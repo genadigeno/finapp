@@ -185,7 +185,7 @@ Status: `IN_PROGRESS`
 - Cx: L
 - DoD: `DOD-KERNEL`
 
-**P0-TSK-010 — Rounding policy**
+**P0-TSK-010 — Rounding policy** — `COMPLETE` (2026-08-31)
 - Context: sharedkernel
 - Description: Explicit named rounding policies; allocation/distribution helper that splits an amount across n parts with zero residual loss.
 - Why: `INV-MON-03` — rounding is explicit; `INV-BAL-03` — value is never created or destroyed.

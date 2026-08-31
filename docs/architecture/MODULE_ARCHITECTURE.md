@@ -214,7 +214,7 @@ phases must satisfy, not a description of code.
 
 ### `sharedkernel` — Phase 0
 - **Responsibility:** framework-free value types shared by every module.
-- **Owns:** no persistent state. Holds `Money` and `CurrencyCode` (P0-TSK-009); rounding policy, typed identifiers, `Clock` and the event envelope follow in later Phase 0 tasks.
+- **Owns:** no persistent state. Holds `Money`, `CurrencyCode` and `RoundingPolicy` (P0-TSK-009, P0-TSK-010); typed identifiers, `Clock` and the event envelope follow in later Phase 0 tasks.
 - **Transaction:** none. Performs no I/O.
 - **Consistency:** n/a — immutable value types.
 - **APIs:** value types and their operations; no service interface.

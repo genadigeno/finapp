@@ -1,6 +1,12 @@
 package com.finapp.sharedkernel.money;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -18,11 +24,19 @@ import java.util.Objects;
  * {@code 1234} minor units is 12.34 at scale 2 and 1.234 at scale 3. Storing the scale makes
  * a historical amount interpretable as originally written ({@code INV-MON-05}).
  *
- * <p><strong>What this type deliberately does not do.</strong> No rounding, no division, no
- * allocation, no conversion between currencies. Every one of those needs an explicitly chosen
- * rounding mode, and offering a convenient default is how rounding becomes implicit
- * ({@code INV-MON-03}). Rounding and allocation are P0-TSK-010; currency conversion is
- * Phase 9 and goes through an FX position, never through this type.
+ * <p><strong>Rounding is never implicit.</strong> Every operation that could lose precision
+ * requires the caller to name a {@link RoundingPolicy}; there is no default and no overload
+ * that guesses ({@code INV-MON-03}). {@link #of(BigDecimal, CurrencyCode)} — the one taking
+ * no policy — does not round at all, it refuses.
+ *
+ * <p><strong>Allocation loses nothing.</strong> {@link #allocate(int)} and
+ * {@link #allocate(long...)} distribute the indivisible remainder rather than discarding it,
+ * so the parts always sum back to the original. An absorbed residual is money creation or
+ * destruction, at scale ({@code INV-BAL-03}).
+ *
+ * <p><strong>What this type still does not do.</strong> No free division, and no conversion
+ * between currencies. Conversion is Phase 9 and posts through an FX position; it never
+ * happens inside this type.
  *
  * <p>Immutable and thread-safe. Every operation returns a new instance.
  */
@@ -96,6 +110,35 @@ public final class Money implements Comparable<Money> {
         }
     }
 
+    /**
+     * An amount in major units, rounded to the currency under an explicitly named policy.
+     *
+     * <p>This is the sanctioned way to turn a computed decimal — a fee, an interest accrual,
+     * the result of applying a rate — into money. The policy is a required argument: there is
+     * no overload that picks one, because a default rounding mode is a decision nobody made
+     * and nobody can afterwards explain ({@code INV-MON-03}).
+     *
+     * <p>Rounding here discards the fraction, by design. Where that fraction must be
+     * accounted for rather than dropped, use {@link #allocate(long...)}, which distributes it.
+     *
+     * @throws MonetaryOverflowException if the rounded amount is outside the representable range
+     */
+    public static Money of(BigDecimal amount, CurrencyCode currency, RoundingPolicy policy) {
+        Objects.requireNonNull(amount, "amount must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        Objects.requireNonNull(policy, "rounding policy must not be null (INV-MON-03)");
+
+        BigDecimal rounded = amount.setScale(currency.minorUnits(), policy.mode());
+        try {
+            return new Money(rounded.unscaledValue().longValueExact(), currency, currency.minorUnits());
+        } catch (ArithmeticException e) {
+            throw new MonetaryOverflowException(
+                    "Amount " + amount.toPlainString() + " " + currency
+                            + " is outside the representable range once rounded "
+                            + policy.policyName(), e);
+        }
+    }
+
     /** Zero in the given currency. There is no currency-less zero — {@code INV-MON-02}. */
     public static Money zero(CurrencyCode currency) {
         return ofMinorUnits(0L, currency);
@@ -161,6 +204,119 @@ public final class Money implements Comparable<Money> {
     /** @throws MonetaryOverflowException if the amount is {@link Long#MIN_VALUE} */
     public Money absoluteValue() {
         return isNegative() ? negated() : this;
+    }
+
+    // -----------------------------------------------------------------
+    // Allocation — the only division, and it loses nothing
+    // -----------------------------------------------------------------
+
+    /**
+     * Splits this amount into {@code parts} as evenly as the currency allows.
+     *
+     * <p>The parts always sum to exactly this amount. Where the split is not exact the
+     * indivisible remainder is handed out one minor unit at a time to the earliest parts:
+     * 1.00 USD into 3 gives 0.34, 0.33, 0.33 — never 0.33 three times with a cent
+     * evaporating ({@code INV-BAL-03}).
+     *
+     * <p>Negative amounts split symmetrically: −1.00 USD into 3 gives −0.34, −0.33, −0.33.
+     *
+     * @throws IllegalArgumentException if {@code parts} is not positive
+     */
+    public List<Money> allocate(int parts) {
+        if (parts <= 0) {
+            throw new IllegalArgumentException(
+                    "Cannot allocate across " + parts + " parts; must be at least 1");
+        }
+        long base = minorUnits / parts;
+        long remainder = minorUnits % parts;
+        long step = Long.signum(remainder);
+        long unitsToHandOut = Math.abs(remainder);
+
+        List<Money> allocation = new ArrayList<>(parts);
+        for (int i = 0; i < parts; i++) {
+            long share = i < unitsToHandOut ? base + step : base;
+            allocation.add(new Money(share, currency, scale));
+        }
+        return Collections.unmodifiableList(allocation);
+    }
+
+    /**
+     * Splits this amount in proportion to the given weights.
+     *
+     * <p>The parts always sum to exactly this amount. Each part first takes its exact share
+     * truncated toward zero; the minor units left over are then handed to the parts with the
+     * largest discarded fraction — the standard largest-remainder method. Ties go to the
+     * earlier part, so the split is deterministic and replaying it reproduces the same
+     * result, which {@code INV-HIST-04} will require of any decision built on it.
+     *
+     * <p>Weights are relative. A zero weight receives nothing and is never given a remainder
+     * unit. Negative weights are rejected: they have no meaning when dividing an amount.
+     *
+     * @throws IllegalArgumentException if no weights are given, any weight is negative, or
+     *     every weight is zero
+     */
+    public List<Money> allocate(long... weights) {
+        Objects.requireNonNull(weights, "weights must not be null");
+        if (weights.length == 0) {
+            throw new IllegalArgumentException("Cannot allocate across an empty set of weights");
+        }
+        BigInteger totalWeight = BigInteger.ZERO;
+        for (long weight : weights) {
+            if (weight < 0L) {
+                throw new IllegalArgumentException(
+                        "Weights must not be negative, but were: " + Arrays.toString(weights));
+            }
+            totalWeight = totalWeight.add(BigInteger.valueOf(weight));
+        }
+        if (totalWeight.signum() == 0) {
+            throw new IllegalArgumentException("At least one weight must be non-zero");
+        }
+
+        // BigInteger for the intermediate product only: amount * weight overflows a long for
+        // entirely realistic inputs, and an overflow here would misallocate silently rather
+        // than fail.
+        BigInteger amount = BigInteger.valueOf(minorUnits);
+        long[] shares = new long[weights.length];
+        BigInteger[] discardedFractions = new BigInteger[weights.length];
+        long allocated = 0L;
+        for (int i = 0; i < weights.length; i++) {
+            BigInteger[] shareAndRemainder =
+                    amount.multiply(BigInteger.valueOf(weights[i])).divideAndRemainder(totalWeight);
+            shares[i] = shareAndRemainder[0].longValueExact();
+            discardedFractions[i] = shareAndRemainder[1].abs();
+            allocated += shares[i];
+        }
+
+        long leftover = minorUnits - allocated;
+        long step = Long.signum(leftover);
+        long unitsToHandOut = Math.abs(leftover);
+
+        List<Integer> byLargestDiscardedFraction = new ArrayList<>(weights.length);
+        for (int i = 0; i < weights.length; i++) {
+            byLargestDiscardedFraction.add(i);
+        }
+        byLargestDiscardedFraction.sort(
+                Comparator.<Integer, BigInteger>comparing(i -> discardedFractions[i])
+                        .reversed()
+                        .thenComparing(Comparator.naturalOrder()));
+
+        long handedOut = 0L;
+        for (int index : byLargestDiscardedFraction) {
+            if (handedOut == unitsToHandOut) {
+                break;
+            }
+            if (weights[index] == 0L) {
+                continue;
+            }
+            shares[index] += step;
+            handedOut++;
+        }
+
+        List<Money> allocation = new ArrayList<>(weights.length);
+        for (long share : shares) {
+            allocation.add(new Money(share, currency, scale));
+        }
+        return Collections.unmodifiableList(allocation);
     }
 
     // -----------------------------------------------------------------

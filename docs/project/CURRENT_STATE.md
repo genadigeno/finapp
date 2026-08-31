@@ -42,49 +42,47 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-010` — Rounding policy**
+**`P0-TSK-011` — Money persistence mapping**
 Status: `READY` — not started.
 
-Bounded context: sharedkernel. Depends on `P0-TSK-009` (`COMPLETE`).
+Bounded context: platform / data. Depends on `P0-TSK-009` (`COMPLETE`) and `P0-TSK-005`
+(`COMPLETE`).
 
-Scope: explicit named rounding policies, and an allocation helper that splits an amount
-across n parts with **zero residual loss** (`INV-BAL-03` — absorbed residual is money
-creation).
+Scope: persist as `amount_minor BIGINT`, `currency CHAR(3)`, `scale SMALLINT`; a reusable
+embeddable and column convention (ADR-0003).
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-03. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TSK-009` — Implement `Money` and `CurrencyCode`** — `COMPLETE` (2026-08-31).
-
-The platform's first financial code. 74 tests in `sharedkernel`, all green.
+**`P0-TSK-010` — Rounding policy** — `COMPLETE` (2026-08-31). 127 tests in `sharedkernel`.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Currency mismatch throws a domain exception, never coerces | `CurrencyMismatchException` on `plus`, `minus` and `compareTo`, carrying both currencies; a test asserts both operands are unchanged after a rejected operation |
-| Overflow is rejected rather than wrapping | `MonetaryOverflowException` on add, subtract, multiply and negate, including `negate(Long.MIN_VALUE)`, which would otherwise return itself and turn a debit into a debit |
-| Construction requires an explicit currency | No no-currency factory exists; `null` currency is rejected; `zero` is currency-scoped |
-| Immutable, no public mutator | Reflection test: all fields `private final`, class `final`, no method named `set*`; operations return new instances |
+| Splitting any amount across any n reassembles to exactly the original | Swept every amount from −500 to +500 across 1–40 parts in four currencies (~160,000 allocations), plus the four extremes of `long`, plus a 2,000-iteration seeded sweep of weighted splits |
+| Rounding mode always caller-specified, never defaulted | `Money.of(BigDecimal, CurrencyCode, RoundingPolicy)` requires the policy; the two-argument factory does not round at all, it refuses |
+
+Both zero-residual properties were demonstrated to have teeth: discarding the remainder in
+the even split failed 6 tests, and discarding it in the weighted split failed 3.
 
 Design decisions worth carrying forward:
-- **Two construction paths, deliberately asymmetric.** `ofMinorUnits` takes the scale from
-  the currency, which is right for an amount created now. `ofPersisted` is the only way to
-  build an amount whose scale differs from the currency's current definition, and is named
-  to be conspicuous — it exists solely so a historical amount survives a change to currency
-  data (ADR-0003).
-- **Scale mismatch is its own failure**, distinct from currency mismatch. The currencies
-  agree; what differs is the minor-unit definition each amount was created under.
-  Reinterpreting one is a redenomination decision, not an arithmetic one.
-- **No rounding, division or conversion.** `Money.of(BigDecimal)` refuses an amount with more
-  precision than the currency can hold rather than choosing between 12.34 and 12.35.
-  Rounding arrives in `P0-TSK-010` as an operation that requires a named mode.
-- **Pseudo-currencies rejected.** `XXX`, `XAU` and `XDR` report −1 minor units; treating them
-  as 0-decimal would make one gram of gold equal one thousandth of one.
-- **`CLF` has four decimal places**, so the scale bound is 9, not 3.
-- **Exception diagnostics survive serialization.** `CurrencyCode` implements `Serializable`
-  so the currencies carried by a `CurrencyMismatchException` are not `transient` — the
-  reflex when a field's type is not serializable, which would have made the accessors return
-  `null` after a round-trip, silently.
+- **`RoundingPolicy` is a named type, not `java.math.RoundingMode`.** `INV-HIST-04` lists
+  "rounding policy" among the versioned artefacts that must be recorded on a decision, so a
+  policy needs a stable name of its own. `ofName` rejects an unknown name rather than
+  defaulting — silently substituting one would change the meaning of a decision being
+  replayed.
+- **`HALF_DOWN` and `UNNECESSARY` are deliberately not offered.** The first biases ties
+  toward zero with no financial justification; the second is not a policy but a refusal, and
+  that is what the no-policy factory already does.
+- **`TOWARDS_ZERO` vs `FLOOR` is documented as the trap it is.** They agree on every positive
+  amount and disagree on every negative one. Debits are negative, so a suite testing only
+  positive amounts passes with either and is wrong in production for one of them — there are
+  explicit negative-amount tests for exactly this.
+- **Weighted allocation uses `BigInteger` for the intermediate product.** `amount × weight`
+  overflows a `long` for realistic inputs, and an overflow there would misallocate silently
+  rather than fail.
+- **Largest-remainder distribution with an index tie-break**, so a replay produces the same
+  split — which `INV-HIST-04` will require of anything built on it.
 
 ---
 
@@ -154,6 +152,12 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
 - `CurrencyCode` validates against ISO 4217 and rejects codes with no minor unit
 - No floating point anywhere on the monetary path
 
+Rounding and allocation (2026-08-31), `P0-TSK-010`:
+- `RoundingPolicy`: six named policies with a stable name for `INV-HIST-04` recording
+- `Money.of(BigDecimal, CurrencyCode, RoundingPolicy)` — rounding requires a named policy
+- `Money.allocate(int)` and `Money.allocate(long...)` — the parts always sum back to the
+  original, so no residual is ever absorbed (`INV-BAL-03`)
+
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
 - Phase gate model, status model and per-phase exit criteria — [`PHASE_GATES.md`](PHASE_GATES.md)
@@ -167,7 +171,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-010` is the next task; `P0-TSK-008` is now unblocked.
+None in progress. `P0-TSK-011` is the next task; `P0-TSK-008` also remains startable.
 
 ## Blockers
 
@@ -308,19 +312,15 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-010` — Rounding policy.**
+**`P0-TSK-011` — Money persistence mapping.**
 
-Rationale: it is the other half of `Money`. This task deliberately shipped a type that cannot
-round, so every rounding decision must name its mode — but until `P0-TSK-010` exists there is
-no sanctioned way to round at all, and the temptation to add a convenient default grows with
-every caller that needs one.
+Rationale: it closes `P0-EPIC-03`, and it is the task that makes `Money`'s stored scale
+mean something. `Money.ofPersisted` exists precisely so a historical amount can be rehydrated
+with the scale it was written under (ADR-0003); until there is a persistence mapping, that
+contract is asserted but never exercised against a real database.
 
-Its allocation helper carries the highest financial risk in `P0-EPIC-03`: splitting an amount
-across n parts must reassemble to exactly the original, because an absorbed residual is money
-creation at scale (`INV-BAL-03`).
-
-`P0-TSK-008` (no-floating-point-money static rule) is also now unblocked — `Money` exists for
-it to be written about.
+`P0-TSK-008` (no-floating-point-money static rule) is also startable and is small — it now
+has both a monetary type to write rules about and an ArchUnit suite to write them in.
 
 ---
 
@@ -328,6 +328,7 @@ it to be written about.
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-010` complete. `RoundingPolicy` with six named policies, explicit-policy rounding, and allocation that distributes the indivisible remainder rather than absorbing it. Zero-residual proven by sweeping ~160,000 even splits and 2,000 weighted ones, and demonstrated to fail when the remainder is discarded. 127 tests. |
 | 2026-08-31 | Task completion review of `P0-TSK-009`. One important finding: the diagnostic state on the monetary exceptions was `transient`, so `left()` and `right()` returned `null` after serialization — proven by round-tripping one, and fixed by making `CurrencyCode` serializable. Also corrected an operand-order inversion in the mismatch message, and added the three tests whose absence let those through: scale mismatch on `minus`/`compareTo`, `absoluteValue` overflow, and serialization of diagnostics. 74 tests. |
 | 2026-08-31 | `P0-TSK-009` complete. `Money` and `CurrencyCode` — the platform's first financial code. Integer minor units, explicit currency, stored scale; exact arithmetic only, with cross-currency, cross-scale, inexact-amount and overflow failures all distinct and all under one `MonetaryException` supertype. 70 tests. |
 | 2026-08-31 | Task completion review of `P0-TSK-007`. Probing showed ArchUnit was importing exactly one class — benign (it skips `package-info`, which is all `platform` and `sharedkernel` contain), but it exposed that the coverage guard asserted only that `app` was seen and would have passed if a module were dropped from the analysis. Guard replaced with one that derives expected coverage from the classpath, proven by excluding a module that had production code. Also added a rule that production classes must belong to a module package: a class directly in `com.finapp` was silently exempt from every rule. |
