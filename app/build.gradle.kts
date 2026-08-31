@@ -7,7 +7,16 @@ plugins {
     // will consume the Spring Boot BOM via platform() for version alignment
     // without taking on Boot's packaging behaviour.
     alias(libs.plugins.spring.boot)
+
+    // Produces a CycloneDX SBOM of app's runtime classpath. app is where the SBOM belongs:
+    // it is the only module that resolves the complete deployable dependency set, so its
+    // SBOM is the honest answer to "what ships?".
+    //
+    // CI's dependency scan reads this. A scanner cannot usefully scan a build script, and
+    // Gradle exports no machine-readable dependency set of its own.
+    alias(libs.plugins.cyclonedx)
 }
+
 
 dependencies {
     // platform() applies the Spring Boot BOM as a set of version constraints.

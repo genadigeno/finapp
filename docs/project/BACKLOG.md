@@ -83,7 +83,7 @@ Status: `IN_PROGRESS`
 - Cx: S
 - DoD: `DOD-BUILD`
 
-**P0-TSK-004 — CI pipeline**
+**P0-TSK-004 — CI pipeline** — `COMPLETE` (2026-08-31)
 - Context: platform / build
 - Description: CI running build, unit tests, integration tests, architecture tests, dependency scan and secret scan on every change.
 - Why: A gate that is not automated is a gate that will be skipped.

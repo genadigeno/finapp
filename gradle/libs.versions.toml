@@ -46,6 +46,13 @@ assertj = "3.27.7"
 flyway = "12.4.0"
 postgresqlDriver = "42.7.13"
 
+# CycloneDX produces the SBOM that CI's dependency scan consumes. Gradle has no native
+# machine-readable dependency export, and a vulnerability scanner cannot scan a build
+# script — so the SBOM is the minimal enabler for the "dependency scan" that P0-TSK-004
+# requires, not an extra. It is also the artefact P0-TSK-039 (dependency verification and
+# locking) will build on, and the thing that answers "what is actually in this build?"
+cyclonedx = "3.4.1"
+
 # Infrastructure image versions — the single source of truth, shared by compose.yaml and
 # (from P0-TSK-035) Testcontainers. Local infrastructure and test infrastructure must be the
 # same version: a difference between them is a defect the test suite cannot see, and
@@ -79,3 +86,4 @@ postgresql-driver = { module = "org.postgresql:postgresql", version.ref = "postg
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
 flyway = { id = "org.flywaydb.flyway", version.ref = "flyway" }
+cyclonedx = { id = "org.cyclonedx.bom", version.ref = "cyclonedx" }

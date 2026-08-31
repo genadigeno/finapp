@@ -56,26 +56,28 @@ Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-ARCH
 
 ### Just completed
 
-**`P0-TSK-005` — Database migration tooling** — `COMPLETE` (2026-08-31).
+**`P0-TSK-004` — CI pipeline** — `COMPLETE` (2026-08-31).
+
+Four jobs in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), separated so a
+red build names its own gate: `build`, `migrations`, `secret-scan`, `dependency-scan`.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Migrations apply cleanly to an empty database | Database destroyed (`down -v`) and recreated; `flywayMigrate` applied `V001` and a re-run was a no-op, not an error |
-| Checksum drift fails the build | Appending one comment line to an applied migration made both `flywayValidate` and `flywayMigrate` fail with `Migration checksum mismatch for migration version 001`; reverting restored them |
-| Schema-per-module namespacing | `platform` schema owned by the platform module, with its `flyway_schema_history` table inside that schema. `nspacl` confirms `PUBLIC` holds no privileges |
+| Pipeline green on a clean clone | Every job's commands executed locally against a clean tree; all four pass. **See the verification limit below.** |
+| A boundary violation fails CI | Reverse dependency `sharedkernel -> platform` fails with a circular-dependency error; separately, adding Spring to `sharedkernel` fails `SharedKernelIsolationTest`. Both revert cleanly |
+| A committed secret fails CI | A random AWS-shaped key committed in a **throwaway clone** produced `aws-access-token` and `generic-api-key` findings and a non-zero exit; the real repository's history was never rewritten |
 
-Decisions recorded in [ADR-0011](../adr/ADR-0011-forward-only-migrations.md), with
-operational conventions in
-[`DATA_MIGRATIONS.md`](../architecture/DATA_MIGRATIONS.md):
-- Forward-only. No undo scripts — a mistake is corrected by a new migration, structurally
-  the same rule as `INV-REV-01`.
-- Each schema-owning module owns its migrations **and** its migration history table.
-- Migrations never run on application startup: DDL is a decision, not a side effect of a
-  process starting.
-- `flywayClean` permanently disabled; `outOfOrder` and `baselineOnMigrate` both off.
-- An explicit convention for irreversible financial migrations: expand / backfill / verify /
-  switch / contract, with only the final step irreversible and never in the same release as
-  the switch.
+Beyond the stated criteria, each scanner was proven to have teeth rather than merely to run:
+the dependency scan flags `commons-collections:3.2.1` (CVE-2015-7501, CRITICAL) and exits
+non-zero. The `migrations` job applies migrations to an empty database, re-applies to prove
+idempotency, and runs `flywayValidate` — which automates `P0-TSK-005`'s "checksum drift fails
+the build".
+
+**Verification limit — this matters.** The repository has **no git remote**, so the workflow
+has never executed on GitHub. "Pipeline green" is evidenced by running the identical
+commands, images and digests locally, not by an observed CI run. The YAML is validated and
+every action is SHA-pinned, but syntax-level CI behaviour (expressions, job orchestration,
+runner environment) is unproven until the repository has a remote and one run completes.
 
 ---
 
@@ -115,6 +117,14 @@ Migration tooling (2026-08-31), `P0-TSK-005`:
 - Migration conventions documented, including irreversible financial migrations and the
   privilege model the DB-level invariants require
 
+Continuous integration (2026-08-31), `P0-TSK-004`:
+- Four gates on every change: build/tests/boundary checks, migrations against a real
+  PostgreSQL, secret scan over full git history, dependency scan of a CycloneDX SBOM
+- Every third-party action pinned to a commit SHA; both scanners pinned to image digests
+- The Java version CI installs is read from the version catalog rather than duplicated
+- The `migrations` job starts PostgreSQL from the project's own `compose.yaml`, so CI and a
+  developer run the identical pinned image
+
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
 - Phase gate model, status model and per-phase exit criteria — [`PHASE_GATES.md`](PHASE_GATES.md)
@@ -128,7 +138,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-006` is the next task; `P0-TSK-004` remains blocked.
+None in progress. `P0-TSK-006` is the next task.
 
 ## Blockers
 
@@ -174,8 +184,12 @@ GRADLE_OPTS="-Djavax.net.ssl.trustStoreType=Windows-ROOT"
 ```
 
 Alternatives: import the AVG root into the JDK `cacerts` with `keytool`, or disable HTTPS
-scanning in AVG. This must be revisited at `P0-TSK-004` — CI runners will need whatever the
-equivalent is in that environment.
+scanning in AVG.
+
+**Resolved for CI (`P0-TSK-004`):** this is specific to this machine. GitHub-hosted runners
+perform no TLS interception, so the workflow needs no equivalent setting. If CI ever moves
+to a self-hosted runner behind an intercepting proxy, that runner needs the same treatment —
+in its own environment, never in the repository.
 
 **Git Bash rewrites container paths.** Running a command inside a container with an absolute
 path from Git Bash (MSYS) silently rewrites it:
@@ -212,7 +226,7 @@ Recorded so it is not mistaken for a completed criterion.
 
 | Task | DoD item not yet met | Owning task |
 |------|---------------------|-------------|
-| `P0-TSK-001` — `P0-TSK-005` | `DOD-BUILD` requires "CI green". No pipeline exists yet, so every verification to date is local — though each was run from a clean clone, and `P0-TSK-001` additionally from an empty Gradle home with a different `JAVA_HOME`. `P0-TSK-004` is now unblocked and closes this. | `P0-TSK-004` |
+| `P0-TSK-001` — `P0-TSK-005` | `DOD-BUILD` requires "CI green". A pipeline now exists and all four jobs pass when run locally, but it has never executed on a CI runner because the repository has no git remote. This closes on the first successful run after a remote is added. | Adding a remote |
 | `P0-TSK-002` | Boundary enforcement is partial: Gradle enforces dependency direction and classpath tests assert module isolation, but cross-module internals and entity references rest on review until ArchUnit lands. | `P0-TSK-007` |
 | `P0-TSK-003`, `P0-TSK-005` | Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised. The migrator/application role split is designed and documented (`DATA_MIGRATIONS.md` §5) but not implemented, and must land **before** any table subject to those invariants is created. | `P0-TSK-022` |
 
@@ -283,6 +297,7 @@ no ArchUnit rules (`P0-TSK-007`), no `Money` type (`P0-TSK-009`).
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-004` complete. CI with four gates: build/tests, migrations against real PostgreSQL, secret scan over full history, SBOM dependency scan. Actions SHA-pinned, scanners digest-pinned. Not yet executed on a runner — no git remote exists. |
 | 2026-08-31 | Task completion review of `P0-TSK-001`, `-002`, `-003`, `-005`. No critical or financial findings — no money-handling code exists yet. Six important findings fixed: an unsatisfiable `DOD-BUILD` "CI green" requirement caused by over-specified `P0-TSK-004` dependencies; a one-directional infrastructure drift check that let an unpinned image pass (proven, then closed); dead Spring Boot configuration in `build-logic` (proven unnecessary); an unnecessary Spring test stack in `platform` contradicting its own comment; a name-substring scope test replaced with a structural one; ADR-0011 missing from `DECISIONS.md`. Java toolchain version moved into the version catalog, removing four duplicated copies of "21". |
 | 2026-08-31 | `P0-TSK-005` complete. Flyway 12.4.0, forward-only, module-owned schema history; ADR-0011 and `DATA_MIGRATIONS.md` written. |
 | 2026-08-31 | `P0-TSK-003` complete. Local infrastructure (PostgreSQL 18.6, Kafka 4.3.1 KRaft, Redis 8.10.1), pinned and health-checked, with a build-enforced version-drift check against the catalog. |

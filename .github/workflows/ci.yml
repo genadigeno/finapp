@@ -1,0 +1,218 @@
+# Continuous integration.
+#
+# A gate that is not automated is a gate that will be skipped (P0-TSK-004). Every check that
+# the Definition of Done relies on runs here, on every change, or it is not a gate.
+#
+# Supply-chain posture: every third-party action is pinned to a commit SHA and every scanner
+# to an image digest, never to a mutable tag. A tag can be repointed by whoever controls the
+# repository; a SHA cannot. This is the same reasoning that pins the Gradle distribution by
+# checksum in gradle/wrapper/gradle-wrapper.properties. The number of third-party actions is
+# deliberately kept small for the same reason.
+#
+# Jobs are separate so a red build says *which* gate failed at a glance, rather than
+# requiring someone to read a log to find out.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege. No job here needs to write to the repository; anything that later does
+# must raise its own permissions explicitly, at the job level, and be reviewed.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Scanners run as pinned container images rather than as marketplace actions: one less
+  # third-party action to trust, and the exact same command can be run locally.
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+  TRIVY_IMAGE: aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Compile, unit tests, module boundary tests, infrastructure version drift.
+  #
+  # `./gradlew build` runs whatever checks exist. It gains the ArchUnit rules
+  # (P0-TSK-007) and the Testcontainers integration tests (P0-TSK-035) the day
+  # those tasks land, with no change needed here.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the pinned Java version from the version catalog
+        id: toolchain
+        # Read rather than hardcoded: gradle/libs.versions.toml is the single source of
+        # truth for versions, and a second copy of "21" in this file would drift silently
+        # the day the toolchain is bumped.
+        run: |
+          version=$(grep -E '^javaToolchain[[:space:]]*=' gradle/libs.versions.toml | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "::error::javaToolchain not found in gradle/libs.versions.toml"
+            exit 1
+          fi
+          echo "java-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          # Verifies gradle-wrapper.jar against Gradle's published checksums. A wrapper jar
+          # is executable code committed to the repository, so it is exactly the kind of
+          # thing an attacker would prefer to modify quietly.
+          validate-wrappers: true
+
+      - name: Build, test and verify
+        run: ./gradlew build --stacktrace
+
+      - name: Upload test reports
+        # Only on failure: a red CI with no reports costs far more time than the upload.
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-reports
+          path: '**/build/reports/tests/**'
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Migrations apply to an empty database, and the repository still agrees with
+  # what was applied.
+  #
+  # This is the integration check that exists today. It uses compose.yaml rather
+  # than a service container so CI runs the *same* pinned PostgreSQL a developer
+  # runs locally — infrastructure differing between the two is a defect the test
+  # suite cannot see (P0-TSK-003).
+  # ---------------------------------------------------------------------------
+  migrations:
+    name: Database migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the pinned Java version from the version catalog
+        id: toolchain
+        run: |
+          version=$(grep -E '^javaToolchain[[:space:]]*=' gradle/libs.versions.toml | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "::error::javaToolchain not found in gradle/libs.versions.toml"
+            exit 1
+          fi
+          echo "java-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+      - name: Start PostgreSQL
+        # --wait blocks until the container reports healthy, so a migration failure is a
+        # real failure rather than a race against startup.
+        run: docker compose up -d postgres --wait
+
+      - name: Apply migrations to an empty database
+        run: ./gradlew :platform:flywayMigrate --stacktrace
+
+      - name: Validate applied migrations against the repository
+        # Fails if an already-applied migration was edited (ADR-0011). This is the
+        # automation of P0-TSK-005's "checksum drift fails the build".
+        run: ./gradlew :platform:flywayValidate --stacktrace
+
+      - name: Re-apply to prove migrations are idempotent
+        run: ./gradlew :platform:flywayMigrate --stacktrace
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: docker compose down -v
+
+  # ---------------------------------------------------------------------------
+  # Secrets must never reach the repository (.claude/rules/security.md).
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, not just the tip: a secret that was committed and later removed is
+          # still disclosed, because it remains in the objects anyone can clone.
+          fetch-depth: 0
+
+      - name: Scan git history for secrets
+        # No allowlist config is used, deliberately. The marked local-development defaults in
+        # compose.yaml do not trigger gitleaks, so suppressing anything would only weaken the
+        # scan for no benefit. If a real false positive appears, allowlist that one finding
+        # narrowly — never disable a rule.
+        run: |
+          docker run --rm -v "$PWD:/repo" "$GITLEAKS_IMAGE" \
+            git /repo --no-banner --redact --verbose
+
+  # ---------------------------------------------------------------------------
+  # Known-vulnerable dependencies.
+  #
+  # Scans a CycloneDX SBOM rather than the build scripts: a scanner cannot resolve
+  # Gradle's dependency graph, and the SBOM is the resolved runtime set that
+  # actually ships.
+  # ---------------------------------------------------------------------------
+  dependency-scan:
+    name: Dependency scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the pinned Java version from the version catalog
+        id: toolchain
+        run: |
+          version=$(grep -E '^javaToolchain[[:space:]]*=' gradle/libs.versions.toml | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "::error::javaToolchain not found in gradle/libs.versions.toml"
+            exit 1
+          fi
+          echo "java-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+      - name: Generate SBOM
+        run: ./gradlew :app:cyclonedxBom --stacktrace
+
+      - name: Scan SBOM for known vulnerabilities
+        # HIGH and CRITICAL fail the build. MEDIUM and below are reported but do not block:
+        # a gate that fires constantly is a gate people learn to bypass, and the threshold
+        # should tighten deliberately rather than by accident.
+        run: |
+          docker run --rm -v "$PWD:/scan" "$TRIVY_IMAGE" \
+            sbom --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress \
+            /scan/app/build/reports/cyclonedx/application.cdx.json
