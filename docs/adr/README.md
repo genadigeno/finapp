@@ -10,7 +10,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 - **An accepted ADR is never edited to change its decision.** A changed decision is a new ADR
   that supersedes the old one; the old one is marked `Superseded by ADR-NNNN`.
 - Status: `Proposed` → `Accepted` → `Superseded`.
-- ADR-0001 through ADR-0011 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
+- ADR-0001 through ADR-0012 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
   once the decisions have been validated by implementation rather than only by argument.
 - A decision found in code but absent from this record is architectural debt.
 
@@ -29,6 +29,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0009](ADR-0009-balance-as-projection.md) | Balances are derived projections anchored to the ledger | Proposed | 0 | Balances |
 | [0010](ADR-0010-audit-trail.md) | The audit trail is a first-class append-only store, distinct from logs | Proposed | 0 | Audit |
 | [0011](ADR-0011-forward-only-migrations.md) | Forward-only migrations with module-owned schema history | Proposed | 0 | Schema evolution |
+| [0012](ADR-0012-context-to-module-mapping.md) | Context-to-module mapping: deliberate merges with recorded split triggers | Proposed | 0 | Module boundaries |
 
 ## Anticipated ADRs
 

@@ -1,7 +1,8 @@
 # Module Architecture — First Baseline
 
-The initial architecture baseline: module boundaries, authoritative data ownership, and the
-transactional, consistency, event, security and provider boundaries between them.
+The architecture baseline: which bounded context maps to which module, what each module
+owns, and the transactional, consistency, event, security and provider boundaries between
+them.
 
 Governing decisions: [ADR-0001](../adr/ADR-0001-modular-monolith.md) (modular monolith),
 [ADR-0006](../adr/ADR-0006-module-boundary-enforcement.md) (boundary enforcement),
@@ -72,183 +73,447 @@ the coupling sink that a modular monolith exists to prevent.
 
 ---
 
-## 3. Module Register
+## 3. Context-to-Module Map
 
-For every module: **Owns** (authoritative state), **Transaction boundary**, **Consistency**,
-**Publishes**, **Consumes**, **Security boundary**, **Phase**.
+Every bounded context in [`BOUNDED_CONTEXTS.md`](BOUNDED_CONTEXTS.md) maps to exactly one
+module. A module may serve more than one context; a context is never split across modules,
+because that would mean its state has two owners.
 
-### `platform` — Phase 0
-- **Owns:** idempotency records, outbox, inbox, audit records
-- **Transaction:** participates in the caller's transaction (outbox, idempotency, audit)
-- **Consistency:** strong, always same-transaction with the caller's state change
-- **Publishes:** nothing itself; it is the publication mechanism
-- **Security:** audit records are `INSERT`/`SELECT` only for the application role
-- **Note:** the only module every other module may depend on directly
+Where several contexts share a module, the reason is recorded, along with **what would
+trigger a split**. Merging is the reversible direction: splitting a module later costs a
+package move, whereas merging two modules that have both grown authoritative state is
+expensive and risky. Fewer, larger modules is therefore the deliberate default until
+evidence says otherwise.
 
-### `sharedkernel` — Phase 0
-- **Owns:** no persistent state
-- **Consistency:** n/a — pure value types
-- **Security:** no I/O, no secrets, no framework
-- **Enforced:** test libraries come from the version catalog, not the Spring Boot BOM, so
-  "no Spring Framework dependency" is a fact rather than an argument about whether BOM
-  constraints count. `SharedKernelIsolationTest` fails if any Spring artefact reaches the
-  classpath.
+| # | Bounded context | Module | Phase | Note |
+|---|-----------------|--------|-------|------|
+| 1 | Party & Customer | `party` | 1 | |
+| 2 | Identity & Authentication | `identity` | 1 | Deliberately separate from `party` |
+| 3 | KYC/KYB | `kyc` | 2 | |
+| 4 | Consent | `consent` | 2 | |
+| 5 | Accounts | `accounts` | 3 | |
+| 6 | Wallet | `accounts` | 3 | **Merged — provisional.** See M1 |
+| 7 | Ledger | `ledger` | 3 | The financial authority |
+| 8 | Transfers | `transfers` | 4 | Added by this task. See M6 |
+| 9 | Payments | `payments` | 5 | |
+| 10 | Payment Methods | `paymentmethods` | 5 | Separate for PCI scope. See M7 |
+| 11 | Checkout | `checkout` | 6 | **Provisional.** See M2 |
+| 12 | Merchant | `merchant` | 6 | |
+| 13 | Settlement | `settlement` | 8 | |
+| 14 | Reconciliation | `reconciliation` | 8 | Separate from `settlement`. See M8 |
+| 15 | FX | `fx` | 9 | |
+| 16 | Cross-Border Payments | `crossborder` | 9 | |
+| 17 | Credit | `credit` | 10 | |
+| 18 | Lending | `lending` | 11 | |
+| 19 | BNPL | `bnpl` | 12 | |
+| 20 | Risk | `risk` | 13 | |
+| 21 | Fraud | `risk` | 13 | **Merged.** See M3 |
+| 22 | AML / Transaction Monitoring | `risk` | 13 | **Merged.** See M3 |
+| 23 | Case Management | `risk` | 13 | Added by this task. See M6 |
+| 24 | Notifications | `notification` | 1+ | |
+| 25 | Accounting / General Ledger | `accounting` | 14 | Distinct from `ledger`. See M9 |
+| 26 | Audit | `platform` | 0 | **Merged.** See M4 |
+| 27 | Reporting | `accounting` | 14 | **Merged.** See M5 |
+| 28 | API / Integration Platform | `platform` + `app` | 0 | **Merged.** See M10 |
 
-### `party` — Phase 1
-- **Owns:** Party, Customer, profile data
-- **Transaction:** own; single-aggregate
-- **Consistency:** strong internally; other modules hold `PartyId` references only
-- **Publishes:** `PartyRegistered`, `CustomerCreated`, `PartyProfileChanged`
-- **Consumes:** `KycDecisionRecorded` (to cache status as a non-authoritative projection)
-- **Security:** PII — restricted; ownership-scoped access
+### Merge and separation decisions
 
-### `identity` — Phase 1
-- **Owns:** Identity, Credential, MFA enrolment, Device, Session, Role assignment
-- **Transaction:** own
-- **Consistency:** strong; session revocation is immediate, not eventually consistent
-- **Publishes:** `IdentityCreated`, `AuthenticationSucceeded/Failed`, `SessionRevoked`
-- **Security:** the platform's highest-sensitivity module. Credential material is isolated
-  from `party` profile data and never leaves the module in any form.
-- **Note:** `identity` and `party` are deliberately separate. Who can log in and who exists
-  as a legal party are different questions with different lifecycles.
+**M1 — Wallet is inside `accounts`, provisionally.** A wallet is a stored-value account: it
+has a balance derived from the ledger, a lifecycle and a holder, exactly as a customer
+account does. Two modules would duplicate that lifecycle and, worse, give two owners to
+"the product a balance belongs to".
+*Split trigger:* wallets acquiring a materially different lifecycle — multi-currency
+sub-balances, third-party wallet custody, or a distinct regulatory treatment.
+*Must resolve by Phase 3* (open question 4).
 
-### `kyc` — Phase 2
-- **Owns:** KYC/KYB Case, Verification Check, Screening Result (evidence), Document
-  reference, Beneficial Owner, Risk Rating
-- **Transaction:** own; case-scoped
-- **Consistency:** the KYC decision is authoritative here. `party` may project it but never
-  overrides it.
-- **Publishes:** `KycCaseOpened`, `KycDecisionRecorded`, `ScreeningHitRaised`
-- **Security:** restricted PII; document access audited; reviewer actions elevated
-- **Providers:** sanctions, PEP, adverse media, document verification — all via adapters
+**M2 — `checkout` is its own module, provisionally.** A checkout session is short-lived and
+expiring; a merchant is long-lived. Different lifecycles usually mean different modules.
+*Merge trigger:* if `checkout` turns out to own no state that outlives a session and merely
+orchestrates `merchant` and `payments`, it is a service inside `merchant`, not a module.
+*Must resolve by Phase 6* (open question 7).
 
-### `consent` — Phase 2
-- **Owns:** Consent Record, versioned consent text, grant/withdraw history
-- **Consistency:** strong; a withdrawn consent takes effect immediately
-- **Publishes:** `ConsentGranted`, `ConsentWithdrawn`
-- **Note:** consent is not authentication and is not authorization (`CLAUDE.md`
-  §Domain Distinctions)
+**M3 — Fraud and AML share the `risk` module.** All three contexts consume the same signals,
+evaluate versioned rule sets, and produce decisions and cases. Splitting them would either
+duplicate the rules engine or create a shared engine owned by nobody.
+They remain **distinct capabilities** with different timing and obligations: fraud
+decisioning is synchronous and latency-bounded; AML monitoring is asynchronous and
+retrospective; onboarding screening is `kyc`, not `risk` (`ROADMAP.md` Refinement 3).
+*Split trigger:* AML acquiring regulatory isolation or retention obligations that fraud does
+not share; or the latency budget of synchronous fraud decisioning being harmed by monitoring
+workload.
 
-### `ledger` — Phase 3 — *the financial authority*
-- **Owns:** Chart of Accounts, Ledger Account, Journal Entry, Journal Line, Balance
-  projection, Hold
-- **Transaction:** owns the posting transaction. Callers request a posting; the ledger
-  decides whether and how it is written.
-- **Consistency:** journal entries strongly consistent. Balance projection is derived and
-  its staleness bound is documented; authoritative balance decisions read the ledger.
-- **Publishes:** `JournalEntryPosted`, `HoldPlaced`, `HoldReleased` — via the outbox, in the
-  posting transaction
-- **Consumes:** nothing. The ledger does not react to events; it is commanded.
-- **Security:** posting authority is privileged. Manual entries require elevation, reason
-  codes and four-eyes. Journal tables are `INSERT`/`SELECT` only.
-- **Invariants:** `INV-LED-*`, `INV-BAL-*`, `INV-HIST-01`, `INV-REV-01`
-- **Hard rule:** no other module writes a posting (`INV-LED-04`, boundary-test enforced)
+**M4 — Audit lives in `platform`.** The audit trail is cross-cutting mechanism, not a domain
+(ADR-0010): every module writes to it, in the caller's transaction. A separate module would
+be depended on by everything, which is what `platform` already is.
+*Split trigger:* audit acquiring its own retention, export or regulatory-reporting behaviour
+substantial enough to constitute a domain — plausible around Phase 15.
 
-### `accounts` — Phase 3
-- **Owns:** Customer Account, Wallet, account product lifecycle and status
-- **Transaction:** own; requests ledger postings for financial effects
-- **Consistency:** account status strong; balance read from `ledger`
-- **Publishes:** `AccountOpened`, `AccountClosed`, `AccountStatusChanged`
-- **Note:** `accounts` owns the *product*; `ledger` owns the *money*. An account's balance
-  is not a field on the account.
+**M5 — Reporting lives in `accounting`.** Financial reports are derived read models over the
+same GL mapping, periods and postings that `accounting` owns. A separate module would need
+read access to all of it and would own nothing.
+*Split trigger:* non-financial or regulatory reporting whose inputs are not the GL.
 
-### `transfers` — Phase 4
-- **Owns:** Transfer, Beneficiary, transfer lifecycle history
-- **Transaction:** transfer state transition and the ledger posting commit together
-  (single database, single transaction — the principal benefit of ADR-0001)
-- **Consistency:** strong
-- **Publishes:** `TransferInitiated/Completed/Failed/Reversed`
-- **Security:** ownership-scoped; step-up authentication for high value or new beneficiary
-- **Seams:** limit check, risk decision (Phase 13)
+**M6 — Two contexts were missing from `BOUNDED_CONTEXTS.md`, and have been added.**
+`Transfers` and `Case Management` are both real bounded contexts with their own aggregates
+and lifecycles (`DELIVERY_PLAN.md` Phases 4 and 13), but neither appeared in the original
+list of 26 — while modules were already planned for both. That is a defect in the context
+list, found by doing the mapping rather than assuming it, and it is exactly the kind of gap
+this task exists to catch. Recording them is not a new decision; the decisions were taken in
+the delivery plan. The list now holds 28 contexts.
 
-### `payments` — Phase 5
-- **Owns:** Payment Intent, Payment Attempt, Authorization, Capture, Refund, Webhook Event
-  (raw evidence), Provider State Mapping
-- **Transaction:** own. **No transaction spans a provider call.** State is committed before
-  the call, and the outcome is applied in a separate transaction.
-- **Consistency:** strong internally; provider truth is eventually consistent and may be
-  unknown (`INV-LIFE-03`)
-- **Publishes:** `PaymentIntentCreated`, `PaymentAuthorized`, `PaymentCaptured`,
-  `PaymentFailed`, `PaymentStateUnknown`, `RefundCompleted`
-- **Security:** webhook signature verification; provider credentials in secret management;
-  tokenised instruments only — no PAN, ever
-- **Providers:** PSP/processor adapters (ADR-0008)
+**M7 — `paymentmethods` is separate from `payments` deliberately.** It exists to hold the
+tokenised-instrument boundary. Keeping it separate makes "no raw card data crosses this
+line" a boundary that can be reviewed and, later, enforced — rather than a convention inside
+a large payments module. This is the isolation criterion from §7, applied in advance because
+PCI scope is the one boundary that is far more expensive to introduce later.
 
-### `paymentmethods` — Phase 5
-- **Owns:** Payment Method token references, instrument metadata
-- **Security:** tokens only. Raw card data never enters the platform boundary.
+**M8 — `settlement` and `reconciliation` are separate.** Settlement owns external evidence
+(files, batches, expectations). Reconciliation owns the comparison and its outcome (matches,
+breaks, resolutions). Conflating them is exactly the mistake `CLAUDE.md` warns about —
+"settlement is not reconciliation".
 
-### `merchant` — Phase 6
-- **Owns:** Merchant, Merchant Account, Fee Schedule (versioned), Merchant Payout
-- **Consistency:** merchant payable derived from `ledger`, never a stored mutable field
-- **Publishes:** `MerchantOnboarded`, `FeeAssessed`, `MerchantPayoutInitiated`
-- **Security:** strict tenant isolation; payout destination change requires step-up,
-  four-eyes and cooling-off
+**M9 — `accounting` is not `ledger`.** The ledger is the operational, authoritative posting
+store. Accounting is the derived general-ledger view with periods, mapping and reports. One
+is a system of record, the other a system of reporting; giving them one owner would let a
+reporting change alter financial truth.
 
-### `checkout` — Phase 6
-- **Owns:** Checkout Session, Order
-- **Consistency:** sessions expire; expiry is a domain event
-- **Publishes:** `CheckoutSessionCreated/Expired`, `OrderPaid`
-
-### `settlement` — Phase 8
-- **Owns:** Settlement Batch, Settlement File (raw, checksummed), Settlement Line,
-  Expectation
-- **Security:** files may contain PII — encrypted, access-controlled
-
-### `reconciliation` — Phase 8
-- **Owns:** Match, Match Rule (versioned), Tolerance (versioned), Break, Investigation,
-  Resolution
-- **Transaction:** resolution and its compensating ledger posting commit together
-- **Publishes:** `ReconciliationBreakRaised`, `BreakResolved`, `AdjustmentPosted`
-- **Security:** resolution is the most sensitive non-administrative privilege in the
-  platform — four-eyes above threshold, reason codes, full audit
-- **Hard rule:** no code path deletes a break (`INV-REC-01`, `INV-REC-02`)
-
-### `fx` — Phase 9
-- **Owns:** FX Quote, Exchange Rate snapshot, FX Trade, FX Position, Currency configuration
-- **Security:** rates are server-authoritative; client-supplied rates rejected
-
-### `crossborder` — Phase 9
-- **Owns:** Cross-Border Payment, Corridor policy
-
-### `credit` — Phase 10
-- **Owns:** Credit Profile, Bureau evidence, Score, Policy Version, Decision (immutable),
-  Reason Codes, Exposure
-- **Security:** restricted PII with retention limits; policy activation requires four-eyes
-- **Providers:** credit bureau adapters
-
-### `lending` — Phase 11
-- **Owns:** Loan Application, Offer, Loan, Repayment Schedule, Accrual Record, Repayment,
-  Delinquency State
-- **Consistency:** loan balances derived from `ledger` postings
-- **Invariants:** `INV-IDEM-02` (accrual idempotency) is critical here
-
-### `bnpl` — Phase 12
-- **Owns:** BNPL Agreement, Instalment Plan, Merchant Financing record
-- **Note:** references both `merchant` and `lending` concepts but owns neither
-
-### `risk` — Phase 13
-- **Owns:** Signal, Rule Set (versioned), Risk Assessment, Risk Decision, Limit, Velocity
-  Counter, Alert, Case
-- **Consistency:** decisions are advisory inputs to a domain lifecycle. `risk` never writes
-  another module's state and never posts to the ledger.
-- **Security:** manual override requires reason codes and four-eyes above threshold; AML
-  case detail is never exposed on customer-facing surfaces
-
-### `accounting` — Phase 14
-- **Owns:** GL Account, GL Mapping Rule (versioned), Accounting Period, Trial Balance
-  snapshot, Report Run (immutable)
-- **Consistency:** derived read model from `ledger`
-- **Hard rule:** **no write access to ledger tables**, verified by database privilege review
-
-### `notification` — Phase 1 onward
-- **Owns:** notification records and delivery state
-- **Consistency:** eventually consistent; never in a money-moving transaction
-- **Consumes:** integration events from many modules
+**M10 — API/Integration Platform is split between `platform` and `app`.** The error
+contract, correlation propagation and provider SPI are mechanism and live in `platform`; the
+HTTP surface, routing and composition live in `app`. Neither owns business state, so no
+state has two owners.
 
 ---
 
-## 4. Boundary Rules
+## 4. Module Register
+
+Every module records the nine attributes `CLAUDE.md` §Architecture requires: **responsibility,
+ownership of state, transaction boundary, consistency boundary, APIs, events, failure
+behaviour, security boundary, operational responsibility.**
+
+Modules from Phase 1 onward do not exist yet. Their entries are the design contract those
+phases must satisfy, not a description of code.
+
+### `sharedkernel` — Phase 0
+- **Responsibility:** framework-free value types shared by every module.
+- **Owns:** no persistent state.
+- **Transaction:** none. Performs no I/O.
+- **Consistency:** n/a — immutable value types.
+- **APIs:** value types and their operations; no service interface.
+- **Events:** none. Defines the envelope *type*; publishes nothing.
+- **Failure:** arithmetic errors are thrown, never absorbed (`INV-MON-04`, `INV-MON-06`).
+- **Security:** no I/O, no secrets, no framework. Test libraries come from the catalog, not the Spring BOM, so "no Spring dependency" is a fact rather than an argument; `SharedKernelIsolationTest` fails if any Spring artefact reaches the classpath.
+- **Operations:** none — nothing to run or monitor.
+
+### `platform` — Phase 0
+- **Responsibility:** the correctness primitives every module depends on. Mechanism, never business rules.
+- **Owns:** idempotency records, outbox, inbox, audit records.
+- **Transaction:** participates in the caller's transaction and never opens its own. A platform component that opened its own transaction would defeat its purpose.
+- **Consistency:** strong; always same-transaction with the caller's state change.
+- **APIs:** internal only — idempotent execution wrapper, outbox writer, inbox consumer wrapper, audit writer, error contract, provider SPI. No business HTTP surface.
+- **Events:** publishes none of its own; it *is* the publication mechanism.
+- **Failure:** relay retries with backoff, attempt counting and a poison path; inbox dedupes; a crash between commit and publish is recovered by the relay (`INV-EVT-01`, `INV-IDEM-04`).
+- **Security:** audit records are `INSERT`/`SELECT` only for the application role (`INV-HIST-03`); log redaction is default-deny (`INV-AUD-02`).
+- **Operations:** outbox depth and age, relay lag, consumer lag, poison-message queue, idempotency-conflict rate.
+- **Note:** the only module every other module may depend on directly.
+
+### `party` — Phase 1
+- **Responsibility:** who exists as a legal party and what commercial relationship they hold.
+- **Owns:** Party, Customer, profile data.
+- **Transaction:** own; single-aggregate.
+- **Consistency:** strong internally. Other modules hold `PartyId` only.
+- **APIs:** registration, profile read/update, party lookup by id.
+- **Events:** publishes `PartyRegistered`, `CustomerCreated`, `PartyProfileChanged`. Consumes `KycDecisionRecorded` to project verification status — a projection it never treats as authoritative.
+- **Failure:** duplicate registration is idempotent by key; a missing KYC projection degrades to "unknown", never to "verified".
+- **Security:** PII, restricted classification; ownership-scoped access; profile changes audited.
+- **Operations:** registration rate, profile-change audit volume.
+
+### `identity` — Phase 1
+- **Responsibility:** who can authenticate, with what credential, from which device or session.
+- **Owns:** Identity, Credential, MFA enrolment, Device, Session, Role assignment.
+- **Transaction:** own.
+- **Consistency:** strong. Session revocation is immediate, never eventually consistent — an eventually-revoked session is an unrevoked session.
+- **APIs:** register, login, MFA challenge/verify, refresh, logout, session and device list/revoke, recovery initiation. Enumeration-safe responses.
+- **Events:** `IdentityCreated`, `AuthenticationSucceeded`, `AuthenticationFailed`, `MfaEnrolled`, `SessionRevoked`, `CredentialChanged`. No credential material in any payload.
+- **Failure:** credential store unavailable fails closed — authentication is refused, never bypassed. Lockout and backoff on repeated failure.
+- **Security:** the platform's highest-sensitivity module. Credential material is isolated from `party` profile data and never leaves the module in any form. Every privileged action audited.
+- **Operations:** authentication success/failure rates, lockouts, MFA outcomes, session lifetimes, recovery attempts — all alertable.
+- **Note:** `identity` and `party` are deliberately separate. Who can log in and who exists as a legal party are different questions with different lifecycles.
+
+### `kyc` — Phase 2
+- **Responsibility:** whether a party may be onboarded, and the evidence for that decision.
+- **Owns:** KYC/KYB Case, Verification Check, Screening Result (evidence), Document reference, Beneficial Owner, Risk Rating, Review Task.
+- **Transaction:** own; case-scoped. Never spans a provider call.
+- **Consistency:** the KYC decision is authoritative here. `party` may project it; it never overrides it.
+- **APIs:** case initiation, document upload, status query, reviewer decision (privileged). Customer-facing status never leaks screening detail.
+- **Events:** `KycCaseOpened`, `KycVerificationCompleted`, `KycDecisionRecorded`, `ScreeningHitRaised`.
+- **Failure:** provider timeout leaves the check in an explicit indeterminate state, never a decision by assumption (`INV-LIFE-03`); duplicate provider callbacks produce one decision (`INV-IDEM-04`); a provider verdict is evidence, never the decision.
+- **Security:** restricted PII; document access least-privilege and audited; reviewer actions elevated with reason codes; four-eyes on high-risk approvals.
+- **Operations:** case age and throughput, straight-through rate, screening hit rate, provider latency and error rate, review queue depth.
+- **Providers:** sanctions, PEP, adverse media, document verification — all via adapters (ADR-0008).
+
+### `consent` — Phase 2
+- **Responsibility:** the lawful basis for processing, held separately from authentication and authorization.
+- **Owns:** Consent Record, versioned consent text, grant/withdraw history.
+- **Transaction:** own; single-aggregate.
+- **Consistency:** strong. A withdrawn consent takes effect immediately.
+- **APIs:** grant, withdraw, query current basis for a purpose.
+- **Events:** `ConsentGranted`, `ConsentWithdrawn`.
+- **Failure:** absence of a recorded consent is a refusal, never an assumed grant (`INV-CRD-03`).
+- **Security:** consent history is immutable; withdrawal is recorded, not deleted.
+- **Operations:** consent coverage per purpose, withdrawal rate, expiring-basis alerts.
+- **Note:** consent is not authentication and is not authorization (`CLAUDE.md` §Domain Distinctions).
+
+### `ledger` — Phase 3 — *the financial authority*
+- **Responsibility:** the authoritative record of financial position. The sole writer of postings.
+- **Owns:** Chart of Accounts, Ledger Account, Journal Entry, Journal Line, Balance projection, Hold.
+- **Transaction:** owns the posting transaction. Callers request a posting; the ledger decides whether and how it is written. The balance projection and the outbox record commit inside it.
+- **Consistency:** journal entries strongly consistent. The balance projection is transactional, so its staleness bound is zero and it is safe for financial decisions (ADR-0009).
+- **APIs:** internal posting command (idempotent), balance query with explicit as-of semantics, statement generation, hold place/release. Posting is **not** a public API: no external caller may post arbitrary entries.
+- **Events:** `JournalEntryPosted`, `HoldPlaced`, `HoldReleased`, published via the outbox in the posting transaction. Consumes nothing — the ledger is commanded, it does not react.
+- **Failure:** an unbalanced entry is rejected by the domain *and* by a database constraint; concurrent postings are resolved by the Phase 3 locking strategy; a crash between posting and publication is recovered by the outbox relay; a duplicate posting command produces one effect.
+- **Security:** posting authority is privileged. Manual entries require elevation, reason codes and four-eyes. Journal tables are `INSERT`/`SELECT` only for the application role.
+- **Operations:** posting rate and latency, projection-vs-postings comparison, trial balance zero per currency, hold utilisation, failed-posting reasons — all alertable.
+- **Invariants:** `INV-LED-*`, `INV-BAL-*`, `INV-HIST-01`, `INV-REV-01`, `INV-ACC-01`.
+- **Hard rule:** no other module writes a posting (`INV-LED-04`).
+
+### `accounts` — Phase 3
+- **Responsibility:** the customer-facing account and wallet *product* — its lifecycle and status, not its money.
+- **Owns:** Customer Account, Wallet, account product lifecycle and status.
+- **Transaction:** own. Requests ledger postings for financial effects; does not write them.
+- **Consistency:** account status strong. Balance is read from `ledger` and never stored here.
+- **APIs:** open, close, freeze, query; balance query delegating to `ledger`.
+- **Events:** `AccountOpened`, `AccountClosed`, `AccountStatusChanged`.
+- **Failure:** a closed or frozen account rejects money movement as a domain outcome, not an exception; ledger unavailability fails the balance read rather than returning a stale figure.
+- **Security:** ownership-scoped access; status changes are privileged and audited.
+- **Operations:** open/close rates, frozen-account count, status-change audit volume.
+- **Note:** `accounts` owns the product; `ledger` owns the money. A balance is not a field on an account.
+
+### `transfers` — Phase 4
+- **Responsibility:** movement of funds between two internal accounts, with an explicit lifecycle.
+- **Owns:** Beneficiary, Transfer, transfer lifecycle history.
+- **Transaction:** the transfer state transition and the ledger posting commit together — one database, one transaction. This is the principal benefit of ADR-0001.
+- **Consistency:** strong.
+- **APIs:** `POST /transfers` with mandatory `Idempotency-Key`; status query; history; beneficiary CRUD. Asynchronous outcome modelled explicitly even though execution is synchronous today.
+- **Events:** `TransferInitiated`, `TransferCompleted`, `TransferFailed`, `TransferReversed`.
+- **Failure:** a client timeout followed by retry produces one effect (`INV-IDEM-01`); racing requests produce one movement (`INV-CON-02`); insufficient funds is a domain outcome with a defined state; a blocked transfer has a defined unwind path that strands no value.
+- **Security:** ownership-scoped on the source account; step-up authentication for high value or a new beneficiary; every command audited.
+- **Operations:** volume and value by state, failure reasons, stuck-transfer detector, idempotency-conflict rate.
+- **Seams:** limit/velocity check and risk decision — interfaces defined here, implemented in Phase 13.
+
+### `payments` — Phase 5
+- **Responsibility:** money movement whose outcome is determined by an unreliable third party.
+- **Owns:** Payment Intent, Payment Attempt, Authorization, Capture, Refund, Webhook Event (raw evidence), Provider State Mapping.
+- **Transaction:** own. **No transaction spans a provider call**: state is committed before the call and the outcome applied in a separate transaction.
+- **Consistency:** strong internally. Provider truth is eventually consistent and may be permanently unknown.
+- **APIs:** intent create/confirm/cancel, attempt status, refund create. Idempotency mandatory on every money-moving command; terminal-state semantics documented.
+- **Events:** `PaymentIntentCreated`, `PaymentAuthorized`, `PaymentCaptured`, `PaymentFailed`, `PaymentStateUnknown`, `RefundInitiated`, `RefundCompleted`.
+- **Failure:** the module's defining concern. A timeout is never treated as failure; unknown is a modelled state with a reconciliation-by-query sweeper (`INV-LIFE-03`); duplicate and out-of-order webhooks produce one effect; an unrecognised provider state maps to indeterminate, never to success.
+- **Security:** webhook signature verification and replay-window enforcement; provider credentials in secret management; tokenised instruments only — no PAN, ever; refunds are privileged.
+- **Operations:** per-provider success/failure/latency, unknown-state count **and age**, webhook lag and duplicate rate, stuck-attempt alerting.
+- **Providers:** PSP/processor adapters (ADR-0008), retaining raw evidence for `settlement`.
+
+### `paymentmethods` — Phase 5
+- **Responsibility:** the tokenised-instrument boundary. Exists so that "no raw card data crosses this line" is a reviewable boundary rather than a convention.
+- **Owns:** Payment Method token references, instrument metadata.
+- **Transaction:** own; single-aggregate.
+- **Consistency:** strong.
+- **APIs:** attach, detach, list. Never returns anything from which an instrument could be reconstructed.
+- **Events:** `PaymentMethodAttached`, `PaymentMethodDetached`.
+- **Failure:** a tokenisation provider being unavailable fails the attach; it never falls back to storing raw detail.
+- **Security:** the platform's PCI boundary. Tokens only; no PAN, CVV or track data is stored, logged or transported anywhere in this platform.
+- **Operations:** tokenisation success rate, provider latency, detached-token cleanup.
+
+### `merchant` — Phase 6
+- **Responsibility:** the merchant as a commercial counterparty, its fees and its payouts.
+- **Owns:** Merchant, Merchant Account, Fee Schedule (versioned), Merchant Payout.
+- **Transaction:** own; payout initiation requests ledger postings.
+- **Consistency:** strong for merchant state. **Payable is derived from `ledger` postings and never stored** — a stored payable would be a second balance authority.
+- **APIs:** merchant CRUD (privileged), payout initiation, merchant transaction reporting. Strict tenant scoping on every call.
+- **Events:** `MerchantOnboarded`, `FeeAssessed`, `MerchantPayoutInitiated`.
+- **Failure:** a payout against insufficient payable is a domain rejection; duplicate payout initiation produces one effect; the fee schedule version is pinned per transaction so a mid-flight change cannot reprice history (`INV-HIST-04`).
+- **Security:** merchant authentication distinct from customer authentication; cross-tenant access impossible; payout destination change requires step-up, four-eyes and a cooling-off period.
+- **Operations:** fee accrual, payout volume and age, per-merchant error rates, chargeback ratio (regulatory-relevant).
+
+### `checkout` — Phase 6
+- **Responsibility:** the customer-facing purchase experience and the order it produces.
+- **Owns:** Checkout Session, Order.
+- **Transaction:** own. Payment execution belongs to `payments`.
+- **Consistency:** strong. Sessions expire; expiry is a domain event, not a side effect of a cleanup job.
+- **APIs:** session create/retrieve/expire, hosted-checkout completion callback.
+- **Events:** `CheckoutSessionCreated`, `CheckoutSessionExpired`, `OrderPaid`.
+- **Failure:** a payment completing after session expiry is handled deterministically, never dropped; duplicate order creation produces one order.
+- **Security:** session tokens are unguessable and single-purpose; no merchant may read another's sessions.
+- **Operations:** conversion and abandonment, session expiry rate, late-completion count.
+
+### `settlement` — Phase 8
+- **Responsibility:** external evidence of money actually moving, and the expectation that it will.
+- **Owns:** Settlement Batch, Settlement File (raw, checksummed), Settlement Line, Expectation.
+- **Transaction:** own; ingestion is per-batch and resumable.
+- **Consistency:** strong for ingested evidence. External settlement is inherently late relative to internal completion (`INV-SET-01`).
+- **APIs:** batch upload and status (privileged, operational).
+- **Events:** `SettlementBatchIngested`, `SettlementExpectationUnmet`.
+- **Failure:** duplicate file ingestion produces no duplicate lines; a partially corrupt file fails the batch rather than importing half; late settlement is processed, not discarded (`INV-SET-03`); an unmet expectation ages and alerts rather than being assumed received.
+- **Security:** settlement files may contain PII — encrypted, access-controlled, retained verbatim (`INV-HIST-02`).
+- **Operations:** batch arrival punctuality, unmet-expectation ageing, ingestion failures.
+
+### `reconciliation` — Phase 8
+- **Responsibility:** proving internal truth agrees with external reality, and handling disagreement without erasing it.
+- **Owns:** Match, Match Rule (versioned), Tolerance (versioned), Reconciliation Break, Investigation, Resolution.
+- **Transaction:** a resolution and its compensating ledger posting commit together.
+- **Consistency:** strong. Matching is deterministic: the same inputs always produce the same matches (`INV-REC-04`).
+- **APIs:** break list/filter/assign, investigation notes, resolution proposal and approval. All privileged and operational.
+- **Events:** `ReconciliationBreakRaised`, `BreakInvestigationStarted`, `BreakResolved`, `AdjustmentPosted`.
+- **Failure:** a matching job that crashes mid-batch resumes without duplicate or lost matches; two operators resolving one break produce one resolution; an unmatched record always becomes a classified break (`INV-REC-02`).
+- **Security:** resolution is the most sensitive non-administrative privilege in the platform — four-eyes above threshold, reason codes, full audit.
+- **Operations:** match rate, unmatched value and count, break age distribution, suspense balance and age, time-to-resolution — all alertable.
+- **Hard rule:** no code path deletes a break (`INV-REC-01`, `INV-REC-02`).
+
+### `fx` — Phase 9
+- **Responsibility:** currency conversion at a server-authoritative, time-bounded rate.
+- **Owns:** FX Quote, Exchange Rate snapshot, FX Trade, FX Position, Currency configuration.
+- **Transaction:** own; a conversion posts both ledger legs through an FX position account in one posting.
+- **Consistency:** strong. A quote's validity window is explicit; expiry is a modelled event.
+- **APIs:** quote request with explicit expiry, conversion execution referencing a quote id.
+- **Events:** `FxQuoteIssued`, `FxQuoteExpired`, `FxTradeExecuted`, `CurrencyConverted`.
+- **Failure:** a rate feed that is unavailable or stale causes the quote to be rejected rather than an old rate to be used; a quote expiring between validation and execution is rejected (`INV-FX-02`); rounding residual is posted, never absorbed (`INV-BAL-03`).
+- **Security:** rates are server-authoritative; client-supplied rates are never trusted. Spread is recognised explicitly as revenue, never concealed in the applied rate (`INV-FX-03`).
+- **Operations:** quote-to-trade rate, expiry rate, rate staleness age, FX position by currency, realised vs expected spread, rounding residual accumulation.
+
+### `crossborder` — Phase 9
+- **Responsibility:** payments that cross a currency or jurisdiction boundary, and the corridor rules governing them.
+- **Owns:** Cross-Border Payment, Corridor policy.
+- **Transaction:** own; delegates conversion to `fx` and execution to `payments`.
+- **Consistency:** strong internally; settlement timing is corridor-dependent and often long.
+- **APIs:** initiation with disclosed rate and fees, status query.
+- **Events:** `CrossBorderPaymentInitiated`, `CrossBorderPaymentSettled`.
+- **Failure:** conversion succeeding but the downstream payment failing has a defined unwind; settlement in an unexpected currency is a break, not a silent acceptance.
+- **Security:** sanctions screening on counterparties; corridor-level policy enforcement.
+- **Operations:** per-corridor volume, settlement latency, failure and unwind counts.
+
+### `credit` — Phase 10
+- **Responsibility:** reproducible, explainable credit decisions that can be defended years later.
+- **Owns:** Credit Profile, Bureau request/response evidence, Credit Score, Risk Score, Policy Version, Rule, Decision (immutable), Reason Code, Decision Input Snapshot, Exposure.
+- **Transaction:** own; a decision and its input snapshot commit together, or the decision is not reproducible.
+- **Consistency:** strong. A recorded decision never changes.
+- **APIs:** decision request (idempotent), decision retrieval, reason-code explanation, policy management (privileged, versioned, audited).
+- **Events:** `CreditProfileUpdated`, `BureauDataRetrieved`, `CreditDecisionRequested`, `CreditDecisionRecorded`, `PolicyVersionActivated`.
+- **Failure:** a bureau being unavailable follows an explicitly chosen path — decline, refer or degraded policy — never an assumed approval; partial bureau data does not silently become a decision; a policy activated mid-decision does not change that decision's pinned version (`INV-HIST-04`).
+- **Security:** bureau access requires recorded consent (`INV-CRD-03`); credit data is restricted PII with retention limits; policy changes require four-eyes.
+- **Operations:** approval/decline rates by policy version, decision latency, bureau availability and cost, reason-code distribution.
+- **Providers:** credit bureau adapters (ADR-0008).
+
+### `lending` — Phase 11
+- **Responsibility:** originating and servicing loans, including time-based mechanics.
+- **Owns:** Loan Application, Loan Offer, Loan, Repayment Schedule, Instalment, Accrual Record, Repayment, Allocation, Delinquency State.
+- **Transaction:** own; disbursement and repayment request ledger postings.
+- **Consistency:** strong. Loan balances are derived from `ledger` postings, never stored independently.
+- **APIs:** application submit, offer retrieve/accept, loan detail and schedule, repayment (idempotent), early settlement quote and execution.
+- **Events:** `LoanApplicationSubmitted`, `LoanOffered`, `LoanAccepted`, `LoanDisbursed`, `InterestAccrued`, `RepaymentReceived`, `LoanDelinquent`, `LoanClosed`.
+- **Failure:** an accrual job that crashes and re-runs produces no second accrual (`INV-IDEM-02`) — double accrual is money creation; a repayment for a closed loan is a domain outcome; disbursement posted but transfer failing has a compensating path.
+- **Security:** disbursement is high-value and strictly authorised; schedule or rate modification requires four-eyes and reason codes; restructuring is fully audited.
+- **Operations:** portfolio outstanding, accrual job success and duration, delinquency buckets, allocation anomalies, schedule-vs-actual drift.
+- **Invariants:** `INV-IDEM-02` is the critical one here.
+
+### `bnpl` — Phase 12
+- **Responsibility:** merchant-financed instalment credit — one economic event producing two financial flows.
+- **Owns:** BNPL Agreement, Instalment Plan, Instalment, Merchant Financing record, Refund Adjustment, Late Fee.
+- **Transaction:** merchant financing and customer obligation are created atomically, or a tested compensating path runs.
+- **Consistency:** strong. References `merchant` and `lending` concepts by identifier; owns neither.
+- **APIs:** eligibility check at checkout, plan selection, agreement retrieval, schedule, early payoff, merchant-initiated refund.
+- **Events:** `BnplEligibilityAssessed`, `BnplAgreementCreated`, `MerchantFinanced`, `InstalmentDue`, `InstalmentPaid`, `BnplRefundApplied`, `BnplAgreementClosed`.
+- **Failure:** the hard case is refunds — a partial refund reduces remaining instalments under an explicit policy; a full refund closes the agreement leaving no residual obligation or stranded value; a chargeback plus refund on one order cannot double-credit the customer.
+- **Security:** eligibility must not leak credit data to the merchant; merchant-initiated refunds are bounded by the original order.
+- **Operations:** eligibility approval rate, plan mix, instalment delinquency, refund rate and its effect on outstanding, merchant financing exposure.
+
+### `risk` — Phase 13
+- **Responsibility:** signals, versioned rules, decisions and cases for fraud, AML monitoring and limits. Advisory to a domain lifecycle — never a substitute for it.
+- **Owns:** Signal, Rule Set (versioned), Risk Assessment, Risk Decision, Limit definition, Velocity Counter, Alert, Case, Case Action.
+- **Transaction:** own. **`risk` never writes another module's state and never posts to the ledger.** A blocked transfer is a transfer in a blocked state, unwound by `transfers`.
+- **Consistency:** synchronous fraud decisions are strongly consistent and latency-bounded; AML monitoring is asynchronous and retrospective. Velocity counters are authoritative against durable state, not cache alone (`INV-CON-03`).
+- **APIs:** internal risk evaluation with a strict latency budget; operational APIs for case queues, alert triage, limit management (privileged) and manual override with reason codes.
+- **Events:** `RiskSignalRecorded`, `RiskDecisionMade`, `LimitBreached`, `AlertRaised`, `CaseOpened`, `CaseClosed`, `TransactionBlocked`.
+- **Failure:** fail-safe behaviour on unavailability is explicit per operation and value band — a wrong default is either an outage or an open door; counter-store loss must not silently disable limits; duplicate signals do not double-count.
+- **Security:** manual override requires reason codes and four-eyes above threshold. **Tipping-off control:** AML case detail is never exposed on a customer-facing surface.
+- **Operations:** decision latency percentiles, block and false-positive rates, rule hit distribution, alert volume and queue age, case resolution time, limit breach rate.
+
+### `accounting` — Phase 14
+- **Responsibility:** turning the operational ledger into reportable financial information.
+- **Owns:** GL Account, GL Mapping Rule (versioned), Accounting Period, Trial Balance snapshot, Period Close record, Report Definition, Report Run (immutable output retained).
+- **Transaction:** own; period close is a controlled, approved transaction.
+- **Consistency:** a derived read model over `ledger`. Reports are reproducible because mapping versions are pinned (`INV-ACC-04`).
+- **APIs:** trial balance query, GL query with drill-down to source postings, period close initiation and approval (privileged), report generation and retrieval.
+- **Events:** `AccountingPeriodOpened`, `TrialBalanceGenerated`, `PeriodCloseRequested`, `AccountingPeriodClosed`, `ReportGenerated`.
+- **Failure:** postings arriving during close are handled deterministically; a close job crashing mid-run resumes; a posting into a closed period is rejected and must use a prior-period adjustment (`INV-ACC-03`).
+- **Security:** period close requires elevation and four-eyes; issued reports are immutable and retained.
+- **Operations:** trial-balance imbalance alert (must always be zero per currency), close duration, unposted items at close, report generation success.
+- **Hard rule:** **no write access to ledger tables**, verified at the database privilege level.
+
+### `notification` — Phase 1 onward
+- **Responsibility:** telling people things. Never part of a money-moving decision.
+- **Owns:** notification records and delivery state.
+- **Transaction:** own. **Never inside a money-moving transaction** — a failed email must not roll back a payment.
+- **Consistency:** eventually consistent by design.
+- **APIs:** internal send request; template management (privileged).
+- **Events:** consumes integration events from many modules; publishes `NotificationSent`, `NotificationFailed`.
+- **Failure:** duplicate events must not send duplicate notifications (inbox dedupe); provider unavailability retries with backoff; permanent failure is recorded, not silently dropped.
+- **Security:** no sensitive data in notification bodies (`INV-AUD-02`) — a notification is an unencrypted channel to an address the platform does not control.
+- **Operations:** send and failure rates by channel, provider latency, retry depth, dead-letter volume.
+
+---
+
+## 5. Authoritative State Ownership
+
+`CLAUDE.md` forbids shared mutable ownership of the same authoritative state across
+independent domains. This table is the check: every authoritative state has exactly one
+owning module, and anything derived names what it is derived from.
+
+| Authoritative state | Sole owner | Derived state elsewhere |
+|---------------------|-----------|-------------------------|
+| Idempotency record, outbox, inbox, audit record | `platform` | — |
+| Party, Customer, profile | `party` | — |
+| Identity, Credential, MFA enrolment, Device, Session, Role assignment | `identity` | — |
+| KYC/KYB Case, Verification Check, Screening Result, Beneficial Owner, Risk Rating | `kyc` | `party` may project verification *status* (non-authoritative) |
+| Consent Record, consent text version | `consent` | — |
+| Chart of Accounts, Ledger Account, Journal Entry, Journal Line, Hold | `ledger` | — |
+| Balance | `ledger` (projection of its own postings, ADR-0009) | `accounts`, `merchant`, `lending` **read** it; none store it |
+| Customer Account, Wallet, account lifecycle/status | `accounts` | — |
+| Beneficiary, Transfer, transfer lifecycle | `transfers` | — |
+| Payment Intent, Attempt, Authorization, Capture, Refund, Webhook evidence | `payments` | — |
+| Payment Method token reference, instrument metadata | `paymentmethods` | — |
+| Merchant, Merchant Account, Fee Schedule, Merchant Payout | `merchant` | Merchant **payable** is derived from `ledger` postings, never stored |
+| Checkout Session, Order | `checkout` | — |
+| Settlement Batch, File, Line, Expectation | `settlement` | — |
+| Match, Match Rule, Tolerance, Break, Investigation, Resolution | `reconciliation` | — |
+| FX Quote, Exchange Rate snapshot, FX Trade, FX Position, Currency config | `fx` | — |
+| Cross-Border Payment, Corridor policy | `crossborder` | — |
+| Credit Profile, Bureau evidence, Score, Policy Version, Decision, Exposure | `credit` | — |
+| Loan Application, Offer, Loan, Schedule, Accrual, Repayment, Delinquency | `lending` | Loan balance derived from `ledger` |
+| BNPL Agreement, Instalment Plan, Merchant Financing record | `bnpl` | References `merchant` and `lending` by id; owns neither |
+| Signal, Rule Set, Risk Assessment, Risk Decision, Limit, Velocity Counter, Alert, Case | `risk` | — |
+| GL Account, GL Mapping Rule, Accounting Period, Trial Balance snapshot, Report Run | `accounting` | Derived read model over `ledger`; **no write access to ledger tables** |
+| Notification record, delivery state | `notification` | — |
+
+### Ownership conflicts found and resolved
+
+**"Case" was at risk of two owners.** `DELIVERY_PLAN.md` Phase 13 describes case management
+as "a shared capability across KYC, fraud and AML", and `kyc` separately owns a Review Task.
+Shared ownership of one mutable aggregate is exactly what `CLAUDE.md` forbids.
+
+Resolved: these are **two different states, not one shared state**. `kyc` owns the KYC
+Review Task — a step inside a KYC case, scoped to that case's lifecycle. `risk` owns the
+generic Case used by fraud and AML. Neither writes the other.
+If a genuinely shared case store is later required, it must become its own module with a
+single owner; it may not become a table two modules write. Decided by Phase 13.
+
+**"Screening result" reads like one state but is two.** `kyc` owns onboarding-time screening
+evidence; `risk` owns ongoing monitoring and rescreening results. They share adapter
+infrastructure, not state (`ROADMAP.md` Refinement 3).
+
+**Balance is read by four modules and owned by one.** `accounts`, `merchant` and `lending`
+all present balances. None stores one: each reads `ledger`. A stored balance in any of them
+would violate `INV-BAL-01`.
+
+## 6. Boundary Rules
 
 ### Module boundary
 - Each module owns a package root; internals are not accessible across modules.
@@ -304,7 +569,7 @@ For every module: **Owns** (authoritative state), **Transaction boundary**, **Co
 
 ---
 
-## 5. Extraction Criteria
+## 7. Extraction Criteria
 
 A module may be extracted into a separate service only when at least one is demonstrated
 with evidence, and an ADR records it:
@@ -321,14 +586,35 @@ are conventional; a diagram looks cleaner.
 `ledger` is the module least likely to be extracted, because the atomicity it provides to
 its callers is the primary architectural asset of this design.
 
+`paymentmethods` is the module most likely to be extracted, on criterion 2: PCI scope is the
+one isolation boundary that is far more expensive to introduce after the fact, which is why
+it is a separate module from the outset (§3, M7).
+
 ---
 
-## 6. Known Open Questions
+## 8. Known Open Questions
 
-Tracked in `CURRENT_STATE.md` §Unresolved Architectural Questions:
+Tracked in `CURRENT_STATE.md` §Unresolved Architectural Questions. Each has a deadline
+because an unmade decision that becomes load-bearing is worse than a decision made early and
+revisited.
 
-- Isolation level and locking strategy for concurrent postings (Phase 3 ADR).
-- Whether balance projections live in the ledger schema or a separate read store.
-- Whether `accounts` and `wallet` are one module or two.
-- Whether `checkout` is a module or part of `merchant`.
-- Chart-of-accounts structure and its relationship to the Phase 14 GL.
+| Question | Recorded position | Must resolve by |
+|----------|-------------------|-----------------|
+| Are `accounts` and `wallet` one module or two? | One (§3, M1), with a stated split trigger | Phase 3 |
+| Is `checkout` a module or part of `merchant`? | Its own module (§3, M2), with a stated merge trigger | Phase 6 |
+| Does a shared case store exist, and who owns it? | No shared store: `kyc` owns Review Task, `risk` owns Case (§5) | Phase 13 |
+| Isolation level and locking strategy for concurrent postings | Undecided — ADR required | Phase 3 |
+| Chart-of-accounts structure and its relation to the Phase 14 GL | Undecided — ADR required | Phase 3 |
+| Balance projection placement: ledger schema or separate read store | Ledger schema, transactional (ADR-0009) | Phase 3 |
+
+### What this map does not yet enforce
+
+The context-to-module map is a design contract, not a mechanism. Nothing in the build
+currently prevents a module from reaching into another's internals, referencing another's
+entities, or quietly acquiring a second owner for a piece of state. Gradle enforces
+dependency *direction* only.
+
+`P0-TSK-007` (ArchUnit boundary rules) is what converts this document from reviewed into
+enforced, and it is the immediate next task for that reason. Until it lands, every rule in
+§6 rests on review — which is worth stating plainly rather than leaving a reader to assume
+the diagram is guaranteed by something.

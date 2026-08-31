@@ -124,12 +124,13 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-02 — Architecture rules as executable tests
 
-**P0-TSK-006 — Define the context-to-module map**
+**P0-TSK-006 — Define the context-to-module map** — `COMPLETE` (2026-08-31)
 - Context: architecture
 - Description: Map each bounded context in `BOUNDED_CONTEXTS.md` to a planned module, with authoritative state ownership, transaction boundary, consistency boundary and security boundary.
 - Why: `CLAUDE.md` mandates these be established for every important component.
 - Deps: none
-- Accept: `MODULE_ARCHITECTURE.md` records all eight boundary attributes for every planned module; no state has two owners.
+- Accept: `MODULE_ARCHITECTURE.md` records all nine boundary attributes for every planned module; no state has two owners.
+- Correction (2026-08-31): this criterion said "eight" attributes. `CLAUDE.md` §Architecture lists **nine** — responsibility, ownership of state, transaction boundary, consistency boundary, APIs, events, failure behaviour, security boundary, operational responsibility. `CLAUDE.md` is the authority, so the map records nine.
 - Risk: Medium
 - Cx: L
 - DoD: `DOD-ARCH`

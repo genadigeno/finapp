@@ -16,7 +16,7 @@ Status: `IN_PROGRESS`
 Entry gate passed on 2026-08-31. All twelve entry-gate criteria in
 [`PHASE_GATES.md`](PHASE_GATES.md) §2 are satisfied: the delivery plan is written, bounded
 contexts and module boundaries are defined, the invariant catalog exists, the backlog is
-elaborated to task granularity, and ADR-0001 through ADR-0010 are recorded as `Proposed`.
+elaborated to task granularity, and ADR-0001 through ADR-0012 are recorded as `Proposed`.
 
 Phase 0 delivers a buildable, boundary-enforced modular monolith containing the financial and
 platform kernel, with **zero business capability**. That constraint is deliberate: money
@@ -42,42 +42,50 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-006` — Define the context-to-module map**
+**`P0-TSK-007` — ArchUnit boundary rules**
 Status: `READY` — not started.
 
-Bounded context: architecture. No dependencies.
+Bounded context: platform. Depends on `P0-TSK-002` (`COMPLETE`) and `P0-TSK-006`
+(`COMPLETE`).
 
-Scope: map each bounded context to a planned module with all eight boundary attributes.
-Largely satisfied already by
-[`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md); the task is to verify
-completeness and close gaps, which is the precondition for `P0-TSK-007` (ArchUnit rules).
+Scope: rules forbidding cross-module internal access, cross-module entity references,
+reverse dependencies and framework leakage into `sharedkernel`.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-ARCH`.
+Acceptance: rules pass on the current codebase; each rule is proven by a deliberately
+introduced violation that fails the build, then reverted.
+
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TSK-004` — CI pipeline** — `COMPLETE` (2026-08-31).
+**`P0-TSK-006` — Define the context-to-module map** — `COMPLETE` (2026-08-31).
 
-Four jobs in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), separated so a
-red build names its own gate: `build`, `migrations`, `secret-scan`, `dependency-scan`.
+[`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md) now carries a
+context-to-module map, a register recording all nine boundary attributes for every module,
+and an authoritative-state ownership table.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Pipeline green on a clean clone | Every job's commands executed locally against a clean tree; all four pass. **See the verification limit below.** |
-| A boundary violation fails CI | Reverse dependency `sharedkernel -> platform` fails with a circular-dependency error; separately, adding Spring to `sharedkernel` fails `SharedKernelIsolationTest`. Both revert cleanly |
-| A committed secret fails CI | A random AWS-shaped key committed in a **throwaway clone** produced `aws-access-token` and `generic-api-key` findings and a non-zero exit; the real repository's history was never rewritten |
+| All boundary attributes for every planned module | 23 modules × 9 attributes, verified mechanically — each of responsibility, owns, transaction, consistency, APIs, events, failure, security, operations appears exactly 23 times |
+| No state has two owners | §5 lists every authoritative state against exactly one owning module; derived state names what it derives from |
+| Every bounded context mapped | All 28 contexts map to a module, verified by script: 0 unmapped |
 
-Beyond the stated criteria, each scanner was proven to have teeth rather than merely to run:
-the dependency scan flags `commons-collections:3.2.1` (CVE-2015-7501, CRITICAL) and exits
-non-zero. The `migrations` job applies migrations to an empty database, re-applies to prove
-idempotency, and runs `flywayValidate` — which automates `P0-TSK-005`'s "checksum drift fails
-the build".
+Three things the mapping exercise found, which is the point of doing it rather than
+assuming it:
+- **Two bounded contexts were missing** from `BOUNDED_CONTEXTS.md` — `Transfers` and
+  `Case Management` — while modules were already planned for both. Added; the list now
+  holds 28.
+- **"Case" was at risk of two owners.** The delivery plan describes case management as
+  "shared across KYC, fraud and AML", and `kyc` separately owns a Review Task. Resolved as
+  two distinct states rather than one shared one; a genuinely shared store would have to be
+  its own module with a single owner.
+- **The acceptance criterion miscounted.** It asked for "eight" attributes; `CLAUDE.md`
+  lists nine. `CLAUDE.md` is the authority, so the map records nine and the backlog is
+  corrected.
 
-**Verification limit — this matters.** The repository has **no git remote**, so the workflow
-has never executed on GitHub. "Pipeline green" is evidenced by running the identical
-commands, images and digests locally, not by an observed CI run. The YAML is validated and
-every action is SHA-pinned, but syntax-level CI behaviour (expressions, job orchestration,
-runner environment) is unproven until the repository has a remote and one run completes.
+Decisions recorded in [ADR-0012](../adr/ADR-0012-context-to-module-mapping.md): 28 contexts
+map to 23 modules; a context is never split across modules; every merge records the evidence
+that would trigger a split, because starting merged is the reversible direction.
 
 ---
 
@@ -125,6 +133,12 @@ Continuous integration (2026-08-31), `P0-TSK-004`:
 - The `migrations` job starts PostgreSQL from the project's own `compose.yaml`, so CI and a
   developer run the identical pinned image
 
+Architecture baseline (2026-08-31), `P0-TSK-006`:
+- Context-to-module map: all 28 bounded contexts mapped to 23 modules, merges justified with
+  recorded split triggers (ADR-0012)
+- Module register with all nine `CLAUDE.md` boundary attributes for every module
+- Authoritative-state ownership table proving no state has two owners
+
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
 - Phase gate model, status model and per-phase exit criteria — [`PHASE_GATES.md`](PHASE_GATES.md)
@@ -138,7 +152,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-006` is the next task.
+None in progress. `P0-TSK-007` is the next task.
 
 ## Blockers
 
@@ -258,10 +272,10 @@ it begins.
 | 1 | Isolation level and locking strategy for concurrent postings | Phase 3 | **High** — lost updates or double spend under contention (`INV-CON-01`) |
 | 2 | Chart-of-accounts structure and its relationship to the Phase 14 GL | Phase 3 | High — a narrow structure forces retroactive remapping, breaking `INV-ACC-04` |
 | 3 | Balance projection placement (ledger schema vs separate read store) | Phase 3 | Medium — affects contention and rebuild cost (ADR-0009) |
-| 4 | Whether `accounts` and `wallet` are one module or two | Phase 3 | Medium — splitting later is cheap; merging authoritative state later is not |
+| 4 | Whether `accounts` and `wallet` are one module or two | Phase 3 | Medium — **working position recorded** (one module, `MODULE_ARCHITECTURE.md` §3 M1) with a named split trigger; still to be confirmed |
 | 5 | Transfer/ledger transaction boundary and compensation strategy | Phase 4 | High — determines whether a saga is ever needed internally |
 | 6 | Accounting treatment of authorization (memo/hold) vs capture (posting) | Phase 5 | High — misstates available funds if wrong |
-| 7 | Whether `checkout` is its own module or part of `merchant` | Phase 6 | Low |
+| 7 | Whether `checkout` is its own module or part of `merchant` | Phase 6 | Low — **working position recorded** (own module, §3 M2) with a named merge trigger |
 | 8 | Fee model: who pays, when recognised, gross vs net settlement | Phase 6 | High — changing revenue recognition after postings exist is a restatement |
 | 9 | Which payment rail to simulate first, and its finality semantics | Phase 5 | Medium — first rail shapes the abstraction (mitigated by designing to `PAYMENT_LIFECYCLES.md`) |
 | 10 | Which jurisdiction-neutral compliance abstractions belong in the MVP | Phase 2 | Medium |
@@ -279,19 +293,17 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-006` — Define the context-to-module map.**
+**`P0-TSK-007` — ArchUnit boundary rules.**
 
-Rationale: `P0-TSK-007` (ArchUnit boundary rules) depends on it, and `P0-TSK-007` is the
-task that converts the module boundaries from documented-and-reviewed into
-mechanically-enforced. That gap is currently the weakest part of the architecture story:
-Gradle enforces dependency *direction*, but nothing yet prevents a cross-module internal
-reference.
-
-Much of `P0-TSK-006` is already done in `MODULE_ARCHITECTURE.md`. The work is to verify
-every planned module records all eight boundary attributes and that no state has two owners.
+Rationale: `P0-TSK-006` produced a design contract; nothing enforces it. Gradle enforces
+dependency *direction* only — nothing currently prevents a module reaching into another's
+internals, referencing another's entities, or quietly acquiring a second owner for a piece
+of state. `P0-TSK-007` is what converts `MODULE_ARCHITECTURE.md` §6 from reviewed into
+enforced, and it is now unblocked.
 
 Per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 4, work stays within that task —
-no ArchUnit rules (`P0-TSK-007`), no `Money` type (`P0-TSK-009`).
+boundary rules only. The no-floating-point-money rule is `P0-TSK-008` and additionally
+depends on `Money` existing (`P0-TSK-009`).
 
 ---
 
@@ -299,6 +311,7 @@ no ArchUnit rules (`P0-TSK-007`), no `Money` type (`P0-TSK-009`).
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-006` complete. Context-to-module map: 28 contexts to 23 modules, all nine boundary attributes per module, authoritative-state ownership table. Found two missing bounded contexts and one state at risk of two owners. ADR-0012 records the mapping decision. |
 | 2026-08-31 | `P0-TSK-004` complete. CI with four gates: build/tests, migrations against real PostgreSQL, secret scan over full history, SBOM dependency scan. Actions SHA-pinned, scanners digest-pinned. Not yet executed on a runner — no git remote exists. |
 | 2026-08-31 | Task completion review of `P0-TSK-001`, `-002`, `-003`, `-005`. No critical or financial findings — no money-handling code exists yet. Six important findings fixed: an unsatisfiable `DOD-BUILD` "CI green" requirement caused by over-specified `P0-TSK-004` dependencies; a one-directional infrastructure drift check that let an unpinned image pass (proven, then closed); dead Spring Boot configuration in `build-logic` (proven unnecessary); an unnecessary Spring test stack in `platform` contradicting its own comment; a name-substring scope test replaced with a structural one; ADR-0011 missing from `DECISIONS.md`. Java toolchain version moved into the version catalog, removing four duplicated copies of "21". |
 | 2026-08-31 | `P0-TSK-005` complete. Flyway 12.4.0, forward-only, module-owned schema history; ADR-0011 and `DATA_MIGRATIONS.md` written. |
