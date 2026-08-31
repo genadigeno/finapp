@@ -55,7 +55,7 @@ Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-03. DoD profile: `DOD-KERN
 
 ### Just completed
 
-**`P0-TSK-010` — Rounding policy** — `COMPLETE` (2026-08-31). 127 tests in `sharedkernel`.
+**`P0-TSK-010` — Rounding policy** — `COMPLETE` (2026-08-31). 128 tests in `sharedkernel`.
 
 | Acceptance criterion | Evidence |
 |---|---|
@@ -83,6 +83,11 @@ Design decisions worth carrying forward:
   rather than fail.
 - **Largest-remainder distribution with an index tie-break**, so a replay produces the same
   split — which `INV-HIST-04` will require of anything built on it.
+- **`allocateEvenly` and `allocateByWeights` are named, not overloaded.** As `allocate(int)`
+  and `allocate(long...)` they resolved silently by the width of the literal: `allocate(3)`
+  split three ways while `allocate(3L)` returned the whole amount as one part. Counts are
+  routinely held in a `long`, so that is a money bug the compiler accepts and no assertion
+  notices. A test now guards against reintroducing a method named `allocate`.
 
 ---
 
@@ -155,8 +160,8 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
 Rounding and allocation (2026-08-31), `P0-TSK-010`:
 - `RoundingPolicy`: six named policies with a stable name for `INV-HIST-04` recording
 - `Money.of(BigDecimal, CurrencyCode, RoundingPolicy)` — rounding requires a named policy
-- `Money.allocate(int)` and `Money.allocate(long...)` — the parts always sum back to the
-  original, so no residual is ever absorbed (`INV-BAL-03`)
+- `Money.allocateEvenly(int)` and `Money.allocateByWeights(long...)` — the parts always sum
+  back to the original, so no residual is ever absorbed (`INV-BAL-03`)
 
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
@@ -328,6 +333,7 @@ has both a monetary type to write rules about and an ArchUnit suite to write the
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | Task completion review of `P0-TSK-010`. One important finding: `allocate(int)` and `allocate(long...)` resolved silently by literal width — `allocate(3)` split three ways, `allocate(3L)` returned the whole amount as one part. Proven, then removed by renaming to `allocateEvenly` / `allocateByWeights`, with a test guarding against reintroduction. |
 | 2026-08-31 | `P0-TSK-010` complete. `RoundingPolicy` with six named policies, explicit-policy rounding, and allocation that distributes the indivisible remainder rather than absorbing it. Zero-residual proven by sweeping ~160,000 even splits and 2,000 weighted ones, and demonstrated to fail when the remainder is discarded. 127 tests. |
 | 2026-08-31 | Task completion review of `P0-TSK-009`. One important finding: the diagnostic state on the monetary exceptions was `transient`, so `left()` and `right()` returned `null` after serialization — proven by round-tripping one, and fixed by making `CurrencyCode` serializable. Also corrected an operand-order inversion in the mismatch message, and added the three tests whose absence let those through: scale mismatch on `minus`/`compareTo`, `absoluteValue` overflow, and serialization of diagnostics. 74 tests. |
 | 2026-08-31 | `P0-TSK-009` complete. `Money` and `CurrencyCode` — the platform's first financial code. Integer minor units, explicit currency, stored scale; exact arithmetic only, with cross-currency, cross-scale, inexact-amount and overflow failures all distinct and all under one `MonetaryException` supertype. 70 tests. |

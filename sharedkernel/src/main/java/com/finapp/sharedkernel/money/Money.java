@@ -29,8 +29,8 @@ import java.util.Objects;
  * that guesses ({@code INV-MON-03}). {@link #of(BigDecimal, CurrencyCode)} — the one taking
  * no policy — does not round at all, it refuses.
  *
- * <p><strong>Allocation loses nothing.</strong> {@link #allocate(int)} and
- * {@link #allocate(long...)} distribute the indivisible remainder rather than discarding it,
+ * <p><strong>Allocation loses nothing.</strong> {@link #allocateEvenly(int)} and
+ * {@link #allocateByWeights(long...)} distribute the indivisible remainder rather than discarding it,
  * so the parts always sum back to the original. An absorbed residual is money creation or
  * destruction, at scale ({@code INV-BAL-03}).
  *
@@ -119,7 +119,7 @@ public final class Money implements Comparable<Money> {
      * and nobody can afterwards explain ({@code INV-MON-03}).
      *
      * <p>Rounding here discards the fraction, by design. Where that fraction must be
-     * accounted for rather than dropped, use {@link #allocate(long...)}, which distributes it.
+     * accounted for rather than dropped, use {@link #allocateByWeights(long...)}, which distributes it.
      *
      * @throws MonetaryOverflowException if the rounded amount is outside the representable range
      */
@@ -213,6 +213,12 @@ public final class Money implements Comparable<Money> {
     /**
      * Splits this amount into {@code parts} as evenly as the currency allows.
      *
+     * <p>Named rather than overloaded on argument type. As {@code allocate(int)} and
+     * {@code allocate(long...)} these two methods resolved silently by the width of the
+     * literal: {@code allocate(3)} split three ways while {@code allocate(3L)} returned the
+     * whole amount as a single part. Counts are often held in a {@code long}, so that is a
+     * money bug the compiler accepts and no test notices.
+     *
      * <p>The parts always sum to exactly this amount. Where the split is not exact the
      * indivisible remainder is handed out one minor unit at a time to the earliest parts:
      * 1.00 USD into 3 gives 0.34, 0.33, 0.33 — never 0.33 three times with a cent
@@ -222,7 +228,7 @@ public final class Money implements Comparable<Money> {
      *
      * @throws IllegalArgumentException if {@code parts} is not positive
      */
-    public List<Money> allocate(int parts) {
+    public List<Money> allocateEvenly(int parts) {
         if (parts <= 0) {
             throw new IllegalArgumentException(
                     "Cannot allocate across " + parts + " parts; must be at least 1");
@@ -243,6 +249,8 @@ public final class Money implements Comparable<Money> {
     /**
      * Splits this amount in proportion to the given weights.
      *
+     * <p>See {@link #allocateEvenly(int)} for why these are named rather than overloaded.
+     *
      * <p>The parts always sum to exactly this amount. Each part first takes its exact share
      * truncated toward zero; the minor units left over are then handed to the parts with the
      * largest discarded fraction — the standard largest-remainder method. Ties go to the
@@ -255,7 +263,7 @@ public final class Money implements Comparable<Money> {
      * @throws IllegalArgumentException if no weights are given, any weight is negative, or
      *     every weight is zero
      */
-    public List<Money> allocate(long... weights) {
+    public List<Money> allocateByWeights(long... weights) {
         Objects.requireNonNull(weights, "weights must not be null");
         if (weights.length == 0) {
             throw new IllegalArgumentException("Cannot allocate across an empty set of weights");

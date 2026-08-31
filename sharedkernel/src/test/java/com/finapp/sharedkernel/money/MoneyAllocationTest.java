@@ -38,7 +38,7 @@ class MoneyAllocationTest {
             for (int parts = 1; parts <= 40; parts++) {
                 Money original = Money.ofMinorUnits(amount, currency);
 
-                List<Money> allocation = original.allocate(parts);
+                List<Money> allocation = original.allocateEvenly(parts);
 
                 assertThat(allocation).hasSize(parts);
                 assertThat(sumOf(allocation, currency))
@@ -55,7 +55,7 @@ class MoneyAllocationTest {
             for (int parts : new int[] {1, 2, 3, 7, 97, 1000}) {
                 Money original = Money.ofMinorUnits(amount, USD);
 
-                assertThat(sumOfMinorUnits(original.allocate(parts)))
+                assertThat(sumOfMinorUnits(original.allocateEvenly(parts)))
                         .as("%d split %d ways", amount, parts)
                         .isEqualTo(amount);
             }
@@ -82,7 +82,7 @@ class MoneyAllocationTest {
             }
 
             Money original = Money.ofMinorUnits(amount, USD);
-            List<Money> allocation = original.allocate(weights);
+            List<Money> allocation = original.allocateByWeights(weights);
 
             assertThat(allocation).hasSize(weights.length);
             assertThat(sumOf(allocation, USD))
@@ -100,7 +100,7 @@ class MoneyAllocationTest {
     void remainderIsDistributedNotDiscarded() {
         Money oneDollar = Money.ofMinorUnits(100L, USD);
 
-        assertThat(oneDollar.allocate(3))
+        assertThat(oneDollar.allocateEvenly(3))
                 .extracting(Money::minorUnits)
                 .containsExactly(34L, 33L, 33L);
     }
@@ -110,7 +110,7 @@ class MoneyAllocationTest {
     void negativeAmountsSplitSymmetrically() {
         Money oweADollar = Money.ofMinorUnits(-100L, USD);
 
-        assertThat(oweADollar.allocate(3))
+        assertThat(oweADollar.allocateEvenly(3))
                 .extracting(Money::minorUnits)
                 .containsExactly(-34L, -33L, -33L);
     }
@@ -118,7 +118,7 @@ class MoneyAllocationTest {
     @Test
     @DisplayName("splits a currency with no minor unit")
     void splitsZeroDecimalCurrency() {
-        assertThat(Money.ofMinorUnits(100L, JPY).allocate(3))
+        assertThat(Money.ofMinorUnits(100L, JPY).allocateEvenly(3))
                 .extracting(Money::minorUnits)
                 .containsExactly(34L, 33L, 33L);
     }
@@ -126,7 +126,7 @@ class MoneyAllocationTest {
     @Test
     @DisplayName("an exact split gives equal parts and no remainder")
     void exactSplitIsEven() {
-        assertThat(Money.ofMinorUnits(900L, USD).allocate(3))
+        assertThat(Money.ofMinorUnits(900L, USD).allocateEvenly(3))
                 .extracting(Money::minorUnits)
                 .containsExactly(300L, 300L, 300L);
     }
@@ -136,13 +136,13 @@ class MoneyAllocationTest {
     void singlePartIsIdentity() {
         Money amount = Money.ofMinorUnits(12_345L, USD);
 
-        assertThat(amount.allocate(1)).containsExactly(amount);
+        assertThat(amount.allocateEvenly(1)).containsExactly(amount);
     }
 
     @Test
     @DisplayName("splitting zero gives zeros")
     void zeroSplitsToZeros() {
-        assertThat(Money.zero(USD).allocate(4))
+        assertThat(Money.zero(USD).allocateEvenly(4))
                 .containsExactly(
                         Money.zero(USD), Money.zero(USD), Money.zero(USD), Money.zero(USD));
     }
@@ -152,17 +152,17 @@ class MoneyAllocationTest {
     void weightsDivideProportionally() {
         // 100 across 1:1:1 is 33.33 each with 1 unit over; the fractions are equal, so the
         // tie-break gives it to the earliest part.
-        assertThat(Money.ofMinorUnits(100L, USD).allocate(1L, 1L, 1L))
+        assertThat(Money.ofMinorUnits(100L, USD).allocateByWeights(1L, 1L, 1L))
                 .extracting(Money::minorUnits)
                 .containsExactly(34L, 33L, 33L);
 
-        assertThat(Money.ofMinorUnits(100L, USD).allocate(70L, 30L))
+        assertThat(Money.ofMinorUnits(100L, USD).allocateByWeights(70L, 30L))
                 .extracting(Money::minorUnits)
                 .containsExactly(70L, 30L);
 
         // 3-way 1:2:3 of 100 = 16.66, 33.33, 50.0 -> 16, 33, 50 leaves 1 unit, whose largest
         // discarded fraction is the first part (0.666).
-        assertThat(Money.ofMinorUnits(100L, USD).allocate(1L, 2L, 3L))
+        assertThat(Money.ofMinorUnits(100L, USD).allocateByWeights(1L, 2L, 3L))
                 .extracting(Money::minorUnits)
                 .containsExactly(17L, 33L, 50L);
     }
@@ -170,7 +170,7 @@ class MoneyAllocationTest {
     @Test
     @DisplayName("a zero weight receives nothing, including no remainder unit")
     void zeroWeightReceivesNothing() {
-        List<Money> allocation = Money.ofMinorUnits(100L, USD).allocate(1L, 0L, 2L);
+        List<Money> allocation = Money.ofMinorUnits(100L, USD).allocateByWeights(1L, 0L, 2L);
 
         assertThat(allocation.get(1)).isEqualTo(Money.zero(USD));
         assertThat(sumOf(allocation, USD)).isEqualTo(Money.ofMinorUnits(100L, USD));
@@ -182,7 +182,7 @@ class MoneyAllocationTest {
         Money amount = Money.ofMinorUnits(1_000_003L, USD);
         long[] weights = {7L, 11L, 13L, 17L};
 
-        assertThat(amount.allocate(weights)).isEqualTo(amount.allocate(weights));
+        assertThat(amount.allocateByWeights(weights)).isEqualTo(amount.allocateByWeights(weights));
     }
 
     @Test
@@ -191,7 +191,7 @@ class MoneyAllocationTest {
         // amount * weight overflows a long here; the implementation must not.
         Money amount = Money.ofMinorUnits(1_000_000L, USD);
 
-        List<Money> allocation = amount.allocate(Long.MAX_VALUE / 4, Long.MAX_VALUE / 4);
+        List<Money> allocation = amount.allocateByWeights(Long.MAX_VALUE / 4, Long.MAX_VALUE / 4);
 
         assertThat(sumOf(allocation, USD)).isEqualTo(amount);
     }
@@ -204,7 +204,7 @@ class MoneyAllocationTest {
     @ValueSource(ints = {0, -1, -100})
     @DisplayName("rejects a non-positive number of parts")
     void rejectsNonPositiveParts(int parts) {
-        assertThatThrownBy(() -> Money.ofMinorUnits(100L, USD).allocate(parts))
+        assertThatThrownBy(() -> Money.ofMinorUnits(100L, USD).allocateEvenly(parts))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("at least 1");
     }
@@ -214,15 +214,15 @@ class MoneyAllocationTest {
     void rejectsMeaninglessWeights() {
         Money amount = Money.ofMinorUnits(100L, USD);
 
-        assertThatThrownBy(amount::allocate)
+        assertThatThrownBy(amount::allocateByWeights)
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("empty");
 
-        assertThatThrownBy(() -> amount.allocate(1L, -1L))
+        assertThatThrownBy(() -> amount.allocateByWeights(1L, -1L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("negative");
 
-        assertThatThrownBy(() -> amount.allocate(0L, 0L))
+        assertThatThrownBy(() -> amount.allocateByWeights(0L, 0L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("non-zero");
     }
@@ -230,7 +230,7 @@ class MoneyAllocationTest {
     @Test
     @DisplayName("the returned allocation cannot be modified")
     void allocationIsUnmodifiable() {
-        List<Money> allocation = Money.ofMinorUnits(100L, USD).allocate(2);
+        List<Money> allocation = Money.ofMinorUnits(100L, USD).allocateEvenly(2);
 
         assertThatThrownBy(() -> allocation.add(Money.zero(USD)))
                 .isInstanceOf(UnsupportedOperationException.class);
@@ -241,12 +241,24 @@ class MoneyAllocationTest {
     void partsPreserveCurrencyAndScale() {
         Money historical = Money.ofPersisted(1000L, BHD, 3);
 
-        assertThat(historical.allocate(3))
+        assertThat(historical.allocateEvenly(3))
                 .allSatisfy(
                         part -> {
                             assertThat(part.currency()).isEqualTo(BHD);
                             assertThat(part.scale()).isEqualTo(3);
                         });
+    }
+
+    @Test
+    @DisplayName("the two allocations are named, not overloaded on argument width")
+    void allocationsAreNotOverloaded() {
+        // As allocate(int) and allocate(long...) these resolved silently by the width of the
+        // literal: allocate(3) split three ways, allocate(3L) returned the whole amount as a
+        // single part. Counts are routinely held in a long, so that is a money bug the
+        // compiler accepts and no assertion notices. This guards against reintroducing it.
+        assertThat(Money.class.getMethods())
+                .as("no method named 'allocate' may exist — the name is ambiguous by width")
+                .noneMatch(method -> method.getName().equals("allocate"));
     }
 
     // -----------------------------------------------------------------
