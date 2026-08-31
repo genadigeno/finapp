@@ -565,6 +565,9 @@ ignores it is not protected by them.
 enforces the rest on every build. Anything below marked *(review)* has no mechanical check.
 
 - Each module owns a package root; internals are not accessible across modules. *(ArchUnit)*
+- Every production class sits under `com.finapp.<module>`, never directly in `com.finapp`.
+  The rules are scoped by the module a class belongs to, so a class with no module would be
+  silently exempt from all of them. *(ArchUnit)*
 - A module exposes a published interface (commands, queries) and integration events. *(review)*
 - No cross-module entity or ORM-relationship references. References are typed identifiers. *(ArchUnit)*
 - Dependency direction is acyclic and enforced. *(Gradle, plus ArchUnit as defence in depth)*
@@ -672,5 +675,12 @@ assume the diagram is guaranteed throughout:
   quietly starts writing state another module declares — that needs schema-level privileges
   (`P0-TSK-022`) and, ultimately, review.
 
-The rules also only protect modules that follow the package convention in §6. A module whose
-internals are not under `com.finapp.<module>.internal` is invisible to the internals rule.
+The rules only protect modules that follow the package convention in §6. A module whose
+internals are not under `com.finapp.<module>.internal` is invisible to the internals rule —
+though a class belonging to no module at all is now itself a violation.
+
+Coverage is self-checking: `everyModuleWithProductionCodeIsAnalysed` derives, from the
+classpath, every module output holding at least one real class, and fails if any of them was
+not imported. Without it the rules would pass silently for a module that had been dropped
+from the analysis, which is the failure mode that makes architecture tests worse than
+useless — they would still report success.

@@ -65,12 +65,17 @@ running on every build.
 | `sharedkernelIsFrameworkFree` | `@Component` on a class in the `sharedkernel` package |
 | `moduleInternalsArePrivateToTheirModule` | a business-module class using `platform.internal` |
 | `entitiesAreNotReferencedAcrossModules` | a business-module class referencing another module's `@Entity` |
+| `productionClassesLiveInAModulePackage` | a class placed directly in `com.finapp` |
 
 Every one was demonstrated to fail and then reverted; the tree is clean of demonstration
-artefacts. The seventh test, `analysisSeesProductionClasses`, guards the suite itself: every
-rule is vacuously satisfied if nothing was imported, so a misconfigured importer would turn
-the class into decoration that reports success — worse than no rules, because it invites
-confidence.
+artefacts.
+
+The eighth test, `everyModuleWithProductionCodeIsAnalysed`, guards the suite itself. Every
+rule is vacuously satisfied for a module whose classes were never imported, so a
+misconfigured importer or a dropped dependency would turn the class into decoration that
+reports success — worse than no rules, because it invites confidence. It derives the expected
+set from the classpath rather than hard-coding it, and was proven by excluding a module that
+had production classes.
 
 Two design points worth carrying forward:
 - **Rules are phrased as conditions over all `com.finapp` classes**, not as
@@ -322,6 +327,7 @@ its own scope.
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | Task completion review of `P0-TSK-007`. Probing showed ArchUnit was importing exactly one class — benign (it skips `package-info`, which is all `platform` and `sharedkernel` contain), but it exposed that the coverage guard asserted only that `app` was seen and would have passed if a module were dropped from the analysis. Guard replaced with one that derives expected coverage from the classpath, proven by excluding a module that had production code. Also added a rule that production classes must belong to a module package: a class directly in `com.finapp` was silently exempt from every rule. |
 | 2026-08-31 | `P0-TSK-007` complete. Six ArchUnit boundary rules enforced on every build, each proven by a deliberate violation; plus a guard test so the suite cannot become silently vacuous. `MODULE_ARCHITECTURE.md` §2 and §8 corrected — they claimed the rules were "not yet in place". |
 | 2026-08-31 | Task completion review of `P0-TSK-006`. Four defects found and fixed, all by mechanical checks rather than re-reading: `Instalment` owned by both `lending` and `bnpl` (the headline acceptance criterion, violated); the `app` module absent from the register entirely; `paymentmethods` and `crossborder` missing from the layering diagram; the §5 ownership table maintained as a second enumeration that could drift from §4. |
 | 2026-08-31 | `P0-TSK-006` complete. Context-to-module map: 28 contexts to 24 modules, all nine boundary attributes per module, authoritative-state ownership table. Found two missing bounded contexts and one state at risk of two owners. ADR-0012 records the mapping decision. |

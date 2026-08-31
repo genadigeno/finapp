@@ -13,8 +13,17 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.stream.Collectors;
 
 /**
  * Mechanical enforcement of the module boundaries in
@@ -65,29 +74,95 @@ class ModuleBoundaryRulesTest {
                     "org.hibernate.");
 
     // ---------------------------------------------------------------------
-    // Guard: the analysis must actually see production code.
+    // Guard: the analysis must actually see the code it claims to check.
     //
-    // Every rule below is vacuously satisfied if nothing was imported. A
-    // misconfigured importer would turn this whole class into decoration that
-    // reports success — which is worse than having no rules, because it invites
-    // confidence. This asserts the suite has something real to work on.
+    // Every rule below is vacuously satisfied for a module whose classes were
+    // never imported. A misconfigured importer, or a module dropped from app's
+    // dependencies, would turn those rules into decoration that reports success
+    // — worse than having no rules, because it invites confidence.
     // ---------------------------------------------------------------------
 
     @ArchTest
-    static void analysisSeesProductionClasses(JavaClasses imported) {
-        assertThat(imported)
-                .as("production classes under com.finapp visible to the architecture rules")
-                .isNotEmpty();
-
-        Set<String> modulesSeen =
+    static void everyModuleWithProductionCodeIsAnalysed(JavaClasses imported) {
+        Set<String> analysed =
                 imported.stream()
                         .map(ModuleBoundaryRulesTest::moduleOf)
-                        .filter(java.util.Objects::nonNull)
-                        .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toUnmodifiableSet());
 
-        assertThat(modulesSeen)
-                .as("the composition root must be among the analysed modules")
-                .contains(APP);
+        assertThat(analysed)
+                .as("modules visible to the architecture rules")
+                .isNotEmpty();
+
+        // Asserting only that *some* module was analysed is not enough: it would pass if a
+        // module were dropped from the analysed classpath, which is precisely the silent
+        // loss of coverage this guard exists to prevent. So the expected set is derived
+        // from the classpath itself — every module output carrying at least one real class
+        // must be represented in the import.
+        assertThat(analysed)
+                .as("every module on the classpath that has production classes must be analysed")
+                .containsAll(modulesOnClasspathWithProductionClasses());
+    }
+
+    /**
+     * Modules whose build output is on the classpath and contains at least one class other
+     * than {@code package-info}. A module holding only {@code package-info} contributes
+     * nothing for ArchUnit to import, which is why it is excluded rather than treated as a
+     * failure.
+     */
+    private static Set<String> modulesOnClasspathWithProductionClasses() {
+        Set<String> modules = new java.util.TreeSet<>();
+        for (String entry : System.getProperty("java.class.path").split(File.pathSeparator)) {
+            Path path = Path.of(entry);
+            String module = moduleOwning(path);
+            if (module == null || !isMainOutput(path)) {
+                continue;
+            }
+            if (containsProductionClasses(path)) {
+                modules.add(module);
+            }
+        }
+        return modules;
+    }
+
+    /** The Gradle module a classpath entry belongs to: the element before {@code build}. */
+    private static String moduleOwning(Path path) {
+        for (int i = 0; i < path.getNameCount() - 1; i++) {
+            if (path.getName(i + 1).toString().equals("build")) {
+                return path.getName(i).toString();
+            }
+        }
+        return null;
+    }
+
+    /** Main source output only — test output must not count towards analysed coverage. */
+    private static boolean isMainOutput(Path path) {
+        String normalised = path.toString().replace(File.separatorChar, '/');
+        return normalised.contains("/build/classes/java/main") || normalised.contains("/build/libs/");
+    }
+
+    private static boolean containsProductionClasses(Path path) {
+        try {
+            if (Files.isDirectory(path)) {
+                try (java.util.stream.Stream<Path> files = Files.walk(path)) {
+                    return files.anyMatch(f -> isProductionClassFile(f.getFileName().toString()));
+                }
+            }
+            if (Files.isRegularFile(path) && path.toString().endsWith(".jar")) {
+                try (JarFile jar = new JarFile(path.toFile())) {
+                    return jar.stream()
+                            .map(JarEntry::getName)
+                            .anyMatch(name -> isProductionClassFile(name.substring(name.lastIndexOf('/') + 1)));
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not inspect classpath entry " + path, e);
+        }
+        return false;
+    }
+
+    private static boolean isProductionClassFile(String fileName) {
+        return fileName.endsWith(".class") && !fileName.equals("package-info.class");
     }
 
     // ---------------------------------------------------------------------
@@ -120,6 +195,14 @@ class ModuleBoundaryRulesTest {
                     .because(
                             "app is the composition root: it may depend on every module and no "
                                 + "module may depend on it");
+
+    @ArchTest
+    static final ArchRule productionClassesLiveInAModulePackage =
+            everyFinappClassShould(resideInAModulePackage())
+                    .because(
+                            "every rule here is scoped by the module a class belongs to, derived "
+                                + "from com.finapp.<module>. A class directly in com.finapp has no "
+                                + "module and would be silently exempt from all of them");
 
     // ---------------------------------------------------------------------
     // Framework isolation
@@ -164,6 +247,21 @@ class ModuleBoundaryRulesTest {
      */
     private static ArchRule everyFinappClassShould(ArchCondition<JavaClass> condition) {
         return classes().that().resideInAPackage("com.finapp..").should(condition);
+    }
+
+    /** Every production class must sit under {@code com.finapp.<module>}, never directly in {@code com.finapp}. */
+    private static ArchCondition<JavaClass> resideInAModulePackage() {
+        return new ArchCondition<>("reside in a module package under com.finapp") {
+            @Override
+            public void check(JavaClass javaClass, ConditionEvents events) {
+                if (moduleOf(javaClass) == null) {
+                    events.add(
+                            SimpleConditionEvent.violated(
+                                    javaClass,
+                                    javaClass.getName() + " is in com.finapp directly, so it belongs to no module"));
+                }
+            }
+        };
     }
 
     /** Within {@code com.finapp}, {@code module} may depend only on {@code permitted} modules. */
