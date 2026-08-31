@@ -387,12 +387,20 @@ class MoneyTest {
                 if (field.isSynthetic()) {
                     continue;
                 }
+                // Every field must be final, static or not: a non-final static would be
+                // shared mutable state, which is worse than a mutable instance field.
                 assertThat(Modifier.isFinal(field.getModifiers()))
                         .as("field %s must be final", field.getName())
                         .isTrue();
-                assertThat(Modifier.isPrivate(field.getModifiers()))
-                        .as("field %s must be private", field.getName())
-                        .isTrue();
+                // Only instance fields must be private. A public static final constant is
+                // not state an instance carries — MAX_SUPPORTED_SCALE is deliberately public
+                // so the database check constraint enforcing the same bound is generated
+                // from it rather than duplicating the number.
+                if (!Modifier.isStatic(field.getModifiers())) {
+                    assertThat(Modifier.isPrivate(field.getModifiers()))
+                            .as("instance field %s must be private", field.getName())
+                            .isTrue();
+                }
             }
 
             assertThat(Money.class.getMethods())
