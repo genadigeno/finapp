@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-08-31
+Last updated: 2026-09-01
 
 ---
 
@@ -42,49 +42,51 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-008` — No-floating-point-money static rule**
+**`P0-DOC-002` — `MODULE_ARCHITECTURE.md`**
 Status: `READY` — not started.
 
-Bounded context: platform. Depends on `P0-TSK-007` (`COMPLETE`) and `P0-TSK-009`
-(`COMPLETE`).
+Bounded context: architecture. Depends on `P0-TSK-006` (`COMPLETE`).
 
-Scope: an architecture test forbidding `float`/`double`/`Float`/`Double` in any monetary
-type, field, parameter or return in financial packages. Closes `P0-EPIC-02` and Phase 0 exit
-criterion 4.
+Scope: the document must match the enforced ArchUnit rules exactly. Much of it was written
+during `P0-TSK-006`, `-007` and `-008`; what remains is a verification pass, and the acceptance
+criterion is an equivalence claim between prose and code, so it is one to check mechanically
+rather than by reading.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-TEST`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-DOC`.
 
 ### Just completed
 
-**`P0-TSK-011` — Money persistence mapping** — `COMPLETE` (2026-08-31).
+**`P0-TSK-008` — No-floating-point-money static rule** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Round-trip preserves exact value for 0-, 2- and 3-minor-unit currencies | Verified against a real PostgreSQL for JPY (0), USD/EUR (2), BHD (3) and CLF (4), plus zero and a negative amount |
-| No numeric-type coercion loss | `Long.MAX_VALUE`, `Long.MIN_VALUE` and 2^53+1 — the values a floating-point path would alter — round-trip exactly through `BIGINT` |
-| Convention documented | [`DATA_MIGRATIONS.md`](../architecture/DATA_MIGRATIONS.md) §5 |
+| Rule fails the build when a `double` monetary field is introduced | A `double` field added to `Money` failed `./gradlew build`, naming `Money.exchangeRate` and its line; reverted |
+| Passes otherwise | Four rules green over all production code; a clean fixture proves they are not merely always-failing |
 
-Both layers were demonstrated to have teeth: deriving scale from the currency instead of
-reading the stored column fails the database round-trip and two unit tests.
+`INV-MON-01` was the last `INV-MON` invariant without mechanical enforcement. This closes
+`P0-EPIC-02` and Phase 0 exit criterion 4.
 
 Design decisions worth carrying forward:
-- **`MoneyColumns` is deliberately not a JPA `@Embeddable`.** The task description asked for
-  one, but no ADR has chosen a data-access mechanism, and writing an embeddable would have
-  decided it by accident. Recorded as unresolved question 12, due Phase 3.
-- **Database tests are a separate task, not a self-skipping test.** `./gradlew build` stays
-  hermetic and green with nothing running; `:platform:databaseTest` is a task you can see did
-  not run. A test that skips itself reports success, which is the failure mode these reviews
-  keep finding. CI runs it in the `migrations` job, which already has PostgreSQL up.
-- **The round-trip uses a `TEMPORARY` table, not a migration.** Phase 0 creates no tables, and
-  a throwaway fixture has no business entering the schema history.
-- **Reading is strict.** A null currency, an unknown or pseudo-currency, or an impossible
-  scale raises `MonetaryColumnException` rather than returning an approximation — a corrupt
-  row is a detectable problem until something defaults it into a wrong balance.
-- **The schema enforces what it can, not just the application.** `CHAR(3)` pads rather than
-  rejects, so it stores `'US '` as readily as `'USD'`; check constraints on the currency
-  pattern and the scale range close that. `DEFINITION_OF_DONE.md` §1.3 requires an invariant
-  enforceable by a database constraint to be enforced there. The scale bound is generated
-  from `Money.MAX_SUPPORTED_SCALE` so SQL and Java cannot drift.
+- **Default-deny over every production class, not a list of financial packages.** A package
+  list is a denylist, and a denylist fails exactly when a new package is added and nobody
+  notices. `P0-TSK-007` already found this shape once — a class directly in `com.finapp` was
+  silently exempt from every boundary rule. Exemptions live in one named, empty set, so each is
+  a visible diff.
+- **Four surfaces, not one.** Declarations are the surface everybody checks. The one that
+  matters more is *calls*: `new BigDecimal(0.1)`, `BigDecimal::doubleValue` and
+  `ResultSet::getDouble` destroy precision without appearing in any declaration of ours, so a
+  declaration-only rule would miss the most common way money actually loses precision.
+- **Generic arguments are inspected, not just raw types.** `List<Double>` erases to `List`; a
+  rule reading only the raw type would let a collection of amounts through, which is where the
+  error compounds fastest.
+- **The teeth are permanent, not a one-off demonstration.** Deliberate-violation fixtures assert
+  on every build that each rule rejects its violation *and* accepts clean code. Proving it by
+  hand proves it once, on one machine, on one day.
+- **The limit is documented rather than papered over.** A `double` local computed only from
+  compile-time constants and narrowed by a cast is undetectable: a cast is a bytecode
+  instruction, and javac inlines `static final double` literals — which is why `Math.PI` cannot
+  be caught and why the fourth rule is scoped to non-constant fields. That was discovered by the
+  fixture failing, not assumed.
 
 ---
 
@@ -146,6 +148,14 @@ Boundary enforcement (2026-08-31), `P0-TSK-007`:
 - Each proven by a deliberate violation, then reverted
 - A guard test asserting the analysis actually sees production classes, so the suite cannot
   become silently vacuous
+
+Monetary type enforcement (2026-09-01), `P0-TSK-008`:
+- `INV-MON-01` enforced statically on every build: no `float`, `double`, `Float` or `Double` in
+  any field, signature, call target or field access in production code
+- Scoped default-deny over every class rather than by a list of financial packages, with an
+  empty, named exemption set
+- Each rule proven to reject its violation and accept clean code on every build, and the whole
+  sweep proven end to end by a `double` planted in `Money`
 
 Financial kernel (2026-08-31), `P0-TSK-009`:
 - `Money`: integer minor units, explicit `CurrencyCode`, stored scale (ADR-0003)
@@ -270,7 +280,7 @@ Recorded so it is not mistaken for a completed criterion.
 | `P0-TSK-001` — `P0-TSK-005` | `DOD-BUILD` requires "CI green". A pipeline now exists and all four jobs pass when run locally, but it has never executed on a CI runner because the repository has no git remote. This closes on the first successful run after a remote is added. | Adding a remote |
 | `P0-TSK-004` | The CycloneDX SBOM covers the whole resolved dependency set, test scope included (21 of ~61 components). Plugin 3.4.1 exposes no configuration filter. Adequate for vulnerability scanning — test libraries execute on CI runners, so they are legitimately in scope — but it means a HIGH/CRITICAL advisory in a test-only library fails the build though nothing vulnerable ships, and **the SBOM must not be published as shipping provenance in this form** because it overstates what is deployed. | Phase 15 (supply chain and provenance) |
 | `P0-TSK-004` | CI actions and scanner images are pinned by SHA/digest with no automated update path, so the pins will rot. | `P0-TSK-040` |
-| `P0-TSK-002` | ~~Boundary enforcement partial~~ — **closed by `P0-TSK-007`**. Cross-module internals and entity references are now mechanically enforced. `INV-MON-01` (no floating-point money) remains unenforced. | `P0-TSK-008` |
+| ~~`P0-TSK-002`~~ | ~~Boundary enforcement partial~~ — **closed**. Cross-module internals and entity references by `P0-TSK-007`; `INV-MON-01` by `P0-TSK-008`. | — |
 | `P0-TSK-003`, `P0-TSK-005` | Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised. The migrator/application role split is designed and documented (`DATA_MIGRATIONS.md` §5) but not implemented, and must land **before** any table subject to those invariants is created. | `P0-TSK-022` |
 
 ---
@@ -321,17 +331,15 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-008` — No-floating-point-money static rule.**
+**`P0-DOC-002` — `MODULE_ARCHITECTURE.md`.**
 
-Rationale: it closes `P0-EPIC-02` and satisfies Phase 0 exit criterion 4, the only remaining
-`INV-MON` invariant without mechanical enforcement. Both its dependencies are now met — there
-is a monetary type to write the rule about (`P0-TSK-009`) and an ArchUnit suite to write it
-in (`P0-TSK-007`).
-
-No floating point currently exists on any monetary path, so the rule will pass immediately.
-That makes the deliberate-violation demonstration the substance of the task rather than a
-formality: a rule that has never been seen to fail is not known to work — which is exactly
-what the `P0-TSK-007` review found about its own coverage guard.
+Rationale: it is the next item in [`BACKLOG.md`](BACKLOG.md) and the last one in `P0-EPIC-02`.
+Its acceptance criterion — "matches the enforced ArchUnit rules exactly" — is an equivalence
+between prose and code, and the document has now been edited by three separate tasks
+(`P0-TSK-006`, `-007`, `-008`). That is precisely the condition under which a document drifts
+from the rules it claims to describe, so the task is a check of that equivalence, not a
+rewrite. `P0-TSK-007` already found §2 and §8 claiming rules were "not yet in place" when they
+were.
 
 ---
 
@@ -339,6 +347,7 @@ what the `P0-TSK-007` review found about its own coverage guard.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-008` complete. `INV-MON-01` enforced statically over all production code — fields, signatures, call targets and field accesses, including generic arguments. Default-deny rather than a list of financial packages, with deliberate-violation fixtures asserting the teeth on every build. Proven end to end by planting a `double` in `Money`. Closes `P0-EPIC-02` and Phase 0 exit criterion 4. 170 tests. |
 | 2026-08-31 | Task completion review of `P0-TSK-011`. Probing PostgreSQL showed `CHAR(3)` accepts `'US '` — the column type was not the guarantee the design implied, leaving `INV-MON-02` enforced only by application code against `DEFINITION_OF_DONE.md` §1.3. Added check constraints on the currency pattern and scale range, generated from `Money.MAX_SUPPORTED_SCALE`, and proved them by weakening them. Also switched the not-null assertion from message text to SQLState (messages are localisable), tightened `trim()` to `stripTrailing()` to match its own stated rationale, and made the write path use `MonetaryColumnException` like the read path. |
 | 2026-08-31 | `P0-TSK-011` complete. `MoneyColumns` fixes the three-column storage shape from ADR-0003 and supplies the DDL migrations use. Round-trip verified against a real PostgreSQL across 0-, 2-, 3- and 4-decimal currencies and the `BIGINT` extremes. Written mechanism-agnostic: the task asked for a JPA embeddable, but no ADR has chosen a data-access mechanism — recorded as unresolved question 12. |
 | 2026-08-31 | Task completion review of `P0-TSK-010`. One important finding: `allocate(int)` and `allocate(long...)` resolved silently by literal width — `allocate(3)` split three ways, `allocate(3L)` returned the whole amount as one part. Proven, then removed by renaming to `allocateEvenly` / `allocateByWeights`, with a test guarding against reintroduction. |

@@ -578,6 +578,33 @@ enforces the rest on every build. Anything below marked *(review)* has no mechan
   exposure is one of the few boundary mechanisms that genuinely holds. `platform` exposes
   `sharedkernel` via `api` because kernel value types appear in its own signatures.
 
+### Monetary type boundary
+
+`INV-MON-01` — no binary floating point on the path of a monetary value — is enforced by
+`NoFloatingPointMoneyRulesTest` on every build (`P0-TSK-008`).
+
+**Scope is default-deny over every production class**, not a list of financial packages. A
+list of financial packages is a denylist, and a denylist fails in the case that matters: a new
+package is unprotected by default and nothing reports the omission. Since this repository is
+financial infrastructure, a package that cannot touch money is the exception. Exemptions live
+in one named, currently empty set in the rule, so each one is a visible diff.
+
+Four surfaces are checked: *(ArchUnit)*
+
+- fields, including `double[]` and generic arguments such as `List<Double>`;
+- method and constructor parameters and return types;
+- calls to any method or constructor that takes or returns a floating-point value — this is
+  what catches `new BigDecimal(0.1)`, `BigDecimal::doubleValue` and `ResultSet::getDouble`,
+  none of which appear in any declaration of ours;
+- reads and writes of a floating-point field.
+
+**Known limit.** A `double` local computed only from compile-time constants and narrowed by a
+cast is not detectable: a cast is a bytecode instruction rather than a declaration or access,
+and javac inlines `static final double` literals so even `Math.PI` leaves no field access
+behind. Such a value is inert unless it is stored, returned, passed or derived from something
+non-constant, all of which are caught — but the limit is recorded because a rule believed to
+be total is more dangerous than one whose edge is known. *(review)*
+
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).
 - **No foreign keys across module schemas.** Referential integrity across contexts is a

@@ -145,7 +145,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-TEST`
 
-**P0-TSK-008 — No-floating-point-money static rule**
+**P0-TSK-008 — No-floating-point-money static rule** — `COMPLETE` (2026-09-01)
 - Context: platform
 - Description: An architecture test forbidding `float`/`double`/`Float`/`Double` in any monetary type, field, parameter or return in financial packages.
 - Why: `INV-MON-01` is the most fundamental rule in the platform and must be mechanically enforced.

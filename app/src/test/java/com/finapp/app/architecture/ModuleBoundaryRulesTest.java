@@ -52,8 +52,10 @@ import java.util.stream.Collectors;
  * ({@link ImportOption.DoNotIncludeTests}) — a test may legitimately reach into internals to
  * verify them, and the rules describe the shipped architecture, not the test scaffolding.
  *
- * <p><strong>Not here:</strong> the no-floating-point-money rule is P0-TSK-008 and
- * additionally depends on {@code Money} existing (P0-TSK-009).
+ * <p><strong>Not here:</strong> {@code INV-MON-01} (no binary floating point) is enforced by
+ * {@link NoFloatingPointMoneyRulesTest}. It is a financial invariant rather than a module
+ * boundary, and it is scoped default-deny over every class rather than by module, so keeping it
+ * separate stops two different scoping rationales sharing one file.
  */
 @AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class ModuleBoundaryRulesTest {
