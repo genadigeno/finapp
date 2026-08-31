@@ -42,35 +42,46 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-002` — Create module skeleton**
+**`P0-TSK-003` — Local infrastructure via Docker Compose**
 Status: `READY` — not started.
 
-Bounded context: platform. Depends on `P0-TSK-001` (`COMPLETE`).
+Bounded context: platform / ops. Depends on `P0-TSK-001` (`COMPLETE`).
 
-Scope: create `platform`, `sharedkernel` and `app` modules with the declared dependency
-direction `app -> platform -> sharedkernel`, never the reverse.
+Scope: PostgreSQL, Kafka and Redis with pinned image versions, named volumes, health checks.
 
-Acceptance: modules build independently; a reverse dependency fails compilation;
-`sharedkernel` has no Spring Framework dependency.
+Acceptance: `docker compose up` yields all three healthy; versions match those used by
+Testcontainers; no credentials committed beyond local-only development defaults clearly
+marked as such.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-BUILD`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-01. DoD profile: `DOD-BUILD`.
 
 ### Just completed
 
-**`P0-TSK-001` — Initialise Gradle multi-module build** — `COMPLETE` (2026-08-31).
+**`P0-TSK-002` — Create module skeleton** — `COMPLETE` (2026-08-31).
 
-Verified, not merely asserted:
+`sharedkernel`, `platform` and `app` exist with the direction
+`app -> platform -> sharedkernel`. Both new modules contain a `package-info.java` recording
+what may and may not enter them, and no other production code — `Money`, identifiers,
+`Clock`, the envelope, idempotency, outbox and audit are later tasks.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Builds from a clean clone, machine with no prior state | Cold build with empty `GRADLE_USER_HOME`: downloaded Gradle, auto-provisioned the JDK, resolved all dependencies, tests green |
-| Java pinned by toolchain, not ambient `JAVA_HOME` | Fresh clone built with `JAVA_HOME` set to JDK 25; compiled bytecode still targets Java 21 |
-| Versions centralised in a version catalog | No version literal in any build script |
-| Spring Boot BOM applied | Versionless starter declarations resolve; Spring context starts |
+| Modules build independently | `:sharedkernel:build`, `:platform:build`, `:app:build` each green in isolation |
+| Reverse dependency fails compilation | Adding `sharedkernel -> platform` fails with a circular-dependency error on the compile task graph |
+| `sharedkernel` has no Spring Framework dependency | `SharedKernelIsolationTest`: no Spring type loadable, no `spring-*` artefact on the classpath |
 
-Test credibility was demonstrated per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md)
-rule 8: changing the toolchain pin to 17 caused both toolchain tests to fail, and reverting
-restored them.
+Test credibility demonstrated per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 8:
+adding Spring to `sharedkernel` failed both isolation tests; reverting restored them.
+
+Decisions taken during the task, recorded in
+[`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md):
+- Every module applies `java-library`, so `api`/`implementation` becomes a boundary control
+  rather than a build detail. `platform` exposes `sharedkernel` via `api` because kernel
+  value types will appear in its own signatures.
+- `sharedkernel` takes its test libraries from the version catalog rather than the Spring
+  Boot BOM, pinned to exactly the versions Boot manages so the whole build runs one JUnit
+  and one AssertJ. **This alignment must be re-checked on every Spring Boot upgrade** — the
+  procedure is in `gradle/libs.versions.toml`.
 
 ---
 
@@ -90,6 +101,13 @@ Platform foundation (2026-08-31), `P0-TSK-001`:
 - Reproducible archives; `-Werror`; LF enforced on `gradlew` so Linux CI is not broken by a
   Windows checkout
 
+Module skeleton (2026-08-31), `P0-TSK-002`:
+- `sharedkernel`, `platform` and `app` with the direction `app -> platform -> sharedkernel`,
+  enforced structurally by Gradle and asserted by classpath tests
+- `sharedkernel` is framework-free and provably carries no Spring artefact
+- `java-library` everywhere, making `api`/`implementation` a deliberate boundary control
+- No production code in either new module beyond boundary documentation
+
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
 - Phase gate model, status model and per-phase exit criteria — [`PHASE_GATES.md`](PHASE_GATES.md)
@@ -103,7 +121,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-002` is the next task to start.
+None in progress. `P0-TSK-003` is the next task to start.
 
 ## Blockers
 
@@ -200,17 +218,20 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-002` — Create module skeleton.**
+**`P0-TSK-003` — Local infrastructure via Docker Compose.**
 
-Rationale: `P0-TSK-001` proved the build works but created only a placeholder module. The
-module boundaries are the mechanism on which ADR-0001 (modular monolith) entirely depends —
-without enforced boundaries a modular monolith is just a monolith. Creating the modules and
-their dependency direction is the precondition for `P0-TSK-007` (ArchUnit rules), which is
-what makes the boundaries real rather than aspirational.
+Rationale: `P0-TSK-005` (migrations) and `P0-TSK-035` (Testcontainers) both need real
+infrastructure, and the versions used locally must match the versions used in tests — a
+schema or broker behaviour that differs between the two is a defect the test suite cannot
+see. It has no unresolved architectural question and Docker 28.0.1 is already present.
+
+Note that `P0-TSK-004` (CI) is blocked on more than this task: it also depends on
+`P0-TSK-011` and `P0-TSK-036`, and it must solve the TLS-interception problem recorded under
+Local Environment Prerequisites for whatever runner it uses.
 
 Per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 4, work stays within that task —
-module structure and dependency direction only. No `Money` type (`P0-TSK-009`), no schema
-(`P0-TSK-005`), no ArchUnit rules (`P0-TSK-007`).
+containers and health checks only. No schema (`P0-TSK-005`), no Testcontainers harness
+(`P0-TSK-035`).
 
 ---
 
@@ -218,5 +239,6 @@ module structure and dependency direction only. No `Money` type (`P0-TSK-009`), 
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-002` complete. `sharedkernel`, `platform`, `app` with enforced dependency direction; `sharedkernel` proven Spring-free; `java-library` adopted for `api`/`implementation` boundary control. |
 | 2026-08-31 | `P0-TSK-001` complete. Gradle 9.7.1 multi-module build, Java 21 toolchain, Spring Boot 4.1.1 BOM, `build-logic` conventions, checksum-pinned wrapper. Phase 0 `IN_PROGRESS`. Repository placed under Git. |
 | 2026-08-31 | Project initiation. Delivery plan, phase gates, backlog, architecture baseline, invariant catalog, Definition of Done, execution protocol and ADR-0001..0010 created. Phase 0 entry gate passed; status `READY`. |

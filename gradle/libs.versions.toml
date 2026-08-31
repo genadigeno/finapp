@@ -18,6 +18,21 @@
 # ones. See docs/project/CURRENT_STATE.md change log.
 springBoot = "4.1.1"
 
+# Test libraries are declared explicitly, not inherited from the Spring Boot BOM.
+#
+# `sharedkernel` must have no Spring Framework dependency (P0-TSK-002 acceptance
+# criterion, MODULE_ARCHITECTURE.md). Taking its test libraries from the Spring
+# BOM would make that independence a matter of interpretation — a BOM
+# contributes constraints rather than artefacts — and would leave the BOM sitting
+# there as an invitation to add a Spring artefact later. Explicit is unambiguous.
+#
+# These versions are deliberately set to exactly what Spring Boot 4.1.1 manages,
+# so every module runs one JUnit and one AssertJ. ON EVERY SPRING BOOT UPGRADE,
+# re-check these against the new BOM:
+#   curl .../spring-boot-dependencies-<version>.pom | grep -E "junit-jupiter.version|assertj.version"
+junitJupiter = "6.0.3"
+assertj = "3.27.7"
+
 [libraries]
 # --- BOM -------------------------------------------------------------------
 # Consumed via platform(). This propagates managed versions to every dependency
@@ -27,6 +42,11 @@ spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies"
 # --- Application (versions supplied by the BOM) -----------------------------
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+
+# --- Test libraries, for modules that must not see Spring ---------------------
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junitJupiter" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }

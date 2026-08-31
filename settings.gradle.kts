@@ -27,9 +27,19 @@ dependencyResolutionManagement {
 // ---------------------------------------------------------------------------
 // Modules.
 //
-// P0-TSK-001 creates one placeholder application module to prove the build
-// wiring end to end. The `platform` and `sharedkernel` modules, and the
-// enforced dependency direction app -> platform -> sharedkernel, are
-// P0-TSK-002 and are deliberately NOT created here.
+// Dependency direction is strictly downward and acyclic:
+//
+//     app  ->  platform  ->  sharedkernel
+//
+// Gradle enforces the direction structurally: a module can only see what its
+// build file declares, and a cycle fails configuration outright. The finer
+// rules that Gradle cannot express — no cross-module internals, no cross-module
+// entity references, no framework leakage into sharedkernel — are ArchUnit
+// rules in P0-TSK-007.
+//
+// Business modules (identity, ledger, payments, ...) sit between app and
+// platform and belong to their own phases. None exist yet.
 // ---------------------------------------------------------------------------
+include("sharedkernel")
+include("platform")
 include("app")

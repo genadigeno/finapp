@@ -18,6 +18,14 @@ dependencies {
     implementation(platform(libs.spring.boot.bom))
     testImplementation(platform(libs.spring.boot.bom))
 
+    // app is the composition root. It depends on platform, and receives
+    // sharedkernel transitively because platform exposes it via `api`. This is
+    // the documented chain: app -> platform -> sharedkernel.
+    //
+    // Business modules will sit between app and platform as they are created;
+    // none exist yet.
+    implementation(project(":platform"))
+
     implementation(libs.spring.boot.starter)
     testImplementation(libs.spring.boot.starter.test)
 }

@@ -49,7 +49,17 @@ Distribution is a Phase 16 question, answered with measurement, not anticipation
                     └───────────────────────────────┘
 ```
 
-Dependency direction is strictly downward. Enforced by ArchUnit; violation fails the build.
+Dependency direction is strictly downward and acyclic.
+
+**Enforcement, as it actually stands.** Gradle enforces the *direction* structurally today
+(`P0-TSK-002`): a module sees only what its build file declares, and a reverse edge fails
+configuration with a circular-dependency error. Classpath tests in `sharedkernel` and
+`platform` assert that no module output from above appears below, and that `sharedkernel`
+carries no Spring artefact.
+
+Gradle cannot express the finer rules — no cross-module internals, no cross-module entity
+references, no floating-point money. Those are ArchUnit rules and are **not yet in place**;
+they are `P0-TSK-007` and `P0-TSK-008`. Until then the finer boundaries rest on review.
 
 ### What may enter `sharedkernel`
 Only concepts that are genuinely universal *and* stable: `Money`, `CurrencyCode`, rounding
@@ -79,6 +89,10 @@ For every module: **Owns** (authoritative state), **Transaction boundary**, **Co
 - **Owns:** no persistent state
 - **Consistency:** n/a — pure value types
 - **Security:** no I/O, no secrets, no framework
+- **Enforced:** test libraries come from the version catalog, not the Spring Boot BOM, so
+  "no Spring Framework dependency" is a fact rather than an argument about whether BOM
+  constraints count. `SharedKernelIsolationTest` fails if any Spring artefact reaches the
+  classpath.
 
 ### `party` — Phase 1
 - **Owns:** Party, Customer, profile data
@@ -241,6 +255,12 @@ For every module: **Owns** (authoritative state), **Transaction boundary**, **Co
 - A module exposes a published interface (commands, queries) and integration events.
 - No cross-module entity or ORM-relationship references. References are typed identifiers.
 - Dependency direction is acyclic and enforced.
+- Every module applies the `java-library` plugin and uses the `api`/`implementation`
+  distinction deliberately. `implementation` keeps a dependency off consumers' compile
+  classpaths so a module cannot leak its internals downstream by accident; `api` makes
+  exposure a reviewed choice. Where process isolation is absent, controlling transitive
+  exposure is one of the few boundary mechanisms that genuinely holds. `platform` exposes
+  `sharedkernel` via `api` because kernel value types appear in its own signatures.
 
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).

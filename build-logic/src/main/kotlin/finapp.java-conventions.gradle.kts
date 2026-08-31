@@ -4,7 +4,15 @@
 // silently opt it into anything; it must ask for these conventions by name.
 
 plugins {
-    java
+    // java-library, not plain java: it provides the api/implementation split.
+    //
+    // That split is a boundary control, not a build detail. `implementation`
+    // keeps a dependency off consumers' compile classpaths, so a module cannot
+    // accidentally leak its internals to everything downstream; `api` makes
+    // exposure a deliberate, reviewable choice. In a modular monolith, where
+    // boundaries are not enforced by process isolation, controlling transitive
+    // exposure is one of the few mechanisms that actually holds.
+    `java-library`
 }
 
 group = "com.finapp"
@@ -19,6 +27,19 @@ java {
         // P0-TSK-001.
         languageVersion = JavaLanguageVersion.of(21)
     }
+}
+
+dependencies {
+    // Gradle does not put the JUnit Platform launcher on the test runtime
+    // classpath implicitly. Without it every module fails identically with
+    // "Failed to load JUnit Platform", which is a confusing message for a
+    // missing-dependency problem — so it is declared once here rather than
+    // rediscovered in each new module.
+    //
+    // Deliberately versionless: the version comes from whichever BOM the module
+    // applies (junit-bom in sharedkernel, the Spring Boot BOM elsewhere), so a
+    // module's launcher always matches its JUnit.
+    "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.withType<JavaCompile>().configureEach {

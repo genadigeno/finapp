@@ -63,7 +63,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-BUILD`
 
-**P0-TSK-002 — Create module skeleton**
+**P0-TSK-002 — Create module skeleton** — `COMPLETE` (2026-08-31)
 - Context: platform
 - Description: Create `platform`, `sharedkernel` and `app` modules with declared dependency direction: `app → platform → sharedkernel`, never the reverse.
 - Why: Boundaries must exist before code does; retrofitting them is the expensive path.
