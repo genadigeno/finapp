@@ -66,8 +66,8 @@ and an authoritative-state ownership table.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| All boundary attributes for every planned module | 23 modules × 9 attributes, verified mechanically — each of responsibility, owns, transaction, consistency, APIs, events, failure, security, operations appears exactly 23 times |
-| No state has two owners | §5 lists every authoritative state against exactly one owning module; derived state names what it derives from |
+| All boundary attributes for every planned module | 24 modules × 9 attributes, verified mechanically — each of responsibility, owns, transaction, consistency, APIs, events, failure, security, operations appears exactly 24 times |
+| No state has two owners | Verified by script over every §4 `Owns:` line: 0 states named by two modules. This check found and resolved an `Instalment` conflict during review |
 | Every bounded context mapped | All 28 contexts map to a module, verified by script: 0 unmapped |
 
 Three things the mapping exercise found, which is the point of doing it rather than
@@ -84,7 +84,7 @@ assuming it:
   corrected.
 
 Decisions recorded in [ADR-0012](../adr/ADR-0012-context-to-module-mapping.md): 28 contexts
-map to 23 modules; a context is never split across modules; every merge records the evidence
+map to 24 modules; a context is never split across modules; every merge records the evidence
 that would trigger a split, because starting merged is the reversible direction.
 
 ---
@@ -134,8 +134,9 @@ Continuous integration (2026-08-31), `P0-TSK-004`:
   developer run the identical pinned image
 
 Architecture baseline (2026-08-31), `P0-TSK-006`:
-- Context-to-module map: all 28 bounded contexts mapped to 23 modules, merges justified with
+- Context-to-module map: all 28 bounded contexts mapped to 24 modules, merges justified with
   recorded split triggers (ADR-0012)
+- Single ownership verified by script over the register, not by reading it
 - Module register with all nine `CLAUDE.md` boundary attributes for every module
 - Authoritative-state ownership table proving no state has two owners
 
@@ -311,7 +312,8 @@ depends on `Money` existing (`P0-TSK-009`).
 
 | Date | Change |
 |------|--------|
-| 2026-08-31 | `P0-TSK-006` complete. Context-to-module map: 28 contexts to 23 modules, all nine boundary attributes per module, authoritative-state ownership table. Found two missing bounded contexts and one state at risk of two owners. ADR-0012 records the mapping decision. |
+| 2026-08-31 | Task completion review of `P0-TSK-006`. Four defects found and fixed, all by mechanical checks rather than re-reading: `Instalment` owned by both `lending` and `bnpl` (the headline acceptance criterion, violated); the `app` module absent from the register entirely; `paymentmethods` and `crossborder` missing from the layering diagram; the §5 ownership table maintained as a second enumeration that could drift from §4. |
+| 2026-08-31 | `P0-TSK-006` complete. Context-to-module map: 28 contexts to 24 modules, all nine boundary attributes per module, authoritative-state ownership table. Found two missing bounded contexts and one state at risk of two owners. ADR-0012 records the mapping decision. |
 | 2026-08-31 | `P0-TSK-004` complete. CI with four gates: build/tests, migrations against real PostgreSQL, secret scan over full history, SBOM dependency scan. Actions SHA-pinned, scanners digest-pinned. Not yet executed on a runner — no git remote exists. |
 | 2026-08-31 | Task completion review of `P0-TSK-001`, `-002`, `-003`, `-005`. No critical or financial findings — no money-handling code exists yet. Six important findings fixed: an unsatisfiable `DOD-BUILD` "CI green" requirement caused by over-specified `P0-TSK-004` dependencies; a one-directional infrastructure drift check that let an unpinned image pass (proven, then closed); dead Spring Boot configuration in `build-logic` (proven unnecessary); an unnecessary Spring test stack in `platform` contradicting its own comment; a name-substring scope test replaced with a structural one; ADR-0011 missing from `DECISIONS.md`. Java toolchain version moved into the version catalog, removing four duplicated copies of "21". |
 | 2026-08-31 | `P0-TSK-005` complete. Flyway 12.4.0, forward-only, module-owned schema history; ADR-0011 and `DATA_MIGRATIONS.md` written. |

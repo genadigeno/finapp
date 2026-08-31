@@ -29,7 +29,7 @@ reversible direction is therefore to start merged.
 **Each bounded context maps to exactly one module. A module may serve several contexts. Every
 merge records its rationale and the specific evidence that would trigger a split.**
 
-- 28 contexts map to 23 modules.
+- 28 contexts map to 24 modules.
 - A context is never split across modules — that would give its state two owners, which
   `CLAUDE.md` forbids.
 - Six merges are recorded, each with a named split trigger (`MODULE_ARCHITECTURE.md` §3,
@@ -80,7 +80,7 @@ Positive:
   `Case Management`) and one state at risk of two owners (`Case`).
 
 Negative:
-- 23 modules is more than a small team would choose and fewer than a purist would. It will be
+- 24 modules is more than a small team would choose and fewer than a purist would. It will be
   wrong somewhere; the split triggers are the mechanism for finding out where.
 - The map is a design contract for modules that do not exist yet. Phases 1–14 must either
   satisfy it or amend it deliberately.

@@ -19,7 +19,7 @@ platform is built as a modular monolith over one PostgreSQL database, with bound
 enforced mechanically so that extraction remains feasible. → [ADR-0001](../adr/ADR-0001-modular-monolith.md), [ADR-0006](../adr/ADR-0006-module-boundary-enforcement.md)
 
 ### Module boundaries
-Each of the 28 bounded contexts maps to exactly one of 23 modules; a context is never split
+Each of the 28 bounded contexts maps to exactly one of 24 modules; a context is never split
 across modules, because that would give its state two owners. Merges are deliberate and each
 records the evidence that would trigger a split — starting merged is the reversible
 direction, since splitting a module later is a package move whereas merging two modules that

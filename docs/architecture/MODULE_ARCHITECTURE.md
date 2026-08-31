@@ -31,10 +31,11 @@ Distribution is a Phase 16 question, answered with measurement, not anticipation
                     └───────────────┬───────────────┘
                                     │
      ┌──────────────────────────────┴──────────────────────────────┐
-     │                    business modules                          │
-     │  identity  party  kyc  consent  accounts  ledger  transfers  │
-     │  payments  merchant  checkout  settlement  reconciliation    │
-     │  fx  credit  lending  bnpl  risk  accounting  notification   │
+     │                       business modules                       │
+     │  identity  party  kyc  consent  accounts  ledger             │
+     │  transfers  payments  paymentmethods  merchant  checkout     │
+     │  settlement  reconciliation  fx  crossborder  credit         │
+     │  lending  bnpl  risk  accounting  notification               │
      └──────────────────────────────┬──────────────────────────────┘
                                     │
                     ┌───────────────┴───────────────┐
@@ -192,6 +193,18 @@ behaviour, security boundary, operational responsibility.**
 
 Modules from Phase 1 onward do not exist yet. Their entries are the design contract those
 phases must satisfy, not a description of code.
+
+### `app` — Phase 0
+- **Responsibility:** composition root. Wires modules together and hosts the HTTP surface and configuration. Owns no business capability.
+- **Owns:** no persistent state; configuration only.
+- **Transaction:** opens none of its own. It delegates to the module that owns the transaction.
+- **Consistency:** n/a — holds no state.
+- **APIs:** the platform's outward HTTP surface — routing, content negotiation and error rendering against the `platform` error contract. Declares no business endpoints of its own.
+- **Events:** none. Publishes and consumes nothing; a composition root that reacted to events would be a business module.
+- **Failure:** a module that fails to start fails startup. `app` must never degrade to serving traffic with a module missing, because a partially-wired platform serves wrong answers rather than no answers.
+- **Security:** authentication at the edge and the TLS termination boundary. It makes **no** business authorization decisions — those belong to each module's published interface, so that a second caller (a job, an operator tool) cannot bypass them.
+- **Operations:** liveness and readiness endpoints, build info, startup success, request-level telemetry.
+- **Note:** `app` may depend on every module; no module may depend on `app`.
 
 ### `sharedkernel` — Phase 0
 - **Responsibility:** framework-free value types shared by every module.
@@ -404,7 +417,7 @@ phases must satisfy, not a description of code.
 
 ### `lending` — Phase 11
 - **Responsibility:** originating and servicing loans, including time-based mechanics.
-- **Owns:** Loan Application, Loan Offer, Loan, Repayment Schedule, Instalment, Accrual Record, Repayment, Allocation, Delinquency State.
+- **Owns:** Loan Application, Loan Offer, Loan, Repayment Schedule, Loan Instalment, Accrual Record, Repayment, Allocation, Delinquency State.
 - **Transaction:** own; disbursement and repayment request ledger postings.
 - **Consistency:** strong. Loan balances are derived from `ledger` postings, never stored independently.
 - **APIs:** application submit, offer retrieve/accept, loan detail and schedule, repayment (idempotent), early settlement quote and execution.
@@ -416,7 +429,7 @@ phases must satisfy, not a description of code.
 
 ### `bnpl` — Phase 12
 - **Responsibility:** merchant-financed instalment credit — one economic event producing two financial flows.
-- **Owns:** BNPL Agreement, Instalment Plan, Instalment, Merchant Financing record, Refund Adjustment, Late Fee.
+- **Owns:** BNPL Agreement, Instalment Plan, BNPL Instalment, Merchant Financing record, Refund Adjustment, Late Fee.
 - **Transaction:** merchant financing and customer obligation are created atomically, or a tested compensating path runs.
 - **Consistency:** strong. References `merchant` and `lending` concepts by identifier; owns neither.
 - **APIs:** eligibility check at checkout, plan selection, agreement retrieval, schedule, early payoff, merchant-initiated refund.
@@ -464,11 +477,20 @@ phases must satisfy, not a description of code.
 ## 5. Authoritative State Ownership
 
 `CLAUDE.md` forbids shared mutable ownership of the same authoritative state across
-independent domains. This table is the check: every authoritative state has exactly one
-owning module, and anything derived names what it is derived from.
+independent domains.
+
+**The `Owns:` lines in §4 are the authoritative enumeration.** This table groups them for
+readability and adds the derived-state column; it deliberately does not repeat every item
+verbatim, because two lists of the same thing drift and the drift is silent.
+
+Single ownership is therefore checked against §4, by comparing every `Owns:` line and
+failing on any state named by two modules — not by reading this table and hoping. That check
+is what found the `Instalment` conflict below.
 
 | Authoritative state | Sole owner | Derived state elsewhere |
 |---------------------|-----------|-------------------------|
+| *(none — pure value types)* | `sharedkernel` | Owns no persistent state |
+| *(none — configuration only)* | `app` | Composition root; owns no persistent state |
 | Idempotency record, outbox, inbox, audit record | `platform` | — |
 | Party, Customer, profile | `party` | — |
 | Identity, Credential, MFA enrolment, Device, Session, Role assignment | `identity` | — |
@@ -487,9 +509,9 @@ owning module, and anything derived names what it is derived from.
 | FX Quote, Exchange Rate snapshot, FX Trade, FX Position, Currency config | `fx` | — |
 | Cross-Border Payment, Corridor policy | `crossborder` | — |
 | Credit Profile, Bureau evidence, Score, Policy Version, Decision, Exposure | `credit` | — |
-| Loan Application, Offer, Loan, Schedule, Accrual, Repayment, Delinquency | `lending` | Loan balance derived from `ledger` |
-| BNPL Agreement, Instalment Plan, Merchant Financing record | `bnpl` | References `merchant` and `lending` by id; owns neither |
-| Signal, Rule Set, Risk Assessment, Risk Decision, Limit, Velocity Counter, Alert, Case | `risk` | — |
+| Loan Application, Loan Offer, Loan, Repayment Schedule, **Loan Instalment**, Accrual Record, Repayment, Allocation, Delinquency State | `lending` | Loan balance derived from `ledger` |
+| BNPL Agreement, Instalment Plan, **BNPL Instalment**, Merchant Financing record, Refund Adjustment, Late Fee | `bnpl` | References `merchant` and `lending` by id; owns neither |
+| Signal, Rule Set, Risk Assessment, Risk Decision, Limit, Velocity Counter, Alert, Case, Case Action | `risk` | — |
 | GL Account, GL Mapping Rule, Accounting Period, Trial Balance snapshot, Report Run | `accounting` | Derived read model over `ledger`; **no write access to ledger tables** |
 | Notification record, delivery state | `notification` | — |
 
@@ -508,6 +530,17 @@ single owner; it may not become a table two modules write. Decided by Phase 13.
 **"Screening result" reads like one state but is two.** `kyc` owns onboarding-time screening
 evidence; `risk` owns ongoing monitoring and rescreening results. They share adapter
 infrastructure, not state (`ROADMAP.md` Refinement 3).
+
+**"Instalment" was claimed by two modules.** The register had both `lending` and `bnpl`
+owning an `Instalment`. They are **not** the same state: a loan instalment belongs to a
+Repayment Schedule and is governed by amortisation and accrual; a BNPL instalment belongs to
+an Instalment Plan and can be reduced by a merchant refund. They share a word, not a
+lifecycle. Renamed to **Loan Instalment** and **BNPL Instalment** so the distinction is in
+the name rather than in someone's head — the same discipline `CLAUDE.md` §Domain
+Distinctions applies to Payment/Transfer/Transaction.
+
+This was found by mechanically comparing the `Owns` lines, not by reading them. A table that
+asserts single ownership is only worth as much as the check behind it.
 
 **Balance is read by four modules and owned by one.** `accounts`, `merchant` and `lending`
 all present balances. None stores one: each reads `ledger`. A stored balance in any of them
