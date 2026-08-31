@@ -135,7 +135,7 @@ Status: `IN_PROGRESS`
 - Cx: L
 - DoD: `DOD-ARCH`
 
-**P0-TSK-007 — ArchUnit boundary rules**
+**P0-TSK-007 — ArchUnit boundary rules** — `COMPLETE` (2026-08-31)
 - Context: platform
 - Description: Rules forbidding cross-module internal access, cross-module entity references, reverse dependencies, and framework leakage into `sharedkernel`.
 - Why: Boundary rules that are documented but unenforced decay within weeks.

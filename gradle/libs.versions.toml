@@ -36,6 +36,11 @@ springBoot = "4.1.1"
 # so every module runs one JUnit and one AssertJ. ON EVERY SPRING BOOT UPGRADE,
 # re-check these against the new BOM:
 #   curl .../spring-boot-dependencies-<version>.pom | grep -E "junit-jupiter.version|assertj.version"
+# ArchUnit is not managed by the Spring Boot BOM, so its version is pinned here like any
+# other. It enforces the module boundaries in MODULE_ARCHITECTURE.md that Gradle cannot
+# express: cross-module internals, cross-module entity references, framework leakage.
+archunit = "1.5.0"
+
 junitJupiter = "6.0.3"
 assertj = "3.27.7"
 
@@ -78,6 +83,7 @@ spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-star
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junitJupiter" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 
 # --- Database migration -------------------------------------------------------
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }

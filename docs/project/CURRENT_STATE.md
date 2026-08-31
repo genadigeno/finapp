@@ -42,50 +42,46 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-007` — ArchUnit boundary rules**
-Status: `READY` — not started.
+**`P0-TSK-008` — No-floating-point-money static rule**
+Status: `BLOCKED` — depends on `P0-TSK-009` (`Money`), which has not started.
 
-Bounded context: platform. Depends on `P0-TSK-002` (`COMPLETE`) and `P0-TSK-006`
-(`COMPLETE`).
-
-Scope: rules forbidding cross-module internal access, cross-module entity references,
-reverse dependencies and framework leakage into `sharedkernel`.
-
-Acceptance: rules pass on the current codebase; each rule is proven by a deliberately
-introduced violation that fails the build, then reverted.
-
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-TEST`.
+Because `P0-TSK-008` is blocked, the next startable task is **`P0-DOC-002`** (reconcile
+`MODULE_ARCHITECTURE.md` with the now-enforced rules) or **`P0-TSK-009`** (`Money` and
+`CurrencyCode`), which opens milestone M0.2.
 
 ### Just completed
 
-**`P0-TSK-006` — Define the context-to-module map** — `COMPLETE` (2026-08-31).
+**`P0-TSK-007` — ArchUnit boundary rules** — `COMPLETE` (2026-08-31).
 
-[`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md) now carries a
-context-to-module map, a register recording all nine boundary attributes for every module,
-and an authoritative-state ownership table.
+Six rules plus a guard in
+[`ModuleBoundaryRulesTest`](../../app/src/test/java/com/finapp/app/architecture/ModuleBoundaryRulesTest.java),
+running on every build.
 
-| Acceptance criterion | Evidence |
+| Rule | Proven by |
 |---|---|
-| All boundary attributes for every planned module | 24 modules × 9 attributes, verified mechanically — each of responsibility, owns, transaction, consistency, APIs, events, failure, security, operations appears exactly 24 times |
-| No state has two owners | Verified by script over every §4 `Owns:` line: 0 states named by two modules. This check found and resolved an `Instalment` conflict during review |
-| Every bounded context mapped | All 28 contexts map to a module, verified by script: 0 unmapped |
+| `sharedkernelDependsOnNoOtherModule` | a class in the `sharedkernel` package referencing `platform` |
+| `platformDependsOnlyOnSharedkernel` | a class in the `platform` package referencing `app` |
+| `nothingDependsOnApp` | a business-module class referencing `FinappApplication` |
+| `sharedkernelIsFrameworkFree` | `@Component` on a class in the `sharedkernel` package |
+| `moduleInternalsArePrivateToTheirModule` | a business-module class using `platform.internal` |
+| `entitiesAreNotReferencedAcrossModules` | a business-module class referencing another module's `@Entity` |
 
-Three things the mapping exercise found, which is the point of doing it rather than
-assuming it:
-- **Two bounded contexts were missing** from `BOUNDED_CONTEXTS.md` — `Transfers` and
-  `Case Management` — while modules were already planned for both. Added; the list now
-  holds 28.
-- **"Case" was at risk of two owners.** The delivery plan describes case management as
-  "shared across KYC, fraud and AML", and `kyc` separately owns a Review Task. Resolved as
-  two distinct states rather than one shared one; a genuinely shared store would have to be
-  its own module with a single owner.
-- **The acceptance criterion miscounted.** It asked for "eight" attributes; `CLAUDE.md`
-  lists nine. `CLAUDE.md` is the authority, so the map records nine and the backlog is
-  corrected.
+Every one was demonstrated to fail and then reverted; the tree is clean of demonstration
+artefacts. The seventh test, `analysisSeesProductionClasses`, guards the suite itself: every
+rule is vacuously satisfied if nothing was imported, so a misconfigured importer would turn
+the class into decoration that reports success — worse than no rules, because it invites
+confidence.
 
-Decisions recorded in [ADR-0012](../adr/ADR-0012-context-to-module-mapping.md): 28 contexts
-map to 24 modules; a context is never split across modules; every merge records the evidence
-that would trigger a split, because starting merged is the reversible direction.
+Two design points worth carrying forward:
+- **Rules are phrased as conditions over all `com.finapp` classes**, not as
+  `noClasses().that().resideInAPackage("..sharedkernel..")`. ArchUnit fails a rule whose
+  `that()` clause matches nothing, and most modules have no production code yet — the
+  natural phrasing failed on four rules for exactly that reason. Suppressing it with
+  `allowEmptyShould(true)` would have made them pass for the wrong reason and keep passing
+  if they later stopped matching.
+- **The rules depend on a package convention** now stated in `MODULE_ARCHITECTURE.md` §6:
+  a module's internals live under `com.finapp.<module>.internal`. A module that ignores the
+  convention is invisible to the internals rule.
 
 ---
 
@@ -140,6 +136,14 @@ Architecture baseline (2026-08-31), `P0-TSK-006`:
 - Module register with all nine `CLAUDE.md` boundary attributes for every module
 - Authoritative-state ownership table proving no state has two owners
 
+Boundary enforcement (2026-08-31), `P0-TSK-007`:
+- Six ArchUnit rules on every build: dependency direction (defence in depth over Gradle),
+  framework leakage into `sharedkernel`, cross-module internal access, cross-module entity
+  references
+- Each proven by a deliberate violation, then reverted
+- A guard test asserting the analysis actually sees production classes, so the suite cannot
+  become silently vacuous
+
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
 - Phase gate model, status model and per-phase exit criteria — [`PHASE_GATES.md`](PHASE_GATES.md)
@@ -153,7 +157,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-007` is the next task.
+None in progress. `P0-TSK-008` is blocked on `P0-TSK-009`; see Next Task.
 
 ## Blockers
 
@@ -244,7 +248,7 @@ Recorded so it is not mistaken for a completed criterion.
 | `P0-TSK-001` — `P0-TSK-005` | `DOD-BUILD` requires "CI green". A pipeline now exists and all four jobs pass when run locally, but it has never executed on a CI runner because the repository has no git remote. This closes on the first successful run after a remote is added. | Adding a remote |
 | `P0-TSK-004` | The CycloneDX SBOM covers the whole resolved dependency set, test scope included (21 of ~61 components). Plugin 3.4.1 exposes no configuration filter. Adequate for vulnerability scanning — test libraries execute on CI runners, so they are legitimately in scope — but it means a HIGH/CRITICAL advisory in a test-only library fails the build though nothing vulnerable ships, and **the SBOM must not be published as shipping provenance in this form** because it overstates what is deployed. | Phase 15 (supply chain and provenance) |
 | `P0-TSK-004` | CI actions and scanner images are pinned by SHA/digest with no automated update path, so the pins will rot. | `P0-TSK-040` |
-| `P0-TSK-002` | Boundary enforcement is partial: Gradle enforces dependency direction and classpath tests assert module isolation, but cross-module internals and entity references rest on review until ArchUnit lands. | `P0-TSK-007` |
+| `P0-TSK-002` | ~~Boundary enforcement partial~~ — **closed by `P0-TSK-007`**. Cross-module internals and entity references are now mechanically enforced. `INV-MON-01` (no floating-point money) remains unenforced. | `P0-TSK-008` |
 | `P0-TSK-003`, `P0-TSK-005` | Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised. The migrator/application role split is designed and documented (`DATA_MIGRATIONS.md` §5) but not implemented, and must land **before** any table subject to those invariants is created. | `P0-TSK-022` |
 
 ---
@@ -294,17 +298,23 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-007` — ArchUnit boundary rules.**
+**`P0-TSK-009` — Implement `Money` and `CurrencyCode`.**
 
-Rationale: `P0-TSK-006` produced a design contract; nothing enforces it. Gradle enforces
-dependency *direction* only — nothing currently prevents a module reaching into another's
-internals, referencing another's entities, or quietly acquiring a second owner for a piece
-of state. `P0-TSK-007` is what converts `MODULE_ARCHITECTURE.md` §6 from reviewed into
-enforced, and it is now unblocked.
+Rationale: `P0-TSK-008` (the no-floating-point-money rule) is the last outstanding item in
+`P0-EPIC-02`, but it cannot be written before there is a monetary type to write it about —
+it depends on `P0-TSK-009`. Taking `P0-TSK-009` next unblocks it and opens milestone **M0.2**
+(financial kernel).
 
-Per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 4, work stays within that task —
-boundary rules only. The no-floating-point-money rule is `P0-TSK-008` and additionally
-depends on `Money` existing (`P0-TSK-009`).
+`P0-TSK-009` carries the highest design risk in Phase 0: ADR-0003 settles the
+representation, but an error in `Money` propagates into every table and every posting the
+platform will ever write. It is `DOD-KERNEL`, the strictest profile after `DOD-FIN`.
+
+`P0-DOC-002` (reconcile `MODULE_ARCHITECTURE.md` with the enforced rules) is also now
+startable and is small; it overlaps substantially with the documentation `P0-TSK-007`
+already updated.
+
+Per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 4, whichever is taken stays within
+its own scope.
 
 ---
 
@@ -312,6 +322,7 @@ depends on `Money` existing (`P0-TSK-009`).
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-007` complete. Six ArchUnit boundary rules enforced on every build, each proven by a deliberate violation; plus a guard test so the suite cannot become silently vacuous. `MODULE_ARCHITECTURE.md` §2 and §8 corrected — they claimed the rules were "not yet in place". |
 | 2026-08-31 | Task completion review of `P0-TSK-006`. Four defects found and fixed, all by mechanical checks rather than re-reading: `Instalment` owned by both `lending` and `bnpl` (the headline acceptance criterion, violated); the `app` module absent from the register entirely; `paymentmethods` and `crossborder` missing from the layering diagram; the §5 ownership table maintained as a second enumeration that could drift from §4. |
 | 2026-08-31 | `P0-TSK-006` complete. Context-to-module map: 28 contexts to 24 modules, all nine boundary attributes per module, authoritative-state ownership table. Found two missing bounded contexts and one state at risk of two owners. ADR-0012 records the mapping decision. |
 | 2026-08-31 | `P0-TSK-004` complete. CI with four gates: build/tests, migrations against real PostgreSQL, secret scan over full history, SBOM dependency scan. Actions SHA-pinned, scanners digest-pinned. Not yet executed on a runner — no git remote exists. |

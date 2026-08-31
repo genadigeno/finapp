@@ -50,4 +50,10 @@ dependencies {
 
     implementation(libs.spring.boot.starter)
     testImplementation(libs.spring.boot.starter.test)
+
+    // Architecture rules live here because `app` is the only module that sees every other
+    // one — enforcing a boundary requires being able to observe both sides of it. As
+    // business modules are added, `app` depends on them too, so the rules keep their full
+    // view without needing to be moved.
+    testImplementation(libs.archunit.junit5)
 }

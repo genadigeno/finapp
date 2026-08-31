@@ -59,9 +59,14 @@ configuration with a circular-dependency error. Classpath tests in `sharedkernel
 `platform` assert that no module output from above appears below, and that `sharedkernel`
 carries no Spring artefact.
 
-Gradle cannot express the finer rules — no cross-module internals, no cross-module entity
-references, no floating-point money. Those are ArchUnit rules and are **not yet in place**;
-they are `P0-TSK-007` and `P0-TSK-008`. Until then the finer boundaries rest on review.
+Gradle cannot express the finer rules. Those are ArchUnit rules in
+`ModuleBoundaryRulesTest`, and as of `P0-TSK-007` they **are** in place and run on every
+build: dependency direction as defence in depth, framework leakage into `sharedkernel`,
+cross-module internal access, and cross-module entity references. Each was proven by
+introducing a violation and watching that specific rule fail.
+
+One finer rule is still outstanding: no floating-point money (`INV-MON-01`). That is
+`P0-TSK-008` and additionally needs `Money` to exist (`P0-TSK-009`).
 
 ### What may enter `sharedkernel`
 Only concepts that are genuinely universal *and* stable: `Money`, `CurrencyCode`, rounding
@@ -205,6 +210,7 @@ phases must satisfy, not a description of code.
 - **Security:** authentication at the edge and the TLS termination boundary. It makes **no** business authorization decisions — those belong to each module's published interface, so that a second caller (a job, an operator tool) cannot bypass them.
 - **Operations:** liveness and readiness endpoints, build info, startup success, request-level telemetry.
 - **Note:** `app` may depend on every module; no module may depend on `app`.
+- **Also hosts:** the platform-wide ArchUnit rules (`ModuleBoundaryRulesTest`). They live here because `app` is the only module that sees every other one, and enforcing a boundary requires observing both sides of it.
 
 ### `sharedkernel` — Phase 0
 - **Responsibility:** framework-free value types shared by every module.
@@ -549,10 +555,19 @@ would violate `INV-BAL-01`.
 ## 6. Boundary Rules
 
 ### Module boundary
-- Each module owns a package root; internals are not accessible across modules.
-- A module exposes a published interface (commands, queries) and integration events.
-- No cross-module entity or ORM-relationship references. References are typed identifiers.
-- Dependency direction is acyclic and enforced.
+
+**Package convention.** A module's root package is `com.finapp.<module>`. Everything under
+`com.finapp.<module>.internal` is private to that module; everything else in the module root
+is its published surface. The ArchUnit rules depend on this convention, so a module that
+ignores it is not protected by them.
+
+**What enforces what.** Gradle enforces dependency direction structurally. `ModuleBoundaryRulesTest`
+enforces the rest on every build. Anything below marked *(review)* has no mechanical check.
+
+- Each module owns a package root; internals are not accessible across modules. *(ArchUnit)*
+- A module exposes a published interface (commands, queries) and integration events. *(review)*
+- No cross-module entity or ORM-relationship references. References are typed identifiers. *(ArchUnit)*
+- Dependency direction is acyclic and enforced. *(Gradle, plus ArchUnit as defence in depth)*
 - Every module applies the `java-library` plugin and uses the `api`/`implementation`
   distinction deliberately. `implementation` keeps a dependency off consumers' compile
   classpaths so a module cannot leak its internals downstream by accident; `api` makes
@@ -640,14 +655,22 @@ revisited.
 | Chart-of-accounts structure and its relation to the Phase 14 GL | Undecided — ADR required | Phase 3 |
 | Balance projection placement: ledger schema or separate read store | Ledger schema, transactional (ADR-0009) | Phase 3 |
 
-### What this map does not yet enforce
+### What this map does and does not enforce
 
-The context-to-module map is a design contract, not a mechanism. Nothing in the build
-currently prevents a module from reaching into another's internals, referencing another's
-entities, or quietly acquiring a second owner for a piece of state. Gradle enforces
-dependency *direction* only.
+As of `P0-TSK-007`, §6's structural rules are mechanical. `ModuleBoundaryRulesTest` fails the
+build if a module reaches into another's internals, references another's persistence
+entities, depends upward, or lets a framework into `sharedkernel`. Each rule was proven by a
+deliberate violation rather than assumed to work.
 
-`P0-TSK-007` (ArchUnit boundary rules) is what converts this document from reviewed into
-enforced, and it is the immediate next task for that reason. Until it lands, every rule in
-§6 rests on review — which is worth stating plainly rather than leaving a reader to assume
-the diagram is guaranteed by something.
+Two things remain on review, and are worth stating plainly rather than letting a reader
+assume the diagram is guaranteed throughout:
+
+- **No floating-point money.** `INV-MON-01` is the platform's most fundamental rule and is
+  still unenforced. `P0-TSK-008`, which also needs `Money` to exist (`P0-TSK-009`).
+- **Single ownership of authoritative state.** §5 is checked by comparing the register's
+  `Owns:` lines, which catches a *declared* second owner. Nothing detects a module that
+  quietly starts writing state another module declares — that needs schema-level privileges
+  (`P0-TSK-022`) and, ultimately, review.
+
+The rules also only protect modules that follow the package convention in §6. A module whose
+internals are not under `com.finapp.<module>.internal` is invisible to the internals rule.
