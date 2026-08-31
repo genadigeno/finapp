@@ -16,10 +16,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class FinappApplication {
 
-    private FinappApplication() {
-        // Composition root; not instantiable.
-    }
-
     public static void main(String[] args) {
         SpringApplication.run(FinappApplication.class, args);
     }

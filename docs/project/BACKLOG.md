@@ -43,7 +43,7 @@ the first activity of its entry gate.
 
 # Phase 0 — Domain and Architecture Foundation
 
-Status: `READY`
+Status: `IN_PROGRESS`
 
 ## P0-EPIC-01 — Build and Repository Foundation
 
@@ -53,7 +53,7 @@ Status: `READY`
 
 #### P0-FEAT-01 — Gradle multi-module Spring Boot build
 
-**P0-TSK-001 — Initialise Gradle multi-module build**
+**P0-TSK-001 — Initialise Gradle multi-module build** — `COMPLETE` (2026-08-31)
 - Context: platform / build
 - Description: Gradle wrapper, root build with version catalog, Java toolchain pinned, Spring Boot BOM, one placeholder application module.
 - Why: A pinned, reproducible toolchain is a prerequisite for every later correctness claim.
@@ -589,6 +589,16 @@ Status: `READY`
 - Accept: Documented; local setup does not normalise insecure defaults into later environments.
 - Risk: Medium
 - Cx: S
+- DoD: `DOD-SEC`
+
+**P0-TSK-039 — Dependency verification and locking**
+- Context: platform / security / build
+- Description: Gradle dependency verification (checksum and/or signature metadata) plus dependency locking, so the set of artefacts the build resolves is pinned and tamper-evident.
+- Why: Discovered during `P0-TSK-001`. The Gradle *distribution* is checksum-pinned, but every library the build resolves is currently trusted implicitly. For a platform whose stated posture is financial infrastructure, an unverified supply chain is a real exposure — a compromised or substituted artefact executes with full build privileges. `.claude/rules/security.md` requires treating external input as untrusted; a dependency is external input.
+- Deps: P0-TSK-004
+- Accept: `gradle/verification-metadata.xml` present and enforced; a deliberately altered artefact checksum fails the build; the procedure for adding or updating a dependency is documented and is not "regenerate everything and hope".
+- Risk: Medium — over-strict verification is disruptive to routine upgrades; the update procedure must be practical or it will be bypassed.
+- Cx: M
 - DoD: `DOD-SEC`
 
 ---

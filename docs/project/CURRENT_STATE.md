@@ -11,7 +11,7 @@ Last updated: 2026-08-31
 ## Current Phase
 
 **Phase 0 — Domain and Architecture Foundation**
-Status: `READY`
+Status: `IN_PROGRESS`
 
 Entry gate passed on 2026-08-31. All twelve entry-gate criteria in
 [`PHASE_GATES.md`](PHASE_GATES.md) §2 are satisfied: the delivery plan is written, bounded
@@ -42,22 +42,53 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-001` — Initialise Gradle multi-module build**
+**`P0-TSK-002` — Create module skeleton**
 Status: `READY` — not started.
 
-Bounded context: platform / build. No dependencies.
+Bounded context: platform. Depends on `P0-TSK-001` (`COMPLETE`).
 
-Acceptance: `./gradlew build` succeeds from a clean clone on a machine with no prior state;
-Java version pinned by the Gradle toolchain rather than ambient `JAVA_HOME`; dependency
-versions centralised in a version catalog; Spring Boot BOM applied.
+Scope: create `platform`, `sharedkernel` and `app` modules with the declared dependency
+direction `app -> platform -> sharedkernel`, never the reverse.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-01. DoD profile: `DOD-BUILD`.
+Acceptance: modules build independently; a reverse dependency fails compilation;
+`sharedkernel` has no Spring Framework dependency.
+
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-BUILD`.
+
+### Just completed
+
+**`P0-TSK-001` — Initialise Gradle multi-module build** — `COMPLETE` (2026-08-31).
+
+Verified, not merely asserted:
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Builds from a clean clone, machine with no prior state | Cold build with empty `GRADLE_USER_HOME`: downloaded Gradle, auto-provisioned the JDK, resolved all dependencies, tests green |
+| Java pinned by toolchain, not ambient `JAVA_HOME` | Fresh clone built with `JAVA_HOME` set to JDK 25; compiled bytecode still targets Java 21 |
+| Versions centralised in a version catalog | No version literal in any build script |
+| Spring Boot BOM applied | Versionless starter declarations resolve; Spring context starts |
+
+Test credibility was demonstrated per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md)
+rule 8: changing the toolchain pin to 17 caused both toolchain tests to fail, and reverting
+restored them.
 
 ---
 
 ## Completed Capabilities
 
-**Business capabilities: none.** No application source code exists.
+**Business capabilities: none** — by design (Phase 0 §2 of the delivery plan).
+
+Platform foundation (2026-08-31), `P0-TSK-001`:
+- Gradle 9.7.1 wrapper; distribution **and** wrapper jar verified by SHA-256 against
+  `services.gradle.org`
+- Version catalog as the single source of dependency versions
+- Java 21 toolchain pinned via a `build-logic` convention plugin, with the foojay resolver
+  provisioning a JDK where the machine lacks one
+- Spring Boot 4.1.1 BOM; the Boot plugin applied only to the executable module, so library
+  modules can take version alignment without `bootJar` packaging
+- Placeholder `app` module carrying no business capability
+- Reproducible archives; `-Werror`; LF enforced on `gradlew` so Linux CI is not broken by a
+  Windows checkout
 
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
@@ -72,11 +103,55 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-001` is the next task to start.
+None in progress. `P0-TSK-002` is the next task to start.
 
 ## Blockers
 
 None.
+
+---
+
+## Local Environment Prerequisites
+
+Machine-specific setup that the repository deliberately does **not** contain. The build must
+work on any machine without local edits (`DOD-BUILD`: "no developer-machine-specific
+assumptions"), so anything below belongs in `GRADLE_USER_HOME`, never in the repo.
+
+**TLS interception by antivirus (this development machine).** AVG "Web/Mail Shield"
+intercepts HTTPS and re-signs it with its own root CA. Windows trusts that CA; the JDK's
+bundled `cacerts` does not. Java tooling therefore fails with:
+
+```
+PKIX path building failed ... unable to find valid certification path to requested target
+```
+
+while `curl` and the browser work — which makes it look like a Gradle fault rather than a
+TLS-trust one. Resolved in `~/.gradle/gradle.properties` (outside the repo):
+
+```properties
+org.gradle.jvmargs=-Djavax.net.ssl.trustStoreType=Windows-ROOT -Xmx2g -XX:MaxMetaspaceSize=512m
+```
+
+That covers the Gradle daemon. Bootstrapping the distribution runs in a separate JVM that
+reads `GRADLE_OPTS`, so on a machine with no Gradle distribution cached also export:
+
+```
+GRADLE_OPTS="-Djavax.net.ssl.trustStoreType=Windows-ROOT"
+```
+
+Alternatives: import the AVG root into the JDK `cacerts` with `keytool`, or disable HTTPS
+scanning in AVG. This must be revisited at `P0-TSK-004` — CI runners will need whatever the
+equivalent is in that environment.
+
+---
+
+## Partially Satisfied Definition of Done
+
+Recorded so it is not mistaken for a completed criterion.
+
+| Task | DoD item not yet met | Owning task |
+|------|---------------------|-------------|
+| `P0-TSK-001` | `DOD-BUILD` requires "CI green". No CI pipeline exists yet, so the build is verified only locally — including from a clean clone with an empty Gradle home. | `P0-TSK-004` |
 
 ---
 
@@ -125,14 +200,17 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-001` — Initialise Gradle multi-module build.**
+**`P0-TSK-002` — Create module skeleton.**
 
-Rationale: nothing in Phase 0 can be verified until there is a reproducible, CI-verified
-build. Every other Phase 0 task depends on it directly or transitively. It carries low risk
-and no unresolved architectural question, which makes it the correct place to start.
+Rationale: `P0-TSK-001` proved the build works but created only a placeholder module. The
+module boundaries are the mechanism on which ADR-0001 (modular monolith) entirely depends —
+without enforced boundaries a modular monolith is just a monolith. Creating the modules and
+their dependency direction is the precondition for `P0-TSK-007` (ArchUnit rules), which is
+what makes the boundaries real rather than aspirational.
 
-Per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 4, work stays within this task —
-no module contents, no `Money` type, no schema.
+Per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 4, work stays within that task —
+module structure and dependency direction only. No `Money` type (`P0-TSK-009`), no schema
+(`P0-TSK-005`), no ArchUnit rules (`P0-TSK-007`).
 
 ---
 
@@ -140,4 +218,5 @@ no module contents, no `Money` type, no schema.
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-001` complete. Gradle 9.7.1 multi-module build, Java 21 toolchain, Spring Boot 4.1.1 BOM, `build-logic` conventions, checksum-pinned wrapper. Phase 0 `IN_PROGRESS`. Repository placed under Git. |
 | 2026-08-31 | Project initiation. Delivery plan, phase gates, backlog, architecture baseline, invariant catalog, Definition of Done, execution protocol and ADR-0001..0010 created. Phase 0 entry gate passed; status `READY`. |
