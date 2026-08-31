@@ -147,6 +147,13 @@ jobs:
       - name: Re-apply to prove migrations are idempotent
         run: ./gradlew :platform:flywayMigrate --stacktrace
 
+      - name: Round-trip monetary values through real columns
+        # INV-MON-05: a persisted amount must return exactly the value written, including
+        # its scale. That is a claim about PostgreSQL and its driver, so it is only worth
+        # testing against a real one. These tests are excluded from `build` deliberately, so
+        # this job is the only place they run.
+        run: ./gradlew :platform:databaseTest --stacktrace
+
       - name: Stop PostgreSQL
         if: always()
         run: docker compose down -v

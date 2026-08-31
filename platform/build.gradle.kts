@@ -30,17 +30,24 @@ plugins {
 // environment variable. No credential is committed beyond the marked local-only default
 // already established in compose.yaml.
 // ---------------------------------------------------------------------------
-flyway {
-    // These defaults MUST match the defaults in compose.yaml — they are the same three
-    // environment variables, so overriding FINAPP_DB_NAME (or user, or password) moves the
-    // container and the migration tool together instead of only one of them.
-    val dbName = providers.environmentVariable("FINAPP_DB_NAME").orElse("finapp").get()
+// Connection details, resolved once and shared by the migration tool and the round-trip
+// test. Reading them in two places would let the two be pointed at different databases,
+// which is exactly the kind of divergence that makes a green test meaningless.
+//
+// These defaults MUST match the defaults in compose.yaml — they are the same environment
+// variables, so overriding FINAPP_DB_NAME (or user, or password) moves the container, the
+// migration tool and the test together rather than only one of them.
+val dbName = providers.environmentVariable("FINAPP_DB_NAME").orElse("finapp").get()
+val dbUrl = providers.environmentVariable("FINAPP_DB_URL")
+    .orElse("jdbc:postgresql://127.0.0.1:5432/$dbName").get()
+val dbUser = providers.environmentVariable("FINAPP_DB_USER").orElse("finapp").get()
+val dbPassword = providers.environmentVariable("FINAPP_DB_PASSWORD")
+    .orElse("local-development-only-not-a-secret").get()
 
-    url = providers.environmentVariable("FINAPP_DB_URL")
-        .orElse("jdbc:postgresql://127.0.0.1:5432/$dbName").get()
-    user = providers.environmentVariable("FINAPP_DB_USER").orElse("finapp").get()
-    password = providers.environmentVariable("FINAPP_DB_PASSWORD")
-        .orElse("local-development-only-not-a-secret").get()
+flyway {
+    url = dbUrl
+    user = dbUser
+    password = dbPassword
 
     schemas = arrayOf("platform")
     defaultSchema = "platform"
@@ -90,4 +97,44 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+
+    // The monetary round-trip has to run against a real PostgreSQL: the claim being tested
+    // is that BIGINT/CHAR(3)/SMALLINT return exactly what was written, and that is a claim
+    // about the database and its driver, not about our code.
+    testImplementation(libs.postgresql.driver)
+}
+
+// ---------------------------------------------------------------------------
+// Tests that need a database are separated from those that do not.
+//
+// `test` stays hermetic so `./gradlew build` is green on a machine with nothing
+// running. `databaseTest` is a task you can see did not run, rather than a test
+// that silently skips itself when the database is absent — a skipped test
+// reports success, which is the failure mode this project keeps finding.
+//
+// P0-TSK-036 (test taxonomy) generalises this; it is deliberately minimal here.
+// ---------------------------------------------------------------------------
+val databaseTag = "database"
+
+tasks.test {
+    useJUnitPlatform { excludeTags(databaseTag) }
+}
+
+tasks.register<Test>("databaseTest") {
+    group = "verification"
+    description = "Runs tests that require a live PostgreSQL (docker compose up -d postgres)."
+
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags(databaseTag) }
+
+    // The same three environment variables the Flyway configuration above uses, so the
+    // migration tool and the round-trip test can never be pointed at different databases.
+    systemProperty("finapp.db.url", dbUrl)
+    systemProperty("finapp.db.user", dbUser)
+    systemProperty("finapp.db.password", dbPassword)
+
+    // Never cached: the point is to exercise a real database, and a cached "up to date"
+    // result would mean it had not.
+    outputs.upToDateWhen { false }
 }

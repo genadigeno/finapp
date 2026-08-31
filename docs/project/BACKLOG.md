@@ -195,7 +195,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-KERNEL`
 
-**P0-TSK-011 — Money persistence mapping**
+**P0-TSK-011 — Money persistence mapping** — `COMPLETE` (2026-08-31)
 - Context: platform / data
 - Description: Persist as `amount_minor BIGINT NOT NULL`, `currency CHAR(3) NOT NULL`, `scale SMALLINT NOT NULL`; a reusable embeddable and column convention.
 - Why: Per ADR-0003; scale is denormalised so a historical amount is interpretable even if currency configuration later changes.

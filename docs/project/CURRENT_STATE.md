@@ -42,52 +42,44 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-011` — Money persistence mapping**
+**`P0-TSK-008` — No-floating-point-money static rule**
 Status: `READY` — not started.
 
-Bounded context: platform / data. Depends on `P0-TSK-009` (`COMPLETE`) and `P0-TSK-005`
+Bounded context: platform. Depends on `P0-TSK-007` (`COMPLETE`) and `P0-TSK-009`
 (`COMPLETE`).
 
-Scope: persist as `amount_minor BIGINT`, `currency CHAR(3)`, `scale SMALLINT`; a reusable
-embeddable and column convention (ADR-0003).
+Scope: an architecture test forbidding `float`/`double`/`Float`/`Double` in any monetary
+type, field, parameter or return in financial packages. Closes `P0-EPIC-02` and Phase 0 exit
+criterion 4.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-03. DoD profile: `DOD-KERNEL`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TSK-010` — Rounding policy** — `COMPLETE` (2026-08-31). 128 tests in `sharedkernel`.
+**`P0-TSK-011` — Money persistence mapping** — `COMPLETE` (2026-08-31).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Splitting any amount across any n reassembles to exactly the original | Swept every amount from −500 to +500 across 1–40 parts in four currencies (~160,000 allocations), plus the four extremes of `long`, plus a 2,000-iteration seeded sweep of weighted splits |
-| Rounding mode always caller-specified, never defaulted | `Money.of(BigDecimal, CurrencyCode, RoundingPolicy)` requires the policy; the two-argument factory does not round at all, it refuses |
+| Round-trip preserves exact value for 0-, 2- and 3-minor-unit currencies | Verified against a real PostgreSQL for JPY (0), USD/EUR (2), BHD (3) and CLF (4), plus zero and a negative amount |
+| No numeric-type coercion loss | `Long.MAX_VALUE`, `Long.MIN_VALUE` and 2^53+1 — the values a floating-point path would alter — round-trip exactly through `BIGINT` |
+| Convention documented | [`DATA_MIGRATIONS.md`](../architecture/DATA_MIGRATIONS.md) §5 |
 
-Both zero-residual properties were demonstrated to have teeth: discarding the remainder in
-the even split failed 6 tests, and discarding it in the weighted split failed 3.
+Both layers were demonstrated to have teeth: deriving scale from the currency instead of
+reading the stored column fails the database round-trip and two unit tests.
 
 Design decisions worth carrying forward:
-- **`RoundingPolicy` is a named type, not `java.math.RoundingMode`.** `INV-HIST-04` lists
-  "rounding policy" among the versioned artefacts that must be recorded on a decision, so a
-  policy needs a stable name of its own. `ofName` rejects an unknown name rather than
-  defaulting — silently substituting one would change the meaning of a decision being
-  replayed.
-- **`HALF_DOWN` and `UNNECESSARY` are deliberately not offered.** The first biases ties
-  toward zero with no financial justification; the second is not a policy but a refusal, and
-  that is what the no-policy factory already does.
-- **`TOWARDS_ZERO` vs `FLOOR` is documented as the trap it is.** They agree on every positive
-  amount and disagree on every negative one. Debits are negative, so a suite testing only
-  positive amounts passes with either and is wrong in production for one of them — there are
-  explicit negative-amount tests for exactly this.
-- **Weighted allocation uses `BigInteger` for the intermediate product.** `amount × weight`
-  overflows a `long` for realistic inputs, and an overflow there would misallocate silently
-  rather than fail.
-- **Largest-remainder distribution with an index tie-break**, so a replay produces the same
-  split — which `INV-HIST-04` will require of anything built on it.
-- **`allocateEvenly` and `allocateByWeights` are named, not overloaded.** As `allocate(int)`
-  and `allocate(long...)` they resolved silently by the width of the literal: `allocate(3)`
-  split three ways while `allocate(3L)` returned the whole amount as one part. Counts are
-  routinely held in a `long`, so that is a money bug the compiler accepts and no assertion
-  notices. A test now guards against reintroducing a method named `allocate`.
+- **`MoneyColumns` is deliberately not a JPA `@Embeddable`.** The task description asked for
+  one, but no ADR has chosen a data-access mechanism, and writing an embeddable would have
+  decided it by accident. Recorded as unresolved question 12, due Phase 3.
+- **Database tests are a separate task, not a self-skipping test.** `./gradlew build` stays
+  hermetic and green with nothing running; `:platform:databaseTest` is a task you can see did
+  not run. A test that skips itself reports success, which is the failure mode these reviews
+  keep finding. CI runs it in the `migrations` job, which already has PostgreSQL up.
+- **The round-trip uses a `TEMPORARY` table, not a migration.** Phase 0 creates no tables, and
+  a throwaway fixture has no business entering the schema history.
+- **Reading is strict.** A null currency, an unknown or pseudo-currency, or an impossible
+  scale raises `MonetaryColumnException` rather than returning an approximation — a corrupt
+  row is a detectable problem until something defaults it into a wrong balance.
 
 ---
 
@@ -163,6 +155,12 @@ Rounding and allocation (2026-08-31), `P0-TSK-010`:
 - `Money.allocateEvenly(int)` and `Money.allocateByWeights(long...)` — the parts always sum
   back to the original, so no residual is ever absorbed (`INV-BAL-03`)
 
+Money persistence (2026-08-31), `P0-TSK-011`:
+- `MoneyColumns` in `platform`: the single definition of the three-column shape from ADR-0003,
+  with the DDL fragment migrations use so the shape cannot drift between tables
+- Round-trip verified against a real PostgreSQL, including the `BIGINT` extremes
+- Mechanism-agnostic: no ORM is chosen, so none is chosen by accident
+
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
 - Phase gate model, status model and per-phase exit criteria — [`PHASE_GATES.md`](PHASE_GATES.md)
@@ -176,7 +174,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-011` is the next task; `P0-TSK-008` also remains startable.
+None in progress. `P0-TSK-008` is the next task.
 
 ## Blockers
 
@@ -304,6 +302,7 @@ it begins.
 | 9 | Which payment rail to simulate first, and its finality semantics | Phase 5 | Medium — first rail shapes the abstraction (mitigated by designing to `PAYMENT_LIFECYCLES.md`) |
 | 10 | Which jurisdiction-neutral compliance abstractions belong in the MVP | Phase 2 | Medium |
 | 11 | Fail-safe policy for risk evaluation: block or allow on unavailability | Phase 13 | High — a wrong default is either an outage or an open door |
+| 12 | **Data-access mechanism: JPA/Hibernate, Spring Data JDBC, or plain JDBC** | Phase 3 | Medium–High — surfaced by `P0-TSK-011`, whose description said "a reusable embeddable" while no ADR had chosen an ORM. It matters here more than usual: Hibernate's dirty checking emits `UPDATE`s, and `INV-LED-03`/`INV-HIST-01` say posted financial records are never updated, with the application role holding no `UPDATE` privilege at all. `MoneyColumns` was written mechanism-agnostic so the decision is not made by accident; it must be made before the ledger schema exists |
 
 Resolved during initiation:
 - ~~Which modules form the initial modular-monolith cut?~~ → [`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md)
@@ -317,15 +316,17 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-011` — Money persistence mapping.**
+**`P0-TSK-008` — No-floating-point-money static rule.**
 
-Rationale: it closes `P0-EPIC-03`, and it is the task that makes `Money`'s stored scale
-mean something. `Money.ofPersisted` exists precisely so a historical amount can be rehydrated
-with the scale it was written under (ADR-0003); until there is a persistence mapping, that
-contract is asserted but never exercised against a real database.
+Rationale: it closes `P0-EPIC-02` and satisfies Phase 0 exit criterion 4, the only remaining
+`INV-MON` invariant without mechanical enforcement. Both its dependencies are now met — there
+is a monetary type to write the rule about (`P0-TSK-009`) and an ArchUnit suite to write it
+in (`P0-TSK-007`).
 
-`P0-TSK-008` (no-floating-point-money static rule) is also startable and is small — it now
-has both a monetary type to write rules about and an ArchUnit suite to write them in.
+No floating point currently exists on any monetary path, so the rule will pass immediately.
+That makes the deliberate-violation demonstration the substance of the task rather than a
+formality: a rule that has never been seen to fail is not known to work — which is exactly
+what the `P0-TSK-007` review found about its own coverage guard.
 
 ---
 
@@ -333,6 +334,7 @@ has both a monetary type to write rules about and an ArchUnit suite to write the
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-011` complete. `MoneyColumns` fixes the three-column storage shape from ADR-0003 and supplies the DDL migrations use. Round-trip verified against a real PostgreSQL across 0-, 2-, 3- and 4-decimal currencies and the `BIGINT` extremes. Written mechanism-agnostic: the task asked for a JPA embeddable, but no ADR has chosen a data-access mechanism — recorded as unresolved question 12. |
 | 2026-08-31 | Task completion review of `P0-TSK-010`. One important finding: `allocate(int)` and `allocate(long...)` resolved silently by literal width — `allocate(3)` split three ways, `allocate(3L)` returned the whole amount as one part. Proven, then removed by renaming to `allocateEvenly` / `allocateByWeights`, with a test guarding against reintroduction. |
 | 2026-08-31 | `P0-TSK-010` complete. `RoundingPolicy` with six named policies, explicit-policy rounding, and allocation that distributes the indivisible remainder rather than absorbing it. Zero-residual proven by sweeping ~160,000 even splits and 2,000 weighted ones, and demonstrated to fail when the remainder is discarded. 127 tests. |
 | 2026-08-31 | Task completion review of `P0-TSK-009`. One important finding: the diagnostic state on the monetary exceptions was `transient`, so `left()` and `right()` returned `null` after serialization — proven by round-tripping one, and fixed by making `CurrencyCode` serializable. Also corrected an operand-order inversion in the mismatch message, and added the three tests whose absence let those through: scale mismatch on `minus`/`compareTo`, `absoluteValue` overflow, and serialization of diagnostics. 74 tests. |

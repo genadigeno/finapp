@@ -167,7 +167,50 @@ failure rolls back. Two exceptions matter:
 
 ---
 
-## 5. Privilege Model
+## 5. Monetary Columns
+
+Every monetary value is stored as three columns, never one (ADR-0003):
+
+```
+<field>_amount_minor  BIGINT    NOT NULL
+<field>_currency      CHAR(3)   NOT NULL
+<field>_scale         SMALLINT  NOT NULL
+```
+
+`com.finapp.platform.money.MoneyColumns` is the single definition of this shape. A migration
+declaring a monetary field takes its DDL fragment from `MoneyColumns.columnsFor("<field>").ddl()`
+rather than hand-writing the three columns, so the shape cannot drift between tables.
+
+**Why three columns.** A single `NUMERIC` drops the currency. A `NUMERIC(19,2)` bakes one
+currency's precision into the schema, which is wrong for JPY at 0 decimals and BHD at 3.
+Integer minor units keep arithmetic exact (`INV-MON-01`) and let one column pair hold any
+currency.
+
+**Why the field-name prefix.** One table often holds several amounts — a gross, a fee, a net.
+Prefixing keeps them distinct and stops one of them silently becoming "the" amount.
+
+**Why every column is `NOT NULL`.** An amount with no currency, or a currency with no scale,
+is not less information — it is uninterpretable. `INV-MON-02` requires the currency to be
+explicit, and the schema is where that is made impossible to violate rather than merely
+discouraged.
+
+**Why scale is stored rather than derived.** Minor-unit counts are data that changes. A row
+holding only `1234` and `USD` would silently change meaning if that data changed — 12.34
+becoming 1.234. The stored scale is what makes a historical row interpretable as originally
+written (`INV-MON-05`), and is why `Money.ofPersisted` exists.
+
+**Never** widen, narrow or retype a monetary column in place. Changing `BIGINT` or the scale
+column reinterprets every existing row at once, which is the irreversible case in section 4:
+expand, backfill, verify, switch, contract.
+
+Round-trip fidelity is verified against a real PostgreSQL by
+`./gradlew :platform:databaseTest`, which CI runs in the `migrations` job. Those tests are
+excluded from `build` on purpose, so a developer without a running database still gets a
+green build rather than a test that skips itself and reports success.
+
+---
+
+## 6. Privilege Model
 
 Three invariants are enforced at the database privilege level, not by application code:
 
@@ -198,7 +241,7 @@ rather than being applied later by hand.
 
 ---
 
-## 6. Checklist
+## 7. Checklist
 
 Before merging a migration:
 
@@ -210,5 +253,6 @@ Before merging a migration:
 - Destructive changes: separate migration, justified, ADR where evidence is affected
 - Backfills: idempotent, batched, separate from DDL, verified by reconciliation
 - Grants stated for any new table, appropriate to its mutability
+- Monetary fields declared through `MoneyColumns`, not hand-written
 - Applies cleanly to an empty database
 - `flywayValidate` passes
