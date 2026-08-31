@@ -90,7 +90,10 @@ public final class MoneyColumns {
     public static short scaleOf(Money money) {
         int scale = required(money).scale();
         if (scale < 0 || scale > Short.MAX_VALUE) {
-            throw new IllegalStateException(
+            // Defence in depth: Money already bounds scale well inside a short, so this is
+            // unreachable today. It exists so that widening Money's bound past SMALLINT
+            // fails loudly here rather than silently narrowing on the way to the database.
+            throw new MonetaryColumnException(
                     "Scale " + scale + " does not fit a SMALLINT column; the amount is corrupt");
         }
         return (short) scale;
@@ -110,11 +113,11 @@ public final class MoneyColumns {
                     "Currency column is null; a stored amount with no currency cannot be "
                             + "interpreted (INV-MON-02)");
         }
-        // CHAR(3) is blank-padded by PostgreSQL when read into a longer buffer, and some
-        // drivers surface that padding. Trimming is safe here and is not the silent coercion
-        // CurrencyCode forbids: it removes padding the column type added, not a difference
-        // the caller supplied.
-        String code = currency.trim();
+        // CHAR(3) is blank-padded by PostgreSQL, and some drivers surface that padding.
+        // Stripping it is not the silent coercion CurrencyCode forbids: it removes padding
+        // the column type added, not a difference the caller supplied. Trailing only —
+        // CHAR never pads on the left, so a leading space is corruption, not padding.
+        String code = currency.stripTrailing();
         try {
             return Money.ofPersisted(amountMinor, CurrencyCode.of(code), scale);
         } catch (RuntimeException e) {
@@ -156,7 +159,16 @@ public final class MoneyColumns {
                     + currency
                     + " CHAR(3) NOT NULL, "
                     + scale
-                    + " SMALLINT NOT NULL";
+                    + " SMALLINT NOT NULL, "
+                    // CHAR(3) is not a guarantee: PostgreSQL pads rather than rejects, so it
+                    // accepts 'US ' as happily as 'USD'. Without this check the only thing
+                    // standing between a malformed code and a balance is the application
+                    // remembering to validate on read. INV-MON-02 is enforceable in the
+                    // schema, so DEFINITION_OF_DONE §1.3 says it belongs there.
+                    + "CHECK (" + currency + " ~ '^[A-Z]{3}$'), "
+                    // The same bound Money enforces, generated from the same constant so the
+                    // two cannot drift.
+                    + "CHECK (" + scale + " BETWEEN 0 AND " + Money.MAX_SUPPORTED_SCALE + ")";
         }
     }
 }

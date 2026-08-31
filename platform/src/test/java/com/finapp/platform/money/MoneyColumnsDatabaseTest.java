@@ -42,6 +42,13 @@ class MoneyColumnsDatabaseTest {
 
     private static final MoneyColumns.ColumnNames COLUMNS = MoneyColumns.columnsFor("amount");
 
+    /** PostgreSQL SQLState codes; locale-independent, unlike the messages. */
+    private static final String NOT_NULL_VIOLATION = "23502";
+
+    private static final String CHECK_VIOLATION = "23514";
+
+    private static final String STRING_TOO_LONG = "22001";
+
     private static Connection connection;
 
     @BeforeAll
@@ -150,8 +157,61 @@ class MoneyColumnsDatabaseTest {
         // Enforced by the schema, not by application code: an amount with no currency must be
         // impossible to write at all, whatever wrote it (INV-MON-02).
         assertThatExceptionOfType(SQLException.class)
-                .isThrownBy(() -> insertWithNullCurrency())
-                .withMessageContaining("null");
+                .isThrownBy(MoneyColumnsDatabaseTest::insertWithNullCurrency)
+                // SQLState, not the message: PostgreSQL messages are localisable, and an
+                // assertion that breaks under a different lc_messages is not an assertion.
+                .matches(e -> NOT_NULL_VIOLATION.equals(e.getSQLState()));
+    }
+
+    @Test
+    @DisplayName("the schema rejects a malformed currency, which CHAR(3) alone does not")
+    void schemaRejectsMalformedCurrency() {
+        // CHAR(3) pads rather than rejects: 'US ' would otherwise be stored happily. The
+        // check constraint is what makes INV-MON-02 a schema guarantee rather than a habit.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> insertRawCurrency(500, "US"))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> insertRawCurrency(501, "usd"))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+
+        // Too long is rejected by the column type itself.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> insertRawCurrency(502, "USDD"))
+                .matches(e -> STRING_TOO_LONG.equals(e.getSQLState()));
+    }
+
+    @Test
+    @DisplayName("the schema rejects a scale outside the range Money allows")
+    void schemaRejectsImpossibleScale() {
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> insertRawScale(600, (short) -1))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> insertRawScale(601, (short) (Money.MAX_SUPPORTED_SCALE + 1)))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+    }
+
+    private static void insertRawCurrency(int id, String currency) throws SQLException {
+        try (PreparedStatement insert = connection.prepareStatement(insertSql())) {
+            insert.setInt(1, id);
+            insert.setLong(2, 100L);
+            insert.setString(3, currency);
+            insert.setShort(4, (short) 2);
+            insert.executeUpdate();
+        }
+    }
+
+    private static void insertRawScale(int id, short scale) throws SQLException {
+        try (PreparedStatement insert = connection.prepareStatement(insertSql())) {
+            insert.setInt(1, id);
+            insert.setLong(2, 100L);
+            insert.setString(3, "USD");
+            insert.setShort(4, scale);
+            insert.executeUpdate();
+        }
     }
 
     private static void insertWithNullCurrency() throws SQLException {
@@ -166,6 +226,16 @@ class MoneyColumnsDatabaseTest {
                                 + ") VALUES (400, 100, NULL, 2)")) {
             insert.executeUpdate();
         }
+    }
+
+    private static String insertSql() {
+        return "INSERT INTO money_round_trip (id, "
+                + COLUMNS.amountMinor()
+                + ", "
+                + COLUMNS.currency()
+                + ", "
+                + COLUMNS.scale()
+                + ") VALUES (?, ?, ?, ?)";
     }
 
     // -----------------------------------------------------------------

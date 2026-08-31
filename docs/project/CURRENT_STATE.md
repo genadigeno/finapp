@@ -80,6 +80,11 @@ Design decisions worth carrying forward:
 - **Reading is strict.** A null currency, an unknown or pseudo-currency, or an impossible
   scale raises `MonetaryColumnException` rather than returning an approximation — a corrupt
   row is a detectable problem until something defaults it into a wrong balance.
+- **The schema enforces what it can, not just the application.** `CHAR(3)` pads rather than
+  rejects, so it stores `'US '` as readily as `'USD'`; check constraints on the currency
+  pattern and the scale range close that. `DEFINITION_OF_DONE.md` §1.3 requires an invariant
+  enforceable by a database constraint to be enforced there. The scale bound is generated
+  from `Money.MAX_SUPPORTED_SCALE` so SQL and Java cannot drift.
 
 ---
 
@@ -334,6 +339,7 @@ what the `P0-TSK-007` review found about its own coverage guard.
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | Task completion review of `P0-TSK-011`. Probing PostgreSQL showed `CHAR(3)` accepts `'US '` — the column type was not the guarantee the design implied, leaving `INV-MON-02` enforced only by application code against `DEFINITION_OF_DONE.md` §1.3. Added check constraints on the currency pattern and scale range, generated from `Money.MAX_SUPPORTED_SCALE`, and proved them by weakening them. Also switched the not-null assertion from message text to SQLState (messages are localisable), tightened `trim()` to `stripTrailing()` to match its own stated rationale, and made the write path use `MonetaryColumnException` like the read path. |
 | 2026-08-31 | `P0-TSK-011` complete. `MoneyColumns` fixes the three-column storage shape from ADR-0003 and supplies the DDL migrations use. Round-trip verified against a real PostgreSQL across 0-, 2-, 3- and 4-decimal currencies and the `BIGINT` extremes. Written mechanism-agnostic: the task asked for a JPA embeddable, but no ADR has chosen a data-access mechanism — recorded as unresolved question 12. |
 | 2026-08-31 | Task completion review of `P0-TSK-010`. One important finding: `allocate(int)` and `allocate(long...)` resolved silently by literal width — `allocate(3)` split three ways, `allocate(3L)` returned the whole amount as one part. Proven, then removed by renaming to `allocateEvenly` / `allocateByWeights`, with a test guarding against reintroduction. |
 | 2026-08-31 | `P0-TSK-010` complete. `RoundingPolicy` with six named policies, explicit-policy rounding, and allocation that distributes the indivisible remainder rather than absorbing it. Zero-residual proven by sweeping ~160,000 even splits and 2,000 weighted ones, and demonstrated to fail when the remainder is discarded. 127 tests. |

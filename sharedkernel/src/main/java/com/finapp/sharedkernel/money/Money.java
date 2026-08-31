@@ -43,11 +43,16 @@ import java.util.Objects;
 public final class Money implements Comparable<Money> {
 
     /**
-     * No ISO 4217 currency currently exceeds 4 decimal places (CLF). The bound exists to turn
-     * a nonsensical scale — from a corrupt record or a programming error — into an immediate
-     * failure rather than an amount that is quietly off by orders of magnitude.
+     * The largest scale an amount may carry. No ISO 4217 currency currently exceeds 4 decimal
+     * places (CLF); the bound exists to turn a nonsensical scale — from a corrupt record or a
+     * programming error — into an immediate failure rather than an amount quietly off by
+     * orders of magnitude.
+     *
+     * <p>Public because the database check constraint enforcing the same bound is generated
+     * from it. Two independent copies of this number would eventually disagree, and the
+     * disagreement would only show up as rows the application refuses to read.
      */
-    private static final int MAX_SUPPORTED_SCALE = 9;
+    public static final int MAX_SUPPORTED_SCALE = 9;
 
     private final long minorUnits;
     private final CurrencyCode currency;

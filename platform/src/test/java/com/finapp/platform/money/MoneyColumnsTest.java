@@ -39,12 +39,26 @@ class MoneyColumnsTest {
         String ddl = MoneyColumns.columnsFor("gross").ddl();
 
         assertThat(ddl)
-                .isEqualTo(
-                        "gross_amount_minor BIGINT NOT NULL, "
-                                + "gross_currency CHAR(3) NOT NULL, "
-                                + "gross_scale SMALLINT NOT NULL");
+                .contains("gross_amount_minor BIGINT NOT NULL")
+                .contains("gross_currency CHAR(3) NOT NULL")
+                .contains("gross_scale SMALLINT NOT NULL");
         // A partially populated amount is not less information, it is uninterpretable.
         assertThat(ddl.split("NOT NULL", -1)).hasSize(4);
+    }
+
+    @Test
+    @DisplayName("the DDL constrains the currency and scale, because CHAR(3) does not")
+    void ddlConstrainsValues() {
+        String ddl = MoneyColumns.columnsFor("gross").ddl();
+
+        // CHAR(3) pads rather than rejects, so it accepts 'US ' as readily as 'USD'. Without
+        // a check constraint the only thing between a malformed code and a balance is the
+        // application remembering to validate on read.
+        assertThat(ddl).contains("CHECK (gross_currency ~ '^[A-Z]{3}$')");
+
+        // Generated from Money's own bound so the two cannot drift.
+        assertThat(ddl)
+                .contains("CHECK (gross_scale BETWEEN 0 AND " + Money.MAX_SUPPORTED_SCALE + ")");
     }
 
     @ParameterizedTest
@@ -114,6 +128,15 @@ class MoneyColumnsTest {
         assertThat(restored.scale()).isEqualTo(3);
         assertThat(restored).isEqualTo(Money.ofPersisted(1234L, USD, 3));
         assertThat(restored).isNotEqualTo(Money.ofMinorUnits(1234L, USD));
+    }
+
+    @Test
+    @DisplayName("a leading space is corruption, not padding, and is refused")
+    void leadingWhitespaceIsNotPadding() {
+        // CHAR pads on the right only. Accepting " US" would be coercing a value the column
+        // type could not have produced.
+        assertThatExceptionOfType(MonetaryColumnException.class)
+                .isThrownBy(() -> MoneyColumns.read(100L, " US", (short) 2));
     }
 
     @Test

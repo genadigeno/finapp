@@ -189,10 +189,21 @@ currency.
 **Why the field-name prefix.** One table often holds several amounts — a gross, a fee, a net.
 Prefixing keeps them distinct and stops one of them silently becoming "the" amount.
 
-**Why every column is `NOT NULL`.** An amount with no currency, or a currency with no scale,
-is not less information — it is uninterpretable. `INV-MON-02` requires the currency to be
-explicit, and the schema is where that is made impossible to violate rather than merely
-discouraged.
+**Why every column is `NOT NULL`, and why that is not enough.** An amount with no currency,
+or a currency with no scale, is not less information — it is uninterpretable. But `CHAR(3)`
+pads rather than rejects, so it stores `'US '` as happily as `'USD'`. The DDL therefore also
+carries check constraints:
+
+```sql
+CHECK (<field>_currency ~ '^[A-Z]{3}$')
+CHECK (<field>_scale BETWEEN 0 AND 9)
+```
+
+Without them the only thing between a malformed code and a balance is the application
+remembering to validate on read. `INV-MON-02` is enforceable in the schema, and
+`DEFINITION_OF_DONE.md` §1.3 says an invariant that can be enforced by a database constraint
+is enforced there rather than only in application code. The scale bound is generated from
+`Money.MAX_SUPPORTED_SCALE` so the SQL and the Java cannot drift.
 
 **Why scale is stored rather than derived.** Minor-unit counts are data that changes. A row
 holding only `1234` and `USD` would silently change meaning if that data changed — 12.34
