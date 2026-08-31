@@ -23,7 +23,7 @@ plugins {
 // but not in tests, or the reverse. Collation, broker semantics and eviction
 // behaviour all vary across versions. This makes the drift a build failure.
 // ---------------------------------------------------------------------------
-val verifyInfrastructureVersions by tasks.registering {
+val verifyInfrastructureVersions = tasks.register("verifyInfrastructureVersions") {
     group = "verification"
     description = "Fails if compose.yaml image versions differ from the version catalog."
 

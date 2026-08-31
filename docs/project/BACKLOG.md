@@ -93,7 +93,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-BUILD`
 
-**P0-TSK-005 — Database migration tooling**
+**P0-TSK-005 — Database migration tooling** — `COMPLETE` (2026-08-31)
 - Context: platform / data
 - Description: Flyway (or equivalent) with schema-per-module naming, forward-only migrations, and a documented convention for irreversible financial migrations.
 - Why: Financial schemas must evolve without ambiguity about applied state.

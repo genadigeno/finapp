@@ -57,6 +57,8 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | PostgreSQL | 18.6 | Debian-based image, ICU collation provider |
 | Kafka | 4.3.1 | KRaft mode, no ZooKeeper |
 | Redis | 8.10.1 | AOF persistence enabled locally |
+| Flyway | 12.4.0 | Matches the Spring Boot BOM; forward-only (ADR-0011) |
+| PostgreSQL JDBC | 42.7.13 | Matches the Spring Boot BOM |
 
 Infrastructure versions appear in both `compose.yaml` and the version catalog. The
 `verifyInfrastructureVersions` build task fails if they drift, because local infrastructure

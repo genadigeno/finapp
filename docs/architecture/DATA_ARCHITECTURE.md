@@ -13,6 +13,14 @@ Preferred roles:
 - Search index: derived query model
 - Analytics warehouse/database: derived analytical model
 
+## Schema Evolution
+
+Schema change is governed by [ADR-0011](../adr/ADR-0011-forward-only-migrations.md) and the
+conventions in [`DATA_MIGRATIONS.md`](DATA_MIGRATIONS.md). Migrations are forward-only, each
+module owns its schema and its migration history, and a change to a financial table is
+treated as a financial operation: history is not edited, corrections are new forward steps,
+and evidence is preserved.
+
 ## Data Rules
 
 - Use constraints to enforce important invariants.

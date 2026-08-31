@@ -39,6 +39,13 @@ assertj = "3.27.7"
 # collation, broker semantics and eviction behaviour all vary across versions.
 #
 # `verifyInfrastructureVersions` fails the build if compose.yaml drifts from these.
+# Flyway and the JDBC driver are pinned to exactly what Spring Boot 4.1.1 manages, for the
+# same reason as JUnit and AssertJ: one version across the build. Flyway in particular must
+# not differ between the tool that applies migrations and any runtime that validates them —
+# the schema history table is a shared format.
+flyway = "12.4.0"
+postgresqlDriver = "42.7.13"
+
 postgresImage = "18.6"
 kafkaImage = "4.3.1"
 redisImage = "8.10.1"
@@ -58,5 +65,10 @@ junit-bom = { module = "org.junit:junit-bom", version.ref = "junitJupiter" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 
+# --- Database migration -------------------------------------------------------
+flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+postgresql-driver = { module = "org.postgresql:postgresql", version.ref = "postgresqlDriver" }
+
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
+flyway = { id = "org.flywaydb.flyway", version.ref = "flyway" }

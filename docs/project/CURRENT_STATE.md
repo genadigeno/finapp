@@ -42,31 +42,40 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-004` — CI pipeline**
-Status: `BLOCKED` — dependencies not met.
+**`P0-TSK-006` — Define the context-to-module map**
+Status: `READY` — not started.
 
-Bounded context: platform / build. Depends on `P0-TSK-001` (`COMPLETE`), `P0-TSK-011`
-(Money persistence mapping, not started) and `P0-TSK-036` (test taxonomy, not started).
+Bounded context: architecture. No dependencies.
 
-Because `P0-TSK-004` is blocked, the next startable task is **`P0-TSK-005` — Database
-migration tooling** (depends on `P0-TSK-003`, now `COMPLETE`).
+Scope: map each bounded context to a planned module with all eight boundary attributes.
+Largely satisfied already by
+[`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md); the task is to verify
+completeness and close gaps, which is the precondition for `P0-TSK-007` (ArchUnit rules).
+
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-ARCH`.
 
 ### Just completed
 
-**`P0-TSK-003` — Local infrastructure via Docker Compose** — `COMPLETE` (2026-08-31).
+**`P0-TSK-005` — Database migration tooling** — `COMPLETE` (2026-08-31).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| `docker compose up` yields all three healthy | PostgreSQL 18.6, Kafka 4.3.1, Redis 8.10.1 all reported `healthy`; verified again after a full `down`/`up` cycle |
-| Versions match those used by Testcontainers | Versions live in `gradle/libs.versions.toml`; `verifyInfrastructureVersions` runs under `check` and fails on drift (demonstrated). `P0-TSK-035` consumes the same catalog entries |
-| No credentials committed beyond marked local-only defaults | Throwaway values named `local-development-only-not-a-secret`, each overridable by environment variable |
+| Migrations apply cleanly to an empty database | Database destroyed (`down -v`) and recreated; `flywayMigrate` applied `V001` and a re-run was a no-op, not an error |
+| Checksum drift fails the build | Appending one comment line to an applied migration made both `flywayValidate` and `flywayMigrate` fail with `Migration checksum mismatch for migration version 001`; reverting restored them |
+| Schema-per-module namespacing | `platform` schema owned by the platform module, with its `flyway_schema_history` table inside that schema. `nspacl` confirms `PUBLIC` holds no privileges |
 
-Beyond the stated criteria, verified functionally rather than by health check alone:
-PostgreSQL accepts queries and uses the ICU collation provider (`datlocprovider = i`,
-`datlocale = und-x-icu`); Kafka creates, describes and deletes a topic; Redis round-trips a
-value. Data survived a full stack restart, confirming the named volumes. All three ports
-bind to `127.0.0.1` only, confirmed with `netstat` — a development database listening on
-`0.0.0.0` is a real exposure on a laptop that joins untrusted networks.
+Decisions recorded in [ADR-0011](../adr/ADR-0011-forward-only-migrations.md), with
+operational conventions in
+[`DATA_MIGRATIONS.md`](../architecture/DATA_MIGRATIONS.md):
+- Forward-only. No undo scripts — a mistake is corrected by a new migration, structurally
+  the same rule as `INV-REV-01`.
+- Each schema-owning module owns its migrations **and** its migration history table.
+- Migrations never run on application startup: DDL is a decision, not a side effect of a
+  process starting.
+- `flywayClean` permanently disabled; `outOfOrder` and `baselineOnMigrate` both off.
+- An explicit convention for irreversible financial migrations: expand / backfill / verify /
+  switch / contract, with only the final step irreversible and never in the same release as
+  the switch.
 
 ---
 
@@ -99,6 +108,13 @@ Local infrastructure (2026-08-31), `P0-TSK-003`:
 - Image versions single-sourced in the version catalog, with a build task that fails on
   drift between `compose.yaml` and the catalog
 
+Migration tooling (2026-08-31), `P0-TSK-005`:
+- Flyway 12.4.0, pinned to the Spring Boot BOM version, applied to the `platform` module
+- Forward-only migrations with module-owned schema history (ADR-0011)
+- `V001` creates the `platform` schema, documents its ownership, and revokes `PUBLIC`
+- Migration conventions documented, including irreversible financial migrations and the
+  privilege model the DB-level invariants require
+
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
 - Phase gate model, status model and per-phase exit criteria — [`PHASE_GATES.md`](PHASE_GATES.md)
@@ -112,7 +128,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-005` is the next startable task; `P0-TSK-004` is blocked.
+None in progress. `P0-TSK-006` is the next task; `P0-TSK-004` remains blocked.
 
 ## Blockers
 
@@ -166,6 +182,17 @@ docker compose exec kafka /opt/kafka/bin/kafka-topics.sh ...
 Prefix with `MSYS_NO_PATHCONV=1`, or use PowerShell. This affects interactive use only —
 health checks and container entrypoints run inside Docker and are unaffected.
 
+**`clean` fails with "Unable to delete directory".** On Windows an orphaned Gradle daemon
+keeps module jars open, so `clean` cannot remove `build/`. It is leftover state, not a repo
+defect. `./gradlew --stop` handles the usual case; a daemon whose `GRADLE_USER_HOME` has been
+deleted survives that and must be killed by PID:
+
+```
+Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
+  Where-Object { $_.CommandLine -match 'GradleDaemon' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
 **Resetting local infrastructure.** `docker compose down` keeps data; `docker compose down -v`
 discards it. A reset is required after changing Kafka's `CLUSTER_ID`, or when moving to a new
 PostgreSQL major version without running `pg_upgrade` — the volume is formatted for the major
@@ -181,7 +208,8 @@ Recorded so it is not mistaken for a completed criterion.
 |------|---------------------|-------------|
 | `P0-TSK-001` | `DOD-BUILD` requires "CI green". No CI pipeline exists yet, so the build is verified only locally — including from a clean clone with an empty Gradle home. | `P0-TSK-004` |
 | `P0-TSK-002` | Same: no CI. Boundary enforcement is also partial — Gradle enforces direction, but cross-module internals and entity references rest on review. | `P0-TSK-004`, `P0-TSK-007` |
-| `P0-TSK-003` | Same: no CI. Additionally, local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised locally — they need a restricted application role. | `P0-TSK-004`, `P0-TSK-005`, `P0-TSK-022` |
+| `P0-TSK-003` | Same: no CI. Additionally, local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised locally — they need a restricted application role. | `P0-TSK-004`, `P0-TSK-022` |
+| `P0-TSK-005` | Same: no CI, so checksum drift fails the *task* rather than an automated pipeline. The migrator/application role split is designed and documented but not implemented; it must land before any table subject to a DB-privilege invariant is created. | `P0-TSK-004`, `P0-TSK-022` |
 
 ---
 
@@ -230,21 +258,19 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-005` — Database migration tooling.**
+**`P0-TSK-006` — Define the context-to-module map.**
 
-Rationale: `P0-TSK-004` (CI) is blocked on `P0-TSK-011` and `P0-TSK-036`. `P0-TSK-005` is
-now unblocked by `P0-TSK-003` and is on the critical path to everything with a schema — the
-idempotency table, outbox, inbox and audit trail all need migrations before they can exist,
-and every one of those is a Phase 0 exit-gate item.
+Rationale: `P0-TSK-007` (ArchUnit boundary rules) depends on it, and `P0-TSK-007` is the
+task that converts the module boundaries from documented-and-reviewed into
+mechanically-enforced. That gap is currently the weakest part of the architecture story:
+Gradle enforces dependency *direction*, but nothing yet prevents a cross-module internal
+reference.
 
-The migration *convention* matters more than the tool. Once financial history exists,
-migrations against immutable tables are constrained by `INV-HIST-01` and `INV-LED-03`, so
-forward-only migrations and a documented approach to irreversible financial changes must be
-settled before the first table is created.
+Much of `P0-TSK-006` is already done in `MODULE_ARCHITECTURE.md`. The work is to verify
+every planned module records all eight boundary attributes and that no state has two owners.
 
 Per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 4, work stays within that task —
-migration tooling and conventions only. No business tables, no idempotency table
-(`P0-TSK-015`), no outbox (`P0-TSK-019`), no audit schema (`P0-TSK-022`).
+no ArchUnit rules (`P0-TSK-007`), no `Money` type (`P0-TSK-009`).
 
 ---
 
@@ -252,6 +278,7 @@ migration tooling and conventions only. No business tables, no idempotency table
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-005` complete. Flyway 12.4.0, forward-only, module-owned schema history; ADR-0011 and `DATA_MIGRATIONS.md` written. |
 | 2026-08-31 | `P0-TSK-003` complete. Local infrastructure (PostgreSQL 18.6, Kafka 4.3.1 KRaft, Redis 8.10.1), pinned and health-checked, with a build-enforced version-drift check against the catalog. |
 | 2026-08-31 | `P0-TSK-002` complete. `sharedkernel`, `platform`, `app` with enforced dependency direction; `sharedkernel` proven Spring-free; `java-library` adopted for `api`/`implementation` boundary control. |
 | 2026-08-31 | `P0-TSK-001` complete. Gradle 9.7.1 multi-module build, Java 21 toolchain, Spring Boot 4.1.1 BOM, `build-logic` conventions, checksum-pinned wrapper. Phase 0 `IN_PROGRESS`. Repository placed under Git. |
