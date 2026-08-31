@@ -42,51 +42,45 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-008` — No-floating-point-money static rule**
-Status: `BLOCKED` — depends on `P0-TSK-009` (`Money`), which has not started.
+**`P0-TSK-010` — Rounding policy**
+Status: `READY` — not started.
 
-Because `P0-TSK-008` is blocked, the next startable task is **`P0-DOC-002`** (reconcile
-`MODULE_ARCHITECTURE.md` with the now-enforced rules) or **`P0-TSK-009`** (`Money` and
-`CurrencyCode`), which opens milestone M0.2.
+Bounded context: sharedkernel. Depends on `P0-TSK-009` (`COMPLETE`).
+
+Scope: explicit named rounding policies, and an allocation helper that splits an amount
+across n parts with **zero residual loss** (`INV-BAL-03` — absorbed residual is money
+creation).
+
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-03. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TSK-007` — ArchUnit boundary rules** — `COMPLETE` (2026-08-31).
+**`P0-TSK-009` — Implement `Money` and `CurrencyCode`** — `COMPLETE` (2026-08-31).
 
-Six rules plus a guard in
-[`ModuleBoundaryRulesTest`](../../app/src/test/java/com/finapp/app/architecture/ModuleBoundaryRulesTest.java),
-running on every build.
+The platform's first financial code. 70 tests in `sharedkernel`, all green.
 
-| Rule | Proven by |
+| Acceptance criterion | Evidence |
 |---|---|
-| `sharedkernelDependsOnNoOtherModule` | a class in the `sharedkernel` package referencing `platform` |
-| `platformDependsOnlyOnSharedkernel` | a class in the `platform` package referencing `app` |
-| `nothingDependsOnApp` | a business-module class referencing `FinappApplication` |
-| `sharedkernelIsFrameworkFree` | `@Component` on a class in the `sharedkernel` package |
-| `moduleInternalsArePrivateToTheirModule` | a business-module class using `platform.internal` |
-| `entitiesAreNotReferencedAcrossModules` | a business-module class referencing another module's `@Entity` |
-| `productionClassesLiveInAModulePackage` | a class placed directly in `com.finapp` |
+| Currency mismatch throws a domain exception, never coerces | `CurrencyMismatchException` on `plus`, `minus` and `compareTo`, carrying both currencies; a test asserts both operands are unchanged after a rejected operation |
+| Overflow is rejected rather than wrapping | `MonetaryOverflowException` on add, subtract, multiply and negate, including `negate(Long.MIN_VALUE)`, which would otherwise return itself and turn a debit into a debit |
+| Construction requires an explicit currency | No no-currency factory exists; `null` currency is rejected; `zero` is currency-scoped |
+| Immutable, no public mutator | Reflection test: all fields `private final`, class `final`, no method named `set*`; operations return new instances |
 
-Every one was demonstrated to fail and then reverted; the tree is clean of demonstration
-artefacts.
-
-The eighth test, `everyModuleWithProductionCodeIsAnalysed`, guards the suite itself. Every
-rule is vacuously satisfied for a module whose classes were never imported, so a
-misconfigured importer or a dropped dependency would turn the class into decoration that
-reports success — worse than no rules, because it invites confidence. It derives the expected
-set from the classpath rather than hard-coding it, and was proven by excluding a module that
-had production classes.
-
-Two design points worth carrying forward:
-- **Rules are phrased as conditions over all `com.finapp` classes**, not as
-  `noClasses().that().resideInAPackage("..sharedkernel..")`. ArchUnit fails a rule whose
-  `that()` clause matches nothing, and most modules have no production code yet — the
-  natural phrasing failed on four rules for exactly that reason. Suppressing it with
-  `allowEmptyShould(true)` would have made them pass for the wrong reason and keep passing
-  if they later stopped matching.
-- **The rules depend on a package convention** now stated in `MODULE_ARCHITECTURE.md` §6:
-  a module's internals live under `com.finapp.<module>.internal`. A module that ignores the
-  convention is invisible to the internals rule.
+Design decisions worth carrying forward:
+- **Two construction paths, deliberately asymmetric.** `ofMinorUnits` takes the scale from
+  the currency, which is right for an amount created now. `ofPersisted` is the only way to
+  build an amount whose scale differs from the currency's current definition, and is named
+  to be conspicuous — it exists solely so a historical amount survives a change to currency
+  data (ADR-0003).
+- **Scale mismatch is its own failure**, distinct from currency mismatch. The currencies
+  agree; what differs is the minor-unit definition each amount was created under.
+  Reinterpreting one is a redenomination decision, not an arithmetic one.
+- **No rounding, division or conversion.** `Money.of(BigDecimal)` refuses an amount with more
+  precision than the currency can hold rather than choosing between 12.34 and 12.35.
+  Rounding arrives in `P0-TSK-010` as an operation that requires a named mode.
+- **Pseudo-currencies rejected.** `XXX`, `XAU` and `XDR` report −1 minor units; treating them
+  as 0-decimal would make one gram of gold equal one thousandth of one.
+- **`CLF` has four decimal places**, so the scale bound is 9, not 3.
 
 ---
 
@@ -149,6 +143,13 @@ Boundary enforcement (2026-08-31), `P0-TSK-007`:
 - A guard test asserting the analysis actually sees production classes, so the suite cannot
   become silently vacuous
 
+Financial kernel (2026-08-31), `P0-TSK-009`:
+- `Money`: integer minor units, explicit `CurrencyCode`, stored scale (ADR-0003)
+- Exact arithmetic only — cross-currency, cross-scale and overflow all rejected with distinct
+  domain exceptions under one `MonetaryException` supertype
+- `CurrencyCode` validates against ISO 4217 and rejects codes with no minor unit
+- No floating point anywhere on the monetary path
+
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
 - Phase gate model, status model and per-phase exit criteria — [`PHASE_GATES.md`](PHASE_GATES.md)
@@ -162,7 +163,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-008` is blocked on `P0-TSK-009`; see Next Task.
+None in progress. `P0-TSK-010` is the next task; `P0-TSK-008` is now unblocked.
 
 ## Blockers
 
@@ -303,23 +304,19 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-009` — Implement `Money` and `CurrencyCode`.**
+**`P0-TSK-010` — Rounding policy.**
 
-Rationale: `P0-TSK-008` (the no-floating-point-money rule) is the last outstanding item in
-`P0-EPIC-02`, but it cannot be written before there is a monetary type to write it about —
-it depends on `P0-TSK-009`. Taking `P0-TSK-009` next unblocks it and opens milestone **M0.2**
-(financial kernel).
+Rationale: it is the other half of `Money`. This task deliberately shipped a type that cannot
+round, so every rounding decision must name its mode — but until `P0-TSK-010` exists there is
+no sanctioned way to round at all, and the temptation to add a convenient default grows with
+every caller that needs one.
 
-`P0-TSK-009` carries the highest design risk in Phase 0: ADR-0003 settles the
-representation, but an error in `Money` propagates into every table and every posting the
-platform will ever write. It is `DOD-KERNEL`, the strictest profile after `DOD-FIN`.
+Its allocation helper carries the highest financial risk in `P0-EPIC-03`: splitting an amount
+across n parts must reassemble to exactly the original, because an absorbed residual is money
+creation at scale (`INV-BAL-03`).
 
-`P0-DOC-002` (reconcile `MODULE_ARCHITECTURE.md` with the enforced rules) is also now
-startable and is small; it overlaps substantially with the documentation `P0-TSK-007`
-already updated.
-
-Per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 4, whichever is taken stays within
-its own scope.
+`P0-TSK-008` (no-floating-point-money static rule) is also now unblocked — `Money` exists for
+it to be written about.
 
 ---
 
@@ -327,6 +324,7 @@ its own scope.
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-009` complete. `Money` and `CurrencyCode` — the platform's first financial code. Integer minor units, explicit currency, stored scale; exact arithmetic only, with cross-currency, cross-scale, inexact-amount and overflow failures all distinct and all under one `MonetaryException` supertype. 70 tests. |
 | 2026-08-31 | Task completion review of `P0-TSK-007`. Probing showed ArchUnit was importing exactly one class — benign (it skips `package-info`, which is all `platform` and `sharedkernel` contain), but it exposed that the coverage guard asserted only that `app` was seen and would have passed if a module were dropped from the analysis. Guard replaced with one that derives expected coverage from the classpath, proven by excluding a module that had production code. Also added a rule that production classes must belong to a module package: a class directly in `com.finapp` was silently exempt from every rule. |
 | 2026-08-31 | `P0-TSK-007` complete. Six ArchUnit boundary rules enforced on every build, each proven by a deliberate violation; plus a guard test so the suite cannot become silently vacuous. `MODULE_ARCHITECTURE.md` §2 and §8 corrected — they claimed the rules were "not yet in place". |
 | 2026-08-31 | Task completion review of `P0-TSK-006`. Four defects found and fixed, all by mechanical checks rather than re-reading: `Instalment` owned by both `lending` and `bnpl` (the headline acceptance criterion, violated); the `app` module absent from the register entirely; `paymentmethods` and `crossborder` missing from the layering diagram; the §5 ownership table maintained as a second enumeration that could drift from §4. |

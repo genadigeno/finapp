@@ -10,9 +10,10 @@ plugins {
 //   - JPA / persistence
 //   - any project(...) dependency
 //
-// Its contents are value types only: Money, CurrencyCode, rounding policy,
-// typed identifiers, the event envelope, the Clock abstraction. Those arrive in
-// P0-TSK-009 onward. Business concepts may never enter it — a shared kernel
+// Its contents are value types only. Money and CurrencyCode exist (P0-TSK-009);
+// rounding policy (P0-TSK-010), typed identifiers (P0-TSK-012), the Clock
+// abstraction (P0-TSK-013) and the event envelope (P0-TSK-018) follow.
+// Business concepts may never enter it — a shared kernel
 // that accumulates domain nouns becomes the coupling sink a modular monolith
 // exists to prevent (MODULE_ARCHITECTURE.md §2).
 

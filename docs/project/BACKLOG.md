@@ -175,7 +175,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-03 — Money value type
 
-**P0-TSK-009 — Implement `Money` and `CurrencyCode`**
+**P0-TSK-009 — Implement `Money` and `CurrencyCode`** — `COMPLETE` (2026-08-31)
 - Context: sharedkernel
 - Description: Immutable `Money` holding minor units, ISO-4217 currency and scale; arithmetic that rejects currency mismatch and overflow; no floating point anywhere; no default currency.
 - Why: `INV-MON-01`, `INV-MON-02` — currency is always explicit and money is never binary floating point.
