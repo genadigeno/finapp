@@ -602,6 +602,16 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-SEC`
 
+**P0-TSK-040 — Update mechanism for pinned CI actions and scanner images**
+- Context: platform / build / security
+- Description: An automated path for proposing updates to the commit-SHA-pinned GitHub Actions and digest-pinned scanner images in `.github/workflows/ci.yml` (Dependabot, or an equivalent that raises a reviewable change).
+- Why: Discovered during the `P0-TSK-004` review. Pinning to a SHA removes the risk of a tag being repointed, but it also freezes the action: without an update path the pins rot, and a security fix in `actions/checkout` or in a scanner is never picked up. Pinning without maintenance trades one supply-chain risk for another, quieter one.
+- Deps: P0-TSK-004
+- Accept: An update to a pinned action or image produces a reviewable proposed change rather than requiring someone to remember; the update procedure is documented alongside the pinning rationale.
+- Risk: Low
+- Cx: S
+- DoD: `DOD-SEC`
+
 ---
 
 ## P0-EPIC-11 — Test Infrastructure

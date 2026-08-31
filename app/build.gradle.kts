@@ -8,15 +8,28 @@ plugins {
     // without taking on Boot's packaging behaviour.
     alias(libs.plugins.spring.boot)
 
-    // Produces a CycloneDX SBOM of app's runtime classpath. app is where the SBOM belongs:
-    // it is the only module that resolves the complete deployable dependency set, so its
-    // SBOM is the honest answer to "what ships?".
+    // Produces the CycloneDX SBOM that CI's dependency scan reads. A scanner cannot resolve
+    // a Gradle dependency graph, and Gradle exports no machine-readable dependency set of
+    // its own, so the SBOM is what makes a dependency scan possible at all.
     //
-    // CI's dependency scan reads this. A scanner cannot usefully scan a build script, and
-    // Gradle exports no machine-readable dependency set of its own.
+    // app is where it belongs: it is the only module that resolves the complete dependency
+    // set.
+    //
+    // SCOPE: this SBOM covers the WHOLE resolved dependency set, test dependencies
+    // included — 21 of its ~61 components are test-only. Plugin 3.4.1 exposes no
+    // configuration filter, and although it marks test components with the property
+    // `cdx:maven:package:test`, that is not the `scope` field a scanner reads.
+    //
+    // Scanning test dependencies is deliberate and defensible: a compromised test library
+    // executes on CI runners with repository access, which is a real supply-chain path. But
+    // it means a HIGH/CRITICAL advisory in a test-only library will fail the build even
+    // though nothing vulnerable ships.
+    //
+    // KNOWN LIMITATION: this SBOM must NOT be published as shipping provenance while it
+    // includes test scope — it would overstate what is deployed. Narrowing it is owned by
+    // Phase 15 (supply chain and provenance); see CURRENT_STATE.md.
     alias(libs.plugins.cyclonedx)
 }
-
 
 dependencies {
     // platform() applies the Spring Boot BOM as a set of version constraints.

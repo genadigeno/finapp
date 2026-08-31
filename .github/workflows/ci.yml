@@ -27,7 +27,11 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded pull-request runs are cancelled; runs on main are not. A main run is the
+  # record that a merged change passed its gates, and discarding it to save a few minutes
+  # trades evidence for speed — the wrong trade on a platform whose CI results are the
+  # justification for believing the build is sound.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   # Scanners run as pinned container images rather than as marketplace actions: one less
