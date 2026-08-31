@@ -13,16 +13,9 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
-import java.io.File;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 
 /**
@@ -88,7 +81,7 @@ class ModuleBoundaryRulesTest {
     static void everyModuleWithProductionCodeIsAnalysed(JavaClasses imported) {
         Set<String> analysed =
                 imported.stream()
-                        .map(ModuleBoundaryRulesTest::moduleOf)
+                        .map(ProductionModules::of)
                         .filter(Objects::nonNull)
                         .collect(Collectors.toUnmodifiableSet());
 
@@ -103,68 +96,7 @@ class ModuleBoundaryRulesTest {
         // must be represented in the import.
         assertThat(analysed)
                 .as("every module on the classpath that has production classes must be analysed")
-                .containsAll(modulesOnClasspathWithProductionClasses());
-    }
-
-    /**
-     * Modules whose build output is on the classpath and contains at least one class other
-     * than {@code package-info}. A module holding only {@code package-info} contributes
-     * nothing for ArchUnit to import, which is why it is excluded rather than treated as a
-     * failure.
-     */
-    private static Set<String> modulesOnClasspathWithProductionClasses() {
-        Set<String> modules = new java.util.TreeSet<>();
-        for (String entry : System.getProperty("java.class.path").split(File.pathSeparator)) {
-            Path path = Path.of(entry);
-            String module = moduleOwning(path);
-            if (module == null || !isMainOutput(path)) {
-                continue;
-            }
-            if (containsProductionClasses(path)) {
-                modules.add(module);
-            }
-        }
-        return modules;
-    }
-
-    /** The Gradle module a classpath entry belongs to: the element before {@code build}. */
-    private static String moduleOwning(Path path) {
-        for (int i = 0; i < path.getNameCount() - 1; i++) {
-            if (path.getName(i + 1).toString().equals("build")) {
-                return path.getName(i).toString();
-            }
-        }
-        return null;
-    }
-
-    /** Main source output only — test output must not count towards analysed coverage. */
-    private static boolean isMainOutput(Path path) {
-        String normalised = path.toString().replace(File.separatorChar, '/');
-        return normalised.contains("/build/classes/java/main") || normalised.contains("/build/libs/");
-    }
-
-    private static boolean containsProductionClasses(Path path) {
-        try {
-            if (Files.isDirectory(path)) {
-                try (java.util.stream.Stream<Path> files = Files.walk(path)) {
-                    return files.anyMatch(f -> isProductionClassFile(f.getFileName().toString()));
-                }
-            }
-            if (Files.isRegularFile(path) && path.toString().endsWith(".jar")) {
-                try (JarFile jar = new JarFile(path.toFile())) {
-                    return jar.stream()
-                            .map(JarEntry::getName)
-                            .anyMatch(name -> isProductionClassFile(name.substring(name.lastIndexOf('/') + 1)));
-                }
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not inspect classpath entry " + path, e);
-        }
-        return false;
-    }
-
-    private static boolean isProductionClassFile(String fileName) {
-        return fileName.endsWith(".class") && !fileName.equals("package-info.class");
+                .containsAll(ProductionModules.onClasspathWithProductionClasses());
     }
 
     // ---------------------------------------------------------------------
@@ -378,13 +310,7 @@ class ModuleBoundaryRulesTest {
 
     /** The module a class belongs to, or {@code null} if it is not one of ours. */
     private static String moduleOf(JavaClass javaClass) {
-        String packageName = javaClass.getPackageName();
-        if (!packageName.startsWith(ROOT)) {
-            return null;
-        }
-        String remainder = packageName.substring(ROOT.length());
-        int dot = remainder.indexOf('.');
-        return dot < 0 ? remainder : remainder.substring(0, dot);
+        return ProductionModules.of(javaClass);
     }
 
     private static boolean isInternalTo(JavaClass javaClass, String module) {

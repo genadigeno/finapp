@@ -27,7 +27,9 @@ import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -99,15 +101,37 @@ class NoFloatingPointMoneyRulesTest {
     private static final Set<String> EXEMPT_CLASSES = Set.of();
 
     // ---------------------------------------------------------------------
-    // Guard: the rule must actually see the code it claims to protect.
+    // Guard: the rules must actually see the code they claim to protect.
     //
-    // Every rule below is vacuously satisfied over an empty import. A rule that
-    // protects INV-MON-01 while seeing no monetary class is not a weak rule, it
-    // is a false report of safety.
+    // Every rule below is vacuously satisfied over classes that were never
+    // imported. A rule that protects INV-MON-01 while seeing nothing is not a
+    // weak rule, it is a false report of safety on the platform's most
+    // fundamental financial guarantee.
+    //
+    // The first version of this guard asserted only that Money was analysed.
+    // That was demonstrated insufficient during this task's completion review:
+    // narrowing the sweep to sharedkernel left the guard green while a double
+    // planted in platform's MoneyColumns went entirely undetected, and the
+    // build passed. Coverage is therefore derived from the classpath, so a
+    // module that stops being analysed fails the build instead of quietly
+    // losing its protection.
     // ---------------------------------------------------------------------
 
     @ArchTest
-    static void theMonetaryKernelIsWithinReachOfTheRule(JavaClasses imported) {
+    static void everyModuleWithProductionCodeIsAnalysed(JavaClasses imported) {
+        Set<String> analysed =
+                imported.stream()
+                        .map(ProductionModules::of)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toUnmodifiableSet());
+
+        assertThat(analysed)
+                .as("every module with production classes must be within reach of INV-MON-01")
+                .containsAll(ProductionModules.onClasspathWithProductionClasses());
+
+        // Named explicitly as well as derived. Money is the reason this rule exists, and a
+        // classpath-derived expectation would not notice if sharedkernel were ever reduced to
+        // package-info and therefore legitimately excluded from the derivation above.
         assertThat(imported.stream().map(JavaClass::getFullName))
                 .as("the class this invariant exists for must be analysed")
                 .contains("com.finapp.sharedkernel.money.Money");

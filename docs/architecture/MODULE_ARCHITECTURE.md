@@ -581,7 +581,9 @@ enforces the rest on every build. Anything below marked *(review)* has no mechan
 ### Monetary type boundary
 
 `INV-MON-01` — no binary floating point on the path of a monetary value — is enforced by
-`NoFloatingPointMoneyRulesTest` on every build (`P0-TSK-008`).
+`NoFloatingPointMoneyRulesTest` on every build (`P0-TSK-008`). This implements the rule
+ADR-0006 lists under *Additional enforced rules*; the implemented scope is deliberately wider
+than the "monetary code paths" phrasing there, for the reason below.
 
 **Scope is default-deny over every production class**, not a list of financial packages. A
 list of financial packages is a denylist, and a denylist fails in the case that matters: a new
@@ -597,6 +599,13 @@ Four surfaces are checked: *(ArchUnit)*
   what catches `new BigDecimal(0.1)`, `BigDecimal::doubleValue` and `ResultSet::getDouble`,
   none of which appear in any declaration of ours;
 - reads and writes of a floating-point field.
+
+**Coverage guard.** Both rule suites derive the set of modules they must have analysed from
+the classpath (`ProductionModules`), because an ArchUnit rule is vacuously satisfied over
+classes it never imported. A guard that names what it expects to see by hand does not notice a
+module dropping out of the sweep — proven during the `P0-TSK-008` review, where narrowing the
+sweep left every floating-point rule green while a `double` planted in `platform` went
+undetected and the build passed. *(ArchUnit)*
 
 **Known limit.** A `double` local computed only from compile-time constants and narrowed by a
 cast is not detectable: a cast is a bytecode instruction rather than a declaration or access,
