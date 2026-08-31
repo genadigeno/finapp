@@ -1,5 +1,55 @@
-# Claude Code personal project instructions
+# --- Claude Code -----------------------------------------------------------
 CLAUDE.local.md
-
-# Generated/local state
 .claude/*.local.*
+
+# --- Gradle ----------------------------------------------------------------
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# gradle-wrapper.jar IS committed, deliberately. It is the bootstrapper that
+# lets a clean clone build without a preinstalled Gradle. Its integrity is
+# protected by the checksums documented in gradle-wrapper.properties, not by
+# excluding it from version control.
+
+# Local, machine-specific Gradle settings. Machine-specific configuration (JVM
+# args, proxy or truststore settings, credentials) belongs in GRADLE_USER_HOME,
+# never in the repository — the build must not depend on one developer's setup.
+gradle.properties
+
+# --- Java ------------------------------------------------------------------
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.war
+*.ear
+hs_err_pid*
+replay_pid*
+
+# --- IDE -------------------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.vscode/
+.settings/
+.project
+.classpath
+
+# --- OS --------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# --- Secrets ---------------------------------------------------------------
+# Belt and braces. Secrets must never reach the repository (.claude/rules/security.md);
+# P0-TSK-031 adds scanning so this is not the only line of defence.
+*.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+secrets/

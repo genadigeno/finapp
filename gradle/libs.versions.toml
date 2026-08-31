@@ -1,0 +1,32 @@
+# Gradle version catalog — the single source of truth for dependency versions.
+#
+# Rule: no version literal appears in any build script. If a build file contains
+# a version string, it belongs here instead. This exists so that a dependency
+# upgrade is one reviewable line in one file, not a search across modules — and
+# so that "which version of X are we on?" has exactly one answer.
+#
+# Scope note (P0-TSK-001): this catalog is deliberately minimal. Entries are
+# added by the task that first needs them, not speculatively:
+#   Flyway        -> P0-TSK-005      ArchUnit      -> P0-TSK-007
+#   Testcontainers-> P0-TSK-035      WireMock      -> P0-TSK-037
+#   OpenTelemetry -> P0-TSK-028
+
+[versions]
+# Spring Boot 4.1.1 is the current GA line. Chosen over the 3.5.x line because
+# this platform spans 17 phases: starting on a superseded major guarantees a
+# framework migration during Phases 3-5, which are the financially critical
+# ones. See docs/project/CURRENT_STATE.md change log.
+springBoot = "4.1.1"
+
+[libraries]
+# --- BOM -------------------------------------------------------------------
+# Consumed via platform(). This propagates managed versions to every dependency
+# below, which is why those declarations carry no version of their own.
+spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }
+
+# --- Application (versions supplied by the BOM) -----------------------------
+spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }

@@ -1,0 +1,32 @@
+# Line-ending and diff policy.
+#
+# Git stores LF in the object database. The working tree is normalised to LF on
+# every platform so that a build produced on Windows is byte-identical to one
+# produced on Linux CI. Reproducibility across machines is a DOD-BUILD
+# requirement ("no developer-machine-specific assumptions").
+
+* text=auto eol=lf
+
+# POSIX interpreters read the shebang literally. A CRLF `gradlew` fails on Linux
+# with "bad interpreter: No such file or directory" — a confusing failure that
+# only appears in CI, never on the developer's machine. Pin it explicitly.
+*.sh        text eol=lf
+gradlew     text eol=lf
+
+# Windows batch interpreters require CRLF.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Never normalise binaries. gradle-wrapper.jar is committed by design: it is the
+# mechanism by which a clean clone can build without a preinstalled Gradle.
+*.jar       binary
+*.zip       binary
+*.png       binary
+*.jpg       binary
+*.gif       binary
+*.pdf       binary
+*.keystore  binary
+*.p12       binary
+
+# Generated files: exclude from language statistics and collapse in diffs.
+gradle/wrapper/gradle-wrapper.jar linguist-vendored
