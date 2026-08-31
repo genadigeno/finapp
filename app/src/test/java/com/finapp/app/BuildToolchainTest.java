@@ -19,13 +19,29 @@ import org.junit.jupiter.api.Test;
  */
 class BuildToolchainTest {
 
-    /** Class-file major version for Java 21 (JVMS 4.1). */
-    private static final int JAVA_21_CLASS_FILE_MAJOR = 65;
-
     private static final int CLASS_FILE_MAGIC = 0xCAFEBABE;
 
+    /**
+     * Class-file major versions start at 45 for Java 1.1 and increment by one per release,
+     * so Java N compiles to major version N + 44 (JVMS 4.1).
+     */
+    private static final int CLASS_FILE_MAJOR_OFFSET = 44;
+
+    /**
+     * The pinned toolchain version, injected by the build from the version catalog. Read
+     * rather than hardcoded so that the expected value has exactly one definition: a second
+     * copy of "21" here would silently stop matching the day the toolchain is bumped.
+     */
+    private static int pinnedJavaVersion() {
+        String pinned = System.getProperty("finapp.java.toolchain");
+        assertThat(pinned)
+                .as("system property finapp.java.toolchain, injected by finapp.java-conventions")
+                .isNotBlank();
+        return Integer.parseInt(pinned);
+    }
+
     @Test
-    @DisplayName("compiled bytecode targets Java 21, as pinned by the Gradle toolchain")
+    @DisplayName("compiled bytecode targets the pinned toolchain version")
     void bytecodeTargetsPinnedJavaVersion() throws IOException {
         String resource = "/" + FinappApplication.class.getName().replace('.', '/') + ".class";
 
@@ -41,7 +57,7 @@ class BuildToolchainTest {
 
             assertThat(major)
                     .as("class-file major version of compiled production code")
-                    .isEqualTo(JAVA_21_CLASS_FILE_MAJOR);
+                    .isEqualTo(pinnedJavaVersion() + CLASS_FILE_MAJOR_OFFSET);
         }
     }
 
@@ -50,7 +66,7 @@ class BuildToolchainTest {
     void testsRunOnPinnedJavaVersion() {
         assertThat(Runtime.version().feature())
                 .as("test JVM feature version")
-                .isEqualTo(21);
+                .isEqualTo(pinnedJavaVersion());
     }
 
     private static InputStream requireStream(InputStream in, String resource) {

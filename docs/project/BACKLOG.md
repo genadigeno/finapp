@@ -87,7 +87,8 @@ Status: `IN_PROGRESS`
 - Context: platform / build
 - Description: CI running build, unit tests, integration tests, architecture tests, dependency scan and secret scan on every change.
 - Why: A gate that is not automated is a gate that will be skipped.
-- Deps: P0-TSK-001, P0-TSK-011, P0-TSK-036
+- Deps: P0-TSK-001, P0-TSK-002
+- Dependency correction (2026-08-31 review): previously declared `P0-TSK-011` (Money persistence mapping) and `P0-TSK-036` (test taxonomy). Neither is required to run a build with its tests, and both are scheduled after several tasks that carry `DOD-BUILD` — whose "CI green" criterion therefore could not be satisfied by any of them. The over-specified dependency, not the work itself, was the blocker. CI runs whatever tests exist and gains steps as later tasks add them.
 - Accept: Pipeline green on a clean clone; a deliberately introduced boundary violation fails CI; a deliberately committed dummy secret fails CI.
 - Risk: Low
 - Cx: M

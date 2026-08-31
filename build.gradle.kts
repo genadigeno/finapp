@@ -52,12 +52,20 @@ val verifyInfrastructureVersions = tasks.register("verifyInfrastructureVersions"
             .toMap()
 
         val problems = buildList {
+            // Catalog -> compose: every pinned image must be present at the pinned version.
             expected.forEach { (image, wanted) ->
                 when (val found = declared[image]) {
                     null -> add("compose.yaml declares no '" + image + "' image, catalog expects " + wanted)
                     wanted -> Unit
                     else -> add("compose.yaml pins " + image + ":" + found + " but the catalog says " + wanted)
                 }
+            }
+            // compose -> catalog: an image the catalog does not know about is unpinned as far
+            // as the test infrastructure is concerned, so Testcontainers would silently use a
+            // different version. Checking only one direction lets a new service slip through
+            // entirely, which defeats the purpose of the check.
+            declared.keys.filterNot(expected::containsKey).sorted().forEach { image ->
+                add("compose.yaml declares image '" + image + "' which is not pinned in the version catalog")
             }
         }
 

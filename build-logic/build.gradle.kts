@@ -4,15 +4,7 @@ plugins {
     `kotlin-dsl`
 }
 
-dependencies {
-    // Makes the Spring Boot plugin resolvable from a convention plugin. The
-    // version comes from the shared catalog; markerCoordinates maps a plugin id
-    // to its marker artifact.
-    implementation(libs.plugins.spring.boot.get().let {
-        "${it.pluginId}:${it.pluginId}.gradle.plugin:${it.version}"
-    })
-}
-
 kotlin {
-    jvmToolchain(21)
+    // Sourced from the catalog so the toolchain version has one definition.
+    jvmToolchain(libs.versions.javaToolchain.get().toInt())
 }

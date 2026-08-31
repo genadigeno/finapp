@@ -31,8 +31,13 @@ plugins {
 // already established in compose.yaml.
 // ---------------------------------------------------------------------------
 flyway {
+    // These defaults MUST match the defaults in compose.yaml — they are the same three
+    // environment variables, so overriding FINAPP_DB_NAME (or user, or password) moves the
+    // container and the migration tool together instead of only one of them.
+    val dbName = providers.environmentVariable("FINAPP_DB_NAME").orElse("finapp").get()
+
     url = providers.environmentVariable("FINAPP_DB_URL")
-        .orElse("jdbc:postgresql://127.0.0.1:5432/finapp").get()
+        .orElse("jdbc:postgresql://127.0.0.1:5432/$dbName").get()
     user = providers.environmentVariable("FINAPP_DB_USER").orElse("finapp").get()
     password = providers.environmentVariable("FINAPP_DB_PASSWORD")
         .orElse("local-development-only-not-a-secret").get()
@@ -66,25 +71,23 @@ flyway {
 }
 
 dependencies {
-    // Drivers for the Flyway tasks. Flyway 10+ ships database support separately, so
-    // flyway-database-postgresql is required in addition to the JDBC driver.
-    // `api`, not `implementation`: sharedkernel types (Money, typed identifiers,
-    // the event envelope) will appear in platform's own public signatures — an
-    // outbox record carries an envelope, an audit record carries an actor id.
-    // Consumers of platform therefore need those types to compile against it.
+    // `api`, not `implementation`: sharedkernel types (Money, typed identifiers, the event
+    // envelope) will appear in platform's own public signatures — an outbox record carries
+    // an envelope, an audit record carries an actor id. Consumers of platform therefore
+    // need those types to compile against it.
     //
-    // This is what makes the documented chain app -> platform -> sharedkernel
-    // literally true: app depends on platform and receives sharedkernel through
-    // it, rather than declaring a second edge.
+    // This is what makes the documented chain app -> platform -> sharedkernel literally
+    // true: app depends on platform and receives sharedkernel through it, rather than
+    // declaring a second edge.
     api(project(":sharedkernel"))
 
-    // The Spring Boot BOM is applied for version alignment only. The Boot
-    // *plugin* is not applied here: it would replace `jar` with `bootJar`, which
-    // is correct for an executable and wrong for a library.
+    // No Spring artefact, in main or test.
     //
-    // No Spring artefact is declared yet. Platform's contents — outbox, inbox,
-    // idempotency, audit, correlation, telemetry, error contract — arrive in
-    // P0-TSK-014 onward and will add what they actually need at that point.
-    testImplementation(platform(libs.spring.boot.bom))
-    testImplementation(libs.spring.boot.starter.test)
+    // Platform will need Spring once it has outbox, inbox, idempotency and audit
+    // components (P0-TSK-014 onward), and it will be added by the task that needs it.
+    // Declaring it now is speculative, and it would put the whole Spring test stack on the
+    // classpath of a test that uses only JUnit and AssertJ.
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
 }

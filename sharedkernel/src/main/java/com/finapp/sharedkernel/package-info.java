@@ -18,6 +18,6 @@
  * <p><strong>No dependencies on other modules.</strong> This package sits at the bottom of
  * the dependency graph: {@code app -> platform -> sharedkernel}.
  *
- * @see <a href="../../../../../../docs/architecture/MODULE_ARCHITECTURE.md">MODULE_ARCHITECTURE.md</a>
+ * <p>See {@code docs/architecture/MODULE_ARCHITECTURE.md} in the repository.
  */
 package com.finapp.sharedkernel;

@@ -12,10 +12,15 @@ build/
 # protected by the checksums documented in gradle-wrapper.properties, not by
 # excluding it from version control.
 
-# Local, machine-specific Gradle settings. Machine-specific configuration (JVM
-# args, proxy or truststore settings, credentials) belongs in GRADLE_USER_HOME,
-# never in the repository — the build must not depend on one developer's setup.
-gradle.properties
+# NOTE: project-level gradle.properties is deliberately NOT ignored.
+#
+# It was, and that was wrong: a blanket `gradle.properties` rule silently swallows a
+# legitimate committed file (build-wide settings such as org.gradle.caching), and a
+# silently-ignored file is worse than an inconvenient one.
+#
+# Machine-specific configuration — JVM args, proxy or truststore settings, credentials —
+# belongs in GRADLE_USER_HOME (~/.gradle/gradle.properties), which is outside the repository
+# and therefore cannot be committed by accident anyway.
 
 # --- Java ------------------------------------------------------------------
 *.class

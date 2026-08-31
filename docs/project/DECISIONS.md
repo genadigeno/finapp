@@ -42,6 +42,13 @@ Domain facts and their publication records commit in the same transaction via a 
 outbox; consumers deduplicate via an inbox. Kafka is transport, never the accounting source
 of truth. → [ADR-0005](../adr/ADR-0005-transactional-outbox.md)
 
+### Schema evolution
+Database migrations are forward-only with no undo scripts: a mistake is corrected by a new
+migration, structurally the same rule as correcting a financial error with a compensating
+entry. Each schema-owning module owns its migrations and its own migration history table.
+Migrations never run as a side effect of application startup. → [ADR-0011](../adr/ADR-0011-forward-only-migrations.md),
+[`DATA_MIGRATIONS.md`](../architecture/DATA_MIGRATIONS.md)
+
 ### Audit
 The audit trail is a dedicated append-only store, immutable at the database privilege level
 and written in the same transaction as the action it records. Application logs are not an

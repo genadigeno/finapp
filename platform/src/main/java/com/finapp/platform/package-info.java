@@ -23,6 +23,6 @@
  * <p><strong>Dependency direction.</strong> {@code app -> platform -> sharedkernel}.
  * Platform may depend on sharedkernel and on nothing else in this build.
  *
- * @see <a href="../../../../../../docs/architecture/MODULE_ARCHITECTURE.md">MODULE_ARCHITECTURE.md</a>
+ * <p>See {@code docs/architecture/MODULE_ARCHITECTURE.md} in the repository.
  */
 package com.finapp.platform;

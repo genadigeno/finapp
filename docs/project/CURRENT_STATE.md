@@ -132,10 +132,16 @@ None in progress. `P0-TSK-006` is the next task; `P0-TSK-004` remains blocked.
 
 ## Blockers
 
-**`P0-TSK-004` (CI pipeline)** cannot start yet. It depends on `P0-TSK-011` and
-`P0-TSK-036`, neither of which has started, and it must also resolve the TLS-interception
-problem below for whatever runner it uses. This is sequencing, not an impediment — but it
-means `DOD-BUILD`'s "CI green" stays unmet across every task completed so far.
+None.
+
+`P0-TSK-004` (CI pipeline) was recorded as blocked. The 2026-08-31 task completion review
+found the blocker was a defect in the backlog, not in the work: `P0-TSK-004` declared
+dependencies on `P0-TSK-011` (Money persistence mapping) and `P0-TSK-036` (test taxonomy),
+neither of which is required to run a build with its tests. Because both are scheduled after
+several tasks carrying `DOD-BUILD`, whose "CI green" criterion they could therefore never
+satisfy, the plan contained an unsatisfiable requirement. Dependencies corrected to
+`P0-TSK-001, P0-TSK-002`; CI is now startable and closes the outstanding `DOD-BUILD` gap
+across all four completed tasks.
 
 ---
 
@@ -206,10 +212,9 @@ Recorded so it is not mistaken for a completed criterion.
 
 | Task | DoD item not yet met | Owning task |
 |------|---------------------|-------------|
-| `P0-TSK-001` | `DOD-BUILD` requires "CI green". No CI pipeline exists yet, so the build is verified only locally — including from a clean clone with an empty Gradle home. | `P0-TSK-004` |
-| `P0-TSK-002` | Same: no CI. Boundary enforcement is also partial — Gradle enforces direction, but cross-module internals and entity references rest on review. | `P0-TSK-004`, `P0-TSK-007` |
-| `P0-TSK-003` | Same: no CI. Additionally, local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised locally — they need a restricted application role. | `P0-TSK-004`, `P0-TSK-022` |
-| `P0-TSK-005` | Same: no CI, so checksum drift fails the *task* rather than an automated pipeline. The migrator/application role split is designed and documented but not implemented; it must land before any table subject to a DB-privilege invariant is created. | `P0-TSK-004`, `P0-TSK-022` |
+| `P0-TSK-001` — `P0-TSK-005` | `DOD-BUILD` requires "CI green". No pipeline exists yet, so every verification to date is local — though each was run from a clean clone, and `P0-TSK-001` additionally from an empty Gradle home with a different `JAVA_HOME`. `P0-TSK-004` is now unblocked and closes this. | `P0-TSK-004` |
+| `P0-TSK-002` | Boundary enforcement is partial: Gradle enforces dependency direction and classpath tests assert module isolation, but cross-module internals and entity references rest on review until ArchUnit lands. | `P0-TSK-007` |
+| `P0-TSK-003`, `P0-TSK-005` | Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised. The migrator/application role split is designed and documented (`DATA_MIGRATIONS.md` §5) but not implemented, and must land **before** any table subject to those invariants is created. | `P0-TSK-022` |
 
 ---
 
@@ -278,6 +283,7 @@ no ArchUnit rules (`P0-TSK-007`), no `Money` type (`P0-TSK-009`).
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | Task completion review of `P0-TSK-001`, `-002`, `-003`, `-005`. No critical or financial findings — no money-handling code exists yet. Six important findings fixed: an unsatisfiable `DOD-BUILD` "CI green" requirement caused by over-specified `P0-TSK-004` dependencies; a one-directional infrastructure drift check that let an unpinned image pass (proven, then closed); dead Spring Boot configuration in `build-logic` (proven unnecessary); an unnecessary Spring test stack in `platform` contradicting its own comment; a name-substring scope test replaced with a structural one; ADR-0011 missing from `DECISIONS.md`. Java toolchain version moved into the version catalog, removing four duplicated copies of "21". |
 | 2026-08-31 | `P0-TSK-005` complete. Flyway 12.4.0, forward-only, module-owned schema history; ADR-0011 and `DATA_MIGRATIONS.md` written. |
 | 2026-08-31 | `P0-TSK-003` complete. Local infrastructure (PostgreSQL 18.6, Kafka 4.3.1 KRaft, Redis 8.10.1), pinned and health-checked, with a build-enforced version-drift check against the catalog. |
 | 2026-08-31 | `P0-TSK-002` complete. `sharedkernel`, `platform`, `app` with enforced dependency direction; `sharedkernel` proven Spring-free; `java-library` adopted for `api`/`implementation` boundary control. |

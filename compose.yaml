@@ -33,6 +33,8 @@ services:
     # this file exists to prevent.
     image: postgres:18.6
     environment:
+      # These three defaults are duplicated in platform/build.gradle.kts, which must
+      # connect to this container to run migrations. Change one, change both.
       POSTGRES_DB: ${FINAPP_DB_NAME:-finapp}
       POSTGRES_USER: ${FINAPP_DB_USER:-finapp}
       # Local-only throwaway value. Not a secret. See SECURITY note above.
