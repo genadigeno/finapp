@@ -1,5 +1,7 @@
 package com.finapp.sharedkernel.money;
 
+import java.io.Serial;
+
 /**
  * Arithmetic or comparison was attempted across two different currencies.
  *
@@ -12,13 +14,14 @@ package com.finapp.sharedkernel.money;
  */
 public final class CurrencyMismatchException extends MonetaryException {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
-    private final transient CurrencyCode left;
-    private final transient CurrencyCode right;
+    private final CurrencyCode left;
+    private final CurrencyCode right;
 
     CurrencyMismatchException(CurrencyCode left, CurrencyCode right, String operation) {
-        super("Cannot " + operation + " " + right + " and " + left
+        super("Cannot " + operation + " " + right + " to " + left
                 + ": amounts in different currencies are never combined. Converting between "
                 + "them is an explicit FX operation that posts through an FX position.");
         this.left = left;

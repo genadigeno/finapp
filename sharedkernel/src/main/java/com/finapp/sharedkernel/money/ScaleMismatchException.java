@@ -1,5 +1,7 @@
 package com.finapp.sharedkernel.money;
 
+import java.io.Serial;
+
 /**
  * Two amounts in the same currency were created with different scales.
  *
@@ -13,9 +15,10 @@ package com.finapp.sharedkernel.money;
  */
 public final class ScaleMismatchException extends MonetaryException {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
-    private final transient CurrencyCode currency;
+    private final CurrencyCode currency;
     private final int leftScale;
     private final int rightScale;
 

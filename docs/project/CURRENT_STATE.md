@@ -57,7 +57,7 @@ Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-03. DoD profile: `DOD-KERN
 
 **`P0-TSK-009` — Implement `Money` and `CurrencyCode`** — `COMPLETE` (2026-08-31).
 
-The platform's first financial code. 70 tests in `sharedkernel`, all green.
+The platform's first financial code. 74 tests in `sharedkernel`, all green.
 
 | Acceptance criterion | Evidence |
 |---|---|
@@ -81,6 +81,10 @@ Design decisions worth carrying forward:
 - **Pseudo-currencies rejected.** `XXX`, `XAU` and `XDR` report −1 minor units; treating them
   as 0-decimal would make one gram of gold equal one thousandth of one.
 - **`CLF` has four decimal places**, so the scale bound is 9, not 3.
+- **Exception diagnostics survive serialization.** `CurrencyCode` implements `Serializable`
+  so the currencies carried by a `CurrencyMismatchException` are not `transient` — the
+  reflex when a field's type is not serializable, which would have made the accessors return
+  `null` after a round-trip, silently.
 
 ---
 
@@ -324,6 +328,7 @@ it to be written about.
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | Task completion review of `P0-TSK-009`. One important finding: the diagnostic state on the monetary exceptions was `transient`, so `left()` and `right()` returned `null` after serialization — proven by round-tripping one, and fixed by making `CurrencyCode` serializable. Also corrected an operand-order inversion in the mismatch message, and added the three tests whose absence let those through: scale mismatch on `minus`/`compareTo`, `absoluteValue` overflow, and serialization of diagnostics. 74 tests. |
 | 2026-08-31 | `P0-TSK-009` complete. `Money` and `CurrencyCode` — the platform's first financial code. Integer minor units, explicit currency, stored scale; exact arithmetic only, with cross-currency, cross-scale, inexact-amount and overflow failures all distinct and all under one `MonetaryException` supertype. 70 tests. |
 | 2026-08-31 | Task completion review of `P0-TSK-007`. Probing showed ArchUnit was importing exactly one class — benign (it skips `package-info`, which is all `platform` and `sharedkernel` contain), but it exposed that the coverage guard asserted only that `app` was seen and would have passed if a module were dropped from the analysis. Guard replaced with one that derives expected coverage from the classpath, proven by excluding a module that had production code. Also added a rule that production classes must belong to a module package: a class directly in `com.finapp` was silently exempt from every rule. |
 | 2026-08-31 | `P0-TSK-007` complete. Six ArchUnit boundary rules enforced on every build, each proven by a deliberate violation; plus a guard test so the suite cannot become silently vacuous. `MODULE_ARCHITECTURE.md` §2 and §8 corrected — they claimed the rules were "not yet in place". |

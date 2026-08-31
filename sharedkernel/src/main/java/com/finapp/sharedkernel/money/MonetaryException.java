@@ -1,5 +1,7 @@
 package com.finapp.sharedkernel.money;
 
+import java.io.Serial;
+
 /**
  * A monetary operation that could not be performed correctly.
  *
@@ -11,6 +13,7 @@ package com.finapp.sharedkernel.money;
  */
 public abstract class MonetaryException extends RuntimeException {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     protected MonetaryException(String message) {

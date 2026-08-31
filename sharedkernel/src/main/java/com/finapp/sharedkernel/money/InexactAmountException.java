@@ -1,5 +1,6 @@
 package com.finapp.sharedkernel.money;
 
+import java.io.Serial;
 import java.math.BigDecimal;
 
 /**
@@ -16,10 +17,11 @@ import java.math.BigDecimal;
  */
 public final class InexactAmountException extends MonetaryException {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
-    private final transient BigDecimal amount;
-    private final transient CurrencyCode currency;
+    private final BigDecimal amount;
+    private final CurrencyCode currency;
 
     InexactAmountException(BigDecimal amount, CurrencyCode currency, Throwable cause) {
         super("Amount " + amount.toPlainString() + " cannot be represented exactly in " + currency

@@ -3,7 +3,13 @@ package com.finapp.sharedkernel.money;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
@@ -208,6 +214,18 @@ class MoneyTest {
         }
 
         @Test
+        @DisplayName("subtraction and comparison reject a scale mismatch too, not just addition")
+        void everyBinaryOperationRejectsScaleMismatch() {
+            Money current = Money.ofMinorUnits(1234L, USD);
+            Money historical = Money.ofPersisted(1234L, USD, 3);
+
+            assertThatExceptionOfType(ScaleMismatchException.class)
+                    .isThrownBy(() -> current.minus(historical));
+            assertThatExceptionOfType(ScaleMismatchException.class)
+                    .isThrownBy(() -> current.compareTo(historical));
+        }
+
+        @Test
         @DisplayName("scale mismatch is not reported as a currency mismatch")
         void scaleMismatchIsItsOwnFailure() {
             // Different causes need different diagnostics: the currencies agree here.
@@ -254,6 +272,15 @@ class MoneyTest {
             // return Long.MIN_VALUE again, turning a debit into a debit of the same sign.
             assertThatExceptionOfType(MonetaryOverflowException.class)
                     .isThrownBy(() -> Money.ofMinorUnits(Long.MIN_VALUE, USD).negated());
+        }
+
+        @Test
+        @DisplayName("absolute value of the most negative amount throws rather than staying negative")
+        void absoluteValueOverflowThrows() {
+            // |Long.MIN_VALUE| is not representable. Returning the input unchanged would leave
+            // a negative "absolute value", which is worse than failing.
+            assertThatExceptionOfType(MonetaryOverflowException.class)
+                    .isThrownBy(() -> Money.ofMinorUnits(Long.MIN_VALUE, USD).absoluteValue());
         }
 
         @Test
@@ -426,6 +453,35 @@ class MoneyTest {
                 Money original = Money.ofMinorUnits(123_456L, currency);
 
                 assertThat(Money.of(original.toBigDecimal(), currency)).isEqualTo(original);
+            }
+        }
+
+        @Test
+        @DisplayName("a failure keeps its diagnostic state across serialization")
+        void failuresRetainDiagnosticsWhenSerialized() throws Exception {
+            // The accessors exist so a caller can react programmatically. Marking the fields
+            // transient — the reflex when a field's type is not serializable — would make them
+            // return null after a round-trip, silently, which is worse than not having them.
+            CurrencyMismatchException original =
+                    catchThrowableOfType(
+                            CurrencyMismatchException.class,
+                            () -> Money.ofMinorUnits(1L, USD).plus(Money.ofMinorUnits(1L, EUR)));
+
+            CurrencyMismatchException restored = roundTrip(original);
+
+            assertThat(restored.left()).isEqualTo(USD);
+            assertThat(restored.right()).isEqualTo(EUR);
+        }
+
+        @SuppressWarnings("unchecked")
+        private static <T> T roundTrip(T value) throws IOException, ClassNotFoundException {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (ObjectOutputStream out = new ObjectOutputStream(bytes)) {
+                out.writeObject(value);
+            }
+            try (ObjectInputStream in =
+                    new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+                return (T) in.readObject();
             }
         }
 

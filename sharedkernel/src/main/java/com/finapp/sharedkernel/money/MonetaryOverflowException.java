@@ -1,5 +1,7 @@
 package com.finapp.sharedkernel.money;
 
+import java.io.Serial;
+
 /**
  * A monetary result is outside the representable range.
  *
@@ -9,6 +11,7 @@ package com.finapp.sharedkernel.money;
  */
 public final class MonetaryOverflowException extends MonetaryException {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     MonetaryOverflowException(String message, Throwable cause) {

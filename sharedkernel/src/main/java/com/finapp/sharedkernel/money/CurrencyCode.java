@@ -1,5 +1,6 @@
 package com.finapp.sharedkernel.money;
 
+import java.io.Serializable;
 import java.util.Currency;
 import java.util.Objects;
 
@@ -29,7 +30,9 @@ import java.util.Objects;
  *
  * @param code the three-letter uppercase ISO 4217 alphabetic code
  */
-public record CurrencyCode(String code) {
+public record CurrencyCode(String code) implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private static final int ISO_4217_CODE_LENGTH = 3;
 
