@@ -42,46 +42,31 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-003` — Local infrastructure via Docker Compose**
-Status: `READY` — not started.
+**`P0-TSK-004` — CI pipeline**
+Status: `BLOCKED` — dependencies not met.
 
-Bounded context: platform / ops. Depends on `P0-TSK-001` (`COMPLETE`).
+Bounded context: platform / build. Depends on `P0-TSK-001` (`COMPLETE`), `P0-TSK-011`
+(Money persistence mapping, not started) and `P0-TSK-036` (test taxonomy, not started).
 
-Scope: PostgreSQL, Kafka and Redis with pinned image versions, named volumes, health checks.
-
-Acceptance: `docker compose up` yields all three healthy; versions match those used by
-Testcontainers; no credentials committed beyond local-only development defaults clearly
-marked as such.
-
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-01. DoD profile: `DOD-BUILD`.
+Because `P0-TSK-004` is blocked, the next startable task is **`P0-TSK-005` — Database
+migration tooling** (depends on `P0-TSK-003`, now `COMPLETE`).
 
 ### Just completed
 
-**`P0-TSK-002` — Create module skeleton** — `COMPLETE` (2026-08-31).
-
-`sharedkernel`, `platform` and `app` exist with the direction
-`app -> platform -> sharedkernel`. Both new modules contain a `package-info.java` recording
-what may and may not enter them, and no other production code — `Money`, identifiers,
-`Clock`, the envelope, idempotency, outbox and audit are later tasks.
+**`P0-TSK-003` — Local infrastructure via Docker Compose** — `COMPLETE` (2026-08-31).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Modules build independently | `:sharedkernel:build`, `:platform:build`, `:app:build` each green in isolation |
-| Reverse dependency fails compilation | Adding `sharedkernel -> platform` fails with a circular-dependency error on the compile task graph |
-| `sharedkernel` has no Spring Framework dependency | `SharedKernelIsolationTest`: no Spring type loadable, no `spring-*` artefact on the classpath |
+| `docker compose up` yields all three healthy | PostgreSQL 18.6, Kafka 4.3.1, Redis 8.10.1 all reported `healthy`; verified again after a full `down`/`up` cycle |
+| Versions match those used by Testcontainers | Versions live in `gradle/libs.versions.toml`; `verifyInfrastructureVersions` runs under `check` and fails on drift (demonstrated). `P0-TSK-035` consumes the same catalog entries |
+| No credentials committed beyond marked local-only defaults | Throwaway values named `local-development-only-not-a-secret`, each overridable by environment variable |
 
-Test credibility demonstrated per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 8:
-adding Spring to `sharedkernel` failed both isolation tests; reverting restored them.
-
-Decisions taken during the task, recorded in
-[`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md):
-- Every module applies `java-library`, so `api`/`implementation` becomes a boundary control
-  rather than a build detail. `platform` exposes `sharedkernel` via `api` because kernel
-  value types will appear in its own signatures.
-- `sharedkernel` takes its test libraries from the version catalog rather than the Spring
-  Boot BOM, pinned to exactly the versions Boot manages so the whole build runs one JUnit
-  and one AssertJ. **This alignment must be re-checked on every Spring Boot upgrade** — the
-  procedure is in `gradle/libs.versions.toml`.
+Beyond the stated criteria, verified functionally rather than by health check alone:
+PostgreSQL accepts queries and uses the ICU collation provider (`datlocprovider = i`,
+`datlocale = und-x-icu`); Kafka creates, describes and deletes a topic; Redis round-trips a
+value. Data survived a full stack restart, confirming the named volumes. All three ports
+bind to `127.0.0.1` only, confirmed with `netstat` — a development database listening on
+`0.0.0.0` is a real exposure on a laptop that joins untrusted networks.
 
 ---
 
@@ -108,6 +93,12 @@ Module skeleton (2026-08-31), `P0-TSK-002`:
 - `java-library` everywhere, making `api`/`implementation` a deliberate boundary control
 - No production code in either new module beyond boundary documentation
 
+Local infrastructure (2026-08-31), `P0-TSK-003`:
+- `compose.yaml` with PostgreSQL 18.6, Kafka 4.3.1 (KRaft) and Redis 8.10.1, pinned,
+  health-checked, on named volumes, bound to loopback only
+- Image versions single-sourced in the version catalog, with a build task that fails on
+  drift between `compose.yaml` and the catalog
+
 Project initiation (2026-08-31):
 - Master delivery plan for all seventeen phases — [`DELIVERY_PLAN.md`](DELIVERY_PLAN.md)
 - Phase gate model, status model and per-phase exit criteria — [`PHASE_GATES.md`](PHASE_GATES.md)
@@ -121,11 +112,14 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-003` is the next task to start.
+None in progress. `P0-TSK-005` is the next startable task; `P0-TSK-004` is blocked.
 
 ## Blockers
 
-None.
+**`P0-TSK-004` (CI pipeline)** cannot start yet. It depends on `P0-TSK-011` and
+`P0-TSK-036`, neither of which has started, and it must also resolve the TLS-interception
+problem below for whatever runner it uses. This is sequencing, not an impediment — but it
+means `DOD-BUILD`'s "CI green" stays unmet across every task completed so far.
 
 ---
 
@@ -161,6 +155,22 @@ Alternatives: import the AVG root into the JDK `cacerts` with `keytool`, or disa
 scanning in AVG. This must be revisited at `P0-TSK-004` — CI runners will need whatever the
 equivalent is in that environment.
 
+**Git Bash rewrites container paths.** Running a command inside a container with an absolute
+path from Git Bash (MSYS) silently rewrites it:
+
+```
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh ...
+  -> exec: "C:/Program Files/Git/opt/kafka/bin/kafka-topics.sh": no such file
+```
+
+Prefix with `MSYS_NO_PATHCONV=1`, or use PowerShell. This affects interactive use only —
+health checks and container entrypoints run inside Docker and are unaffected.
+
+**Resetting local infrastructure.** `docker compose down` keeps data; `docker compose down -v`
+discards it. A reset is required after changing Kafka's `CLUSTER_ID`, or when moving to a new
+PostgreSQL major version without running `pg_upgrade` — the volume is formatted for the major
+version that created it.
+
 ---
 
 ## Partially Satisfied Definition of Done
@@ -170,6 +180,8 @@ Recorded so it is not mistaken for a completed criterion.
 | Task | DoD item not yet met | Owning task |
 |------|---------------------|-------------|
 | `P0-TSK-001` | `DOD-BUILD` requires "CI green". No CI pipeline exists yet, so the build is verified only locally — including from a clean clone with an empty Gradle home. | `P0-TSK-004` |
+| `P0-TSK-002` | Same: no CI. Boundary enforcement is also partial — Gradle enforces direction, but cross-module internals and entity references rest on review. | `P0-TSK-004`, `P0-TSK-007` |
+| `P0-TSK-003` | Same: no CI. Additionally, local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised locally — they need a restricted application role. | `P0-TSK-004`, `P0-TSK-005`, `P0-TSK-022` |
 
 ---
 
@@ -218,20 +230,21 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-003` — Local infrastructure via Docker Compose.**
+**`P0-TSK-005` — Database migration tooling.**
 
-Rationale: `P0-TSK-005` (migrations) and `P0-TSK-035` (Testcontainers) both need real
-infrastructure, and the versions used locally must match the versions used in tests — a
-schema or broker behaviour that differs between the two is a defect the test suite cannot
-see. It has no unresolved architectural question and Docker 28.0.1 is already present.
+Rationale: `P0-TSK-004` (CI) is blocked on `P0-TSK-011` and `P0-TSK-036`. `P0-TSK-005` is
+now unblocked by `P0-TSK-003` and is on the critical path to everything with a schema — the
+idempotency table, outbox, inbox and audit trail all need migrations before they can exist,
+and every one of those is a Phase 0 exit-gate item.
 
-Note that `P0-TSK-004` (CI) is blocked on more than this task: it also depends on
-`P0-TSK-011` and `P0-TSK-036`, and it must solve the TLS-interception problem recorded under
-Local Environment Prerequisites for whatever runner it uses.
+The migration *convention* matters more than the tool. Once financial history exists,
+migrations against immutable tables are constrained by `INV-HIST-01` and `INV-LED-03`, so
+forward-only migrations and a documented approach to irreversible financial changes must be
+settled before the first table is created.
 
 Per [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) rule 4, work stays within that task —
-containers and health checks only. No schema (`P0-TSK-005`), no Testcontainers harness
-(`P0-TSK-035`).
+migration tooling and conventions only. No business tables, no idempotency table
+(`P0-TSK-015`), no outbox (`P0-TSK-019`), no audit schema (`P0-TSK-022`).
 
 ---
 
@@ -239,6 +252,7 @@ containers and health checks only. No schema (`P0-TSK-005`), no Testcontainers h
 
 | Date | Change |
 |------|--------|
+| 2026-08-31 | `P0-TSK-003` complete. Local infrastructure (PostgreSQL 18.6, Kafka 4.3.1 KRaft, Redis 8.10.1), pinned and health-checked, with a build-enforced version-drift check against the catalog. |
 | 2026-08-31 | `P0-TSK-002` complete. `sharedkernel`, `platform`, `app` with enforced dependency direction; `sharedkernel` proven Spring-free; `java-library` adopted for `api`/`implementation` boundary control. |
 | 2026-08-31 | `P0-TSK-001` complete. Gradle 9.7.1 multi-module build, Java 21 toolchain, Spring Boot 4.1.1 BOM, `build-logic` conventions, checksum-pinned wrapper. Phase 0 `IN_PROGRESS`. Repository placed under Git. |
 | 2026-08-31 | Project initiation. Delivery plan, phase gates, backlog, architecture baseline, invariant catalog, Definition of Done, execution protocol and ADR-0001..0010 created. Phase 0 entry gate passed; status `READY`. |

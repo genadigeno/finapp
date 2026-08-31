@@ -1,0 +1,140 @@
+# Local development infrastructure.
+#
+# Purpose: give a developer the same infrastructure the integration tests use, so a
+# behaviour that differs between "works locally" and "works in tests" cannot hide. Image
+# versions are therefore pinned and are asserted against gradle/libs.versions.toml by the
+# `verifyInfrastructureVersions` build task — a drift between the two is a build failure,
+# not something to notice later.
+#
+# Roles are fixed by docs/architecture/DATA_ARCHITECTURE.md and are not interchangeable:
+#   PostgreSQL - transactional source of truth; the ledger lives here
+#   Kafka      - durable integration/event transport. NEVER the accounting source of truth
+#   Redis      - cache, coordination, rate limits, ephemeral state. NEVER financial truth
+#
+# SECURITY: everything here is local-development-only.
+#   - Ports bind to 127.0.0.1, never 0.0.0.0, so this stack is not reachable from the
+#     network. A development database on an open port is a real breach vector on a laptop
+#     that joins untrusted networks.
+#   - The credentials below are throwaway defaults, deliberately named so that they cannot
+#     be mistaken for a secret and cannot silently become one in a deployed environment.
+#     Every one is overridable by an environment variable.
+#   - Real credential handling is P0-TSK-031 (secret management). Nothing here establishes
+#     a pattern for production.
+
+name: finapp
+
+services:
+
+  postgres:
+    # Transactional source of truth. The Debian-based image is used deliberately rather
+    # than -alpine: alpine uses musl, whose locale and collation behaviour differs from
+    # glibc. Collation affects index ordering and comparison, and a database that sorts
+    # differently from the one the tests ran against is exactly the class of difference
+    # this file exists to prevent.
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: ${FINAPP_DB_NAME:-finapp}
+      POSTGRES_USER: ${FINAPP_DB_USER:-finapp}
+      # Local-only throwaway value. Not a secret. See SECURITY note above.
+      # P0-TSK-031 (secret scanning) must be configured to recognise this as a
+      # marked local default rather than flagging it, without weakening the scan.
+      POSTGRES_PASSWORD: ${FINAPP_DB_PASSWORD:-local-development-only-not-a-secret}
+      #
+      # LEAST PRIVILEGE — a gap that P0-TSK-005 and P0-TSK-022 must close.
+      # POSTGRES_USER above is the cluster superuser. That is acceptable for
+      # bootstrapping a local container and nowhere else. Several invariants are
+      # enforced at the database *privilege* level and cannot be satisfied by a
+      # superuser connection:
+      #   INV-LED-03  posted journal entries are immutable
+      #   INV-HIST-01 financial history is never edited
+      #   INV-HIST-03 audit records are append-only
+      # Those require a restricted application role holding INSERT/SELECT only,
+      # and tests that assert UPDATE/DELETE fail for that role. Creating it is
+      # schema work and belongs to P0-TSK-005; running the application as the
+      # superuser must never become the habit that makes those tests impossible.
+      # Deterministic collation, independent of the host's locale.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=und-x-icu --encoding=UTF8"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # Mounted at /var/lib/postgresql, NOT /var/lib/postgresql/data.
+      #
+      # PostgreSQL 18's image changed this: it now stores data in a
+      # major-version-specific subdirectory below this path. Mounting the old
+      # /data path makes the image refuse to start, and — more importantly —
+      # puts a mount boundary in the way of `pg_upgrade --link`, which is how a
+      # major-version upgrade is performed without copying the whole cluster.
+      #
+      # This platform's ledger will live in this database for its whole life, so
+      # the upgrade path is not a detail to discover later.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      # pg_isready reports readiness to accept connections, which is what a caller
+      # actually needs. "container started" is not the same thing.
+      test: ["CMD-SHELL", "pg_isready -U ${FINAPP_DB_USER:-finapp} -d ${FINAPP_DB_NAME:-finapp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  kafka:
+    # Integration/event transport only (ADR-0005: outbox writes are the durable record;
+    # Kafka carries them onward). KRaft mode - no ZooKeeper.
+    image: apache/kafka:4.3.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Two listeners on purpose. Containers reach the broker as kafka:9092; processes on
+      # the host reach it as localhost:29092. A single listener works until the first
+      # containerised consumer is added and then fails confusingly, because the advertised
+      # address is only resolvable from one side.
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # Single node: replication factors must be 1 or topic creation fails.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Fixed cluster id so the formatted log directory survives restarts. Changing this
+      # value makes the existing volume unreadable - see the reset procedure in the README
+      # section of docs (P0-DOC-001).
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    ports:
+      - "127.0.0.1:29092:29092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      # Querying broker API versions proves the broker is actually serving, not merely
+      # that the JVM is up.
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  redis:
+    # Cache, coordination, rate limits, ephemeral state. Never financial truth
+    # (CLAUDE.md rule 12). Nothing whose loss would change a balance may live here.
+    image: redis:8.10.1
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  # Named rather than anonymous, so `docker compose down` keeps data and
+  # `docker compose down -v` is the explicit, deliberate way to discard it.
+  postgres-data:
+  kafka-data:
+  redis-data:

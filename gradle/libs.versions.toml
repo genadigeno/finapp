@@ -33,6 +33,16 @@ springBoot = "4.1.1"
 junitJupiter = "6.0.3"
 assertj = "3.27.7"
 
+# Infrastructure image versions — the single source of truth, shared by compose.yaml and
+# (from P0-TSK-035) Testcontainers. Local infrastructure and test infrastructure must be
+# the same version: a difference between them is a defect the test suite cannot see, and
+# collation, broker semantics and eviction behaviour all vary across versions.
+#
+# `verifyInfrastructureVersions` fails the build if compose.yaml drifts from these.
+postgresImage = "18.6"
+kafkaImage = "4.3.1"
+redisImage = "8.10.1"
+
 [libraries]
 # --- BOM -------------------------------------------------------------------
 # Consumed via platform(). This propagates managed versions to every dependency

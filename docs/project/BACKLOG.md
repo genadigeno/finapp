@@ -73,7 +73,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-BUILD`
 
-**P0-TSK-003 — Local infrastructure via Docker Compose**
+**P0-TSK-003 — Local infrastructure via Docker Compose** — `COMPLETE` (2026-08-31)
 - Context: platform / ops
 - Description: PostgreSQL, Kafka and Redis with pinned image versions, named volumes, health checks.
 - Why: Local behaviour must match the integration-test infrastructure.

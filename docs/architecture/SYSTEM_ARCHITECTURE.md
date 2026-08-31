@@ -54,6 +54,13 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | Java | 21 (LTS) | Pinned by Gradle toolchain, not by ambient `JAVA_HOME` |
 | Gradle | 9.7.1 | Distribution and wrapper jar verified by SHA-256 |
 | Spring Boot | 4.1.1 | Brings Spring Framework 7 and Jackson 3 |
+| PostgreSQL | 18.6 | Debian-based image, ICU collation provider |
+| Kafka | 4.3.1 | KRaft mode, no ZooKeeper |
+| Redis | 8.10.1 | AOF persistence enabled locally |
+
+Infrastructure versions appear in both `compose.yaml` and the version catalog. The
+`verifyInfrastructureVersions` build task fails if they drift, because local infrastructure
+and test infrastructure being different software is a defect the test suite cannot see.
 
 **Why the current major lines rather than the previous ones.** Spring Boot 3.5.x and Gradle
 8.x were both viable and, at the time of the decision, more widely deployed. They were
