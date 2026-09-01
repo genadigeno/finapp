@@ -116,6 +116,20 @@ class EntityIdTest {
         assertThatThrownBy(() -> new ProbeAccountId(new UUID(0L, 0L)))
                 .isInstanceOf(IllegalArgumentException.class);
 
+        // Version 7 but the wrong variant. Found by a mutation sweep during this task's
+        // review: deleting the variant check survived every other case here, because each of
+        // them already failed the version check first. A value shaped like this claims to be
+        // time-ordered while not being an RFC 9562 UUID at all, so its high bits would be read
+        // as a timestamp on the strength of a version field nothing else corroborates.
+        long timeOrderedHighBits = anId().getMostSignificantBits();
+        UUID versionSevenWrongVariant = new UUID(timeOrderedHighBits, 0L);
+        assertThat(versionSevenWrongVariant.version()).as("the probe really is version 7").isEqualTo(7);
+        assertThat(versionSevenWrongVariant.variant()).as("but not the RFC variant").isNotEqualTo(2);
+
+        assertThatThrownBy(() -> new ProbeAccountId(versionSevenWrongVariant))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("variant");
+
         assertThatThrownBy(() -> new ProbeAccountId(null)).isInstanceOf(NullPointerException.class);
     }
 
