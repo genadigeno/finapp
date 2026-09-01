@@ -47,81 +47,67 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-021` - Inbox dedupe store and consumer wrapper**
+**`P0-TSK-022` - Audit schema and writer**
 Status: `READY` - not started.
 
-Bounded context: platform / data. Depends on `P0-TSK-005` (`COMPLETE`).
+Bounded context: platform / audit. Depends on `P0-TSK-005`, `P0-TSK-014` (both `COMPLETE`).
 
-It is the other half of ADR-0005 and the reason the relay is allowed to be at-least-once: the
-relay guarantees an event is delivered, the inbox guarantees it takes effect once. The dedupe key
-is `event_id`, which `P0-TSK-018` fixed at event creation precisely so that redelivery presents
-the same value.
+It opens `P0-EPIC-07` and is the first task that needs the **migrator/application role split**
+(`DATA_MIGRATIONS.md` §6): its acceptance criterion is that the application role holds `INSERT`
+and `SELECT` only, proven by a test. That split is currently listed under Partially Satisfied
+Definition of Done and must land here, because `INV-HIST-03` is enforced at the privilege level
+or not at all.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-06. DoD profile: `DOD-KERNEL`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-07. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TSK-020` - Outbox relay** - `COMPLETE` (2026-09-01).
+**`P0-TSK-021` - Inbox dedupe store and consumer wrapper** - `COMPLETE` (2026-09-01).
+`P0-EPIC-06` (Reliable Messaging) is now complete.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Relay restart after a crash publishes every committed, unpublished row | A publisher that delivers and then throws an `Error` reproduces a process death between publishing and recording it. The event is delivered, nothing marks it, the transaction rolls back leaving no attempt behind, and a restart delivers it again - **twice in total**, which is what at-least-once means and is stated rather than glossed |
-| Ordering preserved per aggregate | Six events published in written order; and, in the case that actually distinguishes the property, a failed event blocks the ones behind it - they are not even attempted |
-| Broker unavailability causes retry, never row loss | Three failed cycles leave the row pending with `attempts = 3` and an error recorded; the broker recovers and the row publishes |
-| Correct under N instances | Eight instances drain a 36-event backlog and deliver each event exactly once between them; and while one instance is provably inside `publish()`, a second is refused that aggregate and publishes a *different* one |
+| Redelivering the same message produces no second effect | Three deliveries, one effect - **counted in a side-effect table**, never inferred from the wrapper's own return value, since a wrapper that reported `SKIPPED_DUPLICATE` while running the handler would pass any test that believed it. Also proven at eight concurrent instances on separate connections |
+| Dedupe record and side effect commit in one transaction | Proven both ways: a committed handler leaves both, and a handler that throws leaves **neither** - then the redelivery is handled rather than skipped. A rollback-only test would pass against a wrapper that never wrote anything |
+| Retention policy documented | `DATA_MIGRATIONS.md` §9, including what the window must exceed and why a provider retrying a webhook for three days against a 24-hour inbox produces a duplicate effect nothing reports |
 
 Design decisions worth carrying forward:
-- **The lock is per aggregate, not per row.** `SELECT ... FOR UPDATE SKIP LOCKED` is the usual
-  outbox claiming pattern and it silently breaks ordering with more than one instance: A takes
-  event 1, B takes event 2, whichever publishes first wins. A transaction-scoped advisory lock on
-  the aggregate makes ordering structural rather than a property of how many relays happen to be
-  running.
-- **An abandoned row blocks its aggregate rather than being skipped.** Skipping is quiet -
-  consumers get events 1 and 3 with no way to know 2 existed. A stall is loud, bounded to one
-  aggregate, and visible as backlog age.
-- **`next_attempt_at` is written and judged by the server's clock.** The V004 lesson applied
-  before it could bite again: a schedule compared across two instances' clocks is a race against
-  skew. `occurred_at` stays application-supplied, which is why one column carries a `DEFAULT` and
-  the other does not.
-- **Auto-commit is not restored on the way out.** JDBC commits the open transaction when
-  auto-commit is switched back on, so a tidy-looking `finally` would turn every error path into a
-  commit. The relay catches `Throwable`, rolls back, and lets the connection close.
-- **No broker adapter, deliberately.** The relay publishes through an `EventPublisher` port.
-  Writing a Kafka adapter here would decide the wire format, the topic scheme and the producer's
-  acknowledgement configuration, and put a broker client on the classpath - four decisions that
-  belong with the phase that has events to publish. `nothingPublishesToABrokerDirectly` therefore
-  still exempts **no** module, which is the honest state rather than a placeholder.
+- **The consumer is part of the key.** One event legitimately has many consumers and each must
+  handle it once. Keying on the message alone would let whichever consumer got there first
+  suppress every other one - and it does not look like a defect: everything succeeds, one
+  consumer runs, and the failure surfaces months later as "the notification never arrived".
+  Asserted from both sides, in the wrapper and at the schema.
+- **No state machine, deliberately.** An idempotency record needs `IN_PROGRESS` because a caller
+  is waiting to be told something. Nobody waits on a redelivered message, so the row has no third
+  state to be in: it is written with the effect and exists if and only if the effect happened.
+  Adding a lifecycle here would be inventing one with no observer.
+- **Losing the race is free, so the wait is short.** 500ms against the idempotency kernel's three
+  seconds. A contended delivery is reported as `CONTENDED` and left unacknowledged; the answer is
+  correct whichever way the other transaction goes, so there is nothing to wait to find out.
+- **Insert-then-handle.** Atomicity is identical either way, but inserting first makes a
+  concurrent duplicate block on the primary key *before* it enters the handler, rather than after
+  both instances have done the work.
+- **`expires_at` is computed by the server**, from a caller-chosen duration. The policy is the
+  consumer's; the instant is a coordination boundary with a sweeper on another instance. This
+  differs deliberately from `idempotency_record`, and `DATA_MIGRATIONS.md` §9 records the
+  divergence so it reads as a decision rather than an inconsistency.
 
-**A test caught a documentation claim.** `RetryPolicy.DEFAULT`'s javadoc said ten attempts was
-"roughly forty minutes of trying". With a five-minute ceiling it is eight and a half. The count
-and the window are not independent, and the window is the number that matters operationally - so
-the test pins the total, not the count, and the default is now fourteen attempts (~28 minutes).
+**An API defect found by using the API.** The store was called from a test that had not opened a
+transaction and failed with "could not create a savepoint" - an error about a mechanism, not
+about the mistake. On an auto-commit connection the dedupe record commits alone, so a handler
+that then fails leaves the message recorded as processed and its effect absent: a silently lost
+message, which is the failure this class exists to prevent. It now refuses auto-commit explicitly
+and says why.
 
-**Verified by mutation: 9 of 10 caught.** The survivor is the `AND published_at IS NULL` guard on
-recording publication, and it survives correctly - while the aggregate lock holds there is no
-second writer to lose to, so reaching that guard would require defeating the lock first. It is
-kept as defence in depth and its javadoc says plainly that no test covers it, so nobody later
-mistakes it for verified behaviour.
+**Verified by mutation: 6 of 6 caught**, after one round that found a real weakness. Running the
+handler on a *contended* delivery survived, because that test asserted "the handler did not run"
+by counting effects after a rollback - which cannot distinguish "did not run" from "ran and was
+undone". Handler invocations are now counted in memory, which no rollback can reverse.
 
-Two rounds of the sweep had to be discarded before that was trustworthy. The first harness read
-an exit code with no failing-test name and reported a survivor as caught; the second used
-`grep -oP`, unsupported in this shell, so it could never report *anything* as caught - and said
-so only because the run included an unmutated baseline. A probe without a baseline is a probe
-that cannot report its own failure, and this is the third review in which the defect was in the
-harness rather than the code.
-
-**Three test defects and one environment finding**, all surfaced by running the suite forty times
-rather than once:
-- The eight-instance test stopped each instance on *its own* idleness. An instance refused every
-  lock has done no work and is not finished; all eight could quit with events still pending - a
-  failure indistinguishable from a relay that loses events.
-- The blocking-instance tests discarded the held instance's outcome, so a relay that threw, one
-  that found nothing and one blocked on a lock all failed with the same unhelpful timeout.
-- `shutdownNow()` does not wait, and nothing on the relay's path responds to an interrupt, so a
-  simulated instance could outlive its test and publish the next test's rows.
-- **The local container clock steps backwards**, making a freshly written row genuinely not yet
-  due. The relay was right to decline it; the fixture was wrong to assume otherwise. Recorded
-  under Local Environment Prerequisites.
+**The correlation guard fired for the third time.** `CorrelationSinkCoverageTest` refused the new
+`inbox` package until a decision was recorded, forcing correlation into the inbox row to be
+*asserted* rather than assumed. That is the fourth sink now proven; only the trace and the audit
+record remain, and both arrive with the epics that create them.
 
 ---
 
@@ -221,6 +207,21 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Inbox deduplication (2026-09-01), `P0-TSK-021`:
+- `platform.inbox_message`: the dedupe record and the side effect commit in one transaction, so
+  the row exists if and only if the effect happened (`INV-IDEM-04`)
+- Keyed on **(consumer, dedupe_key)**, so one event's many consumers each handle it exactly once
+  rather than the first one silently suppressing the rest
+- Eight concurrent instances handed the same redelivery produce one effect, counted in a
+  side-effect table rather than inferred from the wrapper's return value
+- A handler that throws takes its dedupe record with it, and the redelivery is then handled
+- Contention is reported after a 500ms bound, not waited on: losing costs one redelivery, which
+  an at-least-once transport was going to perform anyway
+- An auto-commit connection is refused explicitly, because the record would otherwise commit
+  alone and lose the message
+- Retention documented as a correctness bound (`DATA_MIGRATIONS.md` §9); every record is terminal,
+  so there is no "never sweep a non-terminal record" caveat
 
 Outbox relay (2026-09-01), `P0-TSK-020`:
 - Every instance polls; a transaction-scoped advisory lock **per aggregate** means one instance
@@ -356,7 +357,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-021` is the next task.
+None in progress. `P0-TSK-022` is the next task.
 
 ## Blockers
 
@@ -523,15 +524,13 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-021` - Inbox dedupe store and consumer wrapper**, completing `P0-EPIC-06`.
+**`P0-TSK-022` - Audit schema and writer**, opening `P0-EPIC-07` (Audit Trail).
 
-The relay's at-least-once delivery is only acceptable because this exists: the dedupe record and
-the side effect must commit in one transaction, exactly as the outbox row and the fact do. The
-dedupe key is `event_id`, fixed at event creation by `P0-TSK-018`.
-
-`P0-TST-005` (outbox crash-recovery test) follows it. Note that `P0-TSK-020` already drives a
-crash between publication and its record; `P0-TST-005`'s own criterion is different - it fails
-when the **outbox write** is moved outside the business transaction - so it is not covered.
+It is the task that must finally implement the **migrator/application role split**: its
+acceptance criterion is that the application role holds `INSERT` and `SELECT` only, with `UPDATE`
+and `DELETE` denied at the privilege level and proven by a test. Until then `INV-HIST-03` is
+documented rather than enforced, and `DATA_MIGRATIONS.md` §6 requires the split to land **before**
+any table subject to it exists - which the audit table is.
 
 ---
 
@@ -539,6 +538,7 @@ when the **outbox write** is moved outside the business transaction - so it is n
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-021` complete; `P0-EPIC-06` closed. The inbox: a dedupe record written in the same transaction as the side effect, so it exists if and only if the effect happened. Keyed on **(consumer, dedupe_key)** - scoping to the consumer is the decision that matters, because keying on the message alone lets the first consumer silently suppress every other one, and that defect looks like success until somebody notices months later that a notification never arrived. No state machine, deliberately: an idempotency record needs `IN_PROGRESS` because a caller is waiting to be told something, and nobody waits on a redelivered message. Contention is reported after a 500ms bound rather than waited on, because losing the race costs one redelivery that the broker was going to perform anyway - a trade available to a consumer and not to a command. **An API defect found by using it**: handed an auto-commit connection the store failed with \"could not create a savepoint\", an error about a mechanism rather than about the mistake, when what would actually happen is the dedupe record committing alone and the message being lost; it now refuses auto-commit and says why. Six of six mutations caught after one round exposed a weak assertion - \"the handler did not run\" was checked by counting effects after a rollback, which cannot tell that apart from \"ran and was undone\"; invocations are now counted in memory. The correlation guard fired for the third time and forced the inbox row to be asserted as the fourth sink. 295 hermetic tests, 107 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-020`. One important finding, and it was in the half of the code nobody reads until something is wrong: **every failure log line lacked its correlation identifier**. The correlation scope wrapped only the publish, and a `catch` attached to a try-with-resources runs *after* the resource closes — so the publication-failure warning, the blocked-aggregate warning and the abandonment error, the three lines an operator actually reads, could not be joined to the transfer or payment whose event they concerned. Proven by reading a real Logback appender (three of four new assertions failed), then fixed by scoping the whole per-event handling. Also closed: `P0-TSK-020` was never marked complete in `BACKLOG.md`; ADR-0005 requires a documented poison-message procedure and none existed, though abandonment stalls an aggregate until a person acts — now written, including that an abandoned row is never resolved by deleting it, since the row is the only evidence the gap exists; the `last_error` bound is duplicated between Java and SQL with no test that a maximal error is storable, so a tightened constraint would have made *recording* a broker failure fail; and the advisory-lock namespace had no register. Four deferrals recorded as architectural debt with owning phases — broker adapter, outbox retention, relay metrics, dead-letter tooling — none of them financial-correctness debt. Migrations verified against a from-scratch empty database. 291 hermetic tests, 88 database tests. |
 | 2026-09-01 | `P0-TSK-020` complete. The outbox relay: every instance polls, and a **transaction-scoped advisory lock per aggregate** is what makes ordering survive more than one of them. The usual pattern - `SELECT ... FOR UPDATE SKIP LOCKED` - locks rows, so two instances can take events 1 and 2 of the same aggregate and publish them in whichever order finishes first; ordering would hold only while the relay happened to be running singly, which is the assumption ADR-0014 exists to remove. Delivery is at-least-once and is said so: a publisher that delivers and then dies leaves the event unmarked, and the restart delivers it a second time. Ordering under failure is asserted separately from ordering on the happy path, because the two are different properties and only the second is easy. An abandoned row **blocks** its aggregate rather than being skipped - a stall is loud, an undetectable gap in a financial event stream is not. `V006` puts eligibility and abandonment on the server's clock, applying the V004 lesson before it could bite again. Two implementation traps recorded: JDBC **commits** when auto-commit is restored, so a tidy `finally` would turn every error path into a commit; and `RetryPolicy`'s default claimed forty minutes of retrying where the ceiling made it eight, so the test now pins the window rather than the attempt count. No Kafka adapter, deliberately - the relay publishes through a port, and `nothingPublishesToABrokerDirectly` still exempts nothing at all. 291 hermetic tests, 83 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-019`. Two findings, both from probing. **The byte-exactness assertion could not detect its own loss**: re-encoding the payload through `new String(bytes).trim()` survived every test, because every payload chosen — `{}`, a short JSON object, `{1,2,3}` — happens to be unchanged by a trim-and-re-encode. The payload is now deliberately hostile to it: leading and trailing whitespace, a NUL, and a byte that is not valid UTF-8. A relay must publish what the producer wrote, not a round-trip of it. **All ten of `V005`'s constraints were unexercised** — the same gap the `V002` review closed for the idempotency table. Most cannot be reached through the writer at all, since the envelope validates bounds and versions before SQL sees them and nothing writes `attempts` or `published_at` until the relay, which is exactly the argument for testing them at the schema: a constraint application code cannot reach is one only the database will ever enforce, against an operator or a writer nobody has written yet. `OutboxEventSchemaTest` added; both fixes proven by mutation. 283 hermetic tests, 63 database tests. |

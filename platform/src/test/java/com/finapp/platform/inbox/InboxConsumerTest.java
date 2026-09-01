@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -291,19 +292,33 @@ class InboxConsumerTest {
             // still inside its handler.
             consume(holder, key, unitOfWork -> {});
 
+            // Counted in memory, not in the database. The transaction is rolled back a moment
+            // later, so a handler that HAD run would leave no row either - an effect-count
+            // assertion here cannot tell "did not run" from "ran and was undone", and a mutation
+            // sweep confirmed it caught neither. An in-memory counter survives the rollback.
+            AtomicInteger handlerRuns = new AtomicInteger();
+
             Instant before = Instant.now();
             InboxConsumer.Outcome outcome;
             try (CorrelationContext.Scope ignored =
                     CorrelationContext.enter(Correlation.startingWith(FLOW))) {
                 outcome =
                         new InboxConsumer<Connection>(new JdbcInboxRecordStore(wait), CLOCK, RETENTION)
-                                .consume(connection, key, "probe.Message", recordEffect(key));
+                                .consume(
+                                        connection,
+                                        key,
+                                        "probe.Message",
+                                        unitOfWork -> {
+                                            handlerRuns.incrementAndGet();
+                                            recordEffect(key).handle(unitOfWork);
+                                        });
             }
             Duration waited = Duration.between(before, Instant.now());
             connection.rollback();
 
             assertThat(outcome).isEqualTo(InboxConsumer.Outcome.CONTENDED);
-            assertThat(effectCount(key)).as("the handler did not run").isZero();
+            assertThat(handlerRuns).hasValue(0);
+            assertThat(effectCount(key)).as("and no effect reached the database").isZero();
             assertThat(waited)
                     .as("bounded above: it gave up rather than blocking on the other transaction")
                     .isLessThan(Duration.ofSeconds(10));

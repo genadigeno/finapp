@@ -395,7 +395,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-08 — Inbox / consumer deduplication
 
-**P0-TSK-021 — Inbox dedupe store and consumer wrapper**
+**P0-TSK-021 — Inbox dedupe store and consumer wrapper** — `COMPLETE` (2026-09-01)
 - Context: platform / data
 - Description: Processed-message table keyed on (consumer, dedupe key) plus a consumer wrapper that skips already-processed messages.
 - Why: `CLAUDE.md` rule 8 — duplicate events and webhooks are expected and must be safe.
