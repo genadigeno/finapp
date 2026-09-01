@@ -63,6 +63,13 @@ class CorrelationSinkCoverageTest {
                     // P0-TST-003's criterion named explicitly, and the guard is what stopped the
                     // audit store arriving without the assertion.
                     "audit",
+                    // A correlation sink, and the only one a customer ever sees: every
+                    // problem-detail response carries the flow's identifier so a person
+                    // reporting an error can quote something support can find. Asserted by
+                    // ProblemDetailTest hermetically and by ApiErrorHandlerTest over a real
+                    // HTTP response - not in CorrelationPropagationTest, because the sink is a
+                    // response rather than a row and that class is about what reaches storage.
+                    "api",
                     // Not a sink. MoneyColumns is a persistence convention with no flow of its
                     // own; correlation reaches the tables that use it, not the convention.
                     "money");

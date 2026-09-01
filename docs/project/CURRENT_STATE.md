@@ -52,49 +52,60 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-024` - Error contract**
+**`P0-TSK-025` - Request validation at the boundary**
 Status: `READY` - not started.
 
-Bounded context: platform / api. Opens `P0-EPIC-08` and milestone M0.4.
+Bounded context: platform / api. Depends on `P0-TSK-024` (`COMPLETE`).
 
-It is the first task with an outward-facing surface, and three things are already waiting on it:
-`P0-TSK-017` is blocked on it, `P0-TSK-014`'s ingress-filter clause closes with it, and the
-`Idempotency-Key` semantics ADR-0004 specifies have had no HTTP boundary to be specified at.
+It has an error code waiting for it - `api.ValidationFailed`, 422 - and the contract to render it
+through. Its own criterion is that validation failures never reach domain code, which is a
+statement about *where* the rejection happens rather than about the response.
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-08. DoD profile: `DOD-API`.
 
 ### Just completed
 
-**`P0-TST-006` - Duplicate and out-of-order delivery test** - `COMPLETE` (2026-09-01).
-**`P0-EPIC-06` and milestone M0.3 are closed.**
+**`P0-TSK-024` - Error contract** - `COMPLETE` (2026-09-01). Opens `P0-EPIC-08` and milestone
+**M0.4**, and is the platform's first outward-facing surface.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| One effect per duplicate set | Four deliveries of two messages, interleaved and backwards, produce two handler runs |
-| Test fails if dedupe is disabled | The inbox primary key dropped from the live table: **nine tests fail across three classes**. Restored, and the suite is green again |
+| Every error path returns the contract shape | Eight paths driven over **real HTTP**, including the four the framework raises before our code runs. Removing any one handler fails its test |
+| No internal exception message or stack trace reaches a client | A controller throws with `account=ACC-99812 token=sk_live_2f8a` in its message; the response contains neither that, nor the exception type, nor any frame, nor `trace`/`exception` members |
+| Error codes are enumerated and documented | `ErrorCode` + `PlatformErrorCode`, catalogued in [`ERROR_CONTRACT.md`](../architecture/ERROR_CONTRACT.md), reconciled in both directions plus status agreement |
 
-Duplicate delivery was already covered thoroughly by `InboxConsumerTest`. What was covered
-nowhere was **ordering** - and `EVENT_ARCHITECTURE.md` makes three claims about it that existed
-only as prose. `InboxDeliveryOrderTest` makes them executable:
+Design decisions worth carrying forward:
+- **The contract is in `platform`; the rendering is in `app`.** `MODULE_ARCHITECTURE.md` §M10
+  already said so. A published contract outlives any web stack, so it must not be a function of
+  one - which is why `ProblemDetail` is a framework-free value type rather than the framework's
+  own problem-detail class.
+- **The handlers that matter are for errors we did not raise.** Writing one for your own
+  exception type is the easy half; an unknown route, an unsupported method, an unparseable body
+  and an unread media type are all rejected *before* our code runs and answered in the
+  framework's own shape. A client then sees two error formats depending on how far it got, and
+  nothing notices because each looks reasonable alone.
+- **A real server, not MockMvc.** MockMvc does not run the container's error dispatch, which is
+  exactly where the framework's default body comes from - a slice test can report a clean
+  contract for a path that would return Spring's `/error` body in production. The tests speak
+  HTTP to a real port with the JDK client, which needs no dependency and cannot flatter us.
+- **`ApiException` separates the log message from the client detail.** A single-field design
+  makes every author decide at each throw site whether their message is publishable, and the
+  answer is eventually wrong on a tired afternoon. Here the unsafe default is unreachable:
+  `getMessage()` has nowhere to go.
 
-- **The inbox deduplicates regardless of arrival order.**
-- **An order-dependent handler is still wrong under the inbox.** The handler everybody writes
-  first - store whatever the latest delivery said - receives `TransferCompleted` then
-  `TransferInitiated` and ends up believing a finished transfer is still in flight. Nothing
-  failed, nothing retried, no duplicate occurred: the inbox did its job perfectly and the
-  projection is wrong anyway. That is the claim worth pinning, because the document itself says
-  "a dedupe wrapper is precisely the component people later assume solved ordering too".
-- **An ordering key fixes it**, on the identical delivery order - with a positive control, since
-  a handler that ignored every second message would pass the reordering test and be useless.
+**Two defects found by running it, not by reading it.**
 
-**Retention made executable too.** `DATA_MIGRATIONS.md` §9 says the inbox retention window is a
-correctness bound - "too long merely costs storage; too short costs money". Deleting the dedupe
-record, which is what a sweep running earlier than the producer's redelivery window does, makes
-the same message run a second time with nothing anywhere reporting it.
-
-**Run as the application role**, so the inbox's deliberately narrow grant - `SELECT`, `INSERT`,
-`DELETE`, no `UPDATE` - is proven sufficient for real consumer use rather than only inspected in
-the catalogue.
+- **The wire format was an accident of the serialiser.** Serialising the platform record directly
+  produced `"correlationId":{}` - the identifier a client is meant to quote silently absent while
+  its member was present, because `CorrelationId.value()` is not a bean getter - and
+  `"detail":null` for absent members. Fixed with an explicit wire record in `app`, which also
+  means a field added to the platform's record can no longer publish itself to every client with
+  no review and no failing test.
+- **A correlation scope entered inside a controller is closed before the error handler runs.**
+  The same shape as the relay defect `P0-TSK-020`'s review found - a `try`-with-resources closes
+  before a surrounding `catch`. So it is a requirement on whoever adds the ingress filter: the
+  scope must wrap error handling, not just the handler, or the identifier reaches the log and
+  never the client.
 
 ---
 
@@ -194,6 +205,20 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Error contract (2026-09-01), `P0-TSK-024`:
+- RFC 9457 problem details on **every** error path, including the four the framework raises before
+  our code runs - each proven over real HTTP, each failing if its handler is removed
+- No exception message, type, stack frame or framework member reaches a client; the response is
+  built from the error code alone, and `ProblemDetail` has no factory taking a `Throwable`
+- `ApiException` keeps the log message and the client detail in separate fields, so the unsafe
+  default is unreachable rather than merely discouraged
+- The JSON is decided in one place (`ProblemDetailBody`), after direct serialisation was found to
+  drop the correlation identifier and render absent members as null
+- Codes are namespaced, enumerable and catalogued, reconciled with
+  [`ERROR_CONTRACT.md`](../architecture/ERROR_CONTRACT.md) in both directions
+- The contract lives in `platform`, the rendering in `app` - a published contract must not be a
+  function of the web stack under it
 
 Delivery assumptions made executable (2026-09-01), `P0-TST-006`:
 - Deduplication proven independent of arrival order, with duplicates interleaved and backwards
@@ -400,7 +425,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-024` is the next task, opening milestone M0.4.
+None in progress. `P0-TSK-025` is the next task.
 
 ## Blockers
 
@@ -527,6 +552,8 @@ carries, what triggers paying it down, and the owning phase.
 | **Audit retention and archival.** Records are never deleted, and the application role cannot delete them | ADR-0010 is explicit that deletion is not an option and that archival must preserve queryability - which is a Phase 15 deliverable, not a sweep | Unbounded growth of a table written on every privileged action. **Not** a correctness risk: the inability to delete is the invariant working, and archival must preserve the trail rather than trim it | Table size becoming operationally material | Phase 15 (retention and archival) |
 | **Four-eyes approver is not modelled.** `audit_record` records one actor | `INV-AUD-04` applies to manual adjustments, break resolutions, policy activations and period close - none of which exist yet. ADR-0010 schedules it for Phases 3, 8 and 14 | None today: there is no four-eyes action to under-record. When one arrives it needs a second actor column, which is an ordinary forward migration | The first action requiring a second approver | Phase 3 |
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
+| **No ingress correlation filter, so `correlationId` is absent from real error responses.** | `P0-TSK-024` built the contract; establishing a correlation scope per request is a request-handling concern that no task in `P0-EPIC-08` currently names | The member a client would quote when reporting a problem is never populated in production, so an error report cannot be joined to its log. The contract carries the field and the renderer reads it - only the scope is missing | Any task adding request handling; `P0-TSK-025` is the natural home | Phase 0, M0.4 |
+| **The ingress filter must wrap error handling, not just the handler.** | Recorded as a requirement rather than deferred work | A filter ordered inside the dispatcher, or a scope entered in a controller, closes before `@ExceptionHandler` runs - proven while writing `P0-TSK-024`'s test. The identifier would then reach the log and never the client, which looks like it works | The filter being written | Phase 0, M0.4 |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
 
 None of these is financial-correctness debt.
@@ -572,12 +599,14 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-024` - Error contract**, opening `P0-EPIC-08` and milestone **M0.4**.
+**`P0-TSK-025` - Request validation at the boundary**, continuing `P0-EPIC-08`.
 
-M0.3 delivered the correctness primitives with no outward surface at all. M0.4 adds the first
-one, and three things that have been waiting close with it: `P0-TSK-017` (`Idempotency-Key`
-header) is blocked on it, `P0-TSK-014`'s ingress-filter clause has had no filter to assert
-against, and the relay and inbox metrics recorded as debt need `P0-EPIC-09`.
+`api.ValidationFailed` (422) already exists for it, and so does the contract to render it
+through. Its criterion is about *where* rejection happens - validation failures must never reach
+domain code - rather than about the response shape, which is now settled.
+
+It is also the natural home for the **ingress correlation filter**, recorded as debt above: the
+error contract carries a `correlationId` member that nothing currently populates in production.
 
 ---
 
@@ -585,6 +614,7 @@ against, and the relay and inbox metrics recorded as debt need `P0-EPIC-09`.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-024` complete; **`P0-EPIC-08` and milestone M0.4 opened**, and the platform has its first outward-facing surface. RFC 9457 problem details on every error path - and the paths worth the work are the four the framework raises **before our code runs**: an unknown route, an unsupported method, an unparseable body, an unread media type. Left alone, each answers in Spring's own shape, so a client sees two error formats depending on how far into the request it got, and nothing notices because each looks reasonable alone. Tested over **real HTTP** rather than MockMvc, because MockMvc does not run the container's error dispatch and would have reported a clean contract for paths that return the framework's `/error` body in production. Two defects found by running it: **the wire format was an accident of the serialiser** - the platform record serialised directly produced `\"correlationId\":{}`, the identifier a client is meant to quote silently absent while its member was present, and `\"detail\":null` for absent members; fixed with an explicit wire record so a field added to the contract can no longer publish itself to every client. And **a correlation scope entered in a controller closes before the error handler runs** - the same shape as the relay defect, and now a recorded requirement on the ingress filter. `ApiException` keeps the log message and the client detail in separate fields so the unsafe default is unreachable rather than discouraged. 339 hermetic tests, 152 database tests. |
 | 2026-09-01 | Task completion review of `P0-TST-006`. No critical or important findings. The ordering guard was probed and is load-bearing - removing the `applied_sequence < EXCLUDED.applied_sequence` clause fails the two tests that depend on it, so neither is vacuous. One code-quality fix: the probe handlers read ambient state - a `ThreadLocal` sequence and a static mutable transfer id - which is fragile and, more to the point, models something no consumer does. `InboxConsumer.Handler` receives only the unit of work precisely because the caller has already deserialised the message, so the handlers now close over their message as a real consumer's would, and the test reads as the usage pattern it is meant to document. **Process note**: `git checkout --` destroyed the uncommitted refactor while reverting a probe, for the fourth time in this project. The remedy that works is the one already known - commit before probing - and it is recorded here rather than resolved to be remembered. 316 hermetic tests, 152 database tests. |
 | 2026-09-01 | `P0-TST-006` complete; **`P0-EPIC-06` and milestone M0.3 closed**. Duplicate delivery was already covered; **ordering was covered nowhere**, and `EVENT_ARCHITECTURE.md` made three claims about it that existed only as prose. The sharpest is now executable: an order-dependent handler is **still wrong under the inbox**. The handler everybody writes first receives `TransferCompleted` then `TransferInitiated` and ends up believing a finished transfer is still in flight - nothing failed, nothing retried, no duplicate occurred, the inbox did its job perfectly, and the projection is wrong anyway. An ordering key fixes it on the identical deliveries, with a positive control because a handler that ignored every second message would otherwise pass. Retention was made executable too: deleting a dedupe record - what a sweep running earlier than the producer's redelivery window does - makes the same message run twice with nothing reporting it, which is what `DATA_MIGRATIONS.md` §9 means by a correctness bound. The acceptance criterion was demonstrated against the live database: dropping the inbox primary key fails **nine tests across three classes**, then restored. Run through the application role, so the inbox's narrow grant is proven sufficient for real consumer use. 316 hermetic tests, 152 database tests. |
 | 2026-09-01 | Task completion review of `P0-TST-005`. One important finding: **the killed-instance test did not prove what it claimed**. Its comment said terminating a backend showed the relay's advisory lock had to be transaction-scoped - but killing a backend releases session-scoped locks just as thoroughly, and switching the relay to `pg_try_advisory_lock` passed all 145 database tests. The claim in the relay's own javadoc was therefore unverified. Closed by a test that models a **connection pool** rather than a crash: a source handing out one physical connection whose `close()` does nothing, which is what a pool does and the only case where a session actually survives the cycle. A session-scoped lock now fails exactly that test, and the comment on the killed-instance test says what it does prove. Two minor fixes: `pg_terminate_backend` returns whether it worked, and counting rows rather than successes would have asserted recovery from a crash that never happened; and a second event for one aggregate collided with the probe table's primary key. **A flake class removed**: three tests looped a fixed number of relay cycles assuming each would land an attempt, which holds only while the row is due when the poll runs - and the local clock steps backwards. They failed about one run in twenty, never the same test twice. All now loop on the state they are waiting for. 30 consecutive green runs. 316 hermetic tests, 146 database tests. |

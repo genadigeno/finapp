@@ -473,7 +473,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-10 — API baseline
 
-**P0-TSK-024 — Error contract**
+**P0-TSK-024 — Error contract** — `COMPLETE` (2026-09-01)
 - Context: platform / api
 - Description: RFC 9457 problem-detail responses with a stable machine-readable error code taxonomy; no stack traces or internal detail exposed.
 - Why: `.claude/rules/api-design.md` — explicit API error contracts.

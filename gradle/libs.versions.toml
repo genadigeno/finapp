@@ -78,6 +78,8 @@ spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies"
 # --- Application (versions supplied by the BOM) -----------------------------
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+# The HTTP surface, added by P0-TSK-024 - the first task with anything outward-facing.
+spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
 
 # --- Logging facade (version supplied by the BOM) ----------------------------
 # The facade only. platform binds nothing: choosing an implementation is the

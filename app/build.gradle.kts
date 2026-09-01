@@ -49,6 +49,12 @@ dependencies {
     implementation(project(":platform"))
 
     implementation(libs.spring.boot.starter)
+    implementation(libs.spring.boot.starter.web)
+
+    // The first HTTP surface (P0-TSK-024, M0.4). app is where it belongs: MODULE_ARCHITECTURE.md
+    // §M10 puts routing, content negotiation and error rendering here, and the error CONTRACT -
+    // the codes and the problem-detail shape - in platform, which stays framework-free because a
+    // published contract must not be a function of the web stack underneath it.
     testImplementation(libs.spring.boot.starter.test)
 
     // Architecture rules live here because `app` is the only module that sees every other
@@ -76,5 +82,12 @@ tasks.test {
     // report UP-TO-DATE and the build go green. A third such guard needs a third line here.
     inputs.file(rootProject.layout.projectDirectory.file("docs/architecture/AUDITABLE_ACTIONS.md"))
         .withPropertyName("auditableActionsCatalogue")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The third. ErrorCodeRegistryTest reads it and asserts it names exactly the codes the
+    // taxonomy declares. Declared for the reason the comment above gives - and this is the
+    // "third line" that comment predicted would be needed.
+    inputs.file(rootProject.layout.projectDirectory.file("docs/architecture/ERROR_CONTRACT.md"))
+        .withPropertyName("errorContractCatalogue")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
