@@ -612,6 +612,26 @@ Status: `IN_PROGRESS`
 - Cx: S
 - DoD: `DOD-SEC`
 
+**P0-TSK-041 — Architecture rule for single-instance assumptions**
+- Context: platform / architecture
+- Description: An ArchUnit rule failing the build on the mechanically detectable single-instance patterns — `synchronized` methods or blocks, `ReentrantLock`/`Semaphore`, static mutable collections, `ScheduledExecutorService` and ambient scheduling — with a named, justified exemption set for the non-authoritative uses recorded in `DISTRIBUTED_EXECUTION.md` §3.
+- Why: ADR-0014 is a design rule today and design rules decay. The `INV-MON-01` and no-ambient-time rules show the pattern works, and the P0-TSK-016 defect shows the assumption is easy to reintroduce.
+- Deps: P0-TSK-007, ADR-0014
+- Accept: Rule fails the build on a planted `synchronized` block over shared state and on a static mutable collection; passes on the documented non-authoritative uses; each exemption names why it cannot affect correctness.
+- Risk: Medium
+- Cx: M
+- DoD: `DOD-ARCH`
+
+**P0-TST-009 — Multi-instance concurrency test convention**
+- Context: platform / test
+- Description: A convention and harness for tests that must simulate several instances: separate connections, separate component instances, and separate clocks where a clock participates in the decision.
+- Why: The P0-TSK-016 lease defect passed every test because they ran in one JVM with one clock. A concurrency test that shares a connection serialises itself, and one that shares a clock cannot see skew — both look like concurrency tests and prove far less.
+- Deps: P0-TSK-016, P0-TSK-035
+- Accept: A documented convention plus at least one test proving a clock-skew failure is detectable; existing concurrency tests audited against it.
+- Risk: Medium
+- Cx: M
+- DoD: `DOD-TEST`
+
 **P0-TSK-039 — Dependency verification and locking**
 - Context: platform / security / build
 - Description: Gradle dependency verification (checksum and/or signature metadata) plus dependency locking, so the set of artefacts the build resolves is pinned and tamper-evident.

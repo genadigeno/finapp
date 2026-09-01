@@ -119,6 +119,23 @@ run the identical pinned image.
 7. Observability across customer -> request -> domain operation -> provider -> ledger -> settlement -> reconciliation.
 8. Regulatory-specific behavior behind policy/configuration/adapters.
 
+## Multi-Instance Execution
+
+Every service runs as **N concurrent instances** — pods, containers, JVMs, hosts — and N is
+never 1. ADR-0001's modular monolith is one *deployable*, not one *process*: it is deployed as
+several replicas behind a load balancer, and every distributed-systems constraint applies to it
+exactly as it would to separate services.
+
+No business logic may rely on a single-process assumption. Authoritative state lives in the
+database; coordination involving time uses the database's clock; process-local mechanisms are
+permitted only where they are explicitly non-authoritative and correctness does not depend on
+them.
+
+The full requirement, the component register and the audit that produced it are in
+[`DISTRIBUTED_EXECUTION.md`](DISTRIBUTED_EXECUTION.md). The decision is ADR-0014.
+
+---
+
 ## Preferred Evolution
 
 Start with a modular monolith unless a hard requirement justifies distribution. Extract services only when independent scaling, isolation, ownership, deployment, or reliability warrants it.

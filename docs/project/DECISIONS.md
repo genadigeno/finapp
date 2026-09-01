@@ -26,6 +26,16 @@ direction, since splitting a module later is a package move whereas merging two 
 have both grown authoritative state is not. → [ADR-0012](../adr/ADR-0012-context-to-module-mapping.md),
 [`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md)
 
+### Distributed execution
+Every service runs as N concurrent instances, and N is never 1. Authoritative state — uniqueness,
+idempotency, limits, leases, workflow state, financial position — lives in the database, never in
+process memory. Coordination that involves time uses the database's clock, because a lease
+judged by two instances' clocks is a race against skew rather than a boundary. Process-local
+mechanisms are permitted only where they are explicitly non-authoritative. This does not change
+ADR-0001: one deployable is not one instance. &rarr;
+[ADR-0014](../adr/ADR-0014-multi-instance-execution.md),
+[`DISTRIBUTED_EXECUTION.md`](../architecture/DISTRIBUTED_EXECUTION.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
