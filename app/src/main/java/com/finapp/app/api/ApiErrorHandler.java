@@ -5,6 +5,7 @@ import com.finapp.platform.api.ErrorCode;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.api.ProblemDetail;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
@@ -143,11 +145,62 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
                         .map(error -> error.getField() + " " + error.getDefaultMessage())
                         .sorted()
                         .collect(java.util.stream.Collectors.joining("; "));
+        return validationFailed(detail, request);
+    }
+
+    /**
+     * A constraint broken on a parameter of a {@code @Validated} bean.
+     *
+     * <p>The third of Spring's three validation mechanisms, and the one its base handler does not
+     * cover at all. Left alone it reached the catch-all and became {@code 500 api.InternalError} —
+     * the worst of the three answers, because the caller can fix it and is told they cannot.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Object> handleConstraintViolation(
+            ConstraintViolationException exception, WebRequest request) {
+
+        String detail =
+                exception.getConstraintViolations().stream()
+                        // The violation's message is the constraint's, which is ours. Its invalid
+                        // value is the caller's, and never goes back (INV-AUD-02).
+                        .map(violation -> violation.getPropertyPath() + " " + violation.getMessage())
+                        .sorted()
+                        .collect(java.util.stream.Collectors.joining("; "));
+        return validationFailed(detail, request);
+    }
+
+    /** Field names and constraint messages, both of which are ours. Never the values. */
+    private static String describe(HandlerMethodValidationException validation) {
+        return validation.getParameterValidationResults().stream()
+                .flatMap(
+                        result ->
+                                result.getResolvableErrors().stream()
+                                        .map(
+                                                error ->
+                                                        result.getMethodParameter().getParameterName()
+                                                                + " "
+                                                                + error.getDefaultMessage()))
+                .sorted()
+                .collect(java.util.stream.Collectors.joining("; "));
+    }
+
+    /**
+     * One rendering for every way a constraint can be broken.
+     *
+     * <p>Three mechanisms reach it — a request body, a method parameter, and a method parameter
+     * of a {@code @Validated} bean. Left to Spring's defaults they produced 422, 400 and 500
+     * respectively, which is three answers to one question and no contract at all.
+     */
+    private ResponseEntity<Object> validationFailed(String detail, WebRequest request) {
         String path = pathOf(request);
         LOGGER.warn("Validation failed on {}: {}", path, detail);
         return ResponseEntity.status(HttpStatus.valueOf(PlatformErrorCode.VALIDATION_FAILED.status()))
                 .contentType(PROBLEM_JSON)
-                .body(ProblemDetailBody.from(ProblemDetail.of(PlatformErrorCode.VALIDATION_FAILED, path,
+                .body(
+                        ProblemDetailBody.from(
+                                ProblemDetail.of(
+                                        PlatformErrorCode.VALIDATION_FAILED,
+                                        path,
                                         detail.isBlank() ? null : detail)));
     }
 
@@ -165,6 +218,22 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
             HttpHeaders headers,
             HttpStatusCode statusCode,
             WebRequest request) {
+
+        // A constraint broken on a method parameter, rather than on a request body.
+        //
+        // Checked here rather than by overriding Spring's own
+        // handleHandlerMethodValidationException, which never runs: that exception extends
+        // ResponseStatusException, so the base class dispatches it through a more general branch
+        // and it arrives here with 400 already chosen. The override compiled, looked right, and
+        // was dead code — found only because the isolated run and the full suite disagreed,
+        // since which mechanism Spring uses depends on whether any bean in the context is
+        // @Validated.
+        //
+        // This method is the funnel every framework error provably passes through, so a mapping
+        // placed here cannot be routed around by Spring's internal dispatch.
+        if (exception instanceof HandlerMethodValidationException validation) {
+            return validationFailed(describe(validation), request);
+        }
 
         ErrorCode code = codeForStatus(statusCode.value());
         String path = pathOf(request);
