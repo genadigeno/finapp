@@ -48,53 +48,57 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-014` — Correlation and causation context**
-Status: `READY` — not started.
+**None in progress.**
 
-Bounded context: platform. Depends on `P0-TSK-002` (`COMPLETE`).
+`P0-EPIC-04`'s remaining item, `P0-TST-003` (correlation propagation integration test), is
+**blocked until M0.4** — it asserts correlation identity across a log line, a trace, an outbox
+row and an audit record, and three of those four subsystems do not exist yet. Recorded in
+[`BACKLOG.md`](BACKLOG.md); this is a backlog sequencing defect, not a gap in `P0-TSK-014`.
 
-Scope: an ingress filter establishing `correlationId` (accepted or generated) and
-`causationId`, propagated into MDC, traces, outbox events and audit records.
-
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-04. DoD profile: `DOD-KERNEL`.
+Milestone M0.2 is therefore complete except for that blocked test.
 
 ### Just completed
 
-**`P0-TSK-013` — Time abstraction** — `COMPLETE` (2026-09-01).
+**`P0-TSK-014` — Correlation and causation context** — `COMPLETE` (2026-09-01) for the clauses
+that can be verified now; the rest transferred to `P0-TST-003` with the backlog corrected.
 
-| Acceptance criterion | Evidence |
+| Acceptance criterion | Status |
 |---|---|
-| Architecture rule fails the build on direct `now()` use in domain packages | `Instant.now()` and `System.currentTimeMillis()` planted in `sharedkernel` production code each failed `./gradlew build`, naming `noAmbientTimeIsRead`; `Clock.systemUTC()` in the kernel failed `onlyTheCompositionRootBuildsASystemClock` |
-| Tests can advance time deterministically | `TestClock` — `advance`, `rewind`, `set`; `IdGeneratorTest` uses it to prove behaviour under a clock jumped back an hour |
+| One request produces **log lines** carrying one `correlationId` | **Met** — asserted against a real Logback appender, reading what was written rather than that a logger was called |
+| ...a **trace**... | **Deferred** — no tracing exporter exists (`P0-EPIC-09`, M0.4) |
+| ...and an **emitted event**... | **Deferred** — no outbox exists (`P0-EPIC-06`, M0.3) |
+| Propagation survives an **async handoff** | **Met** — proven across an executor, including the pooled-thread leak case |
 
-No new ADR: ADR-0006 already lists this under *Additional enforced rules*, so the task
-implements a recorded decision rather than taking a new one.
+**The acceptance criterion could not be met as written, and that is a backlog defect.** It names
+a trace, an emitted event and an ingress filter; the tracing exporter, the outbox, the audit
+store and the HTTP surface all arrive in later milestones. Structurally the same defect as
+`P0-TSK-004`'s over-specified dependencies, and corrected the same way — in the backlog, with
+the deferred clauses transferred to the task that can actually run them.
 
 Design decisions worth carrying forward:
-- **The rule found a violation immediately, and it was mine.** `IdGenerator.systemDefault()`,
-  written one task earlier, called `Clock.systemUTC()`. Removed rather than exempted: the
-  shared kernel does not decide where time comes from, and a convenience factory that reads
-  ambient time is exactly the seam through which ambient time re-enters a codebase that has
-  decided against it. Weakening a rule to accommodate existing code is the anti-pattern
-  `DEFINITION_OF_DONE` §3 names.
-- **Two rules, because there are two different things.** A zero-argument `now()` has no seam
-  and is forbidden everywhere with no exemption. `Clock.systemUTC()` produces an *injectable*
-  clock and must exist somewhere, so it is permitted in the composition root alone.
-- **`Instant.now(clock)` is deliberately allowed.** Matching on the method name alone would
-  forbid the idiomatic call and push people off the correct API — a rule that makes the
-  codebase worse while looking stricter.
-- **The module-scoped rule needed a fixture outside the composition root.** Every architecture
-  fixture lives in `com.finapp.app.architecture`, which the rule is *right* to permit, so no
-  fixture there could ever demonstrate it. `SystemClockProbe` declares `com.finapp.ledger`
-  while living in app's test sources; asserting a differently-configured copy of the condition
-  would have tested something other than the rule that runs.
-- **What no rule can check is written down instead.** An injected clock still has to be the
-  right clock: posting date, value date and system time are three different things, and
-  substituting one for another is a domain error that reads perfectly.
-  [`DOMAIN_MODEL.md`](../domain/DOMAIN_MODEL.md) §Time now names the distinction and its
-  consequences.
-- **`ArchitectureRulesAreDocumentedTest` earned its keep one task after being written** — it
-  failed the build until the two new rules were documented in `MODULE_ARCHITECTURE.md` §6.
+- **`InheritableThreadLocal` is the obvious answer and is wrong.** It copies at thread
+  *creation*, not at submission, so a pooled worker keeps the context of whichever request
+  happened to create it and stamps that identifier onto every later request it serves. The
+  failure is not missing correlation but *confidently wrong* correlation — an investigation
+  follows the identifier into unrelated work. Context is captured explicitly at submission, and
+  a test asserts the leak does not happen.
+- **Correlation and causation are different types because they answer different questions.**
+  Correlation is flat and says what belongs together; causation links to the immediate parent
+  and its chain says what caused what. Sharing a type would make them swappable, and swapping
+  them yields a system where every record claims to have caused itself while correlation still
+  ties things together — so it reads as working.
+- **Identifiers are untrusted input.** A correlation id may be *accepted* from a caller and then
+  written into every log line of the flow, so a newline in it forges log entries. Default-deny
+  charset, bounded length, **rejected rather than sanitised** — silently rewriting a caller's
+  identifier breaks the tie to their trace while appearing to succeed — and the rejection
+  message does not echo the value, or the log line reporting it would contain the control
+  characters the check exists to exclude.
+- **The MDC is written and restored by the same code that owns the scope.** A log context set
+  and never cleared is the pooled-thread bug in another place; leaving a scope restores what was
+  there before rather than clearing, so a job inside a request does not wipe the request.
+- **`slf4j-api` added to `platform`, facade only.** Binding a backend in a library imposes it on
+  every consumer. The Spring Boot BOM is applied as version constraints only so the facade
+  cannot split across two versions — which fails silently rather than loudly.
 
 ---
 
@@ -187,6 +191,16 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
   domain exceptions under one `MonetaryException` supertype
 - `CurrencyCode` validates against ISO 4217 and rejects codes with no minor unit
 - No floating point anywhere on the monetary path
+
+Correlation kernel (2026-09-01), `P0-TSK-014`:
+- `CorrelationId` / `CausationId`: distinct types, validated against log injection with a
+  default-deny charset, bounded, rejected rather than sanitised
+- `Correlation`: correlation inherited, causation replaced by the emitting message, so the
+  causal tree survives rather than flattening
+- `CorrelationContext`: scope entry/exit with restore-not-clear, and explicit capture at
+  submission so a pooled worker never inherits an unrelated flow
+- Log lines proven to carry the identifier by reading a real appender, not by mocking a logger
+- No Spring: the kernel is framework-free and serves an HTTP filter, a job and a consumer alike
 
 Time discipline (2026-09-01), `P0-TSK-013`:
 - Ambient time is a build failure: no zero-argument `now()`, `System.currentTimeMillis()`,
@@ -340,6 +354,7 @@ Recorded so it is not mistaken for a completed criterion.
 | `P0-TSK-004` | The CycloneDX SBOM covers the whole resolved dependency set, test scope included (21 of ~61 components). Plugin 3.4.1 exposes no configuration filter. Adequate for vulnerability scanning — test libraries execute on CI runners, so they are legitimately in scope — but it means a HIGH/CRITICAL advisory in a test-only library fails the build though nothing vulnerable ships, and **the SBOM must not be published as shipping provenance in this form** because it overstates what is deployed. | Phase 15 (supply chain and provenance) |
 | `P0-TSK-004` | CI actions and scanner images are pinned by SHA/digest with no automated update path, so the pins will rot. | `P0-TSK-040` |
 | ~~`P0-TSK-002`~~ | ~~Boundary enforcement partial~~ — **closed**. Cross-module internals and entity references by `P0-TSK-007`; `INV-MON-01` by `P0-TSK-008`. | — |
+| `P0-TSK-014` | The acceptance criterion's trace, emitted-event and ingress-filter clauses are unverifiable: no tracing exporter, outbox, audit store or HTTP surface exists yet. The correlation kernel they will each call is built and proven, and the clauses are transferred to `P0-TST-003` in the backlog. | `P0-EPIC-06`, `-07`, `-08`, `-09`, then `P0-TST-003` |
 | `P0-TSK-003`, `P0-TSK-005` | Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised. The migrator/application role split is designed and documented (`DATA_MIGRATIONS.md` §5) but not implemented, and must land **before** any table subject to those invariants is created. | `P0-TSK-022` |
 
 ---
@@ -390,11 +405,11 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-014` — Correlation and causation context.**
+**`P0-TSK-015` — Idempotency record schema**, opening `P0-EPIC-05` and milestone M0.3.
 
-It and `P0-TST-003` (correlation propagation) are all that remain of `P0-EPIC-04` and milestone
-M0.2. `P0-TSK-014` is the first Phase 0 task with a Spring-facing surface — an ingress filter —
-so it is also where `platform`'s framework boundary gets its first real test.
+`P0-TST-003` is skipped deliberately, not forgotten: it is blocked until M0.4 (see Current
+Task). Taking it now would mean either building four subsystems inside a test task or writing a
+test that asserts less than its own description claims.
 
 ---
 
@@ -402,6 +417,7 @@ so it is also where `platform`'s framework boundary gets its first real test.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-014` complete for what can be verified now. Correlation and causation modelled as distinct types, validated as untrusted input against log injection, with a context that survives an async handoff and provably does not leak between tasks on a pooled thread — the failure `InheritableThreadLocal` would have introduced. Log lines proven to carry the identifier by reading a real Logback appender. **The acceptance criterion could not be met as written**: it names a trace, an emitted event and an ingress filter, and the exporter, outbox, audit store and HTTP surface all arrive in later milestones. Backlog corrected and the clauses transferred to `P0-TST-003`, which is recorded as blocked until M0.4. `slf4j-api` added to `platform` (facade only). 254 tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-013`. Three findings in the rule itself, all from probing rather than reading. **`Instant::now` as a method reference bypassed the rule entirely** — a method reference is an `invokedynamic`, not a call, so `getMethodCallsFromSelf()` never sees it; closed with `getMethodReferencesFromSelf()`, and a rule one syntax away from being bypassed is not enforcement. **`TemporalAdjusters.firstDayOfNextMonth` was forbidden and should not have been** — it is applied to a date the caller already holds and reads nothing, so the rule was pushing people off a correct API, exactly the failure its own javadoc warns about. **Ambient *zone* was not forbidden**, though `instant.atZone(ZoneId.systemDefault())` makes which date an instant falls on depend on server configuration — a dating defect no amount of clock injection prevents. Also removed a dead `java.sql.Timestamp` entry that could never match. All four re-probed, including two positive controls proving the allowed APIs stay allowed. 219 tests. |
 | 2026-09-01 | `P0-TSK-013` complete. Two ArchUnit rules make ambient time a build failure, with `Clock.systemUTC()` permitted in the composition root alone. The rules immediately caught a violation written in the previous task — `IdGenerator.systemDefault()` — which was removed rather than exempted. `Instant.now(clock)` is deliberately allowed, since forbidding the clock-taking overloads would push people off the correct API. `TestClock` replaces an inline test clock and makes `rewind` a named operation, because NTP correction moves real clocks backwards. `DOMAIN_MODEL.md` §Time records the posting-date/value-date/system-time distinction, which no rule can enforce. The `P0-DOC-002` documentation-equivalence check failed the build until the new rules were documented, one task after it was written. 219 tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-012`. A mutation sweep over `IdGenerator` and `EntityId` found one real gap: deleting the RFC-variant check from `EntityId` survived every test, because every rejection case in the suite already failed the *version* check first, so the variant branch was never reached. A version-7-but-wrong-variant value claims to be time-ordered while not being an RFC 9562 UUID, and its high bits would be read as a timestamp on the strength of a version field nothing corroborates. Case added; the mutation now fails. Two other mutations survived and are correct to: `hashCode` dropping the class component violates no contract (`equals` still distinguishes), and making `EntityId` final is caught at compile time rather than by a test — my probe harness reported it as surviving because it parsed stale results without checking the exit code, which is the same defect shape these reviews keep finding, this time in the probe rather than the code. 213 tests — the case was added to an existing rejection test rather than as a new one. |

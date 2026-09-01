@@ -228,7 +228,7 @@ phases must satisfy, not a description of code.
 
 ### `platform` — Phase 0
 - **Responsibility:** the correctness primitives every module depends on. Mechanism, never business rules.
-- **Owns:** idempotency records, outbox, inbox, audit records.
+- **Owns:** idempotency records, outbox, inbox, audit records, the correlation/causation context (`P0-TSK-014`).
 - **Transaction:** participates in the caller's transaction and never opens its own. A platform component that opened its own transaction would defeat its purpose.
 - **Consistency:** strong; always same-transaction with the caller's state change.
 - **APIs:** internal only — idempotent execution wrapper, outbox writer, inbox consumer wrapper, audit writer, error contract, provider SPI. No business HTTP surface.

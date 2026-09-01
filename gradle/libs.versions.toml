@@ -79,6 +79,14 @@ spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies"
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 
+# --- Logging facade (version supplied by the BOM) ----------------------------
+# The facade only. platform binds nothing: choosing an implementation is the
+# application's job, and a library that picks one imposes it on every consumer.
+slf4j-api = { module = "org.slf4j:slf4j-api" }
+# Logback's list appender is how a test asserts what was actually logged, rather
+# than asserting that a logging call was made. Test scope only.
+logback-classic = { module = "ch.qos.logback:logback-classic" }
+
 # --- Test libraries, for modules that must not see Spring ---------------------
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junitJupiter" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

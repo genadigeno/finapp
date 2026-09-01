@@ -255,12 +255,20 @@ Status: `IN_PROGRESS`
 - Cx: S
 - DoD: `DOD-KERNEL`
 
-**P0-TSK-014 — Correlation and causation context**
+**P0-TSK-014 — Correlation and causation context** — `COMPLETE` (2026-09-01)
 - Context: platform
 - Description: Ingress filter establishing `correlationId` (accepted or generated) and `causationId`; propagation into MDC, traces, outbox events and audit records.
 - Why: `CLAUDE.md` requires observability across customer → request → domain → provider → ledger → settlement → reconciliation.
 - Deps: P0-TSK-002
 - Accept: One request produces log lines, a trace and an emitted event all carrying the identical `correlationId`; propagation survives an async handoff.
+- **Acceptance corrected (2026-09-01).** As written this criterion could never be met when the
+  task runs: it names a trace, an emitted event and an ingress filter, and the tracing exporter
+  (`P0-EPIC-09`, M0.4), the outbox (`P0-EPIC-06`, M0.3), the audit store (`P0-EPIC-07`, M0.3)
+  and the HTTP surface (`P0-EPIC-08`, M0.4) all arrive in later milestones. Structurally the
+  same defect as `P0-TSK-004`'s over-specified dependencies. The clauses verifiable here — log
+  lines carrying one identifier, and survival across an async handoff — are met and proven. The
+  trace, event and audit clauses transfer to `P0-TST-003`, which must not be attempted before
+  those subsystems exist.
 - Risk: Medium
 - Cx: M
 - DoD: `DOD-KERNEL`
@@ -268,6 +276,10 @@ Status: `IN_PROGRESS`
 **P0-TST-003 — Correlation propagation integration test**
 - Context: platform
 - Description: End-to-end test asserting correlation identity across log, trace, outbox row and audit record.
+- **Blocked until M0.4 (recorded 2026-09-01).** Needs the outbox (`P0-EPIC-06`), the audit store
+  (`P0-EPIC-07`), an HTTP surface (`P0-EPIC-08`) and a tracing exporter (`P0-EPIC-09`). It
+  cannot run in M0.2 and is not a gap in `P0-TSK-014`, which built and proved the kernel those
+  subsystems will call.
 - Why: Correlation gaps are only discovered during incidents unless tested.
 - Deps: P0-TSK-014, P0-TSK-019, P0-TSK-022
 - Accept: Test fails if propagation is removed from any one of the four sinks.

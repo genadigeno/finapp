@@ -88,12 +88,29 @@ dependencies {
     // declaring a second edge.
     api(project(":sharedkernel"))
 
-    // No Spring artefact, in main or test.
+    // The Spring Boot BOM as version constraints only. No Spring artefact enters this
+    // module, in main or test — the BOM is here so slf4j resolves to exactly the version
+    // the application runs, because a logging facade split across two versions binds to
+    // nothing and fails silently rather than loudly.
+    implementation(platform(libs.spring.boot.bom))
+    testImplementation(platform(libs.spring.boot.bom))
+
+    // `api`, not `implementation`: correlation identifiers are written into the caller's
+    // log context, so a consumer of platform legitimately compiles against MDC.
     //
-    // Platform will need Spring once it has outbox, inbox, idempotency and audit
-    // components (P0-TSK-014 onward), and it will be added by the task that needs it.
-    // Declaring it now is speculative, and it would put the whole Spring test stack on the
-    // classpath of a test that uses only JUnit and AssertJ.
+    // The facade only. Binding a backend here would impose it on every consumer, and
+    // choosing one is the application's decision.
+    api(libs.slf4j.api)
+
+    // Platform still holds no Spring code. It will need Spring once it has an outbox
+    // relay, an inbox consumer and an HTTP ingress filter; P0-TSK-014 deliberately did not
+    // add it, because the correlation kernel and its propagation are framework-free and
+    // there is no HTTP surface yet to filter (P0-EPIC-08).
+
+    // A real logging backend, test scope only, so a test can read what was actually
+    // written to the log rather than assert that a logging call was made.
+    testImplementation(libs.logback.classic)
+
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
