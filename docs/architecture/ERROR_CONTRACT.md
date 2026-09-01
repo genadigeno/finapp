@@ -76,6 +76,45 @@ never succeed, and a spike of malformed requests would otherwise be indistinguis
 outage. An unmapped 4xx becomes `api.MalformedRequest` and is logged as a warning, so the gap is
 visible rather than quietly approximated.
 
+## 3a. Rejection at the boundary
+
+Untrusted input is refused before any domain code runs (`P0-TSK-025`).
+
+| Rejected | Code | Where |
+|---|---|---|
+| Body fails declared constraints | `api.ValidationFailed` (422) | Bean Validation, before the handler is entered |
+| Body exceeds the size limit | `api.PayloadTooLarge` (413) | A filter, before the body is read |
+| Body will not parse | `api.MalformedRequest` (400) | The message converter |
+
+**Validation failures never reach domain code**, and that is a claim about *where*, not about the
+response — a 422 returned after the handler ran and did half the work looks identical from
+outside. The tests count handler entries rather than reading the response.
+
+**The size limit closes both routes.** A declared `Content-Length` over the limit is refused
+without reading a byte. A chunked request declares no length at all — which is precisely how a
+caller opts out of a header check — so the body is also wrapped in a counting stream that stops
+at the limit. Default 1 MiB, `finapp.api.max-request-bytes`.
+
+**Rejected values are never echoed.** A validation detail names the field and the constraint,
+both of which are ours. The value is the caller's, and reflecting untrusted bytes into a response
+is how an error message becomes a vector (`INV-AUD-02`).
+
+### Correlation at the boundary
+
+Every request is given a correlation identifier by a filter at the highest precedence, and every
+response carries it in the `X-Correlation-Id` header as well as in the problem detail.
+
+The filter's ordering is a **requirement, not a preference**: its scope must wrap error handling,
+not merely the handler. A scope entered inside a controller closes before the exception it raised
+reaches an exception handler, so the renderer would run with nothing in scope and the identifier
+would reach the log and never the client.
+
+A client may supply the header so its logs and ours can be joined. That value is untrusted:
+`CorrelationId` validates it against a default-deny charset and **rejects rather than sanitises**,
+because a silently rewritten identifier breaks the client's own correlation without telling
+anyone — they log one value, we log another, and the two can never be joined. A rejected header
+does not fail the request; a malformed diagnostic hint is not a reason to decline a payment.
+
 ## 4. Codes are permanent
 
 A client's error handling is written against these strings. Renaming one silently changes the

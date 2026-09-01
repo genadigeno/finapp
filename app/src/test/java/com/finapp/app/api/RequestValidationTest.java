@@ -223,10 +223,23 @@ class RequestValidationTest {
                         HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).as("the request still succeeds").isEqualTo(200);
-        assertThat(response.headers().firstValue(CorrelationFilter.HEADER).orElseThrow())
-                .as("the platform's own identifier, not the caller's")
-                .doesNotContain("bad value")
-                .isNotBlank();
+
+        // Asserted against every fragment of the input, not just the whole string. A mutation
+        // sweep found that "does not contain the original" passes for a SANITISED value -
+        // "bad value with spaces!" becomes "bad_value_with_spaces_" and the assertion is
+        // satisfied while the platform has accepted a value derived from untrusted input.
+        //
+        // Sanitising is the wrong behaviour and CorrelationTokens says so: it rejects rather
+        // than sanitises, because a silently rewritten identifier breaks the client's own
+        // correlation without telling anyone - they log one value, we log another, and the two
+        // can never be joined.
+        String issued = response.headers().firstValue(CorrelationFilter.HEADER).orElseThrow();
+        assertThat(issued).isNotBlank();
+        assertThat(issued)
+                .as("nothing derived from what the caller sent")
+                .doesNotContain("bad")
+                .doesNotContain("value")
+                .doesNotContain("spaces");
         assertThat(injection).isNotBlank();
     }
 

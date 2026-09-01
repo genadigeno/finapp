@@ -483,7 +483,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-API`
 
-**P0-TSK-025 — Request validation at the boundary**
+**P0-TSK-025 — Request validation at the boundary** — `COMPLETE` (2026-09-01)
 - Context: platform / api
 - Description: Declarative validation with rejection before any domain invocation; all external input treated as untrusted.
 - Why: `.claude/rules/security.md` and `api-design.md`.
