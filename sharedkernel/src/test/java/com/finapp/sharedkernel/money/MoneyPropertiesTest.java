@@ -418,8 +418,8 @@ class MoneyPropertiesTest {
         }
 
         @Test
-        @DisplayName("every policy lands between FLOOR and CEILING")
-        void everyPolicyIsBracketedByFloorAndCeiling() {
+        @DisplayName("each policy rounds in the direction that defines it")
+        void eachPolicyRoundsInItsOwnDirection() {
             Random random = seeded();
             int defined = 0;
 
@@ -428,22 +428,45 @@ class MoneyPropertiesTest {
                 BigDecimal raw = anyDecimal(random);
                 RoundingPolicy policy = anyPolicy(random);
 
-                Money floor = resultOrNull(() -> Money.of(raw, currency, RoundingPolicy.FLOOR));
-                Money ceiling = resultOrNull(() -> Money.of(raw, currency, RoundingPolicy.CEILING));
-                Money actual = resultOrNull(() -> Money.of(raw, currency, policy));
-
-                if (floor == null || ceiling == null || actual == null) {
+                Money rounded = resultOrNull(() -> Money.of(raw, currency, policy));
+                if (rounded == null) {
                     continue;
                 }
-                // A policy that escaped this bracket would be rounding to the wrong
-                // neighbour — the defect that separates TOWARDS_ZERO from FLOOR on negative
-                // amounts, and the one that example-based tests miss on the sign they omit.
-                assertThat(actual.minorUnits())
-                        .as("%s under %s must lie within [%s, %s]", raw, policy.policyName(), floor, ceiling)
-                        .isBetween(floor.minorUnits(), ceiling.minorUnits());
+                BigDecimal result = rounded.toBigDecimal();
+                BigDecimal halfMinorUnit =
+                        BigDecimal.ONE.movePointLeft(currency.minorUnits()).divide(BigDecimal.valueOf(2L));
+
+                // Each policy is pinned by the property that defines it, stated without
+                // reference to RoundingMode. An earlier version of this test bracketed every
+                // policy between FLOOR and CEILING computed through Money itself; when a
+                // deliberate break made every policy round CEILING, the bracket collapsed onto
+                // the broken value and the assertion held. An oracle that shares the defect is
+                // not an oracle.
+                switch (policy) {
+                    case FLOOR ->
+                            assertThat(result)
+                                    .as("FLOOR of %s must not exceed it", raw)
+                                    .isLessThanOrEqualTo(raw);
+                    case CEILING ->
+                            assertThat(result)
+                                    .as("CEILING of %s must not fall below it", raw)
+                                    .isGreaterThanOrEqualTo(raw);
+                    case TOWARDS_ZERO ->
+                            assertThat(result.abs())
+                                    .as("TOWARDS_ZERO of %s must not grow in magnitude", raw)
+                                    .isLessThanOrEqualTo(raw.abs());
+                    case AWAY_FROM_ZERO ->
+                            assertThat(result.abs())
+                                    .as("AWAY_FROM_ZERO of %s must not shrink in magnitude", raw)
+                                    .isGreaterThanOrEqualTo(raw.abs());
+                    case HALF_EVEN, HALF_UP ->
+                            assertThat(result.subtract(raw).abs())
+                                    .as("%s of %s must pick the nearer neighbour", policy.policyName(), raw)
+                                    .isLessThanOrEqualTo(halfMinorUnit);
+                }
                 defined++;
             }
-            assertMeaningfulCoverage(defined, "policy bracketing");
+            assertMeaningfulCoverage(defined, "policy direction");
         }
 
         @Test
