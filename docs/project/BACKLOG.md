@@ -314,7 +314,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-KERNEL`
 
-**P0-TSK-016 — Idempotent execution wrapper**
+**P0-TSK-016 — Idempotent execution wrapper** — `COMPLETE` (2026-09-01)
 - Context: platform
 - Description: Execute-once wrapper: claim the key, execute, persist outcome, replay the stored response on retry. Reject a matching key with a differing request fingerprint.
 - Why: Retrying the same command must never create a second financial effect; a *different* command reusing a key must be an error, not a silent success.
