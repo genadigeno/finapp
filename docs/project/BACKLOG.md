@@ -205,7 +205,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-KERNEL`
 
-**P0-TST-001 — `Money` property and edge-case tests**
+**P0-TST-001 — `Money` property and edge-case tests** — `COMPLETE` (2026-09-01)
 - Context: sharedkernel
 - Description: Property-based tests for commutativity/associativity of addition, currency-mismatch rejection, overflow, negative amounts, zero handling, and rounding across JPY (0), USD (2) and BHD (3).
 - Why: Kernel correctness must be demonstrated, not assumed.

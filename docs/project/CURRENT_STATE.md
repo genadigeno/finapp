@@ -42,45 +42,51 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TST-001` — `Money` property and edge-case tests**
+**`P0-TST-002` — Allocation zero-residual test**
 Status: `READY` — not started.
 
-Bounded context: sharedkernel. Depends on `P0-TSK-009` (`COMPLETE`).
+Bounded context: sharedkernel. Depends on `P0-TSK-010` (`COMPLETE`).
+
+Note for that task: `MoneyAllocationTest` already sweeps ~160,000 even splits and 2,000
+weighted ones and asserts zero residual, and `P0-TSK-010` demonstrated it failing when the
+remainder is discarded. The honest work is to check that claim against the acceptance criterion
+as written — "any amount across any 1..100 parts" — and to say plainly where coverage is
+already adequate rather than restating it.
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-03. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-DOC-002` — `MODULE_ARCHITECTURE.md`** — `COMPLETE` (2026-09-01).
+**`P0-TST-001` — `Money` property and edge-case tests** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Document exists and matches the enforced ArchUnit rules exactly | Six drifts found and fixed; the equivalence is now asserted by `ArchitectureRulesAreDocumentedTest` and proven to fail in four directions |
+| Tests fail if **rounding** is deliberately broken | Policy ignored, every amount rounded `CEILING` — `eachPolicyRoundsInItsOwnDirection` fails |
+| Tests fail if **currency checking** is deliberately broken | `requireCompatible` removed from `plus` — cross-currency property fails |
+| Tests fail if **overflow handling** is deliberately broken | `addExact` replaced with `+` — two properties fail |
 
-The six drifts, all in a document that four tasks had edited:
-
-1. §2 said `INV-MON-01` was "still outstanding" — enforced since `P0-TSK-008`.
-2. The `app` register entry named only `ModuleBoundaryRulesTest`.
-3. §8 said `INV-MON-01` was "still unenforced".
-4. §8 described the coverage guard in the singular; there are two.
-5. §8 said "two things remain on review"; one did.
-6. `sharedkernelIsFrameworkFree` ran on every build and appeared nowhere in the §6 rules list.
+`MoneyTest` already covered currency mismatch, scale mismatch, overflow, negatives and zero
+thoroughly, but by example: commutativity and associativity rested on `1.11 + 2.22 + 3.33`,
+which holds under implementations that break at the boundaries of `long`. The new
+`MoneyPropertiesTest` asserts the laws over generated values instead.
 
 Design decisions worth carrying forward:
-- **The equivalence is asserted, not declared.** Fixing prose and calling it accurate restores
-  exactly the condition that produced those six drifts. Every claim of mechanical enforcement
-  now names its rule as ``*(ArchUnit: `ruleName`)*``, and the test fails when a rule is added
-  without documentation, when a documented rule is deleted, when a claim names no rule, and
-  when the convention stops being used at all.
-- **Rule suites are discovered, not listed.** Any test class annotated `@AnalyzeClasses` is a
-  suite, wherever it sits, so neither adding one nor moving one escapes the check — the same
-  reasoning that made the coverage guards derive from the classpath. The first version scanned
-  a single directory and was shown, during this task's own review, to miss a suite one package
-  deeper.
-- **The document is a declared Gradle input.** Found by probing: `:app:test` was `UP-TO-DATE`
-  after the document was broken, so the check reported green over a file it never opened. The
-  document is now an input of the test task, verified by breaking it and watching the task
-  re-run and fail.
+- **Laws, not more examples.** The ledger will assume these from Phase 3: if addition is not
+  associative, two postings that balance in one grouping do not balance in another; if
+  `(a + b) - b` is not `a`, no reversal restores the original position (`INV-REV-01` in
+  arithmetic form); if `compareTo` disagrees with `equals`, a sorted report and a lookup
+  disagree about the same amount.
+- **Coverage is asserted, because every operation may legitimately throw.** A law phrased as
+  "the results agree" is satisfied trivially when both sides reject. Each law counts the trials
+  that produced an amount and fails below a floor — demonstrated by collapsing the generator to
+  extremes only, which fails three properties.
+- **An oracle must not share the defect.** The first rounding property bracketed every policy
+  between `FLOOR` and `CEILING` *computed through `Money`*. Breaking rounding moved the bounds
+  and the value together, and it passed. Each policy is now pinned by the property that defines
+  it, stated without reference to `RoundingMode`.
+- **No property-based library added.** Seeded `java.util.Random`, following
+  `MoneyAllocationTest`. Adding jqwik is a dependency decision, not one a test task should make
+  on its own.
 
 ---
 
@@ -166,6 +172,14 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
   domain exceptions under one `MonetaryException` supertype
 - `CurrencyCode` validates against ISO 4217 and rejects codes with no minor unit
 - No floating point anywhere on the monetary path
+
+Kernel property tests (2026-09-01), `P0-TST-001`:
+- `MoneyPropertiesTest`: commutativity, associativity, additive identity and inverse,
+  subtraction as negated addition, multiplication as repeated addition, and the reversal
+  round-trip, over 20,000 generated trials per law across JPY (0), USD (2) and BHD (3)
+- Exactness checked against `BigDecimal` as an independent implementation
+- Rounding bounded within one minor unit, with each policy pinned by its defining direction
+- Every law asserts its own coverage, so it cannot pass by rejecting everything
 
 Rounding and allocation (2026-08-31), `P0-TSK-010`:
 - `RoundingPolicy`: six named policies with a stable name for `INV-HIST-04` recording
@@ -334,13 +348,12 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TST-001` — `Money` property and edge-case tests.**
+**`P0-TST-002` — Allocation zero-residual test.**
 
-Rationale: it is the next item in [`BACKLOG.md`](BACKLOG.md). `P0-EPIC-02` is now closed by
-`P0-DOC-002`, so work returns to `P0-EPIC-03`, where `P0-TST-001` and `P0-TST-002` are the
-remaining items. Both are substantially covered by tests written during `P0-TSK-009` and
-`P0-TSK-010`; the task is to establish what is genuinely missing rather than to restate what
-exists, and to say so explicitly where coverage is already adequate.
+Rationale: next in [`BACKLOG.md`](BACKLOG.md) and the last item in `P0-EPIC-03`. Much of it
+exists already (`MoneyAllocationTest`, `P0-TSK-010`), so the task is to establish what the
+acceptance criterion asks for that is not yet covered — specifically the stated 1..100 part
+range — and to record explicitly where existing coverage already satisfies it.
 
 ---
 
@@ -348,6 +361,7 @@ exists, and to say so explicitly where coverage is already adequate.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TST-001` complete. `MoneyPropertiesTest` asserts Money's algebraic laws over generated values, where the existing coverage was example-based — commutativity had rested on a single triple of small positive amounts. Each law asserts its own coverage so it cannot pass by rejecting everything. The rounding properties initially failed the acceptance criterion: making every policy round `CEILING` passed, because the `FLOOR`/`CEILING` bracket was computed through `Money` itself and the break moved the bounds with the value. Replaced with per-policy defining properties; all three deliberate breaks named in the criterion now fail. 188 tests. |
 | 2026-09-01 | Task completion review of `P0-DOC-002`. One important finding: rule-suite discovery listed a single directory, so a suite placed in a subpackage ran its rules on every build while escaping the documentation check — enforced but undocumentable, with the equivalence test still green. Proven with a probe suite, then closed by walking the whole test-classes tree (loading classes with `initialize=false`, since deciding whether something is a rule suite must not run its static initialiser). Also confirmed a missing document fails rather than passing vacuously, and that the ten `*(ArchUnit: ...)*` markers all sit in §6 and yield exactly the twelve enforced rule names with no false positives. |
 | 2026-09-01 | `P0-DOC-002` complete. Audit of `MODULE_ARCHITECTURE.md` against the enforced rules found six drifts, including a rule enforced on every build that the §6 list did not mention, and two sections still calling `INV-MON-01` unenforced two tasks after it was enforced. Prose fixed, then the equivalence made mechanical: every enforcement claim names its rule, and `ArchitectureRulesAreDocumentedTest` fails the build in either direction. Probing also found `:app:test` staying `UP-TO-DATE` after the document was broken — the document is now a declared task input. Closes `P0-EPIC-02`. 172 tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-008`. One critical finding, found by probing rather than reading: the new coverage guard asserted only that `Money` was analysed, so it could not see a whole module falling out of the sweep. Proven by narrowing the sweep to `sharedkernel` — all four floating-point rules reported PASSED and the build exited 0 with a `double` planted in `platform`'s `MoneyColumns`. This is the same weakness the `P0-TSK-007` review found and that the new rule's own javadoc cites as its rationale. Both suites now derive expected coverage from the classpath through a shared `ProductionModules` helper, and the identical probe now fails the build. Also verified end to end that a `float` in a signature and a `Double.parseDouble` call in production code each fail the build — the latter also catching `BigDecimal.valueOf(double)`, the trap beside the safe `valueOf(long, int)`. |
