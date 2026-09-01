@@ -1,5 +1,7 @@
 package com.finapp.platform.money;
 
+import java.io.Serial;
+
 /**
  * A stored monetary value could not be read back as the amount that was written.
  *
@@ -10,6 +12,7 @@ package com.finapp.platform.money;
  */
 public final class MonetaryColumnException extends RuntimeException {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     MonetaryColumnException(String message) {
