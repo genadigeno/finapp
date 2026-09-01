@@ -75,8 +75,9 @@ class MoneyPropertiesTest {
 
             for (int trial = 0; trial < TRIALS; trial++) {
                 CurrencyCode currency = anyCurrency(random);
-                Money a = anyAmount(random, currency);
-                Money b = anyAmount(random, currency);
+                int scale = anyScale(random, currency);
+                Money a = anyAmount(random, currency, scale);
+                Money b = anyAmount(random, currency, scale);
 
                 // Comparing outcomes rather than results: an overflow must be symmetric too.
                 // If a+b throws and b+a does not, the order of two postings would decide
@@ -100,9 +101,10 @@ class MoneyPropertiesTest {
 
             for (int trial = 0; trial < TRIALS; trial++) {
                 CurrencyCode currency = anyCurrency(random);
-                Money a = anyAmount(random, currency);
-                Money b = anyAmount(random, currency);
-                Money c = anyAmount(random, currency);
+                int scale = anyScale(random, currency);
+                Money a = anyAmount(random, currency, scale);
+                Money b = anyAmount(random, currency, scale);
+                Money c = anyAmount(random, currency, scale);
 
                 Money left = resultOrNull(() -> a.plus(b).plus(c));
                 Money right = resultOrNull(() -> a.plus(b.plus(c)));
@@ -165,8 +167,9 @@ class MoneyPropertiesTest {
 
             for (int trial = 0; trial < TRIALS; trial++) {
                 CurrencyCode currency = anyCurrency(random);
-                Money a = anyAmount(random, currency);
-                Money b = anyAmount(random, currency);
+                int scale = anyScale(random, currency);
+                Money a = anyAmount(random, currency, scale);
+                Money b = anyAmount(random, currency, scale);
 
                 // This is the reversal property in arithmetic form. INV-REV-01 requires a
                 // reversal to restore the original position exactly; if this law does not
@@ -189,8 +192,9 @@ class MoneyPropertiesTest {
 
             for (int trial = 0; trial < TRIALS; trial++) {
                 CurrencyCode currency = anyCurrency(random);
-                Money a = anyAmount(random, currency);
-                Money b = anyAmount(random, currency);
+                int scale = anyScale(random, currency);
+                Money a = anyAmount(random, currency, scale);
+                Money b = anyAmount(random, currency, scale);
 
                 Money difference = resultOrNull(() -> a.minus(b));
                 Money viaNegation = resultOrNull(() -> a.plus(b.negated()));
@@ -252,8 +256,9 @@ class MoneyPropertiesTest {
 
             for (int trial = 0; trial < TRIALS; trial++) {
                 CurrencyCode currency = anyCurrency(random);
-                Money a = anyAmount(random, currency);
-                Money b = anyAmount(random, currency);
+                int scale = anyScale(random, currency);
+                Money a = anyAmount(random, currency, scale);
+                Money b = anyAmount(random, currency, scale);
 
                 Money sum = resultOrNull(() -> a.plus(b));
                 if (sum == null) {
@@ -299,8 +304,9 @@ class MoneyPropertiesTest {
 
             for (int trial = 0; trial < TRIALS; trial++) {
                 CurrencyCode currency = anyCurrency(random);
-                Money a = anyAmount(random, currency);
-                Money b = anyAmount(random, currency);
+                int scale = anyScale(random, currency);
+                Money a = anyAmount(random, currency, scale);
+                Money b = anyAmount(random, currency, scale);
 
                 assertThat(Integer.signum(a.compareTo(b)))
                         .as("sign of %s vs %s must invert", a, b)
@@ -315,15 +321,39 @@ class MoneyPropertiesTest {
         }
 
         @Test
+        @DisplayName("comparison orders amounts the same way their decimal values order")
+        void comparisonAgreesWithDecimalOrder() {
+            Random random = seeded();
+
+            for (int trial = 0; trial < TRIALS; trial++) {
+                CurrencyCode currency = anyCurrency(random);
+                int scale = anyScale(random, currency);
+                Money a = anyAmount(random, currency, scale);
+                Money b = anyAmount(random, currency, scale);
+
+                // Antisymmetry, transitivity and consistency with equals are all satisfied by a
+                // comparator running backwards; the review's mutation sweep proved it by
+                // reversing compareTo and watching every ordering property still pass. Only an
+                // independent statement of which way is up catches that - and a reversed
+                // comparator is not cosmetic: it inverts every sufficient-funds and limit check
+                // built on it.
+                assertThat(Integer.signum(a.compareTo(b)))
+                        .as("%s vs %s must order as their decimal values do", a, b)
+                        .isEqualTo(Integer.signum(a.toBigDecimal().compareTo(b.toBigDecimal())));
+            }
+        }
+
+        @Test
         @DisplayName("comparison is transitive")
         void comparisonIsTransitive() {
             Random random = seeded();
 
             for (int trial = 0; trial < TRIALS; trial++) {
                 CurrencyCode currency = anyCurrency(random);
-                Money a = anyAmount(random, currency);
-                Money b = anyAmount(random, currency);
-                Money c = anyAmount(random, currency);
+                int scale = anyScale(random, currency);
+                Money a = anyAmount(random, currency, scale);
+                Money b = anyAmount(random, currency, scale);
+                Money c = anyAmount(random, currency, scale);
 
                 if (a.compareTo(b) <= 0 && b.compareTo(c) <= 0) {
                     assertThat(a.compareTo(c)).as("%s <= %s <= %s", a, b, c).isLessThanOrEqualTo(0);
@@ -338,9 +368,10 @@ class MoneyPropertiesTest {
 
             for (int trial = 0; trial < TRIALS; trial++) {
                 CurrencyCode currency = anyCurrency(random);
-                Money a = anyAmount(random, currency);
+                int scale = anyScale(random, currency);
+                Money a = anyAmount(random, currency, scale);
                 Money copy = Money.ofPersisted(a.minorUnits(), a.currency(), a.scale());
-                Money b = anyAmount(random, currency);
+                Money b = anyAmount(random, currency, scale);
 
                 assertThat(a).as("reflexive").isEqualTo(a);
                 assertThat(copy).as("value equality").isEqualTo(a);
@@ -378,6 +409,40 @@ class MoneyPropertiesTest {
             rejected++;
         }
         assertMeaningfulCoverage(rejected, "cross-currency rejection");
+    }
+
+    @Test
+    @DisplayName("no generated pair of different scales ever combines")
+    void differentScalesNeverCombine() {
+        Random random = seeded();
+        int rejected = 0;
+
+        for (int trial = 0; trial < TRIALS; trial++) {
+            CurrencyCode currency = anyCurrency(random);
+            int leftScale = random.nextInt(0, Money.MAX_SUPPORTED_SCALE + 1);
+            int rightScale = random.nextInt(0, Money.MAX_SUPPORTED_SCALE + 1);
+            if (leftScale == rightScale) {
+                continue;
+            }
+            Money a = anyAmount(random, currency, leftScale);
+            Money b = anyAmount(random, currency, rightScale);
+
+            // Same currency, different scale is its own rejection, distinct from a currency
+            // mismatch: 1234 at scale 2 is 12.34 and at scale 3 is 1.234, and treating them as
+            // the same amount is a factor-of-ten error in a balance.
+            assertThat(outcomeOf(() -> a.plus(b))).isEqualTo(ScaleMismatchException.class);
+            assertThat(outcomeOf(() -> a.minus(b))).isEqualTo(ScaleMismatchException.class);
+            assertThat(outcomeOf(() -> a.compareTo(b))).isEqualTo(ScaleMismatchException.class);
+
+            // And they are not equal, whatever their minor units. Without this, dropping the
+            // scale comparison from equals passes every other property in this class.
+            Money sameUnitsDifferentScale = Money.ofPersisted(a.minorUnits(), currency, rightScale);
+            assertThat(sameUnitsDifferentScale)
+                    .as("%s and %s share minor units but are different amounts", a, sameUnitsDifferentScale)
+                    .isNotEqualTo(a);
+            rejected++;
+        }
+        assertMeaningfulCoverage(rejected, "scale mismatch rejection");
     }
 
     // -----------------------------------------------------------------
@@ -513,6 +578,10 @@ class MoneyPropertiesTest {
      * classes exercises both, and the coverage assertions confirm the mix actually does.
      */
     private static Money anyAmount(Random random, CurrencyCode currency) {
+        return anyAmount(random, currency, currency.minorUnits());
+    }
+
+    private static Money anyAmount(Random random, CurrencyCode currency, int scale) {
         int magnitudeClass = random.nextInt(10);
         long minorUnits =
                 switch (magnitudeClass) {
@@ -522,7 +591,27 @@ class MoneyPropertiesTest {
                     case 7, 8 -> random.nextLong(Long.MIN_VALUE / 2L, Long.MAX_VALUE / 2L);
                     default -> extremeValue(random);
                 };
-        return Money.ofMinorUnits(minorUnits, currency);
+        return Money.ofPersisted(minorUnits, currency, scale);
+    }
+
+    /**
+     * A scale for one trial: usually the currency's own, sometimes a historical one.
+     *
+     * <p>The first version of this generator built every amount with {@link Money#ofMinorUnits},
+     * so scale was always the currency's current minor-unit count and never varied. A mutation
+     * sweep during this task's review showed the cost: deleting the scale comparison from
+     * {@code Money.equals} survived every property here, because no two generated amounts ever
+     * differed in scale. Scale is a stored, per-amount property ({@code INV-MON-05}) and a
+     * generator blind to it leaves that whole dimension untested.
+     *
+     * <p>The scale is drawn once per trial and shared by every operand, because a law about
+     * addition is not a law about mixed-scale addition — that is rejected, and is asserted
+     * separately by {@link #differentScalesNeverCombine()}.
+     */
+    private static int anyScale(Random random, CurrencyCode currency) {
+        return random.nextInt(4) == 0
+                ? random.nextInt(0, Money.MAX_SUPPORTED_SCALE + 1)
+                : currency.minorUnits();
     }
 
     /** The values where overflow handling either works or silently wraps. */
