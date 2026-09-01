@@ -383,6 +383,50 @@ class IdempotentExecutorTest {
         assertThat(effectCount()).as("and therefore exactly one effect").isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("a duplicate gives up on a held key within the bounded wait, rather than parking")
+    void contendedClaimGivesUpWithinTheBoundedWait() throws Exception {
+        // Found in this task's own review: the wrapper's javadoc claimed the wait was bounded
+        // while nothing bounded it. Without a lock_timeout a duplicate blocks for as long as the
+        // first command takes, and on a hot key with a retrying client that is how a connection
+        // pool is exhausted - the failure this design refuses to risk by waiting on IN_PROGRESS.
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint fingerprint = RequestFingerprint.sha256("held-open".getBytes(StandardCharsets.UTF_8));
+        Duration shortWait = Duration.ofMillis(300);
+
+        try (Connection holder = openConnection()) {
+            holder.setAutoCommit(false);
+            // Claimed but NOT committed: the holder is mid-command.
+            new JdbcIdempotencyRecordStore(shortWait)
+                    .claim(holder, key, fingerprint, CorrelationId.of("holder-flow"), FIXED,
+                            FIXED.plus(RETENTION));
+
+            IdempotentExecutor bounded =
+                    new IdempotentExecutor(
+                            new JdbcIdempotencyRecordStore(shortWait),
+                            Clock.fixed(FIXED, ZoneOffset.UTC), RETENTION, STALE_AFTER);
+
+            long startedAt = java.lang.System.nanoTime();
+            assertThatExceptionOfType(IdempotencyInProgressException.class)
+                    .as("an unknown outcome, because the holder may still commit or roll back")
+                    .isThrownBy(
+                            () ->
+                                    inScope(() -> bounded.execute(
+                                            connection, key, fingerprint,
+                                            unitOfWork -> CommandResult.succeeded(StoredResponse.empty()))));
+            Duration waited = Duration.ofNanos(java.lang.System.nanoTime() - startedAt);
+            connection.rollback();
+
+            // Both ends matter. An upper bound alone would pass if the claim failed instantly
+            // for some unrelated reason; a lower bound alone would pass if it never gave up.
+            assertThat(waited)
+                    .as("it must actually wait, and then actually give up, near the bound")
+                    .isBetween(shortWait.dividedBy(2), Duration.ofSeconds(3));
+
+            holder.rollback();
+        }
+    }
+
     // -----------------------------------------------------------------
     // Wiring
     // -----------------------------------------------------------------

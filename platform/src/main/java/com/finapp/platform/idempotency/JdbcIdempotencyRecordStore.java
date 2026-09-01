@@ -6,8 +6,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Savepoint;
+import java.sql.Statement;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -29,11 +32,41 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
 
     private static final String TABLE = "platform.idempotency_record";
 
-    /** PostgreSQL unique violation. Locale-independent, unlike the message. */
+    /** PostgreSQL SQLStates. Locale-independent, unlike the messages. */
     private static final String UNIQUE_VIOLATION = "23505";
 
+    private static final String LOCK_NOT_AVAILABLE = "55P03";
+
+    /**
+     * How long to wait for a competing claim before giving up on the key.
+     *
+     * <p>ADR-0004 requires a bounded wait. Without one, a duplicate request blocks for as long
+     * as the first command takes: on a hot key with a retrying client that is how a connection
+     * pool is exhausted, which is the same failure this design rejects waiting on an
+     * {@code IN_PROGRESS} record to avoid.
+     *
+     * <p>The value is a trade in both directions. Too short and a perfectly normal short
+     * command's duplicate is told "unknown, retry" when it could have waited a moment and
+     * replayed. Too long and the pool-exhaustion risk returns. A few seconds is longer than any
+     * command holding a claim should take, and short enough that a caller is never parked.
+     */
+    private final Duration claimWait;
+
+    /** Uses the default bounded wait. */
+    public JdbcIdempotencyRecordStore() {
+        this(Duration.ofSeconds(3));
+    }
+
+    public JdbcIdempotencyRecordStore(Duration claimWait) {
+        Objects.requireNonNull(claimWait, "claimWait must not be null");
+        if (claimWait.isNegative() || claimWait.isZero()) {
+            throw new IllegalArgumentException("claimWait must be positive but was " + claimWait);
+        }
+        this.claimWait = claimWait;
+    }
+
     @Override
-    public boolean claim(
+    public ClaimOutcome claim(
             Connection connection,
             IdempotencyKey key,
             RequestFingerprint fingerprint,
@@ -46,6 +79,10 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
         // that follows down with it - so the loser could never read the winner's response, and
         // a duplicate request would fail instead of replaying.
         Savepoint beforeClaim = savepoint(connection);
+        // Bounded, and confined to this statement. SET LOCAL would otherwise stay in force for
+        // the rest of the caller's transaction, so the command's own writes would inherit a
+        // timeout chosen for the claim and could fail spuriously.
+        setLockTimeout(connection, claimWait.toMillis() + "ms");
         String sql =
                 "INSERT INTO " + TABLE + " (scope, idempotency_key, request_fingerprint, "
                         + "fingerprint_algorithm, state, correlation_id, created_at, expires_at) "
@@ -61,13 +98,41 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
             insert.setTimestamp(8, Timestamp.from(expiresAt));
             insert.executeUpdate();
             release(connection, beforeClaim);
-            return true;
+            return ClaimOutcome.CLAIMED;
         } catch (SQLException e) {
             if (UNIQUE_VIOLATION.equals(e.getSQLState())) {
                 rollbackTo(connection, beforeClaim);
-                return false;
+                return ClaimOutcome.ALREADY_CLAIMED;
+            }
+            if (LOCK_NOT_AVAILABLE.equals(e.getSQLState())) {
+                // Someone holds the key in an open transaction. There is nothing committed to
+                // read - they may still commit or roll back - so the outcome is genuinely
+                // unknown rather than merely elsewhere.
+                rollbackTo(connection, beforeClaim);
+                return ClaimOutcome.CONTENDED;
             }
             throw new IdempotencyStorageException("Could not claim " + key, e);
+        } finally {
+            restoreLockTimeout(connection);
+        }
+    }
+
+    private static void setLockTimeout(Connection connection, String value) {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SET LOCAL lock_timeout = '" + value + "'");
+        } catch (SQLException e) {
+            throw new IdempotencyStorageException("Could not bound the claim wait", e);
+        }
+    }
+
+    private static void restoreLockTimeout(Connection connection) {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SET LOCAL lock_timeout = DEFAULT");
+        } catch (SQLException e) {
+            // If this cannot run the transaction is already failing; masking that with a second
+            // exception would hide the real one.
+            System.getLogger(JdbcIdempotencyRecordStore.class.getName())
+                    .log(System.Logger.Level.DEBUG, "Could not restore lock_timeout", e);
         }
     }
 

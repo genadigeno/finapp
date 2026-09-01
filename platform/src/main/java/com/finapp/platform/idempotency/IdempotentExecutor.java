@@ -32,10 +32,16 @@ import java.util.Optional;
  * retry would repeat because nothing recorded it.
  *
  * <p>The cost is that a concurrent duplicate <em>blocks</em> on the unique index until the first
- * transaction ends, rather than failing at once. That is the correct trade and it is bounded:
- * see {@code lock_timeout} in the class notes of the JDBC store's tests. When the first
- * transaction commits, the second's insert fails as a unique violation and the second request
- * replays the now-committed response — the acceptance criterion's "two identical responses".
+ * transaction ends, rather than failing at once. When that transaction commits, the second
+ * insert fails as a unique violation and the second request replays the now-committed response
+ * — the acceptance criterion's "two identical responses".
+ *
+ * <p><strong>That wait is bounded.</strong> The store sets a {@code lock_timeout} around the
+ * claim, so a duplicate waits a few seconds and no longer. Without it the wait is as long as
+ * the first command takes, and on a hot key with a retrying client that is how a connection
+ * pool is exhausted — the very failure this class refuses to risk by waiting on an
+ * {@code IN_PROGRESS} record. A duplicate that gives up is told the outcome is unknown, which
+ * is true: the holder may still commit or roll back.
  *
  * <h2>What happens to an in-progress claim</h2>
  *
@@ -115,10 +121,15 @@ public final class IdempotentExecutor {
         Instant now = clock.instant();
         CorrelationId correlationId = currentCorrelationId();
 
-        if (store.claim(unitOfWork, key, fingerprint, correlationId, now, now.plus(retention))) {
-            return runAndRecord(unitOfWork, key, command);
-        }
-        return resolveExistingClaim(unitOfWork, key, fingerprint, command, correlationId, now);
+        return switch (store.claim(unitOfWork, key, fingerprint, correlationId, now, now.plus(retention))) {
+            case CLAIMED -> runAndRecord(unitOfWork, key, command);
+            case ALREADY_CLAIMED ->
+                    resolveExistingClaim(unitOfWork, key, fingerprint, command, correlationId, now);
+            // Someone holds the key in an open transaction and we declined to wait longer. There
+            // is nothing committed to read, so the outcome is genuinely unknown - the same
+            // situation as a live IN_PROGRESS record, and it gets the same honest answer.
+            case CONTENDED -> throw new IdempotencyInProgressException(key);
+        };
     }
 
     // -----------------------------------------------------------------

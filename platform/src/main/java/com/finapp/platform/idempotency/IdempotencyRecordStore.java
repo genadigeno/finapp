@@ -25,13 +25,28 @@ import java.util.Optional;
  */
 public interface IdempotencyRecordStore<T> {
 
+    /** What happened when a claim was attempted. */
+    enum ClaimOutcome {
+        /** The key is ours; run the command. */
+        CLAIMED,
+        /** Someone else's claim is committed and readable; resolve against it. */
+        ALREADY_CLAIMED,
+        /**
+         * Someone else holds the key in an uncommitted transaction and we declined to wait.
+         *
+         * <p>Distinct from {@link #ALREADY_CLAIMED} because there is nothing to read: the other
+         * transaction may still commit or roll back, so the outcome is genuinely unknown rather
+         * than merely elsewhere.
+         */
+        CONTENDED
+    }
+
     /**
      * Inserts a new {@code IN_PROGRESS} claim.
      *
-     * @return {@code true} if the claim was taken, {@code false} if the key is already claimed.
-     *     Not an exception: losing a race is the mechanism working, not a fault.
+     * <p>Not an exception on failure: losing a race is the mechanism working, not a fault.
      */
-    boolean claim(
+    ClaimOutcome claim(
             T unitOfWork,
             IdempotencyKey key,
             RequestFingerprint fingerprint,
