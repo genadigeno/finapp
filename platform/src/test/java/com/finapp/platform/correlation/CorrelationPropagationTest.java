@@ -401,7 +401,7 @@ class CorrelationPropagationTest {
                                     auditId,
                                     Actor.SYSTEM,
                                     Instant.now(),
-                                    "propagation.Probe",
+                                    com.finapp.platform.audit.PlatformAuditAction.OUTBOX_EVENT_ABANDONED,
                                     "Probe",
                                     "target-1",
                                     java.util.Optional.empty(),

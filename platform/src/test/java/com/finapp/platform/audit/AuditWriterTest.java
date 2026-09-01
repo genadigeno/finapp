@@ -102,7 +102,7 @@ class AuditWriterTest {
         AuditId id = AuditId.next(IDS);
 
         recordAction("kyc-approved");
-        audit.append(application, record(id, "kyc.CaseApproved"));
+        audit.append(application, record(id, ProbeAuditAction.KYC_CASE_APPROVED));
         application.rollback();
 
         assertThat(actionCount()).as("the action rolled back").isZero();
@@ -117,7 +117,7 @@ class AuditWriterTest {
         AuditId id = AuditId.next(IDS);
 
         recordAction("kyc-approved");
-        audit.append(application, record(id, "kyc.CaseApproved"));
+        audit.append(application, record(id, ProbeAuditAction.KYC_CASE_APPROVED));
         application.commit();
 
         assertThat(actionCount()).isEqualTo(1);
@@ -132,10 +132,10 @@ class AuditWriterTest {
         // no trace it happened, and an absent audit record is indistinguishable from an action
         // that never occurred.
         AuditId id = AuditId.next(IDS);
-        audit.append(application, record(id, "kyc.CaseApproved"));
+        audit.append(application, record(id, ProbeAuditAction.KYC_CASE_APPROVED));
 
         assertThatExceptionOfType(AuditWriteException.class)
-                .isThrownBy(() -> audit.append(application, record(id, "kyc.CaseApproved")))
+                .isThrownBy(() -> audit.append(application, record(id, ProbeAuditAction.KYC_CASE_APPROVED)))
                 .withMessageContaining("must not commit");
         application.rollback();
 
@@ -147,7 +147,7 @@ class AuditWriterTest {
     void anAutoCommitConnectionIsRefused() throws SQLException {
         try (Connection autoCommit = DatabaseRoles.application()) {
             assertThatExceptionOfType(AuditWriteException.class)
-                    .isThrownBy(() -> audit.append(autoCommit, record(AuditId.next(IDS), "kyc.Probe")))
+                    .isThrownBy(() -> audit.append(autoCommit, record(AuditId.next(IDS), ProbeAuditAction.KYC_CASE_APPROVED)))
                     .withMessageContaining("auto-commit");
         }
     }
@@ -179,7 +179,7 @@ class AuditWriterTest {
                                         own.setAutoCommit(false);
                                         AuditId id = AuditId.next(IDS);
                                         start.await();
-                                        new JdbcAuditWriter().append(own, record(id, "audit.Concurrent"));
+                                        new JdbcAuditWriter().append(own, record(id, ProbeAuditAction.CONCURRENT_PROBE));
                                         own.commit();
                                         return id;
                                     }
@@ -215,7 +215,7 @@ class AuditWriterTest {
                         id,
                         new Actor("employee-42", ActorType.EMPLOYEE),
                         OCCURRED,
-                        "reconciliation.BreakResolved",
+                        ProbeAuditAction.BREAK_RESOLVED,
                         "ReconciliationBreak",
                         "break-7",
                         Optional.of("counterparty confirmed the missing leg"),
@@ -255,7 +255,7 @@ class AuditWriterTest {
         // looking at.
         AuditId id = AuditId.next(IDS);
 
-        audit.append(application, record(id, "kyc.CaseApproved"));
+        audit.append(application, record(id, ProbeAuditAction.KYC_CASE_APPROVED));
         application.commit();
 
         try (PreparedStatement select =
@@ -284,7 +284,7 @@ class AuditWriterTest {
                         id,
                         new Actor("employee-9", ActorType.EMPLOYEE),
                         OCCURRED,
-                        "ledger.ManualAdjustmentRequested",
+                        ProbeAuditAction.MANUAL_ADJUSTMENT_REQUESTED,
                         "LedgerAccount",
                         "account-1",
                         Optional.of("exceeds the four-eyes threshold"),
@@ -298,7 +298,7 @@ class AuditWriterTest {
 
     // -----------------------------------------------------------------
 
-    private static AuditRecord record(AuditId id, String operation) {
+    private static AuditRecord record(AuditId id, AuditableAction operation) {
         return new AuditRecord(
                 id,
                 Actor.SYSTEM,

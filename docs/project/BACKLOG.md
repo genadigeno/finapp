@@ -445,7 +445,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-KERNEL`
 
-**P0-TSK-023 — Auditable-action registry**
+**P0-TSK-023 — Auditable-action registry** — `COMPLETE` (2026-09-01)
 - Context: platform / audit
 - Description: An explicit registry of action types that must be audited, with a mechanism making omission visible.
 - Why: Phase 15 must verify audit completeness against a defined list; that list must start here.

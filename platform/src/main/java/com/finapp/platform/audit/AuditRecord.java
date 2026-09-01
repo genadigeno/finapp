@@ -25,13 +25,15 @@ import java.util.Optional;
  * @param actor who performed the action
  * @param occurredAt when the action occurred — a business fact from the caller's injected
  *     {@code Clock}, not the time the row reached the database
- * @param operation a stable action identifier from the auditable-action registry
- *     (P0-TSK-023), never free text: Phase 15 verifies completeness against that registry
+ * @param operation the action performed, from the auditable-action registry (P0-TSK-023).
+ *     Typed rather than free text, so an action that is not in the registry cannot be recorded
+ *     at all — which is what makes Phase 15's completeness verification possible
  * @param targetType what kind of thing was acted on
  * @param targetId which one
- * @param reason why, where the action requires one. Empty is legitimate — most actions need no
- *     reason — but a blank string is not, because "no reason was required" and "a reason was
- *     required and nobody gave one" must remain distinguishable
+ * @param reason why. Required exactly when {@link AuditableAction#requiresReason()} says so,
+ *     which is the decision {@code V009} deferred to the domain. Empty is legitimate for the
+ *     actions that need none, but a blank string never is, because "no reason was required" and
+ *     "a reason was required and nobody gave one" must remain distinguishable
  * @param outcome what came of it, including refusal
  * @param correlationId the flow this action belongs to, joining the record to the request, the
  *     postings and the events of the same operation
@@ -42,7 +44,7 @@ public record AuditRecord(
         AuditId auditId,
         Actor actor,
         Instant occurredAt,
-        String operation,
+        AuditableAction operation,
         String targetType,
         String targetId,
         Optional<String> reason,
@@ -60,12 +62,20 @@ public record AuditRecord(
         Objects.requireNonNull(auditId, "auditId must not be null");
         Objects.requireNonNull(actor, "actor must not be null");
         Objects.requireNonNull(occurredAt, "occurredAt must not be null");
+        Objects.requireNonNull(operation, "operation must not be null");
         Objects.requireNonNull(outcome, "outcome must not be null");
         Objects.requireNonNull(correlationId, "correlationId must not be null");
         Objects.requireNonNull(reason, "reason must not be null; use Optional.empty()");
         Objects.requireNonNull(changeSummary, "changeSummary must not be null; use Optional.empty()");
 
-        operation = bounded(operation, "operation", MAX_NAME_LENGTH);
+        bounded(operation.code(), "operation code", MAX_NAME_LENGTH);
+        if (operation.requiresReason() && reason.isEmpty()) {
+            // Enforced here rather than trusted at each call site. An action whose justification
+            // is the only evidence it was legitimate must not be recordable without one, and the
+            // registry is where that decision lives (V009 deferred it to the domain explicitly).
+            throw new IllegalArgumentException(
+                    "action " + operation.code() + " requires a reason, and none was given");
+        }
         targetType = bounded(targetType, "targetType", MAX_NAME_LENGTH);
         targetId = bounded(targetId, "targetId", MAX_NAME_LENGTH);
         reason = boundedOptional(reason, "reason", MAX_REASON_LENGTH);

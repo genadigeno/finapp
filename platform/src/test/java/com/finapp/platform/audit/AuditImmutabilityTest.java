@@ -74,10 +74,10 @@ class AuditImmutabilityTest {
         DatabaseRoles.assertCannotBypassPrivileges(application);
         AuditId id = AuditId.next(IDS);
 
-        new JdbcAuditWriter().append(application, record(id, "audit.ProbeAppend"));
+        new JdbcAuditWriter().append(application, record(id, ProbeAuditAction.KYC_CASE_APPROVED));
         application.commit();
 
-        assertThat(operationOf(id)).isEqualTo("audit.ProbeAppend");
+        assertThat(operationOf(id)).isEqualTo("kyc.CaseApproved");
     }
 
     @Test
@@ -85,7 +85,7 @@ class AuditImmutabilityTest {
     void updateIsDenied() throws SQLException {
         DatabaseRoles.assertCannotBypassPrivileges(application);
         AuditId id = AuditId.next(IDS);
-        new JdbcAuditWriter().append(application, record(id, "audit.ProbeUpdate"));
+        new JdbcAuditWriter().append(application, record(id, ProbeAuditAction.KYC_CASE_APPROVED));
         application.commit();
 
         assertThatExceptionOfType(SQLException.class)
@@ -105,7 +105,7 @@ class AuditImmutabilityTest {
     void deleteIsDenied() throws SQLException {
         DatabaseRoles.assertCannotBypassPrivileges(application);
         AuditId id = AuditId.next(IDS);
-        new JdbcAuditWriter().append(application, record(id, "audit.ProbeDelete"));
+        new JdbcAuditWriter().append(application, record(id, ProbeAuditAction.KYC_CASE_APPROVED));
         application.commit();
 
         assertThatExceptionOfType(SQLException.class)
@@ -114,7 +114,7 @@ class AuditImmutabilityTest {
                 .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
         application.rollback();
 
-        assertThat(operationOf(id)).as("the record is still there").isEqualTo("audit.ProbeDelete");
+        assertThat(operationOf(id)).as("the record is still there").isEqualTo("kyc.CaseApproved");
     }
 
     @Test
@@ -195,7 +195,7 @@ class AuditImmutabilityTest {
         }
     }
 
-    private static AuditRecord record(AuditId id, String operation) {
+    private static AuditRecord record(AuditId id, AuditableAction operation) {
         return new AuditRecord(
                 id,
                 Actor.SYSTEM,

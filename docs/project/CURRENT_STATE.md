@@ -47,57 +47,50 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-023` - Auditable-action registry**
+**`P0-TST-007` - Audit immutability test**
 Status: `READY` - not started.
 
 Bounded context: platform / audit. Depends on `P0-TSK-022` (`COMPLETE`).
 
-`V009` already assumes it: `operation` is documented as "a stable identifier from the
-auditable-action registry, not free text", because Phase 15 must verify audit completeness
-against an enumerable list. The registry is what makes that column's promise true.
+Note before starting it: `P0-TSK-022` already wrote `AuditImmutabilityTest`, which asserts
+`UPDATE`, `DELETE`, `TRUNCATE`, `DROP`, `ALTER` and self-granting all fail for the application
+role. `P0-TST-007`'s stated scope is the `UPDATE`/`DELETE` pair, so it is largely satisfied
+already - the task should be read for what it adds rather than re-implemented.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-07. DoD profile: `DOD-KERNEL`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-07. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TSK-022` - Audit schema and writer** - `COMPLETE` (2026-09-01).
+**`P0-TSK-023` - Auditable-action registry** - `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Application role has `INSERT` and `SELECT` only; `UPDATE` and `DELETE` denied at the privilege level, proven by test | `AuditImmutabilityTest`, connecting as `finapp_app`. `UPDATE`, `DELETE`, `TRUNCATE`, `DROP TABLE`, `ALTER TABLE` and self-granting all refused; append and read still work. Proven to have teeth by granting `UPDATE, DELETE` on the live table - four tests fail across two suites |
-| No sensitive value stored in clear | The table records *that* an action occurred and by whom, never the payload. `change_summary` is bounded and documented as a summary rather than a diff, because it is the field a payload would be smuggled through (`INV-AUD-02`) |
+| Registry exists and is referenced by the gate check | `AuditableAction` + per-module enums, catalogued in [`AUDITABLE_ACTIONS.md`](../architecture/AUDITABLE_ACTIONS.md), which is what `INV-AUD-01`'s "Verify: audit completeness verification against the registry (Phase 15 gate)" now points at |
+| Adding a privileged action without registering it is detectable | Stronger than review: `AuditRecord.operation` is an `AuditableAction`, so an action outside the registry **cannot be recorded at all**. `AuditableActionRegistryTest` then fails the build in three directions - declared but not catalogued, catalogued but not declared, and a `requiresReason` flag that disagrees - each proven by planting the fault |
 
-**The role split, which had been documented and deferred since `P0-TSK-005`.**
+Design decisions worth carrying forward:
+- **An interface, not one enum.** The obvious shape - a single `AuditAction` enum listing
+  everything - cannot be built: actions belong to the modules that perform them, and the platform
+  sits *below* every business module. An enum here naming KYC's actions would invert the
+  dependency and make the platform's vocabulary the union of every domain's. So each module
+  declares its own enum and only `app` sees the whole set, which is where the reconciliation runs.
+- **Implementations must be enums**, enforced by the guard. Enumerability is the entire point: the
+  Phase 15 gate must be able to ask "what must be audited" and get a complete answer, and a set
+  assembled at run time would answer with whatever happened to be loaded.
+- **`requiresReason()` closes a question `V009` left open.** That migration made `reason` nullable
+  with the comment that "the domain decides which those are"; the registry is where the domain
+  decides, and `AuditRecord` enforces it - so the answer is attached to the action rather than
+  remembered at each call site.
+- **The registry's limit is documented rather than glossed.** It guarantees every audit record
+  names a *declared* action. It does **not** guarantee every privileged action writes one, because
+  a missing call is a missing call and nothing mechanical catches that. Saying so plainly is worth
+  more than a registry that looks complete while the calls are missing - which would be worse than
+  none, because it would be believed.
 
-- **Roles are infrastructure; grants are schema.** A role is a cluster object shared by every
-  database; a migration owns one schema in one database. Creating a role from a migration would
-  claim an object outside that schema, break against the scratch databases CI creates, and
-  require the migrator to hold `CREATEROLE` - the ability to invent roles, which is exactly what
-  a role confined to DDL should not have. So `infra/postgres/initdb/00-roles.sql` creates the
-  roles and `V008`/`V009` grant their privileges.
-- **Both roles are `NOSUPERUSER`, and that is the load-bearing part.** A superuser ignores every
-  permission check, so running the application as one does not merely weaken these invariants -
-  it makes them untestable. `DatabaseRoles.assertCannotBypassPrivileges` asserts the precondition
-  before every denial, and pointing the application credentials at the superuser fails all seven
-  immutability tests including the precondition itself.
-- **`V008` pays three deferred debts.** `V002`, `V005` and `V007` each stated the grants their
-  table needed and deferred them to this task. `ApplicationRoleGrantsTest` reads the granted set
-  from the catalogue per table, so a grant that is too *wide* fails as loudly as one too narrow -
-  and the inbox's deliberate lack of `UPDATE` is now proven rather than described.
-- **`TRUNCATE` is asserted separately.** It is a distinct privilege, not a form of `DELETE`, and
-  it is the most complete destruction of an audit trail available. "We denied DELETE" is the
-  reasoning that misses it.
-
-**A test that was asserting the wrong thing.** `GRANT UPDATE ... TO finapp_app` run *by* that
-role does not raise - PostgreSQL reports "no privileges were granted" as a WARNING and returns
-success. Asserting an exception there would have been asserting the database's error-reporting
-choice while the security boundary held perfectly. The assertion now checks the outcome: after
-attempting the self-grant, the role still cannot update, and its privilege set is unchanged.
-
-**The correlation guard fired for the fourth time**, refusing the new `audit` package. This one
-is a sink `P0-TST-003` named explicitly, so three of its four are now asserted - log, outbox row,
-audit record - plus the idempotency and inbox rows. Only the trace remains, and it arrives with
-`P0-EPIC-09`.
+**Codes are namespaced and stable.** `outbox.EventAbandoned`, not `EventAbandoned`: two modules
+colliding on a bare name would merge two different actions into one line of the trail, and the
+merge would be invisible. Renaming one is a data-migration question, not a refactor, because audit
+records outlive the code that wrote them.
 
 ---
 
@@ -197,6 +190,17 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Auditable-action registry (2026-09-01), `P0-TSK-023`:
+- `AuditableAction`: an interface each module implements as an enum, because the platform sits
+  below every business module and cannot enumerate their vocabulary
+- `AuditRecord.operation` is typed, so an action outside the registry cannot be recorded at all -
+  the type system, not review, is what keeps the trail's vocabulary closed
+- [`AUDITABLE_ACTIONS.md`](../architecture/AUDITABLE_ACTIONS.md) and the code are one definition,
+  reconciled in three directions by `AuditableActionRegistryTest`, each proven by planting the fault
+- `requiresReason()` decides per action whether a justification is mandatory, enforced by
+  `AuditRecord` - the decision `V009` deferred to the domain
+- The registry's limit is stated: it cannot detect a privileged action that writes no record
 
 Audit trail and database role split (2026-09-01), `P0-TSK-022`:
 - `platform.audit_record`: append-only at the **privilege** level - the application role holds
@@ -361,7 +365,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-023` is the next task.
+None in progress. `P0-TST-007` is the next task.
 
 ## Blockers
 
@@ -487,6 +491,7 @@ carries, what triggers paying it down, and the owning phase.
 | **Inbox metrics.** Duplicate rate and contention rate are returned as outcomes but nothing aggregates them | No metrics infrastructure exists (`P0-EPIC-09`, M0.4) | A rising duplicate rate is a signal about the transport and a rising contention rate about consumer concurrency; both are currently visible only as log lines, one of which is at debug | `P0-EPIC-09` landing | Phase 0, M0.4 |
 | **Audit retention and archival.** Records are never deleted, and the application role cannot delete them | ADR-0010 is explicit that deletion is not an option and that archival must preserve queryability - which is a Phase 15 deliverable, not a sweep | Unbounded growth of a table written on every privileged action. **Not** a correctness risk: the inability to delete is the invariant working, and archival must preserve the trail rather than trim it | Table size becoming operationally material | Phase 15 (retention and archival) |
 | **Four-eyes approver is not modelled.** `audit_record` records one actor | `INV-AUD-04` applies to manual adjustments, break resolutions, policy activations and period close - none of which exist yet. ADR-0010 schedules it for Phases 3, 8 and 14 | None today: there is no four-eyes action to under-record. When one arrives it needs a second actor column, which is an ordinary forward migration | The first action requiring a second approver | Phase 3 |
+| **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
 
 None of these is financial-correctness debt.
@@ -532,11 +537,12 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-023` - Auditable-action registry**, continuing `P0-EPIC-07`.
+**`P0-TST-007` - Audit immutability test**, continuing `P0-EPIC-07`.
 
-`V009` already depends on it: `operation` is a stable identifier from the registry rather than
-free text, because Phase 15 verifies audit completeness against an enumerable list. The task's
-own criterion is that adding a privileged action without registering it is detectable.
+Read it before implementing: `P0-TSK-022` already delivered `AuditImmutabilityTest`, covering the
+`UPDATE`/`DELETE` pair the task names and more besides. The open question is whether it adds
+anything - and if not, recording that honestly is the right outcome rather than writing a second
+copy of the same assertions.
 
 ---
 
@@ -544,6 +550,7 @@ own criterion is that adding a privileged action without registering it is detec
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-023` complete. The auditable-action registry, which `INV-AUD-01` names as half of its enforcement and `V009` already assumed existed. The shape that cannot be built is the obvious one - a single enum in the platform listing every action - because actions belong to the modules that perform them and the platform sits below every business module; an enum here naming KYC's actions would invert the dependency. So `AuditableAction` is an interface, each module declares an enum, and only `app` sees the whole set. **The registry is enforced by the type system, not by review**: `AuditRecord.operation` is an `AuditableAction`, so an action outside the registry cannot be recorded at all. The catalogue and the code are reconciled in three directions and each was proven by planting the fault - an action declared but not catalogued, one catalogued but not declared, and a `requiresReason` flag that disagrees. That flag closes the question `V009` deferred: it made `reason` nullable saying \"the domain decides which those are\", and the registry is where the domain decides. The registry's **limit** is documented rather than glossed - it cannot detect a privileged action that writes no record at all, and a registry that looked complete while the calls were missing would be worse than none because it would be believed. Recorded as debt: the three declared platform actions are not yet emitted. 316 hermetic tests, 138 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-022`. One important finding, in the file that is hardest to test because it runs once: **the role-provisioning script hardcoded the database name** while `compose.yaml` parameterises it as `${FINAPP_DB_NAME:-finapp}` and the README documents it as overridable. The failure is not graceful - a `GRANT` naming a database that was never created is an error, `ON_ERROR_STOP` aborts initialisation, and the container exits 3 complaining about a name nobody typed. Reproduced by starting PostgreSQL with `POSTGRES_DB=altdb`, fixed with `current_database()` and `format()`, and verified against both the default and an overridden name. Also added: an escalation test (the application role cannot `SET ROLE` to the migrator, create roles or databases, `COPY TO PROGRAM`, or read `pg_authid` - if it could assume the owning role every grant below it would be decorative), and the concurrency test `DOD-KERNEL` requires, whose subject is an **absence**: audit writes must not serialise, because an audit write is on the critical path of every privileged action and anything making two contend would put a lock in front of the whole platform and present as latency rather than failure. Two deferrals recorded as debt - audit retention/archival and the four-eyes approver column. 307 hermetic tests, 138 database tests. |
 | 2026-09-01 | `P0-TSK-022` complete. The audit trail, and with it **the database role split that had been documented and deferred since `P0-TSK-005`**. Roles are cluster objects, so they are provisioned by infrastructure and only their grants live in migrations - a migration creating a role would claim an object outside its schema, break against the scratch databases CI creates, and need the migrator to hold `CREATEROLE`. Both roles are `NOSUPERUSER`, which is the load-bearing part: a superuser ignores every permission check, so running the application as one does not weaken these invariants but makes them **untestable**, and pointing the app credentials at the superuser now fails all seven immutability tests including the precondition that detects it. `TRUNCATE` is asserted separately from `DELETE`, being a distinct privilege that \"we denied DELETE\" reasoning misses. `V008` pays the grants `V002`, `V005` and `V007` each promised, and the granted set is read from the catalogue per table so a too-wide grant fails as loudly as a too-narrow one. **One test was asserting the wrong thing**: a self-`GRANT` does not raise - PostgreSQL warns \"no privileges were granted\" and returns success - so the assertion checked the database's error-reporting choice while the boundary held; it now checks the outcome instead. Teeth proven by granting `UPDATE, DELETE` on the live table: four tests fail. The correlation guard fired for the fourth time and closed the audit sink `P0-TST-003` named. 307 hermetic tests, 136 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-021`. No critical or important findings; three minor ones, all fixed. A **duplicate arriving inside one transaction** - an entirely ordinary poll batch - was untested, and it takes a different database path from a redelivery: the unique violation is raised immediately rather than after blocking, so the savepoint rather than the lock timeout is what keeps the caller's transaction usable. Probed, found correct, and made permanent. `messageType` was validated only in the store, so a caller got the error from three layers down; it is now checked in the wrapper too, **before** the ambient-correlation lookup, so a caller that got both wrong is told about the argument it passed rather than the context it did not establish. Two deferrals recorded as debt with owning phases - inbox retention sweep and inbox metrics - noting that for retention the risk runs only one way: a record never swept deduplicates forever, and it is early expiry that admits a duplicate. 295 hermetic tests, 109 database tests. |

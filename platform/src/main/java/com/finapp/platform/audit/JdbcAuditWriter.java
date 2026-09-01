@@ -40,7 +40,7 @@ public final class JdbcAuditWriter implements AuditWriter<Connection> {
             insert.setString(2, record.actor().id());
             insert.setString(3, record.actor().type().name());
             insert.setTimestamp(4, Timestamp.from(record.occurredAt()));
-            insert.setString(5, record.operation());
+            insert.setString(5, record.operation().code());
             insert.setString(6, record.targetType());
             insert.setString(7, record.targetId());
             setNullableText(insert, 8, record.reason().orElse(null));
@@ -54,7 +54,7 @@ public final class JdbcAuditWriter implements AuditWriter<Connection> {
             // happened, and an absent audit record is indistinguishable from an action that
             // never occurred.
             throw new AuditWriteException(
-                    "Could not append audit record for " + record.operation() + " on "
+                    "Could not append audit record for " + record.operation().code() + " on "
                             + record.targetType() + " " + record.targetId()
                             + "; the transaction that performed it must not commit",
                     e);

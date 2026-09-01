@@ -231,7 +231,7 @@ phases must satisfy, not a description of code.
 - **Owns:** idempotency records, outbox, inbox, audit records, the correlation/causation context (`P0-TSK-014`).
 - **Transaction:** participates in the caller's transaction and never opens its own. A platform component that opened its own transaction would defeat its purpose.
 - **Consistency:** strong; always same-transaction with the caller's state change.
-- **APIs:** internal only — idempotent execution wrapper, outbox writer, inbox consumer wrapper, audit writer, error contract, provider SPI. No business HTTP surface.
+- **APIs:** internal only — idempotent execution wrapper, outbox writer, outbox relay, inbox consumer wrapper, audit writer, auditable-action registry, error contract, provider SPI. No business HTTP surface.
 - **Events:** publishes none of its own; it *is* the publication mechanism.
 - **Failure:** relay retries with backoff, attempt counting and a poison path; inbox dedupes; a crash between commit and publish is recovered by the relay (`INV-EVT-01`, `INV-IDEM-04`).
 - **Security:** audit records are `INSERT`/`SELECT` only for the application role (`INV-HIST-03`); log redaction is default-deny (`INV-AUD-02`).

@@ -43,7 +43,7 @@ class AuditRecordTest {
                                         AuditId.next(IDS),
                                         Actor.SYSTEM,
                                         OCCURRED,
-                                        "probe.Op",
+                                        ProbeAuditAction.KYC_CASE_APPROVED,
                                         "Probe",
                                         "t1",
                                         null,
@@ -56,7 +56,7 @@ class AuditRecordTest {
     @DisplayName("a blank operation, target type or target id is refused")
     void blankIdentifiersAreRefused() {
         assertThatExceptionOfType(IllegalArgumentException.class)
-                .isThrownBy(() -> withOperation("  "));
+                .isThrownBy(() -> withOperation(action("  ", false)));
         assertThatExceptionOfType(IllegalArgumentException.class)
                 .isThrownBy(() -> withTarget("  ", "t1"));
         assertThatExceptionOfType(IllegalArgumentException.class)
@@ -82,13 +82,13 @@ class AuditRecordTest {
         // Asserted from both sides: an off-by-one to `>=` would reject a legal record, and
         // under ADR-0010 a rejected audit write rolls back the action it was recording - so the
         // off-by-one would not lose a log line, it would refuse a legitimate operation.
-        assertThat(withOperation("o".repeat(AuditRecord.MAX_NAME_LENGTH)).operation())
+        assertThat(withOperation(action("o".repeat(AuditRecord.MAX_NAME_LENGTH), false)).operation().code())
                 .hasSize(AuditRecord.MAX_NAME_LENGTH);
         assertThat(withReason(Optional.of("r".repeat(AuditRecord.MAX_REASON_LENGTH))).reason())
                 .isPresent();
 
         assertThatExceptionOfType(IllegalArgumentException.class)
-                .isThrownBy(() -> withOperation("o".repeat(AuditRecord.MAX_NAME_LENGTH + 1)));
+                .isThrownBy(() -> withOperation(action("o".repeat(AuditRecord.MAX_NAME_LENGTH + 1), false)));
         assertThatExceptionOfType(IllegalArgumentException.class)
                 .isThrownBy(
                         () -> withReason(Optional.of("r".repeat(AuditRecord.MAX_REASON_LENGTH + 1))));
@@ -119,14 +119,78 @@ class AuditRecordTest {
         assertThat(Actor.SYSTEM.toString()).isEqualTo("SYSTEM:system");
     }
 
+    @Test
+    @DisplayName("an action that requires a reason cannot be recorded without one")
+    void aRequiredReasonIsEnforced() {
+        // V009 made reason nullable and deferred the decision to the domain; the registry is
+        // where the domain decides, and this is where the decision bites. Enforcing it here
+        // rather than at each call site is the difference between a rule and a convention.
+        assertThatExceptionOfType(IllegalArgumentException.class)
+                .isThrownBy(() -> withActionAndReason(ProbeAuditAction.BREAK_RESOLVED, Optional.empty()))
+                .withMessageContaining("requires a reason");
+
+        assertThat(
+                        withActionAndReason(
+                                        ProbeAuditAction.BREAK_RESOLVED,
+                                        Optional.of("counterparty confirmed the missing leg"))
+                                .reason())
+                .isPresent();
+    }
+
+    @Test
+    @DisplayName("an action that requires no reason may still carry one")
+    void anOptionalReasonIsStillAllowed() {
+        // The rule is a floor, not a ceiling. An operator volunteering context on a routine
+        // action is useful, and rejecting it would teach people that the field is a nuisance.
+        assertThat(
+                        withActionAndReason(
+                                        ProbeAuditAction.KYC_CASE_APPROVED, Optional.of("documents verified"))
+                                .reason())
+                .isPresent();
+    }
+
     // -----------------------------------------------------------------
+
+    /** An action with a chosen code, for testing the bounds the registry's own constants satisfy. */
+    private static AuditableAction action(String code, boolean requiresReason) {
+        return new AuditableAction() {
+            @Override
+            public String code() {
+                return code;
+            }
+
+            @Override
+            public String description() {
+                return "probe";
+            }
+
+            @Override
+            public boolean requiresReason() {
+                return requiresReason;
+            }
+        };
+    }
+
+    private static AuditRecord withActionAndReason(AuditableAction action, Optional<String> reason) {
+        return new AuditRecord(
+                AuditId.next(IDS),
+                Actor.SYSTEM,
+                OCCURRED,
+                action,
+                "Probe",
+                "t1",
+                reason,
+                AuditOutcome.SUCCEEDED,
+                CorrelationId.of("flow"),
+                Optional.empty());
+    }
 
     private static AuditRecord record(AuditId id, Actor actor) {
         return new AuditRecord(
                 id,
                 actor,
                 OCCURRED,
-                "probe.Op",
+                ProbeAuditAction.KYC_CASE_APPROVED,
                 "Probe",
                 "t1",
                 Optional.empty(),
@@ -135,7 +199,7 @@ class AuditRecordTest {
                 Optional.empty());
     }
 
-    private static AuditRecord withOperation(String operation) {
+    private static AuditRecord withOperation(AuditableAction operation) {
         return new AuditRecord(
                 AuditId.next(IDS),
                 Actor.SYSTEM,
@@ -154,7 +218,7 @@ class AuditRecordTest {
                 AuditId.next(IDS),
                 Actor.SYSTEM,
                 OCCURRED,
-                "probe.Op",
+                ProbeAuditAction.KYC_CASE_APPROVED,
                 targetType,
                 targetId,
                 Optional.empty(),
@@ -168,7 +232,7 @@ class AuditRecordTest {
                 AuditId.next(IDS),
                 Actor.SYSTEM,
                 OCCURRED,
-                "probe.Op",
+                ProbeAuditAction.KYC_CASE_APPROVED,
                 "Probe",
                 "t1",
                 reason,
@@ -182,7 +246,7 @@ class AuditRecordTest {
                 AuditId.next(IDS),
                 Actor.SYSTEM,
                 OCCURRED,
-                "probe.Op",
+                ProbeAuditAction.KYC_CASE_APPROVED,
                 "Probe",
                 "t1",
                 Optional.empty(),
