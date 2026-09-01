@@ -14,7 +14,14 @@ import java.sql.Statement;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -142,6 +149,56 @@ class AuditWriterTest {
             assertThatExceptionOfType(AuditWriteException.class)
                     .isThrownBy(() -> audit.append(autoCommit, record(AuditId.next(IDS), "kyc.Probe")))
                     .withMessageContaining("auto-commit");
+        }
+    }
+
+    @Test
+    @DisplayName("concurrent instances all append, and none blocks another")
+    void concurrentAppendsDoNotContend() throws Exception {
+        // DOD-KERNEL requires concurrency behaviour to be proven rather than argued. The
+        // property here is an absence: audit writes must NOT serialise against each other.
+        //
+        // That is worth pinning precisely because it is easy to lose. An audit write sits on the
+        // critical path of every privileged action under ADR-0010, so anything that made two of
+        // them contend - a shared sequence, a summary row, a uniqueness rule over anything but
+        // the record's own id - would put a lock in front of every action in the platform, and
+        // it would show up as unexplained latency rather than as a failure.
+        int instances = 8;
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(instances);
+        List<AuditId> written = new ArrayList<>();
+        try {
+            List<Future<AuditId>> running = new ArrayList<>();
+            for (int i = 0; i < instances; i++) {
+                running.add(
+                        pool.submit(
+                                () -> {
+                                    // A connection each: a test sharing one would serialise
+                                    // itself and prove nothing about contention.
+                                    try (Connection own = DatabaseRoles.application()) {
+                                        own.setAutoCommit(false);
+                                        AuditId id = AuditId.next(IDS);
+                                        start.await();
+                                        new JdbcAuditWriter().append(own, record(id, "audit.Concurrent"));
+                                        own.commit();
+                                        return id;
+                                    }
+                                }));
+            }
+            start.countDown();
+            for (Future<AuditId> future : running) {
+                // Comfortably longer than it can need. If these were contending, the failure
+                // would be a timeout rather than a wrong answer.
+                written.add(future.get(30, TimeUnit.SECONDS));
+            }
+        } finally {
+            pool.shutdownNow();
+            assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+        }
+
+        assertThat(written).doesNotHaveDuplicates();
+        for (AuditId id : written) {
+            assertThat(exists(id)).as("every instance's record is present").isTrue();
         }
     }
 

@@ -103,6 +103,40 @@ class ApplicationRoleGrantsTest {
     }
 
     @Test
+    @DisplayName("the application role cannot become the migrator, or every grant is decorative")
+    void theRoleCannotEscalate() throws SQLException {
+        // The most direct attack on this whole model: if the application role could assume the
+        // role that owns the schema, the grants below it would be a suggestion. finapp_app is
+        // NOINHERIT and is not a member of finapp_migrator, and neither of those is obvious from
+        // reading the grants - which is why it is asserted rather than assumed.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> execute("SET ROLE finapp_migrator"));
+        application.rollback();
+
+        // NOCREATEROLE and NOCREATEDB, so it cannot route around the restriction by creating
+        // somewhere else to work.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> execute("CREATE ROLE probe_escalation LOGIN"));
+        application.rollback();
+
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> execute("ALTER ROLE finapp_app SUPERUSER"));
+        application.rollback();
+
+        // Superuser-only, and the reason it matters here: COPY TO PROGRAM is arbitrary command
+        // execution on the database host. A role that had it would not need any of the table
+        // grants to destroy the audit trail.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> execute("COPY (SELECT 1) TO PROGRAM 'true'"));
+        application.rollback();
+
+        // Password hashes for every role in the cluster.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> execute("SELECT rolpassword FROM pg_authid"));
+        application.rollback();
+    }
+
+    @Test
     @DisplayName("the role can still read the schema it is confined to")
     void usageOnTheSchemaIsGranted() {
         // The positive control for the denials above. Without USAGE the role cannot see the

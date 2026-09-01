@@ -60,12 +60,26 @@ BEGIN
 END
 $$;
 
--- The migrator needs to create its schema on first run; nothing else does.
-GRANT CREATE, CONNECT ON DATABASE finapp TO finapp_migrator;
-GRANT CONNECT ON DATABASE finapp TO finapp_app;
+-- Database-level grants, against whichever database this script is being run in.
+--
+-- current_database() rather than a literal 'finapp'. The entrypoint runs init scripts against
+-- $POSTGRES_DB, and compose.yaml parameterises that as ${FINAPP_DB_NAME:-finapp} - so a literal
+-- here would be a silent coupling to one default. It does not degrade gracefully either: a
+-- GRANT naming a database that was never created is an error, ON_ERROR_STOP aborts
+-- initialisation, and the container exits 3 complaining about a database name nobody typed.
+--
+-- GRANT has no parameterised form, hence format() with %I to quote the identifier safely.
+DO $$
+BEGIN
+    -- The migrator needs to create its schema on first run; nothing else does.
+    EXECUTE format('GRANT CREATE, CONNECT ON DATABASE %I TO finapp_migrator', current_database());
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO finapp_app', current_database());
 
--- Default-deny for everyone else, matching V001's stance on the schema. PostgreSQL grants
--- CREATE on the public schema and CONNECT on the database to PUBLIC by default, which would
--- let any role in the cluster create objects beside ours.
+    -- Default-deny for everyone else, matching V001's stance on the schema. PostgreSQL grants
+    -- CREATE on the public schema and CONNECT on the database to PUBLIC by default, which would
+    -- let any role in the cluster create objects beside ours.
+    EXECUTE format('REVOKE ALL ON DATABASE %I FROM PUBLIC', current_database());
+END
+$$;
+
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
-REVOKE ALL ON DATABASE finapp FROM PUBLIC;
