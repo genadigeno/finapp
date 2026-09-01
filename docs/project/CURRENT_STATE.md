@@ -47,48 +47,54 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TST-005` - Outbox crash-recovery test**
+**`P0-TST-006` - Duplicate and out-of-order delivery test**
 Status: `READY` - not started.
 
-Bounded context: platform. Depends on `P0-TSK-020` (`COMPLETE`).
+Bounded context: platform. Depends on `P0-TSK-021` (`COMPLETE`).
 
-Read it against what exists first, as `P0-TST-007` had to be. `P0-TSK-020` already drives a crash
-between publication and its record; `P0-TST-005`'s own criterion is different - *"test fails if
-the outbox write is moved outside the business transaction"* - and nothing asserts that today.
+The last task in milestone M0.3. Read it against what exists first, as the last three have
+needed: `InboxConsumerTest` covers duplicate delivery thoroughly, including eight concurrent
+instances. **Out-of-order delivery is covered nowhere**, and `V007` is explicit that the inbox
+addresses duplication only - so the honest scope is the ordering half, and what a consumer is
+expected to do about it.
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-06. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TST-007` - Audit immutability test** - `COMPLETE` (2026-09-01).
-`P0-EPIC-07` (Audit Trail) is now complete.
-
-The task looked already satisfied - `P0-TSK-022` had shipped `AuditImmutabilityTest` covering
-`UPDATE`, `DELETE`, `TRUNCATE`, `DROP`, `ALTER` and self-granting. Checking rather than assuming
-found that its acceptance criterion, *"test fails if the privilege grant is widened"*, was **false
-for one kind of widening**.
+**`P0-TST-005` - Outbox crash-recovery test** - `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Test fails if the privilege grant is widened | Both kinds now demonstrated against the live table: a table-level `GRANT UPDATE, DELETE` fails **six** tests across two classes; a column-level `GRANT UPDATE (reason)` fails **two**. Before this task the column-level widening failed **none** |
+| Test fails if the outbox write is moved outside the business transaction | Demonstrated by doing it - the writer given its own connection, committing independently. Three tests fail across two classes, every run |
 
-**The finding.** PostgreSQL can grant a privilege on a *column*, and such a grant does not appear
-in `information_schema.table_privileges` at all. Granting `UPDATE (reason)` on the audit table let
-the application role rewrite a committed record's justification - `'original reason'` became
-`'rewritten after the fact'` - **and the entire audit suite passed green**. `INV-HIST-03` was
-violated with nothing to detect it, because the existing update test happened to set `outcome`
-and the grants test read a view that column grants do not reach.
+`OutboxCrashRecoveryTest` joins the whole chain - business fact, outbox row, relay, publisher -
+which no existing test did. `OutboxWriterTest` proved the row commits with the fact;
+`OutboxRelayTest` proved a crash *after* publishing republishes. The scenario in between, a
+process dying **before** publication, is the one the outbox exists for and the one where a
+mistake is invisible: the fact is committed, nobody is told, and nothing reports it.
 
-`reason` is the worst column to lose that way: it is the justification for a privileged action,
-and precisely what someone covering their tracks would edit.
+Two properties are genuinely new:
 
-**Closed in two places, deliberately.**
-- `AuditImmutabilityTest` now attempts `UPDATE` on **every** column, with the list read from the
-  catalogue so a column added by a later migration is covered without anyone remembering.
-- `ApplicationRoleGrantsTest` asserts no table's column-level privileges exceed its table-level
-  grant, **for every platform table** rather than only the audit trail. The inbox's deliberate
-  lack of `UPDATE` had the identical hole, and a blind spot found in one place is a blind spot
-  everywhere - fixing only the instance would have left the class of defect open.
+- **A killed instance does not strand its aggregate.** The instance's database backend is
+  terminated with `pg_terminate_backend` while it holds the aggregate's advisory lock and an open
+  transaction - as close to killing a process as a test gets. A surviving instance then publishes
+  the event. This is what makes the transaction-scoped lock choice load-bearing rather than
+  stylistic: a session-scoped lock on a pooled connection would outlive the code meant to release
+  it, and that aggregate would stop publishing forever with nothing to show why.
+- **The criterion is asserted at the relay, not at the writer.** A missing row is a fact about
+  storage; an announcement nobody can retract is the consequence, and the consequence is what
+  makes the atomicity worth having.
+
+**Run as the application role**, so `V008`'s grants on `outbox_event` are exercised rather than
+assumed - the other outbox suites connect as the bootstrap superuser and would pass with no
+grants at all.
+
+**A test that detected the fault only sometimes.** `theFactAndItsAnnouncementAgree` first asserted
+only what the publisher saw, which made it depend on the surviving row being *due* - and under
+the local clock's backwards steps it caught the mutation in one run and missed it in the next.
+Asserting that the row must not exist is the same property stated without a clock in it, and the
+mutation is now caught in every run.
 
 ---
 
@@ -188,6 +194,17 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Outbox crash recovery, end to end (2026-09-01), `P0-TST-005`:
+- The full chain asserted in one test: business fact and outbox row in one transaction, the relay
+  restarted, the event published once with the correlation of the flow that produced the fact
+- An instance killed with `pg_terminate_backend` mid-publication releases its aggregate, and a
+  surviving instance finishes the job - the property that makes the transaction-scoped lock
+  load-bearing
+- A rolled-back fact leaves the relay nothing to announce, asserted at the relay rather than at
+  the writer, because the consequence is an announcement nobody can retract
+- Exercised through the application role, so the outbox grants are proven rather than assumed
+- The criterion demonstrated: moving the write onto its own connection fails three tests, every run
 
 Audit immutability under privilege widening (2026-09-01), `P0-TST-007`:
 - `UPDATE` proven denied on **every** column of the audit trail, not merely the one a test happens
@@ -372,7 +389,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TST-005` is the next task.
+None in progress. `P0-TST-006` is the next task.
 
 ## Blockers
 
@@ -544,12 +561,15 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TST-005` - Outbox crash-recovery test**, continuing `P0-EPIC-06`. Two test tasks remain in
-Phase 0's correctness milestone: this and `P0-TST-006` (duplicate and out-of-order delivery).
+**`P0-TST-006` - Duplicate and out-of-order delivery test**, the last task in milestone M0.3 and
+the last in `P0-EPIC-06`.
 
-As with `P0-TST-007`, read it against what already exists before writing anything: `P0-TSK-020`
-covers the crash itself, and the part that is genuinely uncovered is its stated criterion - that
-the test fails when the outbox write is moved outside the business transaction.
+Duplicate delivery is already well covered by `InboxConsumerTest`, including eight concurrent
+instances producing one effect. **Out-of-order delivery is covered nowhere**, and `V007` says
+plainly that the inbox addresses duplication only - a handler that would be wrong seeing
+`TransferCompleted` before `TransferInitiated` is wrong whether or not it deduplicates. The
+useful scope is therefore the ordering half: what the platform guarantees, what it does not, and
+what a consumer is expected to do about the difference.
 
 ---
 
@@ -557,6 +577,7 @@ the test fails when the outbox write is moved outside the business transaction.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TST-005` complete. `OutboxCrashRecoveryTest` joins the whole chain - business fact, outbox row, relay, publisher - which no existing test did: the writer's tests end at the row and the relay's crash test covers dying *after* publishing. The scenario in between is the one the outbox exists for, and the one where a mistake is invisible. Two properties are new. **A killed instance does not strand its aggregate**: the backend is terminated with `pg_terminate_backend` while it holds the advisory lock and an open transaction, and a surviving instance publishes the event - which is what makes the transaction-scoped lock load-bearing rather than stylistic, since a session-scoped lock on a pooled connection would outlive the code meant to release it and stop that aggregate forever. And **the criterion is asserted at the relay**, not the writer: a missing row is a fact about storage, an announcement nobody can retract is the consequence. Run through the application role, so `V008`'s outbox grants are exercised rather than assumed. The criterion was demonstrated by moving the write onto its own connection - three tests fail. One test initially caught that mutation only sometimes, because it asserted what the publisher saw and so depended on the surviving row being *due*, which the local clock's backwards steps decide; restated as \"the row must not exist\", it catches it every run. 316 hermetic tests, 145 database tests. |
 | 2026-09-01 | Task completion review of `P0-TST-007`. One important finding, and it is the same shape as the defect the task itself closed: **the new column-privilege check was vacuous when its query saw nothing**. `isSubsetOf` over an empty set is trivially true, so a renamed table, a typo or a changed catalogue view would have left it green while checking nothing - proven by making the query return empty and watching it pass. A guard written to catch a blind spot had one of its own. Closed by asserting the query sees something, which is reliable because PostgreSQL expands every table-level grant into `column_privileges`, so non-empty is the normal state. Also verified rather than asserted: **the self-maintaining claim**. A column added as a future migration would add it, with `UPDATE` granted on it, fails both tests with no edit to any test - which is what \"covered without anyone remembering\" has to mean to be worth writing down. The `hasSizeGreaterThan(5)` vacuity guard was replaced with named columns, since a count is satisfied by a query returning the wrong table. Recorded a limit rather than a gap: immutability is enforced against the **application** role; the migrator owns the table and can alter it, which is a privileged-access concern for Phase 15 and is what ADR-0010 claims - that the application cannot alter its own audit trail. 316 hermetic tests, 141 database tests. |
 | 2026-09-01 | `P0-TST-007` complete; `P0-EPIC-07` closed. The task looked already satisfied - `P0-TSK-022` had shipped an immutability test covering `UPDATE`, `DELETE`, `TRUNCATE`, `DROP`, `ALTER` and self-granting - and checking rather than assuming found its acceptance criterion **false for one kind of widening**. PostgreSQL can grant a privilege on a *column*, and a column grant does not appear in `information_schema.table_privileges` at all: `GRANT UPDATE (reason)` let the application role rewrite a committed audit record's justification - `'original reason'` became `'rewritten after the fact'` - **while the entire audit suite passed green**. `INV-HIST-03` violated, undetected, because the existing update test happened to set `outcome` and the grants test read a view column grants do not reach. `reason` is the worst column to lose: it is the justification for a privileged action. Closed in two places - `UPDATE` attempted on every column with the list read from the catalogue so a future column is covered automatically, and column-versus-table privilege comparison for **every** platform table, since the inbox's deliberate lack of `UPDATE` had the identical hole and a blind spot found in one place is a blind spot everywhere. Both widenings now fail the suite; before this task the column-level one failed nothing. 316 hermetic tests, 141 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-023`. One important finding, and it is the same defect this project already fixed once: **the catalogue was not a declared Gradle input**, so editing it left `:app:test` `UP-TO-DATE` and the build went green over a document the guard never opened. Proven by breaking the catalogue and watching the build pass. `P0-DOC-002`'s review found exactly this for `MODULE_ARCHITECTURE.md` and its build-file comment even names the failure - *\"a check that reports success for work it did not do\"* - which did not generalise on its own to a second document-backed guard. Declared, and the comment now says a third guard needs a third line. A minor finding alongside it: the catalogue was located by a path relative to an assumed working directory, which works under Gradle and breaks in an IDE with a failure reading as a missing document rather than a misconfigured test; it now walks upward like its sibling. Also confirmed a missing catalogue fails loudly rather than passing vacuously. 316 hermetic tests, 138 database tests. |

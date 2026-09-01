@@ -405,7 +405,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-KERNEL`
 
-**P0-TST-005 — Outbox crash-recovery test**
+**P0-TST-005 — Outbox crash-recovery test** — `COMPLETE` (2026-09-01)
 - Context: platform
 - Description: Commit a business transaction, kill the relay before publication, restart, assert the event is published exactly once and carries the original correlation.
 - Why: This is the canonical "database commits but the response is lost" scenario.
