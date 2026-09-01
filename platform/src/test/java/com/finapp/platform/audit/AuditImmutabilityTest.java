@@ -137,7 +137,12 @@ class AuditImmutabilityTest {
         // added by a later migration is covered without anyone remembering to add it here.
         DatabaseRoles.assertCannotBypassPrivileges(application);
         List<String> columns = columnsOf();
-        assertThat(columns).as("the guard must see real columns").hasSizeGreaterThan(5);
+        // Named rather than counted. "More than five columns" would be satisfied by a query
+        // that returned the wrong table; naming `reason` ties the guard to the column the
+        // finding was actually about, and `outcome` to the one the older test already set.
+        assertThat(columns)
+                .as("the guard must see the audit table's real columns")
+                .contains("reason", "outcome", "actor_id", "correlation_id");
 
         for (String column : columns) {
             // `SET c = c` needs UPDATE on exactly that column and no literal of any type, so it

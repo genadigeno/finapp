@@ -86,7 +86,17 @@ class ApplicationRoleGrantsTest {
         // violates an invariant, but the inbox's lack of UPDATE is a deliberate design property
         // too, and a hole that was invisible in one place is invisible in all of them.
         for (String table : List.of("idempotency_record", "outbox_event", "inbox_message", "audit_record")) {
-            assertThat(columnPrivilegesOn(table))
+            List<String> columnPrivileges = columnPrivilegesOn(table);
+
+            // isSubsetOf over an empty set is trivially true, so a query that saw nothing - a
+            // renamed table, a typo, a changed catalogue view - would pass this check while
+            // checking nothing. Proven by making the query return empty and watching it stay
+            // green. PostgreSQL expands every table-level grant into column_privileges, so a
+            // non-empty result is the normal state and its absence means the query is broken.
+            assertThat(columnPrivileges)
+                    .as("the column-privilege query must actually see %s", table)
+                    .isNotEmpty();
+            assertThat(columnPrivileges)
                     .as("column grants on %s must not exceed its table grant", table)
                     .isSubsetOf(privilegesOn(table));
         }
