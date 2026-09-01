@@ -47,49 +47,56 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**None in progress.** `P0-EPIC-05` (Idempotency Kernel) is closed apart from `P0-TSK-017`,
-which is blocked.
+**`P0-TSK-019` — Outbox table and writer**
+Status: `READY` — not started.
 
-**`P0-TSK-017` — `Idempotency-Key` header handling** is `BLOCKED`. Two of its three
-requirements have no subject: its own declared dependency `P0-TSK-023` (auditable-action
-registry) is in `P0-EPIC-07` and not started, so "recorded in audit" cannot be satisfied; and
-"an endpoint declared as requiring the header" needs an HTTP surface, which `P0-EPIC-08`
-introduces in M0.4. There is no servlet, controller or web starter in the build today.
+Bounded context: platform. Depends on `P0-TSK-018` (`COMPLETE`).
 
-Next unblocked work is `P0-EPIC-06` (Reliable Messaging: envelope, outbox, inbox), starting at
-`P0-TSK-018`.
+Note for that task: under ADR-0014 the outbox is the first component whose *relay* is scheduled
+work, so `DISTRIBUTED_EXECUTION.md` §5 requires it to state its cluster-safety strategy up front
+rather than have it audited in afterwards. It is also the sink that will trip
+`CorrelationSinkCoverageTest` the moment an `outbox` package appears.
+
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-06. DoD profile: `DOD-EVENT`.
 
 ### Just completed
 
-**`P0-TST-004` — Idempotency concurrency and retry tests** — `COMPLETE` (2026-09-01).
+**`P0-TSK-018` — Event envelope type** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Exactly one effect in every concurrent case | Counted in a side-effect table, not inferred from return values, in every case |
-| No test relies on timing luck | The contention test waits until **PostgreSQL reports the losers waiting on a lock**, then proceeds |
-| Test fails if the unique constraint is dropped | Dropped `idempotency_record_pk` against the live database: **17 tests failed**, including every failure-mode test; restored |
+| All ten fields mandatory and non-null at construction | Enforced in the compact constructor; the test derives the field set **and** the null checks from the record itself, so an eleventh field added without a decision fails |
+| Serialisation is stable and versioned | Canonical form pinned by exact-match test; `schemaVersion` leads it and is carried on every envelope |
 
-Five failure modes from `CLAUDE.md` §Failure Engineering, driven directly:
+**A boundary conflict had to be resolved first.** The task's context is `sharedkernel` and
+`MODULE_ARCHITECTURE.md` names the envelope as the shared kernel's in three places — but the
+envelope carries `correlationId` and `causationId`, and those types lived in `platform`. The
+shared kernel may not depend upward, so the envelope could not go where the architecture says it
+belongs.
 
-- **Observed contention.** Four losers, blocked on the key, all replay the winner's response.
-  The winner does not commit until the database reports them waiting — because starting threads
-  from a latch makes them *begin* together while the winner may still finish first, so the test
-  would pass without ever exercising contention and would keep passing if contention broke.
-- **Contention longer than the bounded wait.** The holder keeps its claim uncommitted past the
-  loser's `lock_timeout`; the loser gets a deterministic unknown rather than parking.
-- **The response is lost after commit.** Indistinguishable from a timeout on the client's side,
-  so it retries — and the effect has already happened. One effect, replayed response.
-- **Expiry, both sides of it.** An expired but unswept record still replays, because replaying
-  is always safe and refusing would turn a safe answer into a re-execution. Once retention has
-  swept it, the same key runs again — not a defect but the cost `DATA_MIGRATIONS.md` §8 warns
-  about, now asserted so it is known rather than discovered.
-- **An instance crashes mid-command.** Its committed claim is recovered by exactly one of two
-  surviving instances.
+Resolved by the general rule rather than a workaround: **value types sit below the mechanisms
+that move them around.** `CorrelationId`, `CausationId`, `Correlation` and their validation moved
+to `sharedkernel`; `CorrelationContext` — which carries a flow across threads and writes it to
+SLF4J's MDC — stays in `platform`, where its logging dependency belongs.
 
-One finding worth keeping: V003 freezes a terminal claim **entirely**, `expires_at` included, so
-retention cannot be extended on a completed record — only decided when it is written. Found when
-the trigger refused a test helper that tried to age a completed record, which is the guard
-working.
+Design decisions worth carrying forward:
+- **Metadata only, no payload.** That is what lets an outbox relay, a dead-letter tool and a
+  consumer's deduplication read, route and store an event they do not understand — and it means
+  a log line carrying an envelope can never spill event contents (`INV-AUD-02`). A test asserts
+  no payload-shaped component can be added.
+- **The two versions are now defined**, in `EVENT_ARCHITECTURE.md`. It listed `eventVersion` and
+  `schemaVersion` without defining either. `eventVersion` is the *event type's contract*;
+  `schemaVersion` is the *envelope's own structure*. Collapsing them means there is no way to
+  say "the metadata moved but the event means the same thing", and every consumer must be
+  redeployed in step with every producer.
+- **`schemaVersion` leads the canonical form.** A consumer that cannot parse the envelope cannot
+  read the field telling it which layout to expect — unless that field is first and never moves.
+- **No wire format.** Choosing one would commit the shared kernel to a serialisation library.
+  The envelope provides a canonical form whose field set and order are pinned by test, so
+  "stable" is a property rather than an intention; the transport format belongs to the outbox
+  and relay.
+- **Causation is mandatory on an event, though optional on a flow.** A flow may start uncaused;
+  an event may not, because something made it happen.
 
 ---
 
@@ -189,6 +196,18 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Event envelope (2026-09-01), `P0-TSK-018`:
+- `EventEnvelope`: all ten `INV-EVT-03` fields mandatory at construction, so an untraceable
+  event cannot be built; the field set and the null checks are derived from the record by test
+- Metadata only — no payload — so relays and consumers handle events they cannot deserialise,
+  and no log line can spill event contents
+- `EventId` as a typed, time-ordered `EntityId`: the value an inbox deduplicates on
+  (`INV-IDEM-04`), so it is fixed when the event is created rather than regenerated on redelivery
+- Canonical form pinned by exact-match test; `eventVersion` and `schemaVersion` distinguished
+  and documented
+- Correlation and causation **identifiers** moved to `sharedkernel`; the context mechanism stays
+  in `platform`
 
 Idempotency failure modes (2026-09-01), `P0-TST-004`:
 - Contention proven by observing PostgreSQL's own lock waits rather than by hoping threads
@@ -432,11 +451,12 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-018` — Event envelope type**, opening `P0-EPIC-06` (Reliable Messaging).
+**`P0-TSK-019` — Outbox table and writer**, continuing `P0-EPIC-06`.
 
-`P0-TSK-017` is skipped deliberately, not forgotten: it is blocked on `P0-TSK-023` and on an
-HTTP surface that arrives in M0.4, and the blocker is recorded against it in
-[`BACKLOG.md`](BACKLOG.md).
+`INV-EVT-01` — a domain fact and its publication record commit in the same transaction — becomes
+schema and code there. Two things to settle before writing it: the relay is scheduled work and
+must state its cluster-safety strategy under ADR-0014, and an `outbox` package will trip
+`CorrelationSinkCoverageTest` until correlation propagation into the outbox row is asserted.
 
 ---
 
@@ -444,6 +464,7 @@ HTTP surface that arrives in M0.4, and the blocker is recorded against it in
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-018` complete. `EventEnvelope` enforces `INV-EVT-03` at construction — all ten fields mandatory, so an event that could not be traced cannot be built — and carries metadata only, so relays and consumers can handle events they cannot deserialise and no log line can spill event contents. A boundary conflict had to be resolved first: the architecture places the envelope in `sharedkernel` in three places, but the correlation identifiers it carries lived in `platform` and the shared kernel may not depend upward. Resolved by the general rule rather than a workaround — value types sit below the mechanisms that move them, so the identifiers moved down and `CorrelationContext` with its MDC dependency stayed. `EVENT_ARCHITECTURE.md` listed `eventVersion` and `schemaVersion` without defining either; both are now defined and distinguished, and `schemaVersion` leads the canonical form because a consumer that cannot parse an envelope cannot read the field telling it which layout to expect unless that field never moves. No wire format: that would commit the shared kernel to a serialisation library, and it belongs to the outbox. 277 hermetic tests, 47 database tests. |
 | 2026-09-01 | Task completion review of `P0-TST-004`. One important finding, in the test whose headline claim is that it relies on no timing luck: the losers used the default three-second claim wait while the winner held its claim until the lock-wait poll finished, so on a slow machine the losers would time out first and the test would fail for a reason unrelated to what it asserts. The losers now wait far longer than they can need — bounding the wait is a different test's subject and must not be this one's constraint. The lock-wait observation itself was verified real by pointing the losers at a different key and watching the test time out rather than pass. Two mutations survive this suite — the lease condition and the fingerprint check — and both were confirmed caught by the full database suite rather than assumed to be; neither is this suite's subject. Five consecutive full runs green. |
 | 2026-09-01 | `P0-TST-004` complete. Five failure modes from `CLAUDE.md` §Failure Engineering driven directly at the idempotency kernel: observed contention, contention outlasting the bounded wait, a response lost after commit, expiry on both sides of the retention sweep, and an instance crashing mid-command. The acceptance criterion "no test relies on timing luck" is met by waiting until PostgreSQL reports the losing sessions waiting on a lock rather than by sleeping — a latch makes threads *begin* together but the winner may finish first, so the test would pass without exercising contention at all. "Test fails if the unique constraint is dropped" demonstrated against the live database: 17 failures, then restored. Recorded that V003 freezes a terminal claim entirely, so retention cannot be extended after completion. `P0-TSK-017` recorded as `BLOCKED` on `P0-TSK-023` and on the HTTP surface `P0-EPIC-08` brings in M0.4. |
 | 2026-09-01 | **Multi-instance execution made an explicit architectural requirement** — ADR-0014, [`DISTRIBUTED_EXECUTION.md`](../architecture/DISTRIBUTED_EXECUTION.md), and a new §Multi-Instance Execution in `SYSTEM_ARCHITECTURE.md`. It had been implicit: ADR-0004 and ADR-0005 both depend on it without naming it, and nothing said how many copies of the monolith run. An audit of all production code found it mechanically clean — no locks, schedulers, caches or static mutable business state — and **one real defect**: `P0-TSK-016`'s claim reclaim compared `created_at` written by one instance's clock against a staleness bound computed from another's. An instance running six minutes fast with a five-minute lease would consider every neighbour's fresh claim abandoned, take the key, and run the command while the neighbour was still running it — two financial effects for one request. It passed every test because they all ran in one JVM with one clock. Corrected by `V004`: the lease is set and judged by the database's clock, the client-side staleness predicate is removed rather than kept as a fast path, and a test gives the second instance a clock an hour ahead. The no-floating-point rule then caught a `double` on the new lease path, which was the right call. Remediation recorded as `P0-TSK-041` (architecture rule) and `P0-TST-009` (multi-instance test convention). ADR-0001 is unchanged: one deployable is not one instance. 268 hermetic tests, 41 database tests. |
