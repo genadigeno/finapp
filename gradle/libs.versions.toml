@@ -80,6 +80,9 @@ spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" 
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 # The HTTP surface, added by P0-TSK-024 - the first task with anything outward-facing.
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
+# Jakarta Bean Validation, added by P0-TSK-025: rejection at the boundary, declared on the
+# request type rather than written by hand in every handler.
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 
 # --- Logging facade (version supplied by the BOM) ----------------------------
 # The facade only. platform binds nothing: choosing an implementation is the

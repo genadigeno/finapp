@@ -50,6 +50,7 @@ dependencies {
 
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
+    implementation(libs.spring.boot.starter.validation)
 
     // The first HTTP surface (P0-TSK-024, M0.4). app is where it belongs: MODULE_ARCHITECTURE.md
     // §M10 puts routing, content negotiation and error rendering here, and the error CONTRACT -

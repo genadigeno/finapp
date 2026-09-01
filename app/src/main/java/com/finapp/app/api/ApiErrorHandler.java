@@ -12,6 +12,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -87,6 +89,78 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
             Exception exception, HttpServletRequest request) {
         errors.error("Unhandled error on {}", request.getRequestURI(), exception);
         return render(ProblemDetail.of(PlatformErrorCode.INTERNAL_ERROR, request.getRequestURI()));
+    }
+
+    /**
+     * A body that ran past the size limit while being read.
+     *
+     * <p>Spring reports it as an unreadable message, because that is what a message converter
+     * sees when the stream refuses to continue. Left alone it would surface as
+     * {@code api.MalformedRequest} - true in a narrow sense and useless to the caller, who
+     * would have no idea their body was simply too big. The cause chain is searched rather than
+     * the top-level type, since the converter wraps whatever it caught.
+     */
+    @Override
+    protected ResponseEntity<Object> handleHttpMessageNotReadable(
+            HttpMessageNotReadableException exception,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request) {
+
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof BoundedRequest.RequestTooLargeException tooLarge) {
+                String path = pathOf(request);
+                errors.warn("Request body to {} exceeded {} bytes", path, tooLarge.maxBytes());
+                return ResponseEntity.status(HttpStatus.valueOf(PlatformErrorCode.PAYLOAD_TOO_LARGE.status()))
+                        .contentType(PROBLEM_JSON)
+                        .body(
+                                ProblemDetailBody.from(
+                                        ProblemDetail.of(
+                                                PlatformErrorCode.PAYLOAD_TOO_LARGE,
+                                                path,
+                                                "The maximum request body is "
+                                                        + tooLarge.maxBytes()
+                                                        + " bytes.")));
+            }
+        }
+        return super.handleHttpMessageNotReadable(exception, headers, status, request);
+    }
+
+    /**
+     * A request that was well-formed and not valid.
+     *
+     * <p>Rendered as **422**, not the 400 Spring defaults to. The distinction is the one
+     * {@code ERROR_CONTRACT.md} §3 keeps: 400 means the serialiser is wrong and only a developer
+     * can act on it; 422 means the data is wrong and the person filling in the form can.
+     *
+     * <p>The detail names the fields and the constraint each broke. It does <strong>not</strong>
+     * include the rejected values: those are the caller's own input, and echoing untrusted bytes
+     * into a response is how a validation message becomes a reflection vector
+     * ({@code INV-AUD-02}).
+     */
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException exception,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request) {
+
+        String detail =
+                exception.getBindingResult().getFieldErrors().stream()
+                        .map(error -> error.getField() + " " + error.getDefaultMessage())
+                        .sorted()
+                        .collect(java.util.stream.Collectors.joining("; "));
+        String path = pathOf(request);
+        errors.warn("Validation failed on {}: {}", path, detail);
+        return ResponseEntity.status(
+                        HttpStatus.valueOf(PlatformErrorCode.VALIDATION_FAILED.status()))
+                .contentType(PROBLEM_JSON)
+                .body(
+                        ProblemDetailBody.from(
+                                ProblemDetail.of(
+                                        PlatformErrorCode.VALIDATION_FAILED,
+                                        path,
+                                        detail.isBlank() ? null : detail)));
     }
 
     /**

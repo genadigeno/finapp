@@ -4,9 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
-import com.finapp.platform.correlation.CorrelationContext;
-import com.finapp.sharedkernel.correlation.Correlation;
-import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -14,19 +11,9 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import jakarta.servlet.Filter;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.ServletRequest;
-import jakarta.servlet.ServletResponse;
-import java.io.IOException;
 import org.springframework.context.annotation.Import;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
-import org.springframework.stereotype.Component;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,19 +40,20 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>The controller below exists only to be failed at. It is a fixture; the production code
  * under test is {@link ApiErrorHandler} and the contract it renders.
+ *
+ * <p>No nested {@code @SpringBootApplication}: the context is the real {@code FinappApplication},
+ * found by searching up from this package. A local one would scan only {@code com.finapp.app.api}
+ * and quietly miss the composition root - which is how this class first failed once the
+ * correlation filter needed a bean from it.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import({ApiErrorHandlerTest.FailingController.class, ApiErrorHandlerTest.CorrelationScopingFilter.class})
-@SuppressWarnings("try") // A correlation Scope is used for its close side effect.
+@Import(ApiErrorHandlerTest.FailingController.class)
 class ApiErrorHandlerTest {
 
     /** A string that must never appear in a response, whatever the path. */
     private static final String SECRET = "account=ACC-99812 token=sk_live_2f8a";
 
     @LocalServerPort private int port;
-
-    @SpringBootApplication
-    static class TestApplication {}
 
     /** Exists to fail. Not production code. */
     @RestController
@@ -204,45 +192,18 @@ class ApiErrorHandlerTest {
     }
 
     @Test
-    @DisplayName("the response carries the flow's correlation identifier when a filter scopes the request")
+    @DisplayName("the response carries a correlation identifier, in the body and in the header")
     void correlationReachesTheClient() throws Exception {
-        // The only correlation sink a customer ever sees, and a finding in its own right: the
-        // scope must be established by a FILTER, not inside the controller.
-        //
-        // Written first with the controller entering the scope around its own failure, this
-        // failed - because a try-with-resources closes before the exception reaches an
-        // @ExceptionHandler, so the renderer ran with no correlation in scope. Exactly the shape
-        // of the relay defect P0-TSK-020's review found, where a catch attached to a
-        // try-with-resources ran after the resource closed.
-        //
-        // So it is a requirement on whoever adds the production ingress filter: the scope has to
-        // wrap error handling as well as the handler, or the identifier reaches the log and not
-        // the client - and the client's copy is the one a person can quote.
+        // The only correlation sink a customer ever sees. This used a stand-in filter until
+        // P0-TSK-025 built the real one; it now exercises production code, and the assertion is
+        // that the body and the header agree rather than that either matches a value the test
+        // chose - which is what a client actually needs when quoting one to support.
         HttpResponse<String> response = postJson("/probe/unexpected", "{}");
 
         assertContract(response, 500, "api.InternalError");
-        assertThat(response.body()).contains("api-flow-9");
-    }
-
-    /**
-     * Establishes a correlation scope around the whole request, as the ingress filter will.
-     *
-     * <p>Registered with the highest precedence so it wraps the dispatcher, and therefore the
-     * error handling too. A filter ordered after the dispatcher would reproduce the failure this
-     * test exists to prevent.
-     */
-    @Component
-    @Order(Ordered.HIGHEST_PRECEDENCE)
-    static class CorrelationScopingFilter implements Filter {
-        @Override
-        public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
-                throws IOException, ServletException {
-            try (CorrelationContext.Scope ignored =
-                    CorrelationContext.enter(
-                            Correlation.startingWith(CorrelationId.of("api-flow-9")))) {
-                chain.doFilter(request, response);
-            }
-        }
+        String header = response.headers().firstValue(CorrelationFilter.HEADER).orElseThrow();
+        assertThat(header).isNotBlank();
+        assertThat(response.body()).contains(header);
     }
 
     // -----------------------------------------------------------------
