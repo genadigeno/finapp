@@ -146,8 +146,8 @@ class InboxDeliveryOrderTest {
         // Nothing failed; nothing retried; no duplicate occurred. The inbox did its job perfectly.
         UUID transfer = UUID.randomUUID();
 
-        deliver(transfer, COMPLETED, lastWriteWins());
-        deliver(transfer, INITIATED, lastWriteWins());
+        deliver(transfer, COMPLETED, lastWriteWins(transfer, COMPLETED));
+        deliver(transfer, INITIATED, lastWriteWins(transfer, INITIATED));
 
         assertThat(statusOf(transfer))
                 .as("the naive handler ends on whichever event arrived last, not the latest one")
@@ -163,8 +163,8 @@ class InboxDeliveryOrderTest {
         // moved past - so a late arrival is ignored rather than believed.
         UUID transfer = UUID.randomUUID();
 
-        deliver(transfer, COMPLETED, orderIndependent());
-        deliver(transfer, INITIATED, orderIndependent());
+        deliver(transfer, COMPLETED, orderIndependent(transfer, COMPLETED));
+        deliver(transfer, INITIATED, orderIndependent(transfer, INITIATED));
 
         assertThat(statusOf(transfer))
                 .as("a late TransferInitiated must not undo a TransferCompleted already applied")
@@ -179,10 +179,10 @@ class InboxDeliveryOrderTest {
         // test above and be useless.
         UUID transfer = UUID.randomUUID();
 
-        deliver(transfer, INITIATED, orderIndependent());
+        deliver(transfer, INITIATED, orderIndependent(transfer, INITIATED));
         assertThat(statusOf(transfer)).isEqualTo("INITIATED");
 
-        deliver(transfer, COMPLETED, orderIndependent());
+        deliver(transfer, COMPLETED, orderIndependent(transfer, COMPLETED));
         assertThat(statusOf(transfer)).isEqualTo("COMPLETED");
     }
 
@@ -194,10 +194,10 @@ class InboxDeliveryOrderTest {
         UUID transfer = UUID.randomUUID();
         AtomicInteger handled = new AtomicInteger();
 
-        deliver(transfer, COMPLETED, both(orderIndependent(), handled));
-        deliver(transfer, COMPLETED, both(orderIndependent(), handled));
-        deliver(transfer, INITIATED, both(orderIndependent(), handled));
-        deliver(transfer, INITIATED, both(orderIndependent(), handled));
+        deliver(transfer, COMPLETED, both(orderIndependent(transfer, COMPLETED), handled));
+        deliver(transfer, COMPLETED, both(orderIndependent(transfer, COMPLETED), handled));
+        deliver(transfer, INITIATED, both(orderIndependent(transfer, INITIATED), handled));
+        deliver(transfer, INITIATED, both(orderIndependent(transfer, INITIATED), handled));
 
         assertThat(handled).as("one run per distinct message").hasValue(2);
         assertThat(statusOf(transfer)).isEqualTo("COMPLETED");
@@ -240,31 +240,40 @@ class InboxDeliveryOrderTest {
     // Handlers
     // -----------------------------------------------------------------
 
-    /** What everybody writes first: store whatever the latest delivery said. */
-    private static InboxConsumer.Handler<Connection> lastWriteWins() {
-        return unitOfWork -> {
-            int sequence = currentSequence.get();
-            upsert(
-                    unitOfWork,
-                    "INSERT INTO " + PROJECTION + " (aggregate_id, status, applied_sequence) "
-                            + "VALUES (?, ?, ?) ON CONFLICT (aggregate_id) DO UPDATE "
-                            + "SET status = EXCLUDED.status, applied_sequence = EXCLUDED.applied_sequence",
-                    sequence);
-        };
+    /**
+     * What everybody writes first: store whatever the latest delivery said.
+     *
+     * <p>Built <em>for</em> the message, closing over what it needs, which is how a real consumer
+     * works - the caller has already deserialised the message and knows what it says.
+     * {@code InboxConsumer.Handler} receives only the unit of work precisely because everything
+     * else is the caller's to supply, and a test that smuggled the message in through ambient
+     * state would be modelling something no consumer does.
+     */
+    private static InboxConsumer.Handler<Connection> lastWriteWins(UUID transfer, int sequence) {
+        return unitOfWork ->
+                upsert(
+                        unitOfWork,
+                        "INSERT INTO " + PROJECTION + " (aggregate_id, status, applied_sequence) "
+                                + "VALUES (?, ?, ?) ON CONFLICT (aggregate_id) DO UPDATE "
+                                + "SET status = EXCLUDED.status, "
+                                + "applied_sequence = EXCLUDED.applied_sequence",
+                        transfer,
+                        sequence);
     }
 
     /** Carries the event's sequence and refuses to move backwards. */
-    private static InboxConsumer.Handler<Connection> orderIndependent() {
-        return unitOfWork -> {
-            int sequence = currentSequence.get();
-            upsert(
-                    unitOfWork,
-                    "INSERT INTO " + PROJECTION + " (aggregate_id, status, applied_sequence) "
-                            + "VALUES (?, ?, ?) ON CONFLICT (aggregate_id) DO UPDATE "
-                            + "SET status = EXCLUDED.status, applied_sequence = EXCLUDED.applied_sequence "
-                            + "WHERE " + PROJECTION + ".applied_sequence < EXCLUDED.applied_sequence",
-                    sequence);
-        };
+    private static InboxConsumer.Handler<Connection> orderIndependent(UUID transfer, int sequence) {
+        return unitOfWork ->
+                upsert(
+                        unitOfWork,
+                        "INSERT INTO " + PROJECTION + " (aggregate_id, status, applied_sequence) "
+                                + "VALUES (?, ?, ?) ON CONFLICT (aggregate_id) DO UPDATE "
+                                + "SET status = EXCLUDED.status, "
+                                + "applied_sequence = EXCLUDED.applied_sequence "
+                                + "WHERE " + PROJECTION
+                                + ".applied_sequence < EXCLUDED.applied_sequence",
+                        transfer,
+                        sequence);
     }
 
     private static InboxConsumer.Handler<Connection> counting(AtomicInteger handled) {
@@ -283,16 +292,9 @@ class InboxDeliveryOrderTest {
     // Fixture
     // -----------------------------------------------------------------
 
-    /** The sequence of the message currently being delivered, read by the handlers. */
-    private static final ThreadLocal<Integer> currentSequence = new ThreadLocal<>();
-
-    private static UUID currentTransfer;
-
     private static InboxConsumer.Outcome deliver(
             UUID transfer, int sequence, InboxConsumer.Handler<Connection> handler)
             throws SQLException {
-        currentTransfer = transfer;
-        currentSequence.set(sequence);
         try (CorrelationContext.Scope ignored =
                 CorrelationContext.enter(Correlation.startingWith(FLOW))) {
             InboxConsumer.Outcome outcome =
@@ -300,8 +302,6 @@ class InboxDeliveryOrderTest {
                             .consume(connection, keyFor(transfer, sequence), typeOf(sequence), handler);
             connection.commit();
             return outcome;
-        } finally {
-            currentSequence.remove();
         }
     }
 
@@ -337,9 +337,9 @@ class InboxDeliveryOrderTest {
         return sequence == INITIATED ? "INITIATED" : "COMPLETED";
     }
 
-    private static void upsert(Connection unitOfWork, String sql, int sequence) {
+    private static void upsert(Connection unitOfWork, String sql, UUID transfer, int sequence) {
         try (PreparedStatement statement = unitOfWork.prepareStatement(sql)) {
-            statement.setObject(1, currentTransfer);
+            statement.setObject(1, transfer);
             statement.setString(2, statusFor(sequence));
             statement.setInt(3, sequence);
             statement.executeUpdate();
