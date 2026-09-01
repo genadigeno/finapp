@@ -104,7 +104,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-BUILD`
 
-**P0-DOC-001 — Build and local development guide**
+**P0-DOC-001 — Build and local development guide** — `COMPLETE` (2026-09-01)
 - Context: platform
 - Description: `README` covering prerequisites, build, run, test, and infrastructure lifecycle.
 - Why: Reproducibility is part of operability.

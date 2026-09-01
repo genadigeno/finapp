@@ -28,11 +28,15 @@ today.
 - The infrastructure versions are pinned in `compose.yaml` and asserted against the version
   catalog on every build.
 
-Confirm what the build actually resolved:
+Report the Gradle version and the JVM Gradle itself is running on:
 
 ```bash
 ./gradlew toolchainInfo
 ```
+
+Note that the launcher JVM is *not* the compile toolchain. The build targets Java 21 whatever
+JVM launched it; what proves that is `BuildToolchainTest`, which asserts the emitted bytecode
+version and runs as part of `./gradlew build`.
 
 ---
 
