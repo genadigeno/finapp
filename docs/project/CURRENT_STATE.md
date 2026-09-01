@@ -48,57 +48,60 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**None in progress.**
+**`P0-TSK-016` — Idempotent execution wrapper**
+Status: `READY` — not started.
 
-`P0-EPIC-04`'s remaining item, `P0-TST-003` (correlation propagation integration test), is
-**blocked until M0.4** — it asserts correlation identity across a log line, a trace, an outbox
-row and an audit record, and three of those four subsystems do not exist yet. Recorded in
-[`BACKLOG.md`](BACKLOG.md); this is a backlog sequencing defect, not a gap in `P0-TSK-014`.
+Bounded context: platform. Depends on `P0-TSK-015` (`COMPLETE`).
 
-Milestone M0.2 is therefore complete except for that blocked test.
+Scope: claim, execute, persist outcome; fingerprint comparison for `INV-IDEM-03`; deterministic
+handling of an `IN_PROGRESS` claim including reclaim after a crash timeout.
+
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-05. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TSK-014` — Correlation and causation context** — `COMPLETE` (2026-09-01) for the clauses
-that can be verified now; the rest transferred to `P0-TST-003` with the backlog corrected.
+**`P0-TSK-015` — Idempotency record schema** — `COMPLETE` (2026-09-01). The platform's first
+real table.
 
-| Acceptance criterion | Status |
+| Acceptance criterion | Evidence |
 |---|---|
-| One request produces **log lines** carrying one `correlationId` | **Met** — asserted against a real Logback appender, reading what was written rather than that a logger was called |
-| ...a **trace**... | **Deferred** — no tracing exporter exists (`P0-EPIC-09`, M0.4) |
-| ...and an **emitted event**... | **Deferred** — no outbox exists (`P0-EPIC-06`, M0.3) |
-| Propagation survives an **async handoff** | **Met** — proven across an executor, including the pooled-thread leak case |
-
-**The acceptance criterion could not be met as written, and that is a backlog defect.** It names
-a trace, an emitted event and an ingress filter; the tracing exporter, the outbox, the audit
-store and the HTTP surface all arrive in later milestones. Structurally the same defect as
-`P0-TSK-004`'s over-specified dependencies, and corrected the same way — in the backlog, with
-the deferred clauses transferred to the task that can actually run them.
+| Unique constraint prevents a second record | 16 threads racing one key from a standing start: exactly one winner, every loser failing as a unique violation rather than as something unexplained |
+| Expiry policy documented | [`DATA_MIGRATIONS.md`](../architecture/DATA_MIGRATIONS.md) §8 |
+| Scope prevents key collision across different commands | Two scopes, one shared client key, both stored |
 
 Design decisions worth carrying forward:
-- **`InheritableThreadLocal` is the obvious answer and is wrong.** It copies at thread
-  *creation*, not at submission, so a pooled worker keeps the context of whichever request
-  happened to create it and stamps that identifier onto every later request it serves. The
-  failure is not missing correlation but *confidently wrong* correlation — an investigation
-  follows the identifier into unrelated work. Context is captured explicitly at submission, and
-  a test asserts the leak does not happen.
-- **Correlation and causation are different types because they answer different questions.**
-  Correlation is flat and says what belongs together; causation links to the immediate parent
-  and its chain says what caused what. Sharing a type would make them swappable, and swapping
-  them yields a system where every record claims to have caused itself while correlation still
-  ties things together — so it reads as working.
-- **Identifiers are untrusted input.** A correlation id may be *accepted* from a caller and then
-  written into every log line of the flow, so a newline in it forges log entries. Default-deny
-  charset, bounded length, **rejected rather than sanitised** — silently rewriting a caller's
-  identifier breaks the tie to their trace while appearing to succeed — and the rejection
-  message does not echo the value, or the log line reporting it would contain the control
-  characters the check exists to exclude.
-- **The MDC is written and restored by the same code that owns the scope.** A log context set
-  and never cleared is the pooled-thread bug in another place; leaving a scope restores what was
-  there before rather than clearing, so a job inside a request does not wipe the request.
-- **`slf4j-api` added to `platform`, facade only.** Binding a backend in a library imposes it on
-  every consumer. The Spring Boot BOM is applied as version constraints only so the facade
-  cannot split across two versions — which fails silently rather than loudly.
+- **This table is deliberately not append-only, and that needed justifying rather than
+  assuming.** `DATA_MIGRATIONS.md` §6 says the migrator/application role split must land before
+  any table covered by `INV-LED-03`, `INV-HIST-01` or `INV-HIST-03` exists. An idempotency
+  record is covered by none of them: it is a concurrency-control artefact that is claimed
+  before the command runs, updated with the outcome and deleted at expiry. Making it immutable
+  would make the mechanism unimplementable. It records *that* a command ran; the immutable
+  record of *what it did* is the ledger's.
+- **`IN_PROGRESS` is a modelled state, not an assumption of failure.** A process that dies mid
+  command may already have committed its financial effect, so a retry that assumed failure and
+  re-executed would produce the second effect the whole mechanism exists to prevent. This is
+  `INV-LIFE-03`'s reasoning about unknown provider outcomes applied to our own interrupted work.
+- **The response is stored as bytes, not JSON.** A retry must receive the bytes the first caller
+  received; re-serialising a parsed structure can differ in field order or numeric formatting,
+  and "almost the same response" is not what `INV-IDEM-01` promises. It also avoids deciding the
+  API representation here, which is `P0-EPIC-08`'s.
+- **The fingerprint algorithm is stored on the record.** `INV-HIST-04`'s rule — pin the version
+  of whatever produced a decision — applied to the thing that decides whether two requests are
+  "the same". Without it, changing the algorithm would compare digests from two different
+  functions, which never match, so every retry after the change would become a new request and
+  a second financial effect.
+- **The enum and the `CHECK` constraint are one definition.** `IdempotencyState.sqlValueList()`
+  generates the literal list, and a hermetic test asserts the migration contains exactly it, so
+  drift cannot survive a compile — not just until someone remembers to run the database tests.
+- **No index on `expires_at`.** Its right shape depends on the sweep's predicate, which is not
+  written yet; an index maintained on every insert for a query nobody has written is a cost with
+  no benefit. Recorded, with the reasoning, in §8.
+
+**One process note.** I edited the migration after Flyway had applied it locally, and
+`flywayValidate` caught the checksum mismatch — `DATA_MIGRATIONS.md` §3.1 working exactly as
+intended. Resolved with `flywayRepair`, which is correct for a migration that exists only on the
+author's machine; it would not be correct for one applied anywhere else. The migration was then
+verified against a genuinely empty scratch database: applies, re-applies idempotently, validates.
 
 ---
 
@@ -191,6 +194,16 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
   domain exceptions under one `MonetaryException` supertype
 - `CurrencyCode` validates against ISO 4217 and rejects codes with no minor unit
 - No floating point anywhere on the monetary path
+
+Idempotency schema (2026-09-01), `P0-TSK-015`:
+- `platform.idempotency_record`: `INV-IDEM-01` enforced by a unique key on
+  (scope, idempotency_key), proven under 16-way contention against a real PostgreSQL
+- The state machine checked in the schema, not only in code: an `IN_PROGRESS` claim cannot
+  carry an outcome, a terminal one must be timestamped
+- Fingerprint length bounded and its algorithm recorded, so `INV-IDEM-03` cannot be weakened by
+  truncation or by a silent algorithm change
+- `IdempotencyState` and the `CHECK` constraint generated from one definition, guarded
+  hermetically
 
 Correlation kernel (2026-09-01), `P0-TSK-014`:
 - `CorrelationId` / `CausationId`: distinct types, validated against log injection with a
@@ -405,11 +418,11 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-015` — Idempotency record schema**, opening `P0-EPIC-05` and milestone M0.3.
+**`P0-TSK-016` — Idempotent execution wrapper.**
 
-`P0-TST-003` is skipped deliberately, not forgotten: it is blocked until M0.4 (see Current
-Task). Taking it now would mean either building four subsystems inside a test task or writing a
-test that asserts less than its own description claims.
+It is where `INV-IDEM-01` and `INV-IDEM-03` become behaviour rather than schema: claim, execute,
+persist, and — the part that carries the risk — decide what to do about an `IN_PROGRESS` claim
+without either deadlocking on it or assuming it failed.
 
 ---
 
@@ -417,6 +430,7 @@ test that asserts less than its own description claims.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-015` complete — the platform's first table. `INV-IDEM-01` enforced by a unique key on (scope, idempotency_key) and proven under 16-way contention against a real PostgreSQL: exactly one winner, every loser a unique violation. The state machine is checked in the schema as well as in code, the fingerprint's algorithm is recorded on the record (`INV-HIST-04`'s rule applied to the thing that decides whether two requests are the same), and the response is stored as bytes so a retry receives what the first caller received. Established that this table is legitimately mutable and so not gated on the `P0-TSK-022` privilege split. `flywayValidate` caught a checksum mismatch when the migration was edited after being applied locally — the rule working; repaired, then verified against an empty scratch database. Expiry policy documented in `DATA_MIGRATIONS.md` §8, including why too-short expiry costs money and too-long costs storage. 259 hermetic tests, 20 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-014`. All eight mutations of the correlation kernel were caught, including `InheritableThreadLocal`, which fails through the unwrapped-task path — so the claim the design rests on is genuinely tested rather than merely argued. Two gaps the sweep could not reveal, both fixed: the token charset used `String.matches`, recompiling the expression on the ingress path of every request; and the MDC key names are documented as a published contract that log queries and dashboards are written against, yet every test used the constants, so renaming one would have been a compile-safe refactor that silently broke every dashboard. Literals now pinned. Also recorded that `propagate` returns an `Executor` rather than an `ExecutorService`, so a caller needing `submit` wraps the task — no speculative decorator written. 255 tests. |
 | 2026-09-01 | `P0-TSK-014` complete for what can be verified now. Correlation and causation modelled as distinct types, validated as untrusted input against log injection, with a context that survives an async handoff and provably does not leak between tasks on a pooled thread — the failure `InheritableThreadLocal` would have introduced. Log lines proven to carry the identifier by reading a real Logback appender. **The acceptance criterion could not be met as written**: it names a trace, an emitted event and an ingress filter, and the exporter, outbox, audit store and HTTP surface all arrive in later milestones. Backlog corrected and the clauses transferred to `P0-TST-003`, which is recorded as blocked until M0.4. `slf4j-api` added to `platform` (facade only). 254 tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-013`. Three findings in the rule itself, all from probing rather than reading. **`Instant::now` as a method reference bypassed the rule entirely** — a method reference is an `invokedynamic`, not a call, so `getMethodCallsFromSelf()` never sees it; closed with `getMethodReferencesFromSelf()`, and a rule one syntax away from being bypassed is not enforcement. **`TemporalAdjusters.firstDayOfNextMonth` was forbidden and should not have been** — it is applied to a date the caller already holds and reads nothing, so the rule was pushing people off a correct API, exactly the failure its own javadoc warns about. **Ambient *zone* was not forbidden**, though `instant.atZone(ZoneId.systemDefault())` makes which date an instant falls on depend on server configuration — a dating defect no amount of clock injection prevents. Also removed a dead `java.sql.Timestamp` entry that could never match. All four re-probed, including two positive controls proving the allowed APIs stay allowed. 219 tests. |

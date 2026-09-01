@@ -267,3 +267,45 @@ Before merging a migration:
 - Monetary fields declared through `MoneyColumns`, not hand-written
 - Applies cleanly to an empty database
 - `flywayValidate` passes
+
+---
+
+## 8. Retention and Expiry
+
+Some platform tables are bounded by an expiry rather than kept forever. Financial records are
+never among them — `INV-HIST-01` makes financial history permanent — so this section covers the
+correctness primitives only.
+
+### Idempotency records (`platform.idempotency_record`)
+
+**Policy: retain for at least as long as any client may retry, and no longer than necessary.**
+The default is **24 hours** from creation, set by the caller through `expires_at` rather than by
+a schema default, because different commands have different retry windows and a single hardcoded
+value would be wrong for most of them.
+
+**The floor is a correctness bound, not a preference.** An idempotency record is what makes a
+retry safe. If it expires before the client stops retrying, the next retry finds no record,
+claims the key afresh and produces **a second financial effect** — the exact outcome the
+mechanism exists to prevent, arriving quietly and long after anyone is watching. So the expiry
+of a command's records must exceed:
+
+- the client's own retry schedule, including any exponential backoff and its final attempt;
+- any gateway, proxy or SDK retry the client does not control;
+- the manual-retry window a support process might use.
+
+When those are unknown, the safe direction is unambiguous: **too long merely costs storage; too
+short costs money.**
+
+**The ceiling is real too.** Records accumulate, and an unbounded table degrades the index that
+`INV-IDEM-01` depends on. Retention is therefore explicit and swept, not left to grow.
+
+**Sweeping.** Deleting expired records is the retention job's work, not the schema's. No index on
+`expires_at` is created by `V002`: its right shape depends on the predicate that sweep uses — a
+plain btree and a partial index restricted to terminal states have different write costs — and an
+index maintained on every insert for a query nobody has written yet is a cost with no benefit.
+The task that writes the sweep adds the index its query needs.
+
+**Never sweep a non-terminal record.** An `IN_PROGRESS` claim older than its expiry is not
+garbage; it is a command whose outcome is unknown, and deleting it discards the evidence that
+something was interrupted mid-flight. Those are resolved by the reclaim path (`P0-TSK-016`),
+which is a decision about an unfinished command, not a cleanup.

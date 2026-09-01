@@ -297,7 +297,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-05 — Persistent idempotency records
 
-**P0-TSK-015 — Idempotency record schema**
+**P0-TSK-015 — Idempotency record schema** — `COMPLETE` (2026-09-01)
 - Context: platform / data
 - Description: Table keyed on (scope, idempotency key) with request fingerprint, state (`IN_PROGRESS`/`COMPLETED`/`FAILED`), stored response, created/expiry timestamps, unique constraint.
 - Why: `INV-IDEM-01`; a database unique constraint is the only reliable arbiter under concurrency.
