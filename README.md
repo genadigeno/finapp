@@ -93,6 +93,40 @@ Check state at any time:
 docker compose ps
 ```
 
+### Database roles
+
+PostgreSQL is provisioned with three roles, not one:
+
+| Role | Used by | Holds |
+|---|---|---|
+| `finapp` | The container's own bootstrap | Cluster superuser. Nothing in this project connects as it except one test fixture |
+| `finapp_migrator` | Flyway | Owns the `platform` schema. DDL only, **not** a superuser |
+| `finapp_app` | The application | Per-table DML, granted by the migration that creates each table. No DDL |
+
+The split is not cosmetic. `INV-LED-03`, `INV-HIST-01` and `INV-HIST-03` are enforced by the
+application role **lacking** a privilege, and a superuser ignores every permission check — so
+running as one would make those invariants untestable rather than merely unenforced.
+
+`finapp_migrator` and `finapp_app` are created by
+`infra/postgres/initdb/00-roles.sql`, which the container runs on **first initialisation only**.
+Roles are cluster objects and so cannot live in a Flyway migration; see the script's header.
+
+**If your volume predates this file**, the script never ran. Either reset:
+
+```bash
+docker compose down -v && docker compose up -d --wait
+```
+
+or apply it once by hand — `MSYS_NO_PATHCONV=1` is required in Git Bash, which otherwise
+rewrites the container path:
+
+```bash
+MSYS_NO_PATHCONV=1 docker compose exec -T postgres psql -U finapp -d finapp -f /docker-entrypoint-initdb.d/00-roles.sql
+```
+
+Without the roles, `./gradlew :platform:flywayMigrate` fails with
+`FATAL: password authentication failed for user "finapp_migrator"`.
+
 ---
 
 ## 4. Database migrations and database tests

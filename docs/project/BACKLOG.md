@@ -435,7 +435,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-09 — Audit record store
 
-**P0-TSK-022 — Audit schema and writer**
+**P0-TSK-022 — Audit schema and writer** — `COMPLETE` (2026-09-01)
 - Context: platform / audit
 - Description: Append-only table: actor, actor type, occurred-at, operation, target type/id, reason (where applicable), correlation id, outcome, before/after summary where material.
 - Why: Mandated by `CLAUDE.md` §Security and Audit.

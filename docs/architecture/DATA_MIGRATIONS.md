@@ -244,11 +244,36 @@ This implies two roles:
 Grants belong in the migration that creates the table, so a table's privileges arrive with it
 rather than being applied later by hand.
 
-> **Not yet implemented.** Local development currently connects as the cluster superuser
-> `finapp`, which is both migrator and application role. That is acceptable for bootstrapping
-> a container and nowhere else, and it means the privilege-level invariants cannot yet be
-> exercised. Closing this is `P0-TSK-022`, and it must be closed before any table those
-> invariants apply to is created. Tracked in `CURRENT_STATE.md`.
+**Implemented by `P0-TSK-022`.**
+
+| Role | Is | Holds |
+|------|----|-------|
+| `finapp_migrator` | The owner of the `platform` schema and every object in it. Flyway connects as this | DDL on its own schema. **Not** a superuser |
+| `finapp_app` | What the application connects as | Per-table DML, granted by the migration that creates the table. No DDL, no access to the migration history |
+
+**Roles are provisioned by infrastructure, not by a migration.** A role is a cluster-level
+object shared by every database in the cluster, while a migration belongs to one schema in one
+database. Creating a role from a migration would have that schema's history claim an object
+outside it, would break the second database in the same cluster (CI creates scratch databases to
+verify migrations apply to an empty one), and would require the migrator to hold `CREATEROLE` —
+the ability to invent roles, which is precisely what a role confined to DDL on one schema should
+not have. Locally that provisioning is
+[`infra/postgres/initdb/00-roles.sql`](../../infra/postgres/initdb/00-roles.sql); in a deployed
+environment it is Terraform or a managed-database operator.
+
+**Both roles are `NOSUPERUSER`, and that is the load-bearing part.** A superuser ignores every
+permission check. Running the application as one does not merely weaken these invariants — it
+makes them *untestable*, because an immutability test connecting as a superuser passes whatever
+the grants say. `DatabaseRoles.assertCannotBypassPrivileges` asserts the connected role is
+neither a superuser nor `BYPASSRLS` before every denial assertion, and pointing the application
+credentials at the superuser fails the whole suite.
+
+**Verified, not asserted.** `AuditImmutabilityTest` proves `UPDATE`, `DELETE` and — separately,
+because it is a distinct privilege that "we denied DELETE" reasoning misses — `TRUNCATE` all
+fail for the application role, along with `DROP TABLE`, `ALTER TABLE` and self-granting.
+`ApplicationRoleGrantsTest` reads the granted privileges from the catalogue and checks each
+table against the set its design requires, so a grant that is too *wide* fails as loudly as one
+that is too narrow.
 
 ---
 

@@ -47,67 +47,57 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-022` - Audit schema and writer**
+**`P0-TSK-023` - Auditable-action registry**
 Status: `READY` - not started.
 
-Bounded context: platform / audit. Depends on `P0-TSK-005`, `P0-TSK-014` (both `COMPLETE`).
+Bounded context: platform / audit. Depends on `P0-TSK-022` (`COMPLETE`).
 
-It opens `P0-EPIC-07` and is the first task that needs the **migrator/application role split**
-(`DATA_MIGRATIONS.md` §6): its acceptance criterion is that the application role holds `INSERT`
-and `SELECT` only, proven by a test. That split is currently listed under Partially Satisfied
-Definition of Done and must land here, because `INV-HIST-03` is enforced at the privilege level
-or not at all.
+`V009` already assumes it: `operation` is documented as "a stable identifier from the
+auditable-action registry, not free text", because Phase 15 must verify audit completeness
+against an enumerable list. The registry is what makes that column's promise true.
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-07. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TSK-021` - Inbox dedupe store and consumer wrapper** - `COMPLETE` (2026-09-01).
-`P0-EPIC-06` (Reliable Messaging) is now complete.
+**`P0-TSK-022` - Audit schema and writer** - `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Redelivering the same message produces no second effect | Three deliveries, one effect - **counted in a side-effect table**, never inferred from the wrapper's own return value, since a wrapper that reported `SKIPPED_DUPLICATE` while running the handler would pass any test that believed it. Also proven at eight concurrent instances on separate connections |
-| Dedupe record and side effect commit in one transaction | Proven both ways: a committed handler leaves both, and a handler that throws leaves **neither** - then the redelivery is handled rather than skipped. A rollback-only test would pass against a wrapper that never wrote anything |
-| Retention policy documented | `DATA_MIGRATIONS.md` §9, including what the window must exceed and why a provider retrying a webhook for three days against a 24-hour inbox produces a duplicate effect nothing reports |
+| Application role has `INSERT` and `SELECT` only; `UPDATE` and `DELETE` denied at the privilege level, proven by test | `AuditImmutabilityTest`, connecting as `finapp_app`. `UPDATE`, `DELETE`, `TRUNCATE`, `DROP TABLE`, `ALTER TABLE` and self-granting all refused; append and read still work. Proven to have teeth by granting `UPDATE, DELETE` on the live table - four tests fail across two suites |
+| No sensitive value stored in clear | The table records *that* an action occurred and by whom, never the payload. `change_summary` is bounded and documented as a summary rather than a diff, because it is the field a payload would be smuggled through (`INV-AUD-02`) |
 
-Design decisions worth carrying forward:
-- **The consumer is part of the key.** One event legitimately has many consumers and each must
-  handle it once. Keying on the message alone would let whichever consumer got there first
-  suppress every other one - and it does not look like a defect: everything succeeds, one
-  consumer runs, and the failure surfaces months later as "the notification never arrived".
-  Asserted from both sides, in the wrapper and at the schema.
-- **No state machine, deliberately.** An idempotency record needs `IN_PROGRESS` because a caller
-  is waiting to be told something. Nobody waits on a redelivered message, so the row has no third
-  state to be in: it is written with the effect and exists if and only if the effect happened.
-  Adding a lifecycle here would be inventing one with no observer.
-- **Losing the race is free, so the wait is short.** 500ms against the idempotency kernel's three
-  seconds. A contended delivery is reported as `CONTENDED` and left unacknowledged; the answer is
-  correct whichever way the other transaction goes, so there is nothing to wait to find out.
-- **Insert-then-handle.** Atomicity is identical either way, but inserting first makes a
-  concurrent duplicate block on the primary key *before* it enters the handler, rather than after
-  both instances have done the work.
-- **`expires_at` is computed by the server**, from a caller-chosen duration. The policy is the
-  consumer's; the instant is a coordination boundary with a sweeper on another instance. This
-  differs deliberately from `idempotency_record`, and `DATA_MIGRATIONS.md` §9 records the
-  divergence so it reads as a decision rather than an inconsistency.
+**The role split, which had been documented and deferred since `P0-TSK-005`.**
 
-**An API defect found by using the API.** The store was called from a test that had not opened a
-transaction and failed with "could not create a savepoint" - an error about a mechanism, not
-about the mistake. On an auto-commit connection the dedupe record commits alone, so a handler
-that then fails leaves the message recorded as processed and its effect absent: a silently lost
-message, which is the failure this class exists to prevent. It now refuses auto-commit explicitly
-and says why.
+- **Roles are infrastructure; grants are schema.** A role is a cluster object shared by every
+  database; a migration owns one schema in one database. Creating a role from a migration would
+  claim an object outside that schema, break against the scratch databases CI creates, and
+  require the migrator to hold `CREATEROLE` - the ability to invent roles, which is exactly what
+  a role confined to DDL should not have. So `infra/postgres/initdb/00-roles.sql` creates the
+  roles and `V008`/`V009` grant their privileges.
+- **Both roles are `NOSUPERUSER`, and that is the load-bearing part.** A superuser ignores every
+  permission check, so running the application as one does not merely weaken these invariants -
+  it makes them untestable. `DatabaseRoles.assertCannotBypassPrivileges` asserts the precondition
+  before every denial, and pointing the application credentials at the superuser fails all seven
+  immutability tests including the precondition itself.
+- **`V008` pays three deferred debts.** `V002`, `V005` and `V007` each stated the grants their
+  table needed and deferred them to this task. `ApplicationRoleGrantsTest` reads the granted set
+  from the catalogue per table, so a grant that is too *wide* fails as loudly as one too narrow -
+  and the inbox's deliberate lack of `UPDATE` is now proven rather than described.
+- **`TRUNCATE` is asserted separately.** It is a distinct privilege, not a form of `DELETE`, and
+  it is the most complete destruction of an audit trail available. "We denied DELETE" is the
+  reasoning that misses it.
 
-**Verified by mutation: 6 of 6 caught**, after one round that found a real weakness. Running the
-handler on a *contended* delivery survived, because that test asserted "the handler did not run"
-by counting effects after a rollback - which cannot distinguish "did not run" from "ran and was
-undone". Handler invocations are now counted in memory, which no rollback can reverse.
+**A test that was asserting the wrong thing.** `GRANT UPDATE ... TO finapp_app` run *by* that
+role does not raise - PostgreSQL reports "no privileges were granted" as a WARNING and returns
+success. Asserting an exception there would have been asserting the database's error-reporting
+choice while the security boundary held perfectly. The assertion now checks the outcome: after
+attempting the self-grant, the role still cannot update, and its privilege set is unchanged.
 
-**The correlation guard fired for the third time.** `CorrelationSinkCoverageTest` refused the new
-`inbox` package until a decision was recorded, forcing correlation into the inbox row to be
-*asserted* rather than assumed. That is the fourth sink now proven; only the trace and the audit
-record remain, and both arrive with the epics that create them.
+**The correlation guard fired for the fourth time**, refusing the new `audit` package. This one
+is a sink `P0-TST-003` named explicitly, so three of its four are now asserted - log, outbox row,
+audit record - plus the idempotency and inbox rows. Only the trace remains, and it arrives with
+`P0-EPIC-09`.
 
 ---
 
@@ -207,6 +197,20 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Audit trail and database role split (2026-09-01), `P0-TSK-022`:
+- `platform.audit_record`: append-only at the **privilege** level - the application role holds
+  `INSERT` and `SELECT` and nothing else (`INV-HIST-03`)
+- Two ordinary roles, both `NOSUPERUSER`: `finapp_migrator` owns the schema and Flyway connects
+  as it; `finapp_app` is what the application connects as
+- Roles provisioned by infrastructure, grants by the migration that creates each table - a role
+  is a cluster object and cannot belong to one schema's migration history
+- `UPDATE`, `DELETE`, `TRUNCATE`, `DROP`, `ALTER` and self-granting all proven denied, with the
+  vacuity precondition asserted first because a superuser would pass all of it
+- `V008` pays the grants `V002`, `V005` and `V007` each promised; every table's granted set is
+  checked against its design, so too-wide fails as loudly as too-narrow
+- `AuditRecord` makes all seven questions mandatory at construction; `ActorType` and
+  `AuditOutcome` generate their own `CHECK` constraints, guarded hermetically against drift
 
 Inbox deduplication (2026-09-01), `P0-TSK-021`:
 - `platform.inbox_message`: the dedupe record and the side effect commit in one transaction, so
@@ -357,7 +361,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-022` is the next task.
+None in progress. `P0-TSK-023` is the next task.
 
 ## Blockers
 
@@ -465,7 +469,7 @@ Recorded so it is not mistaken for a completed criterion.
 | `P0-TSK-004` | CI actions and scanner images are pinned by SHA/digest with no automated update path, so the pins will rot. | `P0-TSK-040` |
 | ~~`P0-TSK-002`~~ | ~~Boundary enforcement partial~~ — **closed**. Cross-module internals and entity references by `P0-TSK-007`; `INV-MON-01` by `P0-TSK-008`. | — |
 | `P0-TSK-014` | Narrowing. The **emitted-event** clause is now satisfied: `P0-TSK-019` added the outbox and `CorrelationPropagationTest` asserts a queued event carries the flow's identifier. The **trace** and **ingress-filter** clauses remain unverifiable — no tracing exporter or HTTP surface exists — and close on arrival rather than on memory, because `CorrelationSinkCoverageTest` fails the build when a new concern lands unclassified. | `P0-EPIC-08`, `-09` |
-| `P0-TSK-003`, `P0-TSK-005` | Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised. The migrator/application role split is designed and documented (`DATA_MIGRATIONS.md` §5) but not implemented, and must land **before** any table subject to those invariants is created. | `P0-TSK-022` |
+| ~~`P0-TSK-003`, `P0-TSK-005`~~ | ~~Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants cannot be exercised~~ — **closed** by `P0-TSK-022`. `finapp_migrator` and `finapp_app` exist, both `NOSUPERUSER`; Flyway connects as the migrator and every table grants the application role only the DML it requires. `INV-HIST-03` is now enforced and proven; `INV-LED-03` and `INV-HIST-01` have the mechanism they need and close when the ledger tables exist (Phase 3). | — |
 
 ---
 
@@ -526,13 +530,11 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-022` - Audit schema and writer**, opening `P0-EPIC-07` (Audit Trail).
+**`P0-TSK-023` - Auditable-action registry**, continuing `P0-EPIC-07`.
 
-It is the task that must finally implement the **migrator/application role split**: its
-acceptance criterion is that the application role holds `INSERT` and `SELECT` only, with `UPDATE`
-and `DELETE` denied at the privilege level and proven by a test. Until then `INV-HIST-03` is
-documented rather than enforced, and `DATA_MIGRATIONS.md` §6 requires the split to land **before**
-any table subject to it exists - which the audit table is.
+`V009` already depends on it: `operation` is a stable identifier from the registry rather than
+free text, because Phase 15 verifies audit completeness against an enumerable list. The task's
+own criterion is that adding a privileged action without registering it is detectable.
 
 ---
 
@@ -540,6 +542,7 @@ any table subject to it exists - which the audit table is.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-022` complete. The audit trail, and with it **the database role split that had been documented and deferred since `P0-TSK-005`**. Roles are cluster objects, so they are provisioned by infrastructure and only their grants live in migrations - a migration creating a role would claim an object outside its schema, break against the scratch databases CI creates, and need the migrator to hold `CREATEROLE`. Both roles are `NOSUPERUSER`, which is the load-bearing part: a superuser ignores every permission check, so running the application as one does not weaken these invariants but makes them **untestable**, and pointing the app credentials at the superuser now fails all seven immutability tests including the precondition that detects it. `TRUNCATE` is asserted separately from `DELETE`, being a distinct privilege that \"we denied DELETE\" reasoning misses. `V008` pays the grants `V002`, `V005` and `V007` each promised, and the granted set is read from the catalogue per table so a too-wide grant fails as loudly as a too-narrow one. **One test was asserting the wrong thing**: a self-`GRANT` does not raise - PostgreSQL warns \"no privileges were granted\" and returns success - so the assertion checked the database's error-reporting choice while the boundary held; it now checks the outcome instead. Teeth proven by granting `UPDATE, DELETE` on the live table: four tests fail. The correlation guard fired for the fourth time and closed the audit sink `P0-TST-003` named. 307 hermetic tests, 136 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-021`. No critical or important findings; three minor ones, all fixed. A **duplicate arriving inside one transaction** - an entirely ordinary poll batch - was untested, and it takes a different database path from a redelivery: the unique violation is raised immediately rather than after blocking, so the savepoint rather than the lock timeout is what keeps the caller's transaction usable. Probed, found correct, and made permanent. `messageType` was validated only in the store, so a caller got the error from three layers down; it is now checked in the wrapper too, **before** the ambient-correlation lookup, so a caller that got both wrong is told about the argument it passed rather than the context it did not establish. Two deferrals recorded as debt with owning phases - inbox retention sweep and inbox metrics - noting that for retention the risk runs only one way: a record never swept deduplicates forever, and it is early expiry that admits a duplicate. 295 hermetic tests, 109 database tests. |
 | 2026-09-01 | `P0-TSK-021` complete; `P0-EPIC-06` closed. The inbox: a dedupe record written in the same transaction as the side effect, so it exists if and only if the effect happened. Keyed on **(consumer, dedupe_key)** - scoping to the consumer is the decision that matters, because keying on the message alone lets the first consumer silently suppress every other one, and that defect looks like success until somebody notices months later that a notification never arrived. No state machine, deliberately: an idempotency record needs `IN_PROGRESS` because a caller is waiting to be told something, and nobody waits on a redelivered message. Contention is reported after a 500ms bound rather than waited on, because losing the race costs one redelivery that the broker was going to perform anyway - a trade available to a consumer and not to a command. **An API defect found by using it**: handed an auto-commit connection the store failed with \"could not create a savepoint\", an error about a mechanism rather than about the mistake, when what would actually happen is the dedupe record committing alone and the message being lost; it now refuses auto-commit and says why. Six of six mutations caught after one round exposed a weak assertion - \"the handler did not run\" was checked by counting effects after a rollback, which cannot tell that apart from \"ran and was undone\"; invocations are now counted in memory. The correlation guard fired for the third time and forced the inbox row to be asserted as the fourth sink. 295 hermetic tests, 107 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-020`. One important finding, and it was in the half of the code nobody reads until something is wrong: **every failure log line lacked its correlation identifier**. The correlation scope wrapped only the publish, and a `catch` attached to a try-with-resources runs *after* the resource closes — so the publication-failure warning, the blocked-aggregate warning and the abandonment error, the three lines an operator actually reads, could not be joined to the transfer or payment whose event they concerned. Proven by reading a real Logback appender (three of four new assertions failed), then fixed by scoping the whole per-event handling. Also closed: `P0-TSK-020` was never marked complete in `BACKLOG.md`; ADR-0005 requires a documented poison-message procedure and none existed, though abandonment stalls an aggregate until a person acts — now written, including that an abandoned row is never resolved by deleting it, since the row is the only evidence the gap exists; the `last_error` bound is duplicated between Java and SQL with no test that a maximal error is storable, so a tightened constraint would have made *recording* a broker failure fail; and the advisory-lock namespace had no register. Four deferrals recorded as architectural debt with owning phases — broker adapter, outbox retention, relay metrics, dead-letter tooling — none of them financial-correctness debt. Migrations verified against a from-scratch empty database. 291 hermetic tests, 88 database tests. |

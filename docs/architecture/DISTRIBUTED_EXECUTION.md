@@ -60,6 +60,8 @@ Every component with state, and what makes it safe for N instances.
 | `OutboxRelay` | none — all state in the row | **Transaction-scoped advisory lock per aggregate.** Every instance polls; one drains a given aggregate at a time; conditional `UPDATE ... WHERE published_at IS NULL` on every write | Delegates to the row |
 | `platform.inbox_message` | durable | **Primary key** on (consumer, dedupe_key). The database arbitrates between two instances handed the same redelivery | **Yes**, for "has this consumer handled this?" |
 | `InboxConsumer` / `JdbcInboxRecordStore` | none — all state in the row | Insert-then-handle in the caller's transaction; a bounded `lock_timeout`, then report `CONTENDED` and let the broker redeliver | Delegates to the row |
+| `platform.audit_record` | durable | Append-only by **privilege**, not by convention: the application role holds no `UPDATE` or `DELETE`, so no instance can edit the trail whatever its code does | **Yes** |
+| `AuditWriter` / `JdbcAuditWriter` | none | Writes on the caller's connection and opens nothing of its own; insert-only, so there is no lost update to have | Delegates to the row |
 
 ### `IdGenerator` — why a per-instance counter is acceptable
 
