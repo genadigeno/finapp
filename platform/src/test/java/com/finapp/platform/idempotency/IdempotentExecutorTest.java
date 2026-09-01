@@ -57,7 +57,7 @@ class IdempotentExecutorTest {
     private static final String EFFECTS = "idempotency_effect_probe";
     private static final Instant FIXED = Instant.parse("2026-09-01T12:00:00Z");
     private static final Duration RETENTION = Duration.ofHours(24);
-    private static final Duration STALE_AFTER = Duration.ofMinutes(5);
+    private static final Duration LEASE = Duration.ofMinutes(5);
 
     private static Connection connection;
     private static final AtomicInteger SUFFIX = new AtomicInteger();
@@ -275,7 +275,7 @@ class IdempotentExecutorTest {
         // Order matters: a different request must never inherit a key, so the fingerprint is
         // compared before any question of reclaiming an abandoned claim.
         IdempotencyKey key = uniqueKey();
-        insertStaleClaim(key, RequestFingerprint.sha256("original".getBytes(StandardCharsets.UTF_8)));
+        insertExpiredLeaseClaim(key, RequestFingerprint.sha256("original".getBytes(StandardCharsets.UTF_8)));
 
         assertThatExceptionOfType(IdempotencyConflictException.class)
                 .isThrownBy(
@@ -301,7 +301,7 @@ class IdempotentExecutorTest {
         RequestFingerprint fingerprint = RequestFingerprint.sha256("held".getBytes(StandardCharsets.UTF_8));
         try (Connection other = openConnection()) {
             other.setAutoCommit(false);
-            store.claim(other, key, fingerprint, CorrelationId.of("other-flow"), FIXED, FIXED.plus(RETENTION));
+            store.claim(other, key, fingerprint, CorrelationId.of("other-flow"), FIXED, FIXED.plus(RETENTION), LEASE);
             other.commit();
         }
 
@@ -325,7 +325,7 @@ class IdempotentExecutorTest {
         // during which the customer's payment simply cannot be retried.
         IdempotencyKey key = uniqueKey();
         RequestFingerprint fingerprint = RequestFingerprint.sha256("abandoned".getBytes(StandardCharsets.UTF_8));
-        insertStaleClaim(key, fingerprint);
+        insertExpiredLeaseClaim(key, fingerprint);
 
         AtomicInteger executions = new AtomicInteger();
         IdempotentExecutor.ExecutionOutcome outcome = inScope(() -> executor().execute(
@@ -344,7 +344,7 @@ class IdempotentExecutorTest {
         // both processes would read the same row and both would believe they had won.
         IdempotencyKey key = uniqueKey();
         RequestFingerprint fingerprint = RequestFingerprint.sha256("contended".getBytes(StandardCharsets.UTF_8));
-        insertStaleClaim(key, fingerprint);
+        insertExpiredLeaseClaim(key, fingerprint);
 
         CountDownLatch start = new CountDownLatch(1);
         AtomicInteger executions = new AtomicInteger();
@@ -399,12 +399,12 @@ class IdempotentExecutorTest {
             // Claimed but NOT committed: the holder is mid-command.
             new JdbcIdempotencyRecordStore(shortWait)
                     .claim(holder, key, fingerprint, CorrelationId.of("holder-flow"), FIXED,
-                            FIXED.plus(RETENTION));
+                            FIXED.plus(RETENTION), LEASE);
 
             IdempotentExecutor bounded =
                     new IdempotentExecutor(
                             new JdbcIdempotencyRecordStore(shortWait),
-                            Clock.fixed(FIXED, ZoneOffset.UTC), RETENTION, STALE_AFTER);
+                            Clock.fixed(FIXED, ZoneOffset.UTC), RETENTION, LEASE);
 
             long startedAt = java.lang.System.nanoTime();
             assertThatExceptionOfType(IdempotencyInProgressException.class)
@@ -436,7 +436,7 @@ class IdempotentExecutorTest {
         // nothing exercised it.
         IdempotencyKey key = uniqueKey();
         RequestFingerprint fingerprint = RequestFingerprint.sha256("once".getBytes(StandardCharsets.UTF_8));
-        store.claim(connection, key, fingerprint, CorrelationId.of("flow"), FIXED, FIXED.plus(RETENTION));
+        store.claim(connection, key, fingerprint, CorrelationId.of("flow"), FIXED, FIXED.plus(RETENTION), LEASE);
 
         assertThat(store.complete(connection, key, IdempotencyState.COMPLETED, StoredResponse.empty(), FIXED))
                 .isTrue();
@@ -444,6 +444,52 @@ class IdempotentExecutorTest {
                 .as("already terminal: reported, not thrown")
                 .isFalse();
         connection.commit();
+    }
+
+    @Test
+    @DisplayName("an instance whose clock runs fast cannot steal a live claim from another instance")
+    void clockSkewCannotStealALiveClaim() throws Exception {
+        // THE DEFECT THIS EXISTS FOR. The lease used to be judged by comparing one instance's
+        // created_at against another instance's idea of "long enough ago". With N instances that
+        // is a race against clock skew: an instance running six minutes fast considered every
+        // claim just made by its neighbour abandoned, took it over, and ran the command while
+        // the neighbour was still running it - two financial effects for one request.
+        //
+        // Every earlier test passed because they all ran in one JVM with one clock. This one
+        // gives the second instance a clock an hour ahead, which is far more skew than any real
+        // deployment, and the lease must still hold.
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint fingerprint = RequestFingerprint.sha256("live".getBytes(StandardCharsets.UTF_8));
+
+        // Instance A claims the key and is still working.
+        try (Connection instanceA = openConnection()) {
+            instanceA.setAutoCommit(false);
+            new JdbcIdempotencyRecordStore()
+                    .claim(instanceA, key, fingerprint, CorrelationId.of("instance-a"), FIXED,
+                            FIXED.plus(RETENTION), LEASE);
+            instanceA.commit();
+        }
+
+        // Instance B's clock is an hour ahead of A's.
+        IdempotentExecutor skewed =
+                new IdempotentExecutor(
+                        new JdbcIdempotencyRecordStore(),
+                        Clock.fixed(FIXED.plus(Duration.ofHours(1)), ZoneOffset.UTC),
+                        RETENTION,
+                        LEASE);
+
+        AtomicInteger executions = new AtomicInteger();
+        assertThatExceptionOfType(IdempotencyInProgressException.class)
+                .as("the lease is the database's, so B's fast clock buys it nothing")
+                .isThrownBy(
+                        () ->
+                                inScope(() -> skewed.execute(
+                                        connection, key, fingerprint,
+                                        unitOfWork -> recordEffect(unitOfWork, executions, "stolen"))));
+        connection.rollback();
+
+        assertThat(executions.get()).as("the live command must not have been run a second time").isZero();
+        assertThat(effectCount()).isZero();
     }
 
     // -----------------------------------------------------------------
@@ -472,7 +518,7 @@ class IdempotentExecutorTest {
                 new JdbcIdempotencyRecordStore(),
                 Clock.fixed(FIXED, ZoneOffset.UTC),
                 RETENTION,
-                STALE_AFTER);
+                LEASE);
     }
 
     /** Runs inside a correlation scope, as every money-moving command must. */
@@ -517,15 +563,21 @@ class IdempotentExecutorTest {
         }
     }
 
-    /** A claim older than {@code STALE_AFTER}, committed by someone else and never finished. */
-    private static void insertStaleClaim(IdempotencyKey key, RequestFingerprint fingerprint)
+    /**
+     * A claim whose lease has already expired, committed by another instance and never finished.
+     *
+     * <p>The lease is taken with a negative duration so the database sets {@code lease_expires_at}
+     * in its own past. That is deliberate: a test that aged the claim by supplying an old
+     * client-side {@code created_at} would be exercising the very client-clock staleness this
+     * task removed, and would keep passing if the lease were reintroduced on a caller's clock.
+     */
+    private static void insertExpiredLeaseClaim(IdempotencyKey key, RequestFingerprint fingerprint)
             throws SQLException {
-        Instant longAgo = FIXED.minus(STALE_AFTER).minus(Duration.ofMinutes(1));
         try (Connection other = openConnection()) {
             other.setAutoCommit(false);
             new JdbcIdempotencyRecordStore()
-                    .claim(other, key, fingerprint, CorrelationId.of("crashed-flow"), longAgo,
-                            longAgo.plus(RETENTION));
+                    .claim(other, key, fingerprint, CorrelationId.of("crashed-flow"), FIXED,
+                            FIXED.plus(RETENTION), Duration.ofSeconds(-1));
             other.commit();
         }
     }

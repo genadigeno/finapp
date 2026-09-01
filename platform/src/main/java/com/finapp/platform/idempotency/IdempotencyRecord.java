@@ -33,8 +33,7 @@ public record IdempotencyRecord(
         Objects.requireNonNull(expiresAt, "expiresAt must not be null");
     }
 
-    /** Whether this claim has been running longer than a live command plausibly could. */
-    public boolean isStaleAt(Instant now, java.time.Duration after) {
-        return state == IdempotencyState.IN_PROGRESS && createdAt.plus(after).isBefore(now);
-    }
+    // No isStaleAt(): whether a claim is abandoned is decided by the database's lease, not by
+    // any instance's clock. A predicate here would invite exactly the single-instance
+    // assumption that made a claim stealable under clock skew (V004).
 }

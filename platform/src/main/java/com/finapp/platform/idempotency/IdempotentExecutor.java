@@ -77,25 +77,26 @@ public final class IdempotentExecutor {
     private final IdempotencyRecordStore<java.sql.Connection> store;
     private final Clock clock;
     private final Duration retention;
-    private final Duration staleClaimAfter;
+    private final Duration lease;
 
     /**
      * @param retention how long a completed record answers retries. Must exceed every retry
      *     window a client may use: too long merely costs storage, too short costs money
      *     ({@code DATA_MIGRATIONS.md} §8)
-     * @param staleClaimAfter how long an {@code IN_PROGRESS} claim may stand before it is
-     *     treated as abandoned. Must exceed the longest a command can legitimately take, or a
-     *     slow command's key gets stolen while it is still running
+     * @param lease how long a claim may be held before another instance may take it over.
+     *     Must exceed the longest a command can legitimately take, or a slow command's key is
+     *     taken while it is still running. Measured by the database's clock, so it does not
+     *     have to absorb clock skew between instances — only genuine command duration
      */
     public IdempotentExecutor(
             IdempotencyRecordStore<java.sql.Connection> store,
             Clock clock,
             Duration retention,
-            Duration staleClaimAfter) {
+            Duration lease) {
         this.store = Objects.requireNonNull(store, "store must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.retention = positive(retention, "retention");
-        this.staleClaimAfter = positive(staleClaimAfter, "staleClaimAfter");
+        this.lease = positive(lease, "lease");
     }
 
     /**
@@ -121,7 +122,8 @@ public final class IdempotentExecutor {
         Instant now = clock.instant();
         CorrelationId correlationId = currentCorrelationId();
 
-        return switch (store.claim(unitOfWork, key, fingerprint, correlationId, now, now.plus(retention))) {
+        return switch (store.claim(
+                unitOfWork, key, fingerprint, correlationId, now, now.plus(retention), lease)) {
             case CLAIMED -> runAndRecord(unitOfWork, key, command);
             case ALREADY_CLAIMED ->
                     resolveExistingClaim(unitOfWork, key, fingerprint, command, correlationId, now);
@@ -186,15 +188,14 @@ public final class IdempotentExecutor {
             return new ExecutionOutcome(existing.state(), existing.response(), true);
         }
 
-        if (existing.isStaleAt(now, staleClaimAfter)
-                && store.reclaimIfStale(
-                        unitOfWork,
-                        key,
-                        fingerprint,
-                        correlationId,
-                        now.minus(staleClaimAfter),
-                        now,
-                        now.plus(retention))) {
+        // No client-side staleness pre-check. An earlier version asked this instance's clock
+        // whether the claim looked old enough, and only then let the database decide. That
+        // pre-check could not make a wrong reclaim happen - the database still had the final
+        // say - but it could wrongly *prevent* a legitimate one whenever this instance's clock
+        // ran behind, and it made the lease look like something a caller participates in. The
+        // database owns the lease; the caller asks and is told.
+        if (store.reclaimIfLeaseExpired(
+                unitOfWork, key, correlationId, now, now.plus(retention), lease)) {
             return runAndRecord(unitOfWork, key, command);
         }
 

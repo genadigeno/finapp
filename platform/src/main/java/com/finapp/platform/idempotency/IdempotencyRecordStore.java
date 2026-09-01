@@ -1,6 +1,7 @@
 package com.finapp.platform.idempotency;
 
 import com.finapp.platform.correlation.CorrelationId;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -52,7 +53,8 @@ public interface IdempotencyRecordStore<T> {
             RequestFingerprint fingerprint,
             CorrelationId correlationId,
             Instant now,
-            Instant expiresAt);
+            Instant expiresAt,
+            Duration lease);
 
     /** Reads a claim, if one exists. */
     Optional<IdempotencyRecord> find(T unitOfWork, IdempotencyKey key);
@@ -70,20 +72,26 @@ public interface IdempotencyRecordStore<T> {
             Instant completedAt);
 
     /**
-     * Takes over a claim abandoned by a crashed process.
+     * Takes over a claim whose lease has expired, presumed abandoned by a crashed instance.
      *
-     * <p>Conditional on the record still being {@code IN_PROGRESS} and older than
-     * {@code staleBefore}, evaluated by the database rather than by the caller, so two
-     * processes reclaiming at once cannot both succeed.
+     * <p><strong>The lease is decided entirely by the database.</strong> No caller-supplied
+     * instant participates: expiry is the server comparing its own {@code now()} against a
+     * {@code lease_expires_at} the server itself set. An earlier version compared one
+     * instance's {@code created_at} against another instance's notion of "long enough ago",
+     * which is a race against clock skew rather than a lease — a fast-running clock would let
+     * one instance steal a claim another was still executing, producing two financial effects
+     * for one request.
+     *
+     * <p>The condition is also evaluated inside the {@code UPDATE}, so two instances reclaiming
+     * the same abandoned key at once cannot both succeed.
      *
      * @return {@code true} if this caller now owns the claim
      */
-    boolean reclaimIfStale(
+    boolean reclaimIfLeaseExpired(
             T unitOfWork,
             IdempotencyKey key,
-            RequestFingerprint fingerprint,
             CorrelationId correlationId,
-            Instant staleBefore,
             Instant now,
-            Instant expiresAt);
+            Instant expiresAt,
+            Duration lease);
 }

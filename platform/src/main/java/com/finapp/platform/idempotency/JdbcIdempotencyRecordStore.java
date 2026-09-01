@@ -72,7 +72,8 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
             RequestFingerprint fingerprint,
             CorrelationId correlationId,
             Instant now,
-            Instant expiresAt) {
+            Instant expiresAt,
+            Duration lease) {
 
         // A savepoint, because in PostgreSQL a failed statement poisons the whole transaction.
         // Without it, losing the race would abort the caller's transaction and take the reader
@@ -85,8 +86,13 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
         setLockTimeout(connection, claimWait.toMillis() + "ms");
         String sql =
                 "INSERT INTO " + TABLE + " (scope, idempotency_key, request_fingerprint, "
-                        + "fingerprint_algorithm, state, correlation_id, created_at, expires_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                        + "fingerprint_algorithm, state, correlation_id, created_at, expires_at, "
+                        + "lease_expires_at) "
+                        // now() is the SERVER's clock, deliberately. The business timestamps
+                        // beside it are the application's, from one injected Clock; the lease is
+                        // a coordination boundary and must be read from the one clock every
+                        // instance shares.
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, now() + make_interval(secs => ?))";
         try (PreparedStatement insert = connection.prepareStatement(sql)) {
             insert.setString(1, key.scope());
             insert.setString(2, key.key());
@@ -96,6 +102,7 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
             insert.setString(6, correlationId.value());
             insert.setTimestamp(7, Timestamp.from(now));
             insert.setTimestamp(8, Timestamp.from(expiresAt));
+            insert.setDouble(9, lease.toMillis() / 1000.0d);
             insert.executeUpdate();
             release(connection, beforeClaim);
             return ClaimOutcome.CLAIMED;
@@ -186,7 +193,11 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
         // handled race and a stack trace.
         String sql =
                 "UPDATE " + TABLE + " SET state = ?, response_body = ?, response_media_type = ?, "
-                        + "completed_at = ? WHERE scope = ? AND idempotency_key = ? AND state = ?";
+                        // The lease is released with the outcome: a finished command is not
+                        // holding anything, and V004's CHECK makes that structural rather than
+                        // a convention.
+                        + "completed_at = ?, lease_expires_at = NULL "
+                        + "WHERE scope = ? AND idempotency_key = ? AND state = ?";
         try (PreparedStatement update = connection.prepareStatement(sql)) {
             update.setString(1, terminalState.name());
             update.setBytes(2, response.bodyBytes().orElse(null));
@@ -202,33 +213,38 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
     }
 
     @Override
-    public boolean reclaimIfStale(
+    public boolean reclaimIfLeaseExpired(
             Connection connection,
             IdempotencyKey key,
-            RequestFingerprint fingerprint,
             CorrelationId correlationId,
-            Instant staleBefore,
             Instant now,
-            Instant expiresAt) {
+            Instant expiresAt,
+            Duration lease) {
 
-        // The staleness test is in the WHERE clause, not in the caller. Two processes reclaiming
-        // the same abandoned key at once would both read the same row and both believe they had
-        // won; letting the database decide means exactly one UPDATE reports a row.
+        // Every part of the decision is server-side: lease_expires_at was set by the server's
+        // now(), and it is compared against the server's now(). No instance's clock takes part,
+        // so clock skew between instances cannot cause a live claim to be stolen.
+        //
+        // The condition lives in the UPDATE rather than in the caller for the same reason it
+        // always did: two instances reclaiming the same abandoned key would otherwise both read
+        // the same row and both believe they had won.
         //
         // The fingerprint is NOT rewritten - V003 forbids it, and rightly: a reclaim must not
         // quietly convert a claim into one for a different request. A caller whose fingerprint
         // differs is a conflict, decided before reclaim is attempted.
         String sql =
-                "UPDATE " + TABLE + " SET correlation_id = ?, created_at = ?, expires_at = ? "
-                        + "WHERE scope = ? AND idempotency_key = ? AND state = ? AND created_at < ?";
+                "UPDATE " + TABLE + " SET correlation_id = ?, created_at = ?, expires_at = ?, "
+                        + "lease_expires_at = now() + make_interval(secs => ?) "
+                        + "WHERE scope = ? AND idempotency_key = ? AND state = ? "
+                        + "AND lease_expires_at < now()";
         try (PreparedStatement update = connection.prepareStatement(sql)) {
             update.setString(1, correlationId.value());
             update.setTimestamp(2, Timestamp.from(now));
             update.setTimestamp(3, Timestamp.from(expiresAt));
-            update.setString(4, key.scope());
-            update.setString(5, key.key());
-            update.setString(6, IdempotencyState.IN_PROGRESS.name());
-            update.setTimestamp(7, Timestamp.from(staleBefore));
+            update.setDouble(4, lease.toMillis() / 1000.0d);
+            update.setString(5, key.scope());
+            update.setString(6, key.key());
+            update.setString(7, IdempotencyState.IN_PROGRESS.name());
             return update.executeUpdate() == 1;
         } catch (SQLException e) {
             throw new IdempotencyStorageException("Could not reclaim " + key, e);
