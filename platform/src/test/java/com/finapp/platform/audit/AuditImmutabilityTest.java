@@ -13,6 +13,8 @@ import java.sql.Statement;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -118,6 +120,50 @@ class AuditImmutabilityTest {
     }
 
     @Test
+    @DisplayName("UPDATE is denied on every column, not merely on the one this test happens to set")
+    void updateIsDeniedOnEveryColumn() throws SQLException {
+        // P0-TST-007. Table-level denial is not the whole story: PostgreSQL supports COLUMN-level
+        // grants, and a single `GRANT UPDATE (reason)` makes that one column writable while
+        // leaving every other assertion in this class true.
+        //
+        // That was not hypothetical. Granting it and rewriting a committed record's justification
+        // - "original reason" to "rewritten after the fact" - left the entire audit suite green,
+        // because the update test here sets `outcome` and the grants test reads
+        // information_schema.table_privileges, where column grants do not appear at all. `reason`
+        // is the worst column to lose: it is the justification for a privileged action, and the
+        // field anyone covering their tracks would want to change.
+        //
+        // The column list comes from the catalogue rather than being written out, so a column
+        // added by a later migration is covered without anyone remembering to add it here.
+        DatabaseRoles.assertCannotBypassPrivileges(application);
+        List<String> columns = columnsOf();
+        assertThat(columns).as("the guard must see real columns").hasSizeGreaterThan(5);
+
+        for (String column : columns) {
+            // `SET c = c` needs UPDATE on exactly that column and no literal of any type, so it
+            // asks the privilege question for every column the same way.
+            assertThatExceptionOfType(SQLException.class)
+                    .as("UPDATE must be denied on %s", column)
+                    .isThrownBy(() -> execute("UPDATE " + TABLE + " SET " + column + " = " + column))
+                    .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
+            application.rollback();
+        }
+    }
+
+    @Test
+    @DisplayName("no column-level grant widens what the table-level grant allows")
+    void noColumnLevelPrivilegeExists() throws SQLException {
+        // The same hole from the other side, and the cheaper check: column grants are invisible
+        // in table_privileges, so ApplicationRoleGrantsTest cannot see them however carefully it
+        // reads. This is the view that can.
+        DatabaseRoles.assertCannotBypassPrivileges(application);
+
+        assertThat(columnPrivileges())
+                .as("only INSERT and SELECT may reach any column of the audit trail")
+                .containsExactly("INSERT", "SELECT");
+    }
+
+    @Test
     @DisplayName("TRUNCATE is denied too, which DELETE being denied does not imply")
     void truncateIsDenied() throws SQLException {
         // TRUNCATE is a separate privilege in PostgreSQL, not a form of DELETE. A grant of
@@ -188,6 +234,35 @@ class AuditImmutabilityTest {
 
     /** PostgreSQL's SQLState for a refused privilege. Locale-independent, unlike the message. */
     private static final String INSUFFICIENT_PRIVILEGE = "42501";
+
+    /** Every column of the audit table, from the catalogue rather than from a list. */
+    private static List<String> columnsOf() throws SQLException {
+        return query(
+                "SELECT column_name FROM information_schema.columns "
+                        + "WHERE table_schema = 'platform' AND table_name = 'audit_record' "
+                        + "ORDER BY ordinal_position");
+    }
+
+    /** The distinct privileges the connected role holds on any column of the audit table. */
+    private static List<String> columnPrivileges() throws SQLException {
+        return query(
+                "SELECT DISTINCT privilege_type FROM information_schema.column_privileges "
+                        + "WHERE table_schema = 'platform' AND table_name = 'audit_record' "
+                        + "AND grantee = current_user ORDER BY privilege_type");
+    }
+
+    private static List<String> query(String sql) throws SQLException {
+        try (Statement statement = application.createStatement();
+                ResultSet rows = statement.executeQuery(sql)) {
+            List<String> values = new ArrayList<>();
+            while (rows.next()) {
+                values.add(rows.getString(1));
+            }
+            return values;
+        } finally {
+            application.commit();
+        }
+    }
 
     private static void execute(String sql) throws SQLException {
         try (Statement statement = application.createStatement()) {

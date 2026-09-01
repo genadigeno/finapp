@@ -455,7 +455,7 @@ Status: `IN_PROGRESS`
 - Cx: S
 - DoD: `DOD-KERNEL`
 
-**P0-TST-007 — Audit immutability test**
+**P0-TST-007 — Audit immutability test** — `COMPLETE` (2026-09-01)
 - Context: platform / audit
 - Description: Assert `UPDATE` and `DELETE` against the audit table fail with the application role.
 - Why: Immutability claimed at the ORM layer is not immutability.

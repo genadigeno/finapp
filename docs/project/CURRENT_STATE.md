@@ -47,50 +47,48 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TST-007` - Audit immutability test**
+**`P0-TST-005` - Outbox crash-recovery test**
 Status: `READY` - not started.
 
-Bounded context: platform / audit. Depends on `P0-TSK-022` (`COMPLETE`).
+Bounded context: platform. Depends on `P0-TSK-020` (`COMPLETE`).
 
-Note before starting it: `P0-TSK-022` already wrote `AuditImmutabilityTest`, which asserts
-`UPDATE`, `DELETE`, `TRUNCATE`, `DROP`, `ALTER` and self-granting all fail for the application
-role. `P0-TST-007`'s stated scope is the `UPDATE`/`DELETE` pair, so it is largely satisfied
-already - the task should be read for what it adds rather than re-implemented.
+Read it against what exists first, as `P0-TST-007` had to be. `P0-TSK-020` already drives a crash
+between publication and its record; `P0-TST-005`'s own criterion is different - *"test fails if
+the outbox write is moved outside the business transaction"* - and nothing asserts that today.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-07. DoD profile: `DOD-TEST`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-06. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TSK-023` - Auditable-action registry** - `COMPLETE` (2026-09-01).
+**`P0-TST-007` - Audit immutability test** - `COMPLETE` (2026-09-01).
+`P0-EPIC-07` (Audit Trail) is now complete.
+
+The task looked already satisfied - `P0-TSK-022` had shipped `AuditImmutabilityTest` covering
+`UPDATE`, `DELETE`, `TRUNCATE`, `DROP`, `ALTER` and self-granting. Checking rather than assuming
+found that its acceptance criterion, *"test fails if the privilege grant is widened"*, was **false
+for one kind of widening**.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Registry exists and is referenced by the gate check | `AuditableAction` + per-module enums, catalogued in [`AUDITABLE_ACTIONS.md`](../architecture/AUDITABLE_ACTIONS.md), which is what `INV-AUD-01`'s "Verify: audit completeness verification against the registry (Phase 15 gate)" now points at |
-| Adding a privileged action without registering it is detectable | Stronger than review: `AuditRecord.operation` is an `AuditableAction`, so an action outside the registry **cannot be recorded at all**. `AuditableActionRegistryTest` then fails the build in three directions - declared but not catalogued, catalogued but not declared, and a `requiresReason` flag that disagrees - each proven by planting the fault |
+| Test fails if the privilege grant is widened | Both kinds now demonstrated against the live table: a table-level `GRANT UPDATE, DELETE` fails **six** tests across two classes; a column-level `GRANT UPDATE (reason)` fails **two**. Before this task the column-level widening failed **none** |
 
-Design decisions worth carrying forward:
-- **An interface, not one enum.** The obvious shape - a single `AuditAction` enum listing
-  everything - cannot be built: actions belong to the modules that perform them, and the platform
-  sits *below* every business module. An enum here naming KYC's actions would invert the
-  dependency and make the platform's vocabulary the union of every domain's. So each module
-  declares its own enum and only `app` sees the whole set, which is where the reconciliation runs.
-- **Implementations must be enums**, enforced by the guard. Enumerability is the entire point: the
-  Phase 15 gate must be able to ask "what must be audited" and get a complete answer, and a set
-  assembled at run time would answer with whatever happened to be loaded.
-- **`requiresReason()` closes a question `V009` left open.** That migration made `reason` nullable
-  with the comment that "the domain decides which those are"; the registry is where the domain
-  decides, and `AuditRecord` enforces it - so the answer is attached to the action rather than
-  remembered at each call site.
-- **The registry's limit is documented rather than glossed.** It guarantees every audit record
-  names a *declared* action. It does **not** guarantee every privileged action writes one, because
-  a missing call is a missing call and nothing mechanical catches that. Saying so plainly is worth
-  more than a registry that looks complete while the calls are missing - which would be worse than
-  none, because it would be believed.
+**The finding.** PostgreSQL can grant a privilege on a *column*, and such a grant does not appear
+in `information_schema.table_privileges` at all. Granting `UPDATE (reason)` on the audit table let
+the application role rewrite a committed record's justification - `'original reason'` became
+`'rewritten after the fact'` - **and the entire audit suite passed green**. `INV-HIST-03` was
+violated with nothing to detect it, because the existing update test happened to set `outcome`
+and the grants test read a view that column grants do not reach.
 
-**Codes are namespaced and stable.** `outbox.EventAbandoned`, not `EventAbandoned`: two modules
-colliding on a bare name would merge two different actions into one line of the trail, and the
-merge would be invisible. Renaming one is a data-migration question, not a refactor, because audit
-records outlive the code that wrote them.
+`reason` is the worst column to lose that way: it is the justification for a privileged action,
+and precisely what someone covering their tracks would edit.
+
+**Closed in two places, deliberately.**
+- `AuditImmutabilityTest` now attempts `UPDATE` on **every** column, with the list read from the
+  catalogue so a column added by a later migration is covered without anyone remembering.
+- `ApplicationRoleGrantsTest` asserts no table's column-level privileges exceed its table-level
+  grant, **for every platform table** rather than only the audit trail. The inbox's deliberate
+  lack of `UPDATE` had the identical hole, and a blind spot found in one place is a blind spot
+  everywhere - fixing only the instance would have left the class of defect open.
 
 ---
 
@@ -190,6 +188,15 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Audit immutability under privilege widening (2026-09-01), `P0-TST-007`:
+- `UPDATE` proven denied on **every** column of the audit trail, not merely the one a test happens
+  to set, with the column list derived from the catalogue
+- Column-level grants - invisible in `information_schema.table_privileges` - are checked against
+  the table grant for every platform table
+- Found by trying it: `GRANT UPDATE (reason)` let the application rewrite a committed record's
+  justification while the whole audit suite stayed green
+- Both widenings now demonstrated to fail the suite: table-level fails six tests, column-level two
 
 Auditable-action registry (2026-09-01), `P0-TSK-023`:
 - `AuditableAction`: an interface each module implements as an enum, because the platform sits
@@ -365,7 +372,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TST-007` is the next task.
+None in progress. `P0-TST-005` is the next task.
 
 ## Blockers
 
@@ -537,12 +544,12 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TST-007` - Audit immutability test**, continuing `P0-EPIC-07`.
+**`P0-TST-005` - Outbox crash-recovery test**, continuing `P0-EPIC-06`. Two test tasks remain in
+Phase 0's correctness milestone: this and `P0-TST-006` (duplicate and out-of-order delivery).
 
-Read it before implementing: `P0-TSK-022` already delivered `AuditImmutabilityTest`, covering the
-`UPDATE`/`DELETE` pair the task names and more besides. The open question is whether it adds
-anything - and if not, recording that honestly is the right outcome rather than writing a second
-copy of the same assertions.
+As with `P0-TST-007`, read it against what already exists before writing anything: `P0-TSK-020`
+covers the crash itself, and the part that is genuinely uncovered is its stated criterion - that
+the test fails when the outbox write is moved outside the business transaction.
 
 ---
 
@@ -550,6 +557,7 @@ copy of the same assertions.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TST-007` complete; `P0-EPIC-07` closed. The task looked already satisfied - `P0-TSK-022` had shipped an immutability test covering `UPDATE`, `DELETE`, `TRUNCATE`, `DROP`, `ALTER` and self-granting - and checking rather than assuming found its acceptance criterion **false for one kind of widening**. PostgreSQL can grant a privilege on a *column*, and a column grant does not appear in `information_schema.table_privileges` at all: `GRANT UPDATE (reason)` let the application role rewrite a committed audit record's justification - `'original reason'` became `'rewritten after the fact'` - **while the entire audit suite passed green**. `INV-HIST-03` violated, undetected, because the existing update test happened to set `outcome` and the grants test read a view column grants do not reach. `reason` is the worst column to lose: it is the justification for a privileged action. Closed in two places - `UPDATE` attempted on every column with the list read from the catalogue so a future column is covered automatically, and column-versus-table privilege comparison for **every** platform table, since the inbox's deliberate lack of `UPDATE` had the identical hole and a blind spot found in one place is a blind spot everywhere. Both widenings now fail the suite; before this task the column-level one failed nothing. 316 hermetic tests, 141 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-023`. One important finding, and it is the same defect this project already fixed once: **the catalogue was not a declared Gradle input**, so editing it left `:app:test` `UP-TO-DATE` and the build went green over a document the guard never opened. Proven by breaking the catalogue and watching the build pass. `P0-DOC-002`'s review found exactly this for `MODULE_ARCHITECTURE.md` and its build-file comment even names the failure - *\"a check that reports success for work it did not do\"* - which did not generalise on its own to a second document-backed guard. Declared, and the comment now says a third guard needs a third line. A minor finding alongside it: the catalogue was located by a path relative to an assumed working directory, which works under Gradle and breaks in an IDE with a failure reading as a missing document rather than a misconfigured test; it now walks upward like its sibling. Also confirmed a missing catalogue fails loudly rather than passing vacuously. 316 hermetic tests, 138 database tests. |
 | 2026-09-01 | `P0-TSK-023` complete. The auditable-action registry, which `INV-AUD-01` names as half of its enforcement and `V009` already assumed existed. The shape that cannot be built is the obvious one - a single enum in the platform listing every action - because actions belong to the modules that perform them and the platform sits below every business module; an enum here naming KYC's actions would invert the dependency. So `AuditableAction` is an interface, each module declares an enum, and only `app` sees the whole set. **The registry is enforced by the type system, not by review**: `AuditRecord.operation` is an `AuditableAction`, so an action outside the registry cannot be recorded at all. The catalogue and the code are reconciled in three directions and each was proven by planting the fault - an action declared but not catalogued, one catalogued but not declared, and a `requiresReason` flag that disagrees. That flag closes the question `V009` deferred: it made `reason` nullable saying \"the domain decides which those are\", and the registry is where the domain decides. The registry's **limit** is documented rather than glossed - it cannot detect a privileged action that writes no record at all, and a registry that looked complete while the calls were missing would be worse than none because it would be believed. Recorded as debt: the three declared platform actions are not yet emitted. 316 hermetic tests, 138 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-022`. One important finding, in the file that is hardest to test because it runs once: **the role-provisioning script hardcoded the database name** while `compose.yaml` parameterises it as `${FINAPP_DB_NAME:-finapp}` and the README documents it as overridable. The failure is not graceful - a `GRANT` naming a database that was never created is an error, `ON_ERROR_STOP` aborts initialisation, and the container exits 3 complaining about a name nobody typed. Reproduced by starting PostgreSQL with `POSTGRES_DB=altdb`, fixed with `current_database()` and `format()`, and verified against both the default and an overridden name. Also added: an escalation test (the application role cannot `SET ROLE` to the migrator, create roles or databases, `COPY TO PROGRAM`, or read `pg_authid` - if it could assume the owning role every grant below it would be decorative), and the concurrency test `DOD-KERNEL` requires, whose subject is an **absence**: audit writes must not serialise, because an audit write is on the critical path of every privileged action and anything making two contend would put a lock in front of the whole platform and present as latency rather than failure. Two deferrals recorded as debt - audit retention/archival and the four-eyes approver column. 307 hermetic tests, 138 database tests. |

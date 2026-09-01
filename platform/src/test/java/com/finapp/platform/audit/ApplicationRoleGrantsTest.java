@@ -75,6 +75,24 @@ class ApplicationRoleGrantsTest {
     }
 
     @Test
+    @DisplayName("no column-level grant exceeds the table grant, on any platform table")
+    void columnGrantsNeverExceedTableGrants() throws SQLException {
+        // A blind spot found by P0-TST-007, and it is a blind spot of this test in particular:
+        // PostgreSQL column-level grants do NOT appear in information_schema.table_privileges, so
+        // `GRANT UPDATE (reason)` widens what the application can do while every assertion above
+        // still reads INSERT, SELECT and passes.
+        //
+        // Checked for every table rather than only the audit trail. The audit table is where it
+        // violates an invariant, but the inbox's lack of UPDATE is a deliberate design property
+        // too, and a hole that was invisible in one place is invisible in all of them.
+        for (String table : List.of("idempotency_record", "outbox_event", "inbox_message", "audit_record")) {
+            assertThat(columnPrivilegesOn(table))
+                    .as("column grants on %s must not exceed its table grant", table)
+                    .isSubsetOf(privilegesOn(table));
+        }
+    }
+
+    @Test
     @DisplayName("the inbox cannot be updated, which distinguishes its grant from the outbox's")
     void theInboxIsNotUpdatable() throws SQLException {
         // The narrow grant V007 promised, proven rather than described. Without this the
@@ -150,6 +168,24 @@ class ApplicationRoleGrantsTest {
     private static void execute(String sql) throws SQLException {
         try (Statement statement = application.createStatement()) {
             statement.execute(sql);
+        }
+    }
+
+    /** Distinct privileges granted at COLUMN level, which table_privileges cannot show. */
+    private static List<String> columnPrivilegesOn(String table) throws SQLException {
+        try (Statement statement = application.createStatement();
+                ResultSet rows =
+                        statement.executeQuery(
+                                "SELECT DISTINCT privilege_type FROM information_schema.column_privileges "
+                                        + "WHERE table_schema = 'platform' AND table_name = '" + table
+                                        + "' AND grantee = current_user ORDER BY privilege_type")) {
+            List<String> privileges = new ArrayList<>();
+            while (rows.next()) {
+                privileges.add(rows.getString(1));
+            }
+            return privileges;
+        } finally {
+            application.commit();
         }
     }
 

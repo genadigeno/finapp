@@ -275,6 +275,26 @@ fail for the application role, along with `DROP TABLE`, `ALTER TABLE` and self-g
 table against the set its design requires, so a grant that is too *wide* fails as loudly as one
 that is too narrow.
 
+**Column-level grants are checked separately, because they are invisible to the obvious check.**
+PostgreSQL can grant a privilege on a *column* — `GRANT UPDATE (reason) ON audit_record` — and
+such a grant does **not** appear in `information_schema.table_privileges` at all. `P0-TST-007`
+found the consequence by trying it: the application role rewrote a committed audit record's
+justification, from `'original reason'` to `'rewritten after the fact'`, while the entire audit
+test suite stayed green. `INV-HIST-03` was violated and nothing detected it.
+
+`reason` is the worst column to lose that way — it is the justification for a privileged action,
+and the field anyone covering their tracks would want to change. Two checks close it:
+`AuditImmutabilityTest` attempts an `UPDATE` on **every** column, with the column list read from
+the catalogue so a column added by a later migration is covered without anyone remembering; and
+`ApplicationRoleGrantsTest` asserts that no table's column-level privileges exceed its
+table-level grant, for every table rather than only the audit trail — a hole that was invisible
+in one place is invisible in all of them.
+
+**Widening the grant is what these tests are measured against.** Both a table-level
+`GRANT UPDATE, DELETE` and a column-level `GRANT UPDATE (reason)` were applied to the live table
+and the suites re-run: the first fails six tests across two classes, the second two. Before
+`P0-TST-007` the column-level widening failed none.
+
 ---
 
 ## 7. Checklist
