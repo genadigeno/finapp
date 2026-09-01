@@ -58,19 +58,17 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 @RestControllerAdvice
 public class ApiErrorHandler extends ResponseEntityExceptionHandler {
 
-    private static final Logger errors = LoggerFactory.getLogger(ApiErrorHandler.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ApiErrorHandler.class);
 
     /** RFC 9457's media type. Not {@code application/json}: the shape is a contract of its own. */
     public static final MediaType PROBLEM_JSON = MediaType.valueOf("application/problem+json");
 
     /** Raised deliberately by our own code, carrying the code that says what went wrong. */
     @ExceptionHandler(ApiException.class)
-    public ResponseEntity<ProblemDetailBody> handleApiException(
-            ApiException exception, HttpServletRequest request) {
+    public ResponseEntity<ProblemDetailBody> handleApiException(ApiException exception, HttpServletRequest request) {
         // Warn, not error: a client error is the API working. The message may name whatever makes
         // it diagnosable, because it goes to the log and not to the wire.
-        errors.warn(
-                "API error {}: {}", exception.errorCode().code(), exception.getMessage(), exception);
+        LOGGER.warn("API error {}: {}", exception.errorCode().code(), exception.getMessage(), exception);
         return render(
                 ProblemDetail.of(
                         exception.errorCode(),
@@ -85,9 +83,8 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
      * because its message is the least trustworthy string in the system to be publishing.
      */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ProblemDetailBody> handleUnexpected(
-            Exception exception, HttpServletRequest request) {
-        errors.error("Unhandled error on {}", request.getRequestURI(), exception);
+    public ResponseEntity<ProblemDetailBody> handleUnexpected(Exception exception, HttpServletRequest request) {
+        LOGGER.error("Unhandled error on {}", request.getRequestURI(), exception);
         return render(ProblemDetail.of(PlatformErrorCode.INTERNAL_ERROR, request.getRequestURI()));
     }
 
@@ -110,17 +107,13 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
             if (cause instanceof BoundedRequest.RequestTooLargeException tooLarge) {
                 String path = pathOf(request);
-                errors.warn("Request body to {} exceeded {} bytes", path, tooLarge.maxBytes());
+                LOGGER.warn("Request body to {} exceeded {} bytes", path, tooLarge.maxBytes());
                 return ResponseEntity.status(HttpStatus.valueOf(PlatformErrorCode.PAYLOAD_TOO_LARGE.status()))
                         .contentType(PROBLEM_JSON)
-                        .body(
-                                ProblemDetailBody.from(
-                                        ProblemDetail.of(
+                        .body(ProblemDetailBody.from(ProblemDetail.of(
                                                 PlatformErrorCode.PAYLOAD_TOO_LARGE,
                                                 path,
-                                                "The maximum request body is "
-                                                        + tooLarge.maxBytes()
-                                                        + " bytes.")));
+                                                "The maximum request body is "+tooLarge.maxBytes()+" bytes.")));
             }
         }
         return super.handleHttpMessageNotReadable(exception, headers, status, request);
@@ -151,15 +144,10 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
                         .sorted()
                         .collect(java.util.stream.Collectors.joining("; "));
         String path = pathOf(request);
-        errors.warn("Validation failed on {}: {}", path, detail);
-        return ResponseEntity.status(
-                        HttpStatus.valueOf(PlatformErrorCode.VALIDATION_FAILED.status()))
+        LOGGER.warn("Validation failed on {}: {}", path, detail);
+        return ResponseEntity.status(HttpStatus.valueOf(PlatformErrorCode.VALIDATION_FAILED.status()))
                 .contentType(PROBLEM_JSON)
-                .body(
-                        ProblemDetailBody.from(
-                                ProblemDetail.of(
-                                        PlatformErrorCode.VALIDATION_FAILED,
-                                        path,
+                .body(ProblemDetailBody.from(ProblemDetail.of(PlatformErrorCode.VALIDATION_FAILED, path,
                                         detail.isBlank() ? null : detail)));
     }
 
@@ -181,9 +169,9 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         ErrorCode code = codeForStatus(statusCode.value());
         String path = pathOf(request);
         if (statusCode.is5xxServerError()) {
-            errors.error("Framework error {} on {}", statusCode.value(), path, exception);
+            LOGGER.error("Framework error {} on {}", statusCode.value(), path, exception);
         } else {
-            errors.warn(
+            LOGGER.warn(
                     "Framework error {} on {} rendered as {}",
                     statusCode.value(),
                     path,
@@ -216,8 +204,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
             case 413 -> PlatformErrorCode.PAYLOAD_TOO_LARGE;
             case 415 -> PlatformErrorCode.UNSUPPORTED_MEDIA_TYPE;
             case 422 -> PlatformErrorCode.VALIDATION_FAILED;
-            default ->
-                    status >= 400 && status < 500
+            default -> status >= 400 && status < 500
                             ? PlatformErrorCode.MALFORMED_REQUEST
                             : PlatformErrorCode.INTERNAL_ERROR;
         };

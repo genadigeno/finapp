@@ -21,6 +21,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,7 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
  * work would look identical from outside.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(RequestValidationTest.GuardedController.class)
+@Import({RequestValidationTest.GuardedController.class, RequestValidationTest.ProxyValidatedController.class})
 class RequestValidationTest {
 
     /** Never appears in a response: it is the caller's own input coming back. */
@@ -61,10 +64,29 @@ class RequestValidationTest {
                 @NotBlank @Size(max = 32) String reference,
                 @Positive @Max(1_000_000) long amountMinorUnits) {}
 
+        /** Spring's built-in method validation. */
+        @GetMapping("/probe/param-validated")
+        String paramValidated(@RequestParam @Positive int amount) {
+            ENTERED.incrementAndGet();
+            return String.valueOf(amount);
+        }
+
         @PostMapping(path = "/probe/transfers", consumes = MediaType.APPLICATION_JSON_VALUE)
         String create(@Valid @RequestBody Transfer transfer) {
             ENTERED.incrementAndGet();
             return transfer.reference();
+        }
+    }
+
+    /** The other way Spring validates a method parameter: a {@code @Validated} proxy. */
+    @RestController
+    @Validated
+    static class ProxyValidatedController {
+
+        @GetMapping("/probe/proxy-validated")
+        String proxyValidated(@RequestParam @Positive int amount) {
+            ENTERED.incrementAndGet();
+            return String.valueOf(amount);
         }
     }
 
@@ -243,10 +265,46 @@ class RequestValidationTest {
         assertThat(injection).isNotBlank();
     }
 
+    @Test
+    @DisplayName("a constraint on a method parameter is 422 too, however Spring validates it")
+    void everyValidationPathGivesTheSameAnswer() throws Exception {
+        // A review found the same class of failure reported three different ways depending only
+        // on where the constraint was declared: a request body gave 422, a method parameter gave
+        // 400, and a method parameter under @Validated gave 500. A client cannot write error
+        // handling against that, and the 500 told the caller it was our fault for something only
+        // they could fix.
+        //
+        // Both parameter paths are asserted, because they are different mechanisms in Spring and
+        // fixing one says nothing about the other.
+        HttpResponse<String> builtIn = get("/probe/param-validated?amount=-1");
+        HttpResponse<String> proxied = get("/probe/proxy-validated?amount=-1");
+
+        assertThat(builtIn.statusCode()).as("Spring's built-in method validation").isEqualTo(422);
+        assertThat(builtIn.body()).contains("\"code\":\"api.ValidationFailed\"").contains("amount");
+
+        assertThat(proxied.statusCode()).as("the @Validated proxy path").isEqualTo(422);
+        assertThat(proxied.body()).contains("\"code\":\"api.ValidationFailed\"").contains("amount");
+
+        assertThat(ENTERED).as("neither reached the handler").hasValue(0);
+    }
+
+    @Test
+    @DisplayName("a valid parameter still reaches the handler on both paths")
+    void validParametersAreAccepted() throws Exception {
+        assertThat(get("/probe/param-validated?amount=5").statusCode()).isEqualTo(200);
+        assertThat(get("/probe/proxy-validated?amount=5").statusCode()).isEqualTo(200);
+        assertThat(ENTERED).hasValue(2);
+    }
+
     // -----------------------------------------------------------------
 
     private static final HttpClient CLIENT =
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+
+    private HttpResponse<String> get(String path) throws Exception {
+        return CLIENT.send(
+                HttpRequest.newBuilder(uri(path)).GET().build(), HttpResponse.BodyHandlers.ofString());
+    }
 
     private HttpResponse<String> postJson(String path, String body) throws Exception {
         return CLIENT.send(
