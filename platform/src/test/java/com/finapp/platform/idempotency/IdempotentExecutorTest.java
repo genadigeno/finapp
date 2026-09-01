@@ -427,6 +427,25 @@ class IdempotentExecutorTest {
         }
     }
 
+    @Test
+    @DisplayName("recording an outcome twice reports the second as a no-op, not an exception")
+    void completingATerminalClaimIsReportedNotThrown() throws SQLException {
+        // The store's WHERE state = 'IN_PROGRESS' guard. V003's trigger would reject the second
+        // update anyway, so this is defence in depth - but the difference between the two is
+        // the difference between a handled race and a stack trace, and a mutation sweep showed
+        // nothing exercised it.
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint fingerprint = RequestFingerprint.sha256("once".getBytes(StandardCharsets.UTF_8));
+        store.claim(connection, key, fingerprint, CorrelationId.of("flow"), FIXED, FIXED.plus(RETENTION));
+
+        assertThat(store.complete(connection, key, IdempotencyState.COMPLETED, StoredResponse.empty(), FIXED))
+                .isTrue();
+        assertThat(store.complete(connection, key, IdempotencyState.COMPLETED, StoredResponse.empty(), FIXED))
+                .as("already terminal: reported, not thrown")
+                .isFalse();
+        connection.commit();
+    }
+
     // -----------------------------------------------------------------
     // Wiring
     // -----------------------------------------------------------------

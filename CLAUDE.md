@@ -49,6 +49,38 @@ Do not infer undocumented architecture when the repository can answer the questi
 12. Kafka, Redis, caches, search indexes, and projections are not financial truth.
 13. Do not weaken a financial invariant merely to make distributed processing easier.
 
+## Mandatory Multi-Instance Microservices Rule
+
+This is a true multi-instance microservices system.
+
+Assume every service runs with N concurrent instances.
+
+Never design correctness around a single process, JVM, container, pod, scheduler, consumer, or local memory.
+
+For every shared state and critical operation explicitly consider:
+
+* race conditions;
+* concurrent requests;
+* atomicity;
+* transaction boundaries;
+* consistency;
+* idempotency;
+* duplicate events;
+* retries;
+* distributed scheduling;
+* service failure;
+* network failure.
+
+If existing code or architecture documentation does not satisfy this requirement, do not preserve it merely because it already exists.
+
+Update the relevant architecture documentation and ADRs, create remediation work, and refactor the implementation.
+
+A feature is not complete until it remains correct under concurrent execution by multiple instances.
+
+Before completing any critical feature, ask:
+
+"Would this remain correct if 10 instances executed it concurrently?"
+
 ## Domain Distinctions
 
 Do not collapse:
