@@ -65,8 +65,11 @@ build: dependency direction as defence in depth, framework leakage into `sharedk
 cross-module internal access, and cross-module entity references. Each was proven by
 introducing a violation and watching that specific rule fail.
 
-One finer rule is still outstanding: no floating-point money (`INV-MON-01`). That is
-`P0-TSK-008` and additionally needs `Money` to exist (`P0-TSK-009`).
+No floating-point money (`INV-MON-01`) is enforced separately by
+`NoFloatingPointMoneyRulesTest` as of `P0-TSK-008` — see §6, *Monetary type
+boundary*. It is kept out of `ModuleBoundaryRulesTest` because it is a financial
+invariant rather than a module boundary, and is scoped over every class rather than
+by module.
 
 ### What may enter `sharedkernel`
 Only concepts that are genuinely universal *and* stable: `Money`, `CurrencyCode`, rounding
@@ -210,7 +213,7 @@ phases must satisfy, not a description of code.
 - **Security:** authentication at the edge and the TLS termination boundary. It makes **no** business authorization decisions — those belong to each module's published interface, so that a second caller (a job, an operator tool) cannot bypass them.
 - **Operations:** liveness and readiness endpoints, build info, startup success, request-level telemetry.
 - **Note:** `app` may depend on every module; no module may depend on `app`.
-- **Also hosts:** the platform-wide ArchUnit rules (`ModuleBoundaryRulesTest`). They live here because `app` is the only module that sees every other one, and enforcing a boundary requires observing both sides of it.
+- **Also hosts:** the platform-wide ArchUnit rules — `ModuleBoundaryRulesTest` (module boundaries), `NoFloatingPointMoneyRulesTest` (`INV-MON-01`), their shared coverage derivation `ProductionModules`, and `ArchitectureRulesAreDocumentedTest`, which holds §6 of this document and the enforced rule set to each other. They live here because `app` is the only module that sees every other one, and enforcing a boundary requires observing both sides of it.
 
 ### `sharedkernel` — Phase 0
 - **Responsibility:** framework-free value types shared by every module.
@@ -561,16 +564,27 @@ would violate `INV-BAL-01`.
 is its published surface. The ArchUnit rules depend on this convention, so a module that
 ignores it is not protected by them.
 
-**What enforces what.** Gradle enforces dependency direction structurally. `ModuleBoundaryRulesTest`
-enforces the rest on every build. Anything below marked *(review)* has no mechanical check.
+**What enforces what.** Gradle enforces dependency direction structurally; the ArchUnit
+suites in `app` enforce the rest on every build. Every claim of mechanical enforcement below
+names the rule that makes it true, and `ArchitectureRulesAreDocumentedTest` fails the build if
+that naming and the rule set stop agreeing. Anything marked *(review)* has no mechanical check.
 
-- Each module owns a package root; internals are not accessible across modules. *(ArchUnit)*
+- Each module owns a package root; internals are not accessible across modules.
+  *(ArchUnit: `moduleInternalsArePrivateToTheirModule`)*
 - Every production class sits under `com.finapp.<module>`, never directly in `com.finapp`.
   The rules are scoped by the module a class belongs to, so a class with no module would be
-  silently exempt from all of them. *(ArchUnit)*
+  silently exempt from all of them. *(ArchUnit: `productionClassesLiveInAModulePackage`)*
 - A module exposes a published interface (commands, queries) and integration events. *(review)*
-- No cross-module entity or ORM-relationship references. References are typed identifiers. *(ArchUnit)*
-- Dependency direction is acyclic and enforced. *(Gradle, plus ArchUnit as defence in depth)*
+- No cross-module entity or ORM-relationship references. References are typed
+  identifiers. *(ArchUnit: `entitiesAreNotReferencedAcrossModules`)*
+- Dependency direction is acyclic and enforced. *(Gradle, plus ArchUnit as defence in
+  depth: `sharedkernelDependsOnNoOtherModule`, `platformDependsOnlyOnSharedkernel`,
+  `nothingDependsOnApp`)*
+- No framework reaches `sharedkernel` — no Spring, no JPA, no Hibernate, no
+  transaction annotations. This is what keeps the financial kernel unit-testable
+  without a container, and stops a persistence concern from shaping a monetary type.
+  `SharedKernelIsolationTest` asserts the same thing one level lower, at the
+  classpath. *(ArchUnit: `sharedkernelIsFrameworkFree`)*
 - Every module applies the `java-library` plugin and uses the `api`/`implementation`
   distinction deliberately. `implementation` keeps a dependency off consumers' compile
   classpaths so a module cannot leak its internals downstream by accident; `api` makes
@@ -591,21 +605,26 @@ package is unprotected by default and nothing reports the omission. Since this r
 financial infrastructure, a package that cannot touch money is the exception. Exemptions live
 in one named, currently empty set in the rule, so each one is a visible diff.
 
-Four surfaces are checked: *(ArchUnit)*
+Four surfaces are checked:
 
-- fields, including `double[]` and generic arguments such as `List<Double>`;
-- method and constructor parameters and return types;
+- fields, including `double[]` and generic arguments such as `List<Double>`.
+  *(ArchUnit: `noFieldHoldsAFloatingPointValue`)*
+- method and constructor parameters and return types.
+  *(ArchUnit: `noSignatureCarriesAFloatingPointValue`)*
 - calls to any method or constructor that takes or returns a floating-point value — this is
   what catches `new BigDecimal(0.1)`, `BigDecimal::doubleValue` and `ResultSet::getDouble`,
-  none of which appear in any declaration of ours;
+  none of which appear in any declaration of ours.
+  *(ArchUnit: `noCallReachesAFloatingPointApi`)*
 - reads and writes of a floating-point field.
+  *(ArchUnit: `noFloatingPointFieldIsAccessed`)*
 
 **Coverage guard.** Both rule suites derive the set of modules they must have analysed from
 the classpath (`ProductionModules`), because an ArchUnit rule is vacuously satisfied over
 classes it never imported. A guard that names what it expects to see by hand does not notice a
 module dropping out of the sweep — proven during the `P0-TSK-008` review, where narrowing the
 sweep left every floating-point rule green while a `double` planted in `platform` went
-undetected and the build passed. *(ArchUnit)*
+undetected and the build passed.
+*(ArchUnit: `everyModuleWithProductionCodeIsAnalysed`, one per rule suite)*
 
 **Known limit.** A `double` local computed only from compile-time constants and narrowed by a
 cast is not detectable: a cast is a bytecode instruction rather than a declaration or access,
@@ -698,14 +717,19 @@ revisited.
 
 As of `P0-TSK-007`, §6's structural rules are mechanical. `ModuleBoundaryRulesTest` fails the
 build if a module reaches into another's internals, references another's persistence
-entities, depends upward, or lets a framework into `sharedkernel`. Each rule was proven by a
-deliberate violation rather than assumed to work.
+entities, depends upward, or lets a framework into `sharedkernel`. As of `P0-TSK-008`,
+`NoFloatingPointMoneyRulesTest` fails the build on any floating point in production
+code. Each rule was proven by a deliberate violation rather than assumed to work.
 
-Two things remain on review, and are worth stating plainly rather than letting a reader
-assume the diagram is guaranteed throughout:
+`P0-DOC-002` closes the loop between this document and those rules:
+`ArchitectureRulesAreDocumentedTest` fails the build if §6 names a rule that no
+longer exists, or if a rule exists that §6 does not name. This document had drifted
+from the rules six times by the time that check was written, so the equivalence is
+now asserted rather than claimed.
 
-- **No floating-point money.** `INV-MON-01` is the platform's most fundamental rule and is
-  still unenforced. `P0-TSK-008`, which also needs `Money` to exist (`P0-TSK-009`).
+One thing remains on review, and is worth stating plainly rather than letting a
+reader assume the diagram is guaranteed throughout:
+
 - **Single ownership of authoritative state.** §5 is checked by comparing the register's
   `Owns:` lines, which catches a *declared* second owner. Nothing detects a module that
   quietly starts writing state another module declares — that needs schema-level privileges
@@ -715,8 +739,11 @@ The rules only protect modules that follow the package convention in §6. A modu
 internals are not under `com.finapp.<module>.internal` is invisible to the internals rule —
 though a class belonging to no module at all is now itself a violation.
 
-Coverage is self-checking: `everyModuleWithProductionCodeIsAnalysed` derives, from the
-classpath, every module output holding at least one real class, and fails if any of them was
-not imported. Without it the rules would pass silently for a module that had been dropped
-from the analysis, which is the failure mode that makes architecture tests worse than
-useless — they would still report success.
+Coverage is self-checking: each rule suite carries an
+`everyModuleWithProductionCodeIsAnalysed` guard that derives, from the classpath,
+every module output holding at least one real class, and fails if any of them was not
+imported. Both use the same derivation (`ProductionModules`), because writing a
+second guard by hand is not hypothetical: the `P0-TSK-008` review found exactly that,
+and a `double` planted in `platform` went undetected while the build passed. Without
+these guards the rules would report success for a module dropped from the analysis,
+which is the failure mode that makes architecture tests worse than useless.
