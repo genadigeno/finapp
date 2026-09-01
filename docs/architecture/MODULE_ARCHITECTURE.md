@@ -648,18 +648,23 @@ nothing can ever demonstrate whether it is.
 
 Two rules, because there are two different things to control:
 
-- No production class reads the environment's time directly: no zero-argument `Instant.now()`,
+- No production class reads the environment directly: no zero-argument `Instant.now()`,
   `LocalDate.now()` or the other `java.time` `now()` methods, no `System.currentTimeMillis()`,
-  no `System.nanoTime()`, no `new Date()`. These have no seam and cannot be substituted by any
-  means. Forbidden everywhere, no exemption.
+  no `System.nanoTime()`, no `new Date()`. Method *references* count too — `Instant::now` is an
+  `invokedynamic` rather than a call, and a rule one syntax away from being bypassed is not
+  enforcement. The environment's **zone** is included for the same reason as its clock: which
+  *date* an instant falls on depends on the zone it is read in, so
+  `instant.atZone(ZoneId.systemDefault())` makes a cut-off, a period boundary or a value date
+  depend on how the server happens to be configured. Forbidden everywhere, no exemption.
   *(ArchUnit: `noAmbientTimeIsRead`)*
 - Only the composition root constructs a system clock — `Clock.systemUTC()` and friends. A
   system clock has to be built somewhere or nothing can be injected, and `app` is the module
   whose job that is; anywhere else it is ambient time with an abstraction wrapped round it.
   *(ArchUnit: `onlyTheCompositionRootBuildsASystemClock`)*
 
-`Instant.now(clock)` and `LocalDate.now(clock)` are deliberately **allowed** — they take the
-clock and are the idiomatic call. A rule that forbade them would push people off the correct
+`Instant.now(clock)`, `LocalDate.now(clock)`, an explicitly-passed `ZoneId`, and the pure
+`TemporalAdjusters` are deliberately **allowed** — they take what they need as an argument and
+are the idiomatic calls. A rule that forbade them would push people off the correct
 API, which is how a well-meant rule makes a codebase worse.
 
 **What no rule can check.** An injected clock still has to be the *right* clock. System time is

@@ -10,6 +10,7 @@ import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaConstructorCall;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
+import com.tngtech.archunit.core.domain.JavaMethodReference;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -84,17 +85,37 @@ class NoAmbientTimeRulesTest {
                     "java.time.chrono.MinguoDate",
                     "java.time.chrono.ThaiBuddhistDate");
 
-    /** Other ways to reach the environment's clock, none of them substitutable. */
+    /**
+     * Other ways to reach the environment, none of them substitutable.
+     *
+     * <p>The zone entries are here for the same reason as the clock ones. Which <em>date</em>
+     * an instant falls on depends on the zone it is read in, so
+     * {@code instant.atZone(ZoneId.systemDefault())} makes a payment cut-off, a period boundary
+     * or a value date depend on how the server happens to be configured. That is a dating
+     * defect that no amount of clock injection prevents, and it moves when the deployment does.
+     *
+     * <p>An earlier version of this set also listed
+     * {@code TemporalAdjusters.firstDayOfNextMonth}. That was a mistake found in this task's own
+     * review: the adjuster is applied to a date the caller already holds and reads nothing at
+     * all. Forbidding it would have pushed people off a correct, deterministic API — precisely
+     * the failure this rule's javadoc warns about.
+     */
     private static final Set<String> AMBIENT_CALLS =
             Set.of(
                     "java.lang.System.currentTimeMillis",
                     "java.lang.System.nanoTime",
                     "java.util.Calendar.getInstance",
-                    "java.time.temporal.TemporalAdjusters.firstDayOfNextMonth");
+                    "java.time.ZoneId.systemDefault",
+                    "java.util.TimeZone.getDefault");
 
-    /** Constructors that capture the current time. */
+    /**
+     * Constructors that capture the current time.
+     *
+     * <p>{@code java.sql.Timestamp} was listed here and removed: it has no no-argument
+     * constructor, so the entry could never match and was coverage that looked real.
+     */
     private static final Set<String> AMBIENT_CONSTRUCTORS =
-            Set.of("java.util.Date", "java.sql.Timestamp", "java.util.GregorianCalendar");
+            Set.of("java.util.Date", "java.util.GregorianCalendar");
 
     /**
      * {@link Clock} factories that read the environment. {@code Clock.fixed} and
@@ -148,6 +169,8 @@ class NoAmbientTimeRulesTest {
         assertRejects(noAmbientTimeIsRead, ReadsLocalDateNow.class);
         assertRejects(noAmbientTimeIsRead, ReadsCurrentTimeMillis.class);
         assertRejects(noAmbientTimeIsRead, ConstructsADate.class);
+        assertRejects(noAmbientTimeIsRead, ReferencesInstantNow.class);
+        assertRejects(noAmbientTimeIsRead, ReadsTheAmbientZone.class);
         // Declared in package com.finapp.ledger so the module-scoped rule can see it as a
         // module other than the composition root. See SystemClockProbe for why.
         assertRejects(onlyTheCompositionRootBuildsASystemClock, SystemClockProbe.class);
@@ -206,16 +229,26 @@ class NoAmbientTimeRulesTest {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
                 for (JavaMethodCall call : javaClass.getMethodCallsFromSelf()) {
-                    String owner = call.getTargetOwner().getFullName();
-                    String name = call.getName();
-                    boolean zeroArgNow =
-                            "now".equals(name)
-                                    && call.getTarget().getRawParameterTypes().isEmpty()
-                                    && TIME_TYPES.contains(owner);
-                    if (zeroArgNow || AMBIENT_CALLS.contains(owner + "." + name)) {
+                    if (isAmbient(call.getTargetOwner().getFullName(), call.getName(), call.getTarget().getRawParameterTypes().isEmpty())) {
                         events.add(
                                 SimpleConditionEvent.violated(
                                         javaClass, call.getDescription() + " reads ambient time"));
+                    }
+                }
+                // A method reference is not a method call in the bytecode - it is an
+                // invokedynamic whose target sits in the bootstrap attributes - so the loop
+                // above cannot see it. Found by probing during this task's review:
+                // `Supplier<Instant> s = Instant::now;` passed the rule completely. A rule that
+                // is one syntax away from being bypassed is not enforcement.
+                for (JavaMethodReference reference : javaClass.getMethodReferencesFromSelf()) {
+                    if (isAmbient(
+                            reference.getTargetOwner().getFullName(),
+                            reference.getName(),
+                            reference.getTarget().getRawParameterTypes().isEmpty())) {
+                        events.add(
+                                SimpleConditionEvent.violated(
+                                        javaClass,
+                                        reference.getDescription() + " references ambient time"));
                     }
                 }
                 for (JavaConstructorCall call : javaClass.getConstructorCallsFromSelf()) {
@@ -228,6 +261,18 @@ class NoAmbientTimeRulesTest {
                 }
             }
         };
+    }
+
+    /**
+     * Whether a target reads the environment.
+     *
+     * <p>{@code takesNoArguments} is what separates {@code Instant.now()} from
+     * {@code Instant.now(clock)}: the second is the idiomatic, injectable call and must stay
+     * allowed.
+     */
+    private static boolean isAmbient(String owner, String name, boolean takesNoArguments) {
+        boolean zeroArgNow = "now".equals(name) && takesNoArguments && TIME_TYPES.contains(owner);
+        return zeroArgNow || AMBIENT_CALLS.contains(owner + "." + name);
     }
 
     private static ArchCondition<JavaClass> buildNoSystemClockOutside(String permittedModule) {
@@ -290,6 +335,22 @@ class NoAmbientTimeRulesTest {
         }
     }
 
+    @SuppressWarnings("unused")
+    static final class ReferencesInstantNow {
+        java.util.function.Supplier<Instant> when() {
+            // Not a method call in the bytecode. Passed the rule until this task's review.
+            return Instant::now;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static final class ReadsTheAmbientZone {
+        LocalDate dateOf(Instant instant) {
+            // Which date this instant falls on now depends on how the server is configured.
+            return instant.atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+        }
+    }
+
     /** The shape the platform actually uses: the clock arrives, it is never fetched. */
     @SuppressWarnings("unused")
     static final class UsesAnInjectedClock {
@@ -309,6 +370,16 @@ class NoAmbientTimeRulesTest {
 
         long millis() {
             return clock.millis();
+        }
+
+        /** Pure: applied to a date the caller already holds, reads nothing. */
+        LocalDate endOfMonth(LocalDate date) {
+            return date.with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
+        }
+
+        /** An explicit zone is a decision, not an ambient read. */
+        LocalDate dateIn(Instant instant, java.time.ZoneId zone) {
+            return instant.atZone(zone).toLocalDate();
         }
     }
 }
