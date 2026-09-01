@@ -345,10 +345,11 @@ class OutboxRelayTest {
         OutboxRelay relay =
                 relay(publisher, new RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 10));
 
-        for (int cycle = 0; cycle < 3; cycle++) {
-            waitUntilDue(eventId);
-            assertThat(relay.pollOnce().failed()).isEqualTo(1);
-        }
+        // Polled until three attempts are RECORDED, not three times. A cycle only lands an
+        // attempt if the row is due when it runs, and the local server clock steps backwards -
+        // so counting cycles finished with two attempts about one run in twenty and failed on a
+        // count that was never this test's subject.
+        pollUntilAttempts(relay, eventId, 3);
 
         assertThat(attempts(eventId)).isEqualTo(3);
         assertThat(publishedAt(eventId)).as("still pending, not lost").isNull();
@@ -356,9 +357,8 @@ class OutboxRelayTest {
 
         // And when the broker comes back, the row that was never lost is published.
         publisher.recover();
-        waitUntilDue(eventId);
 
-        assertThat(relay.pollOnce().published()).isEqualTo(1);
+        assertThat(pollUntilPublished(relay, eventId)).isEqualTo(1);
         assertThat(publishedAt(eventId)).isNotNull();
         assertThat(lastError(eventId)).as("cleared on success").isNull();
     }
@@ -402,13 +402,8 @@ class OutboxRelayTest {
         publisher.failOn(poisoned);
         OutboxRelay relay = relay(publisher);
 
-        RelayPollResult last = null;
-        for (int cycle = 0; cycle < IMPATIENT.maxAttempts(); cycle++) {
-            waitUntilDue(poisoned);
-            last = relay.pollOnce();
-        }
+        RelayPollResult last = pollUntilAbandoned(relay, poisoned);
 
-        assertThat(last).isNotNull();
         assertThat(last.deadLettered()).isEqualTo(1);
         assertThat(deadLetteredAt(poisoned)).isNotNull();
         assertThat(attempts(poisoned)).isEqualTo(IMPATIENT.maxAttempts());
@@ -432,10 +427,7 @@ class OutboxRelayTest {
         RecordingPublisher publisher = new RecordingPublisher();
         publisher.failOn(poisoned);
         OutboxRelay relay = relay(publisher);
-        for (int cycle = 0; cycle < IMPATIENT.maxAttempts(); cycle++) {
-            waitUntilDue(poisoned);
-            relay.pollOnce();
-        }
+        pollUntilAbandoned(relay, poisoned);
         EventId unrelated = writeEvent(healthy);
 
         RelayPollResult result = relay.pollOnce();
@@ -804,6 +796,64 @@ class OutboxRelayTest {
             throw new IllegalStateException("could not seed an outbox row", e);
         }
         return envelope.eventId();
+    }
+
+    /** Polls until the row records {@code target} attempts. See {@link #pollUntilAbandoned}. */
+    private static void pollUntilAttempts(OutboxRelay relay, EventId eventId, int target)
+            throws SQLException {
+        Instant deadline = Instant.now().plusSeconds(30);
+        while (attempts(eventId) < target) {
+            if (Instant.now().isAfter(deadline)) {
+                throw new IllegalStateException(
+                        "event " + eventId.value() + " reached only " + attempts(eventId)
+                                + " of " + target + " attempts");
+            }
+            waitUntilDue(eventId);
+            relay.pollOnce();
+        }
+    }
+
+    /** Polls until the event publishes, returning the cycle's published count. */
+    private static int pollUntilPublished(OutboxRelay relay, EventId eventId) throws SQLException {
+        Instant deadline = Instant.now().plusSeconds(30);
+        while (true) {
+            waitUntilDue(eventId);
+            int published = relay.pollOnce().published();
+            if (published > 0) {
+                return published;
+            }
+            if (Instant.now().isAfter(deadline)) {
+                throw new IllegalStateException("event " + eventId.value() + " never published");
+            }
+        }
+    }
+
+    /**
+     * Polls until the event is abandoned, rather than a fixed number of times.
+     *
+     * <p>Counting cycles assumes every cycle lands an attempt, which assumes the row is due when
+     * the poll happens - and the local server clock steps backwards, so a row can be due when
+     * checked and not due a moment later. The suite then finished with the row on its second
+     * attempt rather than its third, left it not abandoned, and the aggregate stayed a candidate:
+     * about one run in twenty, and never the same test twice.
+     *
+     * <p>Looping on the state that matters removes the assumption. The deadline is a failure, not
+     * a fallback: if abandonment never happens, that is the thing to report.
+     */
+    private static RelayPollResult pollUntilAbandoned(OutboxRelay relay, EventId eventId)
+            throws SQLException {
+        Instant deadline = Instant.now().plusSeconds(30);
+        RelayPollResult last = relay.pollOnce();
+        while (deadLetteredAt(eventId) == null) {
+            if (Instant.now().isAfter(deadline)) {
+                throw new IllegalStateException(
+                        "event " + eventId.value() + " was never abandoned; attempts="
+                                + attempts(eventId));
+            }
+            waitUntilDue(eventId);
+            last = relay.pollOnce();
+        }
+        return last;
     }
 
     /**

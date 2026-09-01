@@ -157,10 +157,13 @@ class OutboxCrashRecoveryTest {
         // A real kill, not a rollback: the instance's database backend is terminated while it
         // holds the aggregate's advisory lock and an open transaction.
         //
-        // The property is that the aggregate is not stranded. The relay's lock is
-        // transaction-scoped precisely so a crash cannot leak it - a session-scoped lock on a
-        // pooled connection would outlive the code meant to release it, and that aggregate would
-        // stop publishing forever with nothing to show why. This is what proves the choice.
+        // The property is that the aggregate is not stranded and the event still goes out.
+        //
+        // This test does NOT prove the lock's transaction scope, and a review found it claiming
+        // to: terminating a backend releases session-scoped locks just as thoroughly, so
+        // switching the relay to pg_try_advisory_lock passed this and every other test. The
+        // scope is proven by theAggregateLockDoesNotOutliveItsTransaction, which models a pool
+        // instead of killing anything - the case where a session actually survives.
         UUID aggregateId = IDS.next();
         EventId eventId = commitFactAndEvent(aggregateId, "transfer-completed");
         BlockingPublisher dying = new BlockingPublisher();
@@ -192,6 +195,43 @@ class OutboxCrashRecoveryTest {
         assertThat(recovered.published()).isEqualTo(1);
         assertThat(survivor.delivered()).containsExactly(eventId);
         assertThat(survivor.events().get(0).correlationId()).isEqualTo(FLOW);
+    }
+
+    @Test
+    @DisplayName("a pooled connection does not keep an aggregate locked after the cycle ends")
+    void theAggregateLockDoesNotOutliveItsTransaction() throws SQLException {
+        // Why this exists, and why killing a backend was not enough. The relay takes a
+        // TRANSACTION-scoped advisory lock, and the class javadoc says that is deliberate:
+        // a session-scoped lock would outlive the code meant to release it. Nothing proved that.
+        // Changing pg_try_advisory_xact_lock to pg_try_advisory_lock passed all 145 database
+        // tests - because every other test opens a real connection and closes it, and closing a
+        // connection ends the session and releases session locks too.
+        //
+        // Production will not close them. A connection pool's close() returns the connection to
+        // the pool with its session intact, so a session-scoped lock survives the cycle, and the
+        // next instance to want that aggregate is refused forever. The aggregate simply stops
+        // publishing, with no error anywhere - which is why this is worth a test that models a
+        // pool rather than a fresh connection every time.
+        UUID aggregateId = IDS.next();
+        commitFactAndEvent(aggregateId, "first-event");
+
+        try (Connection pooled = application()) {
+            pooled.setAutoCommit(false);
+            RecordingPublisher first = new RecordingPublisher();
+            // A source that hands out the same physical connection and ignores close(), which is
+            // what a pool does.
+            assertThat(relay(first, () -> nonClosing(pooled)).pollOnce().published()).isEqualTo(1);
+
+            // A second event for the SAME aggregate, and a genuinely different instance.
+            EventId second = commitEventFor(aggregateId, "second-event");
+            RecordingPublisher other = new RecordingPublisher();
+            RelayPollResult result = relay(other).pollOnce();
+
+            assertThat(result.published())
+                    .as("the lock must have gone with the transaction, not stayed with the session")
+                    .isEqualTo(1);
+            assertThat(other.delivered()).containsExactly(second);
+        }
     }
 
     // -----------------------------------------------------------------
@@ -260,6 +300,19 @@ class OutboxCrashRecoveryTest {
     // Fixture
     // -----------------------------------------------------------------
 
+    /**
+     * Commits a further event for an aggregate whose fact already exists.
+     *
+     * <p>A second event about the same transfer, which is the ordinary case - an aggregate emits
+     * many events over its life. The probe fact table is keyed by aggregate, so this writes only
+     * the announcement.
+     */
+    private static EventId commitEventFor(UUID aggregateId, String description) throws SQLException {
+        EventId eventId = writeEvent(aggregateId, description);
+        business.commit();
+        return eventId;
+    }
+
     /** Writes the fact and its announcement in one transaction, and commits. */
     private static EventId commitFactAndEvent(UUID aggregateId, String description)
             throws SQLException {
@@ -284,6 +337,11 @@ class OutboxCrashRecoveryTest {
             insert.setString(2, description);
             insert.executeUpdate();
         }
+        return writeEvent(aggregateId, description);
+    }
+
+    /** The announcement alone, on the business connection, uncommitted. */
+    private static EventId writeEvent(UUID aggregateId, String description) throws SQLException {
         EventEnvelope envelope =
                 new EventEnvelope(
                         EventId.next(IDS),
@@ -330,16 +388,43 @@ class OutboxCrashRecoveryTest {
             try (ResultSet rows = select.executeQuery()) {
                 int terminated = 0;
                 while (rows.next()) {
-                    terminated++;
+                    // pg_terminate_backend RETURNS whether it worked. Counting rows rather than
+                    // successes would report a kill that never happened, and the test would then
+                    // assert recovery from a crash it did not cause.
+                    if (rows.getBoolean(1)) {
+                        terminated++;
+                    }
                 }
                 return terminated;
             }
         }
     }
 
+    /** A connection whose {@code close()} does nothing, as a pooled connection's does not. */
+    private static Connection nonClosing(Connection delegate) {
+        return (Connection)
+                java.lang.reflect.Proxy.newProxyInstance(
+                        Connection.class.getClassLoader(),
+                        new Class<?>[] {Connection.class},
+                        (proxy, method, args) -> {
+                            if ("close".equals(method.getName())) {
+                                return null;
+                            }
+                            try {
+                                return method.invoke(delegate, args);
+                            } catch (java.lang.reflect.InvocationTargetException e) {
+                                throw e.getCause();
+                            }
+                        });
+    }
+
     private static OutboxRelay relay(EventPublisher publisher) {
+        return relay(publisher, OutboxCrashRecoveryTest::application);
+    }
+
+    private static OutboxRelay relay(EventPublisher publisher, OutboxConnectionSource connections) {
         return new OutboxRelay(
-                OutboxCrashRecoveryTest::application,
+                connections,
                 publisher,
                 new RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 5),
                 8,
