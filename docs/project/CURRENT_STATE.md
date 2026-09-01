@@ -25,17 +25,23 @@ financial history exists.
 
 ## Current Milestone
 
-**M0.1 — Buildable, boundary-enforced skeleton**
-`P0-EPIC-01` (Build and Repository Foundation) and `P0-EPIC-02` (Module Architecture and
-Boundary Enforcement).
+**M0.2 — Financial kernel**
+`P0-EPIC-03` (Financial Kernel: Money) and `P0-EPIC-04` (Identity, Time and Correlation
+Primitives).
 
-Milestone complete when: a Gradle multi-module Spring Boot build is green in CI from a clean
-clone; `platform`, `sharedkernel` and `app` modules exist with enforced dependency direction;
-ArchUnit boundary rules fail the build on a deliberately introduced violation; PostgreSQL,
-Kafka and Redis run locally with pinned versions matching the test infrastructure.
+Milestone complete when: `Money` is exact, currency-explicit and scale-preserving with its
+invariants enforced and proven; typed identifiers, an injected `Clock` and correlation/causation
+context exist and propagate.
+
+**M0.1 — Buildable, boundary-enforced skeleton** — `P0-EPIC-01` and `P0-EPIC-02`. All ten items
+are `COMPLETE` as of `P0-DOC-001` (2026-09-01). Three of its four completion criteria are met:
+modules with enforced dependency direction, ArchUnit rules failing the build on a deliberate
+violation, and pinned local infrastructure matching the test infrastructure. The fourth —
+"green **in CI** from a clean clone" — cannot be met while the repository has no git remote.
+A clean clone was verified to reach a green build locally during `P0-DOC-001`; only the runner
+execution is outstanding.
 
 Subsequent Phase 0 milestones:
-- **M0.2** Financial kernel — `P0-EPIC-03`, `P0-EPIC-04`
 - **M0.3** Correctness primitives — `P0-EPIC-05`, `P0-EPIC-06`, `P0-EPIC-07`
 - **M0.4** API, observability, security baseline — `P0-EPIC-08`, `-09`, `-10`
 - **M0.5** Test infrastructure and phase review — `P0-EPIC-11`, `P0-EPIC-12`
@@ -43,55 +49,35 @@ Subsequent Phase 0 milestones:
 ## Current Task
 
 **`P0-TST-002` — Allocation zero-residual test**
-Status: `READY` — not started.
+Status: `IN_PROGRESS`.
 
 Bounded context: sharedkernel. Depends on `P0-TSK-010` (`COMPLETE`).
-
-Note for that task: `MoneyAllocationTest` already sweeps ~160,000 even splits and 2,000
-weighted ones and asserts zero residual, and `P0-TSK-010` demonstrated it failing when the
-remainder is discarded. The honest work is to check that claim against the acceptance criterion
-as written — "any amount across any 1..100 parts" — and to say plainly where coverage is
-already adequate rather than restating it.
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-03. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TST-001` — `Money` property and edge-case tests** — `COMPLETE` (2026-09-01).
+**`P0-DOC-001` — Build and local development guide** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Tests fail if **rounding** is deliberately broken | Policy ignored, every amount rounded `CEILING` — `eachPolicyRoundsInItsOwnDirection` fails |
-| Tests fail if **currency checking** is deliberately broken | `requireCompatible` removed from `plus` — cross-currency property fails |
-| Tests fail if **overflow handling** is deliberately broken | `addExact` replaced with `+` — two properties fail |
+| A reader following only this document reaches a green build and running infrastructure | Verified literally: a clean `git clone` into a temporary directory, then every command in the document, in order |
 
-`MoneyTest` already covered currency mismatch, scale mismatch, overflow, negatives and zero
-thoroughly, but by example: commutativity and associativity rested on `1.11 + 2.22 + 3.33`,
-which holds under implementations that break at the boundaries of `long`. The new
-`MoneyPropertiesTest` asserts the laws over generated values instead.
+The verification was run with **infrastructure stopped first**, so the guide's claim that
+`./gradlew build` needs nothing running was tested rather than asserted. From the clean clone:
+`./gradlew build` green in 18s with all containers down; then `docker compose up -d --wait`,
+`flywayMigrate`, `flywayValidate`, `flywayInfo`, `databaseTest` (7 tests), the two narrower
+test commands, and the lifecycle commands — all as written.
 
-Design decisions worth carrying forward:
-- **Laws, not more examples.** The ledger will assume these from Phase 3: if addition is not
-  associative, two postings that balance in one grouping do not balance in another; if
-  `(a + b) - b` is not `a`, no reversal restores the original position (`INV-REV-01` in
-  arithmetic form); if `compareTo` disagrees with `equals`, a sorted report and a lookup
-  disagree about the same amount.
-- **Coverage is asserted, because every operation may legitimately throw.** A law phrased as
-  "the results agree" is satisfied trivially when both sides reject. Each law counts the trials
-  that produced an amount and fails below a floor — demonstrated by collapsing the generator to
-  extremes only, which fails three properties.
-- **An oracle must not share the defect.** The first rounding property bracketed every policy
-  between `FLOOR` and `CEILING` *computed through `Money`*. Breaking rounding moved the bounds
-  and the value together, and it passed. Each policy is now pinned by the property that defines
-  it, stated without reference to `RoundingMode`.
-- **A property can describe a shape without pinning the value.** The review's mutation sweep
-  showed the ordering properties passing under a reversed `compareTo`, and the equality
-  properties passing under an `equals` that ignored scale. Both are now closed, and the lesson
-  generalises: laws constrain, but only an independent oracle fixes which of the constrained
-  possibilities is the right one.
-- **No property-based library added.** Seeded `java.util.Random`, following
-  `MoneyAllocationTest`. Adding jqwik is a dependency decision, not one a test task should make
-  on its own.
+That verification found one inaccuracy, which was corrected: the guide said `toolchainInfo`
+confirms "what the build actually resolved". It prints the Gradle version and the **launcher**
+JVM, which is not the compile toolchain — a reader could see `Launcher JVM: 21` and conclude
+the toolchain was verified when it is pinned independently. The guide now says what the task
+prints and points at `BuildToolchainTest`, which asserts the emitted bytecode version.
+
+Noted but not changed, because it is `P0-TSK-001`'s code and out of scope here: the
+`toolchainInfo` task's own `description` says "Prints the pinned toolchain and build versions",
+which has the same inaccuracy.
 
 ---
 
@@ -164,6 +150,13 @@ Monetary type enforcement (2026-09-01), `P0-TSK-008`:
   `Double.parseDouble` call — each in a different module
 - Coverage derived from the classpath by a shared `ProductionModules` helper, so a module that
   stops being analysed fails the build rather than silently losing its protection
+
+Developer documentation (2026-09-01), `P0-DOC-001`:
+- `README.md`: prerequisites, build, test, infrastructure lifecycle, migrations, CI gates and
+  the failures this stack actually produces
+- Every command verified from a clean clone, with infrastructure stopped first so the hermetic
+  build claim was tested rather than assumed
+- States the CI limitation rather than implying green
 
 Architecture documentation (2026-09-01), `P0-DOC-002`:
 - `MODULE_ARCHITECTURE.md` §6 names the rule behind every claim of mechanical enforcement
@@ -353,12 +346,11 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TST-002` — Allocation zero-residual test.**
+**`P0-TST-002` — Allocation zero-residual test** (in progress).
 
-Rationale: next in [`BACKLOG.md`](BACKLOG.md) and the last item in `P0-EPIC-03`. Much of it
-exists already (`MoneyAllocationTest`, `P0-TSK-010`), so the task is to establish what the
-acceptance criterion asks for that is not yet covered — specifically the stated 1..100 part
-range — and to record explicitly where existing coverage already satisfies it.
+After it, `P0-EPIC-03` closes and the remaining M0.2 work is `P0-EPIC-04`: `P0-TSK-012`
+(identifier strategy), `P0-TSK-013` (time abstraction), `P0-TSK-014` (correlation and causation
+context) and `P0-TST-003` (correlation propagation).
 
 ---
 
@@ -366,6 +358,7 @@ range — and to record explicitly where existing coverage already satisfies it.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-DOC-001` complete. `README.md` covering prerequisites, build, test, infrastructure lifecycle, migrations and CI gates. Verified by cloning the repository into a temporary directory and running every documented command in order, with infrastructure stopped first so the hermetic-build claim was tested rather than asserted. One inaccuracy found and corrected: `toolchainInfo` reports the launcher JVM, not the compile toolchain. Closes `P0-EPIC-01` and completes every item in milestone M0.1; only "green in CI" remains, blocked on the absent git remote. Milestone pointer corrected from M0.1 to M0.2, which the last five tasks had already been working in. |
 | 2026-09-01 | Task completion review of `P0-TST-001`. A mutation sweep over `Money` found three surviving mutants, two of them real gaps. Reversing `compareTo` survived every ordering property — antisymmetry, transitivity and consistency with `equals` are all satisfied by a comparator running backwards, so the properties described its shape but never its orientation; closed by stating the orientation against `BigDecimal`'s own ordering. Deleting the scale comparison from `equals` also survived, because the generator built every amount with `ofMinorUnits` and so never varied scale at all — an entire dimension of `Money`'s state was invisible. Generation is now scale-aware, with a new property asserting same-currency/different-scale operations are rejected and that such amounts are not equal. The third mutant, `hashCode` ignoring currency, survives correctly: `hashCode` may collide. 190 tests. |
 | 2026-09-01 | `P0-TST-001` complete. `MoneyPropertiesTest` asserts Money's algebraic laws over generated values, where the existing coverage was example-based — commutativity had rested on a single triple of small positive amounts. Each law asserts its own coverage so it cannot pass by rejecting everything. The rounding properties initially failed the acceptance criterion: making every policy round `CEILING` passed, because the `FLOOR`/`CEILING` bracket was computed through `Money` itself and the break moved the bounds with the value. Replaced with per-policy defining properties; all three deliberate breaks named in the criterion now fail. 188 tests. |
 | 2026-09-01 | Task completion review of `P0-DOC-002`. One important finding: rule-suite discovery listed a single directory, so a suite placed in a subpackage ran its rules on every build while escaping the documentation check — enforced but undocumentable, with the equivalence test still green. Proven with a probe suite, then closed by walking the whole test-classes tree (loading classes with `initialize=false`, since deciding whether something is a rule suite must not run its static initialiser). Also confirmed a missing document fails rather than passing vacuously, and that the ten `*(ArchUnit: ...)*` markers all sit in §6 and yield exactly the twelve enforced rule names with no false positives. |
