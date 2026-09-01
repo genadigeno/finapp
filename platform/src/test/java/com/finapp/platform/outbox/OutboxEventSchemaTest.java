@@ -145,6 +145,30 @@ class OutboxEventSchemaTest {
     // -----------------------------------------------------------------
 
     @Test
+    @DisplayName("a new row is eligible immediately, so nothing has to set next_attempt_at to queue an event")
+    void aNewRowIsDueImmediately() throws SQLException {
+        // The writer does not set next_attempt_at; the DEFAULT is what makes a queued event
+        // publishable, and without it every row would be pending forever.
+        UUID eventId = UUID.randomUUID();
+        insert(eventId, "schema-probe", 1, 1, 0, null);
+
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT next_attempt_at <= now() + INTERVAL '1 second' FROM " + TABLE
+                                + " WHERE event_id = ?")) {
+            select.setObject(1, eventId);
+            try (ResultSet rows = select.executeQuery()) {
+                rows.next();
+                // A tolerance, not a strict comparison: the local Docker VM's clock is corrected
+                // in steps of a few hundred milliseconds, so "written a moment ago is due now" is
+                // not reliably true of the server clock. What must hold is that the default is a
+                // point in the present, not a point in the future.
+                assertThat(rows.getBoolean(1)).isTrue();
+            }
+        }
+    }
+
+    @Test
     @DisplayName("a row cannot be both published and abandoned")
     void publishedAndAbandonedAreMutuallyExclusive() {
         // If it could, "how many events did we fail to deliver" would have two contradictory

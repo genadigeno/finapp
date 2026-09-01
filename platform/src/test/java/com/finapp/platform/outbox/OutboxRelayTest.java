@@ -39,6 +39,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.TestWatcher;
 
 /**
  * The outbox relay against a real PostgreSQL (P0-TSK-020, ADR-0005, ADR-0014).
@@ -54,6 +57,7 @@ import org.junit.jupiter.api.Test;
  * ({@code DISTRIBUTED_EXECUTION.md} §5).
  */
 @Tag("database")
+@ExtendWith(OutboxRelayTest.DumpStateOnFailure.class)
 class OutboxRelayTest {
 
     private static final String TABLE = "platform.outbox_event";
@@ -105,6 +109,121 @@ class OutboxRelayTest {
             statement.executeUpdate("DELETE FROM " + TABLE);
         }
         writeConnection.commit();
+        assertNoLeakedAggregateLocks();
+    }
+
+    /**
+     * Fails if a previous test left an aggregate lock held.
+     *
+     * <p>A leaked lock does not look like a leak. The next test writes its rows, the relay is
+     * refused the aggregate, the publisher records nothing, and the failure reads as "the relay
+     * published nothing" — in a test that has no concurrency in it at all. Two such failures
+     * were seen before this check existed, and neither pointed anywhere near the cause.
+     *
+     * <p>Locks are transaction-scoped, so anything still held here belongs to a connection some
+     * earlier test never finished with.
+     */
+    private static void assertNoLeakedAggregateLocks() throws SQLException {
+        // A short grace period: a thread being torn down may be mid-rollback, which is not a
+        // leak. Anything still holding after this is not going to let go.
+        Instant deadline = Instant.now().plusSeconds(10);
+        List<String> holders;
+        while (!(holders = heldAggregateLocks()).isEmpty() && Instant.now().isBefore(deadline)) {
+            Thread.onSpinWait();
+        }
+        assertThat(holders)
+                .as(
+                        "an earlier test left an outbox aggregate lock held; the next test would "
+                            + "fail as though the relay published nothing")
+                .isEmpty();
+    }
+
+    /**
+     * Stops a simulated instance and waits for it to actually stop.
+     *
+     * <p>{@code shutdownNow} interrupts and returns immediately; it does not wait, and nothing
+     * on the relay's path responds to an interrupt. A test that only called it could hand the
+     * next test a second relay still polling the same table — which would publish that test's
+     * rows before its own relay saw them, and fail it with "the relay published nothing" in a
+     * test containing no concurrency at all. Two failures of exactly that shape were seen while
+     * writing this class.
+     */
+    private static void shutDownAndConfirm(ExecutorService instance) throws InterruptedException {
+        instance.shutdownNow();
+        assertThat(instance.awaitTermination(30, TimeUnit.SECONDS))
+                .as("a simulated relay instance is still running after its test finished")
+                .isTrue();
+    }
+
+    /**
+     * Prints the outbox and the held locks whenever a test fails.
+     *
+     * <p>Every failure in this class so far has had the same shape — a poll that should have
+     * found work found none — and the assertion message alone cannot distinguish "the row was
+     * not due", "the aggregate was locked" and "the row was already published". Attaching the
+     * evidence to the failing test, whichever it turns out to be, is the only way to tell them
+     * apart when the failure is intermittent.
+     */
+    static final class DumpStateOnFailure implements TestWatcher {
+        @Override
+        public void testFailed(ExtensionContext context, Throwable cause) {
+            try {
+                System.out.println("[outbox state after failure of " + context.getDisplayName() + "]");
+                pendingRowSummary().forEach(row -> System.out.println("    " + row));
+                System.out.println("    server now=" + serverNow() + " host now=" + Instant.now());
+                heldAggregateLocks().forEach(lock -> System.out.println("    lock " + lock));
+            } catch (SQLException e) {
+                System.out.println("    could not read outbox state: " + e);
+            }
+        }
+    }
+
+    private static Instant serverNow() throws SQLException {
+        try (Connection connection = open();
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("SELECT now()")) {
+            rows.next();
+            return rows.getTimestamp(1).toInstant();
+        }
+    }
+
+    /** Every row's publication state, for a failure message that can be acted on. */
+    private static List<String> pendingRowSummary() throws SQLException {
+        try (Connection connection = open();
+                Statement statement = connection.createStatement();
+                ResultSet rows =
+                        statement.executeQuery(
+                                "SELECT event_id, aggregate_id, attempts, published_at IS NOT NULL, "
+                                        + "next_attempt_at <= now(), dead_lettered_at IS NOT NULL "
+                                        + "FROM " + TABLE + " ORDER BY event_id")) {
+            List<String> summary = new ArrayList<>();
+            while (rows.next()) {
+                summary.add(
+                        "event=" + rows.getString(1) + " aggregate=" + rows.getString(2)
+                                + " attempts=" + rows.getInt(3) + " published=" + rows.getBoolean(4)
+                                + " due=" + rows.getBoolean(5) + " abandoned=" + rows.getBoolean(6));
+            }
+            return summary;
+        }
+    }
+
+    private static List<String> heldAggregateLocks() throws SQLException {
+        try (Statement statement = writeConnection.createStatement();
+                ResultSet rows =
+                        statement.executeQuery(
+                                "SELECT l.objid, a.pid, a.state, left(coalesce(a.query, ''), 80) "
+                                        + "FROM pg_locks l JOIN pg_stat_activity a USING (pid) "
+                                        + "WHERE l.locktype = 'advisory' AND l.classid = 1")) {
+            List<String> holders = new ArrayList<>();
+            while (rows.next()) {
+                holders.add(
+                        "key=" + rows.getLong(1) + " pid=" + rows.getInt(2)
+                                + " state=" + rows.getString(3) + " query=" + rows.getString(4));
+            }
+            return holders;
+        } finally {
+            writeConnection.commit();
+        }
     }
 
     // -----------------------------------------------------------------
@@ -175,7 +294,7 @@ class OutboxRelayTest {
 
     @Test
     @DisplayName("one aggregate's events are published in the order they were written")
-    void orderingIsPreservedWithinAnAggregate() {
+    void orderingIsPreservedWithinAnAggregate() throws SQLException {
         UUID aggregateId = IDS.next();
         List<EventId> written = new ArrayList<>();
         for (int i = 0; i < 6; i++) {
@@ -183,7 +302,7 @@ class OutboxRelayTest {
         }
         RecordingPublisher publisher = new RecordingPublisher();
 
-        relay(publisher).pollOnce();
+        RelayPollResult result = relay(publisher).pollOnce();
 
         assertThat(publisher.delivered()).containsExactlyElementsOf(written);
     }
@@ -324,6 +443,14 @@ class OutboxRelayTest {
         assertThat(result.published()).isEqualTo(1);
         assertThat(publishedAt(unrelated)).isNotNull();
         assertThat(deadLetteredAt(poisoned)).isNotNull();
+        // Not merely "the healthy one was published": the blocked aggregate must not be offered
+        // as a candidate at all. Each cycle drains a bounded number of aggregates, so one that
+        // can never make progress would occupy a slot on every cycle forever — enough of them
+        // would starve the healthy aggregates while every event still eventually publishes,
+        // which degrades as "the relay is slow" rather than presenting as a defect.
+        assertThat(result.aggregatesDrained())
+                .as("the blocked aggregate is not even picked up")
+                .isEqualTo(1);
     }
 
     @Test
@@ -437,7 +564,7 @@ class OutboxRelayTest {
             assertThat(a.get(30, TimeUnit.SECONDS).published()).isEqualTo(2);
         } finally {
             held.release();
-            instanceA.shutdownNow();
+            shutDownAndConfirm(instanceA);
         }
     }
 
@@ -467,7 +594,7 @@ class OutboxRelayTest {
             a.get(30, TimeUnit.SECONDS);
         } finally {
             blocking.release();
-            instanceA.shutdownNow();
+            shutDownAndConfirm(instanceA);
         }
     }
 
@@ -503,6 +630,9 @@ class OutboxRelayTest {
                                     // and looking exactly like a relay that loses events.
                                     Instant deadline = Instant.now().plusSeconds(60);
                                     while (pendingCountOnOwnConnection() > 0) {
+                                        if (Thread.currentThread().isInterrupted()) {
+                                            return null;
+                                        }
                                         if (Instant.now().isAfter(deadline)) {
                                             throw new IllegalStateException(
                                                     "the cluster did not drain the backlog in time");
@@ -517,7 +647,7 @@ class OutboxRelayTest {
                 future.get(60, TimeUnit.SECONDS);
             }
         } finally {
-            pool.shutdownNow();
+            shutDownAndConfirm(pool);
         }
 
         assertThat(shared.delivered())
@@ -668,6 +798,7 @@ class OutboxRelayTest {
                         CausationId.of("relay-cause"));
         try {
             new JdbcOutboxWriter().write(writeConnection, envelope, payload, mediaType);
+            backDate(envelope.eventId());
             writeConnection.commit();
         } catch (SQLException e) {
             throw new IllegalStateException("could not seed an outbox row", e);
@@ -701,6 +832,31 @@ class OutboxRelayTest {
             Thread.onSpinWait();
         }
         throw new IllegalStateException("event " + eventId.value() + " never became due");
+    }
+
+    /**
+     * Makes a seeded row unambiguously due.
+     *
+     * <p>{@code next_attempt_at} defaults to the server's {@code now()}, so a row written a
+     * moment ago is normally due a moment later — unless the server's clock moves backwards in
+     * between, and the local Docker VM's clock does exactly that: it drifts behind the host and
+     * is corrected in steps of several hundred milliseconds. A row written before a correction
+     * and read after it is genuinely not yet due, the relay correctly declines to publish it,
+     * and the test fails claiming the relay published nothing.
+     *
+     * <p>The relay is right and the fixture was wrong: none of these tests is about whether a
+     * new row is immediately eligible. Back-dating removes the dependency on the clock advancing
+     * monotonically without weakening a single property under test. The default's own behaviour
+     * is asserted in {@code OutboxEventSchemaTest}, where a tolerance is appropriate.
+     */
+    private static void backDate(EventId eventId) throws SQLException {
+        try (PreparedStatement update =
+                writeConnection.prepareStatement(
+                        "UPDATE " + TABLE + " SET next_attempt_at = now() - INTERVAL '1 minute' "
+                                + "WHERE event_id = ?")) {
+            update.setObject(1, eventId.value());
+            update.executeUpdate();
+        }
     }
 
     /**
