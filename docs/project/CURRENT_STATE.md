@@ -47,47 +47,53 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-016` — Idempotent execution wrapper**
+**`P0-TSK-017` — `Idempotency-Key` header handling**
 Status: `READY` — not started.
 
-Bounded context: platform. Depends on `P0-TSK-015` (`COMPLETE`).
+Bounded context: platform / api. Depends on `P0-TSK-016` (`COMPLETE`).
+
+Note: it maps an HTTP header onto the wrapper, and there is no HTTP surface until `P0-EPIC-08`
+in M0.4. Worth confirming that dependency before starting rather than discovering it mid-task,
+as `P0-TSK-014` did.
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-05. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TST-003` — Correlation propagation integration test** — `COMPLETE` (2026-09-01).
-**`P0-EPIC-04` and milestone M0.2 are now closed.**
+**`P0-TSK-016` — Idempotent execution wrapper** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Test fails if propagation is removed from any one of the four sinks | Two sinks exist and are asserted identically across a thread handoff; removing propagation fails the test. The other three cannot land silently — see below |
-
-**This task had been recorded as blocked until M0.4, and that was too pessimistic.** The
-re-examination found a second sink already in place: `platform.idempotency_record` carries
-`correlation_id NOT NULL`, which makes a genuine database-backed end-to-end assertion possible
-today — one request, its identifier accepted from the caller, handed to another thread, and the
-same value present in both the log lines and the committed row. Compared directly, because two
-independently-correct sinks that disagree are worse than one.
-
-The outbox, audit store and tracing exporter genuinely do not exist. Rather than defer the task
-or write one that asserts less than its name claims, `CorrelationSinkCoverageTest` derives the
-set of platform concerns from the build output and fails when one appears that has not been
-classified as a sink or not-a-sink. Proven by adding an `outbox` package and watching the build
-go red. **The four-sink criterion is now enforced as the sinks arrive**, rather than depending
-on someone remembering this task existed — which is the failure mode that would otherwise have
-left the criterion satisfied on paper and not in fact.
+| Concurrent identical requests produce one effect and two identical responses | 8 racers on separate connections: one execution, one row in a side-effect table, eight identical responses |
+| Differing fingerprint returns a distinct conflict error | `IdempotencyConflictException`, and the different command provably did not run |
+| An in-progress claim is handled deterministically rather than deadlocking | `IdempotencyInProgressException` for a live claim; a stale one is taken over, with only one of two racing reclaims winning |
 
 Design decisions worth carrying forward:
-- **The worker reads the ambient context rather than closing over the identifier.** Closing over
-  it would make the test pass even with propagation removed — the assertion would be about the
-  lambda, not the mechanism. The negative control exists for the same reason.
-- **A generated identifier is tested as well as an accepted one.** Flows started by a job or an
-  internal caller have no inbound header; if only the accepted path propagated, those flows
-  would be untraceable while HTTP ones looked fine.
-- **A guard that derives its expectation from the codebase cannot rot.** Same reasoning as the
-  architecture rules' coverage guards and the documentation-equivalence check, applied to a test
-  whose scope must grow with the platform.
+- **One transaction, and that is the whole design.** The claim, the command's effect and the
+  recorded outcome commit together (ADR-0004), so there is no window in which a process crashes
+  having produced a financial effect that no idempotency record describes. The cost — a
+  concurrent duplicate blocks on the unique index until the first transaction ends — is the
+  correct trade, and a rollback test proves the key is released rather than left blocking work
+  that never happened.
+- **A savepoint around the claim.** In PostgreSQL a failed statement poisons the whole
+  transaction, so without one, losing the race would abort the caller's transaction and take the
+  read that follows down with it — the loser could never replay the winner's response.
+- **`IN_PROGRESS` is reported, not waited on and not assumed failed.** Waiting ties up a
+  connection for as long as the other command runs; assuming failure re-executes a command that
+  may already have committed. Saying so is the only honest third option (`INV-LIFE-03`).
+- **Staleness is decided by the database, not the caller.** Two processes reclaiming an
+  abandoned key would otherwise both read the same row and both believe they had won.
+- **The fingerprint is compared before staleness**, so a different request never inherits a key.
+- **A definitive failure is a result, not an exception.** A rejected transfer has a real outcome
+  a retry must be told, not have re-attempted.
+- **The store is a port**, so unresolved question 12 stays open — the same reasoning that kept
+  `MoneyColumns` mechanism-agnostic.
+
+Two fixture findings worth keeping. A PostgreSQL `TEMPORARY TABLE` is session-local, so the
+first version of the concurrency test could not see its own side-effect table from the racing
+connections — a concurrency test whose shared state is invisible across connections proves
+nothing. And `IdempotencyKey` had to become `Serializable` so the exceptions' diagnostic state
+survives a round trip, which is the defect the `P0-TSK-009` review found on `CurrencyCode`.
 
 ---
 
@@ -187,6 +193,16 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Idempotent execution (2026-09-01), `P0-TSK-016`:
+- Claim, execute, record outcome — all in the caller's transaction, so a crash cannot leave an
+  effect without a record or a record without an effect
+- 8-way concurrent duplicates: one execution, one effect, eight identical responses
+- `INV-IDEM-03` enforced by fingerprint comparison, refusing rather than guessing when the
+  algorithm differs
+- A live `IN_PROGRESS` claim is reported; a stale one is taken over, with the staleness test in
+  the database so two reclaims cannot both win
+- The data-access mechanism stays undecided: the wrapper depends on a port
 
 Idempotency schema (2026-09-01), `P0-TSK-015`:
 - `platform.idempotency_record`: `INV-IDEM-01` enforced by a unique key on
@@ -413,12 +429,11 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-016` — Idempotent execution wrapper.**
+**`P0-TSK-017` — `Idempotency-Key` header handling.**
 
-`P0-EPIC-04` and milestone M0.2 are closed, so work continues in M0.3 where `P0-TSK-015` left
-off. `P0-TSK-016` is where `INV-IDEM-01` and `INV-IDEM-03` become behaviour rather than schema,
-and the risk sits in one place: deciding what to do about an `IN_PROGRESS` claim without either
-deadlocking on it or assuming it failed.
+Check its dependencies first: it maps an HTTP header onto `P0-TSK-016`'s wrapper, and there is
+no HTTP surface until `P0-EPIC-08` in M0.4. If that holds, the next unblocked work is
+`P0-TST-004` (idempotency concurrency and retry tests) or `P0-EPIC-06`.
 
 ---
 
@@ -426,6 +441,7 @@ deadlocking on it or assuming it failed.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-016` complete. The execute-once wrapper: claim, run, record, replay — all inside the caller's transaction, so no crash can leave a financial effect that no idempotency record describes. All three acceptance clauses proven against a real PostgreSQL, with "exactly one effect" counted in a side-effect table rather than inferred from the wrapper's own return value. A live `IN_PROGRESS` claim is reported rather than waited on or assumed failed; a stale one is taken over with the staleness test in the database, so two racing reclaims cannot both win. The fingerprint is compared before staleness, so a different request never inherits a key. The store is a port, leaving unresolved question 12 open. Two fixture findings: a `TEMPORARY TABLE` is session-local and so invisible to the racing connections, and `IdempotencyKey` had to become `Serializable` or the exceptions lose their diagnostic state — the `P0-TSK-009` defect again. 268 hermetic tests, 38 database tests. |
 | 2026-09-01 | `P0-TST-003` complete; `P0-EPIC-04` and milestone M0.2 closed. The task had been recorded as blocked until M0.4, which was too pessimistic: a second sink already existed, since `platform.idempotency_record` carries `correlation_id NOT NULL`. One request's identifier is now proven identical in the log and in a committed row across a thread handoff, for both an accepted and a generated identifier, with a negative control showing an unwrapped handoff loses it. The three sinks that genuinely do not exist are handled by `CorrelationSinkCoverageTest`, which derives platform concerns from the build output and fails when one appears unclassified — proven by adding an `outbox` package. The four-sink criterion is enforced as the sinks arrive rather than left to memory. 261 hermetic tests, 28 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-015`. All nine constraint mutations were caught, and so was the enum/migration drift guard. One real gap the sweep could not reveal: a `CHECK` constraint sees only the row being written, so V002 constrained row *shape* and said nothing about *transitions*. Probing the developer database with the statement an operator or a defective wrapper would run — `UPDATE ... SET state='IN_PROGRESS', completed_at=NULL` — turned a finished command back into an unfinished one, which a wrapper would then re-execute: a second financial effect from an UPDATE no application code performed. Closed by `V003`, a `BEFORE UPDATE` trigger freezing terminal claims entirely and making identity and fingerprint immutable in any state; both halves proven by isolated mutation. A second finding was a test artefact worth keeping: mixing a client-generated `created_at` with PostgreSQL's `now()` for `completed_at` produced a backwards row, because the container's clock runs behind the host's — which is why these timestamps are application-supplied from one injected clock and the schema declares no `DEFAULT now()`. 259 hermetic tests, 25 database tests. |
 | 2026-09-01 | `P0-TSK-015` complete — the platform's first table. `INV-IDEM-01` enforced by a unique key on (scope, idempotency_key) and proven under 16-way contention against a real PostgreSQL: exactly one winner, every loser a unique violation. The state machine is checked in the schema as well as in code, the fingerprint's algorithm is recorded on the record (`INV-HIST-04`'s rule applied to the thing that decides whether two requests are the same), and the response is stored as bytes so a retry receives what the first caller received. Established that this table is legitimately mutable and so not gated on the `P0-TSK-022` privilege split. `flywayValidate` caught a checksum mismatch when the migration was edited after being applied locally — the rule working; repaired, then verified against an empty scratch database. Expiry policy documented in `DATA_MIGRATIONS.md` §8, including why too-short expiry costs money and too-long costs storage. 259 hermetic tests, 20 database tests. |
