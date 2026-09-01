@@ -48,51 +48,53 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-013` — Time abstraction**
+**`P0-TSK-014` — Correlation and causation context**
 Status: `READY` — not started.
 
-Bounded context: sharedkernel. Depends on `P0-TSK-002` and `P0-TSK-007`, both `COMPLETE`.
+Bounded context: platform. Depends on `P0-TSK-002` (`COMPLETE`).
 
-Scope: inject `java.time.Clock` everywhere; an architecture rule forbidding `Instant.now()` /
-`LocalDate.now()` in domain code; distinguish posting date, value date and system time.
-`IdGenerator` is already written to an injected clock, so the rule will have nothing to forbid
-in the identifier kernel.
+Scope: an ingress filter establishing `correlationId` (accepted or generated) and
+`causationId`, propagated into MDC, traces, outbox events and audit records.
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-04. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TSK-012` — Identifier strategy** — `COMPLETE` (2026-09-01). ADR-0013 recorded.
+**`P0-TSK-013` — Time abstraction** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| IDs are time-ordered and monotonic enough for index locality | Strictly increasing in unsigned byte order — the ordering a database index uses — across advancing time, within one frozen millisecond, through counter exhaustion, and across a clock jumped back an hour |
-| A `CustomerId` cannot be passed where an `AccountId` is required (compile error) | `javac` invoked on the substitution and asserted to reject it, naming both types, with a positive control that the correct call compiles |
+| Architecture rule fails the build on direct `now()` use in domain packages | `Instant.now()` and `System.currentTimeMillis()` planted in `sharedkernel` production code each failed `./gradlew build`, naming `noAmbientTimeIsRead`; `Clock.systemUTC()` in the kernel failed `onlyTheCompositionRootBuildsASystemClock` |
+| Tests can advance time deterministically | `TestClock` — `advance`, `rewind`, `set`; `IdGeneratorTest` uses it to prove behaviour under a clock jumped back an hour |
+
+No new ADR: ADR-0006 already lists this under *Additional enforced rules*, so the task
+implements a recorded decision rather than taking a new one.
 
 Design decisions worth carrying forward:
-- **Per-aggregate identifiers do not live in `sharedkernel`.** The task named `CustomerId` and
-  `AccountId`, but those are business nouns owned by `party` and `accounts`; the kernel's own
-  `package-info` forbids them. The kernel holds `EntityId` and the generator — the mechanism —
-  and each aggregate declares its identifier in three lines in its owning module. The
-  compile-error criterion is proven with probe types rather than by importing Phase 1 and
-  Phase 3 concepts into Phase 0.
-- **A compile error cannot be asserted at run time,** so the compiler is invoked as the thing
-  under test. Demonstrating type safety by hand proves it once; this proves it on every build,
-  and the positive control stops it degrading into a check that always fails.
-- **Monotonicity is engineered, not inherited from the clock.** The 12-bit field is a counter
-  rather than randomness, so identifiers minted in the same millisecond still sort in issue
-  order. Exhausting it borrows the next millisecond rather than wrapping — wrapping would emit
-  a value that sorts before, and could repeat, one already issued. A backwards clock never
-  produces a backwards identifier: NTP correction and leap smearing both move wall-clock time
-  backwards, and a generator that simply read the clock would issue identifiers sorting before
-  rows already written.
-- **Uniqueness across restarts rests on randomness, not on the counter.** The restart test
-  asserts that two instances on the same frozen millisecond genuinely *do* collide in the
-  timestamp-and-counter half, and are still disjoint overall — making explicit that a
-  deterministically seeded generator would re-issue every identifier after a crash, which is
-  why the production configuration uses `SecureRandom`.
-- **`EntityId` rejects any value that is not a UUIDv7,** so `createdAt()` cannot return a time
-  fabricated from randomness.
+- **The rule found a violation immediately, and it was mine.** `IdGenerator.systemDefault()`,
+  written one task earlier, called `Clock.systemUTC()`. Removed rather than exempted: the
+  shared kernel does not decide where time comes from, and a convenience factory that reads
+  ambient time is exactly the seam through which ambient time re-enters a codebase that has
+  decided against it. Weakening a rule to accommodate existing code is the anti-pattern
+  `DEFINITION_OF_DONE` §3 names.
+- **Two rules, because there are two different things.** A zero-argument `now()` has no seam
+  and is forbidden everywhere with no exemption. `Clock.systemUTC()` produces an *injectable*
+  clock and must exist somewhere, so it is permitted in the composition root alone.
+- **`Instant.now(clock)` is deliberately allowed.** Matching on the method name alone would
+  forbid the idiomatic call and push people off the correct API — a rule that makes the
+  codebase worse while looking stricter.
+- **The module-scoped rule needed a fixture outside the composition root.** Every architecture
+  fixture lives in `com.finapp.app.architecture`, which the rule is *right* to permit, so no
+  fixture there could ever demonstrate it. `SystemClockProbe` declares `com.finapp.ledger`
+  while living in app's test sources; asserting a differently-configured copy of the condition
+  would have tested something other than the rule that runs.
+- **What no rule can check is written down instead.** An injected clock still has to be the
+  right clock: posting date, value date and system time are three different things, and
+  substituting one for another is a domain error that reads perfectly.
+  [`DOMAIN_MODEL.md`](../domain/DOMAIN_MODEL.md) §Time now names the distinction and its
+  consequences.
+- **`ArchitectureRulesAreDocumentedTest` earned its keep one task after being written** — it
+  failed the build until the two new rules were documented in `MODULE_ARCHITECTURE.md` §6.
 
 ---
 
@@ -185,6 +187,16 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
   domain exceptions under one `MonetaryException` supertype
 - `CurrencyCode` validates against ISO 4217 and rejects codes with no minor unit
 - No floating point anywhere on the monetary path
+
+Time discipline (2026-09-01), `P0-TSK-013`:
+- Ambient time is a build failure: no zero-argument `now()`, `System.currentTimeMillis()`,
+  `nanoTime()` or `new Date()` anywhere in production code
+- `Clock.systemUTC()` permitted in the composition root alone, proven from both sides — the
+  root is exempt, another module is not
+- `Instant.now(clock)` and `LocalDate.now(clock)` deliberately allowed
+- `TestClock` moves time forwards, backwards and to an instant, so time-dependent behaviour is
+  tested at boundaries rather than by sleeping
+- Posting date, value date and system time distinguished in `DOMAIN_MODEL.md` §Time
 
 Identifier kernel (2026-09-01), `P0-TSK-012`:
 - `EntityId`: typed per-aggregate identifiers; substitution is a compile error, proven by
@@ -378,10 +390,11 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-013` — Time abstraction.**
+**`P0-TSK-014` — Correlation and causation context.**
 
-Then `P0-TSK-014` (correlation and causation context) and `P0-TST-003` (correlation
-propagation) close `P0-EPIC-04` and milestone M0.2.
+It and `P0-TST-003` (correlation propagation) are all that remain of `P0-EPIC-04` and milestone
+M0.2. `P0-TSK-014` is the first Phase 0 task with a Spring-facing surface — an ingress filter —
+so it is also where `platform`'s framework boundary gets its first real test.
 
 ---
 
@@ -389,6 +402,7 @@ propagation) close `P0-EPIC-04` and milestone M0.2.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-013` complete. Two ArchUnit rules make ambient time a build failure, with `Clock.systemUTC()` permitted in the composition root alone. The rules immediately caught a violation written in the previous task — `IdGenerator.systemDefault()` — which was removed rather than exempted. `Instant.now(clock)` is deliberately allowed, since forbidding the clock-taking overloads would push people off the correct API. `TestClock` replaces an inline test clock and makes `rewind` a named operation, because NTP correction moves real clocks backwards. `DOMAIN_MODEL.md` §Time records the posting-date/value-date/system-time distinction, which no rule can enforce. The `P0-DOC-002` documentation-equivalence check failed the build until the new rules were documented, one task after it was written. 219 tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-012`. A mutation sweep over `IdGenerator` and `EntityId` found one real gap: deleting the RFC-variant check from `EntityId` survived every test, because every rejection case in the suite already failed the *version* check first, so the variant branch was never reached. A version-7-but-wrong-variant value claims to be time-ordered while not being an RFC 9562 UUID, and its high bits would be read as a timestamp on the strength of a version field nothing corroborates. Case added; the mutation now fails. Two other mutations survived and are correct to: `hashCode` dropping the class component violates no contract (`equals` still distinguishes), and making `EntityId` final is caught at compile time rather than by a test — my probe harness reported it as surviving because it parsed stale results without checking the exit code, which is the same defect shape these reviews keep finding, this time in the probe rather than the code. 213 tests — the case was added to an existing rejection test rather than as a new one. |
 | 2026-09-01 | `P0-TSK-012` complete; ADR-0013 recorded. Typed aggregate identifiers over UUIDv7. The task named `CustomerId` and `AccountId`, but those are business nouns owned by `party` and `accounts` and the shared kernel forbids them, so the kernel holds the mechanism and the compile-error criterion is proven with probe types — by invoking `javac` on the substitution, since a compile error cannot be asserted at run time. Monotonicity is engineered rather than inherited from the clock: a counter rather than randomness in the 12-bit field, borrowing the next millisecond on exhaustion, and no regression when the clock jumps backwards. The restart test makes explicit that cross-instance uniqueness rests on the 62 random bits, not the counter. 213 tests. |
 | 2026-09-01 | `P0-TST-002` complete, closing `P0-EPIC-03`. The criterion's naive-division clause was already satisfied — that mutation is caught by eight existing tests — so the work was the untested range: 1..100 parts rather than 1..40, and amounts from the whole representable range rather than a band around zero. Both sweeps assert they encountered indivisible remainders, because zero residual is trivially true on divisible amounts and a sweep of those would pass over a broken allocator. Evenness asserted separately: an allocator dumping the whole remainder on the first part satisfies totality and is caught only by that. |
