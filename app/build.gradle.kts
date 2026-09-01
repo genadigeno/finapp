@@ -68,4 +68,13 @@ tasks.test {
     inputs.file(rootProject.layout.projectDirectory.file("docs/architecture/MODULE_ARCHITECTURE.md"))
         .withPropertyName("moduleArchitectureDocument")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // AuditableActionRegistryTest reads this one and asserts it names exactly the actions the
+    // code declares. Declared for the identical reason, and it is worth noting that the reason
+    // did not generalise on its own: P0-TSK-023 added a second document-backed guard and
+    // reintroduced the same defect, proven by breaking the catalogue and watching :app:test
+    // report UP-TO-DATE and the build go green. A third such guard needs a third line here.
+    inputs.file(rootProject.layout.projectDirectory.file("docs/architecture/AUDITABLE_ACTIONS.md"))
+        .withPropertyName("auditableActionsCatalogue")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }

@@ -43,7 +43,7 @@ import org.junit.jupiter.api.Test;
  */
 class AuditableActionRegistryTest {
 
-    private static final Path CATALOGUE = Path.of("..", "docs", "architecture", "AUDITABLE_ACTIONS.md");
+    private static final String CATALOGUE = "docs/architecture/AUDITABLE_ACTIONS.md";
 
     /**
      * {@code module.ActionName}. Namespaced so two modules cannot collide on a bare name and
@@ -202,16 +202,31 @@ class AuditableActionRegistryTest {
                 .orElseThrow(() -> new AssertionError("no catalogue row for " + code));
     }
 
+    /**
+     * Reads the catalogue, searching upwards from the working directory.
+     *
+     * <p>The same resolution {@code ArchitectureRulesAreDocumentedTest} uses, and for the same
+     * reason: a path relative to one assumed working directory works under Gradle and breaks in
+     * an IDE, and it breaks with "the catalogue must exist" — a failure that reads as a missing
+     * document rather than a misconfigured test.
+     *
+     * <p>Not found is a hard failure, never a skip. A test that cannot locate the catalogue and
+     * quietly passes would report agreement without having compared anything.
+     */
     private static String readCatalogue() {
-        try {
-            // Failing loudly rather than skipping: a test that cannot find the catalogue and
-            // quietly passes would report agreement without comparing anything.
-            assertThat(Files.exists(CATALOGUE))
-                    .as("catalogue %s must exist", CATALOGUE.toAbsolutePath())
-                    .isTrue();
-            return Files.readString(CATALOGUE, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read " + CATALOGUE, e);
+        Path directory = Path.of("").toAbsolutePath();
+        while (directory != null) {
+            Path candidate = directory.resolve(CATALOGUE);
+            if (Files.isRegularFile(candidate)) {
+                try {
+                    return Files.readString(candidate, StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    throw new UncheckedIOException("Could not read " + candidate, e);
+                }
+            }
+            directory = directory.getParent();
         }
+        throw new IllegalStateException(
+                "Could not find " + CATALOGUE + " above " + Path.of("").toAbsolutePath());
     }
 }
