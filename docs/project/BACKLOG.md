@@ -330,6 +330,13 @@ Status: `IN_PROGRESS`
 - Why: Idempotency must be a boundary contract, not an internal convenience.
 - Deps: P0-TSK-016, P0-TSK-023
 - Accept: An endpoint declared as requiring the header rejects requests without one; key format validated; the header is never logged as sensitive data but is recorded in audit.
+- **BLOCKED (recorded 2026-09-01).** Two of its three requirements have no subject yet. Its own
+  declared dependency `P0-TSK-023` (auditable-action registry) is in `P0-EPIC-07` and not
+  started, so "recorded in audit" cannot be satisfied; and "an endpoint declared as requiring
+  the header" needs an HTTP surface, which `P0-EPIC-08` introduces in M0.4 — there is no
+  servlet, controller or web starter in the build today. Unblocks after `P0-TSK-023` and
+  `P0-EPIC-08`. Not a gap in `P0-TSK-016`, which built and proved the mechanism this task will
+  expose at the boundary.
 - Risk: Medium
 - Cx: S
 - DoD: `DOD-API`
