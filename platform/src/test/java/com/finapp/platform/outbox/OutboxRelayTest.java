@@ -326,6 +326,56 @@ class OutboxRelayTest {
         assertThat(deadLetteredAt(poisoned)).isNotNull();
     }
 
+    @Test
+    @DisplayName("an abandoned event mid-stream stops the drain, not just an abandoned head")
+    void anAbandonedEventBehindAPublishableOneStillBlocks() throws SQLException {
+        // Two guards enforce this, and a mutation sweep found each one hiding the other: the
+        // candidate query never offers an aggregate whose HEAD is abandoned, so a test seeding
+        // the poison first never reaches the relay's own stop condition, and removing that
+        // condition changed nothing anybody could see.
+        //
+        // It is not decorative. The candidate list is read outside the aggregate's lock, so
+        // between choosing an aggregate and draining it another instance may have failed or
+        // abandoned an event further down. This inner check is what stops the relay publishing
+        // past it, and this is the shape that reaches it.
+        UUID aggregateId = IDS.next();
+        EventId first = writeEvent(aggregateId);
+        EventId poisoned = writeEvent(aggregateId);
+        EventId behind = writeEvent(aggregateId);
+        abandon(poisoned);
+        RecordingPublisher publisher = new RecordingPublisher();
+
+        RelayPollResult result = relay(publisher).pollOnce();
+
+        assertThat(publisher.delivered()).containsExactly(first);
+        assertThat(publishedAt(first)).isNotNull();
+        assertThat(result.published()).isEqualTo(1);
+        assertThat(publishedAt(behind)).as("blocked behind the abandoned event").isNull();
+        assertThat(attempts(behind)).isZero();
+    }
+
+    @Test
+    @DisplayName("an event still backing off mid-stream stops the drain")
+    void anEventNotYetDueBehindAPublishableOneStillBlocks() throws SQLException {
+        // Same masking as above, for the other stop condition: the candidate query filters on
+        // the head's next_attempt_at, so only a backing-off event further down reaches the
+        // relay's own due check. Publishing past it would reorder the aggregate purely because
+        // one of its events had failed once.
+        UUID aggregateId = IDS.next();
+        EventId first = writeEvent(aggregateId);
+        EventId backingOff = writeEvent(aggregateId);
+        EventId behind = writeEvent(aggregateId);
+        delayNextAttempt(backingOff, Duration.ofHours(1));
+        RecordingPublisher publisher = new RecordingPublisher();
+
+        RelayPollResult result = relay(publisher).pollOnce();
+
+        assertThat(publisher.delivered()).containsExactly(first);
+        assertThat(result.published()).isEqualTo(1);
+        assertThat(publishedAt(behind)).isNull();
+        assertThat(attempts(behind)).isZero();
+    }
+
     // -----------------------------------------------------------------
     // Crash recovery — the reason the outbox exists
     // -----------------------------------------------------------------
@@ -376,7 +426,7 @@ class OutboxRelayTest {
             // Instance A is now inside publish(), holding the aggregate's advisory lock and its
             // transaction. This is a real overlap, not a hoped-for one: B polls while A is
             // provably mid-publication.
-            assertThat(held.awaitEntry()).as("instance A reached the publisher").isTrue();
+            awaitEntryOrExplain(held, a);
 
             RelayPollResult b = relay(other).pollOnce();
 
@@ -406,7 +456,7 @@ class OutboxRelayTest {
         ExecutorService instanceA = Executors.newSingleThreadExecutor();
         try {
             Future<RelayPollResult> a = instanceA.submit(() -> relay(blocking).pollOnce());
-            assertThat(blocking.awaitEntry()).isTrue();
+            awaitEntryOrExplain(blocking, a);
 
             RelayPollResult b = relay(other).pollOnce();
 
@@ -445,11 +495,19 @@ class OutboxRelayTest {
                                 () -> {
                                     start.await();
                                     OutboxRelay relay = relay(shared);
-                                    // Poll until the backlog is empty rather than a fixed number
-                                    // of times: an instance that is refused every lock does no
-                                    // work, and the assertion is about the cluster, not one node.
-                                    while (relay.pollOnce().didWork()) {
-                                        // keep draining
+                                    // Until the BACKLOG is empty, not until this instance stops
+                                    // finding work. An instance refused every lock in a cycle
+                                    // did no work and is not finished - it lost a race. Stopping
+                                    // on its own idleness let all eight quit with events still
+                                    // pending, which is how this test first failed: intermittently,
+                                    // and looking exactly like a relay that loses events.
+                                    Instant deadline = Instant.now().plusSeconds(60);
+                                    while (pendingCountOnOwnConnection() > 0) {
+                                        if (Instant.now().isAfter(deadline)) {
+                                            throw new IllegalStateException(
+                                                    "the cluster did not drain the backlog in time");
+                                        }
+                                        relay.pollOnce();
                                     }
                                     return null;
                                 }));
@@ -519,6 +577,31 @@ class OutboxRelayTest {
         int deliveryCount() {
             return events.size();
         }
+    }
+
+    /**
+     * Waits for the held instance to reach the publisher, and explains itself when it does not.
+     *
+     * <p>Without this the latch simply times out, and the message says only that the instance
+     * never arrived — which is true of a relay that threw, a relay that found nothing pending,
+     * and a relay blocked on a lock alike. The instance's own outcome is the evidence, and a
+     * test that discards it makes every failure look like the same failure.
+     */
+    private static void awaitEntryOrExplain(BlockingPublisher held, Future<RelayPollResult> instance)
+            throws Exception {
+        if (held.awaitEntry()) {
+            return;
+        }
+        held.release();
+        Object outcome;
+        try {
+            outcome = instance.get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            outcome = e;
+        }
+        throw new AssertionError(
+                "the held instance never reached the publisher; its poll returned/threw: " + outcome
+                        + ", pending rows: " + pendingCount());
     }
 
     /** Blocks inside {@code publish} so a second instance can be observed while the first holds. */
@@ -620,6 +703,38 @@ class OutboxRelayTest {
         throw new IllegalStateException("event " + eventId.value() + " never became due");
     }
 
+    /**
+     * Puts a row into the state a previous relay cycle would have left it in.
+     *
+     * <p>Written directly rather than driven through the relay because the relay can only
+     * abandon an aggregate's <em>head</em>, and the state under test is an abandoned event with
+     * a publishable one in front of it — reachable in production when another instance fails
+     * that event between this one reading the candidate list and taking the lock.
+     */
+    private static void abandon(EventId eventId) throws SQLException {
+        try (PreparedStatement update =
+                writeConnection.prepareStatement(
+                        "UPDATE " + TABLE + " SET attempts = 3, dead_lettered_at = now(), "
+                                + "last_error = 'probe' WHERE event_id = ?")) {
+            update.setObject(1, eventId.value());
+            update.executeUpdate();
+        }
+        writeConnection.commit();
+    }
+
+    private static void delayNextAttempt(EventId eventId, Duration delay) throws SQLException {
+        try (PreparedStatement update =
+                writeConnection.prepareStatement(
+                        "UPDATE " + TABLE + " SET attempts = 1, "
+                                + "next_attempt_at = now() + (? * INTERVAL '1 millisecond') "
+                                + "WHERE event_id = ?")) {
+            update.setLong(1, delay.toMillis());
+            update.setObject(2, eventId.value());
+            update.executeUpdate();
+        }
+        writeConnection.commit();
+    }
+
     private static Instant publishedAt(EventId eventId) throws SQLException {
         return instantColumn(eventId, "published_at");
     }
@@ -660,6 +775,23 @@ class OutboxRelayTest {
             // The reader runs in its own transaction; ending it keeps later reads from seeing a
             // snapshot taken before the relay committed.
             writeConnection.commit();
+        }
+    }
+
+    /**
+     * Pending rows, read on a connection of this thread's own.
+     *
+     * <p>The shared {@code writeConnection} is the main thread's; a simulated instance reading
+     * through it would serialise against the very concurrency the test exists to create.
+     */
+    private static int pendingCountOnOwnConnection() throws SQLException {
+        try (Connection connection = open();
+                Statement statement = connection.createStatement();
+                ResultSet rows =
+                        statement.executeQuery(
+                                "SELECT count(*) FROM " + TABLE + " WHERE published_at IS NULL")) {
+            rows.next();
+            return rows.getInt(1);
         }
     }
 
