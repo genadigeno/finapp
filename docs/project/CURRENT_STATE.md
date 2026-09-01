@@ -89,7 +89,15 @@ Design decisions worth carrying forward:
 - **The store is a port**, so unresolved question 12 stays open — the same reasoning that kept
   `MoneyColumns` mechanism-agnostic.
 
-Two fixture findings worth keeping. A PostgreSQL `TEMPORARY TABLE` is session-local, so the
+Three fixture findings worth keeping. Adding this suite exposed a **latent flake in
+`P0-TSK-015`'s schema test**: it read `Instant.now()` at the call site for `completed_at` and
+again inside the helper for `created_at`, so whenever the two reads straddled a tick the row was
+born with `completed_at` before `created_at` and the constraint correctly rejected it. It had
+passed by luck until the suite grew enough to widen the gap. That is the third instance of one
+root cause in that file, and the same lesson `P0-TSK-013` enforces in production code: a single
+moment comes from a single read. Fixed and verified over five consecutive runs.
+
+A PostgreSQL `TEMPORARY TABLE` is session-local, so the
 first version of the concurrency test could not see its own side-effect table from the racing
 connections — a concurrency test whose shared state is invisible across connections proves
 nothing. And `IdempotencyKey` had to become `Serializable` so the exceptions' diagnostic state

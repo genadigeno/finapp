@@ -417,8 +417,18 @@ class IdempotencyRecordSchemaTest {
     private static void insert(
             String scope, String key, String state, Instant completedAt, byte[] body, String mediaType)
             throws SQLException {
-        insertOn(connection, scope, key, state, completedAt, body, mediaType, sha256(key), "req-1",
-                Instant.now(), Instant.now().plusSeconds(86_400));
+        // ONE clock read, used for both timestamps.
+        //
+        // This previously called Instant.now() at the call site for completedAt and again in
+        // here for createdAt, so whenever the two reads straddled a tick the row was born with
+        // completed_at BEFORE created_at and idempotency_record_completed_after_created
+        // correctly rejected it. It passed by luck until this suite grew enough to widen the
+        // gap. Third instance of one root cause in this file - the first was mixing a client
+        // clock with PostgreSQL's now() - and the lesson is the same one P0-TSK-013 enforces
+        // for production code: a single moment comes from a single read.
+        Instant now = Instant.now();
+        insertOn(connection, scope, key, state, completedAt == null ? null : now, body, mediaType,
+                sha256(key), "req-1", now, now.plusSeconds(86_400));
     }
 
     private static void insertWithExpiry(String scope, String key, Instant created, Instant expires)
