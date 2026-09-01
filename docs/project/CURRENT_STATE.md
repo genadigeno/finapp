@@ -48,37 +48,51 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-012` — Identifier strategy**
+**`P0-TSK-013` — Time abstraction**
 Status: `READY` — not started.
 
-Bounded context: sharedkernel. First task of `P0-EPIC-04`, the remaining half of milestone M0.2.
+Bounded context: sharedkernel. Depends on `P0-TSK-002` and `P0-TSK-007`, both `COMPLETE`.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-04.
+Scope: inject `java.time.Clock` everywhere; an architecture rule forbidding `Instant.now()` /
+`LocalDate.now()` in domain code; distinguish posting date, value date and system time.
+`IdGenerator` is already written to an injected clock, so the rule will have nothing to forbid
+in the identifier kernel.
+
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-04. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TST-002` — Allocation zero-residual test** — `COMPLETE` (2026-09-01).
+**`P0-TSK-012` — Identifier strategy** — `COMPLETE` (2026-09-01). ADR-0013 recorded.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| No input produces a residual | 36,000 even-allocation trials across 1..100 parts and 4,000 weighted trials across up to 100 weights, amounts drawn from the whole representable range |
-| Test fails if the allocator is changed to naive division | Proven — and it was already true of `MoneyAllocationTest`, which catches the same mutation in eight tests |
-
-The naive-division half of the criterion was **already satisfied** before this task. What was
-missing was range: `MoneyAllocationTest` stops at 40 parts where the criterion says 1..100, and
-draws amounts from a dense band around zero rather than the representable range. A hundred-way
-split is a payment schedule or an instalment plan, and the residual grows with the number of
-parts.
+| IDs are time-ordered and monotonic enough for index locality | Strictly increasing in unsigned byte order — the ordering a database index uses — across advancing time, within one frozen millisecond, through counter exhaustion, and across a clock jumped back an hour |
+| A `CustomerId` cannot be passed where an `AccountId` is required (compile error) | `javac` invoked on the substitution and asserted to reject it, naming both types, with a positive control that the correct call compiles |
 
 Design decisions worth carrying forward:
-- **The sweep asserts it found remainders to distribute.** Zero residual is trivially true when
-  an amount divides exactly — a naive allocator is *correct* in that case — so a randomised
-  sweep dominated by divisible amounts would report success over a broken allocator. Both
-  sweeps count trials with an indivisible remainder and fail below half. Proven by making every
-  generated amount zero, which fails both sweeps.
-- **Totality does not imply evenness.** An allocator handing the whole remainder to the first
-  part sums back to the original exactly. That mutation passes the zero-residual assertion and
-  is caught only by the separate assertion that parts differ by at most one minor unit.
+- **Per-aggregate identifiers do not live in `sharedkernel`.** The task named `CustomerId` and
+  `AccountId`, but those are business nouns owned by `party` and `accounts`; the kernel's own
+  `package-info` forbids them. The kernel holds `EntityId` and the generator — the mechanism —
+  and each aggregate declares its identifier in three lines in its owning module. The
+  compile-error criterion is proven with probe types rather than by importing Phase 1 and
+  Phase 3 concepts into Phase 0.
+- **A compile error cannot be asserted at run time,** so the compiler is invoked as the thing
+  under test. Demonstrating type safety by hand proves it once; this proves it on every build,
+  and the positive control stops it degrading into a check that always fails.
+- **Monotonicity is engineered, not inherited from the clock.** The 12-bit field is a counter
+  rather than randomness, so identifiers minted in the same millisecond still sort in issue
+  order. Exhausting it borrows the next millisecond rather than wrapping — wrapping would emit
+  a value that sorts before, and could repeat, one already issued. A backwards clock never
+  produces a backwards identifier: NTP correction and leap smearing both move wall-clock time
+  backwards, and a generator that simply read the clock would issue identifiers sorting before
+  rows already written.
+- **Uniqueness across restarts rests on randomness, not on the counter.** The restart test
+  asserts that two instances on the same frozen millisecond genuinely *do* collide in the
+  timestamp-and-counter half, and are still disjoint overall — making explicit that a
+  deterministically seeded generator would re-issue every identifier after a crash, which is
+  why the production configuration uses `SecureRandom`.
+- **`EntityId` rejects any value that is not a UUIDv7,** so `createdAt()` cannot return a time
+  fabricated from randomness.
 
 ---
 
@@ -171,6 +185,15 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
   domain exceptions under one `MonetaryException` supertype
 - `CurrencyCode` validates against ISO 4217 and rejects codes with no minor unit
 - No floating point anywhere on the monetary path
+
+Identifier kernel (2026-09-01), `P0-TSK-012`:
+- `EntityId`: typed per-aggregate identifiers; substitution is a compile error, proven by
+  invoking `javac`; identity includes the concrete type so two kinds never compare equal
+- `IdGenerator`: UUIDv7, monotonic within a millisecond, through counter exhaustion, and
+  across a backwards clock; clock and randomness injected
+- Concurrency proven at 80,000 identifiers across 16 threads on one frozen millisecond
+- ADR-0013 records the decision, the rejected alternatives, and the creation-time disclosure
+  a UUIDv7 inherently carries
 
 Allocation residual proof (2026-09-01), `P0-TST-002`:
 - `INV-BAL-03` swept across the criterion's full 1..100 range for even allocation and up to 100
@@ -355,11 +378,10 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-012` — Identifier strategy.**
+**`P0-TSK-013` — Time abstraction.**
 
-Rationale: `P0-EPIC-03` is closed, so `P0-EPIC-04` is all that remains of milestone M0.2 —
-`P0-TSK-012` (identifier strategy), `P0-TSK-013` (time abstraction), `P0-TSK-014` (correlation
-and causation context) and `P0-TST-003` (correlation propagation).
+Then `P0-TSK-014` (correlation and causation context) and `P0-TST-003` (correlation
+propagation) close `P0-EPIC-04` and milestone M0.2.
 
 ---
 
@@ -367,6 +389,7 @@ and causation context) and `P0-TST-003` (correlation propagation).
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-012` complete; ADR-0013 recorded. Typed aggregate identifiers over UUIDv7. The task named `CustomerId` and `AccountId`, but those are business nouns owned by `party` and `accounts` and the shared kernel forbids them, so the kernel holds the mechanism and the compile-error criterion is proven with probe types — by invoking `javac` on the substitution, since a compile error cannot be asserted at run time. Monotonicity is engineered rather than inherited from the clock: a counter rather than randomness in the 12-bit field, borrowing the next millisecond on exhaustion, and no regression when the clock jumps backwards. The restart test makes explicit that cross-instance uniqueness rests on the 62 random bits, not the counter. 213 tests. |
 | 2026-09-01 | `P0-TST-002` complete, closing `P0-EPIC-03`. The criterion's naive-division clause was already satisfied — that mutation is caught by eight existing tests — so the work was the untested range: 1..100 parts rather than 1..40, and amounts from the whole representable range rather than a band around zero. Both sweeps assert they encountered indivisible remainders, because zero residual is trivially true on divisible amounts and a sweep of those would pass over a broken allocator. Evenness asserted separately: an allocator dumping the whole remainder on the first part satisfies totality and is caught only by that. |
 | 2026-09-01 | `P0-DOC-001` complete. `README.md` covering prerequisites, build, test, infrastructure lifecycle, migrations and CI gates. Verified by cloning the repository into a temporary directory and running every documented command in order, with infrastructure stopped first so the hermetic-build claim was tested rather than asserted. One inaccuracy found and corrected: `toolchainInfo` reports the launcher JVM, not the compile toolchain. Closes `P0-EPIC-01` and completes every item in milestone M0.1; only "green in CI" remains, blocked on the absent git remote. Milestone pointer corrected from M0.1 to M0.2, which the last five tasks had already been working in. |
 | 2026-09-01 | Task completion review of `P0-TST-001`. A mutation sweep over `Money` found three surviving mutants, two of them real gaps. Reversing `compareTo` survived every ordering property — antisymmetry, transitivity and consistency with `equals` are all satisfied by a comparator running backwards, so the properties described its shape but never its orientation; closed by stating the orientation against `BigDecimal`'s own ordering. Deleting the scale comparison from `equals` also survived, because the generator built every amount with `ofMinorUnits` and so never varied scale at all — an entire dimension of `Money`'s state was invisible. Generation is now scale-aware, with a new property asserting same-currency/different-scale operations are rejected and that such amounts are not equal. The third mutant, `hashCode` ignoring currency, survives correctly: `hashCode` may collide. 190 tests. |
