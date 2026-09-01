@@ -133,6 +133,17 @@ class IdempotencyFailureModeTest {
 
             assertThat(winnerHasClaimed.await(30, TimeUnit.SECONDS)).as("winner claimed").isTrue();
 
+            // The losers are given a claim wait far longer than they can possibly need. The
+            // default three seconds would make this test depend on the lock-wait poll finishing
+            // within them: a slow machine would time the losers out, they would receive
+            // "outcome unknown" instead of a replay, and the test would fail for a reason that
+            // has nothing to do with what it asserts. Bounding the wait is the subject of a
+            // different test; here it must not be the constraint.
+            IdempotentExecutor patient =
+                    new IdempotentExecutor(
+                            new JdbcIdempotencyRecordStore(Duration.ofSeconds(60)),
+                            Clock.fixed(FIXED, ZoneOffset.UTC), RETENTION, LEASE);
+
             List<Callable<IdempotentExecutor.ExecutionOutcome>> tasks = new ArrayList<>();
             for (int i = 0; i < losers; i++) {
                 tasks.add(
@@ -140,7 +151,7 @@ class IdempotencyFailureModeTest {
                             try (Connection own = openConnection()) {
                                 own.setAutoCommit(false);
                                 IdempotentExecutor.ExecutionOutcome outcome =
-                                        inScope(() -> executor().execute(
+                                        inScope(() -> patient.execute(
                                                 own, key, fingerprint,
                                                 unitOfWork -> recordEffect(unitOfWork, executions, "loser")));
                                 own.commit();
