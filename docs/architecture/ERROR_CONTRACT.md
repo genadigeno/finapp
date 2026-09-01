@@ -95,6 +95,12 @@ without reading a byte. A chunked request declares no length at all — which is
 caller opts out of a header check — so the body is also wrapped in a counting stream that stops
 at the limit. Default 1 MiB, `finapp.api.max-request-bytes`.
 
+**Every validation path gives the same answer.** A constraint produces `api.ValidationFailed`
+(422) whether it is declared on a request body, on a method parameter, or on a method parameter
+of a `@Validated` bean. Spring validates those on three different mechanisms, and left to their
+defaults they returned 422, 400 and **500** respectively — a client cannot write error handling
+against that, and the 500 tells the caller our side failed for something only they can fix.
+
 **Rejected values are never echoed.** A validation detail names the field and the constraint,
 both of which are ours. The value is the caller's, and reflecting untrusted bytes into a response
 is how an error message becomes a vector (`INV-AUD-02`).
