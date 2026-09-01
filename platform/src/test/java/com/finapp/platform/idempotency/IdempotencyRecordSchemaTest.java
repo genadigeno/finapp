@@ -356,7 +356,8 @@ class IdempotencyRecordSchemaTest {
         try (PreparedStatement complete =
                 connection.prepareStatement(
                         "UPDATE " + TABLE + " SET state = 'COMPLETED', completed_at = ?,"
-                                + " response_body = 'ok'::bytea, response_media_type = 'text/plain'"
+                                + " response_body = 'ok'::bytea, response_media_type = 'text/plain',"
+                                + " lease_expires_at = NULL"
                                 + " WHERE scope = ?")) {
             complete.setTimestamp(1, Timestamp.from(Instant.now()));
             complete.setString(2, scope);
@@ -465,8 +466,11 @@ class IdempotencyRecordSchemaTest {
         String sql =
                 "INSERT INTO " + TABLE + " (scope, idempotency_key, request_fingerprint, "
                         + "fingerprint_algorithm, state, response_body, response_media_type, "
-                        + "correlation_id, created_at, completed_at, expires_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                        + "correlation_id, created_at, completed_at, expires_at, lease_expires_at) "
+                        // V004: a running claim is leased and a terminal one is not, and the
+                        // lease comes from the server's clock rather than this test's.
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                        + "CASE WHEN ? = 'IN_PROGRESS' THEN now() + INTERVAL '5 minutes' END)";
         try (PreparedStatement insert = target.prepareStatement(sql)) {
             insert.setString(1, scope);
             insert.setString(2, key);
@@ -479,6 +483,7 @@ class IdempotencyRecordSchemaTest {
             insert.setTimestamp(9, Timestamp.from(createdAt));
             insert.setTimestamp(10, completedAt == null ? null : Timestamp.from(completedAt));
             insert.setTimestamp(11, Timestamp.from(expiresAt));
+            insert.setString(12, state);
             insert.executeUpdate();
         }
     }

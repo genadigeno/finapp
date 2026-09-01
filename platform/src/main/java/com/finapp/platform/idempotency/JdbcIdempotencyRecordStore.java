@@ -88,11 +88,17 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
                 "INSERT INTO " + TABLE + " (scope, idempotency_key, request_fingerprint, "
                         + "fingerprint_algorithm, state, correlation_id, created_at, expires_at, "
                         + "lease_expires_at) "
+                        // Integer milliseconds, not seconds as a double: INV-MON-01's rule
+                        // caught a double here on first writing, and it was right to. A lease
+                        // boundary is not money, but a floating-point duration on a path that
+                        // decides whether a command may run twice is the same category of
+                        // mistake.
+                        //
                         // now() is the SERVER's clock, deliberately. The business timestamps
                         // beside it are the application's, from one injected Clock; the lease is
                         // a coordination boundary and must be read from the one clock every
                         // instance shares.
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, now() + make_interval(secs => ?))";
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, now() + (? * INTERVAL '1 millisecond'))";
         try (PreparedStatement insert = connection.prepareStatement(sql)) {
             insert.setString(1, key.scope());
             insert.setString(2, key.key());
@@ -102,7 +108,7 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
             insert.setString(6, correlationId.value());
             insert.setTimestamp(7, Timestamp.from(now));
             insert.setTimestamp(8, Timestamp.from(expiresAt));
-            insert.setDouble(9, lease.toMillis() / 1000.0d);
+            insert.setLong(9, lease.toMillis());
             insert.executeUpdate();
             release(connection, beforeClaim);
             return ClaimOutcome.CLAIMED;
@@ -234,14 +240,14 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
         // differs is a conflict, decided before reclaim is attempted.
         String sql =
                 "UPDATE " + TABLE + " SET correlation_id = ?, created_at = ?, expires_at = ?, "
-                        + "lease_expires_at = now() + make_interval(secs => ?) "
+                        + "lease_expires_at = now() + (? * INTERVAL '1 millisecond') "
                         + "WHERE scope = ? AND idempotency_key = ? AND state = ? "
                         + "AND lease_expires_at < now()";
         try (PreparedStatement update = connection.prepareStatement(sql)) {
             update.setString(1, correlationId.value());
             update.setTimestamp(2, Timestamp.from(now));
             update.setTimestamp(3, Timestamp.from(expiresAt));
-            update.setDouble(4, lease.toMillis() / 1000.0d);
+            update.setLong(4, lease.toMillis());
             update.setString(5, key.scope());
             update.setString(6, key.key());
             update.setString(7, IdempotencyState.IN_PROGRESS.name());

@@ -203,8 +203,10 @@ class CorrelationPropagationTest {
     private static void writeClaim(String scope, String correlationId) {
         String sql =
                 "INSERT INTO " + TABLE + " (scope, idempotency_key, request_fingerprint, "
-                        + "fingerprint_algorithm, state, correlation_id, created_at, expires_at) "
-                        + "VALUES (?, ?, ?, ?, 'IN_PROGRESS', ?, ?, ?)";
+                        + "fingerprint_algorithm, state, correlation_id, created_at, expires_at, "
+                        + "lease_expires_at) "
+                        // V004: a running claim carries a lease, taken from the server's clock.
+                        + "VALUES (?, ?, ?, ?, 'IN_PROGRESS', ?, ?, ?, now() + INTERVAL '5 minutes')";
         Instant now = Instant.now();
         try (PreparedStatement insert = connection.prepareStatement(sql)) {
             insert.setString(1, scope);
