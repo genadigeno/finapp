@@ -151,9 +151,14 @@ class OutboxWriterTest {
     @DisplayName("every envelope field reaches the row, so a queued event is as traceable as a built one")
     void theWholeEnvelopeIsPersisted() throws SQLException {
         EventEnvelope envelope = envelope();
-        byte[] payload = "{\"amount\":100}".getBytes(StandardCharsets.UTF_8);
+        // Deliberately hostile to any re-encoding on the way through: leading and trailing
+        // whitespace, a NUL, and a byte that is not valid UTF-8. A mutation sweep during this
+        // task's review showed the earlier payload survived a trim-and-re-encode unchanged, so
+        // the test asserted byte-exactness while being unable to detect its loss. A relay must
+        // publish what the producer wrote, not a round-trip of it.
+        byte[] payload = new byte[] {' ', 0x00, (byte) 0xFF, '{', '}', '\n', ' '};
 
-        outbox.write(connection, envelope, payload, "application/json");
+        outbox.write(connection, envelope, payload, "application/octet-stream");
         connection.commit();
 
         try (PreparedStatement select =
@@ -173,7 +178,7 @@ class OutboxWriterTest {
                 // Byte-exact: a relay must publish what the producer wrote, not a
                 // re-serialisation of it.
                 assertThat(row.getBytes("payload")).isEqualTo(payload);
-                assertThat(row.getString("payload_media_type")).isEqualTo("application/json");
+                assertThat(row.getString("payload_media_type")).isEqualTo("application/octet-stream");
             }
         }
     }
