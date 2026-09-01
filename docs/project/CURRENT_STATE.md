@@ -93,6 +93,11 @@ Design decisions worth carrying forward:
 - **The enum and the `CHECK` constraint are one definition.** `IdempotencyState.sqlValueList()`
   generates the literal list, and a hermetic test asserts the migration contains exactly it, so
   drift cannot survive a compile — not just until someone remembers to run the database tests.
+- **A `CHECK` constraint cannot make a terminal state terminal** — it sees only the row being
+  written, never the previous one. Found in review by running the statement an operator would
+  run, and closed by `V003`'s `BEFORE UPDATE` trigger. `DATA_MIGRATIONS.md` §6's argument — the
+  next caller is a job, an operator tool, or a psql session — applies to transitions as much as
+  to privileges.
 - **No index on `expires_at`.** Its right shape depends on the sweep's predicate, which is not
   written yet; an index maintained on every insert for a query nobody has written is a cost with
   no benefit. Recorded, with the reasoning, in §8.
@@ -198,6 +203,8 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
 Idempotency schema (2026-09-01), `P0-TSK-015`:
 - `platform.idempotency_record`: `INV-IDEM-01` enforced by a unique key on
   (scope, idempotency_key), proven under 16-way contention against a real PostgreSQL
+- `V003`: terminal claims frozen and identity immutable, enforced by trigger because a `CHECK`
+  constraint cannot see the previous row (`INV-LIFE-04`)
 - The state machine checked in the schema, not only in code: an `IN_PROGRESS` claim cannot
   carry an outcome, a terminal one must be timestamped
 - Fingerprint length bounded and its algorithm recorded, so `INV-IDEM-03` cannot be weakened by
@@ -430,6 +437,7 @@ without either deadlocking on it or assuming it failed.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | Task completion review of `P0-TSK-015`. All nine constraint mutations were caught, and so was the enum/migration drift guard. One real gap the sweep could not reveal: a `CHECK` constraint sees only the row being written, so V002 constrained row *shape* and said nothing about *transitions*. Probing the developer database with the statement an operator or a defective wrapper would run — `UPDATE ... SET state='IN_PROGRESS', completed_at=NULL` — turned a finished command back into an unfinished one, which a wrapper would then re-execute: a second financial effect from an UPDATE no application code performed. Closed by `V003`, a `BEFORE UPDATE` trigger freezing terminal claims entirely and making identity and fingerprint immutable in any state; both halves proven by isolated mutation. A second finding was a test artefact worth keeping: mixing a client-generated `created_at` with PostgreSQL's `now()` for `completed_at` produced a backwards row, because the container's clock runs behind the host's — which is why these timestamps are application-supplied from one injected clock and the schema declares no `DEFAULT now()`. 259 hermetic tests, 25 database tests. |
 | 2026-09-01 | `P0-TSK-015` complete — the platform's first table. `INV-IDEM-01` enforced by a unique key on (scope, idempotency_key) and proven under 16-way contention against a real PostgreSQL: exactly one winner, every loser a unique violation. The state machine is checked in the schema as well as in code, the fingerprint's algorithm is recorded on the record (`INV-HIST-04`'s rule applied to the thing that decides whether two requests are the same), and the response is stored as bytes so a retry receives what the first caller received. Established that this table is legitimately mutable and so not gated on the `P0-TSK-022` privilege split. `flywayValidate` caught a checksum mismatch when the migration was edited after being applied locally — the rule working; repaired, then verified against an empty scratch database. Expiry policy documented in `DATA_MIGRATIONS.md` §8, including why too-short expiry costs money and too-long costs storage. 259 hermetic tests, 20 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-014`. All eight mutations of the correlation kernel were caught, including `InheritableThreadLocal`, which fails through the unwrapped-task path — so the claim the design rests on is genuinely tested rather than merely argued. Two gaps the sweep could not reveal, both fixed: the token charset used `String.matches`, recompiling the expression on the ingress path of every request; and the MDC key names are documented as a published contract that log queries and dashboards are written against, yet every test used the constants, so renaming one would have been a compile-safe refactor that silently broke every dashboard. Literals now pinned. Also recorded that `propagate` returns an `Executor` rather than an `ExecutorService`, so a caller needing `submit` wraps the task — no speculative decorator written. 255 tests. |
 | 2026-09-01 | `P0-TSK-014` complete for what can be verified now. Correlation and causation modelled as distinct types, validated as untrusted input against log injection, with a context that survives an async handoff and provably does not leak between tasks on a pooled thread — the failure `InheritableThreadLocal` would have introduced. Log lines proven to carry the identifier by reading a real Logback appender. **The acceptance criterion could not be met as written**: it names a trace, an emitted event and an ingress filter, and the exporter, outbox, audit store and HTTP surface all arrive in later milestones. Backlog corrected and the clauses transferred to `P0-TST-003`, which is recorded as blocked until M0.4. `slf4j-api` added to `platform` (facade only). 254 tests. |
