@@ -51,8 +51,9 @@ import org.junit.jupiter.api.Test;
  * Everything inside such a marker must be a rule identifier; supporting prose belongs in the
  * sentence, not the marker.
  *
- * <p>Rule suites are discovered rather than listed: any class in this package annotated
- * {@link AnalyzeClasses} is a suite, so adding a third one does not silently escape the check.
+ * <p>Rule suites are discovered rather than listed: any test class annotated
+ * {@link AnalyzeClasses} is a suite, wherever it sits, so neither adding a third one nor moving
+ * one to another package silently escapes the check.
  */
 class ArchitectureRulesAreDocumentedTest {
 
@@ -146,28 +147,47 @@ class ArchitectureRulesAreDocumentedTest {
         return names;
     }
 
-    /** Classes in this package annotated {@link AnalyzeClasses} — discovered, not listed. */
+    /**
+     * Every test class annotated {@link AnalyzeClasses}, found by walking the whole test-classes
+     * tree rather than one directory.
+     *
+     * <p>The first version listed one directory. That was demonstrated insufficient during this
+     * task's own review: a suite placed in a subpackage ran its rules on every build and escaped
+     * this check entirely, so its rules were enforced but undocumentable. Scanning everything
+     * means placement cannot exempt a suite.
+     *
+     * <p>Classes are loaded without initialisation - only annotations and member names are read,
+     * and running a stranger's static initialiser to decide whether it is a rule suite would be
+     * a side effect this check has no business causing.
+     */
     private static List<Class<?>> ruleSuites() {
-        Path packageDirectory = testClassesDirectory().resolve(
-                ArchitectureRulesAreDocumentedTest.class.getPackageName().replace('.', '/'));
-        try (Stream<Path> files = Files.list(packageDirectory)) {
-            return files.map(Path::getFileName)
+        Path root = testClassesDirectory();
+        try (Stream<Path> files = Files.walk(root)) {
+            return files.filter(Files::isRegularFile)
+                    .map(root::relativize)
                     .map(Path::toString)
                     .filter(name -> name.endsWith(".class") && !name.contains("$"))
-                    .map(name -> name.substring(0, name.length() - ".class".length()))
+                    .map(ArchitectureRulesAreDocumentedTest::toClassName)
                     .map(ArchitectureRulesAreDocumentedTest::load)
                     .filter(type -> type.isAnnotationPresent(AnalyzeClasses.class))
                     .collect(Collectors.toList());
         } catch (IOException e) {
-            throw new UncheckedIOException("Could not list " + packageDirectory, e);
+            throw new UncheckedIOException("Could not walk " + root, e);
         }
     }
 
-    private static Class<?> load(String simpleName) {
-        String qualified =
-                ArchitectureRulesAreDocumentedTest.class.getPackageName() + "." + simpleName;
+    private static String toClassName(String relativePath) {
+        return relativePath
+                .substring(0, relativePath.length() - ".class".length())
+                .replace(java.io.File.separatorChar, '.')
+                .replace('/', '.');
+    }
+
+    private static Class<?> load(String qualified) {
         try {
-            return Class.forName(qualified);
+            // initialize = false: reading annotations and member names must not run static code.
+            return Class.forName(
+                    qualified, false, ArchitectureRulesAreDocumentedTest.class.getClassLoader());
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("Could not load " + qualified, e);
         }
