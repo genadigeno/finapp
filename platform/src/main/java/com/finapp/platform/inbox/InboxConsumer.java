@@ -124,6 +124,16 @@ public final class InboxConsumer<T> {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(key, "key must not be null");
         Objects.requireNonNull(handler, "handler must not be null");
+        // Validated here as well as in the store, for the reason InboxKey gives about its own
+        // bounds: a caller should get a domain error from the method it called, not one from
+        // three layers down. Arguments are checked before the ambient correlation, so a caller
+        // who got both wrong is told about the thing it passed rather than the thing it did not.
+        Objects.requireNonNull(messageType, "messageType must not be null");
+        if (messageType.isBlank()) {
+            // Not defaulted to the key or to "unknown": the type is what makes a record
+            // diagnosable months later, and a column full of "unknown" is not a record.
+            throw new IllegalArgumentException("messageType must not be blank");
+        }
 
         Correlation correlation =
                 CorrelationContext.current()

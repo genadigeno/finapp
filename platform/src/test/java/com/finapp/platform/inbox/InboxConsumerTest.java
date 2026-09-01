@@ -175,6 +175,46 @@ class InboxConsumerTest {
         assertThat(effectCount(key)).as("exactly one effect across the crash").isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("a duplicate inside one transaction is skipped, as in a poll batch")
+    void aDuplicateWithinOneTransactionIsSkipped() throws SQLException {
+        // A different database path from the redelivery case, and an entirely ordinary one: a
+        // consumer polling a batch can be handed the same message twice in it. Here the unique
+        // violation is raised immediately rather than after blocking, because the conflicting
+        // row was written by this same transaction - so the savepoint, not the lock timeout, is
+        // what keeps the caller's transaction usable afterwards.
+        InboxKey key = key("message-batched-twice");
+        AtomicInteger handlerRuns = new AtomicInteger();
+        InboxConsumer.Handler<Connection> counting =
+                unitOfWork -> {
+                    handlerRuns.incrementAndGet();
+                    recordEffect(key).handle(unitOfWork);
+                };
+
+        InboxConsumer.Outcome first = consume(connection, key, counting);
+        InboxConsumer.Outcome second = consume(connection, key, counting);
+        connection.commit();
+
+        assertThat(first).isEqualTo(InboxConsumer.Outcome.PROCESSED);
+        assertThat(second).isEqualTo(InboxConsumer.Outcome.SKIPPED_DUPLICATE);
+        assertThat(handlerRuns).hasValue(1);
+        assertThat(effectCount(key)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a message with no type is refused, since the record would not be diagnosable")
+    void messageTypeIsRequired() {
+        InboxKey key = key("message-untyped");
+
+        // Also asserts the order: a caller that got both the type and the correlation wrong is
+        // told about the argument it passed, not about the context it did not establish.
+        assertThatExceptionOfType(IllegalArgumentException.class)
+                .isThrownBy(
+                        () ->
+                                new InboxConsumer<Connection>(new JdbcInboxRecordStore(), CLOCK, RETENTION)
+                                        .consume(connection, key, "  ", u -> {}));
+    }
+
     // -----------------------------------------------------------------
     // The consumer is part of the key
     // -----------------------------------------------------------------
