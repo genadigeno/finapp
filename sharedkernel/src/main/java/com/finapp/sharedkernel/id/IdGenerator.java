@@ -1,6 +1,5 @@
 package com.finapp.sharedkernel.id;
 
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.util.Objects;
 import java.util.UUID;
@@ -41,6 +40,14 @@ import java.util.random.RandomGenerator;
  * capability, and an entity whose <em>existence time</em> is sensitive needs a different
  * identifier scheme rather than this one.
  *
+ * <p><strong>No system-clock factory here.</strong> An earlier version offered a
+ * {@code systemDefault()} that called {@code Clock.systemUTC()}. P0-TSK-013 removed it: the
+ * shared kernel does not decide where time comes from, and a convenience factory that reads
+ * ambient time is exactly the seam through which ambient time re-enters a codebase that has
+ * decided against it. The composition root constructs the clock and the {@code SecureRandom}
+ * and injects both — which also means a test never has to remember not to use the convenient
+ * one.
+ *
  * <p>Thread-safe. Instances are cheap; one per application is the expected use.
  */
 public final class IdGenerator {
@@ -77,16 +84,6 @@ public final class IdGenerator {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.random = Objects.requireNonNull(random, "random must not be null");
         this.tick = new AtomicReference<>(new Tick(Long.MIN_VALUE, MAX_COUNTER));
-    }
-
-    /**
-     * The ordinary configuration: UTC system time and a cryptographically strong random source.
-     *
-     * <p>{@link SecureRandom} rather than a plain PRNG because identifiers reach URLs, logs and
-     * support tools. A predictable identifier is an enumeration primitive.
-     */
-    public static IdGenerator systemDefault() {
-        return new IdGenerator(Clock.systemUTC(), new SecureRandom());
     }
 
     /**

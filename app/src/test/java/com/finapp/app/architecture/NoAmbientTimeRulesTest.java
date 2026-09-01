@@ -1,0 +1,314 @@
+package com.finapp.app.architecture;
+
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.finapp.ledger.SystemClockProbe;
+import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.domain.JavaConstructorCall;
+import com.tngtech.archunit.core.domain.JavaMethodCall;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.junit.AnalyzeClasses;
+import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchCondition;
+import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Date;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Time is injected, never read from the environment (P0-TSK-013, ADR-0006).
+ *
+ * <p><strong>Why this is a build failure and not a review note.</strong> Accrual, fee
+ * assessment, period close, value dating, hold expiry, settlement ageing and idempotency-key
+ * expiry are all behaviours whose entire content is what happens as time passes. A component
+ * that reads {@code Instant.now()} cannot be tested at a boundary — you cannot put it just
+ * before midnight, just after a rate expires, or on the last day of a closing period — and it
+ * cannot be replayed, so a decision it made yesterday cannot be reproduced tomorrow
+ * ({@code INV-CRD-01}, {@code INV-ACC-04}). The defect is not that the code is wrong; it is
+ * that nothing can ever demonstrate whether it is.
+ *
+ * <p><strong>Two rules, because there are two different things to control.</strong>
+ *
+ * <ul>
+ *   <li>{@link #noAmbientTimeIsRead} forbids reading the environment's time directly —
+ *       {@code Instant.now()}, {@code System.currentTimeMillis()}, {@code new Date()}. These
+ *       cannot be substituted by any means; there is no seam. Forbidden everywhere, with no
+ *       exemption.
+ *   <li>{@link #onlyTheCompositionRootBuildsASystemClock} allows {@code Clock.systemUTC()} in
+ *       {@code app} alone. A system clock has to be constructed somewhere or nothing can be
+ *       injected; the composition root is the one place whose job that is. Anywhere else it is
+ *       the same defect wearing the abstraction's clothes.
+ * </ul>
+ *
+ * <p><strong>What is deliberately allowed.</strong> {@code Instant.now(clock)} and
+ * {@code LocalDate.now(clock)} take a clock and are the idiomatic call — the rule matches on
+ * the zero-argument overloads only. Getting that wrong would push people away from the correct
+ * API, which is how a well-meant rule makes a codebase worse.
+ *
+ * <p><strong>What no rule can check.</strong> An injected clock still has to be the
+ * <em>right</em> clock, and system time is not a business date. A posting date, a value date
+ * and the instant a request arrived are three different things; substituting one for another
+ * is a domain error that reads perfectly. See {@code DOMAIN_MODEL.md} §Time.
+ */
+@AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
+class NoAmbientTimeRulesTest {
+
+    /** Types whose zero-argument {@code now()} reads the environment. */
+    private static final Set<String> TIME_TYPES =
+            Set.of(
+                    "java.time.Instant",
+                    "java.time.LocalDate",
+                    "java.time.LocalDateTime",
+                    "java.time.LocalTime",
+                    "java.time.OffsetDateTime",
+                    "java.time.OffsetTime",
+                    "java.time.ZonedDateTime",
+                    "java.time.Year",
+                    "java.time.YearMonth",
+                    "java.time.MonthDay",
+                    "java.time.chrono.HijrahDate",
+                    "java.time.chrono.JapaneseDate",
+                    "java.time.chrono.MinguoDate",
+                    "java.time.chrono.ThaiBuddhistDate");
+
+    /** Other ways to reach the environment's clock, none of them substitutable. */
+    private static final Set<String> AMBIENT_CALLS =
+            Set.of(
+                    "java.lang.System.currentTimeMillis",
+                    "java.lang.System.nanoTime",
+                    "java.util.Calendar.getInstance",
+                    "java.time.temporal.TemporalAdjusters.firstDayOfNextMonth");
+
+    /** Constructors that capture the current time. */
+    private static final Set<String> AMBIENT_CONSTRUCTORS =
+            Set.of("java.util.Date", "java.sql.Timestamp", "java.util.GregorianCalendar");
+
+    /**
+     * {@link Clock} factories that read the environment. {@code Clock.fixed} and
+     * {@code Clock.offset} take their time from an argument, so they are not here.
+     */
+    private static final Set<String> SYSTEM_CLOCK_FACTORIES =
+            Set.of("systemUTC", "systemDefaultZone", "system", "tickMillis", "tickSeconds", "tickMinutes");
+
+    /** The composition root: the one module whose job is deciding where time comes from. */
+    private static final String COMPOSITION_ROOT = "app";
+
+    @ArchTest
+    static void everyModuleWithProductionCodeIsAnalysed(JavaClasses imported) {
+        Set<String> analysed =
+                imported.stream()
+                        .map(ProductionModules::of)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toUnmodifiableSet());
+
+        assertThat(analysed)
+                .as("every module with production classes must be within reach of the time rules")
+                .containsAll(ProductionModules.onClasspathWithProductionClasses());
+    }
+
+    @ArchTest
+    static final ArchRule noAmbientTimeIsRead =
+            everyProductionClassShould(readNoAmbientTime())
+                    .because(
+                            "a component that reads the environment's clock cannot be placed at "
+                                + "a boundary by a test and cannot be replayed, so nothing can "
+                                + "ever demonstrate whether its dating is correct");
+
+    @ArchTest
+    static final ArchRule onlyTheCompositionRootBuildsASystemClock =
+            everyProductionClassShould(buildNoSystemClockOutside(COMPOSITION_ROOT))
+                    .because(
+                            "a system clock must be constructed somewhere or nothing can be "
+                                + "injected, and the composition root is the one place whose job "
+                                + "that is; anywhere else it is ambient time with an abstraction "
+                                + "wrapped round it");
+
+    // ---------------------------------------------------------------------
+    // Teeth. Fixtures are test classes, so DoNotIncludeTests keeps them out of
+    // the sweep above; the tests below import them explicitly.
+    // ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("each rule rejects the violation it exists to catch")
+    void rulesRejectTheirViolations() {
+        assertRejects(noAmbientTimeIsRead, ReadsInstantNow.class);
+        assertRejects(noAmbientTimeIsRead, ReadsLocalDateNow.class);
+        assertRejects(noAmbientTimeIsRead, ReadsCurrentTimeMillis.class);
+        assertRejects(noAmbientTimeIsRead, ConstructsADate.class);
+        // Declared in package com.finapp.ledger so the module-scoped rule can see it as a
+        // module other than the composition root. See SystemClockProbe for why.
+        assertRejects(onlyTheCompositionRootBuildsASystemClock, SystemClockProbe.class);
+    }
+
+    @Test
+    @DisplayName("the composition root may build a system clock, so the exemption is real and scoped")
+    void theCompositionRootIsExempt() {
+        // The other half of a module-scoped rule: it must permit what it means to permit.
+        // BuildsASystemClock sits in com.finapp.app.architecture, so the rule sees it as the
+        // composition root. If this failed, wiring a clock would be impossible anywhere.
+        JavaClasses inCompositionRoot = new ClassFileImporter().importClasses(BuildsASystemClock.class);
+
+        assertThatCode(() -> onlyTheCompositionRootBuildsASystemClock.check(inCompositionRoot))
+                .doesNotThrowAnyException();
+
+        // And the exemption must not leak: the same call from another module is rejected.
+        JavaClasses inAnotherModule = new ClassFileImporter().importClasses(SystemClockProbe.class);
+
+        assertThatThrownBy(() -> onlyTheCompositionRootBuildsASystemClock.check(inAnotherModule))
+                .isInstanceOf(AssertionError.class);
+    }
+
+    @Test
+    @DisplayName("the clock-taking overloads are allowed, so the rule does not push people off the right API")
+    void rulesAcceptInjectedTime() {
+        JavaClasses clean = new ClassFileImporter().importClasses(UsesAnInjectedClock.class);
+
+        assertThatCode(
+                        () -> {
+                            noAmbientTimeIsRead.check(clean);
+                            onlyTheCompositionRootBuildsASystemClock.check(clean);
+                        })
+                .doesNotThrowAnyException();
+    }
+
+    private static void assertRejects(ArchRule rule, Class<?> violation) {
+        JavaClasses violating = new ClassFileImporter().importClasses(violation);
+
+        assertThatThrownBy(() -> rule.check(violating))
+                .as("%s must reject %s", rule.getDescription(), violation.getSimpleName())
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining(violation.getSimpleName());
+    }
+
+    // ---------------------------------------------------------------------
+    // Conditions
+    // ---------------------------------------------------------------------
+
+    private static ArchRule everyProductionClassShould(ArchCondition<JavaClass> condition) {
+        return classes().that().resideInAPackage("com.finapp..").should(condition);
+    }
+
+    private static ArchCondition<JavaClass> readNoAmbientTime() {
+        return new ArchCondition<>("read no ambient time") {
+            @Override
+            public void check(JavaClass javaClass, ConditionEvents events) {
+                for (JavaMethodCall call : javaClass.getMethodCallsFromSelf()) {
+                    String owner = call.getTargetOwner().getFullName();
+                    String name = call.getName();
+                    boolean zeroArgNow =
+                            "now".equals(name)
+                                    && call.getTarget().getRawParameterTypes().isEmpty()
+                                    && TIME_TYPES.contains(owner);
+                    if (zeroArgNow || AMBIENT_CALLS.contains(owner + "." + name)) {
+                        events.add(
+                                SimpleConditionEvent.violated(
+                                        javaClass, call.getDescription() + " reads ambient time"));
+                    }
+                }
+                for (JavaConstructorCall call : javaClass.getConstructorCallsFromSelf()) {
+                    if (AMBIENT_CONSTRUCTORS.contains(call.getTargetOwner().getFullName())
+                            && call.getTarget().getRawParameterTypes().isEmpty()) {
+                        events.add(
+                                SimpleConditionEvent.violated(
+                                        javaClass, call.getDescription() + " captures ambient time"));
+                    }
+                }
+            }
+        };
+    }
+
+    private static ArchCondition<JavaClass> buildNoSystemClockOutside(String permittedModule) {
+        return new ArchCondition<>("construct a system clock only in " + permittedModule) {
+            @Override
+            public void check(JavaClass javaClass, ConditionEvents events) {
+                if (permittedModule.equals(ProductionModules.of(javaClass))) {
+                    return;
+                }
+                for (JavaMethodCall call : javaClass.getMethodCallsFromSelf()) {
+                    if ("java.time.Clock".equals(call.getTargetOwner().getFullName())
+                            && SYSTEM_CLOCK_FACTORIES.contains(call.getName())) {
+                        events.add(
+                                SimpleConditionEvent.violated(
+                                        javaClass,
+                                        call.getDescription()
+                                                + " builds a system clock outside the composition root"));
+                    }
+                }
+            }
+        };
+    }
+
+    // ---------------------------------------------------------------------
+    // Fixtures
+    // ---------------------------------------------------------------------
+
+    @SuppressWarnings("unused")
+    static final class ReadsInstantNow {
+        Instant when() {
+            return Instant.now();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static final class ReadsLocalDateNow {
+        LocalDate today() {
+            return LocalDate.now();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static final class ReadsCurrentTimeMillis {
+        long millis() {
+            return System.currentTimeMillis();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static final class ConstructsADate {
+        Date when() {
+            return new Date();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static final class BuildsASystemClock {
+        Clock clock() {
+            return Clock.systemUTC();
+        }
+    }
+
+    /** The shape the platform actually uses: the clock arrives, it is never fetched. */
+    @SuppressWarnings("unused")
+    static final class UsesAnInjectedClock {
+        private final Clock clock;
+
+        UsesAnInjectedClock(Clock clock) {
+            this.clock = clock;
+        }
+
+        Instant when() {
+            return Instant.now(clock);
+        }
+
+        LocalDate today() {
+            return LocalDate.now(clock);
+        }
+
+        long millis() {
+            return clock.millis();
+        }
+    }
+}

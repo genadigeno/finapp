@@ -245,7 +245,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-KERNEL`
 
-**P0-TSK-013 — Time abstraction**
+**P0-TSK-013 — Time abstraction** — `COMPLETE` (2026-09-01)
 - Context: sharedkernel
 - Description: Inject `java.time.Clock` everywhere; forbid `Instant.now()` / `LocalDate.now()` in domain code via an architecture rule. Distinguish posting date, value date and system time.
 - Why: Accrual, period close and value-dating cannot be tested or reproduced against ambient clocks.

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.security.SecureRandom;
+import com.finapp.sharedkernel.time.TestClock;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -82,7 +83,7 @@ class IdGeneratorTest {
         @Test
         @DisplayName("strictly increase across advancing milliseconds, giving index locality")
         void strictlyIncreaseAsTimeAdvances() {
-            MutableClock clock = new MutableClock(FIXED);
+            TestClock clock = TestClock.at(FIXED);
             IdGenerator generator = new IdGenerator(clock, seededRandom());
 
             List<UUID> issued = new ArrayList<>();
@@ -136,14 +137,14 @@ class IdGeneratorTest {
             // NTP correction and leap-second smearing both move wall-clock time backwards.
             // A generator that simply read the clock would issue identifiers sorting before
             // rows already written, and could repeat one.
-            MutableClock clock = new MutableClock(FIXED);
+            TestClock clock = TestClock.at(FIXED);
             IdGenerator generator = new IdGenerator(clock, seededRandom());
 
             List<UUID> issued = new ArrayList<>();
             for (int i = 0; i < 100; i++) {
                 issued.add(generator.next());
             }
-            clock.set(FIXED.minus(Duration.ofHours(1)));
+            clock.rewind(Duration.ofHours(1));
             for (int i = 0; i < 100; i++) {
                 issued.add(generator.next());
             }
@@ -246,9 +247,12 @@ class IdGeneratorTest {
     }
 
     @Test
-    @DisplayName("the system default generator works and is time-ordered")
-    void systemDefaultIsUsable() {
-        IdGenerator generator = IdGenerator.systemDefault();
+    @DisplayName("works against a real system clock, wired the way the composition root wires it")
+    void worksAgainstARealClock() {
+        // P0-TSK-013 removed IdGenerator.systemDefault(): the kernel does not decide where
+        // time comes from. The composition root supplies both dependencies, so that is what
+        // this test does. Tests are outside the ambient-time rule precisely so they can.
+        IdGenerator generator = new IdGenerator(Clock.systemUTC(), new SecureRandom());
 
         List<UUID> issued = new ArrayList<>();
         for (int i = 0; i < 500; i++) {
@@ -256,7 +260,7 @@ class IdGeneratorTest {
         }
 
         assertStrictlyIncreasing(issued);
-        assertThat(issued.get(0).version()).isEqualTo(7);
+        assertThat(issued.getFirst().version()).isEqualTo(7);
     }
 
     // -----------------------------------------------------------------
@@ -294,36 +298,4 @@ class IdGeneratorTest {
         return new Random(20260901L);
     }
 
-    /** A clock the test moves deliberately, including backwards. */
-    private static final class MutableClock extends Clock {
-
-        private volatile Instant now;
-
-        private MutableClock(Instant now) {
-            this.now = now;
-        }
-
-        void advance(Duration by) {
-            now = now.plus(by);
-        }
-
-        void set(Instant instant) {
-            now = instant;
-        }
-
-        @Override
-        public ZoneOffset getZone() {
-            return ZoneOffset.UTC;
-        }
-
-        @Override
-        public Clock withZone(java.time.ZoneId zone) {
-            throw new UnsupportedOperationException("test clock is UTC only");
-        }
-
-        @Override
-        public Instant instant() {
-            return now;
-        }
-    }
 }

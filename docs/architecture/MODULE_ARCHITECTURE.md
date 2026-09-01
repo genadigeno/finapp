@@ -633,6 +633,40 @@ behind. Such a value is inert unless it is stored, returned, passed or derived f
 non-constant, all of which are caught — but the limit is recorded because a rule believed to
 be total is more dangerous than one whose edge is known. *(review)*
 
+### Time boundary
+
+Time is injected, never read from the environment (`P0-TSK-013`, implementing ADR-0006's
+*Additional enforced rules*).
+
+**Why a build failure and not a review note.** Accrual, fee assessment, period close, value
+dating, hold expiry, settlement ageing and idempotency-key expiry are behaviours whose entire
+content is what happens as time passes. A component that reads `Instant.now()` cannot be placed
+at a boundary by a test — just before midnight, just after a rate expires, on the last day of a
+closing period — and cannot be replayed, so a decision it made yesterday cannot be reproduced
+tomorrow (`INV-CRD-01`, `INV-ACC-04`). The defect is not that such code is wrong; it is that
+nothing can ever demonstrate whether it is.
+
+Two rules, because there are two different things to control:
+
+- No production class reads the environment's time directly: no zero-argument `Instant.now()`,
+  `LocalDate.now()` or the other `java.time` `now()` methods, no `System.currentTimeMillis()`,
+  no `System.nanoTime()`, no `new Date()`. These have no seam and cannot be substituted by any
+  means. Forbidden everywhere, no exemption.
+  *(ArchUnit: `noAmbientTimeIsRead`)*
+- Only the composition root constructs a system clock — `Clock.systemUTC()` and friends. A
+  system clock has to be built somewhere or nothing can be injected, and `app` is the module
+  whose job that is; anywhere else it is ambient time with an abstraction wrapped round it.
+  *(ArchUnit: `onlyTheCompositionRootBuildsASystemClock`)*
+
+`Instant.now(clock)` and `LocalDate.now(clock)` are deliberately **allowed** — they take the
+clock and are the idiomatic call. A rule that forbade them would push people off the correct
+API, which is how a well-meant rule makes a codebase worse.
+
+**What no rule can check.** An injected clock still has to be the *right* clock. System time is
+not a business date: posting date, value date and system time are three different things and
+substituting one for another is a domain error that reads perfectly. See
+[`DOMAIN_MODEL.md`](../domain/DOMAIN_MODEL.md) §Time. *(review)*
+
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).
 - **No foreign keys across module schemas.** Referential integrity across contexts is a
