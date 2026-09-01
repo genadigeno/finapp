@@ -271,6 +271,113 @@ class IdempotencyRecordSchemaTest {
     }
 
     // -----------------------------------------------------------------
+    // INV-LIFE-04 — terminal is terminal (V003 trigger)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a completed claim cannot be moved back to in-progress")
+    void terminalClaimCannotBeReopened() throws SQLException {
+        // The defect this guard was written for, run exactly as an operator or a defective
+        // wrapper would run it. A reopened claim is one a wrapper re-executes.
+        String scope = uniqueScope();
+        insert(scope, "k", "COMPLETED", Instant.now(), null, null);
+
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(
+                        () ->
+                                execute(
+                                        "UPDATE " + TABLE + " SET state = 'IN_PROGRESS', completed_at = NULL"
+                                                + " WHERE scope = '" + scope + "'"))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()))
+                // Asserting our own message text is safe where asserting PostgreSQL's was not:
+                // this string is a literal we wrote in V003, not a server message subject to
+                // lc_messages.
+                .matches(e -> e.getMessage().contains("INV-LIFE-04"));
+
+        assertThat(stateOf(scope)).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("a failed claim is frozen too, including its stored response")
+    void terminalClaimResponseCannotBeRewritten() throws SQLException {
+        // INV-IDEM-01 promises a retry returns the original outcome. An editable response
+        // makes that a promise nothing keeps.
+        String scope = uniqueScope();
+        insert(scope, "k", "FAILED", Instant.now(), "original".getBytes(), "text/plain");
+
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(
+                        () ->
+                                execute(
+                                        "UPDATE " + TABLE + " SET response_body = 'rewritten'::bytea"
+                                                + " WHERE scope = '" + scope + "'"))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+    }
+
+    @Test
+    @DisplayName("a claim's identity and fingerprint never change, even while in progress")
+    void identityIsImmutable() throws SQLException {
+        // Rewriting the fingerprint would make INV-IDEM-03 compare the new request against
+        // itself and always agree.
+        String scope = uniqueScope();
+        claim(scope, "k");
+
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(
+                        () ->
+                                execute(
+                                        "UPDATE " + TABLE + " SET request_fingerprint = "
+                                                + "decode(repeat('ff', 32), 'hex') WHERE scope = '" + scope + "'"))
+                .matches(e -> e.getMessage().contains("INV-IDEM-03"));
+
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(
+                        () ->
+                                execute(
+                                        "UPDATE " + TABLE + " SET idempotency_key = 'moved'"
+                                                + " WHERE scope = '" + scope + "'"));
+    }
+
+    @Test
+    @DisplayName("an in-progress claim can still be completed, so the guard is not a freeze on everything")
+    void inProgressClaimCanStillBeCompleted() throws SQLException {
+        // The other half: a guard that blocked the legitimate transition would make the
+        // mechanism unimplementable, and would look identical in a test that only checked
+        // that something was rejected.
+        String scope = uniqueScope();
+        claim(scope, "k");
+
+        // The completion time comes from the same clock that wrote created_at, deliberately.
+        // Using PostgreSQL's now() here failed against completed_after_created, because the
+        // container's clock runs behind the host's: mixing a client-generated created_at with a
+        // server-generated completed_at makes a correct row look like a backwards one. The
+        // application owns these timestamps and takes them from one injected Clock
+        // (P0-TSK-013), which is why the schema declares no DEFAULT now() for them.
+        try (PreparedStatement complete =
+                connection.prepareStatement(
+                        "UPDATE " + TABLE + " SET state = 'COMPLETED', completed_at = ?,"
+                                + " response_body = 'ok'::bytea, response_media_type = 'text/plain'"
+                                + " WHERE scope = ?")) {
+            complete.setTimestamp(1, Timestamp.from(Instant.now()));
+            complete.setString(2, scope);
+            complete.executeUpdate();
+        }
+
+        assertThat(stateOf(scope)).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("an expired record can still be deleted, because retention depends on it")
+    void expiredRecordsRemainDeletable() throws SQLException {
+        String scope = uniqueScope();
+        insert(scope, "k", "COMPLETED", Instant.now(), null, null);
+
+        execute("DELETE FROM " + TABLE + " WHERE scope = '" + scope + "'");
+
+        assertThat(countIn(scope)).isZero();
+    }
+
+    // -----------------------------------------------------------------
     // The enum and the constraint are one definition
     // -----------------------------------------------------------------
 
@@ -363,6 +470,23 @@ class IdempotencyRecordSchemaTest {
             insert.setTimestamp(10, completedAt == null ? null : Timestamp.from(completedAt));
             insert.setTimestamp(11, Timestamp.from(expiresAt));
             insert.executeUpdate();
+        }
+    }
+
+    private static void execute(String sql) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(sql);
+        }
+    }
+
+    private static String stateOf(String scope) throws SQLException {
+        try (PreparedStatement select =
+                connection.prepareStatement("SELECT state FROM " + TABLE + " WHERE scope = ?")) {
+            select.setString(1, scope);
+            try (ResultSet rows = select.executeQuery()) {
+                rows.next();
+                return rows.getString(1);
+            }
         }
     }
 
