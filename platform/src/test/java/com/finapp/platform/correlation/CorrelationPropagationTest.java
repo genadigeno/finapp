@@ -3,7 +3,11 @@ package com.finapp.platform.correlation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.event.EventEnvelope;
+import com.finapp.sharedkernel.event.EventId;
+import com.finapp.platform.outbox.JdbcOutboxWriter;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -54,6 +58,7 @@ import org.slf4j.LoggerFactory;
 class CorrelationPropagationTest {
 
     private static final String TABLE = "platform.idempotency_record";
+    private static final String OUTBOX = "platform.outbox_event";
 
     /** What a caller's gateway would put on the request. */
     private static final String INBOUND_HEADER = "upstream-trace-9f2a";
@@ -85,6 +90,7 @@ class CorrelationPropagationTest {
 
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("DELETE FROM " + TABLE + " WHERE scope LIKE 'propagation:%'");
+            statement.executeUpdate("DELETE FROM " + OUTBOX + " WHERE producer = 'propagation'");
         }
     }
 
@@ -143,6 +149,52 @@ class CorrelationPropagationTest {
         assertThat(fromLog)
                 .as("log and database must agree; two sinks that disagree are worse than one")
                 .isEqualTo(persistedCorrelationId(scope));
+    }
+
+    @Test
+    @DisplayName("an event queued during the flow carries the same identifier as its log lines")
+    void correlationReachesTheOutboxRow() throws Exception {
+        // The third sink. P0-TSK-014's criterion named an "emitted event" and could not verify
+        // it because no outbox existed; CorrelationSinkCoverageTest is what stopped the outbox
+        // arriving without this assertion rather than leaving it to memory.
+        String scope = "propagation:emits";
+        CorrelationId accepted = CorrelationId.of(INBOUND_HEADER);
+        EventId eventId = EventId.next(
+                new com.finapp.sharedkernel.id.IdGenerator(
+                        java.time.Clock.systemUTC(), new java.security.SecureRandom()));
+
+        try (ExecutorService worker = Executors.newSingleThreadExecutor()) {
+            try (var scoped = CorrelationContext.enter(Correlation.startingWith(accepted))) {
+                logger.info("request accepted");
+                worker.submit(
+                                CorrelationContext.propagate(
+                                        (Runnable)
+                                                () -> {
+                                                    // Reads the ambient context, as the real
+                                                    // emitting code will: closing over the
+                                                    // identifier would make this pass with
+                                                    // propagation removed.
+                                                    CorrelationId onWorker = currentCorrelationId();
+                                                    logger.info("event emitted");
+                                                    writeClaim(scope, onWorker);
+                                                    queueEvent(eventId, onWorker);
+                                                }))
+                        .get(30, TimeUnit.SECONDS);
+            }
+        }
+
+        assertThat(outboxCorrelationId(eventId))
+                .as("the queued event must carry the identifier the caller supplied")
+                .isEqualTo(INBOUND_HEADER);
+        assertThat(outboxCorrelationId(eventId))
+                .as("and agree with the idempotency record written in the same flow")
+                .isEqualTo(persistedCorrelationId(scope));
+        assertThat(recorded.list)
+                .allSatisfy(
+                        event ->
+                                assertThat(event.getMDCPropertyMap())
+                                        .containsEntry(
+                                                CorrelationContext.CORRELATION_ID_KEY, INBOUND_HEADER));
     }
 
     @Test
@@ -234,6 +286,42 @@ class CorrelationPropagationTest {
                 assertThat(rows.next()).as("a row must have been written for %s", scope).isTrue();
                 return rows.getString(1);
             }
+        }
+    }
+
+    /** Queues an event carrying whatever correlation the current context holds. */
+    private static void queueEvent(EventId eventId, CorrelationId correlationId) {
+        EventEnvelope envelope =
+                new EventEnvelope(
+                        eventId,
+                        "propagation.Probe",
+                        1,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        new ProbeAggregateId(java.util.UUID.fromString(eventId.value().toString())),
+                        "Probe",
+                        Instant.now(),
+                        "propagation",
+                        correlationId == null ? CorrelationId.of("MISSING") : correlationId,
+                        CausationId.of("command-1"));
+        new JdbcOutboxWriter().write(connection, envelope, new byte[0], "application/json");
+    }
+
+    private static String outboxCorrelationId(EventId eventId) throws SQLException {
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT correlation_id FROM " + OUTBOX + " WHERE event_id = ?")) {
+            select.setObject(1, eventId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                assertThat(rows.next()).as("an outbox row must have been written").isTrue();
+                return rows.getString(1);
+            }
+        }
+    }
+
+    /** Stands in for an aggregate identifier owned by a business module in a later phase. */
+    static final class ProbeAggregateId extends com.finapp.sharedkernel.id.EntityId {
+        ProbeAggregateId(java.util.UUID value) {
+            super(value);
         }
     }
 

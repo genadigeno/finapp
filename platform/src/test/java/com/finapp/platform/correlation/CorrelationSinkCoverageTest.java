@@ -48,6 +48,11 @@ class CorrelationSinkCoverageTest {
                     "idempotency",
                     // The mechanism itself.
                     "correlation",
+                    // A correlation sink, asserted by CorrelationPropagationTest: every outbox
+                    // row carries correlation_id NOT NULL. This is the "emitted event" sink
+                    // P0-TSK-014's criterion named and could not verify at the time; the guard
+                    // is what made it impossible for the outbox to land without it.
+                    "outbox",
                     // Not a sink. MoneyColumns is a persistence convention with no flow of its
                     // own; correlation reaches the tables that use it, not the convention.
                     "money");

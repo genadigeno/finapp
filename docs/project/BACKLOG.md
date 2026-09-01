@@ -373,7 +373,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-07 — Transactional outbox
 
-**P0-TSK-019 — Outbox table and writer**
+**P0-TSK-019 — Outbox table and writer** — `COMPLETE` (2026-09-01)
 - Context: platform / data
 - Description: Outbox table written in the *same* transaction as the state change; writer API usable from domain services.
 - Why: `INV-EVT-01` — a fact and its publication record commit atomically or not at all.

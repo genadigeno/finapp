@@ -47,56 +47,53 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-019` — Outbox table and writer**
+**`P0-TSK-020` — Outbox relay**
 Status: `READY` — not started.
 
-Bounded context: platform. Depends on `P0-TSK-018` (`COMPLETE`).
+Bounded context: platform. Depends on `P0-TSK-019` (`COMPLETE`).
 
-Note for that task: under ADR-0014 the outbox is the first component whose *relay* is scheduled
-work, so `DISTRIBUTED_EXECUTION.md` §5 requires it to state its cluster-safety strategy up front
-rather than have it audited in afterwards. It is also the sink that will trip
-`CorrelationSinkCoverageTest` the moment an `outbox` package appears.
+Two things are already decided for it and should not be rediscovered: under ADR-0014 it is the
+platform's first *scheduled* component and must state its cluster-safety strategy before it is
+written (`DISTRIBUTED_EXECUTION.md` §5), and `nothingPublishesToABrokerDirectly` currently
+exempts **no** module — the relay adds itself to that exemption, which is the one place the
+decision is visible.
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-06. DoD profile: `DOD-EVENT`.
 
 ### Just completed
 
-**`P0-TSK-018` — Event envelope type** — `COMPLETE` (2026-09-01).
+**`P0-TSK-019` — Outbox table and writer** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| All ten fields mandatory and non-null at construction | Enforced in the compact constructor; the test derives the field set **and** the null checks from the record itself, so an eleventh field added without a decision fails |
-| Serialisation is stable and versioned | Canonical form pinned by exact-match test; `schemaVersion` leads it and is carried on every envelope |
-
-**A boundary conflict had to be resolved first.** The task's context is `sharedkernel` and
-`MODULE_ARCHITECTURE.md` names the envelope as the shared kernel's in three places — but the
-envelope carries `correlationId` and `causationId`, and those types lived in `platform`. The
-shared kernel may not depend upward, so the envelope could not go where the architecture says it
-belongs.
-
-Resolved by the general rule rather than a workaround: **value types sit below the mechanisms
-that move them around.** `CorrelationId`, `CausationId`, `Correlation` and their validation moved
-to `sharedkernel`; `CorrelationContext` — which carries a flow across threads and writes it to
-SLF4J's MDC — stays in `platform`, where its logging dependency belongs.
+| Rolling back the business transaction rolls back the outbox row | Asserted both ways — a rollback loses the fact *and* the row; a commit keeps both. A rollback-only test would pass against a writer that never wrote anything |
+| No code path publishes directly to Kafka, enforced by architecture rule | `nothingPublishesToABrokerDirectly`; proven by planting a direct publish in `platform` production code and watching `./gradlew build` fail |
 
 Design decisions worth carrying forward:
-- **Metadata only, no payload.** That is what lets an outbox relay, a dead-letter tool and a
-  consumer's deduplication read, route and store an event they do not understand — and it means
-  a log line carrying an envelope can never spill event contents (`INV-AUD-02`). A test asserts
-  no payload-shaped component can be added.
-- **The two versions are now defined**, in `EVENT_ARCHITECTURE.md`. It listed `eventVersion` and
-  `schemaVersion` without defining either. `eventVersion` is the *event type's contract*;
-  `schemaVersion` is the *envelope's own structure*. Collapsing them means there is no way to
-  say "the metadata moved but the event means the same thing", and every consumer must be
-  redeployed in step with every producer.
-- **`schemaVersion` leads the canonical form.** A consumer that cannot parse the envelope cannot
-  read the field telling it which layout to expect — unless that field is first and never moves.
-- **No wire format.** Choosing one would commit the shared kernel to a serialisation library.
-  The envelope provides a canonical form whose field set and order are pinned by test, so
-  "stable" is a property rather than an intention; the transport format belongs to the outbox
-  and relay.
-- **Causation is mandatory on an event, though optional on a flow.** A flow may start uncaused;
-  an event may not, because something made it happen.
+- **The writer never opens a transaction.** It writes on the connection it is handed and does
+  nothing else. A writer that opened its own would look identical in every test and silently
+  reintroduce the window `INV-EVT-01` exists to close.
+- **A failed write raises rather than logs.** The caller's transaction must fail: a fact
+  committed without its publication record is a lost event, undetectable afterwards and
+  surfacing much later as a reconciliation break with nothing attached to explain it.
+- **The relay will select unpublished rows, never "everything above a watermark".** Sequence
+  values are allocated at insert and become visible at commit, so a slow transaction can commit
+  a *lower* id after a faster one committed a higher one — a watermark relay skips that row
+  permanently and nothing ever reports it. Recorded in `V005` so the next task does not
+  reinvent the bug.
+- **The pending index is justified, unlike `V002`'s deferred one.** ADR-0005 fixes the relay's
+  predicate, so the shape is known rather than guessed; it is partial, so it holds only the
+  backlog and shrinks back as the relay keeps up.
+- **The broker rule matches by package name, not by type**, because no broker client is on the
+  classpath and a rule that only worked once someone added the dependency would be missing at
+  the moment it is first needed. Method references count. Its exemption names a **module** and
+  is currently empty — until the relay exists, nothing at all may publish.
+
+**Both self-maintaining guards fired, as designed.** `CorrelationSinkCoverageTest` refused the
+new `outbox` package until a decision was recorded, and `ArchitectureRulesAreDocumentedTest`
+refused the new rule until §6 named it. The first is the more valuable: it forced correlation
+propagation into the outbox row to be *asserted*, which closes the "emitted event" sink
+`P0-TSK-014`'s criterion named and could not verify at the time.
 
 ---
 
@@ -196,6 +193,15 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Transactional outbox (2026-09-01), `P0-TSK-019`:
+- `platform.outbox_event`: the full envelope as columns, all ten NOT NULL, so an untraceable
+  event cannot be queued any more than it can be constructed
+- `INV-EVT-01` proven both ways: a rolled-back fact loses its outbox row, a committed one keeps it
+- `nothingPublishesToABrokerDirectly` fails the build on a direct publish anywhere, matched by
+  package name so the rule exists before the dependency does
+- Correlation now proven to reach a third sink — the outbox row — closing one of `P0-TSK-014`'s
+  deferred clauses
 
 Event envelope (2026-09-01), `P0-TSK-018`:
 - `EventEnvelope`: all ten `INV-EVT-03` fields mandatory at construction, so an untraceable
@@ -400,7 +406,7 @@ Recorded so it is not mistaken for a completed criterion.
 | `P0-TSK-004` | The CycloneDX SBOM covers the whole resolved dependency set, test scope included (21 of ~61 components). Plugin 3.4.1 exposes no configuration filter. Adequate for vulnerability scanning — test libraries execute on CI runners, so they are legitimately in scope — but it means a HIGH/CRITICAL advisory in a test-only library fails the build though nothing vulnerable ships, and **the SBOM must not be published as shipping provenance in this form** because it overstates what is deployed. | Phase 15 (supply chain and provenance) |
 | `P0-TSK-004` | CI actions and scanner images are pinned by SHA/digest with no automated update path, so the pins will rot. | `P0-TSK-040` |
 | ~~`P0-TSK-002`~~ | ~~Boundary enforcement partial~~ — **closed**. Cross-module internals and entity references by `P0-TSK-007`; `INV-MON-01` by `P0-TSK-008`. | — |
-| `P0-TSK-014` | The acceptance criterion's trace, emitted-event and ingress-filter clauses remain unverifiable: no tracing exporter, outbox or HTTP surface exists. Narrowed by `P0-TST-003`, which now asserts propagation into a persisted sink and fails the build if a new sink lands unclassified — so this closes on arrival rather than on memory. | `P0-EPIC-06`, `-07`, `-08`, `-09` |
+| `P0-TSK-014` | Narrowing. The **emitted-event** clause is now satisfied: `P0-TSK-019` added the outbox and `CorrelationPropagationTest` asserts a queued event carries the flow's identifier. The **trace** and **ingress-filter** clauses remain unverifiable — no tracing exporter or HTTP surface exists — and close on arrival rather than on memory, because `CorrelationSinkCoverageTest` fails the build when a new concern lands unclassified. | `P0-EPIC-08`, `-09` |
 | `P0-TSK-003`, `P0-TSK-005` | Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised. The migrator/application role split is designed and documented (`DATA_MIGRATIONS.md` §5) but not implemented, and must land **before** any table subject to those invariants is created. | `P0-TSK-022` |
 
 ---
@@ -451,12 +457,12 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-019` — Outbox table and writer**, continuing `P0-EPIC-06`.
+**`P0-TSK-020` — Outbox relay**, continuing `P0-EPIC-06`.
 
-`INV-EVT-01` — a domain fact and its publication record commit in the same transaction — becomes
-schema and code there. Two things to settle before writing it: the relay is scheduled work and
-must state its cluster-safety strategy under ADR-0014, and an `outbox` package will trip
-`CorrelationSinkCoverageTest` until correlation propagation into the outbox row is asserted.
+It is the platform's first scheduled component, so ADR-0014 applies directly: every instance
+runs the scheduler, and the relay is therefore either idempotent under duplicate execution or
+takes an explicit database lease. At-least-once publication with idempotent consumption is what
+ADR-0005 already chose, so "exactly once" must not reappear as a claim.
 
 ---
 
@@ -464,6 +470,7 @@ must state its cluster-safety strategy under ADR-0014, and an `outbox` package w
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-019` complete. `platform.outbox_event` carries the full envelope as columns, all ten NOT NULL, and the writer never opens a transaction of its own — so `INV-EVT-01` holds by construction rather than by intent. Proven both ways: a rolled-back fact loses its outbox row and a committed one keeps it, because a rollback-only test would pass against a writer that never wrote anything. A failed write raises rather than logs, since a fact committed without its publication record is a lost event nobody can detect afterwards. `nothingPublishesToABrokerDirectly` enforces the second acceptance criterion, matched by package name so the rule exists before the dependency does and covering method references; proven by planting a direct publish in production code. `V005` records why the relay must select unpublished rows rather than a sequence watermark — allocation happens at insert and visibility at commit, so a watermark relay skips rows permanently. Both self-maintaining guards fired as designed, and the sink guard forced correlation propagation into the outbox row to be asserted, closing one of `P0-TSK-014`'s deferred clauses. 283 hermetic tests, 56 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-018`. All eight mutations of the envelope were caught, including reordering two fields of the canonical form and having an emitted event inherit its parent's cause rather than being caused by the event emitting it — so the two reflection-derived tests are load-bearing rather than merely clever. Three minor findings, all fixed: `correlationForEmittedEvent` used a fully-qualified type name twice where an import sat two lines above; a name at exactly `MAX_NAME_LENGTH` was untested, so an off-by-one to `>=` would have silently rejected a legal name (proven, then closed); and `EventId.of(String)` — the path a received message header takes — had no test that a v4 or a malformed value is refused. 279 hermetic tests, 47 database tests. |
 | 2026-09-01 | `P0-TSK-018` complete. `EventEnvelope` enforces `INV-EVT-03` at construction — all ten fields mandatory, so an event that could not be traced cannot be built — and carries metadata only, so relays and consumers can handle events they cannot deserialise and no log line can spill event contents. A boundary conflict had to be resolved first: the architecture places the envelope in `sharedkernel` in three places, but the correlation identifiers it carries lived in `platform` and the shared kernel may not depend upward. Resolved by the general rule rather than a workaround — value types sit below the mechanisms that move them, so the identifiers moved down and `CorrelationContext` with its MDC dependency stayed. `EVENT_ARCHITECTURE.md` listed `eventVersion` and `schemaVersion` without defining either; both are now defined and distinguished, and `schemaVersion` leads the canonical form because a consumer that cannot parse an envelope cannot read the field telling it which layout to expect unless that field never moves. No wire format: that would commit the shared kernel to a serialisation library, and it belongs to the outbox. 277 hermetic tests, 47 database tests. |
 | 2026-09-01 | Task completion review of `P0-TST-004`. One important finding, in the test whose headline claim is that it relies on no timing luck: the losers used the default three-second claim wait while the winner held its claim until the lock-wait poll finished, so on a slow machine the losers would time out first and the test would fail for a reason unrelated to what it asserts. The losers now wait far longer than they can need — bounding the wait is a different test's subject and must not be this one's constraint. The lock-wait observation itself was verified real by pointing the losers at a different key and watching the test time out rather than pass. Two mutations survive this suite — the lease condition and the fingerprint check — and both were confirmed caught by the full database suite rather than assumed to be; neither is this suite's subject. Five consecutive full runs green. |

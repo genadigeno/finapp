@@ -672,6 +672,29 @@ not a business date: posting date, value date and system time are three differen
 substituting one for another is a domain error that reads perfectly. See
 [`DOMAIN_MODEL.md`](../domain/DOMAIN_MODEL.md) §Time. *(review)*
 
+### Event publication boundary
+
+Nothing publishes to a message broker except the outbox relay (ADR-0005, `INV-EVT-01`).
+
+**Why a rule rather than a convention.** There is no safe moment for domain code to publish
+directly. Inside the transaction the broker cannot know whether it will commit, so a rolled-back
+fact is announced as though it happened. After the transaction there is a window in which the
+process dies having committed a fact nobody will ever hear about. Both failures are silent, both
+surface later as a reconciliation break with no explanation attached, and both look like
+ordinary code at review. The outbox removes the window by making the fact and its publication
+record one commit — and that guarantee lasts exactly as long as nobody takes the shortcut.
+
+- No production class calls, references or holds a broker client — Kafka, AMQP, JMS, SNS/SQS.
+  Matched by **package name rather than by type**, because no broker client is on the classpath
+  yet and a rule that only worked once someone added the dependency would be missing at the
+  moment it is first needed. Method references count: an `invokedynamic` is not a call, and a
+  rule one syntax away from being bypassed is not enforcement.
+  *(ArchUnit: `nothingPublishesToABrokerDirectly`)*
+
+The exemption is a **module**, not a class list, so the relay can be built from several classes
+without editing the rule. It is currently **empty** — until `P0-TSK-020` builds the relay,
+nothing at all may publish.
+
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).
 - **No foreign keys across module schemas.** Referential integrity across contexts is a
