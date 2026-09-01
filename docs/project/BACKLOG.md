@@ -215,7 +215,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-TEST`
 
-**P0-TST-002 — Allocation zero-residual test**
+**P0-TST-002 — Allocation zero-residual test** — `COMPLETE` (2026-09-01)
 - Context: sharedkernel
 - Description: Randomised test asserting that allocating any amount across any 1..100 parts sums exactly back to the original.
 - Why: Directly protects `INV-BAL-03`.

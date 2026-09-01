@@ -48,36 +48,37 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TST-002` — Allocation zero-residual test**
-Status: `IN_PROGRESS`.
+**`P0-TSK-012` — Identifier strategy**
+Status: `READY` — not started.
 
-Bounded context: sharedkernel. Depends on `P0-TSK-010` (`COMPLETE`).
+Bounded context: sharedkernel. First task of `P0-EPIC-04`, the remaining half of milestone M0.2.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-03. DoD profile: `DOD-TEST`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-04.
 
 ### Just completed
 
-**`P0-DOC-001` — Build and local development guide** — `COMPLETE` (2026-09-01).
+**`P0-TST-002` — Allocation zero-residual test** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| A reader following only this document reaches a green build and running infrastructure | Verified literally: a clean `git clone` into a temporary directory, then every command in the document, in order |
+| No input produces a residual | 36,000 even-allocation trials across 1..100 parts and 4,000 weighted trials across up to 100 weights, amounts drawn from the whole representable range |
+| Test fails if the allocator is changed to naive division | Proven — and it was already true of `MoneyAllocationTest`, which catches the same mutation in eight tests |
 
-The verification was run with **infrastructure stopped first**, so the guide's claim that
-`./gradlew build` needs nothing running was tested rather than asserted. From the clean clone:
-`./gradlew build` green in 18s with all containers down; then `docker compose up -d --wait`,
-`flywayMigrate`, `flywayValidate`, `flywayInfo`, `databaseTest` (7 tests), the two narrower
-test commands, and the lifecycle commands — all as written.
+The naive-division half of the criterion was **already satisfied** before this task. What was
+missing was range: `MoneyAllocationTest` stops at 40 parts where the criterion says 1..100, and
+draws amounts from a dense band around zero rather than the representable range. A hundred-way
+split is a payment schedule or an instalment plan, and the residual grows with the number of
+parts.
 
-That verification found one inaccuracy, which was corrected: the guide said `toolchainInfo`
-confirms "what the build actually resolved". It prints the Gradle version and the **launcher**
-JVM, which is not the compile toolchain — a reader could see `Launcher JVM: 21` and conclude
-the toolchain was verified when it is pinned independently. The guide now says what the task
-prints and points at `BuildToolchainTest`, which asserts the emitted bytecode version.
-
-Noted but not changed, because it is `P0-TSK-001`'s code and out of scope here: the
-`toolchainInfo` task's own `description` says "Prints the pinned toolchain and build versions",
-which has the same inaccuracy.
+Design decisions worth carrying forward:
+- **The sweep asserts it found remainders to distribute.** Zero residual is trivially true when
+  an amount divides exactly — a naive allocator is *correct* in that case — so a randomised
+  sweep dominated by divisible amounts would report success over a broken allocator. Both
+  sweeps count trials with an indivisible remainder and fail below half. Proven by making every
+  generated amount zero, which fails both sweeps.
+- **Totality does not imply evenness.** An allocator handing the whole remainder to the first
+  part sums back to the original exactly. That mutation passes the zero-residual assertion and
+  is caught only by the separate assertion that parts differ by at most one minor unit.
 
 ---
 
@@ -170,6 +171,14 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
   domain exceptions under one `MonetaryException` supertype
 - `CurrencyCode` validates against ISO 4217 and rejects codes with no minor unit
 - No floating point anywhere on the monetary path
+
+Allocation residual proof (2026-09-01), `P0-TST-002`:
+- `INV-BAL-03` swept across the criterion's full 1..100 range for even allocation and up to 100
+  weights for weighted allocation, with amounts from the whole representable range
+- Both sweeps assert they actually encountered indivisible remainders, so neither can pass by
+  allocating only divisible amounts
+- Evenness asserted separately from totality, since a first-part-takes-all allocator satisfies
+  totality
 
 Kernel property tests (2026-09-01), `P0-TST-001`:
 - `MoneyPropertiesTest`: commutativity, associativity, additive identity and inverse,
@@ -346,11 +355,11 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TST-002` — Allocation zero-residual test** (in progress).
+**`P0-TSK-012` — Identifier strategy.**
 
-After it, `P0-EPIC-03` closes and the remaining M0.2 work is `P0-EPIC-04`: `P0-TSK-012`
-(identifier strategy), `P0-TSK-013` (time abstraction), `P0-TSK-014` (correlation and causation
-context) and `P0-TST-003` (correlation propagation).
+Rationale: `P0-EPIC-03` is closed, so `P0-EPIC-04` is all that remains of milestone M0.2 —
+`P0-TSK-012` (identifier strategy), `P0-TSK-013` (time abstraction), `P0-TSK-014` (correlation
+and causation context) and `P0-TST-003` (correlation propagation).
 
 ---
 
@@ -358,6 +367,7 @@ context) and `P0-TST-003` (correlation propagation).
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TST-002` complete, closing `P0-EPIC-03`. The criterion's naive-division clause was already satisfied — that mutation is caught by eight existing tests — so the work was the untested range: 1..100 parts rather than 1..40, and amounts from the whole representable range rather than a band around zero. Both sweeps assert they encountered indivisible remainders, because zero residual is trivially true on divisible amounts and a sweep of those would pass over a broken allocator. Evenness asserted separately: an allocator dumping the whole remainder on the first part satisfies totality and is caught only by that. |
 | 2026-09-01 | `P0-DOC-001` complete. `README.md` covering prerequisites, build, test, infrastructure lifecycle, migrations and CI gates. Verified by cloning the repository into a temporary directory and running every documented command in order, with infrastructure stopped first so the hermetic-build claim was tested rather than asserted. One inaccuracy found and corrected: `toolchainInfo` reports the launcher JVM, not the compile toolchain. Closes `P0-EPIC-01` and completes every item in milestone M0.1; only "green in CI" remains, blocked on the absent git remote. Milestone pointer corrected from M0.1 to M0.2, which the last five tasks had already been working in. |
 | 2026-09-01 | Task completion review of `P0-TST-001`. A mutation sweep over `Money` found three surviving mutants, two of them real gaps. Reversing `compareTo` survived every ordering property — antisymmetry, transitivity and consistency with `equals` are all satisfied by a comparator running backwards, so the properties described its shape but never its orientation; closed by stating the orientation against `BigDecimal`'s own ordering. Deleting the scale comparison from `equals` also survived, because the generator built every amount with `ofMinorUnits` and so never varied scale at all — an entire dimension of `Money`'s state was invisible. Generation is now scale-aware, with a new property asserting same-currency/different-scale operations are rejected and that such amounts are not equal. The third mutant, `hashCode` ignoring currency, survives correctly: `hashCode` may collide. 190 tests. |
 | 2026-09-01 | `P0-TST-001` complete. `MoneyPropertiesTest` asserts Money's algebraic laws over generated values, where the existing coverage was example-based — commutativity had rested on a single triple of small positive amounts. Each law asserts its own coverage so it cannot pass by rejecting everything. The rounding properties initially failed the acceptance criterion: making every policy round `CEILING` passed, because the `FLOOR`/`CEILING` bracket was computed through `Money` itself and the break moved the bounds with the value. Replaced with per-policy defining properties; all three deliberate breaks named in the criterion now fail. 188 tests. |
