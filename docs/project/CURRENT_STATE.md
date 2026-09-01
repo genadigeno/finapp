@@ -25,14 +25,19 @@ financial history exists.
 
 ## Current Milestone
 
-**M0.3 — Correctness primitives**
-`P0-EPIC-05` (Idempotency Kernel), `P0-EPIC-06` (Reliable Messaging) and `P0-EPIC-07` (Audit
-Trail).
+**M0.4 — API, observability and security baseline**
+`P0-EPIC-08` (API Conventions and Error Contract), `P0-EPIC-09` (Observability Baseline) and
+`P0-EPIC-10` (Security Baseline).
 
-Milestone complete when: money-moving commands are idempotent under genuine concurrency; domain
-facts and their publication records commit together via an outbox, with an inbox deduplicating
-consumers; and privileged actions produce append-only audit records the application role cannot
-edit.
+**M0.3 — Correctness primitives** — `P0-EPIC-05`, `P0-EPIC-06` and `P0-EPIC-07`, all `COMPLETE`
+(2026-09-01), with one exception recorded rather than hidden: `P0-TSK-017` (`Idempotency-Key`
+header) is `BLOCKED` on the HTTP surface `P0-EPIC-08` brings in M0.4, and moves with it.
+
+Every claim the milestone was for is now enforced and proven: money-moving commands are idempotent
+under genuine concurrency; domain facts and their publication records commit together via an
+outbox whose relay is safe across N instances; consumers deduplicate through an inbox; and
+privileged actions produce append-only audit records the application role cannot edit — enforced
+at the database privilege level, not in code.
 
 **M0.2 — Financial kernel** — `P0-EPIC-03` and `P0-EPIC-04`, both `COMPLETE` (2026-09-01).
 
@@ -47,54 +52,49 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TST-006` - Duplicate and out-of-order delivery test**
+**`P0-TSK-024` - Error contract**
 Status: `READY` - not started.
 
-Bounded context: platform. Depends on `P0-TSK-021` (`COMPLETE`).
+Bounded context: platform / api. Opens `P0-EPIC-08` and milestone M0.4.
 
-The last task in milestone M0.3. Read it against what exists first, as the last three have
-needed: `InboxConsumerTest` covers duplicate delivery thoroughly, including eight concurrent
-instances. **Out-of-order delivery is covered nowhere**, and `V007` is explicit that the inbox
-addresses duplication only - so the honest scope is the ordering half, and what a consumer is
-expected to do about it.
+It is the first task with an outward-facing surface, and three things are already waiting on it:
+`P0-TSK-017` is blocked on it, `P0-TSK-014`'s ingress-filter clause closes with it, and the
+`Idempotency-Key` semantics ADR-0004 specifies have had no HTTP boundary to be specified at.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-06. DoD profile: `DOD-TEST`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-08. DoD profile: `DOD-API`.
 
 ### Just completed
 
-**`P0-TST-005` - Outbox crash-recovery test** - `COMPLETE` (2026-09-01).
+**`P0-TST-006` - Duplicate and out-of-order delivery test** - `COMPLETE` (2026-09-01).
+**`P0-EPIC-06` and milestone M0.3 are closed.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Test fails if the outbox write is moved outside the business transaction | Demonstrated by doing it - the writer given its own connection, committing independently. Three tests fail across two classes, every run |
+| One effect per duplicate set | Four deliveries of two messages, interleaved and backwards, produce two handler runs |
+| Test fails if dedupe is disabled | The inbox primary key dropped from the live table: **nine tests fail across three classes**. Restored, and the suite is green again |
 
-`OutboxCrashRecoveryTest` joins the whole chain - business fact, outbox row, relay, publisher -
-which no existing test did. `OutboxWriterTest` proved the row commits with the fact;
-`OutboxRelayTest` proved a crash *after* publishing republishes. The scenario in between, a
-process dying **before** publication, is the one the outbox exists for and the one where a
-mistake is invisible: the fact is committed, nobody is told, and nothing reports it.
+Duplicate delivery was already covered thoroughly by `InboxConsumerTest`. What was covered
+nowhere was **ordering** - and `EVENT_ARCHITECTURE.md` makes three claims about it that existed
+only as prose. `InboxDeliveryOrderTest` makes them executable:
 
-Two properties are genuinely new:
+- **The inbox deduplicates regardless of arrival order.**
+- **An order-dependent handler is still wrong under the inbox.** The handler everybody writes
+  first - store whatever the latest delivery said - receives `TransferCompleted` then
+  `TransferInitiated` and ends up believing a finished transfer is still in flight. Nothing
+  failed, nothing retried, no duplicate occurred: the inbox did its job perfectly and the
+  projection is wrong anyway. That is the claim worth pinning, because the document itself says
+  "a dedupe wrapper is precisely the component people later assume solved ordering too".
+- **An ordering key fixes it**, on the identical delivery order - with a positive control, since
+  a handler that ignored every second message would pass the reordering test and be useless.
 
-- **A killed instance does not strand its aggregate.** The instance's database backend is
-  terminated with `pg_terminate_backend` while it holds the aggregate's advisory lock and an open
-  transaction - as close to killing a process as a test gets. A surviving instance then publishes
-  the event. This is what makes the transaction-scoped lock choice load-bearing rather than
-  stylistic: a session-scoped lock on a pooled connection would outlive the code meant to release
-  it, and that aggregate would stop publishing forever with nothing to show why.
-- **The criterion is asserted at the relay, not at the writer.** A missing row is a fact about
-  storage; an announcement nobody can retract is the consequence, and the consequence is what
-  makes the atomicity worth having.
+**Retention made executable too.** `DATA_MIGRATIONS.md` §9 says the inbox retention window is a
+correctness bound - "too long merely costs storage; too short costs money". Deleting the dedupe
+record, which is what a sweep running earlier than the producer's redelivery window does, makes
+the same message run a second time with nothing anywhere reporting it.
 
-**Run as the application role**, so `V008`'s grants on `outbox_event` are exercised rather than
-assumed - the other outbox suites connect as the bootstrap superuser and would pass with no
-grants at all.
-
-**A test that detected the fault only sometimes.** `theFactAndItsAnnouncementAgree` first asserted
-only what the publisher saw, which made it depend on the surviving row being *due* - and under
-the local clock's backwards steps it caught the mutation in one run and missed it in the next.
-Asserting that the row must not exist is the same property stated without a clock in it, and the
-mutation is now caught in every run.
+**Run as the application role**, so the inbox's deliberately narrow grant - `SELECT`, `INSERT`,
+`DELETE`, no `UPDATE` - is proven sufficient for real consumer use rather than only inspected in
+the catalogue.
 
 ---
 
@@ -194,6 +194,17 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Delivery assumptions made executable (2026-09-01), `P0-TST-006`:
+- Deduplication proven independent of arrival order, with duplicates interleaved and backwards
+- The document's sharpest claim demonstrated: an order-dependent handler is **still wrong** under
+  the inbox - it ends believing a completed transfer is in flight, with nothing failing anywhere
+- An ordering key shown to fix it on the same deliveries, with a positive control so a handler
+  that ignored messages could not pass
+- A swept dedupe record admits the effect again, which is what `DATA_MIGRATIONS.md` §9 means by
+  retention being a correctness bound rather than housekeeping
+- "Dedupe disabled" demonstrated against the live database: dropping the inbox primary key fails
+  nine tests across three classes
 
 Outbox crash recovery, end to end (2026-09-01), `P0-TST-005`:
 - The full chain asserted in one test: business fact and outbox row in one transaction, the relay
@@ -389,7 +400,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TST-006` is the next task.
+None in progress. `P0-TSK-024` is the next task, opening milestone M0.4.
 
 ## Blockers
 
@@ -561,15 +572,12 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TST-006` - Duplicate and out-of-order delivery test**, the last task in milestone M0.3 and
-the last in `P0-EPIC-06`.
+**`P0-TSK-024` - Error contract**, opening `P0-EPIC-08` and milestone **M0.4**.
 
-Duplicate delivery is already well covered by `InboxConsumerTest`, including eight concurrent
-instances producing one effect. **Out-of-order delivery is covered nowhere**, and `V007` says
-plainly that the inbox addresses duplication only - a handler that would be wrong seeing
-`TransferCompleted` before `TransferInitiated` is wrong whether or not it deduplicates. The
-useful scope is therefore the ordering half: what the platform guarantees, what it does not, and
-what a consumer is expected to do about the difference.
+M0.3 delivered the correctness primitives with no outward surface at all. M0.4 adds the first
+one, and three things that have been waiting close with it: `P0-TSK-017` (`Idempotency-Key`
+header) is blocked on it, `P0-TSK-014`'s ingress-filter clause has had no filter to assert
+against, and the relay and inbox metrics recorded as debt need `P0-EPIC-09`.
 
 ---
 
@@ -577,6 +585,7 @@ what a consumer is expected to do about the difference.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TST-006` complete; **`P0-EPIC-06` and milestone M0.3 closed**. Duplicate delivery was already covered; **ordering was covered nowhere**, and `EVENT_ARCHITECTURE.md` made three claims about it that existed only as prose. The sharpest is now executable: an order-dependent handler is **still wrong under the inbox**. The handler everybody writes first receives `TransferCompleted` then `TransferInitiated` and ends up believing a finished transfer is still in flight - nothing failed, nothing retried, no duplicate occurred, the inbox did its job perfectly, and the projection is wrong anyway. An ordering key fixes it on the identical deliveries, with a positive control because a handler that ignored every second message would otherwise pass. Retention was made executable too: deleting a dedupe record - what a sweep running earlier than the producer's redelivery window does - makes the same message run twice with nothing reporting it, which is what `DATA_MIGRATIONS.md` §9 means by a correctness bound. The acceptance criterion was demonstrated against the live database: dropping the inbox primary key fails **nine tests across three classes**, then restored. Run through the application role, so the inbox's narrow grant is proven sufficient for real consumer use. 316 hermetic tests, 152 database tests. |
 | 2026-09-01 | Task completion review of `P0-TST-005`. One important finding: **the killed-instance test did not prove what it claimed**. Its comment said terminating a backend showed the relay's advisory lock had to be transaction-scoped - but killing a backend releases session-scoped locks just as thoroughly, and switching the relay to `pg_try_advisory_lock` passed all 145 database tests. The claim in the relay's own javadoc was therefore unverified. Closed by a test that models a **connection pool** rather than a crash: a source handing out one physical connection whose `close()` does nothing, which is what a pool does and the only case where a session actually survives the cycle. A session-scoped lock now fails exactly that test, and the comment on the killed-instance test says what it does prove. Two minor fixes: `pg_terminate_backend` returns whether it worked, and counting rows rather than successes would have asserted recovery from a crash that never happened; and a second event for one aggregate collided with the probe table's primary key. **A flake class removed**: three tests looped a fixed number of relay cycles assuming each would land an attempt, which holds only while the row is due when the poll runs - and the local clock steps backwards. They failed about one run in twenty, never the same test twice. All now loop on the state they are waiting for. 30 consecutive green runs. 316 hermetic tests, 146 database tests. |
 | 2026-09-01 | `P0-TST-005` complete. `OutboxCrashRecoveryTest` joins the whole chain - business fact, outbox row, relay, publisher - which no existing test did: the writer's tests end at the row and the relay's crash test covers dying *after* publishing. The scenario in between is the one the outbox exists for, and the one where a mistake is invisible. Two properties are new. **A killed instance does not strand its aggregate**: the backend is terminated with `pg_terminate_backend` while it holds the advisory lock and an open transaction, and a surviving instance publishes the event - which is what makes the transaction-scoped lock load-bearing rather than stylistic, since a session-scoped lock on a pooled connection would outlive the code meant to release it and stop that aggregate forever. And **the criterion is asserted at the relay**, not the writer: a missing row is a fact about storage, an announcement nobody can retract is the consequence. Run through the application role, so `V008`'s outbox grants are exercised rather than assumed. The criterion was demonstrated by moving the write onto its own connection - three tests fail. One test initially caught that mutation only sometimes, because it asserted what the publisher saw and so depended on the surviving row being *due*, which the local clock's backwards steps decide; restated as \"the row must not exist\", it catches it every run. 316 hermetic tests, 145 database tests. |
 | 2026-09-01 | Task completion review of `P0-TST-007`. One important finding, and it is the same shape as the defect the task itself closed: **the new column-privilege check was vacuous when its query saw nothing**. `isSubsetOf` over an empty set is trivially true, so a renamed table, a typo or a changed catalogue view would have left it green while checking nothing - proven by making the query return empty and watching it pass. A guard written to catch a blind spot had one of its own. Closed by asserting the query sees something, which is reliable because PostgreSQL expands every table-level grant into `column_privileges`, so non-empty is the normal state. Also verified rather than asserted: **the self-maintaining claim**. A column added as a future migration would add it, with `UPDATE` granted on it, fails both tests with no edit to any test - which is what \"covered without anyone remembering\" has to mean to be worth writing down. The `hasSizeGreaterThan(5)` vacuity guard was replaced with named columns, since a count is satisfied by a query returning the wrong table. Recorded a limit rather than a gap: immutability is enforced against the **application** role; the migrator owns the table and can alter it, which is a privileged-access concern for Phase 15 and is what ADR-0010 claims - that the application cannot alter its own audit trail. 316 hermetic tests, 141 database tests. |

@@ -415,7 +415,7 @@ Status: `IN_PROGRESS`
 - Cx: L
 - DoD: `DOD-TEST`
 
-**P0-TST-006 — Duplicate and out-of-order delivery test**
+**P0-TST-006 — Duplicate and out-of-order delivery test** — `COMPLETE` (2026-09-01)
 - Context: platform
 - Description: Deliver the same event twice and deliver events out of order; assert single effect and correct handling.
 - Why: `EVENT_ARCHITECTURE.md` delivery assumptions must be demonstrably satisfied.
