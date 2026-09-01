@@ -341,7 +341,7 @@ Status: `IN_PROGRESS`
 - Cx: S
 - DoD: `DOD-API`
 
-**P0-TST-004 — Idempotency concurrency and retry tests**
+**P0-TST-004 — Idempotency concurrency and retry tests** — `COMPLETE` (2026-09-01)
 - Context: platform
 - Description: Integration tests: two threads with the same key; retry after simulated response loss; same key with different payload; expired key reuse; process crash while `IN_PROGRESS`.
 - Why: The failure modes in `CLAUDE.md` §Failure Engineering apply directly to this component.

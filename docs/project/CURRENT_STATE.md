@@ -47,61 +47,49 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-017` — `Idempotency-Key` header handling**
-Status: `READY` — not started.
+**None in progress.** `P0-EPIC-05` (Idempotency Kernel) is closed apart from `P0-TSK-017`,
+which is blocked.
 
-Bounded context: platform / api. Depends on `P0-TSK-016` (`COMPLETE`).
+**`P0-TSK-017` — `Idempotency-Key` header handling** is `BLOCKED`. Two of its three
+requirements have no subject: its own declared dependency `P0-TSK-023` (auditable-action
+registry) is in `P0-EPIC-07` and not started, so "recorded in audit" cannot be satisfied; and
+"an endpoint declared as requiring the header" needs an HTTP surface, which `P0-EPIC-08`
+introduces in M0.4. There is no servlet, controller or web starter in the build today.
 
-Note: it maps an HTTP header onto the wrapper, and there is no HTTP surface until `P0-EPIC-08`
-in M0.4. Worth confirming that dependency before starting rather than discovering it mid-task,
-as `P0-TSK-014` did.
-
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-05. DoD profile: `DOD-KERNEL`.
+Next unblocked work is `P0-EPIC-06` (Reliable Messaging: envelope, outbox, inbox), starting at
+`P0-TSK-018`.
 
 ### Just completed
 
-**`P0-TSK-016` — Idempotent execution wrapper** — `COMPLETE` (2026-09-01).
+**`P0-TST-004` — Idempotency concurrency and retry tests** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Concurrent identical requests produce one effect and two identical responses | 8 racers on separate connections: one execution, one row in a side-effect table, eight identical responses |
-| Differing fingerprint returns a distinct conflict error | `IdempotencyConflictException`, and the different command provably did not run |
-| An in-progress claim is handled deterministically rather than deadlocking | `IdempotencyInProgressException` for a live claim; a stale one is taken over, with only one of two racing reclaims winning |
+| Exactly one effect in every concurrent case | Counted in a side-effect table, not inferred from return values, in every case |
+| No test relies on timing luck | The contention test waits until **PostgreSQL reports the losers waiting on a lock**, then proceeds |
+| Test fails if the unique constraint is dropped | Dropped `idempotency_record_pk` against the live database: **17 tests failed**, including every failure-mode test; restored |
 
-Design decisions worth carrying forward:
-- **One transaction, and that is the whole design.** The claim, the command's effect and the
-  recorded outcome commit together (ADR-0004), so there is no window in which a process crashes
-  having produced a financial effect that no idempotency record describes. The cost — a
-  concurrent duplicate blocks on the unique index until the first transaction ends — is the
-  correct trade, and a rollback test proves the key is released rather than left blocking work
-  that never happened.
-- **A savepoint around the claim.** In PostgreSQL a failed statement poisons the whole
-  transaction, so without one, losing the race would abort the caller's transaction and take the
-  read that follows down with it — the loser could never replay the winner's response.
-- **`IN_PROGRESS` is reported, not waited on and not assumed failed.** Waiting ties up a
-  connection for as long as the other command runs; assuming failure re-executes a command that
-  may already have committed. Saying so is the only honest third option (`INV-LIFE-03`).
-- **Staleness is decided by the database, not the caller.** Two processes reclaiming an
-  abandoned key would otherwise both read the same row and both believe they had won.
-- **The fingerprint is compared before staleness**, so a different request never inherits a key.
-- **A definitive failure is a result, not an exception.** A rejected transfer has a real outcome
-  a retry must be told, not have re-attempted.
-- **The store is a port**, so unresolved question 12 stays open — the same reasoning that kept
-  `MoneyColumns` mechanism-agnostic.
+Five failure modes from `CLAUDE.md` §Failure Engineering, driven directly:
 
-Three fixture findings worth keeping. Adding this suite exposed a **latent flake in
-`P0-TSK-015`'s schema test**: it read `Instant.now()` at the call site for `completed_at` and
-again inside the helper for `created_at`, so whenever the two reads straddled a tick the row was
-born with `completed_at` before `created_at` and the constraint correctly rejected it. It had
-passed by luck until the suite grew enough to widen the gap. That is the third instance of one
-root cause in that file, and the same lesson `P0-TSK-013` enforces in production code: a single
-moment comes from a single read. Fixed and verified over five consecutive runs.
+- **Observed contention.** Four losers, blocked on the key, all replay the winner's response.
+  The winner does not commit until the database reports them waiting — because starting threads
+  from a latch makes them *begin* together while the winner may still finish first, so the test
+  would pass without ever exercising contention and would keep passing if contention broke.
+- **Contention longer than the bounded wait.** The holder keeps its claim uncommitted past the
+  loser's `lock_timeout`; the loser gets a deterministic unknown rather than parking.
+- **The response is lost after commit.** Indistinguishable from a timeout on the client's side,
+  so it retries — and the effect has already happened. One effect, replayed response.
+- **Expiry, both sides of it.** An expired but unswept record still replays, because replaying
+  is always safe and refusing would turn a safe answer into a re-execution. Once retention has
+  swept it, the same key runs again — not a defect but the cost `DATA_MIGRATIONS.md` §8 warns
+  about, now asserted so it is known rather than discovered.
+- **An instance crashes mid-command.** Its committed claim is recovered by exactly one of two
+  surviving instances.
 
-A PostgreSQL `TEMPORARY TABLE` is session-local, so the
-first version of the concurrency test could not see its own side-effect table from the racing
-connections — a concurrency test whose shared state is invisible across connections proves
-nothing. And `IdempotencyKey` had to become `Serializable` so the exceptions' diagnostic state
-survives a round trip, which is the defect the `P0-TSK-009` review found on `CurrencyCode`.
+One finding worth keeping: V003 freezes a terminal claim **entirely**, `expires_at` included, so
+retention cannot be extended on a completed record — only decided when it is written. Found when
+the trigger refused a test helper that tried to age a completed record, which is the guard
+working.
 
 ---
 
@@ -201,6 +189,13 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Idempotency failure modes (2026-09-01), `P0-TST-004`:
+- Contention proven by observing PostgreSQL's own lock waits rather than by hoping threads
+  overlap, so the test cannot pass while contention is broken
+- Lost response, expired key, swept key, and a crashed instance mid-command each driven to a
+  single effect
+- Dropping the unique constraint fails 17 tests, demonstrated against the live database
 
 Idempotent execution (2026-09-01), `P0-TSK-016`:
 - Claim, execute, record outcome — all in the caller's transaction, so a crash cannot leave an
@@ -437,11 +432,11 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-017` — `Idempotency-Key` header handling.**
+**`P0-TSK-018` — Event envelope type**, opening `P0-EPIC-06` (Reliable Messaging).
 
-Check its dependencies first: it maps an HTTP header onto `P0-TSK-016`'s wrapper, and there is
-no HTTP surface until `P0-EPIC-08` in M0.4. If that holds, the next unblocked work is
-`P0-TST-004` (idempotency concurrency and retry tests) or `P0-EPIC-06`.
+`P0-TSK-017` is skipped deliberately, not forgotten: it is blocked on `P0-TSK-023` and on an
+HTTP surface that arrives in M0.4, and the blocker is recorded against it in
+[`BACKLOG.md`](BACKLOG.md).
 
 ---
 
@@ -449,6 +444,7 @@ no HTTP surface until `P0-EPIC-08` in M0.4. If that holds, the next unblocked wo
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TST-004` complete. Five failure modes from `CLAUDE.md` §Failure Engineering driven directly at the idempotency kernel: observed contention, contention outlasting the bounded wait, a response lost after commit, expiry on both sides of the retention sweep, and an instance crashing mid-command. The acceptance criterion "no test relies on timing luck" is met by waiting until PostgreSQL reports the losing sessions waiting on a lock rather than by sleeping — a latch makes threads *begin* together but the winner may finish first, so the test would pass without exercising contention at all. "Test fails if the unique constraint is dropped" demonstrated against the live database: 17 failures, then restored. Recorded that V003 freezes a terminal claim entirely, so retention cannot be extended after completion. `P0-TSK-017` recorded as `BLOCKED` on `P0-TSK-023` and on the HTTP surface `P0-EPIC-08` brings in M0.4. |
 | 2026-09-01 | **Multi-instance execution made an explicit architectural requirement** — ADR-0014, [`DISTRIBUTED_EXECUTION.md`](../architecture/DISTRIBUTED_EXECUTION.md), and a new §Multi-Instance Execution in `SYSTEM_ARCHITECTURE.md`. It had been implicit: ADR-0004 and ADR-0005 both depend on it without naming it, and nothing said how many copies of the monolith run. An audit of all production code found it mechanically clean — no locks, schedulers, caches or static mutable business state — and **one real defect**: `P0-TSK-016`'s claim reclaim compared `created_at` written by one instance's clock against a staleness bound computed from another's. An instance running six minutes fast with a five-minute lease would consider every neighbour's fresh claim abandoned, take the key, and run the command while the neighbour was still running it — two financial effects for one request. It passed every test because they all ran in one JVM with one clock. Corrected by `V004`: the lease is set and judged by the database's clock, the client-side staleness predicate is removed rather than kept as a fast path, and a test gives the second instance a clock an hour ahead. The no-floating-point rule then caught a `double` on the new lease path, which was the right call. Remediation recorded as `P0-TSK-041` (architecture rule) and `P0-TST-009` (multi-instance test convention). ADR-0001 is unchanged: one deployable is not one instance. 268 hermetic tests, 41 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-016`. One important finding, from checking a claim rather than reading it: the wrapper's javadoc said the blocking wait was "bounded: see `lock_timeout`" and `lock_timeout` existed nowhere. The claim was false — a duplicate blocked for as long as the first command took, which on a hot key with a retrying client is connection-pool exhaustion, the exact failure the class argues against two paragraphs earlier. ADR-0004 requires a bounded wait then conflict. Closed: the store now bounds the claim with a `lock_timeout` confined to that statement, and `claim()` returns `CLAIMED`/`ALREADY_CLAIMED`/`CONTENDED` because a contended claim has nothing to read — the holder may still commit or roll back — so it is honestly reported as unknown. The test asserts both ends of the bound, since an upper bound alone would pass if the claim failed instantly for an unrelated reason. A mutation sweep then left two survivors, both closed: the store's `state = 'IN_PROGRESS'` guard on recording an outcome, and `isStaleAt`, which survived only because the reclaim statement re-checks staleness in SQL — defence in depth working, and precisely why the Java predicate needed its own test, since together the two mutations would re-run a live command. 272 hermetic tests, 40 database tests. |
 | 2026-09-01 | `P0-TSK-016` complete. The execute-once wrapper: claim, run, record, replay — all inside the caller's transaction, so no crash can leave a financial effect that no idempotency record describes. All three acceptance clauses proven against a real PostgreSQL, with "exactly one effect" counted in a side-effect table rather than inferred from the wrapper's own return value. A live `IN_PROGRESS` claim is reported rather than waited on or assumed failed; a stale one is taken over with the staleness test in the database, so two racing reclaims cannot both win. The fingerprint is compared before staleness, so a different request never inherits a key. The store is a port, leaving unresolved question 12 open. Two fixture findings: a `TEMPORARY TABLE` is session-local and so invisible to the racing connections, and `IdempotencyKey` had to become `Serializable` or the exceptions lose their diagnostic state — the `P0-TSK-009` defect again. 268 hermetic tests, 38 database tests. |
