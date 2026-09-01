@@ -72,9 +72,11 @@ Design decisions worth carrying forward:
   now names its rule as ``*(ArchUnit: `ruleName`)*``, and the test fails when a rule is added
   without documentation, when a documented rule is deleted, when a claim names no rule, and
   when the convention stops being used at all.
-- **Rule suites are discovered, not listed.** Any class in the package annotated
-  `@AnalyzeClasses` is a suite, so a third one cannot escape the check by omission — the same
-  reasoning that made the coverage guards derive from the classpath.
+- **Rule suites are discovered, not listed.** Any test class annotated `@AnalyzeClasses` is a
+  suite, wherever it sits, so neither adding one nor moving one escapes the check — the same
+  reasoning that made the coverage guards derive from the classpath. The first version scanned
+  a single directory and was shown, during this task's own review, to miss a suite one package
+  deeper.
 - **The document is a declared Gradle input.** Found by probing: `:app:test` was `UP-TO-DATE`
   after the document was broken, so the check reported green over a file it never opened. The
   document is now an input of the test task, verified by breaking it and watching the task
@@ -346,6 +348,7 @@ exists, and to say so explicitly where coverage is already adequate.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | Task completion review of `P0-DOC-002`. One important finding: rule-suite discovery listed a single directory, so a suite placed in a subpackage ran its rules on every build while escaping the documentation check — enforced but undocumentable, with the equivalence test still green. Proven with a probe suite, then closed by walking the whole test-classes tree (loading classes with `initialize=false`, since deciding whether something is a rule suite must not run its static initialiser). Also confirmed a missing document fails rather than passing vacuously, and that the ten `*(ArchUnit: ...)*` markers all sit in §6 and yield exactly the twelve enforced rule names with no false positives. |
 | 2026-09-01 | `P0-DOC-002` complete. Audit of `MODULE_ARCHITECTURE.md` against the enforced rules found six drifts, including a rule enforced on every build that the §6 list did not mention, and two sections still calling `INV-MON-01` unenforced two tasks after it was enforced. Prose fixed, then the equivalence made mechanical: every enforcement claim names its rule, and `ArchitectureRulesAreDocumentedTest` fails the build in either direction. Probing also found `:app:test` staying `UP-TO-DATE` after the document was broken — the document is now a declared task input. Closes `P0-EPIC-02`. 172 tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-008`. One critical finding, found by probing rather than reading: the new coverage guard asserted only that `Money` was analysed, so it could not see a whole module falling out of the sweep. Proven by narrowing the sweep to `sharedkernel` — all four floating-point rules reported PASSED and the build exited 0 with a `double` planted in `platform`'s `MoneyColumns`. This is the same weakness the `P0-TSK-007` review found and that the new rule's own javadoc cites as its rationale. Both suites now derive expected coverage from the classpath through a shared `ProductionModules` helper, and the identical probe now fails the build. Also verified end to end that a `float` in a signature and a `Double.parseDouble` call in production code each fail the build — the latter also catching `BigDecimal.valueOf(double)`, the trap beside the safe `valueOf(long, int)`. |
 | 2026-09-01 | `P0-TSK-008` complete. `INV-MON-01` enforced statically over all production code — fields, signatures, call targets and field accesses, including generic arguments. Default-deny rather than a list of financial packages, with deliberate-violation fixtures asserting the teeth on every build. Proven end to end by planting a `double` in `Money`. Closes `P0-EPIC-02` and Phase 0 exit criterion 4. 170 tests. |
