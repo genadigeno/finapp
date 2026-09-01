@@ -211,6 +211,19 @@ class OutboxEventSchemaTest {
                 .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
     }
 
+    @Test
+    @DisplayName("an error of exactly the maximum length is stored, so the relay's truncation fits")
+    void theRelayTruncationLengthIsAcceptable() throws SQLException {
+        // OutboxRelay truncates to MAX_LAST_ERROR_LENGTH and this constraint bounds the column;
+        // the two numbers are written in two places. If the constraint were ever tightened, the
+        // relay's attempt to RECORD a publication failure would itself fail — turning a routine
+        // broker error into a failed poll cycle. Asserting the exact boundary is what makes that
+        // drift a failing test rather than an incident.
+        writeRelayState(UUID.randomUUID(), 1, null, null, "e".repeat(1000));
+
+        assertThat(probeCount()).isEqualTo(1);
+    }
+
     // -----------------------------------------------------------------
 
     private static void writeRelayState(

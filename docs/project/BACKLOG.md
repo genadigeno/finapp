@@ -383,7 +383,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-KERNEL`
 
-**P0-TSK-020 — Outbox relay**
+**P0-TSK-020 — Outbox relay** — `COMPLETE` (2026-09-01)
 - Context: platform
 - Description: Poller publishing unpublished rows in order per aggregate, with retry, backoff, attempt counting and a poison-message path.
 - Why: At-least-once delivery must survive crashes and broker unavailability.

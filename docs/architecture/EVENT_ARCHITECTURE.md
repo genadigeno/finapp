@@ -79,6 +79,43 @@ undetectable gap in a financial event stream is worse than a stall somebody has 
 deduplicates on `eventId` (`INV-IDEM-04`), which is the consumer's property and not the relay's.
 This is why `eventId` is minted with the event and never regenerated at publication.
 
+### Handling an abandoned event
+
+ADR-0005 requires poison messages to have a documented procedure, and abandonment is not
+self-healing: the aggregate stays stalled until a person acts. There is no tooling yet — Phase
+15 owns dead-letter handling and replay — so the procedure is manual and deliberately small.
+
+An abandoned row announces itself twice: an `ERROR` naming the event, the aggregate and the
+attempt count, and a `WARN` on every subsequent cycle saying the aggregate is blocked behind it.
+Both carry the originating flow's correlation identifier, so the event can be traced back to the
+transfer or payment that produced it.
+
+```sql
+-- What is abandoned, and what is stuck behind it.
+SELECT event_id, aggregate_id, event_type, attempts, dead_lettered_at, last_error
+FROM platform.outbox_event
+WHERE dead_lettered_at IS NOT NULL
+ORDER BY dead_lettered_at;
+```
+
+Two resolutions, and the choice is a judgement about the event, never a default:
+
+- **Retry it** — the cause was environmental (a broker misconfiguration, an expired credential,
+  a topic that did not exist) and the event is still correct to publish. Clear the abandonment
+  and let the relay pick it up again:
+  `UPDATE platform.outbox_event SET dead_lettered_at = NULL, attempts = 0, next_attempt_at = now() WHERE event_id = ?`
+- **Abandon it permanently** — the event is genuinely unpublishable. This is a decision that
+  consumers will never see a fact that happened, so it needs the same scrutiny as a manual
+  adjustment: record why, and expect to answer for it at reconciliation. The row is **not**
+  deleted; it is the evidence that the gap exists.
+
+**Never resolve an abandoned row by deleting it.** The row is the only record that an event
+which should have been published was not, and the outbox is where that question is answered.
+
+Both statements are manual `UPDATE`s against a table the application role can write, which is
+acceptable only because the outbox is transport rather than financial history (`INV-EVT-02`,
+`V005`). The same action against a ledger table would not be.
+
 **The transport adapter is deliberately absent.** The relay publishes through an
 `EventPublisher` port; writing an adapter decides the wire format, the topic scheme and the
 producer's acknowledgement configuration, and puts a broker client on the classpath. Those

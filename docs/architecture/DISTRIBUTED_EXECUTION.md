@@ -103,6 +103,14 @@ locks stops publishing an aggregate forever.
 Two aggregates whose lock keys collide serialise against each other, which costs throughput and
 nothing else: each is still published in order, by one instance at a time.
 
+**Advisory-lock namespaces.** PostgreSQL advisory locks share one cluster-wide key space, so
+every component taking one uses the two-argument form and reserves a namespace here. A component
+reusing another's namespace would collide silently, and only under load.
+
+| Namespace | Owner | Key |
+|---|---|---|
+| `1` | `OutboxRelay` | `aggregateId.hashCode()` |
+
 **Scheduling.** Every instance runs the poller. There is no leader and no designated primary,
 because every such arrangement is a single point of failure wearing a distributed costume.
 `pollOnce()` is safe to call concurrently from any number of threads and instances, which is

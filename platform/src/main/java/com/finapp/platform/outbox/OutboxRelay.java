@@ -287,37 +287,46 @@ public final class OutboxRelay {
         int failed = 0;
         int deadLettered = 0;
         for (PendingRow row : pendingFor(connection, aggregateId)) {
-            if (row.abandoned()) {
-                // The head of this aggregate has been given up on. Everything behind it waits,
-                // by design: see V006.
-                log.warn(
-                        "Outbox aggregate {} is blocked behind abandoned event {}; it will not "
-                                + "publish again until that event is resolved",
-                        aggregateId,
-                        row.event().eventId().value());
-                break;
-            }
-            if (!row.due()) {
-                break;
-            }
-
             PendingEvent event = row.event();
+            // The scope covers everything said about this event, not only its publication.
+            // Scoping just the publish left every failure line — including the abandonment
+            // error, the loudest thing the relay ever says — with no correlation on it, because
+            // a catch block attached to a try-with-resources runs after the resource is closed.
+            // A warning that an event could not be published, which cannot be joined to the
+            // transfer that produced it, does not answer the only question its reader has.
             try (CorrelationContext.Scope ignored =
                     CorrelationContext.enter(
                             new Correlation(event.correlationId(), event.causationId()))) {
-                publisher.publish(event);
-                markPublished(connection, event.eventId());
-                published++;
-            } catch (Exception e) {
-                // Any exception, not only the expected one: an adapter failing with a
-                // NullPointerException must cost one event a retry, not stop the relay.
-                if (recordFailure(connection, event, e)) {
-                    deadLettered++;
-                } else {
-                    failed++;
+
+                if (row.abandoned()) {
+                    // The head of what remains has been given up on. Everything behind it waits,
+                    // by design: see V006.
+                    log.warn(
+                            "Outbox aggregate {} is blocked behind abandoned event {}; it will not "
+                                    + "publish again until that event is resolved",
+                            aggregateId,
+                            event.eventId().value());
+                    break;
                 }
-                // Ordering: nothing behind a failed event may go ahead of it.
-                break;
+                if (!row.due()) {
+                    break;
+                }
+
+                try {
+                    publisher.publish(event);
+                    markPublished(connection, event.eventId());
+                    published++;
+                } catch (Exception e) {
+                    // Any exception, not only the expected one: an adapter failing with a
+                    // NullPointerException must cost one event a retry, not stop the relay.
+                    if (recordFailure(connection, event, e)) {
+                        deadLettered++;
+                    } else {
+                        failed++;
+                    }
+                    // Ordering: nothing behind a failed event may go ahead of it.
+                    break;
+                }
             }
         }
         return new AggregateOutcome(true, published, failed, deadLettered);
