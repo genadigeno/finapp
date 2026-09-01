@@ -57,3 +57,15 @@ dependencies {
     // view without needing to be moved.
     testImplementation(libs.archunit.junit5)
 }
+
+tasks.test {
+    // ArchitectureRulesAreDocumentedTest reads this document and asserts it names exactly the
+    // rules that run on every build. Gradle cannot infer that a markdown file is an input, so
+    // without this declaration a doc-only edit leaves :app:test UP-TO-DATE and the check
+    // reports green over a document it never opened — the same "check that reports success for
+    // work it did not do" this suite exists to prevent. Verified by breaking the document and
+    // watching the task re-run and fail.
+    inputs.file(rootProject.layout.projectDirectory.file("docs/architecture/MODULE_ARCHITECTURE.md"))
+        .withPropertyName("moduleArchitectureDocument")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}

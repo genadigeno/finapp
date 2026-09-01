@@ -42,51 +42,43 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-DOC-002` — `MODULE_ARCHITECTURE.md`**
+**`P0-TST-001` — `Money` property and edge-case tests**
 Status: `READY` — not started.
 
-Bounded context: architecture. Depends on `P0-TSK-006` (`COMPLETE`).
+Bounded context: sharedkernel. Depends on `P0-TSK-009` (`COMPLETE`).
 
-Scope: the document must match the enforced ArchUnit rules exactly. Much of it was written
-during `P0-TSK-006`, `-007` and `-008`; what remains is a verification pass, and the acceptance
-criterion is an equivalence claim between prose and code, so it is one to check mechanically
-rather than by reading.
-
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-02. DoD profile: `DOD-DOC`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-03. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TSK-008` — No-floating-point-money static rule** — `COMPLETE` (2026-09-01).
+**`P0-DOC-002` — `MODULE_ARCHITECTURE.md`** — `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Rule fails the build when a `double` monetary field is introduced | A `double` field added to `Money` failed `./gradlew build`, naming `Money.exchangeRate` and its line; reverted |
-| Passes otherwise | Four rules green over all production code; a clean fixture proves they are not merely always-failing |
+| Document exists and matches the enforced ArchUnit rules exactly | Six drifts found and fixed; the equivalence is now asserted by `ArchitectureRulesAreDocumentedTest` and proven to fail in four directions |
 
-`INV-MON-01` was the last `INV-MON` invariant without mechanical enforcement. This closes
-`P0-EPIC-02` and Phase 0 exit criterion 4.
+The six drifts, all in a document that four tasks had edited:
+
+1. §2 said `INV-MON-01` was "still outstanding" — enforced since `P0-TSK-008`.
+2. The `app` register entry named only `ModuleBoundaryRulesTest`.
+3. §8 said `INV-MON-01` was "still unenforced".
+4. §8 described the coverage guard in the singular; there are two.
+5. §8 said "two things remain on review"; one did.
+6. `sharedkernelIsFrameworkFree` ran on every build and appeared nowhere in the §6 rules list.
 
 Design decisions worth carrying forward:
-- **Default-deny over every production class, not a list of financial packages.** A package
-  list is a denylist, and a denylist fails exactly when a new package is added and nobody
-  notices. `P0-TSK-007` already found this shape once — a class directly in `com.finapp` was
-  silently exempt from every boundary rule. Exemptions live in one named, empty set, so each is
-  a visible diff.
-- **Four surfaces, not one.** Declarations are the surface everybody checks. The one that
-  matters more is *calls*: `new BigDecimal(0.1)`, `BigDecimal::doubleValue` and
-  `ResultSet::getDouble` destroy precision without appearing in any declaration of ours, so a
-  declaration-only rule would miss the most common way money actually loses precision.
-- **Generic arguments are inspected, not just raw types.** `List<Double>` erases to `List`; a
-  rule reading only the raw type would let a collection of amounts through, which is where the
-  error compounds fastest.
-- **The teeth are permanent, not a one-off demonstration.** Deliberate-violation fixtures assert
-  on every build that each rule rejects its violation *and* accepts clean code. Proving it by
-  hand proves it once, on one machine, on one day.
-- **The limit is documented rather than papered over.** A `double` local computed only from
-  compile-time constants and narrowed by a cast is undetectable: a cast is a bytecode
-  instruction, and javac inlines `static final double` literals — which is why `Math.PI` cannot
-  be caught and why the fourth rule is scoped to non-constant fields. That was discovered by the
-  fixture failing, not assumed.
+- **The equivalence is asserted, not declared.** Fixing prose and calling it accurate restores
+  exactly the condition that produced those six drifts. Every claim of mechanical enforcement
+  now names its rule as ``*(ArchUnit: `ruleName`)*``, and the test fails when a rule is added
+  without documentation, when a documented rule is deleted, when a claim names no rule, and
+  when the convention stops being used at all.
+- **Rule suites are discovered, not listed.** Any class in the package annotated
+  `@AnalyzeClasses` is a suite, so a third one cannot escape the check by omission — the same
+  reasoning that made the coverage guards derive from the classpath.
+- **The document is a declared Gradle input.** Found by probing: `:app:test` was `UP-TO-DATE`
+  after the document was broken, so the check reported green over a file it never opened. The
+  document is now an input of the test task, verified by breaking it and watching the task
+  re-run and fail.
 
 ---
 
@@ -159,6 +151,12 @@ Monetary type enforcement (2026-09-01), `P0-TSK-008`:
   `Double.parseDouble` call — each in a different module
 - Coverage derived from the classpath by a shared `ProductionModules` helper, so a module that
   stops being analysed fails the build rather than silently losing its protection
+
+Architecture documentation (2026-09-01), `P0-DOC-002`:
+- `MODULE_ARCHITECTURE.md` §6 names the rule behind every claim of mechanical enforcement
+- `ArchitectureRulesAreDocumentedTest` fails the build when the document and the enforced rule
+  set stop agreeing, in either direction
+- The document is a declared input of `:app:test`, so a doc-only edit re-runs the check
 
 Financial kernel (2026-08-31), `P0-TSK-009`:
 - `Money`: integer minor units, explicit `CurrencyCode`, stored scale (ADR-0003)
@@ -334,15 +332,13 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-DOC-002` — `MODULE_ARCHITECTURE.md`.**
+**`P0-TST-001` — `Money` property and edge-case tests.**
 
-Rationale: it is the next item in [`BACKLOG.md`](BACKLOG.md) and the last one in `P0-EPIC-02`.
-Its acceptance criterion — "matches the enforced ArchUnit rules exactly" — is an equivalence
-between prose and code, and the document has now been edited by three separate tasks
-(`P0-TSK-006`, `-007`, `-008`). That is precisely the condition under which a document drifts
-from the rules it claims to describe, so the task is a check of that equivalence, not a
-rewrite. `P0-TSK-007` already found §2 and §8 claiming rules were "not yet in place" when they
-were.
+Rationale: it is the next item in [`BACKLOG.md`](BACKLOG.md). `P0-EPIC-02` is now closed by
+`P0-DOC-002`, so work returns to `P0-EPIC-03`, where `P0-TST-001` and `P0-TST-002` are the
+remaining items. Both are substantially covered by tests written during `P0-TSK-009` and
+`P0-TSK-010`; the task is to establish what is genuinely missing rather than to restate what
+exists, and to say so explicitly where coverage is already adequate.
 
 ---
 
@@ -350,6 +346,7 @@ were.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-DOC-002` complete. Audit of `MODULE_ARCHITECTURE.md` against the enforced rules found six drifts, including a rule enforced on every build that the §6 list did not mention, and two sections still calling `INV-MON-01` unenforced two tasks after it was enforced. Prose fixed, then the equivalence made mechanical: every enforcement claim names its rule, and `ArchitectureRulesAreDocumentedTest` fails the build in either direction. Probing also found `:app:test` staying `UP-TO-DATE` after the document was broken — the document is now a declared task input. Closes `P0-EPIC-02`. 172 tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-008`. One critical finding, found by probing rather than reading: the new coverage guard asserted only that `Money` was analysed, so it could not see a whole module falling out of the sweep. Proven by narrowing the sweep to `sharedkernel` — all four floating-point rules reported PASSED and the build exited 0 with a `double` planted in `platform`'s `MoneyColumns`. This is the same weakness the `P0-TSK-007` review found and that the new rule's own javadoc cites as its rationale. Both suites now derive expected coverage from the classpath through a shared `ProductionModules` helper, and the identical probe now fails the build. Also verified end to end that a `float` in a signature and a `Double.parseDouble` call in production code each fail the build — the latter also catching `BigDecimal.valueOf(double)`, the trap beside the safe `valueOf(long, int)`. |
 | 2026-09-01 | `P0-TSK-008` complete. `INV-MON-01` enforced statically over all production code — fields, signatures, call targets and field accesses, including generic arguments. Default-deny rather than a list of financial packages, with deliberate-violation fixtures asserting the teeth on every build. Proven end to end by planting a `double` in `Money`. Closes `P0-EPIC-02` and Phase 0 exit criterion 4. 170 tests. |
 | 2026-08-31 | Task completion review of `P0-TSK-011`. Probing PostgreSQL showed `CHAR(3)` accepts `'US '` — the column type was not the guarantee the design implied, leaving `INV-MON-02` enforced only by application code against `DEFINITION_OF_DONE.md` §1.3. Added check constraints on the currency pattern and scale range, generated from `Money.MAX_SUPPORTED_SCALE`, and proved them by weakening them. Also switched the not-null assertion from message text to SQLState (messages are localisable), tightened `trim()` to `stripTrailing()` to match its own stated rationale, and made the write path use `MonetaryColumnException` like the read path. |

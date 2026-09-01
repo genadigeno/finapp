@@ -155,7 +155,7 @@ Status: `IN_PROGRESS`
 - Cx: S
 - DoD: `DOD-TEST`
 
-**P0-DOC-002 — MODULE_ARCHITECTURE.md**
+**P0-DOC-002 — MODULE_ARCHITECTURE.md** — `COMPLETE` (2026-09-01)
 - Context: architecture
 - Description: Document the module cut, ownership, boundaries and the rules enforcing them.
 - Why: The architecture baseline is a durable reference, not a conversation artefact.
