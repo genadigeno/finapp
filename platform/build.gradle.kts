@@ -44,10 +44,30 @@ val dbUser = providers.environmentVariable("FINAPP_DB_USER").orElse("finapp").ge
 val dbPassword = providers.environmentVariable("FINAPP_DB_PASSWORD")
     .orElse("local-development-only-not-a-secret").get()
 
+// The two ordinary roles, created by infra/postgres/initdb/00-roles.sql (P0-TSK-022).
+//
+// Roles are cluster objects, so they are provisioned by infrastructure rather than by a
+// migration; their PRIVILEGES on our tables are granted by the migration that creates each
+// table. dbUser above remains the bootstrap superuser and is used by nothing but a fixture
+// that needs DDL.
+//
+// Flyway connects as the migrator, so every object is owned by a role that is NOT a superuser
+// -- which is what makes INV-HIST-03 enforceable at all: a superuser ignores every permission
+// check, so an append-only table owned and written by one is append-only only by convention.
+val migratorUser = providers.environmentVariable("FINAPP_DB_MIGRATOR_USER")
+    .orElse("finapp_migrator").get()
+val migratorPassword = providers.environmentVariable("FINAPP_DB_MIGRATOR_PASSWORD")
+    .orElse("local-development-only-not-a-secret").get()
+val appUser = providers.environmentVariable("FINAPP_DB_APP_USER").orElse("finapp_app").get()
+val appPassword = providers.environmentVariable("FINAPP_DB_APP_PASSWORD")
+    .orElse("local-development-only-not-a-secret").get()
+
 flyway {
     url = dbUrl
-    user = dbUser
-    password = dbPassword
+    // The migrator, not the superuser: objects must be owned by a role that cannot bypass the
+    // grants it applies.
+    user = migratorUser
+    password = migratorPassword
 
     schemas = arrayOf("platform")
     defaultSchema = "platform"
@@ -150,6 +170,17 @@ tasks.register<Test>("databaseTest") {
     systemProperty("finapp.db.url", dbUrl)
     systemProperty("finapp.db.user", dbUser)
     systemProperty("finapp.db.password", dbPassword)
+
+    // The application role. Tests asserting a privilege-level invariant MUST connect as this
+    // and never as dbUser above, because a superuser ignores permission checks and would pass
+    // whatever the grants said. DatabaseRoles asserts it is not a superuser for that reason.
+    systemProperty("finapp.db.app.user", appUser)
+    systemProperty("finapp.db.app.password", appPassword)
+
+    // The migrator, for fixtures that legitimately need DDL - a probe table, say. Application
+    // behaviour is never exercised through it.
+    systemProperty("finapp.db.migrator.user", migratorUser)
+    systemProperty("finapp.db.migrator.password", migratorPassword)
 
     // Never cached: the point is to exercise a real database, and a cached "up to date"
     // result would mean it had not.

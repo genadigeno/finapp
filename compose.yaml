@@ -42,18 +42,19 @@ services:
       # marked local default rather than flagging it, without weakening the scan.
       POSTGRES_PASSWORD: ${FINAPP_DB_PASSWORD:-local-development-only-not-a-secret}
       #
-      # LEAST PRIVILEGE — a gap that P0-TSK-005 and P0-TSK-022 must close.
-      # POSTGRES_USER above is the cluster superuser. That is acceptable for
-      # bootstrapping a local container and nowhere else. Several invariants are
-      # enforced at the database *privilege* level and cannot be satisfied by a
-      # superuser connection:
+      # LEAST PRIVILEGE. POSTGRES_USER above is the cluster superuser, which is
+      # how the container bootstraps itself and is not what anything else uses.
+      # P0-TSK-022 added two ordinary roles in infra/postgres/initdb/00-roles.sql:
+      #   finapp_migrator - owns the platform schema; Flyway connects as this
+      #   finapp_app      - what the application connects as; per-table DML only
+      # Both are NOSUPERUSER, which is the point: a superuser ignores every
+      # permission check, so these invariants are enforced only for a role that
+      # cannot bypass them --
       #   INV-LED-03  posted journal entries are immutable
       #   INV-HIST-01 financial history is never edited
       #   INV-HIST-03 audit records are append-only
-      # Those require a restricted application role holding INSERT/SELECT only,
-      # and tests that assert UPDATE/DELETE fail for that role. Creating it is
-      # schema work and belongs to P0-TSK-005; running the application as the
-      # superuser must never become the habit that makes those tests impossible.
+      # -- and an immutability test connecting as a superuser would pass whatever
+      # the grants said.
       # Deterministic collation, independent of the host's locale.
       POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=und-x-icu --encoding=UTF8"
     ports:
@@ -70,6 +71,11 @@ services:
       # This platform's ledger will live in this database for its whole life, so
       # the upgrade path is not a detail to discover later.
       - postgres-data:/var/lib/postgresql
+      # Role provisioning, run by the entrypoint on FIRST initialisation only.
+      # Roles are cluster objects and so cannot live in a Flyway migration; see the
+      # script's own header. An existing volume predates this mount and needs the
+      # script applied by hand once - README documents the command.
+      - ./infra/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # pg_isready reports readiness to accept connections, which is what a caller
       # actually needs. "container started" is not the same thing.

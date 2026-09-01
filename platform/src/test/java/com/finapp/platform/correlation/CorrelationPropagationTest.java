@@ -7,6 +7,11 @@ import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
 import com.finapp.sharedkernel.event.EventId;
+import com.finapp.platform.audit.Actor;
+import com.finapp.platform.audit.AuditId;
+import com.finapp.platform.audit.AuditOutcome;
+import com.finapp.platform.audit.AuditRecord;
+import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.inbox.InboxConsumer;
 import com.finapp.platform.inbox.InboxKey;
 import com.finapp.platform.inbox.JdbcInboxRecordStore;
@@ -340,6 +345,91 @@ class CorrelationPropagationTest {
         assertThat(inboxCorrelationId(key))
                 .as("and agree with the idempotency record written in the same flow")
                 .isEqualTo(persistedCorrelationId(scope));
+    }
+
+    @Test
+    @DisplayName("an action audited during the flow carries the same identifier as its log lines")
+    void correlationReachesTheAuditRecord() throws Exception {
+        // The audit sink, named by P0-TST-003's criterion and unverifiable until the audit store
+        // existed. An audit record that cannot be joined to the request that caused it answers
+        // "what happened" without answering "as part of what", which is the question asked first
+        // in any investigation.
+        String scope = "propagation:audits";
+        CorrelationId accepted = CorrelationId.of(INBOUND_HEADER);
+        AuditId auditId =
+                AuditId.next(
+                        new com.finapp.sharedkernel.id.IdGenerator(
+                                java.time.Clock.systemUTC(), new java.security.SecureRandom()));
+
+        try (ExecutorService worker = Executors.newSingleThreadExecutor()) {
+            try (var scoped = CorrelationContext.enter(Correlation.startingWith(accepted))) {
+                logger.info("privileged action accepted");
+                worker.submit(
+                                CorrelationContext.propagate(
+                                        (Runnable)
+                                                () -> {
+                                                    // Reads the ambient context, as the real
+                                                    // auditing code will. Closing over the
+                                                    // identifier would make this pass with
+                                                    // propagation removed.
+                                                    CorrelationId onWorker = currentCorrelationId();
+                                                    logger.info("action audited");
+                                                    writeClaim(scope, onWorker);
+                                                    auditAction(auditId, onWorker);
+                                                }))
+                        .get(30, TimeUnit.SECONDS);
+            }
+        }
+
+        assertThat(auditCorrelationId(auditId))
+                .as("the audit record must carry the identifier the caller supplied")
+                .isEqualTo(INBOUND_HEADER);
+        assertThat(auditCorrelationId(auditId))
+                .as("and agree with the idempotency record written in the same flow")
+                .isEqualTo(persistedCorrelationId(scope));
+    }
+
+    private static void auditAction(AuditId auditId, CorrelationId correlationId) {
+        // The real writer, which refuses an auto-commit connection - so the transaction is
+        // opened around this call, as for the inbox above.
+        try {
+            connection.setAutoCommit(false);
+            new JdbcAuditWriter()
+                    .append(
+                            connection,
+                            new AuditRecord(
+                                    auditId,
+                                    Actor.SYSTEM,
+                                    Instant.now(),
+                                    "propagation.Probe",
+                                    "Probe",
+                                    "target-1",
+                                    java.util.Optional.empty(),
+                                    AuditOutcome.SUCCEEDED,
+                                    correlationId == null ? CorrelationId.of("MISSING") : correlationId,
+                                    java.util.Optional.empty()));
+            connection.commit();
+        } catch (SQLException e) {
+            throw new IllegalStateException("could not audit the probe action", e);
+        } finally {
+            try {
+                connection.setAutoCommit(true);
+            } catch (SQLException e) {
+                throw new IllegalStateException("could not restore auto-commit", e);
+            }
+        }
+    }
+
+    private static String auditCorrelationId(AuditId auditId) throws SQLException {
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT correlation_id FROM platform.audit_record WHERE audit_id = ?")) {
+            select.setObject(1, auditId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                assertThat(rows.next()).as("an audit record must have been written").isTrue();
+                return rows.getString(1);
+            }
+        }
     }
 
     private static void consumeMessage(InboxKey key) {

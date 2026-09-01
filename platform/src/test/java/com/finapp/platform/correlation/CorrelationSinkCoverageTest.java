@@ -58,6 +58,11 @@ class CorrelationSinkCoverageTest {
                     // cannot be joined to the flow that produced the message it handled, which
                     // is the only question anyone has when tracing a duplicate.
                     "inbox",
+                    // A correlation sink, asserted by CorrelationPropagationTest: every audit
+                    // record carries correlation_id NOT NULL. This is one of the four sinks
+                    // P0-TST-003's criterion named explicitly, and the guard is what stopped the
+                    // audit store arriving without the assertion.
+                    "audit",
                     // Not a sink. MoneyColumns is a persistence convention with no flow of its
                     // own; correlation reaches the tables that use it, not the convention.
                     "money");
