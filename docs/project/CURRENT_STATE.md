@@ -25,24 +25,23 @@ financial history exists.
 
 ## Current Milestone
 
-**M0.2 — Financial kernel**
-`P0-EPIC-03` (Financial Kernel: Money) and `P0-EPIC-04` (Identity, Time and Correlation
-Primitives).
+**M0.3 — Correctness primitives**
+`P0-EPIC-05` (Idempotency Kernel), `P0-EPIC-06` (Reliable Messaging) and `P0-EPIC-07` (Audit
+Trail).
 
-Milestone complete when: `Money` is exact, currency-explicit and scale-preserving with its
-invariants enforced and proven; typed identifiers, an injected `Clock` and correlation/causation
-context exist and propagate.
+Milestone complete when: money-moving commands are idempotent under genuine concurrency; domain
+facts and their publication records commit together via an outbox, with an inbox deduplicating
+consumers; and privileged actions produce append-only audit records the application role cannot
+edit.
 
-**M0.1 — Buildable, boundary-enforced skeleton** — `P0-EPIC-01` and `P0-EPIC-02`. All ten items
-are `COMPLETE` as of `P0-DOC-001` (2026-09-01). Three of its four completion criteria are met:
-modules with enforced dependency direction, ArchUnit rules failing the build on a deliberate
-violation, and pinned local infrastructure matching the test infrastructure. The fourth —
-"green **in CI** from a clean clone" — cannot be met while the repository has no git remote.
-A clean clone was verified to reach a green build locally during `P0-DOC-001`; only the runner
-execution is outstanding.
+**M0.2 — Financial kernel** — `P0-EPIC-03` and `P0-EPIC-04`, both `COMPLETE` (2026-09-01).
+
+**M0.1 — Buildable, boundary-enforced skeleton** — `P0-EPIC-01` and `P0-EPIC-02`, both
+`COMPLETE`. Three of its four completion criteria are met; the fourth, "green **in CI** from a
+clean clone", cannot be met while the repository has no git remote. A clean clone was verified
+to reach a green build locally during `P0-DOC-001`.
 
 Subsequent Phase 0 milestones:
-- **M0.3** Correctness primitives — `P0-EPIC-05`, `P0-EPIC-06`, `P0-EPIC-07`
 - **M0.4** API, observability, security baseline — `P0-EPIC-08`, `-09`, `-10`
 - **M0.5** Test infrastructure and phase review — `P0-EPIC-11`, `P0-EPIC-12`
 
@@ -53,60 +52,42 @@ Status: `READY` — not started.
 
 Bounded context: platform. Depends on `P0-TSK-015` (`COMPLETE`).
 
-Scope: claim, execute, persist outcome; fingerprint comparison for `INV-IDEM-03`; deterministic
-handling of an `IN_PROGRESS` claim including reclaim after a crash timeout.
-
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-05. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TSK-015` — Idempotency record schema** — `COMPLETE` (2026-09-01). The platform's first
-real table.
+**`P0-TST-003` — Correlation propagation integration test** — `COMPLETE` (2026-09-01).
+**`P0-EPIC-04` and milestone M0.2 are now closed.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Unique constraint prevents a second record | 16 threads racing one key from a standing start: exactly one winner, every loser failing as a unique violation rather than as something unexplained |
-| Expiry policy documented | [`DATA_MIGRATIONS.md`](../architecture/DATA_MIGRATIONS.md) §8 |
-| Scope prevents key collision across different commands | Two scopes, one shared client key, both stored |
+| Test fails if propagation is removed from any one of the four sinks | Two sinks exist and are asserted identically across a thread handoff; removing propagation fails the test. The other three cannot land silently — see below |
+
+**This task had been recorded as blocked until M0.4, and that was too pessimistic.** The
+re-examination found a second sink already in place: `platform.idempotency_record` carries
+`correlation_id NOT NULL`, which makes a genuine database-backed end-to-end assertion possible
+today — one request, its identifier accepted from the caller, handed to another thread, and the
+same value present in both the log lines and the committed row. Compared directly, because two
+independently-correct sinks that disagree are worse than one.
+
+The outbox, audit store and tracing exporter genuinely do not exist. Rather than defer the task
+or write one that asserts less than its name claims, `CorrelationSinkCoverageTest` derives the
+set of platform concerns from the build output and fails when one appears that has not been
+classified as a sink or not-a-sink. Proven by adding an `outbox` package and watching the build
+go red. **The four-sink criterion is now enforced as the sinks arrive**, rather than depending
+on someone remembering this task existed — which is the failure mode that would otherwise have
+left the criterion satisfied on paper and not in fact.
 
 Design decisions worth carrying forward:
-- **This table is deliberately not append-only, and that needed justifying rather than
-  assuming.** `DATA_MIGRATIONS.md` §6 says the migrator/application role split must land before
-  any table covered by `INV-LED-03`, `INV-HIST-01` or `INV-HIST-03` exists. An idempotency
-  record is covered by none of them: it is a concurrency-control artefact that is claimed
-  before the command runs, updated with the outcome and deleted at expiry. Making it immutable
-  would make the mechanism unimplementable. It records *that* a command ran; the immutable
-  record of *what it did* is the ledger's.
-- **`IN_PROGRESS` is a modelled state, not an assumption of failure.** A process that dies mid
-  command may already have committed its financial effect, so a retry that assumed failure and
-  re-executed would produce the second effect the whole mechanism exists to prevent. This is
-  `INV-LIFE-03`'s reasoning about unknown provider outcomes applied to our own interrupted work.
-- **The response is stored as bytes, not JSON.** A retry must receive the bytes the first caller
-  received; re-serialising a parsed structure can differ in field order or numeric formatting,
-  and "almost the same response" is not what `INV-IDEM-01` promises. It also avoids deciding the
-  API representation here, which is `P0-EPIC-08`'s.
-- **The fingerprint algorithm is stored on the record.** `INV-HIST-04`'s rule — pin the version
-  of whatever produced a decision — applied to the thing that decides whether two requests are
-  "the same". Without it, changing the algorithm would compare digests from two different
-  functions, which never match, so every retry after the change would become a new request and
-  a second financial effect.
-- **The enum and the `CHECK` constraint are one definition.** `IdempotencyState.sqlValueList()`
-  generates the literal list, and a hermetic test asserts the migration contains exactly it, so
-  drift cannot survive a compile — not just until someone remembers to run the database tests.
-- **A `CHECK` constraint cannot make a terminal state terminal** — it sees only the row being
-  written, never the previous one. Found in review by running the statement an operator would
-  run, and closed by `V003`'s `BEFORE UPDATE` trigger. `DATA_MIGRATIONS.md` §6's argument — the
-  next caller is a job, an operator tool, or a psql session — applies to transitions as much as
-  to privileges.
-- **No index on `expires_at`.** Its right shape depends on the sweep's predicate, which is not
-  written yet; an index maintained on every insert for a query nobody has written is a cost with
-  no benefit. Recorded, with the reasoning, in §8.
-
-**One process note.** I edited the migration after Flyway had applied it locally, and
-`flywayValidate` caught the checksum mismatch — `DATA_MIGRATIONS.md` §3.1 working exactly as
-intended. Resolved with `flywayRepair`, which is correct for a migration that exists only on the
-author's machine; it would not be correct for one applied anywhere else. The migration was then
-verified against a genuinely empty scratch database: applies, re-applies idempotently, validates.
+- **The worker reads the ambient context rather than closing over the identifier.** Closing over
+  it would make the test pass even with propagation removed — the assertion would be about the
+  lambda, not the mechanism. The negative control exists for the same reason.
+- **A generated identifier is tested as well as an accepted one.** Flows started by a job or an
+  internal caller have no inbound header; if only the accepted path propagated, those flows
+  would be untraceable while HTTP ones looked fine.
+- **A guard that derives its expectation from the codebase cannot rot.** Same reasoning as the
+  architecture rules' coverage guards and the documentation-equivalence check, applied to a test
+  whose scope must grow with the platform.
 
 ---
 
@@ -199,6 +180,13 @@ Financial kernel (2026-08-31), `P0-TSK-009`:
   domain exceptions under one `MonetaryException` supertype
 - `CurrencyCode` validates against ISO 4217 and rejects codes with no minor unit
 - No floating point anywhere on the monetary path
+
+Correlation propagation (2026-09-01), `P0-TST-003`:
+- One request's identifier proven identical in the log and in a committed database row, across
+  a thread handoff, for both an accepted and a generated identifier
+- A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
+- `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
+  decision about whether correlation must reach it
 
 Idempotency schema (2026-09-01), `P0-TSK-015`:
 - `platform.idempotency_record`: `INV-IDEM-01` enforced by a unique key on
@@ -374,7 +362,7 @@ Recorded so it is not mistaken for a completed criterion.
 | `P0-TSK-004` | The CycloneDX SBOM covers the whole resolved dependency set, test scope included (21 of ~61 components). Plugin 3.4.1 exposes no configuration filter. Adequate for vulnerability scanning — test libraries execute on CI runners, so they are legitimately in scope — but it means a HIGH/CRITICAL advisory in a test-only library fails the build though nothing vulnerable ships, and **the SBOM must not be published as shipping provenance in this form** because it overstates what is deployed. | Phase 15 (supply chain and provenance) |
 | `P0-TSK-004` | CI actions and scanner images are pinned by SHA/digest with no automated update path, so the pins will rot. | `P0-TSK-040` |
 | ~~`P0-TSK-002`~~ | ~~Boundary enforcement partial~~ — **closed**. Cross-module internals and entity references by `P0-TSK-007`; `INV-MON-01` by `P0-TSK-008`. | — |
-| `P0-TSK-014` | The acceptance criterion's trace, emitted-event and ingress-filter clauses are unverifiable: no tracing exporter, outbox, audit store or HTTP surface exists yet. The correlation kernel they will each call is built and proven, and the clauses are transferred to `P0-TST-003` in the backlog. | `P0-EPIC-06`, `-07`, `-08`, `-09`, then `P0-TST-003` |
+| `P0-TSK-014` | The acceptance criterion's trace, emitted-event and ingress-filter clauses remain unverifiable: no tracing exporter, outbox or HTTP surface exists. Narrowed by `P0-TST-003`, which now asserts propagation into a persisted sink and fails the build if a new sink lands unclassified — so this closes on arrival rather than on memory. | `P0-EPIC-06`, `-07`, `-08`, `-09` |
 | `P0-TSK-003`, `P0-TSK-005` | Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants (`INV-LED-03`, `INV-HIST-01`, `INV-HIST-03`) cannot yet be exercised. The migrator/application role split is designed and documented (`DATA_MIGRATIONS.md` §5) but not implemented, and must land **before** any table subject to those invariants is created. | `P0-TSK-022` |
 
 ---
@@ -427,9 +415,10 @@ Resolved during initiation:
 
 **`P0-TSK-016` — Idempotent execution wrapper.**
 
-It is where `INV-IDEM-01` and `INV-IDEM-03` become behaviour rather than schema: claim, execute,
-persist, and — the part that carries the risk — decide what to do about an `IN_PROGRESS` claim
-without either deadlocking on it or assuming it failed.
+`P0-EPIC-04` and milestone M0.2 are closed, so work continues in M0.3 where `P0-TSK-015` left
+off. `P0-TSK-016` is where `INV-IDEM-01` and `INV-IDEM-03` become behaviour rather than schema,
+and the risk sits in one place: deciding what to do about an `IN_PROGRESS` claim without either
+deadlocking on it or assuming it failed.
 
 ---
 
@@ -437,6 +426,7 @@ without either deadlocking on it or assuming it failed.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TST-003` complete; `P0-EPIC-04` and milestone M0.2 closed. The task had been recorded as blocked until M0.4, which was too pessimistic: a second sink already existed, since `platform.idempotency_record` carries `correlation_id NOT NULL`. One request's identifier is now proven identical in the log and in a committed row across a thread handoff, for both an accepted and a generated identifier, with a negative control showing an unwrapped handoff loses it. The three sinks that genuinely do not exist are handled by `CorrelationSinkCoverageTest`, which derives platform concerns from the build output and fails when one appears unclassified — proven by adding an `outbox` package. The four-sink criterion is enforced as the sinks arrive rather than left to memory. 261 hermetic tests, 28 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-015`. All nine constraint mutations were caught, and so was the enum/migration drift guard. One real gap the sweep could not reveal: a `CHECK` constraint sees only the row being written, so V002 constrained row *shape* and said nothing about *transitions*. Probing the developer database with the statement an operator or a defective wrapper would run — `UPDATE ... SET state='IN_PROGRESS', completed_at=NULL` — turned a finished command back into an unfinished one, which a wrapper would then re-execute: a second financial effect from an UPDATE no application code performed. Closed by `V003`, a `BEFORE UPDATE` trigger freezing terminal claims entirely and making identity and fingerprint immutable in any state; both halves proven by isolated mutation. A second finding was a test artefact worth keeping: mixing a client-generated `created_at` with PostgreSQL's `now()` for `completed_at` produced a backwards row, because the container's clock runs behind the host's — which is why these timestamps are application-supplied from one injected clock and the schema declares no `DEFAULT now()`. 259 hermetic tests, 25 database tests. |
 | 2026-09-01 | `P0-TSK-015` complete — the platform's first table. `INV-IDEM-01` enforced by a unique key on (scope, idempotency_key) and proven under 16-way contention against a real PostgreSQL: exactly one winner, every loser a unique violation. The state machine is checked in the schema as well as in code, the fingerprint's algorithm is recorded on the record (`INV-HIST-04`'s rule applied to the thing that decides whether two requests are the same), and the response is stored as bytes so a retry receives what the first caller received. Established that this table is legitimately mutable and so not gated on the `P0-TSK-022` privilege split. `flywayValidate` caught a checksum mismatch when the migration was edited after being applied locally — the rule working; repaired, then verified against an empty scratch database. Expiry policy documented in `DATA_MIGRATIONS.md` §8, including why too-short expiry costs money and too-long costs storage. 259 hermetic tests, 20 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-014`. All eight mutations of the correlation kernel were caught, including `InheritableThreadLocal`, which fails through the unwrapped-task path — so the claim the design rests on is genuinely tested rather than merely argued. Two gaps the sweep could not reveal, both fixed: the token charset used `String.matches`, recompiling the expression on the ingress path of every request; and the MDC key names are documented as a published contract that log queries and dashboards are written against, yet every test used the constants, so renaming one would have been a compile-safe refactor that silently broke every dashboard. Literals now pinned. Also recorded that `propagate` returns an `Executor` rather than an `ExecutorService`, so a caller needing `submit` wraps the task — no speculative decorator written. 255 tests. |

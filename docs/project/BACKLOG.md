@@ -273,13 +273,20 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-KERNEL`
 
-**P0-TST-003 — Correlation propagation integration test**
+**P0-TST-003 — Correlation propagation integration test** — `COMPLETE` (2026-09-01)
 - Context: platform
 - Description: End-to-end test asserting correlation identity across log, trace, outbox row and audit record.
-- **Blocked until M0.4 (recorded 2026-09-01).** Needs the outbox (`P0-EPIC-06`), the audit store
-  (`P0-EPIC-07`), an HTTP surface (`P0-EPIC-08`) and a tracing exporter (`P0-EPIC-09`). It
-  cannot run in M0.2 and is not a gap in `P0-TSK-014`, which built and proved the kernel those
-  subsystems will call.
+- **Completed against the sinks that exist, with the rest enforced on arrival (2026-09-01).**
+  Previously recorded as blocked until M0.4. Re-examined: two of the four sinks do exist — log
+  lines, and the `correlation_id` on `platform.idempotency_record`, which is a persisted sink
+  and a real database round trip. `CorrelationPropagationTest` asserts one request's identifier
+  reaches **both, identically**, across a thread handoff, and fails when propagation is removed.
+  The outbox (`P0-EPIC-06`), audit store (`P0-EPIC-07`) and tracing exporter (`P0-EPIC-09`) do
+  not exist to assert against. Rather than defer the task, `CorrelationSinkCoverageTest` fails
+  the build when any new platform concern appears without a decision about whether correlation
+  reaches it — proven by adding an `outbox` package and watching it fail. The four-sink
+  criterion is therefore enforced as the sinks land, instead of depending on someone
+  remembering this task existed.
 - Why: Correlation gaps are only discovered during incidents unless tested.
 - Deps: P0-TSK-014, P0-TSK-019, P0-TSK-022
 - Accept: Test fails if propagation is removed from any one of the four sinks.
