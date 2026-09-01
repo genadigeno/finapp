@@ -58,6 +58,32 @@ kernel to a serialisation library. The envelope provides a canonical textual for
 set and order are pinned by test, so the contract cannot drift silently; the transport format is
 the outbox's and the relay's decision (`P0-EPIC-06`).
 
+## Publication
+
+Events are published by the **outbox relay** (`P0-TSK-020`) and by nothing else — enforced by
+`nothingPublishesToABrokerDirectly`.
+
+| Property | What the platform provides |
+|----------|----------------------------|
+| Delivery | **At least once.** The relay publishes, then records publication; a crash between the two republishes on restart |
+| Order | Preserved **per aggregate**. The aggregate id is the partition key, and the relay stops at the first event of an aggregate it cannot publish rather than going around it |
+| Retry | Exponential backoff with a ceiling, counted on the row |
+| Abandonment | After a bounded number of attempts a row is dead-lettered. It is **not** skipped: it blocks its aggregate until an operator resolves it |
+| Latency | Bounded by the poll interval, not immediate (ADR-0005) |
+
+**Abandonment blocks rather than skips**, deliberately. Skipping a poisoned event and carrying
+on is quiet — consumers receive events 1 and 3 with no way to know 2 existed — and an
+undetectable gap in a financial event stream is worse than a stall somebody has to look at.
+
+**Exactly-once is never claimed.** What is exactly-once is the *effect* at a consumer that
+deduplicates on `eventId` (`INV-IDEM-04`), which is the consumer's property and not the relay's.
+This is why `eventId` is minted with the event and never regenerated at publication.
+
+**The transport adapter is deliberately absent.** The relay publishes through an
+`EventPublisher` port; writing an adapter decides the wire format, the topic scheme and the
+producer's acknowledgement configuration, and puts a broker client on the classpath. Those
+belong with the phase that has events to publish.
+
 ## Delivery Assumptions
 
 Consumers must tolerate:

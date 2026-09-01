@@ -692,8 +692,12 @@ record one commit — and that guarantee lasts exactly as long as nobody takes t
   *(ArchUnit: `nothingPublishesToABrokerDirectly`)*
 
 The exemption is a **module**, not a class list, so the relay can be built from several classes
-without editing the rule. It is currently **empty** — until `P0-TSK-020` builds the relay,
-nothing at all may publish.
+without editing the rule. It is still **empty** after `P0-TSK-020`, and that is not an
+oversight: the relay publishes through an `EventPublisher` port and no adapter behind it exists
+yet, so no production class touches a broker client and none needs exempting. The exemption
+arrives with the adapter — with the dependency, the wire format and the topic scheme it brings —
+rather than in advance of it, which keeps the list at exactly the modules that have actually
+taken the privilege.
 
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).

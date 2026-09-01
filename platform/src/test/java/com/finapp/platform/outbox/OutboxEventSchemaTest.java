@@ -141,6 +141,74 @@ class OutboxEventSchemaTest {
     }
 
     // -----------------------------------------------------------------
+    // V006 — relay scheduling
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a row cannot be both published and abandoned")
+    void publishedAndAbandonedAreMutuallyExclusive() {
+        // If it could, "how many events did we fail to deliver" would have two contradictory
+        // answers, and the one an operator happened to query would decide whether anybody
+        // investigated.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> writeRelayState(UUID.randomUUID(), 1, Instant.now(), Instant.now(), "boom"))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+    }
+
+    @Test
+    @DisplayName("a row cannot be abandoned without ever having been attempted")
+    void abandonmentImpliesAnAttempt() {
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> writeRelayState(UUID.randomUUID(), 0, null, Instant.now(), "boom"))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+    }
+
+    @Test
+    @DisplayName("an abandoned row with attempts recorded is accepted, so the rule is not a blanket ban")
+    void abandonmentIsOtherwiseAllowed() throws SQLException {
+        // Without this, tightening the constraint to forbid abandonment outright would pass
+        // every rejection test above.
+        writeRelayState(UUID.randomUUID(), 1, null, Instant.now(), "the broker is unavailable");
+
+        assertThat(probeCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("an unbounded error message is refused rather than stored")
+    void lastErrorIsBounded() {
+        // The relay truncates, but the relay is not the only thing that will ever write here:
+        // an operator tool or a later writer would otherwise put an unbounded provider response
+        // into a column read in operational views.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> writeRelayState(UUID.randomUUID(), 1, null, null, "x".repeat(1001)))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> writeRelayState(UUID.randomUUID(), 1, null, null, ""))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+    }
+
+    // -----------------------------------------------------------------
+
+    private static void writeRelayState(
+            UUID eventId, int attempts, Instant publishedAt, Instant deadLetteredAt, String lastError)
+            throws SQLException {
+        String sql =
+                "INSERT INTO " + TABLE + " (event_id, event_type, event_version, schema_version, "
+                        + "aggregate_id, aggregate_type, occurred_at, producer, correlation_id, "
+                        + "causation_id, payload, payload_media_type, published_at, attempts, "
+                        + "dead_lettered_at, last_error) "
+                        + "VALUES (?, 'probe.Event', 1, 1, ?, 'Probe', now(), 'schema-probe', "
+                        + "'flow-1', 'cause-1', '\\x00', 'application/json', ?, ?, ?, ?)";
+        try (PreparedStatement insert = connection.prepareStatement(sql)) {
+            insert.setObject(1, eventId);
+            insert.setObject(2, UUID.randomUUID());
+            insert.setTimestamp(3, publishedAt == null ? null : Timestamp.from(publishedAt));
+            insert.setInt(4, attempts);
+            insert.setTimestamp(5, deadLetteredAt == null ? null : Timestamp.from(deadLetteredAt));
+            insert.setString(6, lastError);
+            insert.executeUpdate();
+        }
+    }
 
     private static void insert(
             UUID eventId,

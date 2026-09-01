@@ -47,53 +47,55 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-020` — Outbox relay**
-Status: `READY` — not started.
+**`P0-TSK-021` - Inbox dedupe store and consumer wrapper**
+Status: `READY` - not started.
 
-Bounded context: platform. Depends on `P0-TSK-019` (`COMPLETE`).
+Bounded context: platform / data. Depends on `P0-TSK-005` (`COMPLETE`).
 
-Two things are already decided for it and should not be rediscovered: under ADR-0014 it is the
-platform's first *scheduled* component and must state its cluster-safety strategy before it is
-written (`DISTRIBUTED_EXECUTION.md` §5), and `nothingPublishesToABrokerDirectly` currently
-exempts **no** module — the relay adds itself to that exemption, which is the one place the
-decision is visible.
+It is the other half of ADR-0005 and the reason the relay is allowed to be at-least-once: the
+relay guarantees an event is delivered, the inbox guarantees it takes effect once. The dedupe key
+is `event_id`, which `P0-TSK-018` fixed at event creation precisely so that redelivery presents
+the same value.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-06. DoD profile: `DOD-EVENT`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-06. DoD profile: `DOD-KERNEL`.
 
 ### Just completed
 
-**`P0-TSK-019` — Outbox table and writer** — `COMPLETE` (2026-09-01).
+**`P0-TSK-020` - Outbox relay** - `COMPLETE` (2026-09-01).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Rolling back the business transaction rolls back the outbox row | Asserted both ways — a rollback loses the fact *and* the row; a commit keeps both. A rollback-only test would pass against a writer that never wrote anything |
-| No code path publishes directly to Kafka, enforced by architecture rule | `nothingPublishesToABrokerDirectly`; proven by planting a direct publish in `platform` production code and watching `./gradlew build` fail |
+| Relay restart after a crash publishes every committed, unpublished row | A publisher that delivers and then throws an `Error` reproduces a process death between publishing and recording it. The event is delivered, nothing marks it, the transaction rolls back leaving no attempt behind, and a restart delivers it again - **twice in total**, which is what at-least-once means and is stated rather than glossed |
+| Ordering preserved per aggregate | Six events published in written order; and, in the case that actually distinguishes the property, a failed event blocks the ones behind it - they are not even attempted |
+| Broker unavailability causes retry, never row loss | Three failed cycles leave the row pending with `attempts = 3` and an error recorded; the broker recovers and the row publishes |
+| Correct under N instances | Eight instances drain a 36-event backlog and deliver each event exactly once between them; and while one instance is provably inside `publish()`, a second is refused that aggregate and publishes a *different* one |
 
 Design decisions worth carrying forward:
-- **The writer never opens a transaction.** It writes on the connection it is handed and does
-  nothing else. A writer that opened its own would look identical in every test and silently
-  reintroduce the window `INV-EVT-01` exists to close.
-- **A failed write raises rather than logs.** The caller's transaction must fail: a fact
-  committed without its publication record is a lost event, undetectable afterwards and
-  surfacing much later as a reconciliation break with nothing attached to explain it.
-- **The relay will select unpublished rows, never "everything above a watermark".** Sequence
-  values are allocated at insert and become visible at commit, so a slow transaction can commit
-  a *lower* id after a faster one committed a higher one — a watermark relay skips that row
-  permanently and nothing ever reports it. Recorded in `V005` so the next task does not
-  reinvent the bug.
-- **The pending index is justified, unlike `V002`'s deferred one.** ADR-0005 fixes the relay's
-  predicate, so the shape is known rather than guessed; it is partial, so it holds only the
-  backlog and shrinks back as the relay keeps up.
-- **The broker rule matches by package name, not by type**, because no broker client is on the
-  classpath and a rule that only worked once someone added the dependency would be missing at
-  the moment it is first needed. Method references count. Its exemption names a **module** and
-  is currently empty — until the relay exists, nothing at all may publish.
+- **The lock is per aggregate, not per row.** `SELECT ... FOR UPDATE SKIP LOCKED` is the usual
+  outbox claiming pattern and it silently breaks ordering with more than one instance: A takes
+  event 1, B takes event 2, whichever publishes first wins. A transaction-scoped advisory lock on
+  the aggregate makes ordering structural rather than a property of how many relays happen to be
+  running.
+- **An abandoned row blocks its aggregate rather than being skipped.** Skipping is quiet -
+  consumers get events 1 and 3 with no way to know 2 existed. A stall is loud, bounded to one
+  aggregate, and visible as backlog age.
+- **`next_attempt_at` is written and judged by the server's clock.** The V004 lesson applied
+  before it could bite again: a schedule compared across two instances' clocks is a race against
+  skew. `occurred_at` stays application-supplied, which is why one column carries a `DEFAULT` and
+  the other does not.
+- **Auto-commit is not restored on the way out.** JDBC commits the open transaction when
+  auto-commit is switched back on, so a tidy-looking `finally` would turn every error path into a
+  commit. The relay catches `Throwable`, rolls back, and lets the connection close.
+- **No broker adapter, deliberately.** The relay publishes through an `EventPublisher` port.
+  Writing a Kafka adapter here would decide the wire format, the topic scheme and the producer's
+  acknowledgement configuration, and put a broker client on the classpath - four decisions that
+  belong with the phase that has events to publish. `nothingPublishesToABrokerDirectly` therefore
+  still exempts **no** module, which is the honest state rather than a placeholder.
 
-**Both self-maintaining guards fired, as designed.** `CorrelationSinkCoverageTest` refused the
-new `outbox` package until a decision was recorded, and `ArchitectureRulesAreDocumentedTest`
-refused the new rule until §6 named it. The first is the more valuable: it forced correlation
-propagation into the outbox row to be *asserted*, which closes the "emitted event" sink
-`P0-TSK-014`'s criterion named and could not verify at the time.
+**A test caught a documentation claim.** `RetryPolicy.DEFAULT`'s javadoc said ten attempts was
+"roughly forty minutes of trying". With a five-minute ceiling it is eight and a half. The count
+and the window are not independent, and the window is the number that matters operationally - so
+the test pins the total, not the count, and the default is now fourteen attempts (~28 minutes).
 
 ---
 
@@ -193,6 +195,20 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Outbox relay (2026-09-01), `P0-TSK-020`:
+- Every instance polls; a transaction-scoped advisory lock **per aggregate** means one instance
+  drains a given aggregate at a time, so ordering survives concurrency instead of depending on
+  there being one relay
+- At-least-once, said plainly: a crash between publishing and recording it republishes, proven by
+  a publisher that delivers and then dies
+- Exponential backoff with a ceiling, attempt counting, and a poison path that **blocks** its
+  aggregate rather than skipping it, so consumers never get an undetectable gap
+- Eight concurrent instances drain a 36-event backlog with no duplicate and no loss
+- `V006` adds `next_attempt_at`, `dead_lettered_at` and `last_error`, with eligibility and
+  abandonment decided by the server's clock; three new constraints, all exercised at the schema
+- Publishes through an `EventPublisher` port; no broker client on the classpath, so the
+  direct-publish rule still exempts nothing
 
 Transactional outbox (2026-09-01), `P0-TSK-019`:
 - `platform.outbox_event`: the full envelope as columns, all ten NOT NULL, so an untraceable
@@ -314,7 +330,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-008` is the next task.
+None in progress. `P0-TSK-021` is the next task.
 
 ## Blockers
 
@@ -457,12 +473,15 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-020` — Outbox relay**, continuing `P0-EPIC-06`.
+**`P0-TSK-021` - Inbox dedupe store and consumer wrapper**, completing `P0-EPIC-06`.
 
-It is the platform's first scheduled component, so ADR-0014 applies directly: every instance
-runs the scheduler, and the relay is therefore either idempotent under duplicate execution or
-takes an explicit database lease. At-least-once publication with idempotent consumption is what
-ADR-0005 already chose, so "exactly once" must not reappear as a claim.
+The relay's at-least-once delivery is only acceptable because this exists: the dedupe record and
+the side effect must commit in one transaction, exactly as the outbox row and the fact do. The
+dedupe key is `event_id`, fixed at event creation by `P0-TSK-018`.
+
+`P0-TST-005` (outbox crash-recovery test) follows it. Note that `P0-TSK-020` already drives a
+crash between publication and its record; `P0-TST-005`'s own criterion is different - it fails
+when the **outbox write** is moved outside the business transaction - so it is not covered.
 
 ---
 
@@ -470,6 +489,7 @@ ADR-0005 already chose, so "exactly once" must not reappear as a claim.
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | `P0-TSK-020` complete. The outbox relay: every instance polls, and a **transaction-scoped advisory lock per aggregate** is what makes ordering survive more than one of them. The usual pattern - `SELECT ... FOR UPDATE SKIP LOCKED` - locks rows, so two instances can take events 1 and 2 of the same aggregate and publish them in whichever order finishes first; ordering would hold only while the relay happened to be running singly, which is the assumption ADR-0014 exists to remove. Delivery is at-least-once and is said so: a publisher that delivers and then dies leaves the event unmarked, and the restart delivers it a second time. Ordering under failure is asserted separately from ordering on the happy path, because the two are different properties and only the second is easy. An abandoned row **blocks** its aggregate rather than being skipped - a stall is loud, an undetectable gap in a financial event stream is not. `V006` puts eligibility and abandonment on the server's clock, applying the V004 lesson before it could bite again. Two implementation traps recorded: JDBC **commits** when auto-commit is restored, so a tidy `finally` would turn every error path into a commit; and `RetryPolicy`'s default claimed forty minutes of retrying where the ceiling made it eight, so the test now pins the window rather than the attempt count. No Kafka adapter, deliberately - the relay publishes through a port, and `nothingPublishesToABrokerDirectly` still exempts nothing at all. 291 hermetic tests, 80 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-019`. Two findings, both from probing. **The byte-exactness assertion could not detect its own loss**: re-encoding the payload through `new String(bytes).trim()` survived every test, because every payload chosen — `{}`, a short JSON object, `{1,2,3}` — happens to be unchanged by a trim-and-re-encode. The payload is now deliberately hostile to it: leading and trailing whitespace, a NUL, and a byte that is not valid UTF-8. A relay must publish what the producer wrote, not a round-trip of it. **All ten of `V005`'s constraints were unexercised** — the same gap the `V002` review closed for the idempotency table. Most cannot be reached through the writer at all, since the envelope validates bounds and versions before SQL sees them and nothing writes `attempts` or `published_at` until the relay, which is exactly the argument for testing them at the schema: a constraint application code cannot reach is one only the database will ever enforce, against an operator or a writer nobody has written yet. `OutboxEventSchemaTest` added; both fixes proven by mutation. 283 hermetic tests, 63 database tests. |
 | 2026-09-01 | `P0-TSK-019` complete. `platform.outbox_event` carries the full envelope as columns, all ten NOT NULL, and the writer never opens a transaction of its own — so `INV-EVT-01` holds by construction rather than by intent. Proven both ways: a rolled-back fact loses its outbox row and a committed one keeps it, because a rollback-only test would pass against a writer that never wrote anything. A failed write raises rather than logs, since a fact committed without its publication record is a lost event nobody can detect afterwards. `nothingPublishesToABrokerDirectly` enforces the second acceptance criterion, matched by package name so the rule exists before the dependency does and covering method references; proven by planting a direct publish in production code. `V005` records why the relay must select unpublished rows rather than a sequence watermark — allocation happens at insert and visibility at commit, so a watermark relay skips rows permanently. Both self-maintaining guards fired as designed, and the sink guard forced correlation propagation into the outbox row to be asserted, closing one of `P0-TSK-014`'s deferred clauses. 283 hermetic tests, 56 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-018`. All eight mutations of the envelope were caught, including reordering two fields of the canonical form and having an emitted event inherit its parent's cause rather than being caused by the event emitting it — so the two reflection-derived tests are load-bearing rather than merely clever. Three minor findings, all fixed: `correlationForEmittedEvent` used a fully-qualified type name twice where an import sat two lines above; a name at exactly `MAX_NAME_LENGTH` was untested, so an off-by-one to `>=` would have silently rejected a legal name (proven, then closed); and `EventId.of(String)` — the path a received message header takes — had no test that a v4 or a malformed value is refused. 279 hermetic tests, 47 database tests. |

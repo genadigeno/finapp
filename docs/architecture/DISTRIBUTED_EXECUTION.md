@@ -55,6 +55,9 @@ Every component with state, and what makes it safe for N instances.
 | `platform.idempotency_record` | durable | **Unique constraint** on (scope, key). The database is the arbiter (ADR-0004) | **Yes** |
 | `IdempotentExecutor` | none — all state in the row | Claim by insert; conditional updates; database-owned lease | Delegates to the row |
 | `JdbcIdempotencyRecordStore` | none | Conditional `UPDATE ... WHERE`, never read-then-write | Delegates |
+| `platform.outbox_event` | durable | The pending set is a predicate (`published_at IS NULL`), not a cursor. Eligibility and abandonment are decided by the **server's** clock | **Yes**, for publication state |
+| `OutboxWriter` / `JdbcOutboxWriter` | none | Writes on the caller's connection and opens nothing of its own (`INV-EVT-01`) | Delegates to the row |
+| `OutboxRelay` | none — all state in the row | **Transaction-scoped advisory lock per aggregate.** Every instance polls; one drains a given aggregate at a time; conditional `UPDATE ... WHERE published_at IS NULL` on every write | Delegates to the row |
 
 ### `IdGenerator` — why a per-instance counter is acceptable
 
@@ -82,6 +85,33 @@ failure is an untraceable log line.
 It is deliberately **not** used to coordinate anything, and `CorrelationContext.propagate`
 exists because even *within* one instance the context does not survive a thread handoff by
 itself.
+
+### `OutboxRelay` — why an advisory lock per aggregate
+
+ADR-0005 requires ordering per aggregate. The usual outbox claiming pattern,
+`SELECT ... FOR UPDATE SKIP LOCKED`, locks **rows**: instance A takes event 1 while instance B
+takes event 2 of the same aggregate, and whichever finishes its publish first publishes first.
+Ordering then holds only while the relay happens to be running as one instance — the assumption
+this document exists to remove — and the defect is invisible in any test that starts one relay.
+
+Locking the **aggregate** instead makes the guarantee structural. `pg_try_advisory_xact_lock`
+rather than the blocking form, so an instance refused a lock moves to other work instead of
+queueing behind another instance's broker latency; transaction-scoped rather than session-scoped,
+because a session lock outlives a crash of the code meant to release it and a relay that leaks
+locks stops publishing an aggregate forever.
+
+Two aggregates whose lock keys collide serialise against each other, which costs throughput and
+nothing else: each is still published in order, by one instance at a time.
+
+**Scheduling.** Every instance runs the poller. There is no leader and no designated primary,
+because every such arrangement is a single point of failure wearing a distributed costume.
+`pollOnce()` is safe to call concurrently from any number of threads and instances, which is
+what §5's rule for scheduled jobs asks a job to state.
+
+**Delivery is at least once, and is never described otherwise.** The relay publishes, then
+records publication; a crash between the two republishes on restart. The alternative ordering
+loses the event instead. Exactly-once is a property of the *effect* at a deduplicating consumer
+(`INV-IDEM-04`, P0-TSK-021), never of the relay.
 
 ---
 
@@ -142,6 +172,7 @@ same category of mistake as floating-point money. Replaced with integer millisec
 duplicate execution, or takes an explicit database lease. At-least-once execution plus
 idempotent processing is preferred over any "exactly once" claim. The retention sweep
 (`DATA_MIGRATIONS.md` §8) and the outbox relay both fall under this and must say which they are.
+The relay says so above: it takes a lease, per aggregate, for the duration of one transaction.
 
 **Event consumers.** Duplicate-safe by inbox deduplication (`INV-IDEM-04`), and order-independent
 unless an ordering key is stated explicitly. Rebalance, replay and redelivery are normal.
