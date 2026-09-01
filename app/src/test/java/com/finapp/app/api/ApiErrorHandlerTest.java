@@ -28,7 +28,10 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -87,6 +90,16 @@ class ApiErrorHandlerTest {
         }
 
         record Payload(String name, int amount) {}
+
+        @GetMapping("/probe/needs-param")
+        String needsParam(@RequestParam String required) {
+            return required;
+        }
+
+        @GetMapping("/probe/number/{value}")
+        String number(@PathVariable int value) {
+            return String.valueOf(value);
+        }
     }
 
     // -----------------------------------------------------------------
@@ -138,6 +151,18 @@ class ApiErrorHandlerTest {
         assertThat(response.body())
                 .as("the response must not echo what the caller sent")
                 .doesNotContain(SECRET);
+    }
+
+    @Test
+    @DisplayName("a client mistake the framework catches is a 4xx, never a 500")
+    void frameworkClientErrorsAreNotReportedAsOurFailure() throws Exception {
+        // Both of these returned 500 api.InternalError until a review probed them. That is not a
+        // cosmetic mislabel: a client may retry a 500 forever on a request that can never
+        // succeed, and a spike of malformed requests is indistinguishable from an outage on
+        // every error-rate dashboard. Reporting someone else's mistake as our failure is the
+        // specific defect these two assertions exist to prevent.
+        assertContract(get("/probe/needs-param"), 400, "api.MalformedRequest");
+        assertContract(get("/probe/number/not-a-number"), 400, "api.MalformedRequest");
     }
 
     // -----------------------------------------------------------------

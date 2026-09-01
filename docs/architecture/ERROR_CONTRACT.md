@@ -58,6 +58,7 @@ Failures of the *protocol*, raised before any business module is reached.
 | `api.Forbidden` | 403 | Authenticated, and not permitted. |
 | `api.NotFound` | 404 | No route matches. |
 | `api.MethodNotAllowed` | 405 | The route exists; the method does not. |
+| `api.NotAcceptable` | 406 | No representation this endpoint produces is acceptable. |
 | `api.Conflict` | 409 | The request conflicts with current state. |
 | `api.PayloadTooLarge` | 413 | The request body exceeded the accepted size. |
 | `api.UnsupportedMediaType` | 415 | The body's media type is not read here. |
@@ -67,6 +68,13 @@ Failures of the *protocol*, raised before any business module is reached.
 **400 versus 422** is the distinction between "your serialiser is wrong" and "your data is
 wrong", and it is worth keeping: a client can act on the second and only a developer can act on
 the first.
+
+**A client's mistake is never reported as ours.** Spring's web exceptions carry the status they
+mean, and the renderer maps that status to a code rather than letting the catch-all turn it into
+a 500. This is not a cosmetic concern: a client may retry a 500 forever on a request that can
+never succeed, and a spike of malformed requests would otherwise be indistinguishable from an
+outage. An unmapped 4xx becomes `api.MalformedRequest` and is logged as a warning, so the gap is
+visible rather than quietly approximated.
 
 ## 4. Codes are permanent
 

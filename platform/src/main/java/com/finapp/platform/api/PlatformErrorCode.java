@@ -36,6 +36,9 @@ public enum PlatformErrorCode implements ErrorCode {
     /** The body's media type is not one this endpoint reads. */
     UNSUPPORTED_MEDIA_TYPE("api.UnsupportedMediaType", 415, "That media type is not supported."),
 
+    /** No representation this endpoint can produce is acceptable to the caller. */
+    NOT_ACCEPTABLE("api.NotAcceptable", 406, "No acceptable representation is available."),
+
     /** The request body exceeded the accepted size. */
     PAYLOAD_TOO_LARGE("api.PayloadTooLarge", 413, "The request was too large."),
 

@@ -1,52 +1,62 @@
 package com.finapp.app.api;
 
 import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.ErrorCode;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.api.ProblemDetail;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.web.HttpMediaTypeNotSupportedException;
-import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
  * Renders every API failure as {@code application/problem+json}, and nothing else.
  *
- * <p><strong>The handlers that matter are the ones for errors we did not raise.</strong> Writing
- * an {@code @ExceptionHandler} for your own exception type is the obvious half and the easy one.
- * The half that gets forgotten is everything the framework rejects <em>before</em> any of our
- * code runs — an unknown path, a method the route does not support, a body that will not parse,
- * a media type nobody reads. Those come back in the framework's own shape, so a client sees two
- * different error formats depending on how far into the request it got, and nothing in a normal
- * test suite notices because both look reasonable in isolation.
+ * <h2>Why this extends Spring's own handler</h2>
  *
- * <p>Each is mapped explicitly below, and each has a test.
+ * <p>The errors that matter are the ones we did not raise: an unknown path, a method the route
+ * does not support, a body that will not parse, a media type nobody reads, a missing parameter,
+ * a path variable of the wrong type. The framework rejects all of these <em>before</em> our code
+ * runs and by default answers in its own shape — so a client sees two error formats depending on
+ * how far into the request it got, and nothing in a normal test suite notices because each looks
+ * reasonable alone.
+ *
+ * <p>This class was first written with one {@code @ExceptionHandler} per framework exception. A
+ * review found the gap that approach always leaves: a missing query parameter and a wrong-typed
+ * path variable both returned <strong>{@code 500 api.InternalError}</strong> — unambiguous
+ * client mistakes reported as platform failures. A client may retry a 500 forever on a request
+ * that can never succeed, and a spike of malformed requests is indistinguishable from an outage
+ * on every error-rate dashboard.
+ *
+ * <p>Enumerating types fixes the ones somebody thought of. A second attempt — testing for
+ * Spring's {@code ErrorResponse} interface — fixed the missing parameter and still missed the
+ * type mismatch, which does not implement it. The failure is structural: the set of framework
+ * exceptions is Spring's to define, so the mapping from exception to status has to be Spring's
+ * too. {@link ResponseEntityExceptionHandler} is where Spring keeps it, and every one of them
+ * arrives at {@link #handleExceptionInternal} with the status already decided. All this class
+ * does then is render our body instead of theirs.
  *
  * <h2>What never reaches the client</h2>
  *
- * <p>Exception messages, stack traces, class names, SQL, provider payloads. The response body is
- * assembled from the {@link com.finapp.platform.api.ErrorCode} alone, plus authored text where a
- * throw site supplied any — there is no path from a {@code Throwable} to the response. The
- * exception itself goes to the log with the flow's correlation identifier, and the client
- * receives that identifier, which is the one thing that usefully connects a person reporting a
- * problem to the record of it ({@code INV-AUD-02}).
- *
- * <p><strong>The catch-all is deliberately last and deliberately silent.</strong> Any exception
- * with no more specific handler becomes a 500 whose body says nothing about what happened. That
- * is not caution for its own sake: an unhandled exception is by definition one nobody reasoned
- * about, so its message is the least trustworthy string in the system to be publishing.
+ * <p>Exception messages, stack traces, class names, SQL, provider payloads. The body is built
+ * from the {@link ErrorCode} alone plus authored text where a throw site supplied any; there is
+ * no path from a {@code Throwable} to the response. The exception goes to the log with the
+ * flow's correlation identifier, and the client receives that identifier — the one thing that
+ * usefully connects a person reporting a problem to the record of it ({@code INV-AUD-02}).
  */
 @RestControllerAdvice
-public class ApiErrorHandler {
+public class ApiErrorHandler extends ResponseEntityExceptionHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(ApiErrorHandler.class);
+    private static final Logger errors = LoggerFactory.getLogger(ApiErrorHandler.class);
 
     /** RFC 9457's media type. Not {@code application/json}: the shape is a contract of its own. */
     public static final MediaType PROBLEM_JSON = MediaType.valueOf("application/problem+json");
@@ -55,9 +65,10 @@ public class ApiErrorHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ProblemDetailBody> handleApiException(
             ApiException exception, HttpServletRequest request) {
-        // Logged at warn rather than error: a client error is the API working. The message may
-        // name whatever makes it diagnosable, because it is going to the log and not the wire.
-        log.warn("API error {}: {}", exception.errorCode().code(), exception.getMessage(), exception);
+        // Warn, not error: a client error is the API working. The message may name whatever makes
+        // it diagnosable, because it goes to the log and not to the wire.
+        errors.warn(
+                "API error {}: {}", exception.errorCode().code(), exception.getMessage(), exception);
         return render(
                 ProblemDetail.of(
                         exception.errorCode(),
@@ -65,53 +76,83 @@ public class ApiErrorHandler {
                         exception.clientDetail().orElse(null)));
     }
 
-    /** No route matches — raised by the framework before anything of ours runs. */
-    @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<ProblemDetailBody> handleNotFound(
-            NoResourceFoundException exception, HttpServletRequest request) {
-        return render(ProblemDetail.of(PlatformErrorCode.NOT_FOUND, request.getRequestURI()));
-    }
-
-    /** The path exists; the method does not. */
-    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ProblemDetailBody> handleMethodNotAllowed(
-            HttpRequestMethodNotSupportedException exception, HttpServletRequest request) {
-        return render(
-                ProblemDetail.of(PlatformErrorCode.METHOD_NOT_ALLOWED, request.getRequestURI()));
-    }
-
-    /** The body's media type is not one this endpoint reads. */
-    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
-    public ResponseEntity<ProblemDetailBody> handleUnsupportedMediaType(
-            HttpMediaTypeNotSupportedException exception, HttpServletRequest request) {
-        return render(
-                ProblemDetail.of(PlatformErrorCode.UNSUPPORTED_MEDIA_TYPE, request.getRequestURI()));
-    }
-
     /**
-     * The body could not be parsed.
+     * Anything with no more specific handler — a genuine accident.
      *
-     * <p>No detail, deliberately. Jackson's parse errors are precise and quote the input — which
-     * is helpful in a log and is an echo of attacker-controlled bytes in a response.
-     */
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ProblemDetailBody> handleMalformedBody(
-            HttpMessageNotReadableException exception, HttpServletRequest request) {
-        log.warn("Malformed request body on {}", request.getRequestURI(), exception);
-        return render(ProblemDetail.of(PlatformErrorCode.MALFORMED_REQUEST, request.getRequestURI()));
-    }
-
-    /**
-     * Anything else at all.
-     *
-     * <p>Logged at error with the exception, because this is the one nobody expected; rendered
-     * with a body that says nothing, because this is the one whose message we understand least.
+     * <p>Logged at error, because nobody expected it; rendered with a body that says nothing,
+     * because its message is the least trustworthy string in the system to be publishing.
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetailBody> handleUnexpected(
             Exception exception, HttpServletRequest request) {
-        log.error("Unhandled error on {}", request.getRequestURI(), exception);
+        errors.error("Unhandled error on {}", request.getRequestURI(), exception);
         return render(ProblemDetail.of(PlatformErrorCode.INTERNAL_ERROR, request.getRequestURI()));
+    }
+
+    /**
+     * Every framework error passes through here with its status already decided by Spring.
+     *
+     * <p>The single point at which their shape becomes ours. Overriding this rather than writing
+     * a handler per exception type is what makes the coverage complete: a Spring version that
+     * adds a new web exception routes it here too.
+     */
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(
+            Exception exception,
+            Object body,
+            HttpHeaders headers,
+            HttpStatusCode statusCode,
+            WebRequest request) {
+
+        ErrorCode code = codeForStatus(statusCode.value());
+        String path = pathOf(request);
+        if (statusCode.is5xxServerError()) {
+            errors.error("Framework error {} on {}", statusCode.value(), path, exception);
+        } else {
+            errors.warn(
+                    "Framework error {} on {} rendered as {}",
+                    statusCode.value(),
+                    path,
+                    code.code(),
+                    exception);
+        }
+        return ResponseEntity.status(HttpStatus.valueOf(code.status()))
+                .contentType(PROBLEM_JSON)
+                .body(ProblemDetailBody.from(ProblemDetail.of(code, path)));
+    }
+
+    /**
+     * The code a framework status is reported as.
+     *
+     * <p>An unmapped 4xx becomes {@code api.MalformedRequest} rather than an internal error:
+     * whatever it was, the caller can act on it and we could not understand the request.
+     * Reporting a client's mistake as our failure is the specific defect this mapping exists to
+     * prevent, and the unmapped case is logged so the gap is visible rather than approximated
+     * silently.
+     */
+    private static ErrorCode codeForStatus(int status) {
+        return switch (status) {
+            case 400 -> PlatformErrorCode.MALFORMED_REQUEST;
+            case 401 -> PlatformErrorCode.UNAUTHENTICATED;
+            case 403 -> PlatformErrorCode.FORBIDDEN;
+            case 404 -> PlatformErrorCode.NOT_FOUND;
+            case 405 -> PlatformErrorCode.METHOD_NOT_ALLOWED;
+            case 406 -> PlatformErrorCode.NOT_ACCEPTABLE;
+            case 409 -> PlatformErrorCode.CONFLICT;
+            case 413 -> PlatformErrorCode.PAYLOAD_TOO_LARGE;
+            case 415 -> PlatformErrorCode.UNSUPPORTED_MEDIA_TYPE;
+            case 422 -> PlatformErrorCode.VALIDATION_FAILED;
+            default ->
+                    status >= 400 && status < 500
+                            ? PlatformErrorCode.MALFORMED_REQUEST
+                            : PlatformErrorCode.INTERNAL_ERROR;
+        };
+    }
+
+    private static String pathOf(WebRequest request) {
+        return request instanceof ServletWebRequest servlet
+                ? servlet.getRequest().getRequestURI()
+                : request.getDescription(false);
     }
 
     private static ResponseEntity<ProblemDetailBody> render(ProblemDetail problem) {
