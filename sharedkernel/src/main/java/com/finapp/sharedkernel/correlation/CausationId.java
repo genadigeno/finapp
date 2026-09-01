@@ -1,4 +1,4 @@
-package com.finapp.platform.correlation;
+package com.finapp.sharedkernel.correlation;
 
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.util.Objects;

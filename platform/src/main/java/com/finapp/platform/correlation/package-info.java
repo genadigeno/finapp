@@ -8,12 +8,19 @@
  * Two identifiers carry it, and they answer different questions:
  *
  * <ul>
- *   <li>{@link com.finapp.platform.correlation.CorrelationId} — flat and stable for the whole
- *       flow. Answers <em>what belongs together</em>.
- *   <li>{@link com.finapp.platform.correlation.CausationId} — a link to the immediate parent.
- *       The chain answers <em>what caused what</em>, which is what makes a balance explainable
- *       rather than merely attributable.
+ *   <li>{@link com.finapp.sharedkernel.correlation.CorrelationId} — flat and stable for the
+ *       whole flow. Answers <em>what belongs together</em>.
+ *   <li>{@link com.finapp.sharedkernel.correlation.CausationId} — a link to the immediate
+ *       parent. The chain answers <em>what caused what</em>, which is what makes a balance
+ *       explainable rather than merely attributable.
  * </ul>
+ *
+ * <p><strong>The identifiers themselves live in the shared kernel</strong>
+ * ({@code com.finapp.sharedkernel.correlation}), because they are validated value types that
+ * the event envelope, idempotency records and audit records all carry. What remains here is the
+ * mechanism: {@link com.finapp.platform.correlation.CorrelationContext}, which holds the
+ * current flow, carries it across threads, and writes it into SLF4J's MDC — a logging
+ * dependency that has no business below this layer.
  *
  * <p>{@link com.finapp.platform.correlation.CorrelationContext} holds the current context and,
  * more importantly, carries it across threads. It does not use {@code InheritableThreadLocal}:

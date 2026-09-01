@@ -1,6 +1,6 @@
 package com.finapp.platform.idempotency;
 
-import com.finapp.platform.correlation.CorrelationId;
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;

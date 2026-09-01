@@ -1,8 +1,8 @@
 package com.finapp.platform.idempotency;
 
-import com.finapp.platform.correlation.Correlation;
+import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.platform.correlation.CorrelationContext;
-import com.finapp.platform.correlation.CorrelationId;
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;

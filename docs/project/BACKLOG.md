@@ -361,7 +361,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-06 — Event envelope
 
-**P0-TSK-018 — Event envelope type**
+**P0-TSK-018 — Event envelope type** — `COMPLETE` (2026-09-01)
 - Context: sharedkernel
 - Description: Envelope with `eventId`, `eventType`, `aggregateId`, `aggregateType`, `occurredAt`, `producer`, `eventVersion`, `schemaVersion`, `correlationId`, `causationId`.
 - Why: Mandated by `EVENT_ARCHITECTURE.md` and `CLAUDE.md` §Events.

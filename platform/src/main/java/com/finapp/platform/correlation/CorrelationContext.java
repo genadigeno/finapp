@@ -1,5 +1,6 @@
 package com.finapp.platform.correlation;
 
+import com.finapp.sharedkernel.correlation.Correlation;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;

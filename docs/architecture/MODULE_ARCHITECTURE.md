@@ -217,7 +217,7 @@ phases must satisfy, not a description of code.
 
 ### `sharedkernel` — Phase 0
 - **Responsibility:** framework-free value types shared by every module.
-- **Owns:** no persistent state. Holds `Money`, `CurrencyCode` and `RoundingPolicy` (P0-TSK-009, P0-TSK-010); typed identifiers, `Clock` and the event envelope follow in later Phase 0 tasks.
+- **Owns:** no persistent state. Holds `Money`, `CurrencyCode` and `RoundingPolicy` (P0-TSK-009, P0-TSK-010); typed identifiers (P0-TSK-012); correlation and causation *identifiers* (moved down in P0-TSK-018, because the envelope carries them and the shared kernel may not depend upward); and the event envelope (P0-TSK-018). The correlation *context* — the mechanism that carries a flow across threads and writes it to the MDC — stays in `platform`, where its logging dependency belongs.
 - **Transaction:** none. Performs no I/O.
 - **Consistency:** n/a — immutable value types.
 - **APIs:** value types and their operations; no service interface.

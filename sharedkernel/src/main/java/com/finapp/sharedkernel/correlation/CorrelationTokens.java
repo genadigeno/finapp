@@ -1,4 +1,4 @@
-package com.finapp.platform.correlation;
+package com.finapp.sharedkernel.correlation;
 
 import java.util.Objects;
 import java.util.regex.Pattern;

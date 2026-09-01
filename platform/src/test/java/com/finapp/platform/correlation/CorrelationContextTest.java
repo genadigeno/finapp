@@ -3,6 +3,10 @@ package com.finapp.platform.correlation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.sharedkernel.correlation.CausationId;
+import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.sharedkernel.correlation.CorrelationId;
+
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;

@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.finapp.platform.correlation.Correlation;
+import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.platform.correlation.CorrelationContext;
-import com.finapp.platform.correlation.CorrelationId;
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
