@@ -53,6 +53,11 @@ class CorrelationSinkCoverageTest {
                     // P0-TSK-014's criterion named and could not verify at the time; the guard
                     // is what made it impossible for the outbox to land without it.
                     "outbox",
+                    // A correlation sink, asserted by CorrelationPropagationTest: every inbox
+                    // row carries correlation_id NOT NULL. Without it a consumer's effect
+                    // cannot be joined to the flow that produced the message it handled, which
+                    // is the only question anyone has when tracing a duplicate.
+                    "inbox",
                     // Not a sink. MoneyColumns is a persistence convention with no flow of its
                     // own; correlation reaches the tables that use it, not the convention.
                     "money");

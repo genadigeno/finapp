@@ -7,6 +7,9 @@ import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
 import com.finapp.sharedkernel.event.EventId;
+import com.finapp.platform.inbox.InboxConsumer;
+import com.finapp.platform.inbox.InboxKey;
+import com.finapp.platform.inbox.JdbcInboxRecordStore;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 
 import ch.qos.logback.classic.Logger;
@@ -304,6 +307,80 @@ class CorrelationPropagationTest {
                         correlationId == null ? CorrelationId.of("MISSING") : correlationId,
                         CausationId.of("command-1"));
         new JdbcOutboxWriter().write(connection, envelope, new byte[0], "application/json");
+    }
+
+    @Test
+    @DisplayName("a message consumed during the flow carries the same identifier as its log lines")
+    void correlationReachesTheInboxRow() throws Exception {
+        // The fourth sink of P0-TST-003's criterion. The consumer reads the ambient context
+        // rather than being handed an identifier, which is what makes this fail if propagation
+        // is removed.
+        String scope = "propagation:consumes";
+        CorrelationId accepted = CorrelationId.of(INBOUND_HEADER);
+        InboxKey key = new InboxKey("propagation-probe", "message-" + System.nanoTime());
+
+        try (ExecutorService worker = Executors.newSingleThreadExecutor()) {
+            try (var scoped = CorrelationContext.enter(Correlation.startingWith(accepted))) {
+                logger.info("message received");
+                worker.submit(
+                                CorrelationContext.propagate(
+                                        (Runnable)
+                                                () -> {
+                                                    logger.info("message handled");
+                                                    writeClaim(scope, currentCorrelationId());
+                                                    consumeMessage(key);
+                                                }))
+                        .get(30, TimeUnit.SECONDS);
+            }
+        }
+
+        assertThat(inboxCorrelationId(key))
+                .as("the dedupe record must carry the identifier the caller supplied")
+                .isEqualTo(INBOUND_HEADER);
+        assertThat(inboxCorrelationId(key))
+                .as("and agree with the idempotency record written in the same flow")
+                .isEqualTo(persistedCorrelationId(scope));
+    }
+
+    private static void consumeMessage(InboxKey key) {
+        // The real wrapper, not a hand-written INSERT: the claim under test is that consuming
+        // propagates correlation, and an INSERT here would assert only that this test can spell
+        // the column name.
+        // A real transaction, because the store refuses an auto-commit connection: its one
+        // guarantee is that the dedupe record commits with the handler's effect, and auto-commit
+        // would commit the record alone. This class's connection is auto-commit for every other
+        // sink, so the transaction is opened and closed around just this call.
+        try {
+            connection.setAutoCommit(false);
+            new InboxConsumer<Connection>(
+                            new JdbcInboxRecordStore(),
+                            java.time.Clock.systemUTC(),
+                            java.time.Duration.ofHours(1))
+                    .consume(connection, key, "propagation.Probe", unitOfWork -> {});
+            connection.commit();
+        } catch (SQLException e) {
+            throw new IllegalStateException("could not consume the probe message", e);
+        } finally {
+            try {
+                connection.setAutoCommit(true);
+            } catch (SQLException e) {
+                throw new IllegalStateException("could not restore auto-commit", e);
+            }
+        }
+    }
+
+    private static String inboxCorrelationId(InboxKey key) throws SQLException {
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT correlation_id FROM platform.inbox_message "
+                                + "WHERE consumer = ? AND dedupe_key = ?")) {
+            select.setString(1, key.consumer());
+            select.setString(2, key.dedupeKey());
+            try (ResultSet rows = select.executeQuery()) {
+                assertThat(rows.next()).as("an inbox row must have been written").isTrue();
+                return rows.getString(1);
+            }
+        }
     }
 
     private static String outboxCorrelationId(EventId eventId) throws SQLException {

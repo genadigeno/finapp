@@ -270,7 +270,7 @@ Before merging a migration:
 
 ---
 
-## 8. Retention and Expiry
+## 8. Retention and Expiry — `idempotency_record`
 
 Some platform tables are bounded by an expiry rather than kept forever. Financial records are
 never among them — `INV-HIST-01` makes financial history permanent — so this section covers the
@@ -309,3 +309,46 @@ The task that writes the sweep adds the index its query needs.
 garbage; it is a command whose outcome is unknown, and deleting it discards the evidence that
 something was interrupted mid-flight. Those are resolved by the reclaim path (`P0-TSK-016`),
 which is a decision about an unfinished command, not a cleanup.
+
+---
+
+## 9. Retention and Expiry — `inbox_message`
+
+**Policy: retain for longer than any producer or broker may redeliver, and no longer.** The
+default is **24 hours** from processing, chosen by the consumer through the retention duration
+passed to `InboxConsumer` rather than by a schema default, because different producers have
+different redelivery windows and a single value would be wrong for most of them.
+
+**The floor is a correctness bound**, and it is the same shape of argument as §8 with a different
+actor. There, the record is what makes a *client's* retry safe. Here it is what makes a
+*broker's* redelivery safe. If it expires before redelivery can still occur, the next delivery
+finds no record, runs the handler again and produces **a second effect** — the outcome
+`INV-IDEM-04` exists to prevent, arriving quietly and long after anyone is watching. So expiry
+must exceed:
+
+- the broker's own retry and redelivery schedule, including its dead-letter and replay windows;
+- any provider's webhook retry schedule, which for payment providers is routinely **days**;
+- any manual replay a support process might perform;
+- the maximum time a consumer may be down while messages accumulate.
+
+When those are unknown the safe direction is the same: **too long merely costs storage; too short
+costs money.** A provider that retries a webhook for three days against a 24-hour inbox will
+produce a duplicate effect on day two, and nothing in the system will report it.
+
+**The expiry instant is computed by the database, not the caller.** The retention *duration* is a
+policy decision and belongs to the consumer; the *instant* is a coordination boundary between the
+writer and a sweeper running on another instance, and ADR-0014 requires those to use the one clock
+every instance shares. This differs deliberately from `idempotency_record`, whose `expires_at` is
+application-supplied — recorded here so the divergence is read as a decision rather than an
+inconsistency. An instance whose clock ran slow would otherwise write an expiry already in the
+past and have its own dedupe record swept minutes later.
+
+**Sweeping.** Deleting expired records is the retention job's work, not the schema's, and no index
+on `expires_at` is created by `V007` — for the reason §8 gives: the sweep's predicate is not
+written yet, and a plain btree, a BRIN and a partial index have different write costs on a table
+whose entire traffic is inserts. The task that writes the sweep adds the index its query needs.
+
+**Every record is terminal.** Unlike §8, there is no "never sweep a non-terminal record" caveat,
+because an inbox record has no non-terminal state: it is written in the same transaction as the
+effect, so it exists only for messages that were fully handled. That absence is a consequence of
+the design in `V007`, not an oversight.

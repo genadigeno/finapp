@@ -58,6 +58,8 @@ Every component with state, and what makes it safe for N instances.
 | `platform.outbox_event` | durable | The pending set is a predicate (`published_at IS NULL`), not a cursor. Eligibility and abandonment are decided by the **server's** clock | **Yes**, for publication state |
 | `OutboxWriter` / `JdbcOutboxWriter` | none | Writes on the caller's connection and opens nothing of its own (`INV-EVT-01`) | Delegates to the row |
 | `OutboxRelay` | none — all state in the row | **Transaction-scoped advisory lock per aggregate.** Every instance polls; one drains a given aggregate at a time; conditional `UPDATE ... WHERE published_at IS NULL` on every write | Delegates to the row |
+| `platform.inbox_message` | durable | **Primary key** on (consumer, dedupe_key). The database arbitrates between two instances handed the same redelivery | **Yes**, for "has this consumer handled this?" |
+| `InboxConsumer` / `JdbcInboxRecordStore` | none — all state in the row | Insert-then-handle in the caller's transaction; a bounded `lock_timeout`, then report `CONTENDED` and let the broker redeliver | Delegates to the row |
 
 ### `IdGenerator` — why a per-instance counter is acceptable
 
@@ -85,6 +87,24 @@ failure is an untraceable log line.
 It is deliberately **not** used to coordinate anything, and `CorrelationContext.propagate`
 exists because even *within* one instance the context does not survive a thread handoff by
 itself.
+
+### `InboxConsumer` — why losing the race is free here
+
+The idempotency kernel waits a few seconds for a competing claim, because a caller is holding a
+connection waiting for an answer and "unknown, retry" is a poor thing to tell it. A consumer has
+no such caller. Losing the race costs exactly one redelivery, which an at-least-once transport
+was going to perform anyway — so the wait is short (500ms), and the loser is told `CONTENDED` and
+leaves the message unacknowledged.
+
+That answer is correct whichever way the other transaction goes, which is why it does not need to
+wait to find out: if the holder commits, the redelivery is deduplicated; if it rolls back, the
+redelivery is handled. Waiting longer would only convert a free redelivery into a held connection
+during precisely the traffic spike that produced the duplicates.
+
+**Insert-then-handle, not handle-then-insert.** Both are in one transaction so atomicity is
+identical; the difference is that inserting first makes a concurrent duplicate block on the
+primary key *before* it enters the handler. Handling first would let two instances run the same
+handler simultaneously and discover the collision only at the end, after both had done the work.
 
 ### `OutboxRelay` — why an advisory lock per aggregate
 

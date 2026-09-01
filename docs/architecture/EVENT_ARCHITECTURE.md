@@ -121,6 +121,29 @@ acceptable only because the outbox is transport rather than financial history (`
 producer's acknowledgement configuration, and puts a broker client on the classpath. Those
 belong with the phase that has events to publish.
 
+## Consumption
+
+Consumers deduplicate through the **inbox** (`P0-TSK-021`): a dedupe record keyed on
+`(consumer, dedupe_key)`, written **in the same transaction as the side effect**. The record
+exists if and only if the effect happened, which is what makes the relay's at-least-once delivery
+acceptable.
+
+**The dedupe key is scoped to the consumer.** One event legitimately has many consumers and each
+must handle it once; keying on the message alone would let whichever consumer got there first
+silently suppress every other one. For a platform event the key is the envelope's `eventId`,
+fixed at creation so a redelivery presents the same value; for a webhook it is whatever the
+provider guarantees stable across its own retries, which the provider's adapter decides.
+
+**A duplicate is not an error.** At-least-once delivery makes redelivery routine, so a duplicate
+is an outcome (`SKIPPED_DUPLICATE`) and is logged at debug. Two instances racing the same
+redelivery is reported as `CONTENDED` after a short bounded wait, and the correct response is to
+leave the message **unacknowledged** and let it be redelivered — the other transaction may yet
+roll back. A consumer never waits long for a race it does not need to win.
+
+**Retention is a correctness bound**, not housekeeping: a dedupe record that expires while the
+producer can still redeliver admits exactly the duplicate effect it existed to refuse.
+`DATA_MIGRATIONS.md` §9 states the policy and what the window must exceed.
+
 ## Delivery Assumptions
 
 Consumers must tolerate:
@@ -129,5 +152,11 @@ Consumers must tolerate:
 - out-of-order delivery where ordering is not guaranteed
 - replay
 - consumer restart
+
+**The inbox addresses duplication only.** Delay, reordering and replay remain the handler's
+problem, and no dedupe table can solve them: a handler that would be wrong seeing
+`TransferCompleted` before `TransferInitiated` is wrong whether or not it deduplicates. The
+answer is an order-independent handler or an explicit ordering key. This is stated because a
+dedupe wrapper is precisely the component people later assume solved ordering too.
 
 Do not rely on event delivery alone to enforce accounting invariants.
