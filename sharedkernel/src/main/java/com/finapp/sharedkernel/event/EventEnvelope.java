@@ -1,6 +1,7 @@
 package com.finapp.sharedkernel.event;
 
 import com.finapp.sharedkernel.correlation.CausationId;
+import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.EntityId;
 import java.time.Instant;
@@ -152,8 +153,8 @@ public record EventEnvelope(
      * causal tree into a list of siblings, and it reads as working because correlation still
      * ties them together.
      */
-    public com.finapp.sharedkernel.correlation.Correlation correlationForEmittedEvent() {
-        return new com.finapp.sharedkernel.correlation.Correlation(
+    public Correlation correlationForEmittedEvent() {
+        return new Correlation(
                 correlationId, CausationId.of(eventId.value().toString()));
     }
 

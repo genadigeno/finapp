@@ -88,6 +88,28 @@ class EventEnvelopeTest {
     }
 
     @Test
+    @DisplayName("a name at exactly the limit is accepted, so the bound is not off by one")
+    void nameAtTheLimitIsAccepted() {
+        // The upper bound alone would pass if the check were `>=`, silently rejecting a legal
+        // name. Both sides of a boundary or neither.
+        String atLimit = "p".repeat(EventEnvelope.MAX_NAME_LENGTH);
+
+        assertThat(envelopeWith(1, 1, "transfers.T", atLimit).producer()).hasSize(EventEnvelope.MAX_NAME_LENGTH);
+    }
+
+    @Test
+    @DisplayName("an event id that is not a time-ordered UUID is refused when parsed")
+    void eventIdParsingRejectsNonV7() {
+        // EventId.of(String) is the path a received message header takes. A v4 there would make
+        // createdAt() a fabricated time and would scatter the key across an index.
+        assertThatThrownBy(() -> EventId.of(UUID.randomUUID().toString()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("UUIDv7");
+        assertThatThrownBy(() -> EventId.of("not-a-uuid"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("blank and over-long names are refused")
     void namesAreValidated() {
         assertThatThrownBy(() -> envelopeWith(1, 1, "  ", "transfers"))
