@@ -40,6 +40,14 @@ Monetary values are integer minor units with an explicit currency and a stored s
 High-precision rates are a separate type; converting a rate result to money is an explicit,
 named rounding step. → [ADR-0003](../adr/ADR-0003-monetary-representation.md)
 
+### Identifiers
+Aggregate identifiers are typed subclasses of `EntityId` carrying a UUIDv7 value. Passing one
+aggregate's identifier where another's is required is a compile error, and two identifiers of
+different kinds are never equal even with the same value. Time ordering is not cosmetic: a
+random primary key turns the ledger's append-only write pattern into a random one. The shared
+kernel holds the mechanism; each aggregate's identifier type belongs to its owning module.
+&rarr; [ADR-0013](../adr/ADR-0013-typed-time-ordered-identifiers.md)
+
 ### Idempotency
 Money-moving commands are made idempotent by a unique database constraint at the financial
 boundary — never by a cache or an HTTP-layer filter. Key reuse with a different request is

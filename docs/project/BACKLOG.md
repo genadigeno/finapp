@@ -235,7 +235,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-04 — Platform primitives
 
-**P0-TSK-012 — Identifier strategy**
+**P0-TSK-012 — Identifier strategy** — `COMPLETE` (2026-09-01)
 - Context: sharedkernel
 - Description: Typed identifiers with a time-ordered generation strategy (UUIDv7 or equivalent); typed IDs per aggregate to prevent accidental substitution.
 - Why: Random UUID primary keys degrade index locality at ledger volume; untyped IDs invite cross-aggregate mistakes.
