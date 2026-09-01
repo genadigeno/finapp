@@ -258,6 +258,17 @@ class CorrelationContextTest {
     // -----------------------------------------------------------------
 
     @Test
+    @DisplayName("the MDC key names are a published contract, pinned to their literal values")
+    void mdcKeyNamesArePinned() {
+        // These strings are what log queries, dashboards and alert rules are written against.
+        // Renaming a constant is a compile-safe refactor that silently breaks every one of
+        // them, and every other test here uses the constants, so nothing would notice. The
+        // literals are therefore asserted as the contract they are.
+        assertThat(CorrelationContext.CORRELATION_ID_KEY).isEqualTo("correlationId");
+        assertThat(CorrelationContext.CAUSATION_ID_KEY).isEqualTo("causationId");
+    }
+
+    @Test
     @DisplayName("rejects a null correlation rather than entering an empty scope")
     void rejectsNulls() {
         assertThatThrownBy(() -> CorrelationContext.enter(null)).isInstanceOf(NullPointerException.class);

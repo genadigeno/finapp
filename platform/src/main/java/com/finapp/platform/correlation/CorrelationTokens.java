@@ -1,6 +1,7 @@
 package com.finapp.platform.correlation;
 
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Validation shared by {@link CorrelationId} and {@link CausationId}.
@@ -15,12 +16,16 @@ final class CorrelationTokens {
      * ASCII letters, digits and the punctuation tracing systems actually use: UUIDs, W3C
      * trace-context values, and provider references all fit.
      *
+     * <p>Compiled once. {@code String.matches} recompiles the expression on every call, and
+     * this runs on the ingress path of every request — the one place in the platform where a
+     * per-call allocation is worth removing rather than measuring.
+     *
      * <p>Everything else is refused, rather than the more usual approach of listing forbidden
      * characters. A denylist has to anticipate every dangerous character — CR, LF, NUL, ANSI
      * escapes, Unicode line separators, bidirectional overrides — and is wrong the first time
      * one is missed. This is the same default-deny reasoning as the no-floating-point rule.
      */
-    private static final String ALLOWED = "^[A-Za-z0-9._:@/+=-]+$";
+    private static final Pattern ALLOWED = Pattern.compile("[A-Za-z0-9._:@/+=-]+");
 
     private CorrelationTokens() {
         // Static validation helper; not instantiable.
@@ -37,7 +42,7 @@ final class CorrelationTokens {
             throw new IllegalArgumentException(
                     what + " must be at most " + maxLength + " characters but was " + value.length());
         }
-        if (!value.matches(ALLOWED)) {
+        if (!ALLOWED.matcher(value).matches()) {
             // The value is not echoed back. A rejection message containing the offending
             // input would put the very control characters this check exists to stop into the
             // log line reporting the rejection.

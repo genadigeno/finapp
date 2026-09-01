@@ -107,6 +107,14 @@ public final class CorrelationContext {
      * <p>Wrapping the executor rather than each task is what stops the discipline from depending
      * on everybody remembering it. A single unwrapped {@code submit} is an invisible hole, and
      * it is invisible precisely because losing correlation does not fail anything.
+     *
+     * <p><strong>This returns an {@link Executor}, not an {@link java.util.concurrent.ExecutorService}.</strong>
+     * A caller who needs {@code submit} and a {@code Future} must wrap the task instead, with
+     * {@link #propagate(Runnable)} or {@link #propagate(Callable)}. No {@code ExecutorService}
+     * decorator is offered because none is needed yet, and fifteen delegating methods written
+     * for an imagined caller is the kind of speculative surface that later has to be maintained
+     * whether or not anyone uses it. When Spring arrives, its {@code TaskDecorator} is the
+     * idiomatic seam and calls straight onto {@link #propagate(Runnable)}.
      */
     public static Executor propagate(Executor executor) {
         Objects.requireNonNull(executor, "executor must not be null");
