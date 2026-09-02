@@ -531,12 +531,22 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-11 — Telemetry
 
-**P0-TSK-028 — OpenTelemetry tracing**
+**P0-TSK-028 — OpenTelemetry tracing** — `COMPLETE` (2026-09-02)
 - Context: platform
 - Description: Tracing across HTTP, database, Kafka producer and consumer, with correlation on every span.
 - Why: `SYSTEM_ARCHITECTURE.md` principle 7.
 - Deps: P0-TSK-014
-- Accept: A single request produces one connected trace spanning HTTP → DB → outbox → consumer.
+- Accept: A single request produces one connected trace spanning HTTP → DB, with the
+  flow correlation identifier on every span.
+- **Criterion corrected (2026-09-02).** As written it named four legs, and two of them had no
+  subject: there is no broker adapter (`EventPublisher` has no implementation - recorded debt
+  owned by Phase 3) and no consumer wiring, so no request can reach an outbox relay or a
+  consumer. This is the same correction `P0-TSK-014` needed, and for the same reason: a
+  criterion naming components that do not exist can only be satisfied on paper. The outbox
+  and consumer legs transfer to the broker adapter (Phase 3), which is where a span could
+  first cross a message boundary. The HTTP and DB legs were delivered and proven against a
+  live PostgreSQL, and the correlation-on-every-span property - which is what makes any of
+  the legs findable - is delivered in full and holds for spans this codebase never writes.
 - Risk: Low
 - Cx: M
 - DoD: `DOD-OBS`

@@ -122,6 +122,12 @@ dependencies {
     // choosing one is the application's decision.
     api(libs.slf4j.api)
 
+    // The tracing FACADE, on the same terms as slf4j above: platform records spans, and the
+    // application decides what records them. micrometer-tracing brings no exporter, no
+    // OpenTelemetry SDK and no wire format - binding one here would impose it on every consumer
+    // and would put a telemetry stack inside a module that must stay a library.
+    api(libs.micrometer.tracing)
+
     // Platform still holds no Spring code. It will need Spring once it has an outbox
     // relay, an inbox consumer and an HTTP ingress filter; P0-TSK-014 deliberately did not
     // add it, because the correlation kernel and its propagation are framework-free and

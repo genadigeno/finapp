@@ -70,6 +70,17 @@ class CorrelationSinkCoverageTest {
                     // HTTP response - not in CorrelationPropagationTest, because the sink is a
                     // response rather than a row and that class is about what reaches storage.
                     "api",
+                    // A correlation sink, and the one P0-TSK-014's criterion named first and
+                    // could not verify: there was no tracing. Every span the SDK starts is
+                    // stamped with the flow's correlation identifier by a span processor in the
+                    // composition root, asserted by TracingTest hermetically and by
+                    // TraceAcrossDatabaseTest over a real request that reaches PostgreSQL.
+                    //
+                    // Stamped once, centrally, because "every span" is not a property any
+                    // per-component discipline delivers - and the trace id is not a substitute,
+                    // since it is subject to sampling and a sampled-out trace leaves the customer
+                    // holding an identifier that matches nothing.
+                    "telemetry",
                     // Not a sink. MoneyColumns is a persistence convention with no flow of its
                     // own; correlation reaches the tables that use it, not the convention.
                     "money");

@@ -112,6 +112,30 @@ spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-star
 # The facade only. platform binds nothing: choosing an implementation is the
 # application's job, and a library that picks one imposes it on every consumer.
 slf4j-api = { module = "org.slf4j:slf4j-api" }
+
+# --- Tracing (P0-TSK-028) ------------------------------------------------------
+# Split the same way as logging, and for the same reason. `platform` takes the FACADE only -
+# micrometer-tracing is to tracing what slf4j is to logging - so a library module never
+# imposes an implementation on its consumers. `app`, the composition root, binds the
+# implementation: the OpenTelemetry bridge, which is what SYSTEM_ARCHITECTURE.md's
+# observability stack names.
+#
+# Versions come from the Spring Boot BOM (micrometer-tracing 1.7.1, OpenTelemetry 1.62.0), so
+# the tracing graph stays internally consistent with everything else Boot manages.
+micrometer-tracing = { module = "io.micrometer:micrometer-tracing" }
+# Spring Boot 4 split the actuator into modules, so the Micrometer bridge alone auto-configures
+# nothing: with only the bridge on the classpath there is no Tracer bean and no
+# SdkTracerProvider, and every span is silently dropped. This is the module that wires them.
+spring-boot-micrometer-tracing-opentelemetry = { module = "org.springframework.boot:spring-boot-micrometer-tracing-opentelemetry" }
+# BOTH are needed, and the failure when one is missing is silent. The Boot module supplies the
+# auto-configuration; that auto-configuration is @ConditionalOnClass on the bridge, so without
+# the bridge it backs off entirely, leaving a NOOP Tracer, no SdkTracerProvider, and spans that
+# are recorded into nothing. Nothing fails - there are simply no traces.
+micrometer-tracing-bridge-otel = { module = "io.micrometer:micrometer-tracing-bridge-otel" }
+# The in-memory span exporter. Test scope: it is how a test asserts what was actually recorded,
+# rather than asserting that a tracing call was made - the same argument as logback's list
+# appender in the correlation tests.
+opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing" }
 # Logback's list appender is how a test asserts what was actually logged, rather
 # than asserting that a logging call was made. Test scope only.
 logback-classic = { module = "ch.qos.logback:logback-classic" }

@@ -55,57 +55,65 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-028` - OpenTelemetry tracing**
+**`P0-TSK-029` - Metrics and dashboards**
 Status: `READY` - not started.
 
-Bounded context: platform. Depends on `P0-TSK-014` (`COMPLETE`).
+Bounded context: platform. Depends on `P0-TSK-003` (`COMPLETE`).
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-09. DoD profile: `DOD-OBS`.
 
 ### Just completed
 
-**`P0-DOC-003` - API conventions document** - `COMPLETE` (2026-09-02).
-**`P0-EPIC-08` closes with it.** All five items are complete.
+**`P0-TSK-028` - OpenTelemetry tracing** - `COMPLETE` (2026-09-02).
 
-| Acceptance criterion | Evidence |
+**The acceptance criterion could not be met as written, and was corrected rather than approximated.**
+It named four legs - HTTP, DB, outbox, consumer - and two of them have no subject: there is no
+broker adapter (`EventPublisher` still has no implementation, which is recorded debt owned by
+Phase 3) and no consumer wiring, so no request can reach either. Exactly the correction
+`P0-TSK-014` needed. The outbox and consumer legs transfer to the broker adapter; HTTP and DB were
+delivered and proven against a live PostgreSQL.
+
+| Acceptance criterion (corrected) | Evidence |
 |---|---|
-| Document matches implemented behaviour | Enforced rather than asserted: `ApiConventionsAreAccurateTest` pins every stated value against the code, and six mutations - four in the document, two in the implementation - each fail the build |
+| One connected trace spanning HTTP and the database | `TraceAcrossDatabaseTest`: one trace id across the request and the connection span, and the database span is a **child** of the request rather than a root of its own - a flat list of spans sharing a trace cannot answer "what was this connection acquired for?" |
+| The correlation identifier on every span | Asserted over every recorded span, hermetically and against a real database |
 
-The task's difficulty was not writing it. It was that two of the six conventions the backlog asks
-for - **idempotency and pagination** - describe behaviour that **does not exist**: there is no
-money-moving endpoint, and no endpoint returns a collection. `DOD-DOC` forbids "aspirational
-statements presented as current fact", and omitting them would have failed the task's own reason
-for existing, which is that convention drift across contexts is expensive to reverse.
+Design decisions worth carrying forward (ADR-0017):
+- **A trace identifier never substitutes for a correlation identifier.** A trace id is subject to
+  sampling; a sampled-out flow would become unfindable from the one value a customer holds, and it
+  is absent from every table. Correlation goes **on** spans instead - `finapp.correlation_id`.
+- **Stamped once by a span processor, not by each component.** "Every span carries correlation" is
+  not a property per-component discipline delivers: a component added next year, or an
+  instrumentation library nobody wrote, would each have to remember, and forgetting is silent - the
+  span is recorded, the trace looks complete, and it cannot be found. Applying it where the SDK
+  starts spans makes it hold for spans this codebase never writes.
+- **No JDBC tracing library, and no statement text on spans.** Every option records SQL as an
+  attribute, which on this platform's tables means amounts and account identifiers flowing into a
+  backend with different retention and access control (`INV-AUD-02`) - arriving silently the first
+  time somebody writes a query. What remains is `finapp.db.connection`, which is the signal already
+  identified twice: it turns "requests are slow" into "requests are waiting for a connection".
+- **Telemetry is never the record**, the same relationship `INV-EVT-02` sets out for Kafka.
+- **Nothing about where traces go is committed to source.** An endpoint in git is either wrong
+  everywhere or a hostname nobody meant to publish.
 
-Resolved by making the distinction **structural rather than typographic**: every section is
-labelled `Implemented` - naming the class and test that prove it - or `Decided, not yet
-implemented`, naming the owning task. A section with neither label fails the build, so the
-distinction survives the next person adding a section in a hurry.
+**Three defects found by running it, none of which any test would have reported:**
+- **Spring Boot 4 gates the OpenTelemetry SDK behind `management.opentelemetry.enabled`, off by
+  default.** Without it there is no `SdkTracerProvider`, the `Tracer` is Micrometer's NOOP, and
+  every span is recorded into nothing. Nothing fails; there are simply no traces.
+- **The auto-configuration module and the bridge are both required.**
+  `spring-boot-micrometer-tracing-opentelemetry` is `@ConditionalOnClass` on the bridge, so with
+  only one of the two it backs off entirely - the same silent nothing. Found by disassembling the
+  auto-configuration rather than guessing.
+- **A second `management:` key in `application.yaml`** - YAML rejects duplicate keys, so every
+  Spring context in the suite refused to start.
 
-Design decisions worth carrying forward:
-- **One source of truth per fact.** The error-code catalogue stays in `ERROR_CONTRACT.md`, which is
-  already reconciled with the taxonomy. A second table in the conventions document would be
-  unguarded and would drift in the worst direction - looking authoritative while being wrong. A
-  test fails the build if the catalogue is ever pasted in.
-- **Cursor pagination, never offset**, and the argument is correctness before performance: an
-  offset re-reads a moving set, so a row inserted or removed between pages is silently **skipped or
-  repeated**. On a customer's transaction history that is a payment missing from an exported
-  statement with nothing reporting an error. That it is also O(offset) on a ledger is the lesser
-  objection. ADR-0013 already supplies the total order that makes keyset pagination natural here.
-- **`Idempotency-Key` is scoped, not global**, so two callers cannot collide by both choosing `1`;
-  and it is enforced by a database constraint rather than a filter, because a filter deduplicates
-  requests and what must be deduplicated is financial effects (ADR-0004).
-- **What is deliberately not decided** is listed with owning phases - authentication, rate
-  limiting, filter/sort grammar, bulk shapes, asynchronous `202`, webhooks - so their absence is
-  not read as an oversight.
+And one of my own: the data-source wrapper's javadoc said the tracer was **resolved lazily** while
+the code resolved it eagerly in a bean post-processor, which runs before the tracing beans exist.
+Comment and code disagreeing, for the fourth time this session.
 
-**Verified by mutation: 6 of 6 caught, in both directions.** Documenting a size limit, a
-correlation bound, an unlabelled section or a pasted code table each fails; so does changing the
-implemented size limit or bumping the API version while leaving the document alone.
-
-**One stale claim found and corrected while checking the record:** the partially-satisfied DoD row
-for `P0-TSK-014` still said the ingress-filter clause was unverifiable because no HTTP surface
-existed. `P0-TSK-025` built that surface the previous day. Narrowed to the trace clause alone.
+**The correlation sink guard fired for the sixth time**, and this time on the sink it was built
+for: `P0-TSK-014`'s criterion named a trace and could not verify it because there was no tracing.
+That clause is now closed.
 
 ---
 
@@ -205,6 +213,24 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Distributed tracing (2026-09-02), `P0-TSK-028`:
+- Every span carries `finapp.correlation_id`, stamped once by a span processor in the composition
+  root, so the property holds for spans this codebase does not produce
+- A trace identifier is explicitly not a substitute: sampling would make a flow unfindable from
+  the value a customer quotes
+- Inbound W3C `traceparent` is joined rather than replaced, with a negative control proving two
+  unrelated requests remain two traces
+- HTTP and database in one connected trace against a real PostgreSQL, the database span a child of
+  the request rather than a sibling
+- `finapp.db.connection` and no statement text: SQL on a span would carry amounts and account
+  identifiers into a backend with different access control (`INV-AUD-02`)
+- No exporter endpoint in source; sampling at 100% and recorded as a Phase 15 decision
+- ADR-0017 records the reasoning and the four rejected alternatives
+- A log line inside a request carries `traceId`, `spanId` and `correlationId` together, so a
+  line found in a search leads to both the trace and the durable record - added by review,
+  where it was found to be working by coincidence of two mechanisms and asserted nowhere
+- A span outside any flow carries no correlation rather than a fabricated one
 
 API conventions (2026-09-02), `P0-DOC-003`:
 - [`API_CONVENTIONS.md`](../architecture/API_CONVENTIONS.md): versioning, the published contract,
@@ -486,7 +512,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-028` is the next task.
+None in progress. `P0-TSK-029` is the next task.
 
 ## Blockers
 
@@ -593,7 +619,7 @@ Recorded so it is not mistaken for a completed criterion.
 | `P0-TSK-004` | The CycloneDX SBOM covers the whole resolved dependency set, test scope included (21 of ~61 components). Plugin 3.4.1 exposes no configuration filter. Adequate for vulnerability scanning — test libraries execute on CI runners, so they are legitimately in scope — but it means a HIGH/CRITICAL advisory in a test-only library fails the build though nothing vulnerable ships, and **the SBOM must not be published as shipping provenance in this form** because it overstates what is deployed. | Phase 15 (supply chain and provenance) |
 | `P0-TSK-004` | CI actions and scanner images are pinned by SHA/digest with no automated update path, so the pins will rot. | `P0-TSK-040` |
 | ~~`P0-TSK-002`~~ | ~~Boundary enforcement partial~~ — **closed**. Cross-module internals and entity references by `P0-TSK-007`; `INV-MON-01` by `P0-TSK-008`. | — |
-| `P0-TSK-014` | Narrowing again. The **emitted-event** clause was satisfied by `P0-TSK-019`, and the **ingress-filter** clause by `P0-TSK-025`, whose `CorrelationFilter` puts an identifier on every response and is asserted by `ApiErrorHandlerTest` and `RequestValidationTest`. Only the **trace** clause remains, and it closes on arrival rather than on memory: `CorrelationSinkCoverageTest` fails the build when a new platform concern lands unclassified. | `P0-EPIC-09` |
+| ~~`P0-TSK-014`~~ | ~~Correlation must reach four sinks; the trace one is unverifiable~~ - **closed** by `P0-TSK-028`. All four sinks are now asserted: the log (`P0-TSK-014`), the outbox row (`P0-TSK-019`), the audit record (`P0-TSK-022`) and the trace, where every span carries `finapp.correlation_id`. The clause survived four tasks and a milestone because `CorrelationSinkCoverageTest` refused to let a new platform concern land unclassified - which is what closing on arrival rather than on memory means. | — |
 | ~~`P0-TSK-003`, `P0-TSK-005`~~ | ~~Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants cannot be exercised~~ — **closed** by `P0-TSK-022`. `finapp_migrator` and `finapp_app` exist, both `NOSUPERUSER`; Flyway connects as the migrator and every table grants the application role only the DML it requires. `INV-HIST-03` is now enforced and proven; `INV-LED-03` and `INV-HIST-01` have the mechanism they need and close when the ledger tables exist (Phase 3). | — |
 
 ---
@@ -662,19 +688,15 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-028` - OpenTelemetry tracing**, opening `P0-EPIC-09` (Observability Baseline).
+**`P0-TSK-029` - Metrics and dashboards**, continuing `P0-EPIC-09`.
 
-Its acceptance criterion is a single request producing one connected trace across HTTP, database,
-outbox and consumer. It also closes the last outstanding clause of `P0-TSK-014`: correlation
-reaching a trace, which `CorrelationSinkCoverageTest` has been holding open.
+Two debts come due with it, both recorded since `P0-TSK-020` and `-021`: `RelayPollResult` and the
+inbox outcomes are returned and aggregated nowhere, so a stalled aggregate and a rising duplicate
+rate are visible only by reading logs - detection by reading rather than by alerting. ADR-0005
+names outbox depth, age and relay lag as first-class monitored metrics.
 
-`P0-EPIC-09` then continues with `P0-TSK-029` (metrics), `P0-TSK-030` (structured logging with
-redaction, the highest-risk task in the epic) and `P0-TST-008`. `P0-EPIC-10` (security baseline)
-closes M0.4.
-
-Two debts recorded against `P0-EPIC-09` come due with it: relay metrics and inbox metrics are
-returned as outcomes today and aggregated nowhere, so a stalled aggregate is visible only by
-reading logs.
+`P0-EPIC-09` then finishes with `P0-TSK-030` (structured logging with redaction, the highest-risk
+task in the epic) and `P0-TST-008`. `P0-EPIC-10` (security baseline) closes M0.4.
 
 ---
 
@@ -682,6 +704,8 @@ reading logs.
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-028`. One important finding, and it is a property that was **working by coincidence and asserted nowhere**: a log line emitted inside a request carries `traceId`, `spanId` and `correlationId` together - which is the join that makes any of this usable, and it holds only because two independent mechanisms happen to agree, Boot's log correlation and `CorrelationContext`. Disable either and every log line quietly stops being joinable, with nothing failing. Found by probing the logging context from inside a request rather than from the test thread, where it is empty and says nothing. Now asserted. Three further findings, all mine. **A fabricated exception**: the database span recorded connection failures as `span.error(new IllegalStateException(type))`, attaching a stack trace pointing at the recording line rather than at anything that failed - worse than no stack trace, because it looks like one; replaced with an `error.type` tag. **A bean lookup on every connection acquisition**, in front of every database connection the platform will ever make; memoised. And **the hermetic "every span carries correlation" assertion ran over a set of one**, because liveness produces a single span - a claim that cannot fail for the right reason; it now uses readiness, which reaches for a connection and produces two. Also added the branch nobody had covered: a span started outside any flow must carry **no** correlation, since inventing one would fill a dashboard with identifiers matching nothing in any table. Verified rather than assumed: the recorded spans really do include a real HTTP SERVER span, so the HTTP leg is genuine and not the database span in disguise. 400 hermetic tests, 159 database tests. |
+| 2026-09-02 | `P0-TSK-028` complete; `P0-EPIC-09` opened. **The acceptance criterion could not be met as written and was corrected rather than approximated** - it named HTTP, DB, outbox and consumer, and two of those have no subject: there is no broker adapter and no consumer wiring, so no request can reach either. Same correction `P0-TSK-014` needed, and the legs transfer to the Phase 3 broker adapter. What was delivered: **correlation on every span**, stamped once by a span processor rather than by each component - because "every span" is not a property discipline delivers, and forgetting is silent: the span is recorded, the trace looks complete, and it cannot be found. **A trace id is explicitly not a substitute for a correlation id**: it is subject to sampling, so a sampled-out flow would be unfindable from the only value a customer holds, and it is absent from every table. HTTP and database proven in one connected trace against a live PostgreSQL, with the database span a **child** of the request - a flat list sharing a trace id cannot answer what a connection was acquired for. **No JDBC tracing library and no statement text**: SQL on a span would carry amounts and account identifiers into a backend with different retention and access control (`INV-AUD-02`), arriving silently the first time somebody writes a query. Three defects found by running it, each producing **no traces and no error**: Boot 4 gates the OTel SDK behind `management.opentelemetry.enabled`, off by default; the auto-configuration module is `@ConditionalOnClass` on the bridge so both are required; and a duplicate `management:` key in YAML stopped every context. Plus one of mine - a javadoc claiming the tracer was resolved lazily while the code resolved it eagerly in a bean post-processor. **The correlation sink guard fired for the sixth time**, on the sink it was built for, closing `P0-TSK-014`'s last clause four tasks and one milestone after it was recorded. ADR-0017 recorded. 398 hermetic tests, 159 database tests. |
 | 2026-09-02 | Task completion review of `P0-DOC-003`. No critical findings; three gaps in the guard, all closed, and the pattern is that a document guard is only as good as the set of claims it thought to check. **The document named error codes and nothing verified they exist**: `ErrorCodeRegistryTest` reconciles the CATALOGUE with the taxonomy, but these were mentions in prose, so renaming a code would have left the conventions telling a client to handle something that can never arrive - the same defect as documenting one that was never added, from the other direction. **The charset check ran one way only**: it caught a character dropped from the document but not the pattern being widened without the document following, which is the direction that rots quietly; now derived from `CorrelationId` by probing every printable character rather than restated. **And the deprecation windows were a second unguarded copy of ADR-0015** - the exact duplication this class refuses to allow for error codes, written by me two sections later; now compared numerically and wording-independently. Nine of nine mutations caught across the two rounds, in both directions. Two claims verified rather than assumed: every response really does carry `X-Correlation-Id`, actuator responses included, which is what the document promises; and the document is genuinely a declared build input - a green run, an edit to the document alone, and the task re-ran and failed. 394 hermetic tests, 156 database tests. |
 | 2026-09-02 | `P0-DOC-003` complete; **`P0-EPIC-08` closed**. The API conventions document - versioning, errors, correlation, request limits, idempotency, pagination, deprecation - and the interesting part was not writing it. Two of the six conventions the backlog asks for describe behaviour that **does not exist**: there is no money-moving endpoint and no collection endpoint, while `DOD-DOC` forbids aspirational statements presented as current fact. Omitting them would have defeated the task's own reason for existing, since a convention decided after five modules have each invented their own is not a convention. Resolved by making the distinction **structural**: every section is labelled `Implemented`, naming the class and test that prove it, or `Decided, not yet implemented`, naming the owning task - and **an unlabelled section fails the build**, so the distinction survives the next person in a hurry. The acceptance criterion is enforced rather than asserted: `ApiConventionsAreAccurateTest` pins the prefix, the handler package, the correlation header with its charset and 128-character bound, the size limit and its property, the problem-detail members and the media type - and fails if the error-code catalogue is ever pasted in, because `ERROR_CONTRACT.md` owns it and a second unguarded copy would drift while looking authoritative. **Pagination decided on a correctness argument**: offset re-reads a moving set, so a row inserted between pages is silently skipped or repeated - on a transaction history that is a payment missing from a statement with nothing reporting an error; that offset is also O(offset) on a ledger is the lesser objection. Six of six mutations caught in both directions. Also corrected a stale record found while checking: the `P0-TSK-014` DoD row still said no HTTP surface existed, which `P0-TSK-025` had built the day before. 391 hermetic tests, 156 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-027`. Two important findings, both about checks rather than code. **`:app:databaseTest` would never have run in CI**: the workflow step named `:platform:databaseTest` explicitly - a list of one that went stale the moment a second module gained database tests, which is what this task did. The positive control for readiness, the half of the acceptance criterion that says it reports UP when the database is actually there, would have run on one machine and nowhere else. Now `./gradlew databaseTest` unqualified, so a third module is covered without anyone remembering. And **the leak test was a deny-list**: turning details on and reading the body it would really publish showed the disk-space indicator reporting an absolute filesystem path - a username and the host's directory layout - which no list of forbidden substrings had anticipated, while three of its seven entries never fired at all. Replaced with an exact match, which immediately found something else the deny-list had never questioned: the aggregate publishes its group names even with details off. Same argument as `ProblemDetailBody` - specify what is published, because anything else publishes itself. Two minor fixes: the allow-list test was **partly vacuous**, since three of its twelve endpoints return 404 for reasons other than the allow-list - probing with exposure widened to `*` showed nine genuinely gated, and `heapdump` reachable behind one further property, returning 55 MB of process memory; the twelve are now split so no assertion overstates its protection. The migration check also asserted against the test classpath while describing the runtime one, and now checks the running context directly as well. Verified rather than assumed: **readiness recovers on its own** - 200, then 503 with the container stopped, then 200 within one poll of it returning, no restart. Two deferrals recorded as debt: the endpoints are unauthenticated until `P0-EPIC-10`, and connection-pool sizing across N instances is arithmetic owed before Phase 3. 384 hermetic tests, 156 database tests. |

@@ -57,6 +57,17 @@ its database is unreachable, so it can report NOT_READY rather than crash-loop. 
 published; detail is not, until there is an authority to authorize against. &rarr;
 [ADR-0016](../adr/ADR-0016-health-liveness-and-readiness.md)
 
+### Observability
+Distributed tracing carries the flow's correlation identifier on every span, applied once by a span
+processor rather than by each component - because "every span" is a property no per-component
+discipline delivers, and forgetting is silent. A trace identifier never substitutes for a
+correlation identifier: it is subject to sampling, and a sampled-out flow would become unfindable
+from the one value a customer holds. Inbound W3C trace context is joined rather than replaced,
+because a request crossing instances is the normal case. No JDBC tracing library and no statement
+text on spans - SQL would carry amounts and account identifiers into a telemetry backend with
+different access control (`INV-AUD-02`). Telemetry is never the record. &rarr;
+[ADR-0017](../adr/ADR-0017-tracing-and-correlation-on-spans.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

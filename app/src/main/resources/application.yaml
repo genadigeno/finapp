@@ -44,13 +44,37 @@ spring:
         ApplicationName: finapp
 
 # ---------------------------------------------------------------------------
+# Tracing (P0-TSK-028).
+#
+# No exporter endpoint is configured here. Where traces are sent is a deployment decision, not a
+# source-code one, and a committed endpoint is either wrong everywhere or a hostname nobody meant
+# to publish. Spans are recorded regardless; without an exporter they are simply dropped, which is
+# what a developer's machine should do.
+# ---------------------------------------------------------------------------
+management:
+  # Spring Boot 4 gates the OpenTelemetry SDK behind this, and it is off unless asked for. With
+  # only the bridge on the classpath there is no SdkTracerProvider and no real Tracer, so spans
+  # are recorded into a no-op and silently dropped - a tracing setup that looks configured and
+  # produces nothing. Stated explicitly rather than relied upon, for the same reason the health
+  # probes are: behaviour that differs between environments is behaviour nobody can rely on.
+  opentelemetry:
+    enabled: true
+
+  tracing:
+    sampling:
+      # Every request, deliberately, and only for now. Phase 0 has no traffic, so sampling would
+      # buy nothing and would make an already-rare failure rarer to catch. This number is a load
+      # decision and belongs with Phase 15, where there is load to measure - a financial platform
+      # that samples at 1% cannot explain the one payment a customer is asking about.
+      probability: 1.0
+
+# ---------------------------------------------------------------------------
 # Operational endpoints (P0-TSK-027).
 #
 # Deliberately unversioned: they are consumed by orchestrators and scrapers whose
 # configuration is deployment-scoped, not by API clients holding a contract, and moving
 # them on a version bump would break a liveness probe for no benefit (ADR-0015).
 # ---------------------------------------------------------------------------
-management:
   endpoints:
     web:
       exposure:

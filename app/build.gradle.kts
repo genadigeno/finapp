@@ -64,6 +64,13 @@ dependencies {
     implementation(libs.spring.boot.starter.jdbc)
     runtimeOnly(libs.postgresql.driver)
 
+    // The tracing IMPLEMENTATION (P0-TSK-028). app binds it because app is the composition root:
+    // platform records spans through a facade, and choosing what records them - here, the
+    // OpenTelemetry SDK that SYSTEM_ARCHITECTURE.md names - is the application's decision, not a
+    // library's. Exactly the slf4j split, one layer up.
+    implementation(libs.spring.boot.micrometer.tracing.opentelemetry)
+    implementation(libs.micrometer.tracing.bridge.otel)
+
     // The first HTTP surface (P0-TSK-024, M0.4). app is where it belongs: MODULE_ARCHITECTURE.md
     // §M10 puts routing, content negotiation and error rendering here, and the error CONTRACT -
     // the codes and the problem-detail shape - in platform, which stays framework-free because a
@@ -84,6 +91,11 @@ dependencies {
     // rather than a live /v3/api-docs endpoint - one fewer unauthenticated surface, and one
     // fewer library in the shipped dependency set.
     testImplementation(libs.springdoc.openapi.webmvc)
+
+    // Reads back the spans that were actually recorded, rather than asserting that a tracing call
+    // was made. Same argument as logback's list appender in the correlation tests: a telemetry
+    // test that mocks the telemetry proves nothing about what an operator would see.
+    testImplementation(libs.opentelemetry.sdk.testing)
 }
 
 // ---------------------------------------------------------------------------
