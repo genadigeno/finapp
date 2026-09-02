@@ -9,6 +9,11 @@ fails the build when they disagree in *either* direction.
 
 ---
 
+The conventions every endpoint follows - versioning, correlation, request limits, idempotency,
+pagination, deprecation - are in [`API_CONVENTIONS.md`](API_CONVENTIONS.md). This document is the
+error half of that, and owns the code catalogue: §3 below is the only place the codes are listed,
+and `ApiConventionsAreAccurateTest` fails the build if the conventions document restates them.
+
 ## 1. The shape
 
 `Content-Type: application/problem+json`

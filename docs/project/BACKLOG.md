@@ -513,7 +513,7 @@ Status: `IN_PROGRESS`
 - Cx: S
 - DoD: `DOD-API`
 
-**P0-DOC-003 — API conventions document**
+**P0-DOC-003 — API conventions document** — `COMPLETE` (2026-09-02)
 - Context: platform / api
 - Description: Versioning, errors, pagination, idempotency, correlation headers, deprecation.
 - Why: Convention drift across contexts is expensive to reverse.

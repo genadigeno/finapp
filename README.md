@@ -212,6 +212,19 @@ application serves no `/v3/api-docs`.
 
 ---
 
+## 5c. API conventions
+
+[`docs/architecture/API_CONVENTIONS.md`](docs/architecture/API_CONVENTIONS.md) is what a client
+author reads: versioning, errors, correlation, request limits, idempotency, pagination and
+deprecation, in one place.
+
+Every section is labelled **Implemented** or **Decided, not yet implemented**, because Phase 0
+publishes no business endpoint and two of the conventions - idempotency and pagination - are
+settled decisions waiting for their first endpoint. `ApiConventionsAreAccurateTest` fails the build
+if a stated value stops matching the code, or if a section is added without a label.
+
+---
+
 ## 5b. Health, readiness and build info
 
 Three endpoints, deliberately unversioned (ADR-0016):

@@ -180,4 +180,13 @@ tasks.test {
     inputs.files(rootProject.layout.projectDirectory.file("docs/api/openapi.json"))
         .withPropertyName("openApiContractBaseline")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The fifth. ApiConventionsAreAccurateTest holds this document and the implementation to each
+    // other - the prefix, the header name, the correlation charset and bound, the size limit and
+    // its property, the problem-detail members. Same reason as every line above it, and the same
+    // failure if omitted: an edit that makes the document wrong would leave the task UP-TO-DATE
+    // and the build green.
+    inputs.files(rootProject.layout.projectDirectory.file("docs/architecture/API_CONVENTIONS.md"))
+        .withPropertyName("apiConventionsDocument")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }

@@ -26,8 +26,11 @@ financial history exists.
 ## Current Milestone
 
 **M0.4 — API, observability and security baseline**
-`P0-EPIC-08` (API Conventions and Error Contract), `P0-EPIC-09` (Observability Baseline) and
-`P0-EPIC-10` (Security Baseline).
+`P0-EPIC-08` (API Conventions and Error Contract) is **COMPLETE** (2026-09-02): the platform has a
+versioned HTTP surface, an RFC 9457 error contract on every path, validation and correlation at the
+boundary, a published OpenAPI contract compared on every build, operational endpoints, and one
+conventions document holding it together. `P0-EPIC-09` (Observability Baseline) and `P0-EPIC-10`
+(Security Baseline) remain.
 
 **M0.3 — Correctness primitives** — `P0-EPIC-05`, `P0-EPIC-06` and `P0-EPIC-07`, all `COMPLETE`
 (2026-09-01), with one exception recorded rather than hidden: `P0-TSK-017` (`Idempotency-Key`
@@ -52,60 +55,57 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-DOC-003` - API conventions document**
+**`P0-TSK-028` - OpenTelemetry tracing**
 Status: `READY` - not started.
 
-Bounded context: platform / api. Depends on `P0-TSK-024..027`, all `COMPLETE`.
+Bounded context: platform. Depends on `P0-TSK-014` (`COMPLETE`).
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-08. DoD profile: `DOD-DOC`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-09. DoD profile: `DOD-OBS`.
 
 ### Just completed
 
-**`P0-TSK-027` - Health, readiness and info endpoints** - `COMPLETE` (2026-09-02).
+**`P0-DOC-003` - API conventions document** - `COMPLETE` (2026-09-02).
+**`P0-EPIC-08` closes with it.** All five items are complete.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Readiness fails when PostgreSQL is unavailable | 503 with the datasource pointed at a closed port, and 200 against a real database - both directions, because "fails when unavailable" is only half a claim |
-| Endpoints expose no sensitive configuration | Allow-list of `health` and `info`; twelve other actuator endpoints asserted 404; no URL, host, database, driver, error or exception in any health body |
+| Document matches implemented behaviour | Enforced rather than asserted: `ApiConventionsAreAccurateTest` pins every stated value against the code, and six mutations - four in the document, two in the implementation - each fail the build |
 
-Design decisions worth carrying forward (ADR-0016):
-- **Liveness and readiness answer different questions, and sharing one health check is an outage
-  amplifier.** A liveness probe that consulted PostgreSQL would restart every instance at once
-  during a thirty-second failover, leaving the fleet reconnecting in a herd to a database already
-  in trouble - a recoverable degradation converted into a total outage by the check meant to
-  prevent one, with the diagnostic state destroyed on the way.
-- **Spring's default readiness group is `readinessState` alone.** Adding the actuator and a
-  `DataSource` therefore yields a readiness endpoint that returns **UP while PostgreSQL is
-  unreachable** - the opposite of the acceptance criterion, and indistinguishable from working.
-  Dropping `db` from the group fails the test.
-- **Kafka and Redis are deliberately not readiness dependencies.** The outbox holds events durably
-  in PostgreSQL, so a broker outage delays publication rather than invalidating the instance
-  (`INV-EVT-02`); refusing traffic for it would convert a delay into an outage.
-- **The application starts when its database is unreachable**, on purpose. One that refuses to
-  boot cannot report readiness at all: an orchestrator sees a crash-loop rather than a NOT_READY
-  instance, and the signal naming the broken dependency is lost exactly when it is needed.
-- **Readiness is checked through the pool the application uses**, not a connection opened for the
-  purpose - which would report healthy while the pool is exhausted, the very condition under which
-  traffic must be diverted. That is why the application now has a `DataSource` at all.
-- **A `DataSource` is not an ORM.** `spring-boot-starter-jdbc`, never `-data-jpa`: unresolved
-  question 12 stays open for Phase 3, where Hibernate's dirty checking has to be weighed against
-  records that are never updated. Stated in the catalogue, the build file and the ADR, because this
-  is exactly the kind of decision that gets made by accident.
-- **Status is published; detail is not.** A detailed health body names the JDBC URL, the host, the
-  database, the driver and the failing exception, and nothing authenticates the caller yet.
+The task's difficulty was not writing it. It was that two of the six conventions the backlog asks
+for - **idempotency and pagination** - describe behaviour that **does not exist**: there is no
+money-moving endpoint, and no endpoint returns a collection. `DOD-DOC` forbids "aspirational
+statements presented as current fact", and omitting them would have failed the task's own reason
+for existing, which is that convention drift across contexts is expensive to reverse.
 
-**One defect found by running it, and it is this session's third of the same kind:** `properties {
-time = null }` compiles, reads correctly, and does nothing - Boot 4 drives the exclusion from an
-`excludes` set and the generator falls back to the build instant. Found by reading the generated
-`build-info.properties` rather than the build file. The timestamp matters because
-`isPreserveFileTimestamps = false` makes archives reproducible, and an embedded build time defeats
-exactly that.
+Resolved by making the distinction **structural rather than typographic**: every section is
+labelled `Implemented` - naming the class and test that prove it - or `Decided, not yet
+implemented`, naming the owning task. A section with neither label fails the build, so the
+distinction survives the next person adding a section in a hurry.
 
-**Verified by mutation: 5 of 5 caught** - dropping `db` from readiness, adding `db` to liveness,
-`show-details: always`, exposing every endpoint, and un-excluding the build time.
+Design decisions worth carrying forward:
+- **One source of truth per fact.** The error-code catalogue stays in `ERROR_CONTRACT.md`, which is
+  already reconciled with the taxonomy. A second table in the conventions document would be
+  unguarded and would drift in the worst direction - looking authoritative while being wrong. A
+  test fails the build if the catalogue is ever pasted in.
+- **Cursor pagination, never offset**, and the argument is correctness before performance: an
+  offset re-reads a moving set, so a row inserted or removed between pages is silently **skipped or
+  repeated**. On a customer's transaction history that is a payment missing from an exported
+  statement with nothing reporting an error. That it is also O(offset) on a ledger is the lesser
+  objection. ADR-0013 already supplies the total order that makes keyset pagination natural here.
+- **`Idempotency-Key` is scoped, not global**, so two callers cannot collide by both choosing `1`;
+  and it is enforced by a database constraint rather than a filter, because a filter deduplicates
+  requests and what must be deduplicated is financial effects (ADR-0004).
+- **What is deliberately not decided** is listed with owning phases - authentication, rate
+  limiting, filter/sort grammar, bulk shapes, asynchronous `202`, webhooks - so their absence is
+  not read as an oversight.
 
-**And a regression that adding a `DataSource` could have caused:** `./gradlew build` was run with
-PostgreSQL stopped and is green, so `test` is still hermetic and the pool is still lazy.
+**Verified by mutation: 6 of 6 caught, in both directions.** Documenting a size limit, a
+correlation bound, an unlabelled section or a pasted code table each fails; so does changing the
+implemented size limit or bumping the API version while leaving the document alone.
+
+**One stale claim found and corrected while checking the record:** the partially-satisfied DoD row
+for `P0-TSK-014` still said the ingress-filter clause was unverifiable because no HTTP surface
+existed. `P0-TSK-025` built that surface the previous day. Narrowed to the trace clause alone.
 
 ---
 
@@ -205,6 +205,21 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+API conventions (2026-09-02), `P0-DOC-003`:
+- [`API_CONVENTIONS.md`](../architecture/API_CONVENTIONS.md): versioning, the published contract,
+  errors, correlation, request limits, idempotency, pagination and deprecation in one place
+- Every section labelled `Implemented` or `Decided, not yet implemented`, with the owning task -
+  and an unlabelled section fails the build, so the distinction cannot erode
+- Every stated value pinned against the code: the prefix, the handler package, the correlation
+  header, its charset and 128-character bound, the size limit and its property, the problem-detail
+  members and the media type
+- The error-code catalogue is referenced, never restated; a pasted table fails the build
+- Cursor pagination decided on a correctness argument, not a performance one
+- Six mutations caught in both directions - document wrong, and implementation moved
+- Review added three more: every error code the document names must exist, the documented
+  charset must be the whole of the implemented one, and the deprecation windows must agree
+  with ADR-0015 rather than being a second unguarded copy of it
 
 Health, readiness and build info (2026-09-02), `P0-TSK-027`:
 - Liveness depends on nothing external; readiness includes PostgreSQL; both proven in both
@@ -471,7 +486,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-DOC-003` is the next task.
+None in progress. `P0-TSK-028` is the next task.
 
 ## Blockers
 
@@ -578,7 +593,7 @@ Recorded so it is not mistaken for a completed criterion.
 | `P0-TSK-004` | The CycloneDX SBOM covers the whole resolved dependency set, test scope included (21 of ~61 components). Plugin 3.4.1 exposes no configuration filter. Adequate for vulnerability scanning — test libraries execute on CI runners, so they are legitimately in scope — but it means a HIGH/CRITICAL advisory in a test-only library fails the build though nothing vulnerable ships, and **the SBOM must not be published as shipping provenance in this form** because it overstates what is deployed. | Phase 15 (supply chain and provenance) |
 | `P0-TSK-004` | CI actions and scanner images are pinned by SHA/digest with no automated update path, so the pins will rot. | `P0-TSK-040` |
 | ~~`P0-TSK-002`~~ | ~~Boundary enforcement partial~~ — **closed**. Cross-module internals and entity references by `P0-TSK-007`; `INV-MON-01` by `P0-TSK-008`. | — |
-| `P0-TSK-014` | Narrowing. The **emitted-event** clause is now satisfied: `P0-TSK-019` added the outbox and `CorrelationPropagationTest` asserts a queued event carries the flow's identifier. The **trace** and **ingress-filter** clauses remain unverifiable — no tracing exporter or HTTP surface exists — and close on arrival rather than on memory, because `CorrelationSinkCoverageTest` fails the build when a new concern lands unclassified. | `P0-EPIC-08`, `-09` |
+| `P0-TSK-014` | Narrowing again. The **emitted-event** clause was satisfied by `P0-TSK-019`, and the **ingress-filter** clause by `P0-TSK-025`, whose `CorrelationFilter` puts an identifier on every response and is asserted by `ApiErrorHandlerTest` and `RequestValidationTest`. Only the **trace** clause remains, and it closes on arrival rather than on memory: `CorrelationSinkCoverageTest` fails the build when a new platform concern lands unclassified. | `P0-EPIC-09` |
 | ~~`P0-TSK-003`, `P0-TSK-005`~~ | ~~Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants cannot be exercised~~ — **closed** by `P0-TSK-022`. `finapp_migrator` and `finapp_app` exist, both `NOSUPERUSER`; Flyway connects as the migrator and every table grants the application role only the DML it requires. `INV-HIST-03` is now enforced and proven; `INV-LED-03` and `INV-HIST-01` have the mechanism they need and close when the ledger tables exist (Phase 3). | — |
 
 ---
@@ -647,14 +662,19 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-DOC-003` - API conventions document**, the last item in `P0-EPIC-08`.
+**`P0-TSK-028` - OpenTelemetry tracing**, opening `P0-EPIC-09` (Observability Baseline).
 
-`ERROR_CONTRACT.md`, ADR-0015 and ADR-0016 already supply the error, versioning, deprecation,
-correlation and operational-endpoint halves of it; what it adds is pagination and the idempotency
-header convention. `P0-TSK-017` (`Idempotency-Key`) is unblocked as soon as an endpoint exists to
-declare the header on, which is Phase 4.
+Its acceptance criterion is a single request producing one connected trace across HTTP, database,
+outbox and consumer. It also closes the last outstanding clause of `P0-TSK-014`: correlation
+reaching a trace, which `CorrelationSinkCoverageTest` has been holding open.
 
-Closing `P0-EPIC-08` leaves `P0-EPIC-09` (observability) and `P0-EPIC-10` (security) in M0.4.
+`P0-EPIC-09` then continues with `P0-TSK-029` (metrics), `P0-TSK-030` (structured logging with
+redaction, the highest-risk task in the epic) and `P0-TST-008`. `P0-EPIC-10` (security baseline)
+closes M0.4.
+
+Two debts recorded against `P0-EPIC-09` come due with it: relay metrics and inbox metrics are
+returned as outcomes today and aggregated nowhere, so a stalled aggregate is visible only by
+reading logs.
 
 ---
 
@@ -662,6 +682,8 @@ Closing `P0-EPIC-08` leaves `P0-EPIC-09` (observability) and `P0-EPIC-10` (secur
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-DOC-003`. No critical findings; three gaps in the guard, all closed, and the pattern is that a document guard is only as good as the set of claims it thought to check. **The document named error codes and nothing verified they exist**: `ErrorCodeRegistryTest` reconciles the CATALOGUE with the taxonomy, but these were mentions in prose, so renaming a code would have left the conventions telling a client to handle something that can never arrive - the same defect as documenting one that was never added, from the other direction. **The charset check ran one way only**: it caught a character dropped from the document but not the pattern being widened without the document following, which is the direction that rots quietly; now derived from `CorrelationId` by probing every printable character rather than restated. **And the deprecation windows were a second unguarded copy of ADR-0015** - the exact duplication this class refuses to allow for error codes, written by me two sections later; now compared numerically and wording-independently. Nine of nine mutations caught across the two rounds, in both directions. Two claims verified rather than assumed: every response really does carry `X-Correlation-Id`, actuator responses included, which is what the document promises; and the document is genuinely a declared build input - a green run, an edit to the document alone, and the task re-ran and failed. 394 hermetic tests, 156 database tests. |
+| 2026-09-02 | `P0-DOC-003` complete; **`P0-EPIC-08` closed**. The API conventions document - versioning, errors, correlation, request limits, idempotency, pagination, deprecation - and the interesting part was not writing it. Two of the six conventions the backlog asks for describe behaviour that **does not exist**: there is no money-moving endpoint and no collection endpoint, while `DOD-DOC` forbids aspirational statements presented as current fact. Omitting them would have defeated the task's own reason for existing, since a convention decided after five modules have each invented their own is not a convention. Resolved by making the distinction **structural**: every section is labelled `Implemented`, naming the class and test that prove it, or `Decided, not yet implemented`, naming the owning task - and **an unlabelled section fails the build**, so the distinction survives the next person in a hurry. The acceptance criterion is enforced rather than asserted: `ApiConventionsAreAccurateTest` pins the prefix, the handler package, the correlation header with its charset and 128-character bound, the size limit and its property, the problem-detail members and the media type - and fails if the error-code catalogue is ever pasted in, because `ERROR_CONTRACT.md` owns it and a second unguarded copy would drift while looking authoritative. **Pagination decided on a correctness argument**: offset re-reads a moving set, so a row inserted between pages is silently skipped or repeated - on a transaction history that is a payment missing from a statement with nothing reporting an error; that offset is also O(offset) on a ledger is the lesser objection. Six of six mutations caught in both directions. Also corrected a stale record found while checking: the `P0-TSK-014` DoD row still said no HTTP surface existed, which `P0-TSK-025` had built the day before. 391 hermetic tests, 156 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-027`. Two important findings, both about checks rather than code. **`:app:databaseTest` would never have run in CI**: the workflow step named `:platform:databaseTest` explicitly - a list of one that went stale the moment a second module gained database tests, which is what this task did. The positive control for readiness, the half of the acceptance criterion that says it reports UP when the database is actually there, would have run on one machine and nowhere else. Now `./gradlew databaseTest` unqualified, so a third module is covered without anyone remembering. And **the leak test was a deny-list**: turning details on and reading the body it would really publish showed the disk-space indicator reporting an absolute filesystem path - a username and the host's directory layout - which no list of forbidden substrings had anticipated, while three of its seven entries never fired at all. Replaced with an exact match, which immediately found something else the deny-list had never questioned: the aggregate publishes its group names even with details off. Same argument as `ProblemDetailBody` - specify what is published, because anything else publishes itself. Two minor fixes: the allow-list test was **partly vacuous**, since three of its twelve endpoints return 404 for reasons other than the allow-list - probing with exposure widened to `*` showed nine genuinely gated, and `heapdump` reachable behind one further property, returning 55 MB of process memory; the twelve are now split so no assertion overstates its protection. The migration check also asserted against the test classpath while describing the runtime one, and now checks the running context directly as well. Verified rather than assumed: **readiness recovers on its own** - 200, then 503 with the container stopped, then 200 within one poll of it returning, no restart. Two deferrals recorded as debt: the endpoints are unauthenticated until `P0-EPIC-10`, and connection-pool sizing across N instances is arithmetic owed before Phase 3. 384 hermetic tests, 156 database tests. |
 | 2026-09-02 | `P0-TSK-027` complete. Liveness, readiness and build info - and the decision that matters is which questions they answer. **Liveness depends on nothing external**: a liveness probe consulting PostgreSQL restarts every instance at once during a thirty-second failover, leaving the fleet reconnecting in a herd to a database already in trouble, with the diagnostic state destroyed - a degradation turned into an outage by the check meant to prevent one. **Readiness includes PostgreSQL and excludes Kafka and Redis**, because the outbox holds events durably and a broker outage delays publication rather than invalidating the instance (`INV-EVT-02`). The trap closed here is Spring's own default: the readiness group is `readinessState` alone, so adding the actuator and a `DataSource` gives a readiness endpoint that returns **UP while PostgreSQL is unreachable** - correct-looking and worthless. The application now has a `DataSource` at all because readiness must be answered **through the pool the application uses**; one that opens its own connection reports healthy while the pool is exhausted, which is exactly when traffic must be diverted. `spring-boot-starter-jdbc`, never `-data-jpa`: unresolved question 12 stays open. **The application starts when its database is down**, deliberately - one that refuses to boot leaves an orchestrator with a crash-loop instead of an instance able to say what is broken. Security: allow-list exposure, no detail, no components, twelve other actuator endpoints asserted 404, and no URL, host, driver or exception in any health body. One defect found by running it, the third of its kind this session: **`properties { time = null }` compiles and does nothing** - Boot 4 excludes via an `excludes` set and otherwise falls back to the build instant, which would have defeated reproducible archives; found by reading the generated file, not the build script. ADR-0015's claim that operational endpoints escape `/v1` is now verified rather than asserted. Five of five mutations caught, and `./gradlew build` re-run with PostgreSQL stopped to prove the hermetic guarantee survived a new `DataSource`. ADR-0016 recorded. 383 hermetic tests, 156 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-026`. One important finding, and it is the defect class this project keeps meeting: **a fix that compiled, read correctly, and did nothing**. Declaring the contract baseline as a Gradle input made the test's own bootstrap message unreachable - a missing baseline aborts the task before any test runs, reporting an internal property name instead of "a first document has been generated, here it is". The first repair, `optional(true)`, was wrong for a reason worth remembering: it permits a null *value*, and the value is present - it is the file behind it that is missing. `inputs.files` rather than `inputs.file` holds both properties, and both were then re-proven: deleting the baseline reaches the test's message, editing it still re-runs the task and fails. Three further findings. **A `synchronized` that guarded nothing**: an instance method locking a different instance per test method, protecting a static memo whose own comment argued the caching was unnecessary - shared mutable state removed rather than fixed. **Two literals for one component name**, so renaming the problem-detail schema would leave every response pointing at nothing; single-sourced, and a `$ref` resolution test added because a document that does not resolve still parses, still diffs, and still looks complete. **Nothing asserted that the published contract contains no test fixture** - several suites register probe controllers by `@Import`, and their separation from this one is a property of Spring's context cache key rather than something anyone declared; a probe baked into a baseline would look exactly as authoritative. Both new guards proven by mutation. Also tightened the handler predicate to `com.finapp.`, since `HandlerTypePredicate` matches by `startsWith` and would have claimed a sibling namespace - confirmed by disassembling Spring rather than by assuming. 375 hermetic tests, 152 database tests. |
