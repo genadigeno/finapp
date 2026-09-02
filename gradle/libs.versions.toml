@@ -41,6 +41,16 @@ springBoot = "4.1.1"
 # express: cross-module internals, cross-module entity references, framework leakage.
 archunit = "1.5.0"
 
+# springdoc generates the OpenAPI document from the running application (P0-TSK-026).
+# 3.1.0 is the Spring Boot 4 / Spring Framework 7 line; the 2.8.x line targets Boot 3.
+#
+# TEST SCOPE ONLY, deliberately. springdoc reads the request mappings and never changes
+# them, so a document generated with it on the test classpath describes the same
+# application that ships. Keeping it out of the runtime means the contract is a reviewed
+# build artefact rather than an unauthenticated /v3/api-docs endpoint that changes with
+# every deployment - and it is one fewer library in the shipped dependency set.
+springdoc = "3.1.0"
+
 junitJupiter = "6.0.3"
 assertj = "3.27.7"
 
@@ -83,6 +93,20 @@ spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-start
 # Jakarta Bean Validation, added by P0-TSK-025: rejection at the boundary, declared on the
 # request type rather than written by hand in every handler.
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+# Health, readiness and build info (P0-TSK-027). The endpoints an orchestrator asks, which is
+# why they are production dependencies rather than test ones like springdoc: nothing else can
+# answer "should this instance receive traffic?"
+spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+# Plain JDBC and a connection pool - deliberately NOT spring-boot-starter-data-jpa.
+#
+# Readiness has to be checked through the pool the application itself uses; a health check that
+# opens its own connection reports healthy while the pool is exhausted, which is exactly when
+# traffic must be diverted. That needs a DataSource, and a DataSource is all it needs.
+#
+# Choosing an ORM is unresolved question 12 and belongs to Phase 3: Hibernate's dirty checking
+# emits UPDATEs, and INV-LED-03/INV-HIST-01 say posted financial records are never updated. This
+# entry must not become the accidental answer to that question.
+spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
 
 # --- Logging facade (version supplied by the BOM) ----------------------------
 # The facade only. platform binds nothing: choosing an implementation is the
@@ -97,6 +121,8 @@ junit-bom = { module = "org.junit:junit-bom", version.ref = "junitJupiter" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+# The -api starter, not -ui: a Swagger UI is an extra surface nobody here needs.
+springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }
 
 # --- Database migration -------------------------------------------------------
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }

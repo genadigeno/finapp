@@ -493,7 +493,7 @@ Status: `IN_PROGRESS`
 - Cx: S
 - DoD: `DOD-API`
 
-**P0-TSK-026 — API versioning and OpenAPI generation**
+**P0-TSK-026 — API versioning and OpenAPI generation** — `COMPLETE` (2026-09-02)
 - Context: platform / api
 - Description: Versioning strategy, deprecation policy, OpenAPI generated in the build.
 - Why: Backwards-compatible evolution is a stated API rule.
@@ -503,7 +503,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-API`
 
-**P0-TSK-027 — Health, readiness and info endpoints**
+**P0-TSK-027 — Health, readiness and info endpoints** — `COMPLETE` (2026-09-02)
 - Context: platform / api
 - Description: Liveness, readiness (including dependency checks) and build-info endpoints. No business endpoints.
 - Why: Operability baseline; readiness must reflect real dependency state.

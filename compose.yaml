@@ -34,7 +34,10 @@ services:
     image: postgres:18.6
     environment:
       # These three defaults are duplicated in platform/build.gradle.kts, which must
-      # connect to this container to run migrations. Change one, change both.
+      # connect to this container to run migrations, and in app/src/main/resources/
+      # application.yaml, which is how the application itself connects. Change one, change
+      # all three. They are the same environment variables everywhere, so an override moves
+      # the container, the migration tool and the application together.
       POSTGRES_DB: ${FINAPP_DB_NAME:-finapp}
       POSTGRES_USER: ${FINAPP_DB_USER:-finapp}
       # Local-only throwaway value. Not a secret. See SECURITY note above.

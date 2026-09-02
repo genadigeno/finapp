@@ -187,9 +187,15 @@ is a system of record, the other a system of reporting; giving them one owner wo
 reporting change alter financial truth.
 
 **M10 — API/Integration Platform is split between `platform` and `app`.** The error
-contract, correlation propagation and provider SPI are mechanism and live in `platform`; the
-HTTP surface, routing and composition live in `app`. Neither owns business state, so no
+contract, the API version and correlation propagation are contract vocabulary and live in
+`platform`, along with the provider SPI; the HTTP surface, routing, error rendering and the
+application of the version prefix live in `app`. Neither owns business state, so no
 state has two owners.
+
+The published contract itself — [`docs/api/openapi.json`](../api/openapi.json) — is generated
+from the running application on every build and compared against the committed copy
+(ADR-0015). It is an artefact of `app`, because only `app` sees every route; nothing about
+OpenAPI is deployed.
 
 ---
 
@@ -204,14 +210,14 @@ phases must satisfy, not a description of code.
 
 ### `app` — Phase 0
 - **Responsibility:** composition root. Wires modules together and hosts the HTTP surface and configuration. Owns no business capability.
-- **Owns:** no persistent state; configuration only.
+- **Owns:** no persistent state; configuration only — plus the JDBC connection pool, which is infrastructure rather than state. Readiness has to be answered through the pool the application actually uses, since a health check with its own connection reports healthy while the pool is exhausted. A pool is not a data-access mechanism: unresolved question 12 stays open (ADR-0016 §5).
 - **Transaction:** opens none of its own. It delegates to the module that owns the transaction.
 - **Consistency:** n/a — holds no state.
 - **APIs:** the platform's outward HTTP surface — routing, content negotiation and error rendering against the `platform` error contract. Declares no business endpoints of its own.
 - **Events:** none. Publishes and consumes nothing; a composition root that reacted to events would be a business module.
-- **Failure:** a module that fails to start fails startup. `app` must never degrade to serving traffic with a module missing, because a partially-wired platform serves wrong answers rather than no answers.
+- **Failure:** a module that fails to start fails startup. `app` must never degrade to serving traffic with a module missing, because a partially-wired platform serves wrong answers rather than no answers. An unavailable **dependency** is the opposite case and is handled the opposite way: the application starts, reports NOT_READY, and receives no traffic (ADR-0016 §4). Refusing to boot would leave an orchestrator with a crash-loop instead of an instance able to say which dependency is broken.
 - **Security:** authentication at the edge and the TLS termination boundary. It makes **no** business authorization decisions — those belong to each module's published interface, so that a second caller (a job, an operator tool) cannot bypass them.
-- **Operations:** liveness and readiness endpoints, build info, startup success, request-level telemetry.
+- **Operations:** liveness, readiness and build-info endpoints (`P0-TSK-027`, ADR-0016), startup success, request-level telemetry. Liveness depends on nothing external; readiness includes PostgreSQL and excludes Kafka and Redis, which are transport and cache rather than truth. All three are unversioned, because an orchestrator's configuration is deployment-scoped rather than a contract.
 - **Note:** `app` may depend on every module; no module may depend on `app`.
 - **Also hosts:** the platform-wide ArchUnit rules — `ModuleBoundaryRulesTest` (module boundaries), `NoFloatingPointMoneyRulesTest` (`INV-MON-01`), their shared coverage derivation `ProductionModules`, and `ArchitectureRulesAreDocumentedTest`, which holds §6 of this document and the enforced rule set to each other. They live here because `app` is the only module that sees every other one, and enforcing a boundary requires observing both sides of it.
 

@@ -147,12 +147,18 @@ jobs:
       - name: Re-apply to prove migrations are idempotent
         run: ./gradlew :platform:flywayMigrate --stacktrace
 
-      - name: Round-trip monetary values through real columns
-        # INV-MON-05: a persisted amount must return exactly the value written, including
-        # its scale. That is a claim about PostgreSQL and its driver, so it is only worth
-        # testing against a real one. These tests are excluded from `build` deliberately, so
-        # this job is the only place they run.
-        run: ./gradlew :platform:databaseTest --stacktrace
+      - name: Run every test that needs a real database
+        # Claims about PostgreSQL and its driver are only worth testing against a real one:
+        # monetary round-trips preserving scale (INV-MON-05), privilege-level immutability
+        # (INV-HIST-03), idempotency under genuine contention, and readiness reporting UP
+        # against a database that is actually there. These are excluded from `build`
+        # deliberately, so this job is the only place they run.
+        #
+        # `databaseTest` unqualified, NOT `:platform:databaseTest`. The qualified form was a
+        # list of one that went stale the moment a second module gained database tests:
+        # P0-TSK-027 added `:app:databaseTest`, whose whole job is the positive control for
+        # readiness, and it would have run on a developer's machine and nowhere else.
+        run: ./gradlew databaseTest --stacktrace
 
       - name: Stop PostgreSQL
         if: always()

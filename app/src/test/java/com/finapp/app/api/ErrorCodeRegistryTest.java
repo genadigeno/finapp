@@ -4,14 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.api.ErrorCode;
 import com.tngtech.archunit.core.domain.JavaClass;
-import com.tngtech.archunit.core.importer.ClassFileImporter;
-import com.tngtech.archunit.core.importer.ImportOption;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -117,27 +109,11 @@ class ErrorCodeRegistryTest {
     }
 
     private static List<ErrorCode> codes() {
-        List<ErrorCode> codes = new ArrayList<>();
-        for (JavaClass javaClass : implementations()) {
-            Class<?> loaded = javaClass.reflect();
-            if (!loaded.isEnum()) {
-                continue;
-            }
-            for (Object constant : loaded.getEnumConstants()) {
-                codes.add((ErrorCode) constant);
-            }
-        }
-        return codes;
+        return DeclaredErrorCodes.all();
     }
 
     private static List<JavaClass> implementations() {
-        return new ClassFileImporter()
-                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-                .importPackages("com.finapp")
-                .stream()
-                .filter(javaClass -> javaClass.isAssignableTo(ErrorCode.class))
-                .filter(javaClass -> !javaClass.getName().equals(ErrorCode.class.getName()))
-                .toList();
+        return DeclaredErrorCodes.implementations();
     }
 
     private static Set<String> cataloguedCodes() {
@@ -163,21 +139,8 @@ class ErrorCodeRegistryTest {
                 .orElseThrow(() -> new AssertionError("no catalogue row for " + code));
     }
 
-    /** Searches upwards, so the test works from any working directory. */
     private static String readCatalogue() {
-        Path directory = Path.of("").toAbsolutePath();
-        while (directory != null) {
-            Path candidate = directory.resolve(CATALOGUE);
-            if (Files.isRegularFile(candidate)) {
-                try {
-                    return Files.readString(candidate, StandardCharsets.UTF_8);
-                } catch (IOException e) {
-                    throw new UncheckedIOException("Could not read " + candidate, e);
-                }
-            }
-            directory = directory.getParent();
-        }
-        throw new IllegalStateException(
-                "Could not find " + CATALOGUE + " above " + Path.of("").toAbsolutePath());
+        return RepositoryPaths.read(CATALOGUE);
     }
+
 }

@@ -188,6 +188,61 @@ running `pg_upgrade` — a data directory is formatted for the major version tha
 
 ---
 
+## 5a. The API contract
+
+The public HTTP contract is [`docs/api/openapi.json`](docs/api/openapi.json). It is **generated
+from the running application** during `:app:test` and compared byte for byte against that committed
+file, so the build fails on any change to the contract - including one nobody meant to make.
+
+Every route is served under `/v1` (ADR-0015). Controllers do not declare the prefix; the
+application applies it.
+
+When you change the contract on purpose, the failing test prints each difference labelled
+`BREAKING` or `COMPATIBLE`, and tells you what to do. Accepting a compatible change is a copy:
+
+```bash
+cp app/build/openapi/openapi.json docs/api/openapi.json
+```
+
+If any difference is labelled `BREAKING`, do not copy it. A breaking change is not published under
+an existing version - either withdraw it or open the next one.
+
+No OpenAPI machinery is deployed. springdoc is a test-scope dependency, and the running
+application serves no `/v3/api-docs`.
+
+---
+
+## 5b. Health, readiness and build info
+
+Three endpoints, deliberately unversioned (ADR-0016):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}
+' http://localhost:8080/actuator/health/readiness
+```
+
+| Endpoint | Answers | Depends on |
+|---|---|---|
+| `/actuator/health/liveness` | Should this process be killed and restarted? | Nothing external |
+| `/actuator/health/readiness` | Should traffic be routed here? | PostgreSQL |
+| `/actuator/info` | Which build is running? | Nothing |
+
+**Readiness returns 503 when PostgreSQL is unreachable**, and the application still starts and
+still serves those endpoints - so a stopped database gives you an instance that says NOT_READY
+rather than a crash-looping one that says nothing.
+
+**Liveness ignores the database on purpose.** If it did not, a thirty-second failover would
+restart every instance at once and leave them reconnecting in a herd to a database already in
+trouble.
+
+Health responses carry a status and nothing else - no dependency name, no URL, no exception. That
+is a security decision, not an oversight; see `docs/architecture/SECURITY_ARCHITECTURE.md`.
+
+Database settings come from the same `FINAPP_DB_*` environment variables `compose.yaml` uses, and
+the application connects as `finapp_app` - never the superuser.
+
+---
+
 ## 6. What CI checks
 
 Four independent jobs, so a failure names its own gate

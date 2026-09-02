@@ -3,6 +3,7 @@ package com.finapp.app.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.ApiVersion;
 import com.finapp.platform.api.PlatformErrorCode;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -101,7 +102,8 @@ class ApiErrorHandlerTest {
 
         assertContract(response, 409, "api.Conflict");
         assertThat(response.body()).contains("Already submitted.");
-        assertThat(response.body()).contains("\"instance\":\"/probe/api-exception\"");
+        assertThat(response.body())
+                .contains("\"instance\":\"" + ApiVersion.CURRENT_PREFIX + "/probe/api-exception\"");
         assertThat(response.body()).doesNotContain(SECRET);
     }
 
@@ -229,8 +231,14 @@ class ApiErrorHandlerTest {
                 HttpResponse.BodyHandlers.ofString());
     }
 
+    /**
+     * Every probe path below is written unversioned and reached under {@link
+     * ApiVersion#CURRENT_PREFIX}, because that is where the application actually serves it
+     * (P0-TSK-026). Building the URI here rather than in each test means the contract's surface
+     * moves in one place when the version does.
+     */
     private URI uri(String path) {
-        return URI.create("http://127.0.0.1:" + port + path);
+        return URI.create("http://127.0.0.1:" + port + ApiVersion.CURRENT_PREFIX + path);
     }
 
     private static void assertContract(HttpResponse<String> response, int status, String code) {

@@ -1,0 +1,410 @@
+{
+  "components": {
+    "headers": {
+      "X-Correlation-Id": {
+        "description": "The identifier of this request flow. Quote it when reporting a problem; it is what joins a client report to the record of what happened.",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "api.Conflict": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.Conflict"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.Conflict"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The request conflicts with the current state.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.Forbidden": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.Forbidden"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.Forbidden"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] You do not have permission to do that.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.InternalError": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.InternalError"
+                    },
+                    "status": {
+                      "const": 500
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.InternalError"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[500] Something went wrong on our side.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.MalformedRequest": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.MalformedRequest"
+                    },
+                    "status": {
+                      "const": 400
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.MalformedRequest"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[400] The request could not be understood.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.MethodNotAllowed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.MethodNotAllowed"
+                    },
+                    "status": {
+                      "const": 405
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.MethodNotAllowed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[405] That method is not allowed here.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.NotAcceptable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.NotAcceptable"
+                    },
+                    "status": {
+                      "const": 406
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.NotAcceptable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[406] No acceptable representation is available.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.NotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.NotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.NotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] The requested resource does not exist.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.PayloadTooLarge": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.PayloadTooLarge"
+                    },
+                    "status": {
+                      "const": 413
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.PayloadTooLarge"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[413] The request was too large.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.Unauthenticated": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.Unauthenticated"
+                    },
+                    "status": {
+                      "const": 401
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.Unauthenticated"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[401] Authentication is required.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.UnsupportedMediaType": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.UnsupportedMediaType"
+                    },
+                    "status": {
+                      "const": 415
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.UnsupportedMediaType"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[415] That media type is not supported.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.ValidationFailed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.ValidationFailed"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.ValidationFailed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The request was not valid.",
+        "headers": {
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ProblemDetail": {
+        "description": "An RFC 9457 problem detail. Clients switch on `code`; `title` is prose and may be reworded, and several codes share a status. Absent members are absent, never null.",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "status": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "The public HTTP contract. Versioned in the path (ADR-0015); errors follow RFC 9457, catalogued in docs/architecture/ERROR_CONTRACT.md. Generated from the application on every build and compared against this committed copy, so a change to the contract cannot reach a client without being reviewed.",
+    "title": "finapp platform API",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": { }
+}

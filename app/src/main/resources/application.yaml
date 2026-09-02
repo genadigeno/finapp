@@ -1,0 +1,121 @@
+spring:
+  application:
+    name: finapp
+
+  # ---------------------------------------------------------------------------
+  # Database.
+  #
+  # NO SECRET IS COMMITTED HERE. Every value is an environment variable with a
+  # local-development default that is deliberately named so it cannot be mistaken for a
+  # secret and cannot silently become one in a deployed environment. This is the pattern
+  # established by compose.yaml; P0-TSK-031 formalises real credential handling, and
+  # nothing here establishes a pattern for production.
+  #
+  # THESE DEFAULTS ARE DUPLICATED IN compose.yaml AND platform/build.gradle.kts. They are
+  # the same environment variables in all three places, so overriding one moves the
+  # container, the migration tool and the application together rather than only one.
+  #
+  # LEAST PRIVILEGE: the application connects as finapp_app, never as the bootstrap
+  # superuser. finapp_app holds per-table DML and nothing else, which is what makes
+  # INV-HIST-03 (audit records are append-only) enforceable at all - a superuser ignores
+  # every permission check.
+  # ---------------------------------------------------------------------------
+  datasource:
+    url: ${FINAPP_DB_URL:jdbc:postgresql://127.0.0.1:5432/${FINAPP_DB_NAME:finapp}}
+    username: ${FINAPP_DB_APP_USER:finapp_app}
+    password: ${FINAPP_DB_APP_PASSWORD:local-development-only-not-a-secret}
+    hikari:
+      # A readiness check that hangs reports nothing. The orchestrator's probe times out and
+      # what it concludes from that is its own business - so every wait on the readiness path
+      # is explicitly bounded here rather than left to a default measured in tens of seconds.
+      #
+      # How long to wait for a connection FROM THE POOL. Exceeding it is the pool being
+      # exhausted, which is a genuine reason to stop taking traffic.
+      connection-timeout: 5000
+      validation-timeout: 2000
+      data-source-properties:
+        # How long to wait for the TCP connect, in seconds. The driver's default is 10, which
+        # is longer than a probe interval; a blackholed database would otherwise leave
+        # readiness unanswered rather than negative.
+        connectTimeout: 5
+        # socketTimeout is deliberately NOT set. It bounds how long a QUERY may run, and
+        # choosing that number without any real queries to measure would be a guess that
+        # aborts legitimate work later. It belongs with Phase 3, where the queries exist.
+        ApplicationName: finapp
+
+# ---------------------------------------------------------------------------
+# Operational endpoints (P0-TSK-027).
+#
+# Deliberately unversioned: they are consumed by orchestrators and scrapers whose
+# configuration is deployment-scoped, not by API clients holding a contract, and moving
+# them on a version bump would break a liveness probe for no benefit (ADR-0015).
+# ---------------------------------------------------------------------------
+management:
+  endpoints:
+    web:
+      exposure:
+        # An ALLOW-LIST, written out even though `health` alone is the framework default.
+        # The other endpoints exist as beans whether or not they are reachable - /env,
+        # /configprops, /beans, /heapdump, /threaddump - and each is one property away from
+        # being served. A heap dump is every secret the process has ever held; /env is the
+        # configuration; /beans is a map of the application. Naming the two that are wanted
+        # means a third arrives only by someone editing this line.
+        include: health,info
+
+  endpoint:
+    health:
+      # WHAT is wrong is not published, only THAT something is.
+      #
+      # A detailed health response names the JDBC URL, the driver, the validation query and
+      # which dependency is down - which is reconnaissance, and there is no authentication in
+      # front of it yet. The aggregate status is what an orchestrator acts on; an operator
+      # gets the detail from logs and metrics, which are not anonymously readable.
+      #
+      # `when-authorized` becomes the right setting once P0-EPIC-10 provides an authority to
+      # be authorized against. Until then this is the honest choice.
+      show-details: never
+      show-components: never
+
+      probes:
+        # Serves /actuator/health/liveness and /actuator/health/readiness. Enabled
+        # explicitly: Spring turns these on by itself only when it detects Kubernetes, and an
+        # endpoint that exists in one environment and not another is not an endpoint anyone
+        # can rely on.
+        enabled: true
+
+      group:
+        # LIVENESS ANSWERS ONE QUESTION: is this process broken beyond recovery, so that
+        # killing it would help? Nothing external belongs here, and that is not a
+        # simplification - it is the difference between a degradation and an outage. A
+        # liveness probe that checked PostgreSQL would restart every instance during a
+        # thirty-second database blip, all at once, and the fleet would then reconnect in a
+        # herd to a database that was already struggling.
+        liveness:
+          include: livenessState
+
+        # READINESS ANSWERS A DIFFERENT ONE: should this instance receive traffic? An
+        # instance that cannot reach the transactional source of truth can serve nothing
+        # financial, so `db` is included.
+        #
+        # THIS LINE IS THE TASK. Spring's default readiness group is `readinessState` alone,
+        # so adding the actuator and a DataSource yields a readiness endpoint that returns UP
+        # while PostgreSQL is unreachable - the opposite of what it is for, and indisting-
+        # uishable from working. HealthEndpointTest fails if this is reverted.
+        readiness:
+          include: readinessState,db
+
+  info:
+    build:
+      # Group, artifact, version and name, from META-INF/build-info.properties. No timestamp:
+      # see the buildInfo block in app/build.gradle.kts.
+      enabled: true
+    env:
+      # Would publish every `info.*` configuration property. Off by default in Spring; said
+      # out loud because turning it on is a one-line mistake with a configuration leak behind
+      # it.
+      enabled: false
+    java:
+      # JVM vendor and version. Free reconnaissance for anyone matching a CVE to a target.
+      enabled: false
+    os:
+      enabled: false

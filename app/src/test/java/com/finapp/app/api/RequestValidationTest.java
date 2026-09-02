@@ -2,6 +2,7 @@ package com.finapp.app.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.platform.api.ApiVersion;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
@@ -233,7 +234,7 @@ class RequestValidationTest {
         // The header is untrusted input that ends up in log lines, so CorrelationId refuses
         // anything outside its charset. Refusing the REQUEST over it would be wrong: a malformed
         // diagnostic hint is not a reason to decline someone's payment.
-        String injection = "bad\nvalue with control chars";
+        String injection = "bad\nvalue\0with control chars";
 
         HttpResponse<String> response =
                 CLIENT.send(
@@ -315,7 +316,8 @@ class RequestValidationTest {
                 HttpResponse.BodyHandlers.ofString());
     }
 
+    /** Unversioned in the fixture, versioned on the wire - see {@code ApiVersioningTest}. */
     private URI uri(String path) {
-        return URI.create("http://127.0.0.1:" + port + path);
+        return URI.create("http://127.0.0.1:" + port + ApiVersion.CURRENT_PREFIX + path);
     }
 }

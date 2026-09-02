@@ -151,6 +151,22 @@ directly was tried and produced `"correlationId":{}` and `"detail":null` — the
 client is meant to quote silently absent while its member was present. It also meant a field
 added to the record would publish itself to every client with no review and no failing test.
 
+## 6a. The machine-readable contract
+
+Everything above is also published as OpenAPI, at [`docs/api/openapi.json`](../api/openapi.json).
+That document is **generated from the running application on every build** and compared byte for
+byte against the committed copy, so a change to the error contract cannot reach a client without a
+human seeing a build failure that names it (ADR-0015).
+
+Each code is a reusable response component keyed by the code itself, and each pins three things as
+data rather than prose: the `status` it always arrives with, the `code` a client switches on, and
+its stable problem `type`. Publishing the status only inside an English sentence was a real gap -
+found by deliberately changing `api.Conflict` from 409 to 422 and watching the change be reported
+as a harmless rewording.
+
+Every route the platform publishes is served under `/v1`. Error responses are not exempt: a 404
+from an unknown path under `/v1` and a 404 from a path outside it are the same contract.
+
 ## 7. Adding a code
 
 1. Add the constant to the owning module's `ErrorCode` enum, with a namespaced code, a status
@@ -158,5 +174,8 @@ added to the record would publish itself to every client with no review and no f
 2. Add the row to §3.
 3. Raise it with `ApiException`, putting diagnostics in the log message and only
    stranger-safe text in the client detail.
+4. Regenerate the OpenAPI document and commit it. Adding a code is a *compatible* change and the
+   build will say so; the step exists because the contract is only published once it is committed.
 
-Steps 1 and 2 are checked against each other by the build.
+Steps 1 and 2 are checked against each other by the build, and step 4 is what the build asks for
+once they agree.

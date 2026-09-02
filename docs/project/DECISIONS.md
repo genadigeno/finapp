@@ -36,6 +36,27 @@ ADR-0001: one deployable is not one instance. &rarr;
 [ADR-0014](../adr/ADR-0014-multi-instance-execution.md),
 [`DISTRIBUTED_EXECUTION.md`](../architecture/DISTRIBUTED_EXECUTION.md)
 
+### API evolution
+The public HTTP contract is versioned in the path (`/v1`), applied once in the composition root so
+no controller declares or forgets it. The number increments only for a change that breaks a client;
+everything compatible happens inside the current version. The OpenAPI document is generated from
+the running application on every build and compared byte for byte against the committed copy, so a
+contract change cannot reach a client without a human seeing a build failure that names it — and
+each difference is labelled breaking or compatible. Nothing about OpenAPI is deployed: the
+generator is test-scope, and the contract is an artefact in git rather than a live endpoint. &rarr;
+[ADR-0015](../adr/ADR-0015-api-versioning-and-contract-publication.md),
+[`docs/api/openapi.json`](../api/openapi.json)
+
+### Operability
+Liveness and readiness answer different questions and must not share a health check. Liveness
+depends on nothing external - a liveness probe that consulted the database would restart every
+instance during a blip, converting a degradation into an outage and destroying the evidence.
+Readiness includes PostgreSQL, checked through the pool the application actually uses, and
+excludes Kafka and Redis because transport and cache are not truth. The application starts when
+its database is unreachable, so it can report NOT_READY rather than crash-loop. Status is
+published; detail is not, until there is an authority to authorize against. &rarr;
+[ADR-0016](../adr/ADR-0016-health-liveness-and-readiness.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

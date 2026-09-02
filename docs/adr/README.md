@@ -10,7 +10,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 - **An accepted ADR is never edited to change its decision.** A changed decision is a new ADR
   that supersedes the old one; the old one is marked `Superseded by ADR-NNNN`.
 - Status: `Proposed` → `Accepted` → `Superseded`.
-- ADR-0001 through ADR-0014 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
+- ADR-0001 through ADR-0016 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
   once the decisions have been validated by implementation rather than only by argument.
 - A decision found in code but absent from this record is architectural debt.
 
@@ -32,6 +32,8 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0012](ADR-0012-context-to-module-mapping.md) | Context-to-module mapping: deliberate merges with recorded split triggers | Proposed | 0 | Module boundaries |
 | [0013](ADR-0013-typed-time-ordered-identifiers.md) | Aggregate identifiers are typed and time-ordered (UUIDv7) | Proposed | 0 | Identifiers |
 | [0014](ADR-0014-multi-instance-execution.md) | Every service runs as N concurrent instances | Proposed | 0 | Distributed execution |
+| [0015](ADR-0015-api-versioning-and-contract-publication.md) | API versioning in the path, with the contract generated and compared on every build | Proposed | 0 | API evolution |
+| [0016](ADR-0016-health-liveness-and-readiness.md) | Liveness and readiness answer different questions, and only readiness consults dependencies | Proposed | 0 | Operability |
 
 ## Anticipated ADRs
 

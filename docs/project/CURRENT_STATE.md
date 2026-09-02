@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
 
 ---
 
@@ -52,44 +52,60 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-026` - API versioning and OpenAPI generation**
+**`P0-DOC-003` - API conventions document**
 Status: `READY` - not started.
 
-Bounded context: platform / api. Depends on `P0-TSK-024` (`COMPLETE`).
+Bounded context: platform / api. Depends on `P0-TSK-024..027`, all `COMPLETE`.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-08. DoD profile: `DOD-API`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-08. DoD profile: `DOD-DOC`.
 
 ### Just completed
 
-**`P0-TSK-025` - Request validation at the boundary** - `COMPLETE` (2026-09-01).
+**`P0-TSK-027` - Health, readiness and info endpoints** - `COMPLETE` (2026-09-02).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Malformed and oversized payloads are rejected with the error contract | 422 `api.ValidationFailed` for constraint failures, 413 `api.PayloadTooLarge` for oversized bodies - **both routes**, declared length and chunked |
-| Validation failures never reach domain code | The probe controller counts its own entries; every rejection test asserts it was never entered. A 422 returned after the handler ran and did half the work looks identical from outside |
+| Readiness fails when PostgreSQL is unavailable | 503 with the datasource pointed at a closed port, and 200 against a real database - both directions, because "fails when unavailable" is only half a claim |
+| Endpoints expose no sensitive configuration | Allow-list of `health` and `info`; twelve other actuator endpoints asserted 404; no URL, host, database, driver, error or exception in any health body |
 
-Design decisions worth carrying forward:
-- **422, not the 400 Spring defaults to.** `ERROR_CONTRACT.md` keeps the distinction: 400 means
-  the serialiser is wrong and only a developer can act on it; 422 means the data is wrong and the
-  person filling in the form can.
-- **The size limit closes both routes.** A JSON body is streamed with no default bound at all, so
-  an unbounded request body was a denial-of-service vector costing an attacker one connection. A
-  declared `Content-Length` over the limit is refused without reading a byte; a chunked request
-  declares no length - which is exactly how a caller opts out of a header check - so the body is
-  also wrapped in a counting stream. A limit only checking the header is a suggestion.
-- **A filter cannot throw its way to the error contract.** `@ExceptionHandler` is a dispatcher
-  mechanism, so an exception in a filter produces the container's default error page - the
-  framework's own shape on a path the contract covers. The filters render the contract themselves.
-- **The ingress correlation filter, which was recorded debt.** It sits at `HIGHEST_PRECEDENCE` so
-  its scope wraps error handling and not merely the handler - the requirement `P0-TSK-024`'s
-  review recorded. The inbound header is untrusted: validated, and on rejection **replaced rather
-  than sanitised**, because a silently rewritten identifier breaks the client's own correlation
-  without telling anyone. A malformed diagnostic hint never fails the request.
+Design decisions worth carrying forward (ADR-0016):
+- **Liveness and readiness answer different questions, and sharing one health check is an outage
+  amplifier.** A liveness probe that consulted PostgreSQL would restart every instance at once
+  during a thirty-second failover, leaving the fleet reconnecting in a herd to a database already
+  in trouble - a recoverable degradation converted into a total outage by the check meant to
+  prevent one, with the diagnostic state destroyed on the way.
+- **Spring's default readiness group is `readinessState` alone.** Adding the actuator and a
+  `DataSource` therefore yields a readiness endpoint that returns **UP while PostgreSQL is
+  unreachable** - the opposite of the acceptance criterion, and indistinguishable from working.
+  Dropping `db` from the group fails the test.
+- **Kafka and Redis are deliberately not readiness dependencies.** The outbox holds events durably
+  in PostgreSQL, so a broker outage delays publication rather than invalidating the instance
+  (`INV-EVT-02`); refusing traffic for it would convert a delay into an outage.
+- **The application starts when its database is unreachable**, on purpose. One that refuses to
+  boot cannot report readiness at all: an orchestrator sees a crash-loop rather than a NOT_READY
+  instance, and the signal naming the broken dependency is lost exactly when it is needed.
+- **Readiness is checked through the pool the application uses**, not a connection opened for the
+  purpose - which would report healthy while the pool is exhausted, the very condition under which
+  traffic must be diverted. That is why the application now has a `DataSource` at all.
+- **A `DataSource` is not an ORM.** `spring-boot-starter-jdbc`, never `-data-jpa`: unresolved
+  question 12 stays open for Phase 3, where Hibernate's dirty checking has to be weighed against
+  records that are never updated. Stated in the catalogue, the build file and the ADR, because this
+  is exactly the kind of decision that gets made by accident.
+- **Status is published; detail is not.** A detailed health body names the JDBC URL, the host, the
+  database, the driver and the failing exception, and nothing authenticates the caller yet.
 
-**Verified by mutation: 5 of 5 caught**, after one round found a weak assertion. Sanitising the
-inbound correlation header survived, because "does not contain the original string" is satisfied
-by a sanitised value - `bad value with spaces!` becomes `bad_value_with_spaces_`. The assertion
-now checks every fragment, so a value *derived from* the caller's input fails.
+**One defect found by running it, and it is this session's third of the same kind:** `properties {
+time = null }` compiles, reads correctly, and does nothing - Boot 4 drives the exclusion from an
+`excludes` set and the generator falls back to the build instant. Found by reading the generated
+`build-info.properties` rather than the build file. The timestamp matters because
+`isPreserveFileTimestamps = false` makes archives reproducible, and an embedded build time defeats
+exactly that.
+
+**Verified by mutation: 5 of 5 caught** - dropping `db` from readiness, adding `db` to liveness,
+`show-details: always`, exposing every endpoint, and un-excluding the build time.
+
+**And a regression that adding a `DataSource` could have caused:** `./gradlew build` was run with
+PostgreSQL stopped and is green, so `test` is still hermetic and the pool is still lazy.
 
 ---
 
@@ -189,6 +205,38 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Health, readiness and build info (2026-09-02), `P0-TSK-027`:
+- Liveness depends on nothing external; readiness includes PostgreSQL; both proven in both
+  directions, with a real database for the positive control
+- 503 rather than a DOWN body behind a 200, because a load balancer acts on the status line
+- The application starts with its database unreachable and says NOT_READY, rather than crash-looping
+- Checked through the application's own pool, as `finapp_app` and never a superuser - asserted, so
+  the check cannot pass on privileges the application would not hold
+- Allow-list exposure: `health` and `info`; twelve other actuator endpoints asserted absent
+- No health body names a dependency, URL, host, database, driver, error or exception
+- `/actuator/info` carries build identity with no timestamp, so reproducible archives stay so
+- Every wait on the readiness path is bounded; `socketTimeout` deliberately left to Phase 3
+- Flyway is absent from the application's runtime classpath, so ADR-0011's "no migrations at
+  startup" is structural rather than a setting - and is asserted
+- ADR-0015's claim that operational endpoints escape the `/v1` prefix is now verified by test in
+  both directions; it was unverifiable when written
+
+API versioning and contract publication (2026-09-02), `P0-TSK-026`:
+- `/v1` applied once in the composition root to every handler under `com.finapp`; controllers
+  declare no version, and the unprefixed path is proven not to be served as well
+- Operational endpoints are deliberately unversioned, and that falls out of the mechanism rather
+  than needing an exception - actuator has its own handler mapping
+- The OpenAPI document is generated from the running application on every build and compared byte
+  for byte against [`docs/api/openapi.json`](../api/openapi.json); any difference fails the build
+- Each difference is labelled `BREAKING` or `COMPATIBLE`, and the failure message says what to do
+- Every error code is published as a reusable response keyed by the code, pinning the `status`,
+  `code` and `type` it always carries as data rather than prose
+- springdoc is test-scope: the running application serves no `/v3/api-docs` and ships no
+  documentation library
+- ADR-0015 records the strategy, the four rejected alternatives and the deprecation policy
+- Every `$ref` in the published document is proven to resolve, and the contract is proven to
+  contain no test fixture - both added by review, both proven by mutation
 
 Boundary validation and ingress correlation (2026-09-01), `P0-TSK-025`:
 - Declarative constraints on the request type, rejected before any domain invocation - proven by
@@ -423,7 +471,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-026` is the next task.
+None in progress. `P0-DOC-003` is the next task.
 
 ## Blockers
 
@@ -552,6 +600,8 @@ carries, what triggers paying it down, and the owning phase.
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
+| **The operational endpoints are unauthenticated.** `/actuator/health/*` and `/actuator/info` are reachable by anyone who can reach the port | `DOD-API` requires a negative authentication test for every new surface, and there is no authentication anywhere in the platform yet - `P0-EPIC-10` is the epic that brings it. Building one authentication mechanism for the actuator alone would be a second scheme to retire | **Low, and bounded by what is published.** The bodies are pinned by exact-match test to a status and, for the aggregate, its group names; details, components, environment, JVM and OS are all off, and twelve other endpoints are proven absent. What remains is that an unauthenticated caller can learn the instance is up and which build it runs | `P0-EPIC-10` landing, at which point `show-details: when-authorized` also becomes available | Phase 0, M0.4 |
+| **Connection-pool sizing is not reasoned about across instances.** Hikari's default is 10 connections per instance | Nothing uses the pool for anything but a health check, so any number chosen now would be a guess. Sizing needs a workload | **None today, real at Phase 3.** Ten instances at the default exhaust PostgreSQL's default `max_connections` of 100 on their own, before any connection is used for work. The failure mode is instances failing readiness for pool exhaustion rather than for anything wrong with the database - and `ADR-0014` says N is never 1, so this is arithmetic that has to be done before the ledger, not after | The first module that actually uses the pool | Phase 3 |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
 
 None of these is financial-correctness debt.
@@ -597,11 +647,14 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-026` - API versioning and OpenAPI generation**, continuing `P0-EPIC-08`.
+**`P0-DOC-003` - API conventions document**, the last item in `P0-EPIC-08`.
 
-Two of `P0-EPIC-08`'s five items remain after it: `P0-TSK-027` (health and readiness) and
-`P0-DOC-003` (the API conventions document, which `ERROR_CONTRACT.md` now supplies a large part
-of). `P0-TSK-017` is unblocked as soon as an endpoint exists to declare the header on.
+`ERROR_CONTRACT.md`, ADR-0015 and ADR-0016 already supply the error, versioning, deprecation,
+correlation and operational-endpoint halves of it; what it adds is pagination and the idempotency
+header convention. `P0-TSK-017` (`Idempotency-Key`) is unblocked as soon as an endpoint exists to
+declare the header on, which is Phase 4.
+
+Closing `P0-EPIC-08` leaves `P0-EPIC-09` (observability) and `P0-EPIC-10` (security) in M0.4.
 
 ---
 
@@ -609,6 +662,10 @@ of). `P0-TSK-017` is unblocked as soon as an endpoint exists to declare the head
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-027`. Two important findings, both about checks rather than code. **`:app:databaseTest` would never have run in CI**: the workflow step named `:platform:databaseTest` explicitly - a list of one that went stale the moment a second module gained database tests, which is what this task did. The positive control for readiness, the half of the acceptance criterion that says it reports UP when the database is actually there, would have run on one machine and nowhere else. Now `./gradlew databaseTest` unqualified, so a third module is covered without anyone remembering. And **the leak test was a deny-list**: turning details on and reading the body it would really publish showed the disk-space indicator reporting an absolute filesystem path - a username and the host's directory layout - which no list of forbidden substrings had anticipated, while three of its seven entries never fired at all. Replaced with an exact match, which immediately found something else the deny-list had never questioned: the aggregate publishes its group names even with details off. Same argument as `ProblemDetailBody` - specify what is published, because anything else publishes itself. Two minor fixes: the allow-list test was **partly vacuous**, since three of its twelve endpoints return 404 for reasons other than the allow-list - probing with exposure widened to `*` showed nine genuinely gated, and `heapdump` reachable behind one further property, returning 55 MB of process memory; the twelve are now split so no assertion overstates its protection. The migration check also asserted against the test classpath while describing the runtime one, and now checks the running context directly as well. Verified rather than assumed: **readiness recovers on its own** - 200, then 503 with the container stopped, then 200 within one poll of it returning, no restart. Two deferrals recorded as debt: the endpoints are unauthenticated until `P0-EPIC-10`, and connection-pool sizing across N instances is arithmetic owed before Phase 3. 384 hermetic tests, 156 database tests. |
+| 2026-09-02 | `P0-TSK-027` complete. Liveness, readiness and build info - and the decision that matters is which questions they answer. **Liveness depends on nothing external**: a liveness probe consulting PostgreSQL restarts every instance at once during a thirty-second failover, leaving the fleet reconnecting in a herd to a database already in trouble, with the diagnostic state destroyed - a degradation turned into an outage by the check meant to prevent one. **Readiness includes PostgreSQL and excludes Kafka and Redis**, because the outbox holds events durably and a broker outage delays publication rather than invalidating the instance (`INV-EVT-02`). The trap closed here is Spring's own default: the readiness group is `readinessState` alone, so adding the actuator and a `DataSource` gives a readiness endpoint that returns **UP while PostgreSQL is unreachable** - correct-looking and worthless. The application now has a `DataSource` at all because readiness must be answered **through the pool the application uses**; one that opens its own connection reports healthy while the pool is exhausted, which is exactly when traffic must be diverted. `spring-boot-starter-jdbc`, never `-data-jpa`: unresolved question 12 stays open. **The application starts when its database is down**, deliberately - one that refuses to boot leaves an orchestrator with a crash-loop instead of an instance able to say what is broken. Security: allow-list exposure, no detail, no components, twelve other actuator endpoints asserted 404, and no URL, host, driver or exception in any health body. One defect found by running it, the third of its kind this session: **`properties { time = null }` compiles and does nothing** - Boot 4 excludes via an `excludes` set and otherwise falls back to the build instant, which would have defeated reproducible archives; found by reading the generated file, not the build script. ADR-0015's claim that operational endpoints escape `/v1` is now verified rather than asserted. Five of five mutations caught, and `./gradlew build` re-run with PostgreSQL stopped to prove the hermetic guarantee survived a new `DataSource`. ADR-0016 recorded. 383 hermetic tests, 156 database tests. |
+| 2026-09-02 | Task completion review of `P0-TSK-026`. One important finding, and it is the defect class this project keeps meeting: **a fix that compiled, read correctly, and did nothing**. Declaring the contract baseline as a Gradle input made the test's own bootstrap message unreachable - a missing baseline aborts the task before any test runs, reporting an internal property name instead of "a first document has been generated, here it is". The first repair, `optional(true)`, was wrong for a reason worth remembering: it permits a null *value*, and the value is present - it is the file behind it that is missing. `inputs.files` rather than `inputs.file` holds both properties, and both were then re-proven: deleting the baseline reaches the test's message, editing it still re-runs the task and fails. Three further findings. **A `synchronized` that guarded nothing**: an instance method locking a different instance per test method, protecting a static memo whose own comment argued the caching was unnecessary - shared mutable state removed rather than fixed. **Two literals for one component name**, so renaming the problem-detail schema would leave every response pointing at nothing; single-sourced, and a `$ref` resolution test added because a document that does not resolve still parses, still diffs, and still looks complete. **Nothing asserted that the published contract contains no test fixture** - several suites register probe controllers by `@Import`, and their separation from this one is a property of Spring's context cache key rather than something anyone declared; a probe baked into a baseline would look exactly as authoritative. Both new guards proven by mutation. Also tightened the handler predicate to `com.finapp.`, since `HandlerTypePredicate` matches by `startsWith` and would have claimed a sibling namespace - confirmed by disassembling Spring rather than by assuming. 375 hermetic tests, 152 database tests. |
+| 2026-09-02 | `P0-TSK-026` complete. The API is versioned in the path - `/v1`, applied **once** in the composition root rather than written on each controller, because a prefix repeated in every mapping is a prefix somebody eventually omits, and an unversioned route can never be changed: there is no second version to move its clients to. The version lives in the path because that is the only place it survives an access log, an audit record, a proxy cache key and a `curl` pasted into a ticket. The OpenAPI document is **generated from the running application** on every build and compared byte for byte against the committed copy: any difference fails the build, and each is labelled BREAKING or COMPATIBLE. **The gate and the classifier are deliberately separate** - a classifier clever enough to gate would have to be right about every possible edit, and its one dangerous mistake fails at the customer's end. springdoc is test-scope, so the deployed application serves no `/v3/api-docs` and ships no documentation library. Two defects found by mutation, both in what was published: **the status existed only inside an English description**, so changing `api.Conflict` from 409 to 422 read as a harmless rewording - status, code and type are now pinned as data, which was a real gap in the contract and not only in the classifier; and **springdoc synthesises a `servers` entry from the request**, which in a test is the random port and on a deployment is an internal address published to every client. A third in the classifier: exempting a removed `description` as prose made deleting a component look like a rewording. Six of six mutations now behave correctly. Also fixed a literal NUL byte committed in `RequestValidationTest`, which made git treat the file as binary and its diffs unreviewable. ADR-0015 recorded. 373 hermetic tests, 152 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-025`. One important finding, the same defect class this epic's previous task closed one layer in: **a constraint declared on a method parameter was not a 422**. Probing found one class of failure reported three different ways depending only on where the constraint sat - a request body gave 422, a method parameter gave 400, and a method parameter under `@Validated` gave **500**. A client cannot write error handling against that, and the 500 is the worst: it says our side failed for something only the caller can fix. Spring validates these on three separate mechanisms and only the first was mapped. **The first fix was dead code**: overriding `handleHandlerMethodValidationException` compiled, read correctly, and never ran - that exception extends `ResponseStatusException`, so the base class dispatches it through a more general branch and it reaches `handleExceptionInternal` with 400 already chosen. The mapping now sits in that funnel, which every framework error provably passes through, plus a handler for the proxy path Spring does not cover at all; removing either fails the test. It was caught only because **the isolated run and the full suite disagreed** - which mechanism Spring picks depends on whether any bean in the context is `@Validated`, so a single-class run and a whole-suite run genuinely exercise different code. Correlation assertion also strengthened: 5 of 5 mutations caught after \"does not contain the original\" was found to pass for a *sanitised* value. **Process failure**: a fix was reported complete while not present in the commit. Verified now by grepping `git show HEAD:` rather than the working tree, and `git checkout` on a path is no longer used to revert a probe - a scratch copy is. 352 hermetic tests, 152 database tests. |
 | 2026-09-01 | `P0-TSK-025` complete. Declarative validation rejecting before any domain invocation - asserted by **counting handler entries**, because a 422 returned after the handler ran and did half the work looks identical from outside. Rendered 422 rather than the 400 Spring defaults to, keeping the distinction the error contract makes between a wrong serialiser and wrong data. **`api.PayloadTooLarge` made real**: a JSON body is streamed with no default bound, so an unbounded request body was a denial-of-service vector costing an attacker one connection - and a limit that only reads `Content-Length` is one a caller opts out of by sending chunked, so the body is bounded by a counting stream as well. Two findings while building it: **a filter cannot throw its way to the error contract**, since `@ExceptionHandler` is a dispatcher mechanism and a filter runs outside it, so the filters render the contract themselves; and the test context declared its own `@SpringBootApplication`, which scanned only `com.finapp.app.api` and missed the composition root - it now uses the real application. Also closes the ingress correlation filter recorded as debt: every response carries an identifier in the body and in `X-Correlation-Id`, the scope wraps error handling, and an untrusted inbound header is **replaced rather than sanitised** - a silently rewritten identifier breaks the client's own correlation without telling anyone. Five of five mutations caught after one round exposed a weak assertion: \"does not contain the original\" is satisfied by a sanitised value. 350 hermetic tests, 152 database tests. |
 | 2026-09-01 | Task completion review of `P0-TSK-024`. One important finding, from probing error paths the tests had not: **a missing query parameter and a wrong-typed path variable both returned `500 api.InternalError`**. Unambiguous client mistakes reported as platform failures - a client may retry a 500 forever on a request that can never succeed, and a spike of malformed requests is indistinguishable from an outage on every error-rate dashboard. The catch-all was swallowing a whole family of Spring's web exceptions. Two fixes failed before the third worked, and the sequence is the lesson: enumerating exception types fixed the ones I had thought of; testing for Spring's `ErrorResponse` interface fixed the missing parameter and still missed the type mismatch, which does not implement it. **The set of framework exceptions is Spring's to define, so the mapping from exception to status has to be Spring's too** - extending `ResponseEntityExceptionHandler` routes every one through a single override with the status already decided, and a future Spring version's new exception routes there as well. Removing that base class now fails five tests. Added `api.NotAcceptable` (406) to complete the mapping. **Process failure, fifth occurrence**: `git checkout --` destroyed the uncommitted rewrite while reverting a probe. Rewritten and committed before probing again. 339 hermetic tests, 152 database tests. |

@@ -52,6 +52,18 @@ dependencies {
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)
 
+    // Health, readiness and build info (P0-TSK-027).
+    implementation(libs.spring.boot.starter.actuator)
+
+    // A DataSource, and nothing more. Readiness must be answered through the pool the
+    // application uses, so the application has to have one.
+    //
+    // NOT spring-boot-starter-data-jpa: the data-access mechanism is unresolved question 12 and
+    // belongs to Phase 3. MoneyColumns was written mechanism-agnostic for the same reason, and
+    // this must not become the answer by accident.
+    implementation(libs.spring.boot.starter.jdbc)
+    runtimeOnly(libs.postgresql.driver)
+
     // The first HTTP surface (P0-TSK-024, M0.4). app is where it belongs: MODULE_ARCHITECTURE.md
     // §M10 puts routing, content negotiation and error rendering here, and the error CONTRACT -
     // the codes and the problem-detail shape - in platform, which stays framework-free because a
@@ -63,9 +75,68 @@ dependencies {
     // business modules are added, `app` depends on them too, so the rules keep their full
     // view without needing to be moved.
     testImplementation(libs.archunit.junit5)
+
+    // OpenAPI generation (P0-TSK-026), test scope only.
+    //
+    // springdoc READS the request mappings; it never changes them, so a document generated
+    // with it on the test classpath describes the application that actually ships. Keeping it
+    // off the runtime classpath means the contract is a reviewed artefact under docs/api/
+    // rather than a live /v3/api-docs endpoint - one fewer unauthenticated surface, and one
+    // fewer library in the shipped dependency set.
+    testImplementation(libs.springdoc.openapi.webmvc)
+}
+
+// ---------------------------------------------------------------------------
+// Build identity for /actuator/info, so an operator can tell which build is running.
+//
+// The timestamp is deliberately omitted. `isPreserveFileTimestamps = false` and
+// `isReproducibleFileOrder = true` in the java conventions make archives reproducible - two
+// builds of the same source produce identical bytes - and a build time embedded in a resource
+// would defeat exactly that, for information the version and (later) the commit already carry
+// better. Reproducibility is a supply-chain property; a "when was this built" field is not
+// worth losing it for.
+// ---------------------------------------------------------------------------
+springBoot {
+    buildInfo {
+        // `excludes`, not `properties { time = null }`. The latter compiles - `time` is a
+        // Property<String> and accepts null - and changes nothing, because the generator reads
+        // `getTimeIfNotExcluded()` and falls back to the build instant when the field is not in
+        // this set. Verified by reading the generated build-info.properties, not by reading the
+        // build file.
+        excludes.add("time")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests that need a live database are separated from those that do not, exactly as in
+// platform/build.gradle.kts: `test` stays hermetic so `./gradlew build` is green on a machine
+// with nothing running, and `databaseTest` is a task you can SEE did not run - rather than a
+// test that silently skips itself, since a skipped test reports success.
+//
+// No systemProperty wiring here, deliberately. The application reads its database settings from
+// the same FINAPP_DB_* environment variables compose.yaml uses, and a Gradle test JVM inherits
+// the environment - so the test connects exactly the way the deployed application would, through
+// the configuration the application actually has, rather than through a second set of values a
+// test fixture chose.
+// ---------------------------------------------------------------------------
+val databaseTag = "database"
+
+tasks.register<Test>("databaseTest") {
+    group = "verification"
+    description = "Runs tests that require a live PostgreSQL (docker compose up -d postgres)."
+
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags(databaseTag) }
+
+    // Never cached: the point is to exercise a real database, and a cached "up to date" result
+    // would mean it had not.
+    outputs.upToDateWhen { false }
 }
 
 tasks.test {
+    useJUnitPlatform { excludeTags(databaseTag) }
+
     // ArchitectureRulesAreDocumentedTest reads this document and asserts it names exactly the
     // rules that run on every build. Gradle cannot infer that a markdown file is an input, so
     // without this declaration a doc-only edit leaves :app:test UP-TO-DATE and the check
@@ -90,5 +161,23 @@ tasks.test {
     // "third line" that comment predicted would be needed.
     inputs.file(rootProject.layout.projectDirectory.file("docs/architecture/ERROR_CONTRACT.md"))
         .withPropertyName("errorContractCatalogue")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The fourth. OpenApiContractTest compares the generated OpenAPI document against this
+    // committed one and fails on any difference. Undeclared, editing the baseline would leave the
+    // task UP-TO-DATE and the build would go green over a contract nothing had compared - which is
+    // the one failure mode a published contract cannot afford, since the whole point is that a
+    // change to it is noticed. Third occurrence of this defect class; see the two comments above.
+    // `inputs.files`, not `inputs.file`, and that is the whole point of the difference. A single
+    // file input is validated to exist, so a missing baseline aborts the task before any test runs
+    // and reports an internal property name - which made OpenApiContractTest's own message, the one
+    // that says a first baseline has been generated and where to find it, unreachable from the
+    // build that needs it. A file COLLECTION tolerates absence and still snapshots content, so both
+    // properties hold: editing the baseline re-runs the task, and deleting it lets the test speak.
+    //
+    // `optional(true)` was tried first and does nothing here: it permits a null VALUE, and the
+    // value is present - it is the file behind it that is missing.
+    inputs.files(rootProject.layout.projectDirectory.file("docs/api/openapi.json"))
+        .withPropertyName("openApiContractBaseline")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
