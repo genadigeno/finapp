@@ -214,4 +214,23 @@ tasks.test {
     inputs.files(rootProject.layout.projectDirectory.file("infra/grafana/dashboards/finapp-platform.json"))
         .withPropertyName("grafanaDashboard")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The seventh, and the first that is a SET rather than a named file.
+    // CommittedConfigurationHoldsNoSecretTest walks the repository for configuration and fails
+    // the build on a credential literal that is not the one marked local default. Naming the
+    // files it checks would defeat it: a new application-prod.yaml has to be covered without
+    // anyone remembering, which is the "list of one that went stale" defect the P0-TSK-027
+    // review found in this repository's own CI. So the input is the discovery, not a list.
+    //
+    // The tree is filtered to the extensions the test scans and to the directories it walks;
+    // including everything would make :app:test re-run on any file in the repository at all.
+    inputs.files(
+        rootProject.layout.projectDirectory.asFileTree.matching {
+            include("**/*.yaml", "**/*.yml", "**/*.properties", "**/*.sql", "**/*.kts",
+                    "**/*.env", "**/*.conf", "**/*.ini", "**/*.sh")
+            exclude("**/build/**", "**/.gradle/**", "**/.git/**", "**/.idea/**", "**/out/**")
+        }
+    )
+        .withPropertyName("committedConfiguration")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }

@@ -36,7 +36,11 @@ concurrency:
 env:
   # Scanners run as pinned container images rather than as marketplace actions: one less
   # third-party action to trust, and the exact same command can be run locally.
-  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+  #
+  # gitleaks' pin is NOT here. It lives in infra/scripts/secret-scan.sh, which this workflow
+  # calls, so the local invocation and the CI invocation are one definition rather than two
+  # that agree today. The comment above used to claim the command could be run locally while
+  # nothing existed to run (P0-TSK-031).
   TRIVY_IMAGE: aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
 
 jobs:
@@ -180,13 +184,16 @@ jobs:
           fetch-depth: 0
 
       - name: Scan git history for secrets
-        # No allowlist config is used, deliberately. The marked local-development defaults in
-        # compose.yaml do not trigger gitleaks, so suppressing anything would only weaken the
-        # scan for no benefit. If a real false positive appears, allowlist that one finding
-        # narrowly — never disable a rule.
-        run: |
-          docker run --rm -v "$PWD:/repo" "$GITLEAKS_IMAGE" \
-            git /repo --no-banner --redact --verbose
+        # The same script a developer runs, which is the point: the image pin and the
+        # arguments exist once. Its own header carries the reasoning about allowlists and
+        # about why history is scanned rather than the working tree.
+        #
+        # This scan is a NET, not the control. It was probed during P0-TSK-031 and it does
+        # not catch `password: hunter2` in a YAML - there is nothing about a memorable
+        # password to detect. The control for that is a build rule
+        # (CommittedConfigurationHoldsNoSecretTest, run by the `build` job above); see
+        # docs/architecture/SECRET_MANAGEMENT.md.
+        run: ./infra/scripts/secret-scan.sh
 
   # ---------------------------------------------------------------------------
   # Known-vulnerable dependencies.

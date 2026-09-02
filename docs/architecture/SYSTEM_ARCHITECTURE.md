@@ -60,7 +60,7 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | Flyway | 12.4.0 | Matches the Spring Boot BOM; forward-only (ADR-0011) |
 | PostgreSQL JDBC | 42.7.13 | Matches the Spring Boot BOM |
 | CycloneDX Gradle plugin | 3.4.1 | Produces the SBOM the dependency scan consumes |
-| gitleaks | v8.30.1 | Secret scanning; pinned by image digest in CI |
+| gitleaks | v8.30.1 | Secret scanning; pinned by image digest in `infra/scripts/secret-scan.sh`, which CI calls |
 | Trivy | 0.74.0 | Dependency vulnerability scanning; pinned by image digest in CI |
 
 Infrastructure versions appear in both `compose.yaml` and the version catalog. The
@@ -90,7 +90,7 @@ jobs so a failure names its own gate:
 |-----|------|
 | `build` | Compilation, unit tests, module boundary tests, infrastructure version drift, Gradle wrapper checksum validation |
 | `migrations` | Migrations apply to an empty database, re-apply idempotently, and still match the repository (`flywayValidate`) |
-| `secret-scan` | No secret anywhere in git history — not just at the tip, because a secret committed and later removed is still disclosed |
+| `secret-scan` | No secret anywhere in git history — not just at the tip, because a secret committed and later removed is still disclosed. A **net**, not the control: gitleaks is an entropy-and-pattern detector and does not catch `password: hunter2`. The control for that is a build rule in the `build` job (ADR-0020) |
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved runtime dependency set, via a CycloneDX SBOM |
 
 **Supply-chain pinning.** Every third-party action is pinned to a commit SHA and every

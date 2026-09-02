@@ -69,4 +69,26 @@ properties. A JVM version is free reconnaissance for anyone matching a CVE to a 
 The application connects to PostgreSQL as `finapp_app`, never the bootstrap superuser, so a
 health check cannot pass on privileges the application would not otherwise hold.
 
+## Secrets
+
+The approach is [`SECRET_MANAGEMENT.md`](SECRET_MANAGEMENT.md) and ADR-0020. In summary
+(`P0-TSK-031`):
+
+**No credential value is in this repository**, and that is a build rule rather than a promise.
+`CommittedConfigurationHoldsNoSecretTest` fails the build unless every value assigned to a
+credential-named key in committed configuration is externalised, or is the one marked local
+default. Files are discovered, not listed, so a new configuration file is covered without anyone
+remembering.
+
+**The CI secret scanner is a net, not the control.** Probing it found that gitleaks catches a
+private key, a high-entropy token and a real-shaped AWS key pair, and misses `password: hunter2` -
+there is nothing about a memorable password to detect, and a memorable password is what a human
+commits. "Secret scanning green" and "no secret in the repository" are therefore different claims.
+The two mechanisms are blind in different directions, which is why both run.
+
+**A name is not a control.** The marked local default is published deliberately, and
+`DatabaseCredentialGuard` refuses to start the application when it is aimed at a database that is
+not on loopback - closing the one documented way around externalised configuration, which is
+forgetting to set the variable.
+
 Never put secrets, API credentials, private keys, or raw payment credentials in source code.

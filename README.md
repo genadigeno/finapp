@@ -87,6 +87,11 @@ network. Default credentials are `finapp` / `local-development-only-not-a-secret
 database `finapp`, overridable via `FINAPP_DB_USER`, `FINAPP_DB_PASSWORD` and `FINAPP_DB_NAME`.
 They are throwaway local values, deliberately named so they cannot be mistaken for a secret.
 
+That name is not what protects you, though. The application **refuses to start** if that default
+is aimed at a database which is not on loopback, because the one documented way around
+externalised configuration is forgetting to set the variable
+([`SECRET_MANAGEMENT.md`](docs/architecture/SECRET_MANAGEMENT.md), ADR-0020).
+
 Check state at any time:
 
 ```bash
@@ -294,10 +299,27 @@ Four independent jobs, so a failure names its own gate
 | `build` | Compilation, tests, module boundary rules, infrastructure version drift, wrapper checksum |
 | `migrations` | Migrations apply to an empty database, re-apply idempotently, still match the repository, and monetary values round-trip through real columns |
 | `secret-scan` | No secret anywhere in git history — not just at the tip |
+| | *and in `build`:* no credential literal in any committed configuration file |
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved dependency set |
 
 The `migrations` job starts PostgreSQL from this same `compose.yaml`, so CI and your machine
 run the identical pinned image.
+
+The secret scan is one definition, and you can run it:
+
+```bash
+./infra/scripts/secret-scan.sh
+```
+
+CI calls that same script, so the pinned image and the arguments exist in one place rather than
+two that agree today. It scans **history**, not the working tree — a secret committed and later
+removed is still disclosed.
+
+**Two mechanisms, deliberately.** The scanner detects by the *value*'s shape and the build rule by
+the *key*'s name, so they are blind in different directions: gitleaks catches a private key and
+misses `password: hunter2`, which is exactly what a human commits. Do **not** commit a dummy secret
+here to test the scan — history is scanned, so it would stay red for ever. Use a throwaway clone;
+the procedure is in [`SECRET_MANAGEMENT.md`](docs/architecture/SECRET_MANAGEMENT.md) §6.
 
 > **Current limitation, stated plainly:** this repository has no git remote, so the pipeline
 > has never executed on a runner. All four jobs pass when run locally. This is the one

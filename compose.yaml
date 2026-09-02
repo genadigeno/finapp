@@ -18,8 +18,10 @@
 #   - The credentials below are throwaway defaults, deliberately named so that they cannot
 #     be mistaken for a secret and cannot silently become one in a deployed environment.
 #     Every one is overridable by an environment variable.
-#   - Real credential handling is P0-TSK-031 (secret management). Nothing here establishes
-#     a pattern for production.
+#   - The approach is docs/architecture/SECRET_MANAGEMENT.md and ADR-0020. A name is not a
+#     control, so there is one: DatabaseCredentialGuard refuses to start the application on
+#     this default against a database that is not on loopback. Nothing here is a pattern for
+#     a deployed platform's secret storage, which is Phase 15.
 
 name: finapp
 
@@ -33,16 +35,21 @@ services:
     # this file exists to prevent.
     image: postgres:18.6
     environment:
-      # These three defaults are duplicated in platform/build.gradle.kts, which must
-      # connect to this container to run migrations, and in app/src/main/resources/
-      # application.yaml, which is how the application itself connects. Change one, change
-      # all three. They are the same environment variables everywhere, so an override moves
-      # the container, the migration tool and the application together.
+      # The same environment variables are read by platform/build.gradle.kts, which must
+      # connect to this container to run migrations, by app/src/main/resources/
+      # application.yaml, which is how the application itself connects, and by
+      # infra/postgres/initdb/00-roles.sql. An override therefore moves the container, the
+      # migration tool and the application together rather than only one of them.
+      #
+      # Nobody has to keep them in step by hand, and nobody should try: this comment used to
+      # say "three places" when there were six. CommittedConfigurationHoldsNoSecretTest fails
+      # the build if any file uses a local default other than the marked one, which is what
+      # makes that value single-sourced across three languages that cannot share a constant.
       POSTGRES_DB: ${FINAPP_DB_NAME:-finapp}
       POSTGRES_USER: ${FINAPP_DB_USER:-finapp}
       # Local-only throwaway value. Not a secret. See SECURITY note above.
-      # P0-TSK-031 (secret scanning) must be configured to recognise this as a
-      # marked local default rather than flagging it, without weakening the scan.
+      # P0-TSK-031 verified rather than assumed that gitleaks does not flag this, so no
+      # allowlist exists and the scan was not weakened to accommodate it.
       POSTGRES_PASSWORD: ${FINAPP_DB_PASSWORD:-local-development-only-not-a-secret}
       #
       # LEAST PRIVILEGE. POSTGRES_USER above is the cluster superuser, which is
@@ -179,7 +186,7 @@ services:
     environment:
       # ANONYMOUS ACCESS, deliberately, and local-only. A password here would be a committed
       # credential for a service reachable from nowhere but this machine; the loopback binding is
-      # the control. P0-TSK-031 owns real credential handling, and nothing here is a pattern for
+      # the control. See docs/architecture/SECRET_MANAGEMENT.md - nothing here is a pattern for
       # a deployed Grafana.
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin

@@ -5,15 +5,22 @@ spring:
   # ---------------------------------------------------------------------------
   # Database.
   #
-  # NO SECRET IS COMMITTED HERE. Every value is an environment variable with a
-  # local-development default that is deliberately named so it cannot be mistaken for a
-  # secret and cannot silently become one in a deployed environment. This is the pattern
-  # established by compose.yaml; P0-TSK-031 formalises real credential handling, and
-  # nothing here establishes a pattern for production.
+  # NO SECRET IS COMMITTED HERE, and that is enforced rather than promised:
+  # CommittedConfigurationHoldsNoSecretTest fails the build if any credential-named key in
+  # any committed configuration file holds a literal other than the one marked local
+  # default. It exists because the CI secret scanner does NOT catch this shape - `password:
+  # hunter2` has nothing about it to detect - so "scanning green" and "no secret in the
+  # repository" are different claims (ADR-0020).
   #
-  # THESE DEFAULTS ARE DUPLICATED IN compose.yaml AND platform/build.gradle.kts. They are
-  # the same environment variables in all three places, so overriding one moves the
-  # container, the migration tool and the application together rather than only one.
+  # A NAME IS NOT A CONTROL. DatabaseCredentialGuard refuses to start when this default is
+  # aimed at a database that is not on loopback, which closes the one documented way around
+  # the whole scheme: forgetting to set the variable.
+  #
+  # The same environment variables are read by compose.yaml, platform/build.gradle.kts and
+  # infra/postgres/initdb/00-roles.sql, so overriding one moves the container, the migration
+  # tool and the application together rather than only one.
+  #
+  # See docs/architecture/SECRET_MANAGEMENT.md.
   #
   # LEAST PRIVILEGE: the application connects as finapp_app, never as the bootstrap
   # superuser. finapp_app holds per-table DML and nothing else, which is what makes

@@ -87,6 +87,21 @@ stated rather than inherited: Jackson happened not to reveal the value, and acci
 the day somebody adds a getter. &rarr;
 [ADR-0019](../adr/ADR-0019-default-deny-redaction.md)
 
+### Secrets
+No credential value lives in this repository, and that is a build rule rather than a promise: a
+credential-named key in committed configuration must be externalised or hold the one marked local
+default, with the files discovered rather than listed. The CI secret scanner is a **net, not the
+control** - probing it showed gitleaks catches a private key and misses `password: hunter2`, so
+"scanning green" and "no secret in the repository" are different claims, and the two mechanisms
+are blind in different directions. A name is not a control either: the marked local default is
+published deliberately, so the application refuses to start when it is aimed at a database that is
+not on loopback, closing the one documented way around externalised configuration - forgetting to
+set the variable. Nothing is encrypted into git, because ciphertext in permanent history cannot be
+rotated by deletion. A secrets manager is deferred to Phase 15, where there is a deployment to
+shape it. &rarr;
+[ADR-0020](../adr/ADR-0020-secret-management.md),
+[`SECRET_MANAGEMENT.md`](../architecture/SECRET_MANAGEMENT.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
@@ -157,3 +172,4 @@ Recorded so these are not mistaken for oversights.
 | Jurisdiction-specific compliance | Per phase | Jurisdiction-neutral core; specifics behind policy/configuration/adapters |
 | Machine-learning risk models | Beyond scope | Versioned rules first; models add reproducibility burden without domain insight |
 | Handling raw card data | Never | Tokenised at the boundary; PCI scope deliberately minimised |
+| A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) |

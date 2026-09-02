@@ -589,7 +589,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-12 — Security foundations
 
-**P0-TSK-031 — Secret management approach**
+**P0-TSK-031 — Secret management approach** — `COMPLETE` (2026-09-02)
 - Context: platform / security
 - Description: Externalised configuration, no secrets in source or committed config, documented local-development approach.
 - Why: `.claude/rules/security.md` — never hard-code secrets.
@@ -598,6 +598,16 @@ Status: `IN_PROGRESS`
 - Risk: High
 - Cx: S
 - DoD: `DOD-SEC`
+- **Outcome:** all three clauses met, and probing changed the shape of the answer. gitleaks was
+  measured rather than trusted: it catches a private key, a high-entropy token and a real-shaped
+  AWS pair, and **misses `password: hunter2`** - so "scanning green" does not imply "no secret in
+  the repository", and the scanner cannot be the control for clause 1. That control is now
+  `CommittedConfigurationHoldsNoSecretTest`, default-deny over discovered configuration files,
+  which also single-sources the marked local default across six files in three languages.
+  Clause 3 is demonstrated against a throwaway clone with the identical pinned image, never
+  against this repository - a dummy secret committed here would make the scan red for ever.
+  `DatabaseCredentialGuard` closes the one documented bypass of externalised configuration
+  (forgetting to set the variable) by confining the marked default to loopback. ADR-0020.
 
 **P0-TSK-032 — Security context abstraction**
 - Context: platform / security

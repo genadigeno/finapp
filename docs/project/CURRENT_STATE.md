@@ -55,52 +55,67 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-031` - Secret management approach**
+**`P0-TSK-032` - Security context abstraction**
 Status: `READY` - not started.
 
-Bounded context: platform / security. Depends on `P0-TSK-001` (`COMPLETE`).
-**Risk: High.**
+Bounded context: platform / security. Depends on `P0-TSK-022` (`COMPLETE`).
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-SEC`.
 
 ### Just completed
 
-**`P0-TST-008` - Log redaction test** - `COMPLETE` (2026-09-02).
-**`P0-EPIC-09` closes with it.** All four items complete.
-
-**The task's own note said to check whether the criterion was already met rather than assume. It
-was not - and the reason is the most serious defect this phase has produced.**
+**`P0-TSK-031` - Secret management approach** - `COMPLETE` (2026-09-02).
+Opens `P0-EPIC-10`. The only Phase 0 task besides `P0-TSK-030` marked **High risk**.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Test fails if a sensitive field is added without redaction | Now true. A production record with a plaintext `String password` fails the build, as does a getter-only variant. It was **not** true when the task started |
-| Sensitive markers never appear across all appenders | `RedactionAcrossAppendersTest`: console and file, each with a precondition that the line arrived and a negative control that a leak would show |
+| No secret value in the repository | `CommittedConfigurationHoldsNoSecretTest` - default-deny over configuration files it **discovers**, so a new `application-prod.yaml` is covered without anyone remembering |
+| Secret scanning green | `infra/scripts/secret-scan.sh` against real history: 102 commits, no leaks |
+| A deliberately committed dummy secret fails CI | Demonstrated against a throwaway clone with the identical pinned image: `leaks found: 1`, exit 1 - and still red after the file is deleted and committed again |
 
-**`secretsAreWrapped` was structurally incapable of failing.**
-`noClasses().should(condition)` **inverts** the condition's events - it reports as violations the
-things the condition marks *satisfied*. The condition only ever emitted `violated(...)`, so the
-inversion left it nothing to report, and a production record holding a plaintext password passed
-cleanly.
+**The probe changed the shape of the answer.** The obvious reading is that clause 2 delivers
+clause 1. It does not, and that was measured rather than reasoned about - four plausible secrets
+committed to a throwaway repository and scanned:
 
-The rule's own fixture test had "proved" it worked - by invoking the **condition** directly, which
-bypasses the inversion and therefore tested something the build never runs. A security control that
-cannot fail, with a green test beside it, is worse than absent: it is believed. It is now
-`classes().should(not ...)`, the fixture test evaluates the **rule**, and both production shapes -
-a record component and a getter-only field - are proven to fail.
+| Committed | Result |
+|---|---|
+| a private-key block | caught |
+| a high-entropy value on a `db.password` key | caught |
+| a real-shaped AWS access key pair | caught |
+| `password: hunter2` in a YAML | **missed** |
+| `POSTGRES_PA§WORD: correcthorse` in a Compose file | **missed** |
 
-**A second path was found by probing, not reasoning: the MDC.**
-MDC takes a `String`, so `Sensitive` cannot protect it, and the ECS encoder lifts every MDC entry
-to a **top-level field** - `MDC.put("apiToken", token)` publishes it verbatim and queryable.
-Confirmed by planting one and reading the emitted JSON. Closed by
-`onlyCorrelationContextWritesTheMdc`: no production class may touch `org.slf4j.MDC` except the
-component whose job is deciding what belongs in a log line's context. Proven by planting a
-production MDC write, and the exemption is real rather than vacuous - `CorrelationContext` makes
-five MDC calls and passes.
+gitleaks is an entropy-and-pattern detector and is structurally blind to a memorable password on a
+key named `password` - there is nothing about `hunter2` to detect. **A memorable password is what
+a human commits**, and the two shapes it missed are exactly the shape this repository's own
+configuration already has. So the scanner is a **net, not the control**; the control is a build
+rule, and the two are blind in different directions.
 
-**A process finding worth keeping.** The first probe reported "criterion already met" because
-`:app:test` was **UP-TO-DATE** and the assertion read **stale XML from the previous run**. A
-mutation probe that does not force a re-run can report whatever the last run happened to say. Every
-probe in this task now uses `--rerun-tasks`.
+**A name is not a control either.** Externalised configuration has one silent failure mode: the
+fallback is what you get when nobody sets the variable. A first deployment by someone who has only
+run this locally, against a database provisioned by this repository's own init script, would run on
+a published password with nothing saying so - the app starts, the pool connects, readiness reports
+UP. `DatabaseCredentialGuard` refuses to start when the marked default is aimed off loopback. It
+**fails closed** on an unreadable host and checks **every** host in a failover list, because
+checking only the first would let the second be anywhere.
+
+**Three findings worth keeping.**
+- **`secretsAreWrapped` rejected this task's own field.** `APP_PA§WORD_VARIABLE` holds the *name*
+  of an environment variable - a genuine false positive. It was **renamed, not exempted**: teaching
+  the rule that a `VARIABLE` suffix refers to a secret rather than holding one would also admit
+  `PA§WORD_PROPERTY = "hunter2"` for ever after, and that rule has no exemption set at all.
+  `DEFINITION_OF_DONE.md` §3 is unambiguous about weakening a control so a test passes.
+- **The documentation tripped the scan it documents.** The first drafts of ADR-0020 and
+  `SECRET_MANAGEMENT.md` quoted realistic example keys, and the scan caught both files. That is the
+  scanner working - it cannot tell a documented example from a disclosure and must not try - so the
+  examples now describe shapes and the proof procedure generates its dummy value at run time.
+  Allowlisting the documentation about the scanner would have weakened the scan to make room for
+  prose about the scan.
+- **A startup test that tested nothing.** `SpringApplicationBuilder.properties(...)` populates
+  Boot's *default* property source, which ranks **below** `application.yaml`, so both startup cases
+  silently kept the committed URL. It surfaced as the negative case not throwing; the positive case
+  had been green throughout while asserting nothing about its own argument. Command-line arguments
+  outrank the config file, and both now test the URL they name.
 
 ---
 
@@ -200,6 +215,29 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Secret management (2026-09-02), `P0-TSK-031`:
+- No credential literal can reach committed configuration: a credential-named key must be a
+  placeholder or the one marked local default, over files the rule **discovers** rather than lists
+- Built because the CI scanner was measured and does **not** catch `password: hunter2` - the shape
+  a human actually commits, and the shape this repository's own configuration has
+- The marked local default is single-sourced by that same rule across six files in three languages
+  that cannot share a constant; a comment claiming "three places" was already wrong
+- `DatabaseCredentialGuard` confines the marked default to loopback, closing the one documented
+  bypass of externalised configuration - forgetting to set the variable
+- Fails closed on an unreadable host, and checks every host in a failover list
+- `infra/scripts/secret-scan.sh` is one definition: CI calls the script a developer runs, so the
+  pinned digest and the arguments cannot drift apart
+- Clause 3 proven against a throwaway clone, never against this repository - a dummy secret
+  committed here would make the scan red for ever and need a history rewrite to undo
+- ADR-0020 records the reasoning and the five rejected alternatives
+- Review found the rule read only the **first** token of a line, so the SQL role script - one of the
+  four files it names - was not being checked at all; now every match on a line, with SQL's
+  quoted-literal form handled and prose still excluded
+- Review also found `.sh` unscanned, `authorization`/`bearer` missing from the vocabulary, and
+  `PGPASSWORD` unsplittable; all closed, with twenty-two shapes now asserted on every build
+- The guard read `spring.datasource.url` while Hikari's own `jdbc-url` wins - a proven bypass,
+  now closed by reading what the pool actually connects with
 
 Log redaction proven rather than trusted (2026-09-02), `P0-TST-008`:
 - `secretsAreWrapped` fixed: it could not fail at all, because `noClasses().should(...)` inverts a
@@ -542,7 +580,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-031` is the next task.
+None in progress. `P0-TSK-032` is the next task.
 
 ## Blockers
 
@@ -671,6 +709,7 @@ carries, what triggers paying it down, and the owning phase.
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
+| **The loopback guard covers one credential.** `DatabaseCredentialGuard` knows about the datasource password and nothing else | It is the only credential that exists. A general mechanism - every externalised credential declaring its own marked default and being checked - would be designed against one example, which is how you get an abstraction that fits nothing later | **Low today.** The build rule is already general: any credential-named key in any configuration file is covered, so a second credential cannot arrive as a literal. What it would not get is the loopback confinement, so a second published default could be aimed anywhere | The second credential, which is Phase 1's authentication or Phase 5's provider adapters | Phase 1 |
 | **No output scrubber for text the platform does not control.** A secret held only in a local and passed straight to a log call, or one inside a third-party library's message, is not covered | The field and accessor rules cover what a type *stores*; a transient value has no declaration to inspect. Closing it needs a logging facade accepting only declared-safe arguments, which changes every log statement - disproportionate against eight of them | **Low today, and it grows with the codebase.** Nothing in Phase 0 handles a credential; the risk arrives with Phase 1's authentication. A scrubber is a deny-list and must never be mistaken for the control | A business module logging real flows | Phase 1 |
 | **The scrape endpoint widens the unauthenticated surface to three.** `/actuator/prometheus` joins health and info | `DOD-OBS` requires the dashboard to render live data from a running instance, which needs a scrape endpoint, and there is no authentication anywhere yet | A scrape publishes JVM internals, HTTP route templates and pool statistics - a description of the running system rather than its secrets. The **content** is constrained by a build failure: no tag may carry a request-influenced value | `P0-EPIC-10` landing | Phase 0, M0.4 |
 | **The operational endpoints are unauthenticated.** `/actuator/health/*` and `/actuator/info` are reachable by anyone who can reach the port | `DOD-API` requires a negative authentication test for every new surface, and there is no authentication anywhere in the platform yet - `P0-EPIC-10` is the epic that brings it. Building one authentication mechanism for the actuator alone would be a second scheme to retire | **Low, and bounded by what is published.** The bodies are pinned by exact-match test to a status and, for the aggregate, its group names; details, components, environment, JVM and OS are all off, and twelve other endpoints are proven absent. What remains is that an unauthenticated caller can learn the instance is up and which build it runs | `P0-EPIC-10` landing, at which point `show-details: when-authorized` also becomes available | Phase 0, M0.4 |
@@ -720,18 +759,19 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-031` - Secret management approach**, opening `P0-EPIC-10` (Security Baseline) - the last
-epic of M0.4 and the largest remaining in Phase 0 at eight tasks.
+**`P0-TSK-032` - Security context abstraction**, the second of `P0-EPIC-10`'s eight tasks.
 
-Its acceptance criterion is the shape this project likes: *no secret value in the repository;
-secret scanning green; a deliberately committed dummy secret fails CI.* The third clause is the one
-that matters, and it is a claim about CI - which has never run on a runner, so how it is
-demonstrated needs deciding rather than assuming.
+`ActorId` / `ActorType` consumed by audit and domain code, a system actor in Phase 0 and real
+identity in Phase 1. Its acceptance criterion has an unusual second half - *the Phase 1 identity
+implementation requires no change to the audit schema* - which is a claim about a phase that does
+not exist yet and cannot be tested directly. What can be tested is the property behind it: the
+audit schema already stores an actor type and identifier as data rather than as a foreign key to
+anything, so worth checking `V009` and `AuditRecord` before designing, since `P0-TSK-022` may have
+already established the seam.
 
-It also has an existing obligation to honour: `compose.yaml` records that
-`local-development-only-not-a-secret` is a marked local default which `P0-TSK-031` "must be
-configured to recognise as a marked local default rather than flagging it, without weakening the
-scan." That value now appears in three places.
+Note that `ActorType` already exists and generates its own `CHECK` constraint. The task is
+probably narrower than the backlog entry suggests - check rather than assume, as `P0-TST-002`,
+`P0-TST-007` and `P0-TST-008` all turned out differently from their descriptions.
 
 ---
 
@@ -739,6 +779,8 @@ scan." That value now appears in three places.
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-031`. **Two important findings, and both were controls that did not do what they claimed.** First: the configuration rule matched only the **first** `key value` pair on a line, so `LOGIN PASSWORD 'x'` was read as the key `LOGIN` and skipped - **the SQL role script, one of the four files the test names, was not being checked at all**, and a real password planted there passed the build cleanly. It had looked covered because the original mutation changed *both* occurrences and tripped the single-sourcing count instead - a different assertion catching it, which is the second time in this task a mutation passed for the wrong reason. **The lesson is that a mutation must be isolated to the assertion under test**; re-run against one occurrence, it slipped straight through. Second: `DatabaseCredentialGuard` read `spring.datasource.url` while `spring.datasource.hikari.jdbc-url` is bound afterwards and **wins** - proven by starting the application against `db.internal` with the generic URL left on loopback and unwrapping the pool to confirm it really had the remote address. A documented Spring property is exactly the "bypassable by a documented path" `DOD-SEC` forbids; the guard now reads what the pool actually connects with, via `Binder` so relaxed spellings cannot dodge it. Three further gaps, all found by probing bypass shapes rather than by reading: **`.sh` was not scanned** although this task itself added `infra/scripts/`, and shell is where `PGPASSWORD=` lives; **`authorization` and `bearer` had been dropped** from the vocabulary as "authentication data" when they are how an API credential is written in configuration; and **`PGPASSWORD` has no word boundary to split on**, closed with `endsWith` rather than `contains` so `passwordless` and `tokenizer` stay clean. The ad-hoc probes are now a **22-row shape table** asserted on every build - `P0-TST-008`'s lesson that a probe living only in a shell does not survive the person who ran it - plus a guard that the extension list in the test and the Gradle input filter cannot drift, which is the fourth occurrence of that defect class here. 470 hermetic tests, 165 database tests. |
+| 2026-09-02 | `P0-TSK-031` complete; **`P0-EPIC-10` opened**. Secret management, and the probe changed the shape of the answer. The obvious reading of the acceptance criterion is that clause 2 delivers clause 1 - run a scanner, keep it green, no secret in the repository. **It does not.** Four plausible secrets committed to a throwaway repository and scanned with the pinned image: gitleaks caught a private-key block, a high-entropy token and a real-shaped AWS pair, and **missed `password: hunter2` and `POSTGRES_PASSWORD: correcthorse`** - there is nothing about a memorable password to detect, a memorable password is what a human commits, and those two shapes are exactly the shape this repository's own configuration has. So the scanner is a **net, not the control**. The control is `CommittedConfigurationHoldsNoSecretTest`: default-deny over configuration files it **discovers** rather than lists, so a new `application-prod.yaml` is covered without anyone remembering. It does a second job for free - the marked local default is written in six files across YAML, Kotlin and SQL that cannot share a constant, and rejecting any *other* local default is what actually single-sources it; the comment claiming "three places" was already wrong. **A name is not a control either**: externalised configuration fails silently when nobody sets the variable, so `DatabaseCredentialGuard` refuses to start with the marked default aimed off loopback, fails closed on an unreadable host, and checks every host in a failover list. Three findings. **`secretsAreWrapped` rejected this task's own field** - `APP_PASSWORD_VARIABLE` holds the *name* of a variable, a real false positive - and it was **renamed rather than exempted**, because the obvious exemption would admit `PASSWORD_PROPERTY = "hunter2"` for ever and that rule has no exemption set at all. **The documentation tripped the scan it documents**: the first drafts quoted realistic example keys and the scan caught both files, which is the scanner working - it cannot tell an example from a disclosure - so the examples now describe shapes and the proof generates its dummy value at run time, rather than allowlisting prose about the scanner. And **a startup test that tested nothing**: `SpringApplicationBuilder.properties(...)` populates Boot's *default* source, which ranks below `application.yaml`, so both cases silently kept the committed URL - the positive control had been green while asserting nothing about its own argument. Clause 3 is demonstrated against a throwaway clone and never against this repository, since a dummy secret committed here would make the scan red for ever. ADR-0020 recorded. 446 hermetic tests, 165 database tests. |
 | 2026-09-02 | Task completion review of `P0-TST-008`. The first question was whether the inversion defect it found was **systemic**, since other rules protect `INV-MON-01` and `INV-EVT-01`. It is not: all four sibling suites use the positive `classes().that()...should()` form and prove their teeth with `rule.check(violating)` - the **rule**, not the condition. Which makes the finding sharper rather than softer: the correct pattern already existed, this suite deviated from it, and the deviation is exactly what hid a security control that could not fail. The teeth tests now use the sibling idiom - `assertThatThrownBy(() -> rule.check(...))` and `assertThatCode(...).doesNotThrowAnyException()` - so the suite reads like its four neighbours and cannot drift back. Two further fixes. The **MDC rule was proven only by a manual probe**, which is not a method that survives the person who used it; it now has a fixture and is rejected on every build alongside the others. And the appender test wrote its log to the **system temp directory**, where Logback appends for ever - a test whose negative control deliberately writes an unredacted sentinel was leaving that plaintext in a directory nothing cleans, which is the wrong shape for a test about not writing secrets to files. Moved inside `build/`, and the stray removed. 419 hermetic tests, 165 database tests. |
 | 2026-09-02 | `P0-TST-008` complete; **`P0-EPIC-09` closed**. The task's own note said to check whether its criterion was already met rather than assume, and it was not - the reason being the most serious defect this phase has produced. **`secretsAreWrapped` was structurally incapable of failing.** `noClasses().should(condition)` *inverts* the condition's events, reporting as violations the things it marks satisfied; the condition only ever emitted `violated(...)`, so the inversion left it nothing to report and a production record holding a plaintext `String password` passed cleanly. The rule's own fixture test had "proved" it worked by invoking the **condition** directly, bypassing the inversion and testing something the build never runs. A security control that cannot fail, with a green test beside it, is worse than absent: it is believed. Now `classes().should(not ...)`, with the fixture evaluating the rule, and both production shapes proven to fail. **A second path was found by probing**: the MDC takes a `String`, so the wrapper cannot protect it, and the ECS encoder lifts every entry to a top-level field - `MDC.put("apiToken", token)` publishes it verbatim. Closed by `onlyCorrelationContextWritesTheMdc`, proven by planting a production MDC write, with the exemption shown to be real rather than vacuous. Redaction is now asserted across console **and** file appenders, each with a precondition and a negative control, because value-level and encoder-level redaction look identical to a one-appender test. **Process finding:** the first probe reported "already met" because `:app:test` was UP-TO-DATE and the assertion read stale XML - a mutation probe that does not force a re-run can report whatever the last run said. 418 hermetic tests, 165 database tests. |
 | 2026-09-02 | `P0-TSK-030` complete - the only Phase 0 task the backlog marks **High risk**. `INV-AUD-02` is the one invariant that specifies its own enforcement, *default-deny redaction*, and the decision that follows is that **default-deny is a property of the rule, not of the wrapper**: a wrapper people must remember is opt-in with extra steps. `secretsAreWrapped` fails the build on any field or no-argument accessor whose name says it holds a secret unless it is `Sensitive<?>`. The accident being closed is Java's own - a record generates a `toString()` printing every component, so `log.info("authenticating {}", credentials)` prints the password with no getter, no concatenation, and nothing a reviewer stops at. **Accessors as well as fields**, because a serialiser reads accessors and a private `pw` behind a `getPassword()` escaped the first version of the rule entirely. The vocabulary is narrow on purpose and `key` is not in it: an idempotency key is not a secret, and a rule with false positives is a rule somebody turns off. `equals` is identity-based, because value equality would let the wrapper answer whether a guess is right. **Review found the invariant half-covered**: it names logs, event payloads *and API responses*, and only logs were tested. Jackson turned out to decline revealing a `Sensitive` by **accident** - no properties, so `{}` - the same shape as the `"correlationId":{}` defect already hit here, and one that ends silently when somebody adds a getter; masking is now stated by a serialiser in `app` and asserted against a type that *has* an accessor. ECS JSON everywhere including locally, since an encoder nobody runs locally is an encoder whose defects nobody sees. Verified on a running instance: JSON on real stdout, a client-supplied correlation id as a queryable field, and the database password absent even from a logged authentication failure. ADR-0019 recorded. 415 hermetic tests, 165 database tests. |
