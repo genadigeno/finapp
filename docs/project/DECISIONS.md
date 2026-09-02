@@ -115,6 +115,18 @@ while an actor names a party, and merging them would put a customer identifier i
 and span (`INV-AUD-02`). &rarr;
 [ADR-0021](../adr/ADR-0021-security-context-and-the-absent-actor.md), ADR-0010
 
+### Data classification
+Five levels - public, internal, confidential, restricted-financial, restricted-PII - applied **per
+column at its ceiling**: the most sensitive thing a column may ever hold, not what it holds today.
+A column cannot be reclassified once it has data, because by then the handling it was given for its
+whole life is already settled and may be in a log aggregator, an event stream or a backup. Phase 0
+holds nothing sensitive, which is precisely why the scheme is written now. The register is compared
+against the live schema in both directions, so a migration adding an unclassified column fails the
+build - that guard, not the document, is what later data-model tasks actually meet. Handling rules
+are referenced rather than restated, because a second copy drifts while looking authoritative.
+&rarr; [ADR-0022](../adr/ADR-0022-data-classification-at-the-ceiling.md),
+[`DATA_CLASSIFICATION.md`](../architecture/DATA_CLASSIFICATION.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

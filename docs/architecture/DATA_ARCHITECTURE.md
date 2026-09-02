@@ -27,4 +27,8 @@ and evidence is preserved.
 - Use unique constraints for idempotency keys and external identifiers where appropriate.
 - Version state transitions and externally material changes when reproducibility matters.
 - Do not let projections become writable authorities.
-- Sensitive data must be classified and protected appropriately.
+- Sensitive data must be classified and protected appropriately. The scheme is
+  [`DATA_CLASSIFICATION.md`](DATA_CLASSIFICATION.md) (ADR-0022): five levels, classified **per
+  column at its ceiling** rather than at what the column holds today, because a column cannot be
+  reclassified once it has data. `ColumnClassificationTest` fails the build if a migration adds a
+  column the register does not classify.

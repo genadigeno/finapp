@@ -55,61 +55,54 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-033` - Data classification scheme**
+**`P0-TSK-034` - Transport and at-rest encryption baseline**
 Status: `READY` - not started.
 
-Bounded context: platform / security. No dependencies.
+Bounded context: platform / security. Depends on `P0-TSK-003` (`COMPLETE`).
+**Risk: Medium.**
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-DOC`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-SEC`.
 
 ### Just completed
 
-**`P0-TSK-032` - Security context abstraction** - `COMPLETE` (2026-09-02).
+**`P0-TSK-033` - Data classification scheme** - `COMPLETE` (2026-09-02).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Every audit record carries an actor | Already true: `AuditRecord` cannot be constructed without one (`P0-TSK-022`), and `actor_id`/`actor_type` are `NOT NULL` with a `CHECK` |
-| Phase 1 identity needs no audit schema change | `Phase1IdentityFitsTheAuditSchemaTest`: a record written as every non-`SYSTEM` type, through the writer, as the application role, carrying identifier shapes real providers issue |
+| Scheme documented | [`DATA_CLASSIFICATION.md`](../architecture/DATA_CLASSIFICATION.md): five levels, handling rules per level, all 46 platform columns registered |
+| Referenced by later data-model tasks | `ColumnClassificationTest` compares the register against the **live schema** in both directions, so a migration adding an unclassified column fails the build - proven with a planted `customer_email` |
 
-**The first clause was already met, so the task was the mechanism and the decision behind it.**
-`Actor` and `ActorType` existed; nothing supplied them. Every call site would have named
-`Actor.SYSTEM` itself, which decides independently at each one what happens when nobody established
-who was acting.
+**Phase 0 holds no customer data, no money and no credentials - which is exactly why the scheme is
+written now.** A column's classification cannot be added later: by the time it holds data, the
+handling it was given for its whole life is already settled and may be in a log aggregator, an
+event stream or a backup. Reclassifying is not a schema change, it is an admission the previous
+handling was wrong. Same argument ADR-0010 makes for actor attribution and `INV-HIST-01` for
+financial history - the decision precedes the first row.
 
-**`require()` throws rather than defaulting to the system actor.** That is the decision. Defaulting
-is convenient and *correct today* - the system is the only actor there is - and it becomes wrong
-silently the moment Phase 1 lands: an authenticated request whose scope was never established would
-record the platform as having done what a customer did. Nothing fails, the record is complete and
-plausible, it is about the wrong party, and `INV-HIST-03` makes it permanent. `Actor`'s own javadoc
-already said this for a blank identifier; this applies it one level up.
+So every column is classified at its **ceiling**, not at its current content. `audit_record.actor_id`
+is `RESTRICTED-PII` although it currently contains the literal `system`, because from Phase 1 it is
+a person's identity-provider subject and there is no later moment at which changing the answer is
+safe.
 
-Phase 0 claims the system actor **out loud** through `enterSystem()`, which is greppable on
-purpose: it is the list of places Phase 1 must revisit. Reading `Actor.SYSTEM` anywhere else fails
-the build - every audit record needs an actor, so every call site has a parameter to satisfy, and
-the constant is the shortest way to satisfy it.
+**Per column, not per table.** A table mixes levels: the audit record holds an operation code, a
+correlation identifier and a free-text reason. Treating them alike either over-restricts the
+operational fields, which makes people work around the scheme, or under-protects the reason.
 
-`Actor`/`ActorType` moved from `platform.audit` to `platform.security`: audit *records* an actor, it
-does not own the concept, and leaving them there would have made the security context depend on
-audit rather than the reverse. Same reasoning as `P0-TSK-018` moving the correlation identifiers
-down.
+**Handling rules referenced, never restated.** Every rule the levels imply is already enforced -
+redaction (ADR-0019), metric cardinality (ADR-0018), no SQL on spans (ADR-0017), no credential in
+configuration (ADR-0020), audit immutability (ADR-0010). The scheme gathers them under names and
+points at them; a second copy would drift while looking authoritative.
 
-**The un-testable clause was made falsifiable.** "Phase 1 requires no schema change" is a claim
-about a phase that does not exist. The property behind it is not: a record written as every
-non-`SYSTEM` actor type, carrying the identifier shapes real identity providers actually issue - an
-OIDC `sub`, a directory distinguished name, a service credential - persists today with no DDL.
-Proven to fail three ways: narrowing the live `CHECK` to `SYSTEM` alone, and widening `Actor`'s
-bound past the column's.
+**The scheme's weakest point is stated rather than glossed.** Five columns are classified above
+their current content because what they hold is decided by a caller rather than by a type -
+`reason`, `change_summary`, `response_body`, `payload`, `last_error`. No build rule checks what is
+written into a free-text column. The nearest mechanical control is the output scrubber already
+recorded as debt for Phase 1.
 
-**Two findings, both in the tests rather than the code.**
-- **The pooled-thread leak test proved nothing.** It ran a propagated task and then checked the
-  next one - but `propagate` restores on the way out, so the worker was already clean and the
-  assertion passed whatever `apply(null)` did. Confirmed by mutation: making an absent actor a
-  no-op left it green. It now dirties the worker the way a real leak happens, with a precondition
-  asserting the staleness is really there.
-- **The test committed audit rows permanently.** Audit records are append-only to the application
-  role by design, so a test that commits them leaves them for ever, growing on every run. Cleanup
-  is the migrator's job and is scoped by a probe marker rather than a wholesale `DELETE`, because
-  the sibling suites share that table.
+**One defect, caught by its own vacuity guard.** The register parser used `^` without
+`Pattern.MULTILINE`, so it anchored to the start of the whole document and matched **nothing** -
+every assertion would have passed over an empty register and reported a scheme that classified
+nothing. `theRegisterIsActuallyRead` failed immediately, which is what a vacuity guard is for.
 
 ---
 
@@ -209,6 +202,17 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Data classification (2026-09-02), `P0-TSK-033`:
+- Five levels, applied **per column at its ceiling** - what a column may ever hold, not what it
+  holds today, because a column cannot be reclassified once it has data
+- Written in the phase that holds nothing sensitive, which is the only phase where the decision is
+  still free
+- All 46 platform columns registered, reconciled against the **live schema** in both directions, so
+  a migration adding an unclassified column fails the build
+- Handling rules referenced rather than restated - every one is already enforced by an existing rule
+- The weak point named: no build rule checks what a caller writes into a free-text column
+- ADR-0022 records the reasoning and the five rejected alternatives
 
 Security context (2026-09-02), `P0-TSK-032`:
 - `SecurityContext` carries the acting party per flow and across thread handoffs, so an actor need
@@ -590,7 +594,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-033` is the next task.
+None in progress. `P0-TSK-034` is the next task.
 
 ## Blockers
 
@@ -719,6 +723,7 @@ carries, what triggers paying it down, and the owning phase.
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
+| **A caller can put personal or financial data into the correlation identifier.** The permitted charset is `[A-Za-z0-9._:@/+=-]` and a well-formed inbound `X-Correlation-Id` is accepted verbatim, so `jane.doe@example.com`, `acct:GB29NWBK60161331926819`, `customer-1990-05-14` and `+447700900123` are all valid - confirmed by probe during `P0-TSK-033` | Accepting a caller's identifier is deliberate and useful: it lets a client join its logs to ours (`P0-TSK-025`). The charset was chosen to be permissive enough for real client identifiers, and nobody asked what else fits through it | **Real, and the widest-reaching disclosure channel in the platform.** The value is written to every log line as a top-level ECS field, stamped on every span, stored in four tables and echoed in the response header and every problem-detail body - so it reaches a telemetry backend with different access control and months of retention, which is exactly what `INV-AUD-02` forbids. Bounded today only by there being no customers | Phase 1, when real callers exist. The fix is to constrain the value - generate our own and carry the caller's separately, or narrow the charset - never to relax the handling, since forbidding correlation in logs would defeat correlation | Phase 1 |
 | **No production code establishes a security scope.** `SecurityContext` exists and nothing calls it | Phase 0 has no request handler performing an auditable action and no module writing an audit record - the three registered platform actions are themselves recorded as not-yet-emitted. A caller wired now would establish a scope around nothing | **None today, and the failure mode is safe by construction.** `require()` refuses rather than defaulting, so the first caller that forgets fails loudly instead of recording the wrong party. The risk is not silent misattribution but a missing call, which is visible the first time it runs | The first audited action, which is the outbox relay emitting its registered actions or Phase 1's authentication | Phase 1 |
 | **The loopback guard covers one credential.** `DatabaseCredentialGuard` knows about the datasource password and nothing else | It is the only credential that exists. A general mechanism - every externalised credential declaring its own marked default and being checked - would be designed against one example, which is how you get an abstraction that fits nothing later | **Low today.** The build rule is already general: any credential-named key in any configuration file is covered, so a second credential cannot arrive as a literal. What it would not get is the loopback confinement, so a second published default could be aimed anywhere | The second credential, which is Phase 1's authentication or Phase 5's provider adapters | Phase 1 |
 | **No output scrubber for text the platform does not control.** A secret held only in a local and passed straight to a log call, or one inside a third-party library's message, is not covered | The field and accessor rules cover what a type *stores*; a transient value has no declaration to inspect. Closing it needs a logging facade accepting only declared-safe arguments, which changes every log statement - disproportionate against eight of them | **Low today, and it grows with the codebase.** Nothing in Phase 0 handles a credential; the risk arrives with Phase 1's authentication. A scrubber is a deny-list and must never be mistaken for the control | A business module logging real flows | Phase 1 |
@@ -770,18 +775,19 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-033` - Data classification scheme**, the third of `P0-EPIC-10`'s eight.
+**`P0-TSK-034` - Transport and at-rest encryption baseline**, the fourth of `P0-EPIC-10`'s eight.
 
-Classification levels - public / internal / confidential / restricted-financial / restricted-PII -
-with handling rules per level, referenced by later data-model tasks. `DOD-DOC`, so the bar is
-accuracy against what exists rather than aspiration: `SECURITY_ARCHITECTURE.md` and ADR-0019
-already state handling rules for secrets, and `INV-AUD-02` already forbids PII in logs, events and
-responses. The scheme has to reconcile with both rather than become a third description of them.
+TLS and at-rest encryption expectations documented and applied where locally applicable. Its
+acceptance criterion carries the interesting constraint: *local setup does not normalise insecure
+defaults into later environments.* That is a real tension here - `compose.yaml` runs PostgreSQL,
+Kafka and Redis on loopback with no TLS at all, and Kafka's listeners are explicitly `PLAINTEXT`.
+The question is not whether to add TLS locally but whether the absence is recorded as a deliberate
+local-only choice with a named boundary, in the way the marked credential default now is.
 
-Worth deciding early whether the levels get any mechanical enforcement or are documentation only.
-`DOD-DOC` does not require a rule, and this project's pattern is that an unenforced convention
-decays - but a classification scheme with no data to classify yet may genuinely be documentation
-until Phase 1 brings party data.
+`DOD-SEC`, so it needs a negative test for every control and a threat considered rather than a
+feature implemented - which for a documentation-weighted task means deciding what is mechanically
+checkable at all. `P0-TSK-031` found that a documented-only control decays; the same question
+applies here.
 
 ---
 
@@ -789,6 +795,8 @@ until Phase 1 brings party data.
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-033`. **One critical finding, and the scheme itself is what produced it.** `correlation_id` was classified `INTERNAL` in four tables on the reasoning that it is operational metadata. Applying the ceiling rule to it exposed that it is **caller-supplied**: the permitted charset is `[A-Za-z0-9._:@/+=-]`, a well-formed inbound `X-Correlation-Id` is accepted verbatim, and `jane.doe@example.com`, `acct:GB29NWBK60161331926819`, `customer-1990-05-14` and `+447700900123` were all confirmed accepted by probe. That value is then written to **every log line** as a top-level ECS field, stamped on **every span**, stored in four tables, and echoed in the response header and every problem-detail body - so a caller can place personal or financial data into a telemetry backend with different access control and months of retention, which is exactly what `INV-AUD-02` forbids and what ADR-0017 and ADR-0018 keep SQL text and request-derived tags off spans and metrics to prevent. **The level stays `INTERNAL` and the value must change**: raising the classification would forbid correlation from appearing in logs, which defeats correlation. Recorded as debt for Phase 1 rather than fixed, since it is `P0-TSK-025`'s ingress behaviour (`EXECUTION_PROTOCOL.md` rule 4). §5 was rewritten around the distinction it had missed - free text whose ceiling is a *handling* rule, versus caller-supplied identifiers whose level is a *requirement on the value*. **One important defect in the guard**: the register parser matched `[a-z_]+`, so a column name containing a digit - `address_line_2`, `iso_4217_code` - could not be classified at all; the row would sit unparsed and the failure would read "this column has no entry" while the entry was right there. It fails safe and diagnoses the wrong thing, and Phase 3 would have met it. Found by planting such a column, fixed, and re-proven in both directions. 489 hermetic tests, 172 database tests. |
+| 2026-09-02 | `P0-TSK-033` complete. A data classification scheme written in the phase that holds **no customer data, no money and no credentials** - which is the point rather than an irony. A column's classification cannot be added later: by the time it holds data the handling it was given for its whole life is already settled, and may be in a log aggregator, an event stream or a backup that cannot be recalled. Reclassifying is not a schema change, it is an admission the previous handling was wrong. So every column is classified at its **ceiling** rather than its current content - `audit_record.actor_id` is `RESTRICTED-PII` although it contains the literal `system` today, because from Phase 1 it is a person's identity-provider subject and there is no later moment at which changing the answer is safe. Same argument ADR-0010 made for actor attribution. **Per column, not per table**, because a table mixes levels and treating them alike either over-restricts the operational fields - which makes people work around the scheme - or under-protects the free-text one. "Referenced by later data-model tasks" is **enforced rather than hoped**: `ColumnClassificationTest` reconciles the register against the live schema in both directions, so Phase 3 cannot land ledger tables unclassified; proven with a planted `customer_email`, a removed register row and an invalid level. Handling rules are **referenced, never restated** - every one is already enforced by redaction, metric cardinality, span content, configuration or audit immutability rules - because a second copy drifts while looking authoritative. **The weak point is named rather than glossed**: five columns hold whatever a caller writes, and no build rule checks that; the nearest control is the Phase 1 output scrubber already recorded as debt. **One defect, caught by its own vacuity guard**: the register parser used `^` without `Pattern.MULTILINE`, so it anchored to the start of the document and matched nothing - every assertion would have passed over an empty register and reported a scheme classifying nothing. ADR-0022 recorded. 489 hermetic tests, 172 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-032`. **Two important findings, both the same shape: this suite deviated from a pattern its four siblings already had.** First, `SystemActorRulesTest` was written **without a coverage guard** - every other rule suite has `everyModuleWithProductionCodeIsAnalysed`, because a rule that sees nothing passes and reports safety it never checked. That is precisely the deviation `P0-TST-008` identified as the mechanism by which a security rule sits behind a green test protecting nothing. Added, and proven by narrowing the sweep to one module. Second, **`SecurityContext` was missing from `DISTRIBUTED_EXECUTION.md` §3**, whose opening line is "every component with state" - it is the platform's second `ThreadLocal`, and `P0-TSK-041` is scheduled to build an ArchUnit rule whose exemption set is *that register*, so an unlisted one would have arrived as either a build failure or an unjustified exemption. Registered as non-authoritative, with the distinction that matters: it carries the acting party, it is never the source of one, and losing it costs the operation rather than correctness because `require()` refuses. **One accuracy fix**: nothing in production establishes a scope, and both the architecture document and the debt table now say so - it is a seam under `EXECUTION_PROTOCOL.md` rule 3, not an unfinished wiring job, and `DEFINITION_OF_DONE.md` §3 forbids documentation describing behaviour that does not exist. Verified rather than assumed: the field rule was probed against five bypass shapes **individually** - a constant captured in a static initialiser, a static import, a lambda, a chained call and a nested class - because one catch in an aggregate probe can mask four misses; `getField` is a bytecode-level GETSTATIC and caught all five. 489 hermetic tests, 168 database tests. |
 | 2026-09-02 | `P0-TSK-032` complete. The first acceptance clause was **already met** by `P0-TSK-022` - `AuditRecord` cannot be built without an actor - so the task was the mechanism and the decision behind it. `Actor` and `ActorType` existed and nothing supplied them, which meant every call site would decide independently what happens when nobody established who was acting. **`SecurityContext.require()` throws rather than defaulting to `Actor.SYSTEM`**, and that is the decision: a default is convenient and *correct today*, and silently wrong the moment Phase 1 lands - an authenticated request whose scope was never established would record the platform as having done what a customer did, with nothing failing, the record complete and plausible, about the wrong party, and permanent under `INV-HIST-03`. Phase 0 claims the system actor **out loud** through `enterSystem()`, greppable on purpose as the list Phase 1 must revisit, and reading `Actor.SYSTEM` anywhere else now fails the build - every audit record needs an actor, so every call site has a parameter to satisfy and the constant is the shortest way to satisfy it (ADR-0019's argument, unchanged). `Actor`/`ActorType` moved to `platform.security`, because audit *records* an actor and does not own the concept; the actor is deliberately **not** merged into `Correlation`, since an identifier naming one execution and one naming a party are different things and merging them would put a customer identifier into every log line and span (`INV-AUD-02`). **The un-testable clause was made falsifiable**: "Phase 1 needs no schema change" is a claim about a phase that does not exist, but the property behind it is not - a record written as every non-`SYSTEM` type, carrying an OIDC `sub`, a directory DN and a service credential, persists today with no DDL, proven to fail by narrowing the live `CHECK` and by widening `Actor`'s bound past the column's. **Two findings, both in the tests.** The pooled-thread leak test proved nothing - `propagate` restores on the way out, so the worker was already clean and the assertion passed whatever `apply(null)` did; confirmed by a surviving mutation, and it now dirties the worker the way a real leak happens, with a precondition. And the new database test **committed audit rows permanently** - they are append-only to the application role by design - so cleanup is the migrator's job, scoped by a probe marker rather than a wholesale DELETE, because the sibling suites share that table. The correlation sink guard fired for the **seventh** time, on `security`, and the answer was recorded as deliberately not a sink. ADR-0021 recorded. 488 hermetic tests, 168 database tests. **Unrelated defect found and recorded rather than fixed** (`EXECUTION_PROTOCOL.md` rule 4): `RequestValidationTest.aMalformedIdentifierIsReplaced` asserts the issued correlation identifier `doesNotContain("bad")`, and a UUIDv7 hex string contains `bad` about 0.7% of the time - one run in 137, observed once here. The intent is right and the method is wrong: it should assert the value is a well-formed generated identifier, not that it avoids three substrings which are also valid hex. It belongs to `P0-TSK-025` and is noted in the backlog. |
 | 2026-09-02 | Task completion review of `P0-TSK-031`. **Two important findings, and both were controls that did not do what they claimed.** First: the configuration rule matched only the **first** `key value` pair on a line, so `LOGIN PASSWORD 'x'` was read as the key `LOGIN` and skipped - **the SQL role script, one of the four files the test names, was not being checked at all**, and a real password planted there passed the build cleanly. It had looked covered because the original mutation changed *both* occurrences and tripped the single-sourcing count instead - a different assertion catching it, which is the second time in this task a mutation passed for the wrong reason. **The lesson is that a mutation must be isolated to the assertion under test**; re-run against one occurrence, it slipped straight through. Second: `DatabaseCredentialGuard` read `spring.datasource.url` while `spring.datasource.hikari.jdbc-url` is bound afterwards and **wins** - proven by starting the application against `db.internal` with the generic URL left on loopback and unwrapping the pool to confirm it really had the remote address. A documented Spring property is exactly the "bypassable by a documented path" `DOD-SEC` forbids; the guard now reads what the pool actually connects with, via `Binder` so relaxed spellings cannot dodge it. Three further gaps, all found by probing bypass shapes rather than by reading: **`.sh` was not scanned** although this task itself added `infra/scripts/`, and shell is where `PGPASSWORD=` lives; **`authorization` and `bearer` had been dropped** from the vocabulary as "authentication data" when they are how an API credential is written in configuration; and **`PGPASSWORD` has no word boundary to split on**, closed with `endsWith` rather than `contains` so `passwordless` and `tokenizer` stay clean. The ad-hoc probes are now a **22-row shape table** asserted on every build - `P0-TST-008`'s lesson that a probe living only in a shell does not survive the person who ran it - plus a guard that the extension list in the test and the Gradle input filter cannot drift, which is the fourth occurrence of that defect class here. 470 hermetic tests, 165 database tests. |

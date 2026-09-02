@@ -636,7 +636,7 @@ Status: `IN_PROGRESS`
   identifier shapes real providers issue (an OIDC `sub`, a directory DN, a service credential),
   through the writer as the application role. ADR-0021.
 
-**P0-TSK-033 — Data classification scheme**
+**P0-TSK-033 — Data classification scheme** — `COMPLETE` (2026-09-02)
 - Context: platform / security
 - Description: Classification levels (public / internal / confidential / restricted-financial / restricted-PII) with handling rules per level.
 - Why: `DATA_ARCHITECTURE.md` — sensitive data must be classified and protected appropriately.
@@ -645,6 +645,14 @@ Status: `IN_PROGRESS`
 - Risk: Low
 - Cx: S
 - DoD: `DOD-DOC`
+- **Outcome:** five levels, applied **per column at its ceiling** - the most sensitive thing a
+  column may ever hold, not what it holds today - because a column cannot be reclassified once it
+  has data. Phase 0 holds nothing sensitive, which is exactly why the scheme is written now (the
+  argument ADR-0010 already made for actor attribution). "Referenced by later data-model tasks" is
+  enforced rather than hoped: `ColumnClassificationTest` compares the register against the live
+  schema in both directions, so a migration adding an unclassified column fails the build - proven
+  with a planted `customer_email`. All 46 platform columns classified; handling rules referenced,
+  never restated. ADR-0022.
 
 **P0-TSK-034 — Transport and at-rest encryption baseline**
 - Context: platform / security
