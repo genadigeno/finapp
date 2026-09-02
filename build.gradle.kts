@@ -32,6 +32,8 @@ val verifyInfrastructureVersions = tasks.register("verifyInfrastructureVersions"
         "postgres" to libs.versions.postgresImage.get(),
         "apache/kafka" to libs.versions.kafkaImage.get(),
         "redis" to libs.versions.redisImage.get(),
+        "prom/prometheus" to libs.versions.prometheusImage.get(),
+        "grafana/grafana" to libs.versions.grafanaImage.get(),
     )
 
     inputs.file(composeFile)

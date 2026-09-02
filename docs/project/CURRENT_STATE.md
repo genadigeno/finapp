@@ -55,65 +55,61 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-029` - Metrics and dashboards**
+**`P0-TST-008` - Log redaction test**
 Status: `READY` - not started.
 
-Bounded context: platform. Depends on `P0-TSK-003` (`COMPLETE`).
+Bounded context: platform / security. Depends on `P0-TSK-030` (`COMPLETE`).
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-09. DoD profile: `DOD-OBS`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-09. DoD profile: `DOD-TEST`.
+
+**Its acceptance criterion may already be met.** "Test fails if a sensitive field is added without
+redaction" is what `secretsAreWrapped` does, proven on every build by fixtures. Worth checking
+before writing anything, as `P0-TST-002` and `P0-TST-007` both turned out the same way - and
+`P0-TST-007` found its criterion *false* for a case nobody had considered, which is the reason to
+check rather than assume.
 
 ### Just completed
 
-**`P0-TSK-028` - OpenTelemetry tracing** - `COMPLETE` (2026-09-02).
+**`P0-TSK-030` - Structured logging with redaction** - `COMPLETE` (2026-09-02).
+The only Phase 0 task the backlog marks **High risk**.
 
-**The acceptance criterion could not be met as written, and was corrected rather than approximated.**
-It named four legs - HTTP, DB, outbox, consumer - and two of them have no subject: there is no
-broker adapter (`EventPublisher` still has no implementation, which is recorded debt owned by
-Phase 3) and no consumer wiring, so no request can reach either. Exactly the correction
-`P0-TSK-014` needed. The outbox and consumer legs transfer to the broker adapter; HTTP and DB were
-delivered and proven against a live PostgreSQL.
-
-| Acceptance criterion (corrected) | Evidence |
+| Acceptance criterion | Evidence |
 |---|---|
-| One connected trace spanning HTTP and the database | `TraceAcrossDatabaseTest`: one trace id across the request and the connection span, and the database span is a **child** of the request rather than a root of its own - a flat list of spans sharing a trace cannot answer "what was this connection acquired for?" |
-| The correlation identifier on every span | Asserted over every recorded span, hermetically and against a real database |
+| A credential in a logged object does not appear in output | `LogRedactionTest`, reading **emitted** output through the real encoder, with a negative control proving the unwrapped form does leak |
+| Redaction is opt-out, not opt-in | `secretsAreWrapped` fails the build on an unwrapped secret field or accessor; opt-in would be a wrapper people must remember |
 
-Design decisions worth carrying forward (ADR-0017):
-- **A trace identifier never substitutes for a correlation identifier.** A trace id is subject to
-  sampling; a sampled-out flow would become unfindable from the one value a customer holds, and it
-  is absent from every table. Correlation goes **on** spans instead - `finapp.correlation_id`.
-- **Stamped once by a span processor, not by each component.** "Every span carries correlation" is
-  not a property per-component discipline delivers: a component added next year, or an
-  instrumentation library nobody wrote, would each have to remember, and forgetting is silent - the
-  span is recorded, the trace looks complete, and it cannot be found. Applying it where the SDK
-  starts spans makes it hold for spans this codebase never writes.
-- **No JDBC tracing library, and no statement text on spans.** Every option records SQL as an
-  attribute, which on this platform's tables means amounts and account identifiers flowing into a
-  backend with different retention and access control (`INV-AUD-02`) - arriving silently the first
-  time somebody writes a query. What remains is `finapp.db.connection`, which is the signal already
-  identified twice: it turns "requests are slow" into "requests are waiting for a connection".
-- **Telemetry is never the record**, the same relationship `INV-EVT-02` sets out for Kafka.
-- **Nothing about where traces go is committed to source.** An endpoint in git is either wrong
-  everywhere or a hostname nobody meant to publish.
+Design decisions worth carrying forward (ADR-0019):
+- **Default-deny is a property of the rule, not of the wrapper.** A wrapper people must remember is
+  opt-in with extra steps. The build rejects any field or no-argument accessor whose name says it
+  holds a secret unless it is `Sensitive<?>`.
+- **The accident being closed is Java's own.** A record generates a `toString()` printing every
+  component, so `log.info("authenticating {}", credentials)` prints the password with no getter
+  call, no concatenation, and nothing a reviewer would stop at.
+- **Accessors as well as fields**, because a serialiser reads accessors: a private `pw` behind
+  `getPassword()` is invisible to a field-only rule and is exactly what Jackson reaches for.
+- **The vocabulary is narrow, and `key` is not in it.** An idempotency key is not a secret and is
+  recorded in audit deliberately. A rule that flagged `idempotencyKey` is a rule somebody turns
+  off, and a rule that is off protects nothing.
+- **`equals` is identity-based.** Value equality would make the wrapper an oracle - it would answer
+  whether a guess is right - which is how a "safe" wrapper leaks what it wraps.
+- **ECS JSON in every environment**, including locally. A redaction defect living in the encoder a
+  deployment uses would otherwise be invisible to everyone who never runs it.
+- **Tests read emitted output, never a list appender**, which holds the event *before* encoding.
 
-**Three defects found by running it, none of which any test would have reported:**
-- **Spring Boot 4 gates the OpenTelemetry SDK behind `management.opentelemetry.enabled`, off by
-  default.** Without it there is no `SdkTracerProvider`, the `Tracer` is Micrometer's NOOP, and
-  every span is recorded into nothing. Nothing fails; there are simply no traces.
-- **The auto-configuration module and the bridge are both required.**
-  `spring-boot-micrometer-tracing-opentelemetry` is `@ConditionalOnClass` on the bridge, so with
-  only one of the two it backs off entirely - the same silent nothing. Found by disassembling the
-  auto-configuration rather than guessing.
-- **A second `management:` key in `application.yaml`** - YAML rejects duplicate keys, so every
-  Spring context in the suite refused to start.
+**Two findings from the review, both about coverage rather than code:**
+- **The rule checked fields only.** A serialiser reads accessors, so a private `pw` behind a
+  `getPassword()` escaped it entirely. Closed, with a fixture proving it.
+- **`INV-AUD-02` covers logs, event payloads *and API responses*, and only the log path was
+  tested.** Probing found Jackson already declining to reveal a `Sensitive` - but by **accident**,
+  because it finds no properties and emits `{}`. That is the same shape as the `"correlationId":{}`
+  defect this codebase already hit, and it ends silently the day somebody adds a getter. Masking is
+  now stated by a serialiser in `app`, asserted against a type that *has* an accessible property so
+  the accidental protection cannot be what passes the test.
 
-And one of my own: the data-source wrapper's javadoc said the tracer was **resolved lazily** while
-the code resolved it eagerly in a bean post-processor, which runs before the tracing beans exist.
-Comment and code disagreeing, for the fourth time this session.
-
-**The correlation sink guard fired for the sixth time**, and this time on the sink it was built
-for: `P0-TSK-014`'s criterion named a trace and could not verify it because there was no tracing.
-That clause is now closed.
+**Verified against a running instance**, which `DOD-OBS` requires and captured output does not
+prove: real stdout is ECS JSON, a client-supplied `X-Correlation-Id` arrives as a queryable field,
+and the configured database password appears **nowhere** - including when a full authentication
+failure is logged with its stack trace.
 
 ---
 
@@ -213,6 +209,36 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Structured logging and default-deny redaction (2026-09-02), `P0-TSK-030`:
+- `Sensitive<T>`: every rendering path masks - `toString`, interpolation, concatenation, a record's
+  generated `toString`, and JSON
+- `secretsAreWrapped` fails the build on an unwrapped secret field **or accessor**, which is what
+  makes the redaction default-deny rather than something to remember
+- Identity equality, so the wrapper cannot be used as an oracle for the value it hides
+- Masked serialisation stated explicitly, because Jackson's non-disclosure was accidental and would
+  end the day somebody added a getter
+- ECS JSON logs everywhere, with `correlationId`, `traceId` and `spanId` as queryable fields
+- Tests read emitted output rather than a list appender, each with a negative control
+- Verified on a running instance: JSON on real stdout, correlation flowing through, and the
+  database password absent even from a logged authentication failure
+- ADR-0019 records the reasoning and the four rejected alternatives
+
+Metrics and dashboard (2026-09-02), `P0-TSK-029`:
+- `finapp.<module>.<noun>` enforced against the live registry, so a meter from a module that does
+  not exist yet is covered without anyone remembering
+- No tag value may come from a request; correlation is deliberately kept off metrics, and
+  `CorrelationSinkCoverageTest` records `metrics` as the one concern where it must be kept out
+- Outbox depth and age as gauges over the database - readable when the relay is down, which is
+  when they matter - from one statement so the pair cannot describe two instants
+- An unreadable backlog reports NaN, never zero, so an alert still fires
+- `/actuator/prometheus` exposed, `prom/prometheus` and `grafana/grafana` pinned in `compose.yaml`
+  and covered by the drift check
+- The dashboard is a reviewed file in git with UI edits disabled, and was verified rendering live
+  data in a browser against a running instance
+- ADR-0018 records the convention, the cardinality rule and the four rejected alternatives
+- Every dashboard query is resolved against the live registry, so a renamed metric fails the
+  build rather than turning a panel into "No data" - added by review, proven by mutation
 
 Distributed tracing (2026-09-02), `P0-TSK-028`:
 - Every span carries `finapp.correlation_id`, stamped once by a span processor in the composition
@@ -512,7 +538,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-029` is the next task.
+None in progress. `P0-TST-008` is the next task.
 
 ## Blockers
 
@@ -633,14 +659,16 @@ carries, what triggers paying it down, and the owning phase.
 |---|---|---|---|---|
 | **Broker adapter behind `EventPublisher`.** The relay publishes through a port; nothing implements it | An adapter decides the wire format, topic scheme and producer acknowledgement configuration, and puts a broker client on the classpath — four decisions belonging to the phase with events to publish. `EVENT_ARCHITECTURE.md` already defers the wire format | **None today.** Nothing produces events yet, so an unpublished outbox is an empty outbox. The relay's own correctness is proven against a publisher that fails on demand, which no real broker does reliably | The first module that emits a domain event | Phase 3 (ledger) |
 | **Outbox retention.** Published rows are never deleted | `V005` says a published row may be deleted once retained long enough for diagnosis; the sweep is a scheduled job with its own cluster-safety question, and no task owned it | Unbounded table growth. The partial pending index does **not** grow with it — published rows leave it — so the cost is storage and vacuum, not relay latency | Table size becoming operationally material | Phase 15 (data retention and deletion) |
-| **Relay metrics.** `RelayPollResult` is returned but nothing aggregates it | No metrics infrastructure exists (`P0-EPIC-09`, M0.4) | ADR-0005 names outbox depth, age and relay lag as first-class monitored metrics. Until they exist, a stalled aggregate is visible only in logs — which is detection by reading, not by alerting | `P0-EPIC-09` landing | Phase 0, M0.4 |
+| ~~**Relay metrics.**~~ - **partly paid** by `P0-TSK-029`. Outbox depth and age are gauges over the database (`finapp.outbox.pending`, `finapp.outbox.oldest`), so a stalled aggregate is alertable rather than discoverable by reading logs - and readable precisely when the relay is down. **Still open:** throughput, failure and dead-letter counts from `RelayPollResult`, which need a relay that actually runs | Nothing schedules a relay, so those meters would be structurally always zero - which reads as "nothing is failing" rather than "nothing is running" | The remaining risk is narrower: a relay that is running but failing is visible as a growing backlog, not as a failure count | A scheduled relay | Phase 3 |
 | **Inbox retention sweep.** Records are never deleted | The sweep is a scheduled job with its own cluster-safety question, and `V007` deliberately adds no `expires_at` index until its predicate is written | Unbounded growth of a table whose only index is its primary key. **Not** a correctness risk in this direction: a record that is never swept deduplicates forever, and it is early expiry that admits a duplicate (`DATA_MIGRATIONS.md` §9) | Table size becoming operationally material, or the first consumer going live | Phase 15 (data retention and deletion) |
-| **Inbox metrics.** Duplicate rate and contention rate are returned as outcomes but nothing aggregates them | No metrics infrastructure exists (`P0-EPIC-09`, M0.4) | A rising duplicate rate is a signal about the transport and a rising contention rate about consumer concurrency; both are currently visible only as log lines, one of which is at debug | `P0-EPIC-09` landing | Phase 0, M0.4 |
+| **Inbox metrics.** Duplicate and contention rates are returned as outcomes and aggregated nowhere | The metrics infrastructure now exists (`P0-TSK-029`), but nothing consumes messages: a counter incremented by no one is a meter that is structurally always zero | A rising duplicate rate is a signal about the transport and a rising contention rate about consumer concurrency; both remain visible only as log lines, one at debug | The first live consumer | Phase 3 |
 | **Audit retention and archival.** Records are never deleted, and the application role cannot delete them | ADR-0010 is explicit that deletion is not an option and that archival must preserve queryability - which is a Phase 15 deliverable, not a sweep | Unbounded growth of a table written on every privileged action. **Not** a correctness risk: the inability to delete is the invariant working, and archival must preserve the trail rather than trim it | Table size becoming operationally material | Phase 15 (retention and archival) |
 | **Four-eyes approver is not modelled.** `audit_record` records one actor | `INV-AUD-04` applies to manual adjustments, break resolutions, policy activations and period close - none of which exist yet. ADR-0010 schedules it for Phases 3, 8 and 14 | None today: there is no four-eyes action to under-record. When one arrives it needs a second actor column, which is an ordinary forward migration | The first action requiring a second approver | Phase 3 |
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
+| **No output scrubber for text the platform does not control.** A secret held only in a local and passed straight to a log call, or one inside a third-party library's message, is not covered | The field and accessor rules cover what a type *stores*; a transient value has no declaration to inspect. Closing it needs a logging facade accepting only declared-safe arguments, which changes every log statement - disproportionate against eight of them | **Low today, and it grows with the codebase.** Nothing in Phase 0 handles a credential; the risk arrives with Phase 1's authentication. A scrubber is a deny-list and must never be mistaken for the control | A business module logging real flows | Phase 1 |
+| **The scrape endpoint widens the unauthenticated surface to three.** `/actuator/prometheus` joins health and info | `DOD-OBS` requires the dashboard to render live data from a running instance, which needs a scrape endpoint, and there is no authentication anywhere yet | A scrape publishes JVM internals, HTTP route templates and pool statistics - a description of the running system rather than its secrets. The **content** is constrained by a build failure: no tag may carry a request-influenced value | `P0-EPIC-10` landing | Phase 0, M0.4 |
 | **The operational endpoints are unauthenticated.** `/actuator/health/*` and `/actuator/info` are reachable by anyone who can reach the port | `DOD-API` requires a negative authentication test for every new surface, and there is no authentication anywhere in the platform yet - `P0-EPIC-10` is the epic that brings it. Building one authentication mechanism for the actuator alone would be a second scheme to retire | **Low, and bounded by what is published.** The bodies are pinned by exact-match test to a status and, for the aggregate, its group names; details, components, environment, JVM and OS are all off, and twelve other endpoints are proven absent. What remains is that an unauthenticated caller can learn the instance is up and which build it runs | `P0-EPIC-10` landing, at which point `show-details: when-authorized` also becomes available | Phase 0, M0.4 |
 | **Connection-pool sizing is not reasoned about across instances.** Hikari's default is 10 connections per instance | Nothing uses the pool for anything but a health check, so any number chosen now would be a guess. Sizing needs a workload | **None today, real at Phase 3.** Ten instances at the default exhaust PostgreSQL's default `max_connections` of 100 on their own, before any connection is used for work. The failure mode is instances failing readiness for pool exhaustion rather than for anything wrong with the database - and `ADR-0014` says N is never 1, so this is arithmetic that has to be done before the ledger, not after | The first module that actually uses the pool | Phase 3 |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
@@ -688,15 +716,15 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-029` - Metrics and dashboards**, continuing `P0-EPIC-09`.
+**`P0-TST-008` - Log redaction test**, the last item in `P0-EPIC-09`.
 
-Two debts come due with it, both recorded since `P0-TSK-020` and `-021`: `RelayPollResult` and the
-inbox outcomes are returned and aggregated nowhere, so a stalled aggregate and a rising duplicate
-rate are visible only by reading logs - detection by reading rather than by alerting. ADR-0005
-names outbox depth, age and relay lag as first-class monitored metrics.
+Check before writing: its criterion - "test fails if a sensitive field is added without redaction" -
+is what `secretsAreWrapped` already does. `P0-TST-002` and `P0-TST-007` were both largely satisfied
+on arrival, and `P0-TST-007` found its criterion **false** for a case nobody had considered, which
+is the argument for checking rather than assuming either way.
 
-`P0-EPIC-09` then finishes with `P0-TSK-030` (structured logging with redaction, the highest-risk
-task in the epic) and `P0-TST-008`. `P0-EPIC-10` (security baseline) closes M0.4.
+Closing it closes `P0-EPIC-09`, leaving `P0-EPIC-10` (security baseline, 8 tasks) as the last of
+M0.4.
 
 ---
 
@@ -704,6 +732,9 @@ task in the epic) and `P0-TST-008`. `P0-EPIC-10` (security baseline) closes M0.4
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | `P0-TSK-030` complete - the only Phase 0 task the backlog marks **High risk**. `INV-AUD-02` is the one invariant that specifies its own enforcement, *default-deny redaction*, and the decision that follows is that **default-deny is a property of the rule, not of the wrapper**: a wrapper people must remember is opt-in with extra steps. `secretsAreWrapped` fails the build on any field or no-argument accessor whose name says it holds a secret unless it is `Sensitive<?>`. The accident being closed is Java's own - a record generates a `toString()` printing every component, so `log.info("authenticating {}", credentials)` prints the password with no getter, no concatenation, and nothing a reviewer stops at. **Accessors as well as fields**, because a serialiser reads accessors and a private `pw` behind a `getPassword()` escaped the first version of the rule entirely. The vocabulary is narrow on purpose and `key` is not in it: an idempotency key is not a secret, and a rule with false positives is a rule somebody turns off. `equals` is identity-based, because value equality would let the wrapper answer whether a guess is right. **Review found the invariant half-covered**: it names logs, event payloads *and API responses*, and only logs were tested. Jackson turned out to decline revealing a `Sensitive` by **accident** - no properties, so `{}` - the same shape as the `"correlationId":{}` defect already hit here, and one that ends silently when somebody adds a getter; masking is now stated by a serialiser in `app` and asserted against a type that *has* an accessor. ECS JSON everywhere including locally, since an encoder nobody runs locally is an encoder whose defects nobody sees. Verified on a running instance: JSON on real stdout, a client-supplied correlation id as a queryable field, and the database password absent even from a logged authentication failure. ADR-0019 recorded. 415 hermetic tests, 165 database tests. |
+| 2026-09-02 | Task completion review of `P0-TSK-029`. One important finding, and it is the gap the task's own worst defect should have suggested: **nothing checked that the dashboard's queries name series the application actually publishes**. A dashboard querying a series that does not exist does not fail - it renders "No data" on every panel and looks exactly like a quiet system, which during an incident is the worst way to be wrong. That is not hypothetical: `baseUnit("events")` had already made the published name diverge from the queried one, and it took looking at a browser to notice. `DashboardQueriesResolveTest` now resolves every `expr` against a live registry, and the dashboard is a declared build input - the sixth such line. **Writing it found two more things, both by failing.** `hikaricp_*` exists only once the pool has actually initialised: with the datasource at a closed port there is no pool and only the generic `jdbc_connections_*`, so the guard has to run against a real database - which means it checks what the dashboard will really face. And `http_server_requests_*` is registered when the first request is served rather than at startup, so the test serves one first; asserting before that would have reported a dashboard error that does not exist. The PromQL parser errs deliberately towards treating an unknown token AS a series, because a false failure is visible and fixable while the other direction silently stops checking whichever query it misparsed. Three mutations, all caught: a dashboard querying a missing series, a renamed metric with the dashboard untouched, and a drifted Grafana pin. 407 hermetic tests, 165 database tests. |
+| 2026-09-02 | `P0-TSK-029` complete. Prometheus metrics, a naming convention enforced against the **live registry** rather than a written list, and a Grafana dashboard **verified rendering live data in a browser** - `finapp_outbox_pending` reading 1 against exactly one unpublished row. A metric name is a contract that outlives the code: every alert rule and runbook written against it lives outside this repository, so it is enforced by the build before there are twenty-four modules to reconcile. **No tag value may come from a request**, which is a security rule as much as an operational one - an identifier in a tag multiplies one series into thousands and puts it in a system with months of retention (`INV-AUD-02`) - and **correlation is deliberately kept off metrics**, the one concern where it must be kept out. **Outbox depth and age are gauges over the database, not counters from the relay**: a relay-side counter reports nothing when the relay is down, which is exactly the incident worth seeing. An unreadable backlog reports NaN rather than zero, because a zero silences the alert that should fire. **Two defects no test caught**, both found by scraping a running instance: the gauges were structurally always NaN, because the cache compared `nanoTime()` against a `Long.MIN_VALUE` sentinel and the subtraction overflows - two tests were green over it, one asserting NaN when the database is *absent*, which an always-NaN gauge satisfies perfectly; and `baseUnit("events")` renamed the published series to one no dashboard queried, hidden by a substring assertion. **Two architecture rules fired and both improved the design**: `INV-MON-01` caught floating point twice - `OutboxBacklog` was fixed by casting to `bigint`, while `OutboxMetrics` took the first two entries in an exemption set empty since `P0-TSK-008`, because Micrometer's `Gauge` is a `ToDoubleFunction` and a row count cannot reach a monetary path; and the ambient-time rule rejected `nanoTime()`, so the cache uses the injected `Clock`. ADR-0018 recorded. 407 hermetic tests, 163 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-028`. One important finding, and it is a property that was **working by coincidence and asserted nowhere**: a log line emitted inside a request carries `traceId`, `spanId` and `correlationId` together - which is the join that makes any of this usable, and it holds only because two independent mechanisms happen to agree, Boot's log correlation and `CorrelationContext`. Disable either and every log line quietly stops being joinable, with nothing failing. Found by probing the logging context from inside a request rather than from the test thread, where it is empty and says nothing. Now asserted. Three further findings, all mine. **A fabricated exception**: the database span recorded connection failures as `span.error(new IllegalStateException(type))`, attaching a stack trace pointing at the recording line rather than at anything that failed - worse than no stack trace, because it looks like one; replaced with an `error.type` tag. **A bean lookup on every connection acquisition**, in front of every database connection the platform will ever make; memoised. And **the hermetic "every span carries correlation" assertion ran over a set of one**, because liveness produces a single span - a claim that cannot fail for the right reason; it now uses readiness, which reaches for a connection and produces two. Also added the branch nobody had covered: a span started outside any flow must carry **no** correlation, since inventing one would fill a dashboard with identifiers matching nothing in any table. Verified rather than assumed: the recorded spans really do include a real HTTP SERVER span, so the HTTP leg is genuine and not the database span in disguise. 400 hermetic tests, 159 database tests. |
 | 2026-09-02 | `P0-TSK-028` complete; `P0-EPIC-09` opened. **The acceptance criterion could not be met as written and was corrected rather than approximated** - it named HTTP, DB, outbox and consumer, and two of those have no subject: there is no broker adapter and no consumer wiring, so no request can reach either. Same correction `P0-TSK-014` needed, and the legs transfer to the Phase 3 broker adapter. What was delivered: **correlation on every span**, stamped once by a span processor rather than by each component - because "every span" is not a property discipline delivers, and forgetting is silent: the span is recorded, the trace looks complete, and it cannot be found. **A trace id is explicitly not a substitute for a correlation id**: it is subject to sampling, so a sampled-out flow would be unfindable from the only value a customer holds, and it is absent from every table. HTTP and database proven in one connected trace against a live PostgreSQL, with the database span a **child** of the request - a flat list sharing a trace id cannot answer what a connection was acquired for. **No JDBC tracing library and no statement text**: SQL on a span would carry amounts and account identifiers into a backend with different retention and access control (`INV-AUD-02`), arriving silently the first time somebody writes a query. Three defects found by running it, each producing **no traces and no error**: Boot 4 gates the OTel SDK behind `management.opentelemetry.enabled`, off by default; the auto-configuration module is `@ConditionalOnClass` on the bridge so both are required; and a duplicate `management:` key in YAML stopped every context. Plus one of mine - a javadoc claiming the tracer was resolved lazily while the code resolved it eagerly in a bean post-processor. **The correlation sink guard fired for the sixth time**, on the sink it was built for, closing `P0-TSK-014`'s last clause four tasks and one milestone after it was recorded. ADR-0017 recorded. 398 hermetic tests, 159 database tests. |
 | 2026-09-02 | Task completion review of `P0-DOC-003`. No critical findings; three gaps in the guard, all closed, and the pattern is that a document guard is only as good as the set of claims it thought to check. **The document named error codes and nothing verified they exist**: `ErrorCodeRegistryTest` reconciles the CATALOGUE with the taxonomy, but these were mentions in prose, so renaming a code would have left the conventions telling a client to handle something that can never arrive - the same defect as documenting one that was never added, from the other direction. **The charset check ran one way only**: it caught a character dropped from the document but not the pattern being widened without the document following, which is the direction that rots quietly; now derived from `CorrelationId` by probing every printable character rather than restated. **And the deprecation windows were a second unguarded copy of ADR-0015** - the exact duplication this class refuses to allow for error codes, written by me two sections later; now compared numerically and wording-independently. Nine of nine mutations caught across the two rounds, in both directions. Two claims verified rather than assumed: every response really does carry `X-Correlation-Id`, actuator responses included, which is what the document promises; and the document is genuinely a declared build input - a green run, an edit to the document alone, and the task re-ran and failed. 394 hermetic tests, 156 database tests. |

@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: finapp
+    type: file
+    disableDeletion: true
+    # The dashboard is a reviewed file in git, not state inside a Grafana volume. A dashboard
+    # edited in the UI and never exported is lost the first time the volume is discarded, and
+    # nobody can review a change nobody can see.
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

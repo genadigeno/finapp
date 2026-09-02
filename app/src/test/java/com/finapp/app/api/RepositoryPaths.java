@@ -14,12 +14,12 @@ import java.nio.file.Path;
  * therefore fails in a way that reads as "the document is missing" rather than "the test is
  * misconfigured", which is exactly the wrong diagnosis. Walking upward removes the assumption.
  */
-final class RepositoryPaths {
+public final class RepositoryPaths {
 
     private RepositoryPaths() {}
 
     /** @throws IllegalStateException if the file is nowhere above the working directory */
-    static Path locate(String relativePath) {
+    public static Path locate(String relativePath) {
         Path directory = Path.of("").toAbsolutePath();
         while (directory != null) {
             Path candidate = directory.resolve(relativePath);
@@ -32,7 +32,7 @@ final class RepositoryPaths {
                 "Could not find " + relativePath + " above " + Path.of("").toAbsolutePath());
     }
 
-    static String read(String relativePath) {
+    public static String read(String relativePath) {
         Path path = locate(relativePath);
         try {
             return Files.readString(path, StandardCharsets.UTF_8);

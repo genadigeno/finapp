@@ -551,7 +551,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-OBS`
 
-**P0-TSK-029 — Metrics and dashboards**
+**P0-TSK-029 — Metrics and dashboards** — `COMPLETE` (2026-09-02)
 - Context: platform
 - Description: Prometheus metrics with a naming convention; baseline Grafana dashboard.
 - Why: Metric naming decided late becomes inconsistent across contexts.
@@ -561,7 +561,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-OBS`
 
-**P0-TSK-030 — Structured logging with redaction**
+**P0-TSK-030 — Structured logging with redaction** — `COMPLETE` (2026-09-02)
 - Context: platform / security
 - Description: JSON logging with correlation fields and default-deny redaction for credentials, tokens, PANs and unnecessary PII.
 - Why: `.claude/rules/security.md` — never log credentials, tokens, PANs or unnecessary PII.

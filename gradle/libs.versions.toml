@@ -79,6 +79,12 @@ postgresImage = "18.6"
 kafkaImage = "4.3.1"
 redisImage = "8.10.1"
 
+# Observability infrastructure (P0-TSK-029). Pinned on the same terms as the three above and
+# checked by `verifyInfrastructureVersions`: a dashboard that renders against one Grafana
+# version and not another is exactly the difference the drift check exists to prevent.
+prometheusImage = "v3.14.0"
+grafanaImage = "12.4.10"
+
 [libraries]
 # --- BOM -------------------------------------------------------------------
 # Consumed via platform(). This propagates managed versions to every dependency
@@ -132,6 +138,11 @@ spring-boot-micrometer-tracing-opentelemetry = { module = "org.springframework.b
 # the bridge it backs off entirely, leaving a NOOP Tracer, no SdkTracerProvider, and spans that
 # are recorded into nothing. Nothing fails - there are simply no traces.
 micrometer-tracing-bridge-otel = { module = "io.micrometer:micrometer-tracing-bridge-otel" }
+
+# --- Metrics (P0-TSK-029) ------------------------------------------------------
+# The Prometheus registry. Version from the Spring Boot BOM, like everything else, so the
+# metrics graph stays consistent with the tracing one - both are Micrometer.
+micrometer-registry-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
 # The in-memory span exporter. Test scope: it is how a test asserts what was actually recorded,
 # rather than asserting that a tracing call was made - the same argument as logback's list
 # appender in the correlation tests.

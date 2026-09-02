@@ -68,6 +68,25 @@ text on spans - SQL would carry amounts and account identifiers into a telemetry
 different access control (`INV-AUD-02`). Telemetry is never the record. &rarr;
 [ADR-0017](../adr/ADR-0017-tracing-and-correlation-on-spans.md)
 
+Metric names are a contract that outlives the code: every alert rule, dashboard and runbook written
+against them lives outside this repository, so `finapp.<module>.<noun>` is enforced by the build
+rather than documented. No tag value may come from a request - an identifier in a tag is both a
+cardinality explosion and a disclosure with months of retention, and correlation is the one thing
+deliberately kept off metrics because a metric answers how many, not which one. An unreadable
+metric reports absent, never zero, because a zero silences the alert that should fire. &rarr;
+[ADR-0018](../adr/ADR-0018-metric-naming-and-cardinality.md)
+
+### Sensitive data
+`INV-AUD-02` is the one invariant that specifies its own enforcement - default-deny redaction - and
+that is a property of a build rule, not of a wrapper people must remember. A secret is held in
+`Sensitive<T>`, whose every rendering path is a mask, and the build rejects any field or accessor
+whose name says it holds a secret unless it is wrapped. Accessors as well as fields, because a
+serialiser reads accessors. The vocabulary is narrow on purpose - an idempotency key is not a
+secret - because a rule with false positives is a rule somebody turns off. Masked serialisation is
+stated rather than inherited: Jackson happened not to reveal the value, and accidental safety ends
+the day somebody adds a getter. &rarr;
+[ADR-0019](../adr/ADR-0019-default-deny-redaction.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

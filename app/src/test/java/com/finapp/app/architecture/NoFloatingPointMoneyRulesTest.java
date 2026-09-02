@@ -97,8 +97,31 @@ class NoFloatingPointMoneyRulesTest {
      * Adding an entry is a visible change to the architecture rules and needs the same scrutiny
      * as changing an invariant, which is the point: the alternative is that someone weakens or
      * deletes the rule the first time it is inconvenient.
+     *
+     * <h2>The two entries below, and why they are not the thin end of a wedge</h2>
+     *
+     * <p>{@code P0-TSK-029} added them, and they are the first since this rule was written. The
+     * values are a <strong>count of unpublished outbox rows</strong> and an <strong>age in whole
+     * seconds</strong>. Neither is money, neither is derived from money, and neither can reach a
+     * monetary path: both come from {@code count(*)} and a timestamp difference, and both go to a
+     * metrics registry and nowhere else.
+     *
+     * <p>The {@code double} is <strong>imposed by Micrometer</strong>, whose {@code Gauge} takes a
+     * {@code ToDoubleFunction} — there is no integer gauge to use instead. The alternative to an
+     * exemption was to publish no outbox metrics at all, leaving ADR-0005's named signals
+     * unmonitored and the recorded debt unpaid.
+     *
+     * <p><strong>What was NOT exempted.</strong> The same rule also failed on {@code
+     * OutboxBacklog}, which read the age as a {@code double} and floored it. That was fixed rather
+     * than exempted — the SQL now casts to {@code bigint} — because there the floating point was
+     * avoidable, and "it is only a metric" is exactly the reasoning that spreads the habit to
+     * something that is not. An exemption is for what the platform cannot control, never a
+     * shortcut past what it can.
      */
-    private static final Set<String> EXEMPT_CLASSES = Set.of();
+    private static final Set<String> EXEMPT_CLASSES =
+            Set.of(
+                    "com.finapp.app.telemetry.OutboxMetrics",
+                    "com.finapp.app.telemetry.OutboxMetrics$Cached");
 
     // ---------------------------------------------------------------------
     // Guard: the rules must actually see the code they claim to protect.

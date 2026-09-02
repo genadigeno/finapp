@@ -44,6 +44,27 @@ spring:
         ApplicationName: finapp
 
 # ---------------------------------------------------------------------------
+# Logging (P0-TSK-030).
+#
+# ECS JSON on the console, in every environment including a developer's machine. Human-readable
+# locally and JSON in production is the class of difference this project rejects elsewhere for the
+# same reason: a redaction defect that only manifests in the encoder a deployment uses would be
+# invisible to everyone who never runs that encoder. compose.yaml pins the same images as the
+# tests on exactly this argument.
+#
+# Correlation reaches a log line through the MDC, which the ECS format lifts into the document -
+# so `correlationId`, `traceId` and `spanId` are queryable fields rather than text inside a
+# message. That is what makes a log line joinable to a trace and to the durable record.
+#
+# To read logs by eye locally, override on the command line rather than editing this file:
+#   ./gradlew :app:bootRun --args='--logging.structured.format.console='
+# ---------------------------------------------------------------------------
+logging:
+  structured:
+    format:
+      console: ecs
+
+# ---------------------------------------------------------------------------
 # Tracing (P0-TSK-028).
 #
 # No exporter endpoint is configured here. Where traces are sent is a deployment decision, not a
@@ -59,6 +80,17 @@ management:
   # probes are: behaviour that differs between environments is behaviour nobody can rely on.
   opentelemetry:
     enabled: true
+
+  # Metrics (P0-TSK-029).
+  #
+  # No `common-tags` for instance or host. An instance identifier is exactly the unbounded tag
+  # value MetricNames forbids: in a fleet that scales, every replica multiplies every series, and
+  # Prometheus already attaches the target it scraped. Which instance a sample came from is the
+  # scraper's question, not ours.
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 
   tracing:
     sampling:
@@ -84,7 +116,14 @@ management:
         # being served. A heap dump is every secret the process has ever held; /env is the
         # configuration; /beans is a map of the application. Naming the two that are wanted
         # means a third arrives only by someone editing this line.
-        include: health,info
+        # `prometheus` joins the allow-list here, and it is a deliberate widening of an
+        # unauthenticated surface rather than a routine addition. A scrape publishes JVM
+        # internals, HTTP route templates and pool statistics - not secrets, but a description of
+        # the running system. Two things make it acceptable, and both are conditions rather than
+        # opinions: the CONTENT is controlled, because MetricNames forbids any tag whose value a
+        # request can influence and MetricConventionTest fails the build on one; and the exposure
+        # is recorded as debt owned by P0-EPIC-10, alongside health and info.
+        include: health,info,prometheus
 
   endpoint:
     health:

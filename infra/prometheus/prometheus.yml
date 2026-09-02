@@ -1,0 +1,25 @@
+# Local development scrape configuration.
+#
+# Scrapes the application running on the HOST, not in this compose project: the application is
+# started from Gradle or an IDE during development, and a Prometheus that could only see a
+# containerised build would be monitoring something nobody runs.
+#
+# SECURITY: this whole stack is local-development-only, bound to loopback. Nothing here
+# establishes a pattern for production - where the scrape endpoint sits behind network policy
+# and P0-EPIC-10's authentication, which is recorded as debt.
+
+global:
+  # Short, deliberately. A developer changing something wants to see it within a few seconds;
+  # this interval is not a proposal for production, where it is a cost-and-resolution trade.
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: finapp
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          # A LABEL, not a metric tag. Which target a sample came from is the scraper's question,
+          # which is exactly why MetricNames forbids the application from tagging it itself.
+          env: local

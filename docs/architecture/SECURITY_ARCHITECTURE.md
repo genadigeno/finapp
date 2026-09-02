@@ -25,6 +25,26 @@ Controls to consider:
 - privileged-access controls
 - rate limits / abuse controls
 
+## Logging
+
+Logs are ECS JSON in every environment, including a developer's machine (`P0-TSK-030`, ADR-0019).
+Human-readable locally and JSON in production would mean the encoder that matters is the one nobody
+tests, and a redaction defect living in it would be invisible to everyone who never runs it.
+
+`correlationId`, `traceId` and `spanId` are queryable fields lifted from the MDC, so a log line
+joins to its trace and to the durable record.
+
+**A secret cannot be stored in a type that would print it.** `Sensitive<T>` masks on every
+rendering path, and `secretsAreWrapped` fails the build on any field or no-argument accessor whose
+name says it holds a secret unless it is wrapped. This is `INV-AUD-02`'s own prescribed
+enforcement - default-deny - rather than an annotate-the-sensitive-fields scheme that fails on the
+field somebody forgot.
+
+**What it does not cover**, stated so it is not mistaken for total coverage: a secret held only in
+a local variable and passed straight to a log call has no declaration to inspect. An output
+scrubber would net some of those and is recorded as debt; it is a deny-list and must never be
+mistaken for the control.
+
 ## Operational endpoints
 
 The actuator is an allow-list, not a default (`P0-TSK-027`, ADR-0016). Only `health` and `info`

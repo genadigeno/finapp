@@ -81,6 +81,16 @@ class CorrelationSinkCoverageTest {
                     // since it is subject to sampling and a sampled-out trace leaves the customer
                     // holding an identifier that matches nothing.
                     "telemetry",
+                    // NOT a sink, and emphatically so - the one concern where correlation must be
+                    // kept out rather than carried in. A metric tag whose value a request can
+                    // influence multiplies one time series into as many as there are requests,
+                    // until the metrics backend falls over and takes the ability to observe the
+                    // incident with it; and it is a disclosure into a system with different
+                    // access control and months of retention (INV-AUD-02). A metric answers how
+                    // many, how long and how often - never which one. Correlation belongs on a
+                    // trace and in a log, both of which are per-event and searchable.
+                    // MetricConventionTest enforces this against the live registry.
+                    "metrics",
                     // Not a sink. MoneyColumns is a persistence convention with no flow of its
                     // own; correlation reaches the tables that use it, not the convention.
                     "money");

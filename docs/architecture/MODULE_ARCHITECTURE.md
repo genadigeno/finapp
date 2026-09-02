@@ -705,6 +705,35 @@ arrives with the adapter — with the dependency, the wire format and the topic 
 rather than in advance of it, which keeps the list at exactly the modules that have actually
 taken the privilege.
 
+### Secrets cannot be held in a field that would print itself
+
+`INV-AUD-02` does not merely forbid credentials in logs; it specifies the enforcement as
+**default-deny redaction**. The usual approach is the opposite - annotate the sensitive fields -
+and it fails the first time somebody adds a field without thinking about it, which is every time
+somebody is in a hurry.
+
+The accident is Java's own. A record generates a `toString()` printing every component, so
+`log.info("authenticating {}", credentials)` prints the password with no getter call, no
+concatenation, and nothing a reviewer would stop at.
+
+- No production class declares a field, or a no-argument accessor, whose **name** says it holds a
+  secret unless the type is `Sensitive<?>`. Accessors are checked as well as fields because a
+  serialiser reads accessors: a private `pw` behind a `getPassword()` is invisible to a
+  field-only rule and is exactly what Jackson and a record's `toString` reach for.
+  *(ArchUnit: `secretsAreWrapped`)*
+
+The vocabulary is **narrow on purpose**, and `key` is not in it. An idempotency key is not a
+secret - `API_CONVENTIONS.md` §6 says so, and it is recorded on the audit record deliberately. A
+rule that flagged `idempotencyKey` is a rule somebody turns off, and a rule that is off protects
+nothing. Matching is on camel-case word boundaries, so `companyName` is not a PAN and `spinLock`
+is not a PIN.
+
+**What it does not catch**, stated so it is not mistaken for total coverage: a secret held only in
+a local variable and passed straight to a log call. The field and accessor rules cover values a
+type *stores*; a transient value has no declaration to inspect. Closing that needs a logging facade
+that only accepts declared-safe arguments, which is a larger change than this task, and is recorded
+as debt.
+
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).
 - **No foreign keys across module schemas.** Referential integrity across contexts is a

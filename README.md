@@ -256,6 +256,34 @@ the application connects as `finapp_app` - never the superuser.
 
 ---
 
+## 5d. Metrics and the dashboard
+
+The application publishes Prometheus metrics at `/actuator/prometheus`. Names follow
+`finapp.<module>.<noun>` and the build fails if one does not (ADR-0018).
+
+To see the dashboard:
+
+```bash
+docker compose up -d prometheus grafana
+```
+
+Then run the application and open <http://localhost:3000/d/finapp-platform>. Grafana is
+provisioned from `infra/grafana/` - the datasource and the dashboard are files in git, not state
+in a volume, so `allowUiUpdates` is off: edit the JSON, not the UI.
+
+Prometheus scrapes the application on the **host**, not in a container, because that is where a
+developer runs it.
+
+**A metric never carries a correlation identifier, an account, or anything else a request can
+influence.** That is both a cardinality rule and a security rule - a tag value from a request
+multiplies one series into thousands and puts it in a system with months of retention. Correlation
+belongs on a trace and in a log.
+
+**An unreadable metric reports absent, not zero.** Stop PostgreSQL and `finapp_outbox_pending`
+becomes `NaN` rather than `0`, so an alert written on the value still fires.
+
+---
+
 ## 6. What CI checks
 
 Four independent jobs, so a failure names its own gate

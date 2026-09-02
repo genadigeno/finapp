@@ -143,7 +143,69 @@ services:
       retries: 12
       start_period: 5s
 
+  # --- Observability (P0-TSK-029) -------------------------------------------
+  #
+  # Local development only, on loopback like everything else here. These two exist so the
+  # dashboard can be verified against a RUNNING instance rather than asserted - which is what
+  # DOD-OBS asks for, and the one part of a dashboard that cannot be unit tested.
+  #
+  # They scrape the application running on the HOST, not a container: the application is started
+  # from Gradle during development, and monitoring a build nobody runs would prove nothing.
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      # Short retention. This is a developer's laptop, not a monitoring system.
+      - --storage.tsdb.retention.time=6h
+      - --web.enable-lifecycle
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      # Linux does not resolve host.docker.internal by default; Docker Desktop does. Declaring it
+      # makes the scrape target work the same way on both.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  grafana:
+    image: grafana/grafana:12.4.10
+    environment:
+      # ANONYMOUS ACCESS, deliberately, and local-only. A password here would be a committed
+      # credential for a service reachable from nowhere but this machine; the loopback binding is
+      # the control. P0-TSK-031 owns real credential handling, and nothing here is a pattern for
+      # a deployed Grafana.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_USERS_DEFAULT_THEME: dark
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
 volumes:
+  prometheus-data:
+  grafana-data:
   # Named rather than anonymous, so `docker compose down` keeps data and
   # `docker compose down -v` is the explicit, deliberate way to discard it.
   postgres-data:

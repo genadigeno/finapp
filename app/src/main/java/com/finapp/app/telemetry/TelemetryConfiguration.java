@@ -1,6 +1,9 @@
 package com.finapp.app.telemetry;
 
+import com.finapp.platform.outbox.OutboxBacklog;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.tracing.Tracer;
+import java.time.Clock;
 import io.opentelemetry.sdk.trace.SpanProcessor;
 import javax.sql.DataSource;
 import org.springframework.beans.BeansException;
@@ -29,6 +32,24 @@ class TelemetryConfiguration {
     @Bean
     SpanProcessor correlationSpanProcessor() {
         return new CorrelationSpanProcessor();
+    }
+
+    /**
+     * The outbox backlog, as gauges (`P0-TSK-029`, paying down the debt `P0-TSK-020` recorded).
+     *
+     * <p>Reads through the application's own {@code DataSource}, so it measures what the
+     * application can actually see - and so it goes through the traced wrapper and the pool the
+     * rest of the platform uses, rather than opening a private connection that would report health
+     * the application does not have.
+     *
+     * <p>Depth and age only. Relay throughput, failure and dead-letter counts come from
+     * {@code RelayPollResult} and need a relay to be running; nothing schedules one yet, so
+     * recording them here would produce meters that are structurally always zero - which reads as
+     * "nothing is failing" rather than "nothing is running". Recorded as debt rather than faked.
+     */
+    @Bean
+    OutboxMetrics outboxMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
+        return new OutboxMetrics(new OutboxBacklog(dataSource::getConnection), clock, registry);
     }
 
     /**

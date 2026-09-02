@@ -71,6 +71,10 @@ dependencies {
     implementation(libs.spring.boot.micrometer.tracing.opentelemetry)
     implementation(libs.micrometer.tracing.bridge.otel)
 
+    // Prometheus metrics (P0-TSK-029). The registry is the implementation; `platform` records
+    // through Micrometer's MeterRegistry facade, the same split as slf4j and the tracer.
+    implementation(libs.micrometer.registry.prometheus)
+
     // The first HTTP surface (P0-TSK-024, M0.4). app is where it belongs: MODULE_ARCHITECTURE.md
     // §M10 puts routing, content negotiation and error rendering here, and the error CONTRACT -
     // the codes and the problem-detail shape - in platform, which stays framework-free because a
@@ -200,5 +204,14 @@ tasks.test {
     // and the build green.
     inputs.files(rootProject.layout.projectDirectory.file("docs/architecture/API_CONVENTIONS.md"))
         .withPropertyName("apiConventionsDocument")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The sixth. DashboardQueriesResolveTest reads the committed Grafana dashboard and asserts
+    // every series it queries is one the application actually publishes - the check that would
+    // have caught a renamed metric silently turning every panel into "No data", which is how a
+    // dashboard lies during an incident. Undeclared, editing the dashboard would leave the task
+    // UP-TO-DATE and the build green over a query nothing had resolved.
+    inputs.files(rootProject.layout.projectDirectory.file("infra/grafana/dashboards/finapp-platform.json"))
+        .withPropertyName("grafanaDashboard")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }

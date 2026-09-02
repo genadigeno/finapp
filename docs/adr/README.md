@@ -10,7 +10,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 - **An accepted ADR is never edited to change its decision.** A changed decision is a new ADR
   that supersedes the old one; the old one is marked `Superseded by ADR-NNNN`.
 - Status: `Proposed` → `Accepted` → `Superseded`.
-- ADR-0001 through ADR-0017 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
+- ADR-0001 through ADR-0019 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
   once the decisions have been validated by implementation rather than only by argument.
 - A decision found in code but absent from this record is architectural debt.
 
@@ -35,6 +35,8 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0015](ADR-0015-api-versioning-and-contract-publication.md) | API versioning in the path, with the contract generated and compared on every build | Proposed | 0 | API evolution |
 | [0016](ADR-0016-health-liveness-and-readiness.md) | Liveness and readiness answer different questions, and only readiness consults dependencies | Proposed | 0 | Operability |
 | [0017](ADR-0017-tracing-and-correlation-on-spans.md) | Correlation is carried on spans; a trace identifier never replaces it | Proposed | 0 | Observability |
+| [0018](ADR-0018-metric-naming-and-cardinality.md) | Metric names are a contract, and no tag value may come from a request | Proposed | 0 | Observability |
+| [0019](ADR-0019-default-deny-redaction.md) | A secret is unloggable by default, not redacted by remembering | Proposed | 0 | Security |
 
 ## Anticipated ADRs
 

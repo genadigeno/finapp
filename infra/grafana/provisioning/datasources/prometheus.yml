@@ -1,0 +1,12 @@
+# Provisioned rather than clicked. A dashboard that only renders after somebody remembers a
+# manual setup step is a dashboard that is broken for the next person.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    uid: finapp-prometheus
+    editable: false
