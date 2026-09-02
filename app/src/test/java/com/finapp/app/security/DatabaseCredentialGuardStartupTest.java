@@ -53,6 +53,41 @@ class DatabaseCredentialGuardStartupTest {
     }
 
     @Test
+    @DisplayName("the transport guard is wired too, and refuses a remote database in the clear")
+    void transportGuardIsWired() {
+        // TransportSecurityGuardTest proves the decision; this proves it is reached. A supplied
+        // password is set so the CREDENTIAL guard passes and the refusal can only come from the
+        // transport one - otherwise this test would pass on the wrong control, which is how a
+        // control gets deleted without anything failing.
+        assertThatThrownBy(
+                        () ->
+                                new SpringApplicationBuilder(FinappApplication.class)
+                                        .web(WebApplicationType.NONE)
+                                        .run(
+                                                "--spring.datasource.url=jdbc:postgresql://db.internal:5432/x",
+                                                "--spring.datasource.password=supplied-by-the-deployment"))
+                .rootCause()
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("connects unencrypted");
+    }
+
+    @Test
+    @DisplayName("a remote database with verify-full starts, so the guard is satisfiable in situ")
+    void verifyFullStartsTheApplication() {
+        // The positive control at the wiring level. Without it, transportGuardIsWired would pass
+        // against a guard that refused every remote database unconditionally.
+        try (ConfigurableApplicationContext context =
+                new SpringApplicationBuilder(FinappApplication.class)
+                        .web(WebApplicationType.NONE)
+                        .run(
+                                "--spring.datasource.url=jdbc:postgresql://db.internal:5432/x",
+                                "--spring.datasource.password=supplied-by-the-deployment",
+                                "--spring.datasource.hikari.data-source-properties.sslmode=verify-full")) {
+            assertThat(context.getBean(TransportSecurityGuard.class)).isNotNull();
+        }
+    }
+
+    @Test
     @DisplayName("and starts against a local one, so the refusal above is not simply a broken app")
     void startupSucceedsLocally() {
         // The positive control. Without it, the assertion above passes for any reason the context

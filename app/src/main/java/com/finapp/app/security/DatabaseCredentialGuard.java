@@ -1,10 +1,6 @@
 package com.finapp.app.security;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
-import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -90,40 +86,15 @@ public class DatabaseCredentialGuard {
     static final String REQUIRED_ENVIRONMENT_VARIABLE = "FINAPP_DB_APP_PASSWORD";
 
     DatabaseCredentialGuard(Environment environment) {
-        verify(effectiveUrl(environment), effectivePassword(environment));
+        verify(DatabaseEndpoint.url(environment), DatabaseEndpoint.password(environment));
     }
 
-    /**
-     * What the pool will <strong>actually</strong> connect to.
-     *
-     * <p>The first version read {@code spring.datasource.url} alone, and that was a real bypass
-     * rather than a theoretical one - proven by starting the application with
-     * {@code spring.datasource.hikari.jdbc-url} pointing at a remote host while
-     * {@code spring.datasource.url} stayed on loopback. It started, and the pool's own
-     * {@code jdbcUrl} was the remote one. Hikari's properties are bound after the generic ones and
-     * win, so a guard reading only the generic pair inspects a value nothing connects with.
-     *
-     * <p>{@code Binder} rather than {@code getProperty}, because Boot's relaxed binding means
-     * {@code jdbc-url}, {@code jdbcUrl} and {@code JDBC_URL} are the same property, and a literal
-     * lookup would find only whichever spelling was used.
-     */
-    private static String effectiveUrl(Environment environment) {
-        return hikari(environment, "jdbc-url")
-                .orElseGet(() -> environment.getProperty("spring.datasource.url"));
-    }
-
-    private static String effectivePassword(Environment environment) {
-        return hikari(environment, "password")
-                .orElseGet(() -> environment.getProperty("spring.datasource.password"));
-    }
-
-    private static Optional<String> hikari(Environment environment, String property) {
-        return Optional.ofNullable(
-                        Binder.get(environment)
-                                .bind("spring.datasource.hikari." + property, String.class)
-                                .orElse(null))
-                .filter(value -> !value.isBlank());
-    }
+    // The effective-URL and effective-password lookups, and the host parsing below, moved to
+    // DatabaseEndpoint when TransportSecurityGuard needed the same "is this on this machine?"
+    // predicate. Two copies of that would drift, and this repository has found drift between
+    // duplicated definitions often enough to treat it as the default outcome. The reasoning that
+    // was here - Hikari's own properties are bound afterwards and win, so a guard reading only
+    // the generic pair inspects a value nothing connects with - lives there with the code.
 
     /**
      * @throws IllegalStateException if the marked local default is aimed off this machine
@@ -135,7 +106,7 @@ public class DatabaseCredentialGuard {
             return;
         }
 
-        List<String> hosts = hostsOf(jdbcUrl);
+        List<String> hosts = DatabaseEndpoint.hostsOf(jdbcUrl);
         if (hosts.isEmpty()) {
             throw new IllegalStateException(
                     "Refusing to start: the marked local-development database credential is in use,"
@@ -145,7 +116,7 @@ public class DatabaseCredentialGuard {
                             + ". See docs/architecture/SECRET_MANAGEMENT.md.");
         }
 
-        List<String> remote = hosts.stream().filter(host -> !isLoopback(host)).toList();
+        List<String> remote = hosts.stream().filter(host -> !DatabaseEndpoint.isLoopback(host)).toList();
         if (!remote.isEmpty()) {
             throw new IllegalStateException(
                     "Refusing to start: the marked local-development database credential is in use"
@@ -158,60 +129,4 @@ public class DatabaseCredentialGuard {
         }
     }
 
-    /**
-     * Every host in a JDBC URL, because PostgreSQL accepts a comma-separated list for failover and
-     * checking only the first would let the second be anywhere at all.
-     */
-    static List<String> hostsOf(String jdbcUrl) {
-        List<String> hosts = new ArrayList<>();
-        if (jdbcUrl == null) {
-            return hosts;
-        }
-        int authorityStart = jdbcUrl.indexOf("//");
-        if (authorityStart < 0) {
-            return hosts;
-        }
-        String rest = jdbcUrl.substring(authorityStart + 2);
-        int end = rest.length();
-        for (int i = 0; i < rest.length(); i++) {
-            char c = rest.charAt(i);
-            if (c == '/' || c == '?' || c == ';') {
-                end = i;
-                break;
-            }
-        }
-        String authority = rest.substring(0, end);
-        // user:pass@host - the credential form of a URL. Discarded, never parsed.
-        int at = authority.lastIndexOf('@');
-        if (at >= 0) {
-            authority = authority.substring(at + 1);
-        }
-        for (String candidate : authority.split(",")) {
-            String host = stripPort(candidate.trim());
-            if (!host.isEmpty()) {
-                hosts.add(host);
-            }
-        }
-        return hosts;
-    }
-
-    private static String stripPort(String hostAndPort) {
-        if (hostAndPort.startsWith("[")) {
-            // IPv6 literal: the colons inside the brackets are part of the address.
-            int close = hostAndPort.indexOf(']');
-            return close < 0 ? hostAndPort : hostAndPort.substring(1, close);
-        }
-        int colon = hostAndPort.indexOf(':');
-        return colon < 0 ? hostAndPort : hostAndPort.substring(0, colon);
-    }
-
-    /** No DNS lookup: resolution is not this guard's to trust, and it must not block startup. */
-    static boolean isLoopback(String host) {
-        String lower = host.toLowerCase(Locale.ROOT);
-        if (lower.equals("localhost") || lower.equals("::1") || lower.equals("0:0:0:0:0:0:0:1")) {
-            return true;
-        }
-        // The whole 127.0.0.0/8 block, not 127.0.0.1 alone.
-        return lower.matches("127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}");
-    }
 }

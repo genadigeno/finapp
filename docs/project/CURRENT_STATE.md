@@ -55,54 +55,59 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-034` - Transport and at-rest encryption baseline**
+**`P0-TSK-041` - Architecture rule for single-instance assumptions**
 Status: `READY` - not started.
 
-Bounded context: platform / security. Depends on `P0-TSK-003` (`COMPLETE`).
+Bounded context: platform / architecture. Depends on `P0-TSK-007` and ADR-0014, both `COMPLETE`.
 **Risk: Medium.**
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-SEC`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-ARCH`.
 
 ### Just completed
 
-**`P0-TSK-033` - Data classification scheme** - `COMPLETE` (2026-09-02).
+**`P0-TSK-034` - Transport and at-rest encryption baseline** - `COMPLETE` (2026-09-02).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Scheme documented | [`DATA_CLASSIFICATION.md`](../architecture/DATA_CLASSIFICATION.md): five levels, handling rules per level, all 46 platform columns registered |
-| Referenced by later data-model tasks | `ColumnClassificationTest` compares the register against the **live schema** in both directions, so a migration adding an unclassified column fails the build - proven with a planted `customer_email` |
+| Documented | `SECURITY_ARCHITECTURE.md` §Transport encryption and §Encryption at rest: per-hop expectations, each labelled implemented or deferred with an owning phase |
+| Local setup does not normalise insecure defaults | `TransportSecurityGuard` refuses to start when a non-loopback database would be reached without `sslmode=verify-full` |
 
-**Phase 0 holds no customer data, no money and no credentials - which is exactly why the scheme is
-written now.** A column's classification cannot be added later: by the time it holds data, the
-handling it was given for its whole life is already settled and may be in a log aggregator, an
-event stream or a backup. Reclassifying is not a schema change, it is an admission the previous
-handling was wrong. Same argument ADR-0010 makes for actor attribution and `INV-HIST-01` for
-financial history - the decision precedes the first row.
+**The insecure default was the driver's own, and it was measured rather than assumed.** Against the
+local container, which runs `ssl = off`:
 
-So every column is classified at its **ceiling**, not at its current content. `audit_record.actor_id`
-is `RESTRICTED-PII` although it currently contains the literal `system`, because from Phase 1 it is
-a person's identity-provider subject and there is no later moment at which changing the answer is
-safe.
+| `sslmode` | Result |
+|---|---|
+| unset | connects, **unencrypted**, silently |
+| `prefer` | connects, **unencrypted**, silently |
+| `require` | refused |
+| `verify-full` | refused |
 
-**Per column, not per table.** A table mixes levels: the audit record holds an operation code, a
-correlation identifier and a free-text reason. Treating them alike either over-restricts the
-operational fields, which makes people work around the scheme, or under-protects the reason.
+The platform sets no `sslmode`. Locally that is correct - the database is on loopback and the
+container offers no TLS. But it is the same file a deployment inherits, and there it is a plaintext
+connection to a remote database carrying every credential, amount and account identifier in the
+clear, with **nothing reporting it**: the pool connects, readiness returns UP, the logs are quiet.
+`prefer` is the worst available default precisely because it looks like it is trying.
 
-**Handling rules referenced, never restated.** Every rule the levels imply is already enforced -
-redaction (ADR-0019), metric cardinality (ADR-0018), no SQL on spans (ADR-0017), no credential in
-configuration (ADR-0020), audit immutability (ADR-0010). The scheme gathers them under names and
-points at them; a second copy would drift while looking authoritative.
+**`verify-full`, not `require`.** `require` encrypts and verifies nothing - it stops passive
+eavesdropping and not an active attacker presenting their own certificate, which is the threat on
+the path to a financial database. `verify-ca` checks the issuer but not the hostname. Only
+`verify-full` checks both.
 
-**The scheme's weakest point is stated rather than glossed.** Five columns are classified above
-their current content because what they hold is decided by a caller rather than by a type -
-`reason`, `change_summary`, `response_body`, `payload`, `last_error`. No build rule checks what is
-written into a free-text column. The nearest mechanical control is the output scrubber already
-recorded as debt for Phase 1.
+**Loopback is exempt, deliberately.** A loopback connection does not leave the host, and requiring
+TLS there would mean every developer provisioning certificates for a container - a setup step that
+elaborate is one people work around, which costs more security than it buys. `DOD-BUILD` also
+requires a clean clone to build with no machine-specific setup.
 
-**One defect, caught by its own vacuity guard.** The register parser used `^` without
-`Pattern.MULTILINE`, so it anchored to the start of the whole document and matched **nothing** -
-every assertion would have passed over an empty register and reported a scheme that classified
-nothing. `theRegisterIsActuallyRead` failed immediately, which is what a vacuity guard is for.
+**One finding, from a mutation that survived.** Reading `sslmode` only from the Hikari property and
+ignoring the JDBC URL passed every test - the two sources were combined in a private method no test
+reached. Fixing it raised a better question: which source does the driver actually honour? Measured:
+**the URL wins in both directions** (`url=require, props=disable` refused; `url=disable,
+props=require` connects). Rather than encode that, the guard now requires **every configured source
+to agree**, which cannot be wrong about a driver implementation detail that may change.
+
+**Nothing is encrypted at rest and nothing needs to be yet** - Phase 0 holds no customer data, no
+money and no credentials. Expectations recorded per concern with owning phases, so the absence is a
+decision rather than an oversight.
 
 ---
 
@@ -202,6 +207,21 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Transport and at-rest encryption (2026-09-02), `P0-TSK-034`:
+- `TransportSecurityGuard`: a non-loopback database must be reached with `sslmode=verify-full`, or
+  the application refuses to start
+- Built because the driver's default was measured to **connect unencrypted and report nothing** -
+  the configuration that is correct locally is a plaintext remote connection in a deployment
+- `require` rejected as insufficient: it encrypts and authenticates nothing
+- Every configured source of `sslmode` must agree, so the control does not rest on a driver
+  precedence that was measured and could change
+- `DatabaseEndpoint` extracted, so "is this database on this machine?" has one definition shared
+  with the credential guard
+- Kafka, Redis and inbound HTTP documented rather than guarded - no client exists for the first two
+- At-rest expectations recorded per concern with owning phases; nothing is encrypted today and
+  nothing holds data that needs it
+- ADR-0023 records the reasoning and the four rejected alternatives
 
 Data classification (2026-09-02), `P0-TSK-033`:
 - Five levels, applied **per column at its ceiling** - what a column may ever hold, not what it
@@ -594,7 +614,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-034` is the next task.
+None in progress. `P0-TSK-041` is the next task.
 
 ## Blockers
 
@@ -723,6 +743,7 @@ carries, what triggers paying it down, and the owning phase.
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
+| **Kafka and Redis are plaintext with no enforcement.** The transport guard covers PostgreSQL only | There is no Kafka or Redis client on the classpath, so a guard for those connections would be guarding nothing - the same argument that kept a `Classification` enum out of `P0-TSK-033` | **None today**, because nothing connects to either. The expectations are documented per hop in `SECURITY_ARCHITECTURE.md`, so the gap is a decision rather than an omission; the risk arrives with the first client, which is also when it becomes enforceable | The first Kafka or Redis client | Phase 3 (broker adapter) |
 | **A caller can put personal or financial data into the correlation identifier.** The permitted charset is `[A-Za-z0-9._:@/+=-]` and a well-formed inbound `X-Correlation-Id` is accepted verbatim, so `jane.doe@example.com`, `acct:GB29NWBK60161331926819`, `customer-1990-05-14` and `+447700900123` are all valid - confirmed by probe during `P0-TSK-033` | Accepting a caller's identifier is deliberate and useful: it lets a client join its logs to ours (`P0-TSK-025`). The charset was chosen to be permissive enough for real client identifiers, and nobody asked what else fits through it | **Real, and the widest-reaching disclosure channel in the platform.** The value is written to every log line as a top-level ECS field, stamped on every span, stored in four tables and echoed in the response header and every problem-detail body - so it reaches a telemetry backend with different access control and months of retention, which is exactly what `INV-AUD-02` forbids. Bounded today only by there being no customers | Phase 1, when real callers exist. The fix is to constrain the value - generate our own and carry the caller's separately, or narrow the charset - never to relax the handling, since forbidding correlation in logs would defeat correlation | Phase 1 |
 | **No production code establishes a security scope.** `SecurityContext` exists and nothing calls it | Phase 0 has no request handler performing an auditable action and no module writing an audit record - the three registered platform actions are themselves recorded as not-yet-emitted. A caller wired now would establish a scope around nothing | **None today, and the failure mode is safe by construction.** `require()` refuses rather than defaulting, so the first caller that forgets fails loudly instead of recording the wrong party. The risk is not silent misattribution but a missing call, which is visible the first time it runs | The first audited action, which is the outbox relay emitting its registered actions or Phase 1's authentication | Phase 1 |
 | **The loopback guard covers one credential.** `DatabaseCredentialGuard` knows about the datasource password and nothing else | It is the only credential that exists. A general mechanism - every externalised credential declaring its own marked default and being checked - would be designed against one example, which is how you get an abstraction that fits nothing later | **Low today.** The build rule is already general: any credential-named key in any configuration file is covered, so a second credential cannot arrive as a literal. What it would not get is the loopback confinement, so a second published default could be aimed anywhere | The second credential, which is Phase 1's authentication or Phase 5's provider adapters | Phase 1 |
@@ -775,19 +796,18 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-034` - Transport and at-rest encryption baseline**, the fourth of `P0-EPIC-10`'s eight.
+**`P0-TSK-041` - Architecture rule for single-instance assumptions**, the fifth of `P0-EPIC-10`'s
+eight and the first `DOD-ARCH` task in a while.
 
-TLS and at-rest encryption expectations documented and applied where locally applicable. Its
-acceptance criterion carries the interesting constraint: *local setup does not normalise insecure
-defaults into later environments.* That is a real tension here - `compose.yaml` runs PostgreSQL,
-Kafka and Redis on loopback with no TLS at all, and Kafka's listeners are explicitly `PLAINTEXT`.
-The question is not whether to add TLS locally but whether the absence is recorded as a deliberate
-local-only choice with a named boundary, in the way the marked credential default now is.
+An ArchUnit rule failing the build on the mechanically detectable single-instance patterns -
+`synchronized` methods or blocks, `ReentrantLock`/`Semaphore`, static mutable collections,
+`ScheduledExecutorService` and ambient scheduling - with a named, justified exemption set for the
+non-authoritative uses recorded in `DISTRIBUTED_EXECUTION.md` §3.
 
-`DOD-SEC`, so it needs a negative test for every control and a threat considered rather than a
-feature implemented - which for a documentation-weighted task means deciding what is mechanically
-checkable at all. `P0-TSK-031` found that a documented-only control decays; the same question
-applies here.
+That register is now current: `SecurityContext` was added to it during the `P0-TSK-032` review,
+which is exactly the dependency this task has on it. Worth reading §3 and §4 first - the audit
+recorded there found the codebase mechanically clean, so the rule should pass on arrival, and a
+rule that passes trivially needs its teeth proven especially carefully.
 
 ---
 
@@ -795,6 +815,8 @@ applies here.
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-034`. **No critical findings; one important one, and it is the stale-list defect again.** The five modes the guard treats as insufficient - `disable`, `allow`, `prefer`, `require`, `verify-ca` - happened to be **exactly** the driver's other five, and nothing checked that. A driver upgrade adding a mode would have left it silently unclassified and untested, which is the same failure this repository has met in CI's job list, in an ArchUnit coverage guard and in a privilege check. The set is now derived from the driver's own `SslMode` enum at test time, by reflection because the driver is deliberately runtime-only, with a vacuity assertion so an unresolvable class fails loudly rather than comparing two empty sets. Proven by dropping a mode from the classified set. **Two bypass questions answered by disassembling the driver rather than reasoning**: it reads `sslmode` from **no environment variable** - `PGProperty` consults only the passed `Properties` - so there is no silent override; but a libpq **service file** (`?service=name` with `pg_service.conf`) is a source the application cannot see. That one fails in the safe direction only: a service file setting a weak mode is still refused, and one setting `verify-full` produces a false refusal. Documented rather than closed, because the alternative is trusting a file the application cannot read. Also confirmed `verify-full` is a real driver mode rather than a plausible-looking string, and added the two untested edges - a loopback database stays exempt with a weak mode configured, and both `sslmode` sources are load-bearing. Kafka and Redis remaining unguarded is recorded as debt with the reason that a guard for a connection with no client guards nothing. 515 hermetic tests, 172 database tests. |
+| 2026-09-02 | `P0-TSK-034` complete. The acceptance criterion's second clause - *local setup must not normalise insecure defaults into later environments* - turned out to name a real default, and it belongs to the **driver** rather than to this repository. Measured against the local container: `sslmode` unset and `prefer` both **connect unencrypted and report nothing**, while `require` and `verify-full` are refused. The platform sets no `sslmode`, which is correct locally and, in a deployment, a plaintext connection to a remote database carrying every credential, amount and account identifier in the clear - with the pool connected, readiness UP and the logs quiet. `prefer` is the worst available default precisely because it looks like it is trying. `TransportSecurityGuard` now refuses to start when a non-loopback database would be reached without **`verify-full`** - not `require`, which encrypts and verifies nothing and so stops passive eavesdropping but not an active attacker presenting their own certificate. Loopback is exempt deliberately: a connection that does not leave the host would otherwise cost every developer a certificate for a container, and `DOD-BUILD` requires a clean clone to build with no machine-specific setup. **One mutation survived and led somewhere better**: reading `sslmode` only from the Hikari property and ignoring the JDBC URL passed every test, because the two sources were combined in a private method no test reached. That raised the question of which source the driver honours - measured, **the URL wins in both directions** - and rather than encode a driver implementation detail the guard now requires **every configured source to agree**, which cannot be wrong about a precedence that may change. `DatabaseEndpoint` extracted so "is this database on this machine?" has one definition rather than two that drift. Kafka, Redis and inbound HTTP are documented rather than guarded - there is no client for the first two and the application is never the TLS endpoint - and a guard for a connection that does not exist would be guarding nothing. Nothing is encrypted at rest and nothing holds data that needs it; expectations recorded per concern with owning phases. **Process note:** `git checkout --` failed to revert a mutation in a NEW file, because the file was untracked and the command is a no-op there - caught by re-reading the file rather than trusting the command. Copy-based backup is the only reliable revert for untracked work. ADR-0023 recorded. 513 hermetic tests, 172 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-033`. **One critical finding, and the scheme itself is what produced it.** `correlation_id` was classified `INTERNAL` in four tables on the reasoning that it is operational metadata. Applying the ceiling rule to it exposed that it is **caller-supplied**: the permitted charset is `[A-Za-z0-9._:@/+=-]`, a well-formed inbound `X-Correlation-Id` is accepted verbatim, and `jane.doe@example.com`, `acct:GB29NWBK60161331926819`, `customer-1990-05-14` and `+447700900123` were all confirmed accepted by probe. That value is then written to **every log line** as a top-level ECS field, stamped on **every span**, stored in four tables, and echoed in the response header and every problem-detail body - so a caller can place personal or financial data into a telemetry backend with different access control and months of retention, which is exactly what `INV-AUD-02` forbids and what ADR-0017 and ADR-0018 keep SQL text and request-derived tags off spans and metrics to prevent. **The level stays `INTERNAL` and the value must change**: raising the classification would forbid correlation from appearing in logs, which defeats correlation. Recorded as debt for Phase 1 rather than fixed, since it is `P0-TSK-025`'s ingress behaviour (`EXECUTION_PROTOCOL.md` rule 4). §5 was rewritten around the distinction it had missed - free text whose ceiling is a *handling* rule, versus caller-supplied identifiers whose level is a *requirement on the value*. **One important defect in the guard**: the register parser matched `[a-z_]+`, so a column name containing a digit - `address_line_2`, `iso_4217_code` - could not be classified at all; the row would sit unparsed and the failure would read "this column has no entry" while the entry was right there. It fails safe and diagnoses the wrong thing, and Phase 3 would have met it. Found by planting such a column, fixed, and re-proven in both directions. 489 hermetic tests, 172 database tests. |
 | 2026-09-02 | `P0-TSK-033` complete. A data classification scheme written in the phase that holds **no customer data, no money and no credentials** - which is the point rather than an irony. A column's classification cannot be added later: by the time it holds data the handling it was given for its whole life is already settled, and may be in a log aggregator, an event stream or a backup that cannot be recalled. Reclassifying is not a schema change, it is an admission the previous handling was wrong. So every column is classified at its **ceiling** rather than its current content - `audit_record.actor_id` is `RESTRICTED-PII` although it contains the literal `system` today, because from Phase 1 it is a person's identity-provider subject and there is no later moment at which changing the answer is safe. Same argument ADR-0010 made for actor attribution. **Per column, not per table**, because a table mixes levels and treating them alike either over-restricts the operational fields - which makes people work around the scheme - or under-protects the free-text one. "Referenced by later data-model tasks" is **enforced rather than hoped**: `ColumnClassificationTest` reconciles the register against the live schema in both directions, so Phase 3 cannot land ledger tables unclassified; proven with a planted `customer_email`, a removed register row and an invalid level. Handling rules are **referenced, never restated** - every one is already enforced by redaction, metric cardinality, span content, configuration or audit immutability rules - because a second copy drifts while looking authoritative. **The weak point is named rather than glossed**: five columns hold whatever a caller writes, and no build rule checks that; the nearest control is the Phase 1 output scrubber already recorded as debt. **One defect, caught by its own vacuity guard**: the register parser used `^` without `Pattern.MULTILINE`, so it anchored to the start of the document and matched nothing - every assertion would have passed over an empty register and reported a scheme classifying nothing. ADR-0022 recorded. 489 hermetic tests, 172 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-032`. **Two important findings, both the same shape: this suite deviated from a pattern its four siblings already had.** First, `SystemActorRulesTest` was written **without a coverage guard** - every other rule suite has `everyModuleWithProductionCodeIsAnalysed`, because a rule that sees nothing passes and reports safety it never checked. That is precisely the deviation `P0-TST-008` identified as the mechanism by which a security rule sits behind a green test protecting nothing. Added, and proven by narrowing the sweep to one module. Second, **`SecurityContext` was missing from `DISTRIBUTED_EXECUTION.md` §3**, whose opening line is "every component with state" - it is the platform's second `ThreadLocal`, and `P0-TSK-041` is scheduled to build an ArchUnit rule whose exemption set is *that register*, so an unlisted one would have arrived as either a build failure or an unjustified exemption. Registered as non-authoritative, with the distinction that matters: it carries the acting party, it is never the source of one, and losing it costs the operation rather than correctness because `require()` refuses. **One accuracy fix**: nothing in production establishes a scope, and both the architecture document and the debt table now say so - it is a seam under `EXECUTION_PROTOCOL.md` rule 3, not an unfinished wiring job, and `DEFINITION_OF_DONE.md` §3 forbids documentation describing behaviour that does not exist. Verified rather than assumed: the field rule was probed against five bypass shapes **individually** - a constant captured in a static initialiser, a static import, a lambda, a chained call and a nested class - because one catch in an aggregate probe can mask four misses; `getField` is a bytecode-level GETSTATIC and caught all five. 489 hermetic tests, 168 database tests. |

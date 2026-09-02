@@ -69,6 +69,61 @@ properties. A JVM version is free reconnaissance for anyone matching a CVE to a 
 The application connects to PostgreSQL as `finapp_app`, never the bootstrap superuser, so a
 health check cannot pass on privileges the application would not otherwise hold.
 
+## Transport encryption
+
+The expectations per hop, and what enforces them (`P0-TSK-034`, ADR-0023).
+
+| Hop | Local | Deployed | Enforced by |
+|---|---|---|---|
+| Application to PostgreSQL | plaintext, loopback only | `sslmode=verify-full` | `TransportSecurityGuard` - the application refuses to start otherwise |
+| Application to Kafka | `PLAINTEXT` listeners | TLS with client authentication | *Decided, not yet implemented* - there is no Kafka client on the classpath |
+| Application to Redis | plaintext, no auth | TLS, and a credential | *Decided, not yet implemented* - there is no Redis client |
+| Inbound HTTP | plaintext | TLS terminated at the edge; the application is never the TLS endpoint | *Decided, not yet implemented* - Phase 15, with deployment |
+| Application to a provider | none exist | TLS with certificate verification, never a disabled check | Phase 5, with the first adapter |
+
+**The default this closes.** The PostgreSQL driver's `sslmode` default is `prefer`: it attempts TLS
+and **silently falls back to plaintext**. Measured against this repository's own container, which
+runs `ssl = off` — unset and `prefer` both connected unencrypted with no warning; `require` and
+`verify-full` were refused. The platform sets no `sslmode`, which is correct locally and would be a
+plaintext connection to a remote database in a deployment, with nothing saying so.
+
+That is what the acceptance criterion means by *local setup must not normalise insecure defaults
+into later environments*, and a comment saying "remember to set sslmode" is not a control. The
+control is that a non-loopback database requires `verify-full`.
+
+**Why `verify-full` and not `require`.** `require` encrypts and verifies nothing — it stops passive
+eavesdropping, not an active attacker presenting their own certificate, which is the threat on the
+path to a financial database. `verify-ca` checks the issuer but not the hostname, so it still
+accepts a valid certificate issued for a different host. Only `verify-full` checks both.
+
+**Loopback is exempt, deliberately.** A connection over loopback does not leave the host. Requiring
+TLS there would mean every developer provisioning certificates for a container, and a setup step
+that elaborate is one people work around — which costs more security than it buys.
+
+**What the guard cannot see.** A libpq service file (`?service=name` with `pg_service.conf`) can
+also set `sslmode`, and the application cannot read it. It fails in the safe direction only: a
+service file setting a weak mode is still refused, and one setting `verify-full` produces a false
+refusal. The driver reads `sslmode` from no environment variable, so there is no silent override.
+
+## Encryption at rest
+
+**Nothing in this platform is encrypted at rest today, and nothing in it needs to be yet.** Phase 0
+holds no customer data, no money and no credentials; `DATA_CLASSIFICATION.md` records that no column
+currently carries data above `CONFIDENTIAL`, though several are classified at a higher ceiling for
+the data they will hold.
+
+| Concern | Position | Owning phase |
+|---|---|---|
+| Database volume encryption | An infrastructure property, not an application one. Provisioned with the cluster | Phase 15 |
+| Backups | Encrypted, and the key held separately from the backup. A backup is a copy of the ledger | Phase 15 |
+| Object storage (settlement files, documents) | Server-side encryption, and evidence integrity by checksum (`INV-HIST-02`) | Phase 8 |
+| Column-level encryption or tokenisation | Per classification level, when a column actually carries restricted data. Card data is tokenised at the boundary and never stored (`DECISIONS.md`) | Phase 1 (PII), Phase 5 (cards) |
+| Key management and rotation | A KMS decision, meaningless without keys | Phase 15 |
+
+**The local stack is deliberately unencrypted**, and that is recorded rather than left implicit:
+volumes are plain Docker volumes on a developer's disk. The boundary is that nothing local is a
+pattern for a deployment — the same statement `compose.yaml` makes about its credentials.
+
 ## Who is acting
 
 `SecurityContext` carries the current `Actor` for the executing flow and across thread handoffs

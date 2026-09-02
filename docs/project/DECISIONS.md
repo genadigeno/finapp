@@ -127,6 +127,21 @@ are referenced rather than restated, because a second copy drifts while looking 
 &rarr; [ADR-0022](../adr/ADR-0022-data-classification-at-the-ceiling.md),
 [`DATA_CLASSIFICATION.md`](../architecture/DATA_CLASSIFICATION.md)
 
+### Transport and at-rest encryption
+A database that is not on loopback must be reached with `sslmode=verify-full`, and the application
+refuses to start otherwise. The default being closed is the driver's own: `sslmode` unset or
+`prefer` **connects unencrypted and reports nothing** - measured, not assumed. `require` is not
+enough, because it encrypts and verifies nothing, so it stops passive eavesdropping and not an
+active attacker presenting their own certificate. Loopback is exempt, because a connection that
+does not leave the host would otherwise cost every developer a certificate for a container.
+Every configured source of `sslmode` must agree rather than trusting a measured precedence, since a
+driver detail should not be what the control rests on. Kafka, Redis and inbound HTTP are documented
+rather than guarded - there is no client for the first two and the application is never the TLS
+endpoint. Nothing is encrypted at rest and nothing needs to be yet; the expectations and their
+owning phases are recorded so the absence is a decision. &rarr;
+[ADR-0023](../adr/ADR-0023-transport-security-confined-to-loopback.md),
+[`SECURITY_ARCHITECTURE.md`](../architecture/SECURITY_ARCHITECTURE.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

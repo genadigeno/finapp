@@ -121,11 +121,11 @@ class DatabaseCredentialGuardTest {
         // Without this, every "allowed" case above could be passing because the parser returned
         // the wrong host that happened to look local, or the right one by luck.
         assertThat(
-                        DatabaseCredentialGuard.hostsOf(
+                        DatabaseEndpoint.hostsOf(
                                 "jdbc:postgresql://user:pw@a.example:5432,b.example:5433/db?x=1"))
                 .containsExactly("a.example", "b.example");
-        assertThat(DatabaseCredentialGuard.hostsOf("jdbc:postgresql://[::1]:5432/db"))
+        assertThat(DatabaseEndpoint.hostsOf("jdbc:postgresql://[::1]:5432/db"))
                 .containsExactly("::1");
-        assertThat(DatabaseCredentialGuard.hostsOf("jdbc:postgresql:finapp")).isEmpty();
+        assertThat(DatabaseEndpoint.hostsOf("jdbc:postgresql:finapp")).isEmpty();
     }
 }

@@ -18,6 +18,15 @@
 #   - The credentials below are throwaway defaults, deliberately named so that they cannot
 #     be mistaken for a secret and cannot silently become one in a deployed environment.
 #     Every one is overridable by an environment variable.
+#   - NO TLS ANYWHERE HERE, deliberately. PostgreSQL runs with ssl=off, Kafka's listeners are
+#     PLAINTEXT and Redis has neither TLS nor a password. The loopback binding above is what
+#     makes that acceptable, and it is the whole of the argument. Enabling TLS locally would
+#     need a committed certificate - which ADR-0020 forbids - or a self-signed one that could
+#     only be used with a weaker verification mode than the one deployments must use, so it
+#     would teach the wrong lesson. The asymmetry is honest: local is exempt, not simulated.
+#     The application refuses to start against a NON-loopback database without
+#     sslmode=verify-full (TransportSecurityGuard, ADR-0023), so this exemption cannot follow
+#     the configuration into a deployment.
 #   - The approach is docs/architecture/SECRET_MANAGEMENT.md and ADR-0020. A name is not a
 #     control, so there is one: DatabaseCredentialGuard refuses to start the application on
 #     this default against a database that is not on loopback. Nothing here is a pattern for

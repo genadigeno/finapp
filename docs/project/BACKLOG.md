@@ -654,7 +654,7 @@ Status: `IN_PROGRESS`
   with a planted `customer_email`. All 46 platform columns classified; handling rules referenced,
   never restated. ADR-0022.
 
-**P0-TSK-034 — Transport and at-rest encryption baseline**
+**P0-TSK-034 — Transport and at-rest encryption baseline** — `COMPLETE` (2026-09-02)
 - Context: platform / security
 - Description: TLS configuration expectations and at-rest encryption expectations documented and applied where locally applicable.
 - Why: Security objectives in `SECURITY_ARCHITECTURE.md`.
@@ -663,6 +663,16 @@ Status: `IN_PROGRESS`
 - Risk: Medium
 - Cx: S
 - DoD: `DOD-SEC`
+- **Outcome:** the second clause is the whole task, and the insecure default was the driver's own.
+  Measured against the local container: `sslmode` unset and `prefer` both **connect unencrypted and
+  report nothing**; only `require`/`verify-full` refuse. The platform sets no `sslmode`, which is
+  correct locally and a plaintext connection to a remote database in a deployment with nothing
+  saying so. `TransportSecurityGuard` refuses to start when a non-loopback database would be
+  reached without `verify-full` - not `require`, which encrypts and verifies nothing. Every
+  configured source must agree rather than trusting a measured driver precedence. Kafka, Redis and
+  inbound HTTP are documented rather than guarded: no client exists for the first two and the
+  application is never the TLS endpoint. Nothing is encrypted at rest and nothing needs to be yet;
+  expectations recorded with owning phases. ADR-0023.
 
 **P0-TSK-041 — Architecture rule for single-instance assumptions**
 - Context: platform / architecture
