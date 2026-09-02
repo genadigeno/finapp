@@ -51,6 +51,7 @@ Every component with state, and what makes it safe for N instances.
 | `EntityId` | none — immutable value | n/a | n/a |
 | `IdGenerator` | in-memory `(millis, counter)` per instance | **Non-authoritative.** Uniqueness across instances rests on 62 `SecureRandom` bits, not the counter. The counter provides ordering *within* one instance only | No |
 | `CorrelationContext` | `ThreadLocal` per request | **Non-authoritative.** Diagnostic context; each instance carries its own. Losing it costs traceability, never correctness | No |
+| `SecurityContext` | `ThreadLocal` per flow | **Non-authoritative.** It carries the acting party within one instance; it is never the *source* of one. The durable answer to "who did this" is the audit row, written in the action's own transaction. Losing the context costs the operation, not correctness: `require()` throws rather than defaulting, so a lost actor fails the request instead of recording the wrong party (ADR-0021) | No |
 | `MoneyColumns` | none — a column convention | n/a | n/a |
 | `platform.idempotency_record` | durable | **Unique constraint** on (scope, key). The database is the arbiter (ADR-0004) | **Yes** |
 | `IdempotentExecutor` | none — all state in the row | Claim by insert; conditional updates; database-owned lease | Delegates to the row |
@@ -153,7 +154,9 @@ Performed against all production code at the time of ADR-0014.
 
 No `synchronized`, no `ReentrantLock`, no `Semaphore`, no scheduler, no in-memory cache, and no
 static mutable business state anywhere in production code. The only static mutable state is
-`CorrelationContext`'s `ThreadLocal`, classified above as non-authoritative.
+`CorrelationContext`'s `ThreadLocal`, classified above as non-authoritative. `SecurityContext`
+(`P0-TSK-032`) adds a second one, classified alongside it: same mechanism, and a strictly safer
+failure mode, because an absent actor is refused rather than defaulted.
 
 That is largely a consequence of ADR-0004 having chosen a database-enforced idempotency
 mechanism in Phase 0, before any code could grow around a cache.

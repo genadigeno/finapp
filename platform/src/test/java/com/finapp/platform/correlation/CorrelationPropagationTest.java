@@ -7,7 +7,7 @@ import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
 import com.finapp.sharedkernel.event.EventId;
-import com.finapp.platform.audit.Actor;
+import com.finapp.platform.security.Actor;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;

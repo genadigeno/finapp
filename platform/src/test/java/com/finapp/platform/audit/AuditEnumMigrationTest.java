@@ -1,5 +1,7 @@
 package com.finapp.platform.audit;
 
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;

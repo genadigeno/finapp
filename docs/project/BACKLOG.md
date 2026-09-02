@@ -493,6 +493,14 @@ Status: `IN_PROGRESS`
 - Cx: S
 - DoD: `DOD-API`
 
+- **Known defect, found during `P0-TSK-032` (2026-09-02), not yet fixed.**
+  `RequestValidationTest.aMalformedIdentifierIsReplaced` asserts the issued correlation identifier
+  `doesNotContain("bad")`, and a UUIDv7 hex string contains the substring `bad` about **0.7% of the
+  time** - roughly one run in 137, observed once. The assertion is right in intent and wrong in
+  method: it should assert the issued value is a well-formed generated identifier, not that it
+  avoids three substrings that are also valid hex. Left unfixed deliberately - it belongs to
+  `P0-TSK-025`, and `EXECUTION_PROTOCOL.md` rule 4 forbids fixing unrelated things opportunistically.
+
 **P0-TSK-026 — API versioning and OpenAPI generation** — `COMPLETE` (2026-09-02)
 - Context: platform / api
 - Description: Versioning strategy, deprecation policy, OpenAPI generated in the build.
@@ -609,7 +617,7 @@ Status: `IN_PROGRESS`
   `DatabaseCredentialGuard` closes the one documented bypass of externalised configuration
   (forgetting to set the variable) by confining the marked default to loopback. ADR-0020.
 
-**P0-TSK-032 — Security context abstraction**
+**P0-TSK-032 — Security context abstraction** — `COMPLETE` (2026-09-02)
 - Context: platform / security
 - Description: `ActorId` / `ActorType` abstraction consumed by audit and domain code; populated by a system actor in Phase 0, by real identity in Phase 1.
 - Why: Audit records require an actor from the first posting; retrofitting actor attribution is not possible for historical records.
@@ -618,6 +626,15 @@ Status: `IN_PROGRESS`
 - Risk: Medium
 - Cx: S
 - DoD: `DOD-SEC`
+- **Outcome:** the first clause was already met by `P0-TSK-022` - `AuditRecord` cannot be built
+  without an actor - so the work was the mechanism and the decision behind it. `SecurityContext`
+  carries the actor per flow and across handoffs; **`require()` throws rather than defaulting to
+  `Actor.SYSTEM`**, because a default is correct today and silently wrong the moment Phase 1 lands.
+  `Actor`/`ActorType` moved to `platform.security` - audit records an actor, it does not own the
+  concept. The second clause is a claim about a phase that does not exist and was made falsifiable:
+  `Phase1IdentityFitsTheAuditSchemaTest` writes a record as every non-`SYSTEM` type carrying the
+  identifier shapes real providers issue (an OIDC `sub`, a directory DN, a service credential),
+  through the writer as the application role. ADR-0021.
 
 **P0-TSK-033 — Data classification scheme**
 - Context: platform / security

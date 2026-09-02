@@ -93,7 +93,20 @@ class CorrelationSinkCoverageTest {
                     "metrics",
                     // Not a sink. MoneyColumns is a persistence convention with no flow of its
                     // own; correlation reaches the tables that use it, not the convention.
-                    "money");
+                    "money",
+                    // NOT a sink, and the distinction is the point rather than a technicality.
+                    // SecurityContext answers WHO is acting; correlation answers WHICH FLOW this
+                    // is. They travel together and are established at the same entry points, which
+                    // is exactly why it is worth saying that they are not the same thing: an actor
+                    // identifies a party and is a durable attribution, a correlation identifier
+                    // identifies one execution and attributes nothing to anybody. Merging them
+                    // would put a customer identifier into every log line and every trace - a
+                    // disclosure into systems with different access control (INV-AUD-02) - and
+                    // would make the audit trail's actor a function of tracing configuration.
+                    //
+                    // Correlation reaches the audit RECORD, which is where the two meet, and that
+                    // is asserted under "audit" above.
+                    "security");
 
     @Test
     @DisplayName("no platform concern exists without a decision about whether correlation reaches it")

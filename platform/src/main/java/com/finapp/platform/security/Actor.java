@@ -1,4 +1,4 @@
-package com.finapp.platform.audit;
+package com.finapp.platform.security;
 
 import java.util.Objects;
 

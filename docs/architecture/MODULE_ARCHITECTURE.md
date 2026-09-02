@@ -736,6 +736,20 @@ is not a PIN.
   made in one place, by the component whose job is deciding what belongs in a log line's context.
   *(ArchUnit: `onlyCorrelationContextWritesTheMdc`)*
 
+- No production class reads `Actor.SYSTEM` except `SecurityContext`. Every audit record needs an
+  actor, so every call site that writes one has a parameter to satisfy - and when none has been
+  established, the shortest way to make the code compile is the constant that is public, final and
+  right there. The result is a record saying the platform did what a person did: nothing fails, it
+  looks complete, and `INV-HIST-03` makes it permanent. Claiming the platform acted is therefore a
+  deliberate act through `SecurityContext.enterSystem()`, which establishes a scope and says so;
+  everything else asks `require()` and is told the truth when nobody was established.
+  *(ArchUnit: `onlyTheSecurityContextClaimsTheSystemActor`)*
+
+**What that one does not catch**: a caller writing `new Actor("system", ActorType.SYSTEM)` by hand.
+That is forgery rather than a shortcut, and no static rule can tell it from an actor built out of a
+real identity - which is the reason actors are constructible at all. The rule removes the easy
+path, which is the one people take.
+
 **What it does not catch**, stated so it is not mistaken for total coverage: a secret held only in
 a local variable and passed straight to a log call. The rules cover values a type *stores* and the
 one context map a log line carries; a transient value has no declaration to inspect. Closing that

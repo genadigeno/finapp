@@ -1,5 +1,6 @@
 package com.finapp.platform.audit;
 
+import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.time.Instant;
 import java.util.Objects;

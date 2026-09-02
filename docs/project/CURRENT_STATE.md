@@ -55,67 +55,61 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-032` - Security context abstraction**
+**`P0-TSK-033` - Data classification scheme**
 Status: `READY` - not started.
 
-Bounded context: platform / security. Depends on `P0-TSK-022` (`COMPLETE`).
+Bounded context: platform / security. No dependencies.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-SEC`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-DOC`.
 
 ### Just completed
 
-**`P0-TSK-031` - Secret management approach** - `COMPLETE` (2026-09-02).
-Opens `P0-EPIC-10`. The only Phase 0 task besides `P0-TSK-030` marked **High risk**.
+**`P0-TSK-032` - Security context abstraction** - `COMPLETE` (2026-09-02).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| No secret value in the repository | `CommittedConfigurationHoldsNoSecretTest` - default-deny over configuration files it **discovers**, so a new `application-prod.yaml` is covered without anyone remembering |
-| Secret scanning green | `infra/scripts/secret-scan.sh` against real history: 102 commits, no leaks |
-| A deliberately committed dummy secret fails CI | Demonstrated against a throwaway clone with the identical pinned image: `leaks found: 1`, exit 1 - and still red after the file is deleted and committed again |
+| Every audit record carries an actor | Already true: `AuditRecord` cannot be constructed without one (`P0-TSK-022`), and `actor_id`/`actor_type` are `NOT NULL` with a `CHECK` |
+| Phase 1 identity needs no audit schema change | `Phase1IdentityFitsTheAuditSchemaTest`: a record written as every non-`SYSTEM` type, through the writer, as the application role, carrying identifier shapes real providers issue |
 
-**The probe changed the shape of the answer.** The obvious reading is that clause 2 delivers
-clause 1. It does not, and that was measured rather than reasoned about - four plausible secrets
-committed to a throwaway repository and scanned:
+**The first clause was already met, so the task was the mechanism and the decision behind it.**
+`Actor` and `ActorType` existed; nothing supplied them. Every call site would have named
+`Actor.SYSTEM` itself, which decides independently at each one what happens when nobody established
+who was acting.
 
-| Committed | Result |
-|---|---|
-| a private-key block | caught |
-| a high-entropy value on a `db.password` key | caught |
-| a real-shaped AWS access key pair | caught |
-| `password: hunter2` in a YAML | **missed** |
-| `POSTGRES_PA§WORD: correcthorse` in a Compose file | **missed** |
+**`require()` throws rather than defaulting to the system actor.** That is the decision. Defaulting
+is convenient and *correct today* - the system is the only actor there is - and it becomes wrong
+silently the moment Phase 1 lands: an authenticated request whose scope was never established would
+record the platform as having done what a customer did. Nothing fails, the record is complete and
+plausible, it is about the wrong party, and `INV-HIST-03` makes it permanent. `Actor`'s own javadoc
+already said this for a blank identifier; this applies it one level up.
 
-gitleaks is an entropy-and-pattern detector and is structurally blind to a memorable password on a
-key named `password` - there is nothing about `hunter2` to detect. **A memorable password is what
-a human commits**, and the two shapes it missed are exactly the shape this repository's own
-configuration already has. So the scanner is a **net, not the control**; the control is a build
-rule, and the two are blind in different directions.
+Phase 0 claims the system actor **out loud** through `enterSystem()`, which is greppable on
+purpose: it is the list of places Phase 1 must revisit. Reading `Actor.SYSTEM` anywhere else fails
+the build - every audit record needs an actor, so every call site has a parameter to satisfy, and
+the constant is the shortest way to satisfy it.
 
-**A name is not a control either.** Externalised configuration has one silent failure mode: the
-fallback is what you get when nobody sets the variable. A first deployment by someone who has only
-run this locally, against a database provisioned by this repository's own init script, would run on
-a published password with nothing saying so - the app starts, the pool connects, readiness reports
-UP. `DatabaseCredentialGuard` refuses to start when the marked default is aimed off loopback. It
-**fails closed** on an unreadable host and checks **every** host in a failover list, because
-checking only the first would let the second be anywhere.
+`Actor`/`ActorType` moved from `platform.audit` to `platform.security`: audit *records* an actor, it
+does not own the concept, and leaving them there would have made the security context depend on
+audit rather than the reverse. Same reasoning as `P0-TSK-018` moving the correlation identifiers
+down.
 
-**Three findings worth keeping.**
-- **`secretsAreWrapped` rejected this task's own field.** `APP_PA§WORD_VARIABLE` holds the *name*
-  of an environment variable - a genuine false positive. It was **renamed, not exempted**: teaching
-  the rule that a `VARIABLE` suffix refers to a secret rather than holding one would also admit
-  `PA§WORD_PROPERTY = "hunter2"` for ever after, and that rule has no exemption set at all.
-  `DEFINITION_OF_DONE.md` §3 is unambiguous about weakening a control so a test passes.
-- **The documentation tripped the scan it documents.** The first drafts of ADR-0020 and
-  `SECRET_MANAGEMENT.md` quoted realistic example keys, and the scan caught both files. That is the
-  scanner working - it cannot tell a documented example from a disclosure and must not try - so the
-  examples now describe shapes and the proof procedure generates its dummy value at run time.
-  Allowlisting the documentation about the scanner would have weakened the scan to make room for
-  prose about the scan.
-- **A startup test that tested nothing.** `SpringApplicationBuilder.properties(...)` populates
-  Boot's *default* property source, which ranks **below** `application.yaml`, so both startup cases
-  silently kept the committed URL. It surfaced as the negative case not throwing; the positive case
-  had been green throughout while asserting nothing about its own argument. Command-line arguments
-  outrank the config file, and both now test the URL they name.
+**The un-testable clause was made falsifiable.** "Phase 1 requires no schema change" is a claim
+about a phase that does not exist. The property behind it is not: a record written as every
+non-`SYSTEM` actor type, carrying the identifier shapes real identity providers actually issue - an
+OIDC `sub`, a directory distinguished name, a service credential - persists today with no DDL.
+Proven to fail three ways: narrowing the live `CHECK` to `SYSTEM` alone, and widening `Actor`'s
+bound past the column's.
+
+**Two findings, both in the tests rather than the code.**
+- **The pooled-thread leak test proved nothing.** It ran a propagated task and then checked the
+  next one - but `propagate` restores on the way out, so the worker was already clean and the
+  assertion passed whatever `apply(null)` did. Confirmed by mutation: making an absent actor a
+  no-op left it green. It now dirties the worker the way a real leak happens, with a precondition
+  asserting the staleness is really there.
+- **The test committed audit rows permanently.** Audit records are append-only to the application
+  role by design, so a test that commits them leaves them for ever, growing on every run. Cleanup
+  is the migrator's job and is scoped by a probe marker rather than a wholesale `DELETE`, because
+  the sibling suites share that table.
 
 ---
 
@@ -215,6 +209,22 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Security context (2026-09-02), `P0-TSK-032`:
+- `SecurityContext` carries the acting party per flow and across thread handoffs, so an actor need
+  not be threaded through every signature between entry point and audit write
+- **An unestablished actor is an error, never `Actor.SYSTEM`** - a default is correct today and
+  silently wrong the moment real identity arrives, and the resulting record is permanent
+- `enterSystem()` is the greppable list of places claiming the platform acted; reading
+  `Actor.SYSTEM` anywhere else fails the build
+- `Actor`/`ActorType` moved to `platform.security`; audit records an actor, it does not own one
+- Not merged into `Correlation`: an identifier that names one execution and one that names a party
+  are different things, and merging them would put a customer identifier in every log line and span
+- Captured at submission, never `InheritableThreadLocal`, with the pooled-worker leak asserted
+  against a genuinely dirty thread
+- Phase 1's substitution proven against the real schema rather than asserted, using the identifier
+  shapes real identity providers issue
+- ADR-0021 records the reasoning and the five rejected alternatives
 
 Secret management (2026-09-02), `P0-TSK-031`:
 - No credential literal can reach committed configuration: a credential-named key must be a
@@ -580,7 +590,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-032` is the next task.
+None in progress. `P0-TSK-033` is the next task.
 
 ## Blockers
 
@@ -709,6 +719,7 @@ carries, what triggers paying it down, and the owning phase.
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
+| **No production code establishes a security scope.** `SecurityContext` exists and nothing calls it | Phase 0 has no request handler performing an auditable action and no module writing an audit record - the three registered platform actions are themselves recorded as not-yet-emitted. A caller wired now would establish a scope around nothing | **None today, and the failure mode is safe by construction.** `require()` refuses rather than defaulting, so the first caller that forgets fails loudly instead of recording the wrong party. The risk is not silent misattribution but a missing call, which is visible the first time it runs | The first audited action, which is the outbox relay emitting its registered actions or Phase 1's authentication | Phase 1 |
 | **The loopback guard covers one credential.** `DatabaseCredentialGuard` knows about the datasource password and nothing else | It is the only credential that exists. A general mechanism - every externalised credential declaring its own marked default and being checked - would be designed against one example, which is how you get an abstraction that fits nothing later | **Low today.** The build rule is already general: any credential-named key in any configuration file is covered, so a second credential cannot arrive as a literal. What it would not get is the loopback confinement, so a second published default could be aimed anywhere | The second credential, which is Phase 1's authentication or Phase 5's provider adapters | Phase 1 |
 | **No output scrubber for text the platform does not control.** A secret held only in a local and passed straight to a log call, or one inside a third-party library's message, is not covered | The field and accessor rules cover what a type *stores*; a transient value has no declaration to inspect. Closing it needs a logging facade accepting only declared-safe arguments, which changes every log statement - disproportionate against eight of them | **Low today, and it grows with the codebase.** Nothing in Phase 0 handles a credential; the risk arrives with Phase 1's authentication. A scrubber is a deny-list and must never be mistaken for the control | A business module logging real flows | Phase 1 |
 | **The scrape endpoint widens the unauthenticated surface to three.** `/actuator/prometheus` joins health and info | `DOD-OBS` requires the dashboard to render live data from a running instance, which needs a scrape endpoint, and there is no authentication anywhere yet | A scrape publishes JVM internals, HTTP route templates and pool statistics - a description of the running system rather than its secrets. The **content** is constrained by a build failure: no tag may carry a request-influenced value | `P0-EPIC-10` landing | Phase 0, M0.4 |
@@ -759,19 +770,18 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-032` - Security context abstraction**, the second of `P0-EPIC-10`'s eight tasks.
+**`P0-TSK-033` - Data classification scheme**, the third of `P0-EPIC-10`'s eight.
 
-`ActorId` / `ActorType` consumed by audit and domain code, a system actor in Phase 0 and real
-identity in Phase 1. Its acceptance criterion has an unusual second half - *the Phase 1 identity
-implementation requires no change to the audit schema* - which is a claim about a phase that does
-not exist yet and cannot be tested directly. What can be tested is the property behind it: the
-audit schema already stores an actor type and identifier as data rather than as a foreign key to
-anything, so worth checking `V009` and `AuditRecord` before designing, since `P0-TSK-022` may have
-already established the seam.
+Classification levels - public / internal / confidential / restricted-financial / restricted-PII -
+with handling rules per level, referenced by later data-model tasks. `DOD-DOC`, so the bar is
+accuracy against what exists rather than aspiration: `SECURITY_ARCHITECTURE.md` and ADR-0019
+already state handling rules for secrets, and `INV-AUD-02` already forbids PII in logs, events and
+responses. The scheme has to reconcile with both rather than become a third description of them.
 
-Note that `ActorType` already exists and generates its own `CHECK` constraint. The task is
-probably narrower than the backlog entry suggests - check rather than assume, as `P0-TST-002`,
-`P0-TST-007` and `P0-TST-008` all turned out differently from their descriptions.
+Worth deciding early whether the levels get any mechanical enforcement or are documentation only.
+`DOD-DOC` does not require a rule, and this project's pattern is that an unenforced convention
+decays - but a classification scheme with no data to classify yet may genuinely be documentation
+until Phase 1 brings party data.
 
 ---
 
@@ -779,6 +789,8 @@ probably narrower than the backlog entry suggests - check rather than assume, as
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-032`. **Two important findings, both the same shape: this suite deviated from a pattern its four siblings already had.** First, `SystemActorRulesTest` was written **without a coverage guard** - every other rule suite has `everyModuleWithProductionCodeIsAnalysed`, because a rule that sees nothing passes and reports safety it never checked. That is precisely the deviation `P0-TST-008` identified as the mechanism by which a security rule sits behind a green test protecting nothing. Added, and proven by narrowing the sweep to one module. Second, **`SecurityContext` was missing from `DISTRIBUTED_EXECUTION.md` §3**, whose opening line is "every component with state" - it is the platform's second `ThreadLocal`, and `P0-TSK-041` is scheduled to build an ArchUnit rule whose exemption set is *that register*, so an unlisted one would have arrived as either a build failure or an unjustified exemption. Registered as non-authoritative, with the distinction that matters: it carries the acting party, it is never the source of one, and losing it costs the operation rather than correctness because `require()` refuses. **One accuracy fix**: nothing in production establishes a scope, and both the architecture document and the debt table now say so - it is a seam under `EXECUTION_PROTOCOL.md` rule 3, not an unfinished wiring job, and `DEFINITION_OF_DONE.md` §3 forbids documentation describing behaviour that does not exist. Verified rather than assumed: the field rule was probed against five bypass shapes **individually** - a constant captured in a static initialiser, a static import, a lambda, a chained call and a nested class - because one catch in an aggregate probe can mask four misses; `getField` is a bytecode-level GETSTATIC and caught all five. 489 hermetic tests, 168 database tests. |
+| 2026-09-02 | `P0-TSK-032` complete. The first acceptance clause was **already met** by `P0-TSK-022` - `AuditRecord` cannot be built without an actor - so the task was the mechanism and the decision behind it. `Actor` and `ActorType` existed and nothing supplied them, which meant every call site would decide independently what happens when nobody established who was acting. **`SecurityContext.require()` throws rather than defaulting to `Actor.SYSTEM`**, and that is the decision: a default is convenient and *correct today*, and silently wrong the moment Phase 1 lands - an authenticated request whose scope was never established would record the platform as having done what a customer did, with nothing failing, the record complete and plausible, about the wrong party, and permanent under `INV-HIST-03`. Phase 0 claims the system actor **out loud** through `enterSystem()`, greppable on purpose as the list Phase 1 must revisit, and reading `Actor.SYSTEM` anywhere else now fails the build - every audit record needs an actor, so every call site has a parameter to satisfy and the constant is the shortest way to satisfy it (ADR-0019's argument, unchanged). `Actor`/`ActorType` moved to `platform.security`, because audit *records* an actor and does not own the concept; the actor is deliberately **not** merged into `Correlation`, since an identifier naming one execution and one naming a party are different things and merging them would put a customer identifier into every log line and span (`INV-AUD-02`). **The un-testable clause was made falsifiable**: "Phase 1 needs no schema change" is a claim about a phase that does not exist, but the property behind it is not - a record written as every non-`SYSTEM` type, carrying an OIDC `sub`, a directory DN and a service credential, persists today with no DDL, proven to fail by narrowing the live `CHECK` and by widening `Actor`'s bound past the column's. **Two findings, both in the tests.** The pooled-thread leak test proved nothing - `propagate` restores on the way out, so the worker was already clean and the assertion passed whatever `apply(null)` did; confirmed by a surviving mutation, and it now dirties the worker the way a real leak happens, with a precondition. And the new database test **committed audit rows permanently** - they are append-only to the application role by design - so cleanup is the migrator's job, scoped by a probe marker rather than a wholesale DELETE, because the sibling suites share that table. The correlation sink guard fired for the **seventh** time, on `security`, and the answer was recorded as deliberately not a sink. ADR-0021 recorded. 488 hermetic tests, 168 database tests. **Unrelated defect found and recorded rather than fixed** (`EXECUTION_PROTOCOL.md` rule 4): `RequestValidationTest.aMalformedIdentifierIsReplaced` asserts the issued correlation identifier `doesNotContain("bad")`, and a UUIDv7 hex string contains `bad` about 0.7% of the time - one run in 137, observed once here. The intent is right and the method is wrong: it should assert the value is a well-formed generated identifier, not that it avoids three substrings which are also valid hex. It belongs to `P0-TSK-025` and is noted in the backlog. |
 | 2026-09-02 | Task completion review of `P0-TSK-031`. **Two important findings, and both were controls that did not do what they claimed.** First: the configuration rule matched only the **first** `key value` pair on a line, so `LOGIN PASSWORD 'x'` was read as the key `LOGIN` and skipped - **the SQL role script, one of the four files the test names, was not being checked at all**, and a real password planted there passed the build cleanly. It had looked covered because the original mutation changed *both* occurrences and tripped the single-sourcing count instead - a different assertion catching it, which is the second time in this task a mutation passed for the wrong reason. **The lesson is that a mutation must be isolated to the assertion under test**; re-run against one occurrence, it slipped straight through. Second: `DatabaseCredentialGuard` read `spring.datasource.url` while `spring.datasource.hikari.jdbc-url` is bound afterwards and **wins** - proven by starting the application against `db.internal` with the generic URL left on loopback and unwrapping the pool to confirm it really had the remote address. A documented Spring property is exactly the "bypassable by a documented path" `DOD-SEC` forbids; the guard now reads what the pool actually connects with, via `Binder` so relaxed spellings cannot dodge it. Three further gaps, all found by probing bypass shapes rather than by reading: **`.sh` was not scanned** although this task itself added `infra/scripts/`, and shell is where `PGPASSWORD=` lives; **`authorization` and `bearer` had been dropped** from the vocabulary as "authentication data" when they are how an API credential is written in configuration; and **`PGPASSWORD` has no word boundary to split on**, closed with `endsWith` rather than `contains` so `passwordless` and `tokenizer` stay clean. The ad-hoc probes are now a **22-row shape table** asserted on every build - `P0-TST-008`'s lesson that a probe living only in a shell does not survive the person who ran it - plus a guard that the extension list in the test and the Gradle input filter cannot drift, which is the fourth occurrence of that defect class here. 470 hermetic tests, 165 database tests. |
 | 2026-09-02 | `P0-TSK-031` complete; **`P0-EPIC-10` opened**. Secret management, and the probe changed the shape of the answer. The obvious reading of the acceptance criterion is that clause 2 delivers clause 1 - run a scanner, keep it green, no secret in the repository. **It does not.** Four plausible secrets committed to a throwaway repository and scanned with the pinned image: gitleaks caught a private-key block, a high-entropy token and a real-shaped AWS pair, and **missed `password: hunter2` and `POSTGRES_PASSWORD: correcthorse`** - there is nothing about a memorable password to detect, a memorable password is what a human commits, and those two shapes are exactly the shape this repository's own configuration has. So the scanner is a **net, not the control**. The control is `CommittedConfigurationHoldsNoSecretTest`: default-deny over configuration files it **discovers** rather than lists, so a new `application-prod.yaml` is covered without anyone remembering. It does a second job for free - the marked local default is written in six files across YAML, Kotlin and SQL that cannot share a constant, and rejecting any *other* local default is what actually single-sources it; the comment claiming "three places" was already wrong. **A name is not a control either**: externalised configuration fails silently when nobody sets the variable, so `DatabaseCredentialGuard` refuses to start with the marked default aimed off loopback, fails closed on an unreadable host, and checks every host in a failover list. Three findings. **`secretsAreWrapped` rejected this task's own field** - `APP_PASSWORD_VARIABLE` holds the *name* of a variable, a real false positive - and it was **renamed rather than exempted**, because the obvious exemption would admit `PASSWORD_PROPERTY = "hunter2"` for ever and that rule has no exemption set at all. **The documentation tripped the scan it documents**: the first drafts quoted realistic example keys and the scan caught both files, which is the scanner working - it cannot tell an example from a disclosure - so the examples now describe shapes and the proof generates its dummy value at run time, rather than allowlisting prose about the scanner. And **a startup test that tested nothing**: `SpringApplicationBuilder.properties(...)` populates Boot's *default* source, which ranks below `application.yaml`, so both cases silently kept the committed URL - the positive control had been green while asserting nothing about its own argument. Clause 3 is demonstrated against a throwaway clone and never against this repository, since a dummy secret committed here would make the scan red for ever. ADR-0020 recorded. 446 hermetic tests, 165 database tests. |
 | 2026-09-02 | Task completion review of `P0-TST-008`. The first question was whether the inversion defect it found was **systemic**, since other rules protect `INV-MON-01` and `INV-EVT-01`. It is not: all four sibling suites use the positive `classes().that()...should()` form and prove their teeth with `rule.check(violating)` - the **rule**, not the condition. Which makes the finding sharper rather than softer: the correct pattern already existed, this suite deviated from it, and the deviation is exactly what hid a security control that could not fail. The teeth tests now use the sibling idiom - `assertThatThrownBy(() -> rule.check(...))` and `assertThatCode(...).doesNotThrowAnyException()` - so the suite reads like its four neighbours and cannot drift back. Two further fixes. The **MDC rule was proven only by a manual probe**, which is not a method that survives the person who used it; it now has a fixture and is rejected on every build alongside the others. And the appender test wrote its log to the **system temp directory**, where Logback appends for ever - a test whose negative control deliberately writes an unredacted sentinel was leaving that plaintext in a directory nothing cleans, which is the wrong shape for a test about not writing secrets to files. Moved inside `build/`, and the stray removed. 419 hermetic tests, 165 database tests. |

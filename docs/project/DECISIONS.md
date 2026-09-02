@@ -102,6 +102,19 @@ shape it. &rarr;
 [ADR-0020](../adr/ADR-0020-secret-management.md),
 [`SECRET_MANAGEMENT.md`](../architecture/SECRET_MANAGEMENT.md)
 
+### Security context
+Who is acting travels with the flow in a `SecurityContext`, and **an unestablished actor is an
+error rather than the system actor**. Defaulting would be convenient and correct today, and wrong
+silently the moment Phase 1 lands: an authenticated request whose scope was never established would
+record the platform as having done what a customer did - complete, plausible, about the wrong
+party, and permanent under `INV-HIST-03`. Phase 0 says "the platform is acting" out loud through
+`enterSystem()`, which is the greppable list of places Phase 1 must revisit, and reading
+`Actor.SYSTEM` anywhere else fails the build. The actor is deliberately **not** merged into the
+correlation context: a correlation identifier names one execution and attributes nothing to anybody,
+while an actor names a party, and merging them would put a customer identifier into every log line
+and span (`INV-AUD-02`). &rarr;
+[ADR-0021](../adr/ADR-0021-security-context-and-the-absent-actor.md), ADR-0010
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

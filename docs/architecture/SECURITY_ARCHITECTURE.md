@@ -69,6 +69,35 @@ properties. A JVM version is free reconnaissance for anyone matching a CVE to a 
 The application connects to PostgreSQL as `finapp_app`, never the bootstrap superuser, so a
 health check cannot pass on privileges the application would not otherwise hold.
 
+## Who is acting
+
+`SecurityContext` carries the current `Actor` for the executing flow and across thread handoffs
+(`P0-TSK-032`, ADR-0021). `Actor` and `ActorType` live in `platform.security`: audit *records* an
+actor, it does not own the concept of one.
+
+**An unestablished actor is an error, never the system actor.** `require()` throws rather than
+defaulting. Defaulting is convenient and correct while the system is the only actor there is, and
+wrong the moment real identity arrives - an authenticated request whose scope was never established
+would record the platform as having done what a customer did. Nothing fails; the record is complete,
+plausible, about the wrong party, and permanent (`INV-HIST-03`).
+
+Phase 0 claims the system actor explicitly through `SecurityContext.enterSystem()`, which is the
+searchable list of places Phase 1 must revisit. Reading `Actor.SYSTEM` anywhere else fails the build
+(`onlyTheSecurityContextClaimsTheSystemActor`), because every audit record needs an actor and the
+constant is the shortest way to make a call site compile when none was established.
+
+**Nothing in production establishes a scope yet, and that is deliberate rather than unfinished.**
+Phase 0 has no request handler that performs an auditable action and no module that writes an audit
+record - the three registered platform actions are recorded as not-yet-emitted debt. So this is a
+seam in `EXECUTION_PROTOCOL.md` rule 3's sense: a named mechanism with documented behaviour and
+nothing built behind it. The first caller arrives with the first audited action, and the guarantee
+that matters is already enforced - a caller who forgets is refused rather than defaulted.
+
+The actor is deliberately not part of the correlation context. A correlation identifier names one
+execution and attributes nothing to anybody; an actor names a party. Merging them would put a
+customer identifier into every log line and every span, which is a disclosure into systems with
+different access control and retention (`INV-AUD-02`).
+
 ## Secrets
 
 The approach is [`SECRET_MANAGEMENT.md`](SECRET_MANAGEMENT.md) and ADR-0020. In summary
