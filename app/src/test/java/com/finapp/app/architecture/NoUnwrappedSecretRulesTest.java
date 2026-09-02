@@ -1,6 +1,8 @@
 package com.finapp.app.architecture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.sharedkernel.security.Sensitive;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -16,7 +18,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition;
-import java.util.List;
+import org.slf4j.MDC;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -78,18 +80,67 @@ class NoUnwrappedSecretRulesTest {
                     // Authentication data.
                     "otp", "mfacode", "sessionid");
 
+    /**
+     * The one component permitted to write the MDC.
+     *
+     * <p>A single name rather than a package: the privilege belongs to a component, and a package
+     * would silently extend it to whatever is added beside that component later.
+     */
+    private static final String MDC_OWNER = "com.finapp.platform.correlation.CorrelationContext";
+
     /** Splits camelCase, snake_case and SCREAMING_CASE into lower-case words. */
     private static final Pattern WORD_BOUNDARY = Pattern.compile("[_\\s]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])");
 
+    /**
+     * {@code classes().should(...)}, NOT {@code noClasses().should(...)}.
+     *
+     * <p>The first version used {@code noClasses()}, and it was <strong>structurally incapable of
+     * failing</strong>. {@code noClasses().should(condition)} inverts the condition's events: it
+     * reports as violations the things the condition marks <em>satisfied</em>. This condition only
+     * ever emits {@code violated(...)}, so the inversion left it with nothing to report, and a
+     * production record holding a plaintext {@code String password} passed cleanly.
+     *
+     * <p>It was found by {@code P0-TST-008} planting exactly that record. The rule's own fixture
+     * test had "proved" the rule worked - by invoking the condition directly, which bypasses the
+     * inversion entirely and therefore tested something the build never runs. A security control
+     * that cannot fail, with a green test beside it, is worse than none: it is believed.
+     */
     @ArchTest
     static final ArchRule secretsAreWrapped =
-            ArchRuleDefinition.noClasses()
-                    .should(declareAnUnwrappedSecretField())
+            ArchRuleDefinition.classes()
+                    .should(notDeclareAnUnwrappedSecretField())
                     .because(
                             "INV-AUD-02 is enforced by default-deny redaction: a field whose name says it "
                                     + "holds a secret must be a Sensitive<?>, so that toString(), a record's "
                                     + "generated toString and a serialiser's fallback all render a mask "
                                     + "instead of the value");
+
+    /**
+     * The other way a value reaches a log line, and the one {@link Sensitive} cannot protect.
+     *
+     * <p>MDC takes a {@code String}. A secret put there is a plain string by the time the logging
+     * framework sees it, and the ECS encoder lifts every MDC entry to a <strong>top-level
+     * field</strong> - so {@code MDC.put("apiToken", token)} publishes it verbatim, as a queryable
+     * field, with no wrapper anywhere in the path. Probed and confirmed during {@code P0-TST-008}
+     * rather than reasoned about: the value appeared in the emitted JSON exactly as written.
+     *
+     * <p>Confining MDC writes to {@link com.finapp.platform.correlation.CorrelationContext} makes
+     * the MDC's contents a decision made in one place, by the component whose job is deciding what
+     * belongs in a log line's context. That is the same default-deny shape as the field rule: the
+     * capability is denied, and one named component holds it.
+     */
+    @ArchTest
+    static final ArchRule onlyCorrelationContextWritesTheMdc =
+            ArchRuleDefinition.noClasses()
+                    .that()
+                    .doNotHaveFullyQualifiedName(MDC_OWNER)
+                    .should()
+                    .accessClassesThat()
+                    .haveFullyQualifiedName("org.slf4j.MDC")
+                    .because(
+                            "the MDC takes a String, so INV-AUD-02's wrapper cannot protect it, and the ECS "
+                                    + "encoder lifts every MDC entry to a top-level field. What goes into a "
+                                    + "log line's context is decided in one place");
 
     /**
      * The coverage guard, for the reason every rule suite here has one: a rule that sees nothing
@@ -106,28 +157,24 @@ class NoUnwrappedSecretRulesTest {
     }
 
     @Test
-    @DisplayName("the rule rejects the declaration it exists to catch, and accepts the wrapped form")
-    void theRuleHasTeeth() {
-        // Both directions, on fixtures, so the rule is proven on every build rather than the day
-        // somebody happens to write a credential record. A rule that has never rejected anything
-        // is indistinguishable from a rule that cannot.
-        JavaClasses fixtures =
-                new ClassFileImporter()
-                        .importClasses(
-                                Leaky.class, Wrapped.class, Innocent.class, HiddenBehindAGetter.class);
+    @DisplayName("each rule rejects the violation it exists to catch")
+    void rulesRejectTheirViolations() {
+        // rule.check(...), which is what the BUILD runs - not the condition behind it. That
+        // distinction is not stylistic here: the first version of this suite called the condition
+        // directly, and passed cheerfully while the rule, wrapped in noClasses() and inverting the
+        // condition's events, could not fail at all. The four sibling rule suites already used
+        // this form; deviating from them is what hid the defect.
+        assertRejects(secretsAreWrapped, Leaky.class);
+        assertRejects(secretsAreWrapped, HiddenBehindAGetter.class);
+        assertRejects(onlyCorrelationContextWritesTheMdc, WritesTheMdc.class);
+    }
 
-        assertThat(violations(fixtures, Leaky.class))
-                .as("a raw String field named like a secret must be rejected")
-                .isNotEmpty();
-        assertThat(violations(fixtures, Wrapped.class))
-                .as("the same field wrapped in Sensitive must be accepted")
-                .isEmpty();
-        assertThat(violations(fixtures, Innocent.class))
-                .as("idempotencyKey, companyName and spinLock must not be mistaken for secrets")
-                .isEmpty();
-        assertThat(violations(fixtures, HiddenBehindAGetter.class))
-                .as("a getter is what a serialiser reads, so a field-only rule would miss this")
-                .isNotEmpty();
+    @Test
+    @DisplayName("the rules accept the wrapped form, so they are not merely always-failing")
+    void rulesAcceptWrappedSecrets() {
+        JavaClasses clean = new ClassFileImporter().importClasses(Wrapped.class, Innocent.class);
+
+        assertThatCode(() -> secretsAreWrapped.check(clean)).doesNotThrowAnyException();
     }
 
     // -----------------------------------------------------------------
@@ -159,17 +206,35 @@ class NoUnwrappedSecretRulesTest {
     @SuppressWarnings("unused")
     private record Innocent(String idempotencyKey, String companyName, String spinLockName) {}
 
-    // -----------------------------------------------------------------
-
-    private static List<String> violations(JavaClasses classes, Class<?> type) {
-        ConditionEvents events = ConditionEvents.Factory.create();
-        JavaClass javaClass = classes.get(type);
-        declareAnUnwrappedSecretField().check(javaClass, events);
-        return events.getViolating().stream().flatMap(event -> event.getDescriptionLines().stream()).toList();
+    /**
+     * The MDC path, which no wrapper can protect.
+     *
+     * <p>Kept as a fixture so the rule is proven on every build rather than the one afternoon
+     * somebody planted a production MDC write by hand - which is how it was proven the first time,
+     * and is not a method that survives the person who used it.
+     */
+    @SuppressWarnings("unused")
+    private static final class WritesTheMdc {
+        void stash(String value) {
+            MDC.put("apiToken", value);
+        }
     }
 
-    private static ArchCondition<JavaClass> declareAnUnwrappedSecretField() {
-        return new ArchCondition<>("declare a field whose name says it holds a secret without wrapping it") {
+    // -----------------------------------------------------------------
+
+    /** The sibling suites' idiom: check the RULE, and require the failure to name the class. */
+    private static void assertRejects(ArchRule rule, Class<?> violation) {
+        JavaClasses violating = new ClassFileImporter().importClasses(violation);
+
+        assertThatThrownBy(() -> rule.check(violating))
+                .as("%s must reject %s", rule.getDescription(), violation.getSimpleName())
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining(violation.getSimpleName());
+    }
+
+    private static ArchCondition<JavaClass> notDeclareAnUnwrappedSecretField() {
+        return new ArchCondition<>(
+                "not declare a field or accessor whose name says it holds a secret without wrapping it") {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
                 for (JavaField field : javaClass.getFields()) {

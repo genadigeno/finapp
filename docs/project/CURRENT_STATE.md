@@ -55,61 +55,52 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TST-008` - Log redaction test**
+**`P0-TSK-031` - Secret management approach**
 Status: `READY` - not started.
 
-Bounded context: platform / security. Depends on `P0-TSK-030` (`COMPLETE`).
+Bounded context: platform / security. Depends on `P0-TSK-001` (`COMPLETE`).
+**Risk: High.**
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-09. DoD profile: `DOD-TEST`.
-
-**Its acceptance criterion may already be met.** "Test fails if a sensitive field is added without
-redaction" is what `secretsAreWrapped` does, proven on every build by fixtures. Worth checking
-before writing anything, as `P0-TST-002` and `P0-TST-007` both turned out the same way - and
-`P0-TST-007` found its criterion *false* for a case nobody had considered, which is the reason to
-check rather than assume.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-SEC`.
 
 ### Just completed
 
-**`P0-TSK-030` - Structured logging with redaction** - `COMPLETE` (2026-09-02).
-The only Phase 0 task the backlog marks **High risk**.
+**`P0-TST-008` - Log redaction test** - `COMPLETE` (2026-09-02).
+**`P0-EPIC-09` closes with it.** All four items complete.
+
+**The task's own note said to check whether the criterion was already met rather than assume. It
+was not - and the reason is the most serious defect this phase has produced.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| A credential in a logged object does not appear in output | `LogRedactionTest`, reading **emitted** output through the real encoder, with a negative control proving the unwrapped form does leak |
-| Redaction is opt-out, not opt-in | `secretsAreWrapped` fails the build on an unwrapped secret field or accessor; opt-in would be a wrapper people must remember |
+| Test fails if a sensitive field is added without redaction | Now true. A production record with a plaintext `String password` fails the build, as does a getter-only variant. It was **not** true when the task started |
+| Sensitive markers never appear across all appenders | `RedactionAcrossAppendersTest`: console and file, each with a precondition that the line arrived and a negative control that a leak would show |
 
-Design decisions worth carrying forward (ADR-0019):
-- **Default-deny is a property of the rule, not of the wrapper.** A wrapper people must remember is
-  opt-in with extra steps. The build rejects any field or no-argument accessor whose name says it
-  holds a secret unless it is `Sensitive<?>`.
-- **The accident being closed is Java's own.** A record generates a `toString()` printing every
-  component, so `log.info("authenticating {}", credentials)` prints the password with no getter
-  call, no concatenation, and nothing a reviewer would stop at.
-- **Accessors as well as fields**, because a serialiser reads accessors: a private `pw` behind
-  `getPassword()` is invisible to a field-only rule and is exactly what Jackson reaches for.
-- **The vocabulary is narrow, and `key` is not in it.** An idempotency key is not a secret and is
-  recorded in audit deliberately. A rule that flagged `idempotencyKey` is a rule somebody turns
-  off, and a rule that is off protects nothing.
-- **`equals` is identity-based.** Value equality would make the wrapper an oracle - it would answer
-  whether a guess is right - which is how a "safe" wrapper leaks what it wraps.
-- **ECS JSON in every environment**, including locally. A redaction defect living in the encoder a
-  deployment uses would otherwise be invisible to everyone who never runs it.
-- **Tests read emitted output, never a list appender**, which holds the event *before* encoding.
+**`secretsAreWrapped` was structurally incapable of failing.**
+`noClasses().should(condition)` **inverts** the condition's events - it reports as violations the
+things the condition marks *satisfied*. The condition only ever emitted `violated(...)`, so the
+inversion left it nothing to report, and a production record holding a plaintext password passed
+cleanly.
 
-**Two findings from the review, both about coverage rather than code:**
-- **The rule checked fields only.** A serialiser reads accessors, so a private `pw` behind a
-  `getPassword()` escaped it entirely. Closed, with a fixture proving it.
-- **`INV-AUD-02` covers logs, event payloads *and API responses*, and only the log path was
-  tested.** Probing found Jackson already declining to reveal a `Sensitive` - but by **accident**,
-  because it finds no properties and emits `{}`. That is the same shape as the `"correlationId":{}`
-  defect this codebase already hit, and it ends silently the day somebody adds a getter. Masking is
-  now stated by a serialiser in `app`, asserted against a type that *has* an accessible property so
-  the accidental protection cannot be what passes the test.
+The rule's own fixture test had "proved" it worked - by invoking the **condition** directly, which
+bypasses the inversion and therefore tested something the build never runs. A security control that
+cannot fail, with a green test beside it, is worse than absent: it is believed. It is now
+`classes().should(not ...)`, the fixture test evaluates the **rule**, and both production shapes -
+a record component and a getter-only field - are proven to fail.
 
-**Verified against a running instance**, which `DOD-OBS` requires and captured output does not
-prove: real stdout is ECS JSON, a client-supplied `X-Correlation-Id` arrives as a queryable field,
-and the configured database password appears **nowhere** - including when a full authentication
-failure is logged with its stack trace.
+**A second path was found by probing, not reasoning: the MDC.**
+MDC takes a `String`, so `Sensitive` cannot protect it, and the ECS encoder lifts every MDC entry
+to a **top-level field** - `MDC.put("apiToken", token)` publishes it verbatim and queryable.
+Confirmed by planting one and reading the emitted JSON. Closed by
+`onlyCorrelationContextWritesTheMdc`: no production class may touch `org.slf4j.MDC` except the
+component whose job is deciding what belongs in a log line's context. Proven by planting a
+production MDC write, and the exemption is real rather than vacuous - `CorrelationContext` makes
+five MDC calls and passes.
+
+**A process finding worth keeping.** The first probe reported "criterion already met" because
+`:app:test` was **UP-TO-DATE** and the assertion read **stale XML from the previous run**. A
+mutation probe that does not force a re-run can report whatever the last run happened to say. Every
+probe in this task now uses `--rerun-tasks`.
 
 ---
 
@@ -209,6 +200,19 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Log redaction proven rather than trusted (2026-09-02), `P0-TST-008`:
+- `secretsAreWrapped` fixed: it could not fail at all, because `noClasses().should(...)` inverts a
+  condition that only ever emitted violations
+- Its fixture test now evaluates the **rule** rather than the condition, which is what let the
+  defect sit behind a green test
+- Both production shapes proven to fail: a record component, and a field reachable only by a getter
+- `onlyCorrelationContextWritesTheMdc`: the MDC is a `String` map the ECS encoder lifts to
+  top-level fields, so it bypasses the wrapper entirely - writes are confined to one component
+- Redaction asserted on console **and** file appenders, each with a precondition and a negative
+  control, because value-level and encoder-level redaction look identical to a one-appender test
+- Both rules rejected on every build in the four sibling suites' own idiom, after review found
+  this suite had invented a third way of proving teeth - the deviation that hid the defect
 
 Structured logging and default-deny redaction (2026-09-02), `P0-TSK-030`:
 - `Sensitive<T>`: every rendering path masks - `toString`, interpolation, concatenation, a record's
@@ -538,7 +542,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TST-008` is the next task.
+None in progress. `P0-TSK-031` is the next task.
 
 ## Blockers
 
@@ -716,15 +720,18 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TST-008` - Log redaction test**, the last item in `P0-EPIC-09`.
+**`P0-TSK-031` - Secret management approach**, opening `P0-EPIC-10` (Security Baseline) - the last
+epic of M0.4 and the largest remaining in Phase 0 at eight tasks.
 
-Check before writing: its criterion - "test fails if a sensitive field is added without redaction" -
-is what `secretsAreWrapped` already does. `P0-TST-002` and `P0-TST-007` were both largely satisfied
-on arrival, and `P0-TST-007` found its criterion **false** for a case nobody had considered, which
-is the argument for checking rather than assuming either way.
+Its acceptance criterion is the shape this project likes: *no secret value in the repository;
+secret scanning green; a deliberately committed dummy secret fails CI.* The third clause is the one
+that matters, and it is a claim about CI - which has never run on a runner, so how it is
+demonstrated needs deciding rather than assuming.
 
-Closing it closes `P0-EPIC-09`, leaving `P0-EPIC-10` (security baseline, 8 tasks) as the last of
-M0.4.
+It also has an existing obligation to honour: `compose.yaml` records that
+`local-development-only-not-a-secret` is a marked local default which `P0-TSK-031` "must be
+configured to recognise as a marked local default rather than flagging it, without weakening the
+scan." That value now appears in three places.
 
 ---
 
@@ -732,6 +739,8 @@ M0.4.
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TST-008`. The first question was whether the inversion defect it found was **systemic**, since other rules protect `INV-MON-01` and `INV-EVT-01`. It is not: all four sibling suites use the positive `classes().that()...should()` form and prove their teeth with `rule.check(violating)` - the **rule**, not the condition. Which makes the finding sharper rather than softer: the correct pattern already existed, this suite deviated from it, and the deviation is exactly what hid a security control that could not fail. The teeth tests now use the sibling idiom - `assertThatThrownBy(() -> rule.check(...))` and `assertThatCode(...).doesNotThrowAnyException()` - so the suite reads like its four neighbours and cannot drift back. Two further fixes. The **MDC rule was proven only by a manual probe**, which is not a method that survives the person who used it; it now has a fixture and is rejected on every build alongside the others. And the appender test wrote its log to the **system temp directory**, where Logback appends for ever - a test whose negative control deliberately writes an unredacted sentinel was leaving that plaintext in a directory nothing cleans, which is the wrong shape for a test about not writing secrets to files. Moved inside `build/`, and the stray removed. 419 hermetic tests, 165 database tests. |
+| 2026-09-02 | `P0-TST-008` complete; **`P0-EPIC-09` closed**. The task's own note said to check whether its criterion was already met rather than assume, and it was not - the reason being the most serious defect this phase has produced. **`secretsAreWrapped` was structurally incapable of failing.** `noClasses().should(condition)` *inverts* the condition's events, reporting as violations the things it marks satisfied; the condition only ever emitted `violated(...)`, so the inversion left it nothing to report and a production record holding a plaintext `String password` passed cleanly. The rule's own fixture test had "proved" it worked by invoking the **condition** directly, bypassing the inversion and testing something the build never runs. A security control that cannot fail, with a green test beside it, is worse than absent: it is believed. Now `classes().should(not ...)`, with the fixture evaluating the rule, and both production shapes proven to fail. **A second path was found by probing**: the MDC takes a `String`, so the wrapper cannot protect it, and the ECS encoder lifts every entry to a top-level field - `MDC.put("apiToken", token)` publishes it verbatim. Closed by `onlyCorrelationContextWritesTheMdc`, proven by planting a production MDC write, with the exemption shown to be real rather than vacuous. Redaction is now asserted across console **and** file appenders, each with a precondition and a negative control, because value-level and encoder-level redaction look identical to a one-appender test. **Process finding:** the first probe reported "already met" because `:app:test` was UP-TO-DATE and the assertion read stale XML - a mutation probe that does not force a re-run can report whatever the last run said. 418 hermetic tests, 165 database tests. |
 | 2026-09-02 | `P0-TSK-030` complete - the only Phase 0 task the backlog marks **High risk**. `INV-AUD-02` is the one invariant that specifies its own enforcement, *default-deny redaction*, and the decision that follows is that **default-deny is a property of the rule, not of the wrapper**: a wrapper people must remember is opt-in with extra steps. `secretsAreWrapped` fails the build on any field or no-argument accessor whose name says it holds a secret unless it is `Sensitive<?>`. The accident being closed is Java's own - a record generates a `toString()` printing every component, so `log.info("authenticating {}", credentials)` prints the password with no getter, no concatenation, and nothing a reviewer stops at. **Accessors as well as fields**, because a serialiser reads accessors and a private `pw` behind a `getPassword()` escaped the first version of the rule entirely. The vocabulary is narrow on purpose and `key` is not in it: an idempotency key is not a secret, and a rule with false positives is a rule somebody turns off. `equals` is identity-based, because value equality would let the wrapper answer whether a guess is right. **Review found the invariant half-covered**: it names logs, event payloads *and API responses*, and only logs were tested. Jackson turned out to decline revealing a `Sensitive` by **accident** - no properties, so `{}` - the same shape as the `"correlationId":{}` defect already hit here, and one that ends silently when somebody adds a getter; masking is now stated by a serialiser in `app` and asserted against a type that *has* an accessor. ECS JSON everywhere including locally, since an encoder nobody runs locally is an encoder whose defects nobody sees. Verified on a running instance: JSON on real stdout, a client-supplied correlation id as a queryable field, and the database password absent even from a logged authentication failure. ADR-0019 recorded. 415 hermetic tests, 165 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-029`. One important finding, and it is the gap the task's own worst defect should have suggested: **nothing checked that the dashboard's queries name series the application actually publishes**. A dashboard querying a series that does not exist does not fail - it renders "No data" on every panel and looks exactly like a quiet system, which during an incident is the worst way to be wrong. That is not hypothetical: `baseUnit("events")` had already made the published name diverge from the queried one, and it took looking at a browser to notice. `DashboardQueriesResolveTest` now resolves every `expr` against a live registry, and the dashboard is a declared build input - the sixth such line. **Writing it found two more things, both by failing.** `hikaricp_*` exists only once the pool has actually initialised: with the datasource at a closed port there is no pool and only the generic `jdbc_connections_*`, so the guard has to run against a real database - which means it checks what the dashboard will really face. And `http_server_requests_*` is registered when the first request is served rather than at startup, so the test serves one first; asserting before that would have reported a dashboard error that does not exist. The PromQL parser errs deliberately towards treating an unknown token AS a series, because a false failure is visible and fixable while the other direction silently stops checking whichever query it misparsed. Three mutations, all caught: a dashboard querying a missing series, a renamed metric with the dashboard untouched, and a drifted Grafana pin. 407 hermetic tests, 165 database tests. |
 | 2026-09-02 | `P0-TSK-029` complete. Prometheus metrics, a naming convention enforced against the **live registry** rather than a written list, and a Grafana dashboard **verified rendering live data in a browser** - `finapp_outbox_pending` reading 1 against exactly one unpublished row. A metric name is a contract that outlives the code: every alert rule and runbook written against it lives outside this repository, so it is enforced by the build before there are twenty-four modules to reconcile. **No tag value may come from a request**, which is a security rule as much as an operational one - an identifier in a tag multiplies one series into thousands and puts it in a system with months of retention (`INV-AUD-02`) - and **correlation is deliberately kept off metrics**, the one concern where it must be kept out. **Outbox depth and age are gauges over the database, not counters from the relay**: a relay-side counter reports nothing when the relay is down, which is exactly the incident worth seeing. An unreadable backlog reports NaN rather than zero, because a zero silences the alert that should fire. **Two defects no test caught**, both found by scraping a running instance: the gauges were structurally always NaN, because the cache compared `nanoTime()` against a `Long.MIN_VALUE` sentinel and the subtraction overflows - two tests were green over it, one asserting NaN when the database is *absent*, which an always-NaN gauge satisfies perfectly; and `baseUnit("events")` renamed the published series to one no dashboard queried, hidden by a substring assertion. **Two architecture rules fired and both improved the design**: `INV-MON-01` caught floating point twice - `OutboxBacklog` was fixed by casting to `bigint`, while `OutboxMetrics` took the first two entries in an exemption set empty since `P0-TSK-008`, because Micrometer's `Gauge` is a `ToDoubleFunction` and a row count cannot reach a monetary path; and the ambient-time rule rejected `nanoTime()`, so the cache uses the injected `Clock`. ADR-0018 recorded. 407 hermetic tests, 163 database tests. |

@@ -571,7 +571,7 @@ Status: `IN_PROGRESS`
 - Cx: M
 - DoD: `DOD-OBS`
 
-**P0-TST-008 — Log redaction test**
+**P0-TST-008 — Log redaction test** — `COMPLETE` (2026-09-02)
 - Context: platform / security
 - Description: Assert sensitive markers never appear in emitted log output across all appenders.
 - Why: Redaction must be verified, not trusted.

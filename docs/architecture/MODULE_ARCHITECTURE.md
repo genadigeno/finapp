@@ -728,11 +728,19 @@ rule that flagged `idempotencyKey` is a rule somebody turns off, and a rule that
 nothing. Matching is on camel-case word boundaries, so `companyName` is not a PAN and `spinLock`
 is not a PIN.
 
+- No production class calls `org.slf4j.MDC` except `CorrelationContext`. The MDC takes a
+  `String`, so the wrapper above cannot protect it, and the ECS encoder lifts every MDC entry to a
+  **top-level field** - `MDC.put("apiToken", token)` publishes it verbatim, queryable, with no
+  wrapper anywhere on the path. Confirmed by probe rather than by reasoning: the value appeared in
+  the emitted JSON exactly as written. Confining the writes makes the MDC's contents a decision
+  made in one place, by the component whose job is deciding what belongs in a log line's context.
+  *(ArchUnit: `onlyCorrelationContextWritesTheMdc`)*
+
 **What it does not catch**, stated so it is not mistaken for total coverage: a secret held only in
-a local variable and passed straight to a log call. The field and accessor rules cover values a
-type *stores*; a transient value has no declaration to inspect. Closing that needs a logging facade
-that only accepts declared-safe arguments, which is a larger change than this task, and is recorded
-as debt.
+a local variable and passed straight to a log call. The rules cover values a type *stores* and the
+one context map a log line carries; a transient value has no declaration to inspect. Closing that
+needs a logging facade that only accepts declared-safe arguments, which is a larger change than
+this task, and is recorded as debt.
 
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).
