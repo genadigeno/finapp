@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.fail;
 
 import com.finapp.platform.api.ApiVersion;
 import com.finapp.platform.api.ErrorCode;
+import com.finapp.platform.testing.RepositoryPaths;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -48,6 +50,7 @@ import tools.jackson.databind.JsonNode;
  * header that {@code P0-TSK-024} and {@code P0-TSK-025} committed to - and that contract is what
  * this document describes. It is real, and a client is entitled to rely on it.
  */
+@Tag("slice")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OpenApiContractTest {
 

@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -57,6 +58,7 @@ import org.junit.jupiter.api.Test;
  * spinLock} is not a PIN. A substring match would produce exactly the false positives that get a
  * rule deleted.
  */
+@Tag("architecture")
 @AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class NoUnwrappedSecretRulesTest {
 

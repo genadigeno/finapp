@@ -3,6 +3,7 @@ package com.finapp.platform.outbox;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
@@ -12,7 +13,6 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.io.Serial;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -89,7 +89,7 @@ class OutboxRelayTest {
 
     @BeforeAll
     static void connect() throws SQLException {
-        writeConnection = open();
+        writeConnection = DatabaseRoles.bootstrap();
         writeConnection.setAutoCommit(false);
     }
 
@@ -179,7 +179,7 @@ class OutboxRelayTest {
     }
 
     private static Instant serverNow() throws SQLException {
-        try (Connection connection = open();
+        try (Connection connection = DatabaseRoles.bootstrap();
                 Statement statement = connection.createStatement();
                 ResultSet rows = statement.executeQuery("SELECT now()")) {
             rows.next();
@@ -189,7 +189,7 @@ class OutboxRelayTest {
 
     /** Every row's publication state, for a failure message that can be acted on. */
     private static List<String> pendingRowSummary() throws SQLException {
-        try (Connection connection = open();
+        try (Connection connection = DatabaseRoles.bootstrap();
                 Statement statement = connection.createStatement();
                 ResultSet rows =
                         statement.executeQuery(
@@ -768,7 +768,7 @@ class OutboxRelayTest {
 
     private static OutboxRelay relay(EventPublisher publisher, RetryPolicy policy) {
         // A fresh connection per call, so simulated instances share nothing.
-        return new OutboxRelay(OutboxRelayTest::open, publisher, policy, 8, 100);
+        return new OutboxRelay(DatabaseRoles::bootstrap, publisher, policy, 8, 100);
     }
 
     private static EventId writeEvent(UUID aggregateId) {
@@ -991,7 +991,7 @@ class OutboxRelayTest {
      * through it would serialise against the very concurrency the test exists to create.
      */
     private static int pendingCountOnOwnConnection() throws SQLException {
-        try (Connection connection = open();
+        try (Connection connection = DatabaseRoles.bootstrap();
                 Statement statement = connection.createStatement();
                 ResultSet rows =
                         statement.executeQuery(
@@ -1013,18 +1013,5 @@ class OutboxRelayTest {
         }
     }
 
-    private static Connection open() throws SQLException {
-        return DriverManager.getConnection(
-                required("finapp.db.url"), required("finapp.db.user"), required("finapp.db.password"));
-    }
 
-    private static String required(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

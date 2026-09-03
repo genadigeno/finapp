@@ -2,7 +2,7 @@ package com.finapp.app.telemetry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.finapp.app.api.RepositoryPaths;
+import com.finapp.platform.testing.RepositoryPaths;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import java.net.URI;

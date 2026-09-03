@@ -3,12 +3,12 @@ package com.finapp.platform.idempotency;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -64,7 +64,7 @@ class IdempotencyFailureModeTest {
 
     @BeforeAll
     static void connect() throws SQLException {
-        connection = openConnection();
+        connection = DatabaseRoles.bootstrap();
         connection.setAutoCommit(false);
         try (Statement statement = connection.createStatement()) {
             statement.execute(
@@ -114,7 +114,7 @@ class IdempotencyFailureModeTest {
             Future<IdempotentExecutor.ExecutionOutcome> winner =
                     pool.submit(
                             () -> {
-                                try (Connection own = openConnection()) {
+                                try (Connection own = DatabaseRoles.bootstrap()) {
                                     own.setAutoCommit(false);
                                     IdempotentExecutor.ExecutionOutcome outcome =
                                             inScope(() -> executor().execute(
@@ -148,7 +148,7 @@ class IdempotencyFailureModeTest {
             for (int i = 0; i < losers; i++) {
                 tasks.add(
                         () -> {
-                            try (Connection own = openConnection()) {
+                            try (Connection own = DatabaseRoles.bootstrap()) {
                                 own.setAutoCommit(false);
                                 IdempotentExecutor.ExecutionOutcome outcome =
                                         inScope(() -> patient.execute(
@@ -190,7 +190,7 @@ class IdempotencyFailureModeTest {
         AtomicInteger executions = new AtomicInteger();
 
         try (ExecutorService pool = Executors.newFixedThreadPool(1);
-                Connection holder = openConnection()) {
+                Connection holder = DatabaseRoles.bootstrap()) {
             holder.setAutoCommit(false);
             Future<?> held =
                     pool.submit(
@@ -242,7 +242,7 @@ class IdempotencyFailureModeTest {
         AtomicInteger executions = new AtomicInteger();
 
         IdempotentExecutor.ExecutionOutcome committed;
-        try (Connection first = openConnection()) {
+        try (Connection first = DatabaseRoles.bootstrap()) {
             first.setAutoCommit(false);
             committed = inScope(() -> executor().execute(
                     first, key, fingerprint, unitOfWork -> recordEffect(unitOfWork, executions, "paid")));
@@ -339,7 +339,7 @@ class IdempotencyFailureModeTest {
         // surviving instances then retry. The lease must let exactly one take over.
         IdempotencyKey key = uniqueKey();
         RequestFingerprint fingerprint = RequestFingerprint.sha256("crashed".getBytes(StandardCharsets.UTF_8));
-        try (Connection dying = openConnection()) {
+        try (Connection dying = DatabaseRoles.bootstrap()) {
             dying.setAutoCommit(false);
             new JdbcIdempotencyRecordStore()
                     .claim(dying, key, fingerprint, CorrelationId.of("dead-instance"), FIXED,
@@ -355,7 +355,7 @@ class IdempotencyFailureModeTest {
         for (int i = 0; i < 2; i++) {
             survivors.add(
                     () -> {
-                        try (Connection own = openConnection()) {
+                        try (Connection own = DatabaseRoles.bootstrap()) {
                             own.setAutoCommit(false);
                             start.await();
                             try {
@@ -397,7 +397,7 @@ class IdempotencyFailureModeTest {
      */
     private static void awaitLockWaiters(int expected) {
         Instant deadline = Instant.now().plusSeconds(30);
-        try (Connection observer = openConnection()) {
+        try (Connection observer = DatabaseRoles.bootstrap()) {
             while (Instant.now().isBefore(deadline)) {
                 try (PreparedStatement select =
                                 observer.prepareStatement(
@@ -482,20 +482,5 @@ class IdempotencyFailureModeTest {
         return new IdempotencyKey("fail:command-" + SUFFIX.incrementAndGet(), "client-key");
     }
 
-    private static Connection openConnection() throws SQLException {
-        return DriverManager.getConnection(
-                requiredProperty("finapp.db.url"),
-                requiredProperty("finapp.db.user"),
-                requiredProperty("finapp.db.password"));
-    }
 
-    private static String requiredProperty(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

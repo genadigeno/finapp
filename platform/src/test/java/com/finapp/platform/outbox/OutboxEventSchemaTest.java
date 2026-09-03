@@ -3,8 +3,8 @@ package com.finapp.platform.outbox;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.platform.testing.database.DatabaseRoles;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -48,8 +48,7 @@ class OutboxEventSchemaTest {
     @BeforeAll
     static void connect() throws SQLException {
         connection =
-                DriverManager.getConnection(
-                        required("finapp.db.url"), required("finapp.db.user"), required("finapp.db.password"));
+                DatabaseRoles.bootstrap();
         connection.setAutoCommit(true);
     }
 
@@ -301,13 +300,4 @@ class OutboxEventSchemaTest {
         }
     }
 
-    private static String required(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

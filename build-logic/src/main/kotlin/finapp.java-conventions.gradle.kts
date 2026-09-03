@@ -93,11 +93,86 @@ tasks.withType<JavaCompile>().configureEach {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Test tiers (P0-TSK-036).
+//
+// A tier is defined by WHAT A TEST NEEDS IN ORDER TO RUN, and by nothing else. That is the only
+// axis on which a tier can be decided mechanically, and it is the axis that matters for
+// scheduling: a test needing a real PostgreSQL cannot share a task with one needing nothing,
+// because the task then costs what its heaviest member costs and fails when that member's
+// infrastructure is absent.
+//
+// THE DEFAULT TIER TAKES EVERYTHING NOT CLAIMED BY ANOTHER. `unitTest` EXCLUDES the tagged tiers
+// rather than INCLUDING a `unit` tag, so a test can never land in no tier at all - which is the
+// hole a set of includeTags-only tasks opens, and it is a silent one: the test compiles, reports
+// nothing, and is believed to be running.
+//
+// docs/project/TESTING.md is the document and TestTier is the Java-side declaration; both are
+// held to this list by TestTaxonomyTest rather than by agreement.
+// ---------------------------------------------------------------------------
+val defaultTierTask = "unitTest"
+
+// Tier task -> the JUnit tag that selects it. Order is the escalation order: each tier needs
+// strictly more than the one above it.
+val taggedTiers = linkedMapOf(
+    "architectureTest" to "architecture",
+    "sliceTest" to "slice",
+    "databaseTest" to "database",
+)
+
+// Tiers needing something outside the JVM. These are excluded from `test`, so `./gradlew build`
+// stays green on a machine with nothing running - and they are a task you can SEE did not run,
+// rather than a test that skips itself, because a skipped test reports success.
+val externalInfrastructureTiers = setOf("databaseTest")
+
+val externalTierTags = taggedTiers.filterKeys { it in externalInfrastructureTiers }.values.toTypedArray()
+
+tasks.test {
+    useJUnitPlatform { excludeTags(*externalTierTags) }
+}
+
+tasks.register<Test>(defaultTierTask) {
+    group = "verification"
+    description = "Runs tests that need nothing beyond the JVM."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { excludeTags(*taggedTiers.values.toTypedArray()) }
+}
+
+taggedTiers.forEach { (taskName, tierTag) ->
+    tasks.register<Test>(taskName) {
+        group = "verification"
+        description = "Runs the '$tierTag' test tier."
+        testClassesDirs = sourceSets.test.get().output.classesDirs
+        classpath = sourceSets.test.get().runtimeClasspath
+        useJUnitPlatform { includeTags(tierTag) }
+
+        if (taskName in externalInfrastructureTiers) {
+            // Never cached: the point is to exercise real infrastructure, and a cached
+            // "up to date" result would mean it had not.
+            outputs.upToDateWhen { false }
+        }
+    }
+}
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     // Tests assert the toolchain pin (BuildToolchainTest). Injecting it here means the
     // expected value has one definition rather than a second copy hardcoded in the test.
     systemProperty("finapp.java.toolchain", javaToolchainVersion)
+
+    // The tier declaration, crossing the Gradle/Java boundary as data. TestTaxonomyTest asserts
+    // it equals TestTier, so the tasks Gradle registers and the tiers the guard checks cannot
+    // drift apart — a build script and a Java enum have no other way to share one definition.
+    systemProperty(
+        "finapp.test.tiers",
+        (mapOf(defaultTierTask to "") + taggedTiers).entries.joinToString(",") { "${it.key}=${it.value}" }
+    )
+    systemProperty(
+        "finapp.test.tiers.external",
+        externalInfrastructureTiers.sorted().joinToString(",")
+    )
+
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = false

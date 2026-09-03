@@ -55,14 +55,33 @@ fail the build on a boundary or floating-point-money violation.
 test starts a container, and no test skips itself when something is missing. Tests that
 genuinely require a database live in a separate task you can see did not run — see §4.
 
+### Test tiers
+
+A test's **tier** is what it needs in order to run, and each tier is its own task. The tiers are
+declared once, in `finapp.java-conventions.gradle.kts`, and `TestTaxonomyTest` fails the build
+when they, `TestTier`, the tag on a test class, and what CI invokes stop agreeing.
+
+| Task | Runs tests that need |
+|---|---|
+| `./gradlew unitTest` | nothing beyond the JVM |
+| `./gradlew architectureTest` | the compiled classes of every module |
+| `./gradlew sliceTest` | a Spring application context |
+| `./gradlew databaseTest` | a real PostgreSQL — see §4 |
+
+`build` runs the first three. `unitTest` is the fast inner loop: seconds rather than a minute,
+because it starts no Spring context.
+
+The full conventions — which tier a concern belongs to, naming, tagging, and the shared harnesses
+— are in [`docs/project/TESTING.md`](docs/project/TESTING.md).
+
 Useful narrower commands:
 
 ```bash
-./gradlew :sharedkernel:test
+./gradlew :sharedkernel:unitTest
 ```
 
 ```bash
-./gradlew :app:test --tests '*ModuleBoundaryRulesTest*'
+./gradlew :app:architectureTest --tests '*ModuleBoundaryRulesTest*'
 ```
 
 ---
@@ -162,10 +181,10 @@ edited migration file:
 ./gradlew :platform:flywayValidate
 ```
 
-Tests that need a live PostgreSQL are a **separate task**, not tests that skip themselves:
+Tests that need a live PostgreSQL are a **separate tier**, not tests that skip themselves:
 
 ```bash
-./gradlew :platform:databaseTest
+./gradlew databaseTest
 ```
 
 A test that quietly skips when the database is absent reports success, and a suite that

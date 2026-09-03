@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -55,6 +56,7 @@ import org.junit.jupiter.api.Test;
  * {@link AnalyzeClasses} is a suite, wherever it sits, so neither adding a third one nor moving
  * one to another package silently escapes the check.
  */
+@Tag("architecture")
 class ArchitectureRulesAreDocumentedTest {
 
     private static final String DOCUMENT = "docs/architecture/MODULE_ARCHITECTURE.md";

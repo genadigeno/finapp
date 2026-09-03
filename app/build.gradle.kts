@@ -134,27 +134,18 @@ springBoot {
 }
 
 // ---------------------------------------------------------------------------
-// Tests that need a live database are separated from those that do not, exactly as in
-// platform/build.gradle.kts: `test` stays hermetic so `./gradlew build` is green on a machine
-// with nothing running, and `databaseTest` is a task you can SEE did not run - rather than a
-// test that silently skips itself, since a skipped test reports success.
+// The `database` tier's module-specific configuration.
 //
-// No systemProperty wiring here, deliberately. The application reads its database settings from
-// the same FINAPP_DB_* environment variables compose.yaml uses, and a Gradle test JVM inherits
-// the environment - so the test connects exactly the way the deployed application would, through
-// the configuration the application actually has, rather than through a second set of values a
-// test fixture chose.
+// The tier tasks themselves are registered once in finapp.java-conventions (P0-TSK-036). Only
+// what is specific to app belongs here.
+//
+// No database CREDENTIALS are wired, deliberately. The application reads its settings from the
+// same FINAPP_DB_* environment variables compose.yaml uses, and a Gradle test JVM inherits the
+// environment - so the test connects exactly the way the deployed application would, through the
+// configuration the application actually has, rather than through a second set of values a test
+// fixture chose.
 // ---------------------------------------------------------------------------
-val databaseTag = "database"
-
-tasks.register<Test>("databaseTest") {
-    group = "verification"
-    description = "Runs tests that require a live PostgreSQL (docker compose up -d postgres)."
-
-    testClassesDirs = sourceSets.test.get().output.classesDirs
-    classpath = sourceSets.test.get().runtimeClasspath
-    useJUnitPlatform { includeTags(databaseTag) }
-
+tasks.named<Test>("databaseTest") {
     // The container image, from the version catalog, exactly as platform's task supplies it.
     // Without this the shared harness runs, finds no image, and returns - which is how these
     // tests silently kept connecting to a developer's compose stack (P0-TSK-035).
@@ -170,13 +161,41 @@ tasks.register<Test>("databaseTest") {
     val runtimeNames = configurations.runtimeClasspath.map { cfg -> cfg.files.joinToString(",") { it.name } }
     doFirst { systemProperty("finapp.runtime.classpath", runtimeNames.get()) }
 
-    // Never cached: the point is to exercise a real database, and a cached "up to date" result
-    // would mean it had not.
-    outputs.upToDateWhen { false }
+    // `outputs.upToDateWhen { false }` is applied by the convention plugin to every tier needing
+    // external infrastructure, so it is not repeated here.
 }
 
-tasks.test {
-    useJUnitPlatform { excludeTags(databaseTag) }
+// The document inputs below are declared on EVERY test task, not only on `test`.
+//
+// Each document-backed guard runs in whichever tier its own test belongs to:
+// DashboardQueriesResolveTest is `database` and resolves the Grafana dashboard against a live
+// registry, while the rest are `unit`. A task that does not declare the document it reads goes
+// UP-TO-DATE over an edit to it and reports green having opened nothing - a failure this
+// repository has now met three times (see the comments below). P0-TSK-036 split one test task
+// into five, which is precisely the change that would have reintroduced it four more times, so
+// the declaration is made against the type rather than against a named task.
+// TestTaxonomyTest sweeps the compiled TEST classes of every module, because a module's test
+// output is deliberately not on another module's classpath — so it reads them from disk.
+//
+// Gradle cannot infer that, and without these two lines the sweep reads whatever happened to be
+// compiled last. PROVEN, not assumed: the first mutation of this task — removing @Tag("database")
+// from a platform test — SURVIVED, because :platform:testClasses had not re-run and :app's task
+// read a stale class file. That is the same "check that reports success for work it did not do"
+// the document-input lines below exist for, one module across.
+//
+// Derived from the subprojects rather than listed, so a fourth module is swept without anyone
+// remembering — the stale-list defect this repository has now met four times.
+val siblingModules = rootProject.subprojects.filter { it.path != project.path }
+
+tasks.withType<Test>().configureEach {
+    siblingModules.forEach { sibling -> dependsOn("${sibling.path}:testClasses") }
+    inputs.files(
+        siblingModules.map {
+            rootProject.layout.projectDirectory.dir("${it.name}/build/classes/java/test")
+        }
+    )
+        .withPropertyName("siblingTestClasses")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 
     // ArchitectureRulesAreDocumentedTest reads this document and asserts it names exactly the
     // rules that run on every build. Gradle cannot infer that a markdown file is an input, so
@@ -257,5 +276,12 @@ tasks.test {
         }
     )
         .withPropertyName("committedConfiguration")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The eighth. TestTaxonomyTest holds this document and the tier declaration to each other:
+    // the document must name exactly the tiers that exist, with the task and tag each one
+    // actually uses. Same reason as every line above it.
+    inputs.files(rootProject.layout.projectDirectory.file("docs/project/TESTING.md"))
+        .withPropertyName("testingConventions")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }

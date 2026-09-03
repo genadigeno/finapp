@@ -3,10 +3,10 @@ package com.finapp.platform.idempotency;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.platform.testing.database.DatabaseRoles;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -60,10 +60,7 @@ class IdempotencyRecordSchemaTest {
     @BeforeAll
     static void connect() throws SQLException {
         connection =
-                DriverManager.getConnection(
-                        requiredProperty("finapp.db.url"),
-                        requiredProperty("finapp.db.user"),
-                        requiredProperty("finapp.db.password"));
+                DatabaseRoles.bootstrap();
         connection.setAutoCommit(true);
     }
 
@@ -134,7 +131,7 @@ class IdempotencyRecordSchemaTest {
                                         () -> {
                                             // Each racer needs its own connection: sharing one
                                             // would serialise them and the race would not happen.
-                                            try (Connection own = openConnection()) {
+                                            try (Connection own = DatabaseRoles.bootstrap()) {
                                                 start.await();
                                                 try {
                                                     claimOn(own, scope, "contended");
@@ -524,20 +521,5 @@ class IdempotencyRecordSchemaTest {
         }
     }
 
-    private static Connection openConnection() throws SQLException {
-        return DriverManager.getConnection(
-                requiredProperty("finapp.db.url"),
-                requiredProperty("finapp.db.user"),
-                requiredProperty("finapp.db.password"));
-    }
 
-    private static String requiredProperty(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

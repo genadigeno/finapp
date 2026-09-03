@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.Test;
  * <p>P0-TSK-007 adds ArchUnit rules covering what Gradle cannot express (cross-module
  * internals, entity references). This test covers what the classpath can prove.
  */
+@Tag("architecture")
 class SharedKernelIsolationTest {
 
     @Test

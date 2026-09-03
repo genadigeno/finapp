@@ -9,6 +9,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -47,6 +48,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
         // Port 1 is closed. Connection refused, immediately, with no dependency on anything
         // being installed - so this stays a hermetic test of a genuinely absent database.
         properties = "spring.datasource.url=jdbc:postgresql://127.0.0.1:1/absent")
+@Tag("slice")
 class HealthEndpointTest {
 
     @LocalServerPort private int port;

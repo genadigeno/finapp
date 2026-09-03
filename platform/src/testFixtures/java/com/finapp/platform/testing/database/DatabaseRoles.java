@@ -1,4 +1,4 @@
-package com.finapp.platform.testing;
+package com.finapp.platform.testing.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,6 +29,28 @@ import java.sql.Statement;
 public final class DatabaseRoles {
 
     private DatabaseRoles() {}
+
+    /**
+     * The bootstrap role the container is created with, for tests making no privilege claim.
+     *
+     * <p>Added by {@code P0-TSK-036} to pay down a duplication its audit surfaced: thirteen test
+     * classes each carried a private {@code openConnection()} and a private
+     * {@code requiredProperty()} doing exactly this. None of them was wrong — the audit checked —
+     * but a convention with a shared harness that most tests do not use is a convention the next
+     * test is as likely to miss as to find, and what it would find by copying is a connection as
+     * the <em>superuser</em>.
+     *
+     * <p><strong>Prefer {@link #application}.</strong> This role bypasses every permission check,
+     * so a denial asserted through it passes whether the grants are right, wrong or absent. Use
+     * it only where no privilege claim is being made — a temporary-table round trip, a schema
+     * probe — and never to make a failing privilege test pass.
+     */
+    public static Connection bootstrap() throws SQLException {
+        return DriverManager.getConnection(
+                required("finapp.db.url"),
+                required("finapp.db.user"),
+                required("finapp.db.password"));
+    }
 
     /** The role the application connects as: per-table DML only, no DDL, not a superuser. */
     public static Connection application() throws SQLException {

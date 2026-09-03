@@ -19,6 +19,7 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.Test;
  * constants and their values, which requires reflection rather than static analysis, and it is
  * not an architecture rule that {@code MODULE_ARCHITECTURE.md} §6 should list.
  */
+@Tag("architecture")
 class AuditableActionRegistryTest {
 
     private static final String CATALOGUE = "docs/architecture/AUDITABLE_ACTIONS.md";

@@ -26,6 +26,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -67,6 +68,7 @@ import org.junit.jupiter.api.Test;
  * than instructions — verified by probe, where the block method reported no modifiers at all. That
  * check reads bytecode directly; see {@link MonitorInstructions}.
  */
+@Tag("architecture")
 @AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class NoSingleInstanceAssumptionRulesTest {
 

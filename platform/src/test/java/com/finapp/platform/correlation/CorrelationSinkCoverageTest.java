@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.Test;
  * documentation-equivalence check: an expectation derived from the codebase cannot rot, and one
  * maintained by hand always does.
  */
+@Tag("architecture")
 class CorrelationSinkCoverageTest {
 
     /**

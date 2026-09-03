@@ -4,10 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -59,7 +59,7 @@ class InboxConsumerTest {
 
     @BeforeAll
     static void connect() throws SQLException {
-        connection = open();
+        connection = DatabaseRoles.bootstrap();
         connection.setAutoCommit(false);
         try (Statement statement = connection.createStatement()) {
             // An ordinary table: a TEMPORARY one is session-local and so invisible to the
@@ -280,7 +280,7 @@ class InboxConsumerTest {
                     () -> {
                         // A connection of its own: a test sharing one connection serialises
                         // itself and would report the constraint working whether or not it did.
-                        try (Connection own = open()) {
+                        try (Connection own = DatabaseRoles.bootstrap()) {
                             own.setAutoCommit(false);
                             start.await();
                             InboxConsumer.Outcome outcome = consume(own, key, recordEffect(key));
@@ -326,7 +326,7 @@ class InboxConsumerTest {
         InboxKey key = key("message-contended");
         Duration wait = Duration.ofMillis(250);
 
-        try (Connection holder = open()) {
+        try (Connection holder = DatabaseRoles.bootstrap()) {
             holder.setAutoCommit(false);
             // The holder claims the key and does not commit, standing in for another instance
             // still inside its handler.
@@ -401,7 +401,7 @@ class InboxConsumerTest {
     void anAutoCommitConnectionIsRefused() throws SQLException {
         InboxKey key = key("message-autocommit");
 
-        try (Connection autoCommit = open()) {
+        try (Connection autoCommit = DatabaseRoles.bootstrap()) {
             assertThatExceptionOfType(InboxStorageException.class)
                     .isThrownBy(() -> consume(autoCommit, key, recordEffect(key)))
                     .withMessageContaining("auto-commit");
@@ -517,18 +517,5 @@ class InboxConsumerTest {
         }
     }
 
-    private static Connection open() throws SQLException {
-        return DriverManager.getConnection(
-                required("finapp.db.url"), required("finapp.db.user"), required("finapp.db.password"));
-    }
 
-    private static String required(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

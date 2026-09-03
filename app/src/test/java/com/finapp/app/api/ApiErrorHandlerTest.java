@@ -11,6 +11,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -47,6 +48,7 @@ import org.springframework.web.bind.annotation.RestController;
  * and quietly miss the composition root - which is how this class first failed once the
  * correlation filter needed a bean from it.
  */
+@Tag("slice")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(ApiErrorHandlerTest.FailingController.class)
 class ApiErrorHandlerTest {

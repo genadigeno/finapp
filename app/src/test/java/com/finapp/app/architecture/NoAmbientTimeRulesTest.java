@@ -27,6 +27,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -64,6 +65,7 @@ import org.junit.jupiter.api.Test;
  * and the instant a request arrived are three different things; substituting one for another
  * is a domain error that reads perfectly. See {@code DOMAIN_MODEL.md} §Time.
  */
+@Tag("architecture")
 @AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class NoAmbientTimeRulesTest {
 

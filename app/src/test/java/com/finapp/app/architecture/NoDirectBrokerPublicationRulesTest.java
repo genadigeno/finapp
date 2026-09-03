@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -50,6 +51,7 @@ import org.junit.jupiter.api.Test;
  * built out of several classes without anyone editing this rule — and means the exemption stays
  * one obvious place rather than a growing list.
  */
+@Tag("architecture")
 @AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class NoDirectBrokerPublicationRulesTest {
 

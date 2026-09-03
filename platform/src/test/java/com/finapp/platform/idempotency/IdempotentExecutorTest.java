@@ -4,13 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
-import com.finapp.platform.testing.SimulatedInstance;
+import com.finapp.platform.testing.database.SimulatedInstance;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -67,7 +67,7 @@ class IdempotentExecutorTest {
 
     @BeforeAll
     static void connect() throws SQLException {
-        connection = openConnection();
+        connection = DatabaseRoles.bootstrap();
         connection.setAutoCommit(false);
         try (Statement statement = connection.createStatement()) {
             // An ordinary table, not a TEMPORARY one. A PostgreSQL temporary table is
@@ -150,7 +150,7 @@ class IdempotentExecutorTest {
         for (int i = 0; i < racers; i++) {
             tasks.add(
                     () -> {
-                        try (Connection own = openConnection()) {
+                        try (Connection own = DatabaseRoles.bootstrap()) {
                             own.setAutoCommit(false);
                             start.await();
                             IdempotentExecutor.ExecutionOutcome outcome =
@@ -300,7 +300,7 @@ class IdempotentExecutorTest {
         // re-executing would assume it failed.
         IdempotencyKey key = uniqueKey();
         RequestFingerprint fingerprint = RequestFingerprint.sha256("held".getBytes(StandardCharsets.UTF_8));
-        try (Connection other = openConnection()) {
+        try (Connection other = DatabaseRoles.bootstrap()) {
             other.setAutoCommit(false);
             store.claim(other, key, fingerprint, CorrelationId.of("other-flow"), FIXED, FIXED.plus(RETENTION), LEASE);
             other.commit();
@@ -355,7 +355,7 @@ class IdempotentExecutorTest {
         for (int i = 0; i < 2; i++) {
             tasks.add(
                     () -> {
-                        try (Connection own = openConnection()) {
+                        try (Connection own = DatabaseRoles.bootstrap()) {
                             own.setAutoCommit(false);
                             start.await();
                             try {
@@ -395,7 +395,7 @@ class IdempotentExecutorTest {
         RequestFingerprint fingerprint = RequestFingerprint.sha256("held-open".getBytes(StandardCharsets.UTF_8));
         Duration shortWait = Duration.ofMillis(300);
 
-        try (Connection holder = openConnection()) {
+        try (Connection holder = DatabaseRoles.bootstrap()) {
             holder.setAutoCommit(false);
             // Claimed but NOT committed: the holder is mid-command.
             new JdbcIdempotencyRecordStore(shortWait)
@@ -596,7 +596,7 @@ class IdempotentExecutorTest {
      */
     private static void insertExpiredLeaseClaim(IdempotencyKey key, RequestFingerprint fingerprint)
             throws SQLException {
-        try (Connection other = openConnection()) {
+        try (Connection other = DatabaseRoles.bootstrap()) {
             other.setAutoCommit(false);
             new JdbcIdempotencyRecordStore()
                     .claim(other, key, fingerprint, CorrelationId.of("crashed-flow"), FIXED,
@@ -609,20 +609,5 @@ class IdempotentExecutorTest {
         return new IdempotencyKey("exec:transfer-" + SUFFIX.incrementAndGet(), "client-key");
     }
 
-    private static Connection openConnection() throws SQLException {
-        return DriverManager.getConnection(
-                requiredProperty("finapp.db.url"),
-                requiredProperty("finapp.db.user"),
-                requiredProperty("finapp.db.password"));
-    }
 
-    private static String requiredProperty(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
  * modular monolith quietly becomes a monolith, and it is far cheaper to fail here than to
  * discover it when the ledger can no longer be extracted or reasoned about in isolation.
  */
+@Tag("architecture")
 class PlatformModuleBoundaryTest {
 
     @Test

@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
@@ -40,6 +41,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
             "logging.file.name=build/test-logs/redaction-appenders.log",
             "logging.structured.format.file=ecs"
         })
+@Tag("slice")
 @ExtendWith(OutputCaptureExtension.class)
 class RedactionAcrossAppendersTest {
 

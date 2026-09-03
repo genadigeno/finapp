@@ -3,10 +3,10 @@ package com.finapp.platform.money;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -54,10 +54,7 @@ class MoneyColumnsDatabaseTest {
     @BeforeAll
     static void connectAndCreateTable() throws SQLException {
         connection =
-                DriverManager.getConnection(
-                        requiredProperty("finapp.db.url"),
-                        requiredProperty("finapp.db.user"),
-                        requiredProperty("finapp.db.password"));
+                DatabaseRoles.bootstrap();
         connection.setAutoCommit(true);
 
         // A TEMPORARY table, not a migration. Phase 0 creates no tables, and a throwaway
@@ -276,13 +273,4 @@ class MoneyColumnsDatabaseTest {
         }
     }
 
-    private static String requiredProperty(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

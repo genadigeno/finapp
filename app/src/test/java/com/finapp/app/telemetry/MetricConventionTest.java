@@ -35,6 +35,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * rotates ({@code INV-AUD-02}). Correlation belongs on a trace and in a log; a metric answers how
  * many, how long and how often, never which one.
  */
+@org.junit.jupiter.api.Tag("slice") // qualified: io.micrometer.core.instrument.Tag is imported here
 @SpringBootTest(properties = "spring.datasource.url=jdbc:postgresql://127.0.0.1:1/absent")
 class MetricConventionTest {
 

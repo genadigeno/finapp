@@ -176,29 +176,15 @@ dependencies {
 }
 
 // ---------------------------------------------------------------------------
-// Tests that need a database are separated from those that do not.
+// The `database` tier's module-specific configuration.
 //
-// `test` stays hermetic so `./gradlew build` is green on a machine with nothing
-// running. `databaseTest` is a task you can see did not run, rather than a test
-// that silently skips itself when the database is absent — a skipped test
-// reports success, which is the failure mode this project keeps finding.
-//
-// P0-TSK-036 (test taxonomy) generalises this; it is deliberately minimal here.
+// The tier TASKS are registered once in finapp.java-conventions, which is what P0-TSK-036
+// generalised: the separation between hermetic and infrastructure-bound tests, and the rule that
+// the default tier takes whatever no other tier claims, are properties of the build rather than
+// of this module. What belongs here is only what is specific to platform — the coordinates the
+// database tests connect with.
 // ---------------------------------------------------------------------------
-val databaseTag = "database"
-
-tasks.test {
-    useJUnitPlatform { excludeTags(databaseTag) }
-}
-
-tasks.register<Test>("databaseTest") {
-    group = "verification"
-    description = "Runs tests that require a live PostgreSQL (docker compose up -d postgres)."
-
-    testClassesDirs = sourceSets.test.get().output.classesDirs
-    classpath = sourceSets.test.get().runtimeClasspath
-    useJUnitPlatform { includeTags(databaseTag) }
-
+tasks.named<Test>("databaseTest") {
     // The same three environment variables the Flyway configuration above uses, so the
     // migration tool and the round-trip test can never be pointed at different databases.
     // The container image, from the version catalog, so it is the same PostgreSQL compose runs
@@ -226,7 +212,7 @@ tasks.register<Test>("databaseTest") {
         systemProperty("finapp.db.migrator.password", migratorPassword)
     }
 
-    // Never cached: the point is to exercise a real database, and a cached "up to date"
-    // result would mean it had not.
-    outputs.upToDateWhen { false }
+    // `outputs.upToDateWhen { false }` is NOT repeated here. The convention plugin applies it to
+    // every tier needing external infrastructure, which is the property being expressed — a
+    // second copy would be a second place for it to be forgotten.
 }

@@ -3,10 +3,10 @@ package com.finapp.platform.inbox;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -71,7 +71,7 @@ class InboxDeliveryOrderTest {
 
     @BeforeAll
     static void connect() throws SQLException {
-        try (Connection migrator = migrator();
+        try (Connection migrator = DatabaseRoles.migrator();
                 Statement statement = migrator.createStatement()) {
             statement.execute(
                     "CREATE TABLE IF NOT EXISTS " + PROJECTION
@@ -82,7 +82,7 @@ class InboxDeliveryOrderTest {
             statement.execute(
                     "GRANT SELECT, INSERT, UPDATE, DELETE ON " + PROJECTION + " TO finapp_app");
         }
-        connection = application();
+        connection = DatabaseRoles.application();
         connection.setAutoCommit(false);
     }
 
@@ -91,7 +91,7 @@ class InboxDeliveryOrderTest {
         if (connection != null) {
             connection.close();
         }
-        try (Connection migrator = migrator();
+        try (Connection migrator = DatabaseRoles.migrator();
                 Statement statement = migrator.createStatement()) {
             statement.execute("DROP TABLE IF EXISTS " + PROJECTION);
         }
@@ -370,27 +370,6 @@ class InboxDeliveryOrderTest {
         }
     }
 
-    private static Connection application() throws SQLException {
-        return DriverManager.getConnection(
-                required("finapp.db.url"),
-                required("finapp.db.app.user"),
-                required("finapp.db.app.password"));
-    }
 
-    private static Connection migrator() throws SQLException {
-        return DriverManager.getConnection(
-                required("finapp.db.url"),
-                required("finapp.db.migrator.user"),
-                required("finapp.db.migrator.password"));
-    }
 
-    private static String required(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

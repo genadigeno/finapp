@@ -3,6 +3,7 @@ package com.finapp.platform.outbox;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
@@ -11,7 +12,6 @@ import com.finapp.sharedkernel.id.EntityId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -83,14 +83,14 @@ class OutboxCrashRecoveryTest {
         // The probe table needs DDL, which the application role deliberately lacks. Created by
         // the migrator and used by the application - the same split production has, rather than
         // widening a grant to make a test convenient.
-        try (Connection migrator = migrator();
+        try (Connection migrator = DatabaseRoles.migrator();
                 Statement statement = migrator.createStatement()) {
             statement.execute(
                     "CREATE TABLE IF NOT EXISTS " + FACTS
                             + " (aggregate_id UUID PRIMARY KEY, description TEXT NOT NULL)");
             statement.execute("GRANT SELECT, INSERT, DELETE ON " + FACTS + " TO finapp_app");
         }
-        business = application();
+        business = DatabaseRoles.application();
         business.setAutoCommit(false);
     }
 
@@ -99,7 +99,7 @@ class OutboxCrashRecoveryTest {
         if (business != null) {
             business.close();
         }
-        try (Connection migrator = migrator();
+        try (Connection migrator = DatabaseRoles.migrator();
                 Statement statement = migrator.createStatement()) {
             statement.execute("DROP TABLE IF EXISTS " + FACTS);
         }
@@ -215,7 +215,7 @@ class OutboxCrashRecoveryTest {
         UUID aggregateId = IDS.next();
         commitFactAndEvent(aggregateId, "first-event");
 
-        try (Connection pooled = application()) {
+        try (Connection pooled = DatabaseRoles.application()) {
             pooled.setAutoCommit(false);
             RecordingPublisher first = new RecordingPublisher();
             // A source that hands out the same physical connection and ignores close(), which is
@@ -379,7 +379,7 @@ class OutboxCrashRecoveryTest {
      * politely. Run as the superuser because terminating another role's backend requires it.
      */
     private static int terminateBackendsHoldingAnAggregateLock() throws SQLException {
-        try (Connection admin = superuser();
+        try (Connection admin = DatabaseRoles.bootstrap();
                 PreparedStatement select =
                         admin.prepareStatement(
                                 "SELECT pg_terminate_backend(l.pid) FROM pg_locks l "
@@ -419,7 +419,7 @@ class OutboxCrashRecoveryTest {
     }
 
     private static OutboxRelay relay(EventPublisher publisher) {
-        return relay(publisher, OutboxCrashRecoveryTest::application);
+        return relay(publisher, DatabaseRoles::application);
     }
 
     private static OutboxRelay relay(EventPublisher publisher, OutboxConnectionSource connections) {
@@ -520,32 +520,7 @@ class OutboxCrashRecoveryTest {
         }
     }
 
-    private static Connection application() throws SQLException {
-        return DriverManager.getConnection(
-                required("finapp.db.url"),
-                required("finapp.db.app.user"),
-                required("finapp.db.app.password"));
-    }
 
-    private static Connection migrator() throws SQLException {
-        return DriverManager.getConnection(
-                required("finapp.db.url"),
-                required("finapp.db.migrator.user"),
-                required("finapp.db.migrator.password"));
-    }
 
-    private static Connection superuser() throws SQLException {
-        return DriverManager.getConnection(
-                required("finapp.db.url"), required("finapp.db.user"), required("finapp.db.password"));
-    }
 
-    private static String required(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

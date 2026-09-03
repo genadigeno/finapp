@@ -1,4 +1,4 @@
-package com.finapp.platform.testing;
+package com.finapp.platform.testing.database;
 
 import java.sql.Connection;
 import java.sql.ResultSet;

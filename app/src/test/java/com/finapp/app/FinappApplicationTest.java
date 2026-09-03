@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,6 +20,7 @@ import org.springframework.context.ApplicationContext;
  * not resolve and this class would not compile; if the Boot plugin were not applied, no
  * context would start.
  */
+@Tag("slice")
 @SpringBootTest
 class FinappApplicationTest {
 

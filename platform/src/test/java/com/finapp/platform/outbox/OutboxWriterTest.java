@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
@@ -12,7 +13,6 @@ import com.finapp.sharedkernel.id.EntityId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -58,7 +58,7 @@ class OutboxWriterTest {
 
     @BeforeAll
     static void connect() throws SQLException {
-        connection = openConnection();
+        connection = DatabaseRoles.bootstrap();
         connection.setAutoCommit(false);
         try (Statement statement = connection.createStatement()) {
             // An ordinary table, so the rollback assertion is about a real committed state
@@ -293,20 +293,5 @@ class OutboxWriterTest {
         }
     }
 
-    private static Connection openConnection() throws SQLException {
-        return DriverManager.getConnection(
-                requiredProperty("finapp.db.url"),
-                requiredProperty("finapp.db.user"),
-                requiredProperty("finapp.db.password"));
-    }
 
-    private static String requiredProperty(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

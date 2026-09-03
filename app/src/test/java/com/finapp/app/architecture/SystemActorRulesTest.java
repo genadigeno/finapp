@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -45,6 +46,7 @@ import org.junit.jupiter.api.Test;
  * identity - which is the whole reason actors are constructible at all. The rule removes the easy
  * path, which is the one people actually take.
  */
+@Tag("architecture")
 @AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class SystemActorRulesTest {
 

@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -82,6 +83,7 @@ import org.junit.jupiter.api.Test;
  * <p>Tests are excluded from the sweep: a test may legitimately construct a {@code double} to
  * prove that something rejects it, and the nested fixtures below do exactly that.
  */
+@Tag("architecture")
 @AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class NoFloatingPointMoneyRulesTest {
 

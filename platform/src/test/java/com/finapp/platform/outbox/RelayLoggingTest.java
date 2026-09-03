@@ -6,6 +6,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
@@ -14,7 +15,6 @@ import com.finapp.sharedkernel.id.EntityId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -69,7 +69,7 @@ class RelayLoggingTest {
 
     @BeforeAll
     static void connect() throws SQLException {
-        writeConnection = open();
+        writeConnection = DatabaseRoles.bootstrap();
         writeConnection.setAutoCommit(false);
     }
 
@@ -197,7 +197,7 @@ class RelayLoggingTest {
 
     private static OutboxRelay relay(EventPublisher publisher) {
         return new OutboxRelay(
-                RelayLoggingTest::open,
+                DatabaseRoles::bootstrap,
                 publisher,
                 new RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 3),
                 8,
@@ -257,18 +257,5 @@ class RelayLoggingTest {
         }
     }
 
-    private static Connection open() throws SQLException {
-        return DriverManager.getConnection(
-                required("finapp.db.url"), required("finapp.db.user"), required("finapp.db.password"));
-    }
 
-    private static String required(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

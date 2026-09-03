@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.api.ApiVersion;
 import com.finapp.platform.api.ErrorCode;
+import com.finapp.platform.testing.RepositoryPaths;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;

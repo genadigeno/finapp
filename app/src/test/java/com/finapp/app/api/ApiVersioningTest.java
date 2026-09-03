@@ -9,6 +9,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -30,6 +31,7 @@ import tools.jackson.databind.JsonNode;
  * at all; mapping one probe controller and finding it in the document proves both that springdoc
  * sees real mappings and that what it sees carries the prefix.
  */
+@Tag("slice")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(ApiVersioningTest.VersionedController.class)
 class ApiVersioningTest {

@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -40,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
  * the tests assert it was never entered. A 422 returned after the handler ran and did half the
  * work would look identical from outside.
  */
+@Tag("slice")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import({RequestValidationTest.GuardedController.class, RequestValidationTest.ProxyValidatedController.class})
 class RequestValidationTest {

@@ -789,7 +789,7 @@ Status: `IN_PROGRESS`
   had to change and its own comment had predicted why: it checked the test classpath as a proxy for
   the runtime one, and now checks the runtime classpath directly. ADR-0027.
 
-**P0-TSK-036 — Test taxonomy and conventions**
+**P0-TSK-036 — Test taxonomy and conventions** — `COMPLETE` (2026-09-03)
 - Context: platform / test
 - Description: Define unit / slice / integration / contract / architecture tiers, naming, tagging, and which tier a given concern belongs to.
 - Why: Without a taxonomy, integration coverage of financial behaviour is claimed but not achieved.
@@ -798,6 +798,32 @@ Status: `IN_PROGRESS`
 - Risk: Low
 - Cx: M
 - DoD: `DOD-TEST`
+- **Outcome:** four tiers — unit, architecture, slice, database — defined by **what a test needs
+  in order to run**, which is the only axis on which membership can be decided mechanically. Each
+  is its own task and the tiers partition the hermetic suite exactly (418 + 54 + 68 = 540 = `test`),
+  so `build` still runs all three hermetic ones and nothing left CI's coverage as a side effect of
+  the split. `unitTest` is ~14s against `build`'s minute.
+  **Two of the five names the description asks for are deliberately not tiers**, with the reason
+  recorded rather than dropped: `contract` is a *kind* whose members have different requirements —
+  `OpenApiContractTest` needs a Spring context, `ColumnClassificationTest` needs a database — and
+  grouping two requirements under one name is the one thing a tier must not do; `integration` is
+  replaced by `database`, which says what is integrated with, so a Kafka client gets its own tier
+  instead.
+  The split multiplies the ways to make the `:platform:databaseTest` mistake the `P0-TSK-027`
+  review found, so it ships with `TestTaxonomyTest` holding the Gradle declaration, `TestTier`,
+  every class's tag, `TESTING.md` and CI to each other — **nine mutations, all caught**, though
+  only after the first one **survived** and exposed a real defect: the sweep reads sibling modules'
+  test classes from disk and nothing had told Gradle that, so it read a stale class file. Also
+  found by its own guards: `ModuleBoundaryRulesTest` — the oldest rule suite here — was skipped
+  entirely, because ArchUnit executes `@ArchTest` **fields** and it declares no `@Test` method;
+  and `MoneyTest` was skipped because every test method lives in a `@Nested` class. Detection was
+  narrowed from `java.sql` to **acquisition** after a false positive on a rule suite whose fixture
+  merely mentions `Connection`. Also pays down the recorded duplication: thirteen test classes
+  opened connections through private helpers, all now on `DatabaseRoles`. **Review added two
+  guards**, both found by asking what CI actually runs: `build` executes `test` and never the tier
+  tasks, and an empty tier task passes in a second having selected nothing — so `noTierIsEmpty`;
+  and an unrecognised `@Tag` is ignored rather than rejected, so the vocabulary is now closed.
+  ADR-0028.
 
 **P0-TSK-037 — WireMock harness for provider adapters**
 - Context: platform / test

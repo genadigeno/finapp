@@ -2,6 +2,7 @@ package com.finapp.platform.correlation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -21,7 +22,6 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -78,7 +78,7 @@ class CorrelationPropagationTest {
 
     @BeforeAll
     static void connect() throws SQLException {
-        connection = openConnection();
+        connection = DatabaseRoles.bootstrap();
         connection.setAutoCommit(true);
     }
 
@@ -492,20 +492,5 @@ class CorrelationPropagationTest {
         }
     }
 
-    private static Connection openConnection() throws SQLException {
-        return DriverManager.getConnection(
-                requiredProperty("finapp.db.url"),
-                requiredProperty("finapp.db.user"),
-                requiredProperty("finapp.db.password"));
-    }
 
-    private static String requiredProperty(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
-        }
-        return value;
-    }
 }

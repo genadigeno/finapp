@@ -1,4 +1,4 @@
-package com.finapp.platform.testing;
+package com.finapp.platform.testing.database;
 
 import java.nio.file.Path;
 import org.flywaydb.core.Flyway;

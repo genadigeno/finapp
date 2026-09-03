@@ -185,6 +185,22 @@ bot for those was rejected in favour of a check that could actually be **proven*
 repository has no remote and no workflow has ever run. &rarr;
 [ADR-0026](../adr/ADR-0026-keeping-pins-fresh.md), ADR-0025
 
+### Test tiers
+A test's tier is **what it needs in order to run**, never what it proves. That is the only axis on
+which membership can be decided mechanically, and it is the axis that matters for scheduling: a
+tier mixing requirements produces a task that costs what its heaviest member costs and fails
+wherever that member's infrastructure is absent. Four tiers — unit, architecture, slice, database
+— each its own task. The default tier selects by **excluding** the others' tags rather than
+including one of its own, so a test can never belong to no tier at all; that failure is silent,
+which is the worst kind. `contract` is deliberately not a tier: it is a kind, and its members have
+different requirements. Detection is one-directional and over-declaration is permitted, because a
+`@SpringBootTest` reaching a database through the application's own pool has nothing in its
+bytecode to detect. Splitting one task into four multiplies the ways to make the
+`:platform:databaseTest` mistake, so the split ships with a guard holding the tiers, the tags, the
+build and CI to each other. &rarr;
+[ADR-0028](../adr/ADR-0028-test-tiers-by-requirement.md),
+[`TESTING.md`](TESTING.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

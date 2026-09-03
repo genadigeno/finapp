@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.FinappApplication;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -22,6 +23,7 @@ import org.springframework.context.ConfigurableApplicationContext;
  * {@code com.finapp.app.security} is exactly the thing being asserted, so a test context that
  * registered the bean by hand would prove the opposite of what is wanted.
  */
+@Tag("slice")
 class DatabaseCredentialGuardStartupTest {
 
     @Test

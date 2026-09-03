@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 ---
 
@@ -26,8 +26,13 @@ financial history exists.
 ## Current Milestone
 
 **M0.5 — Test infrastructure and phase review**
-`P0-EPIC-11` (Test Infrastructure, 4 tasks) and `P0-EPIC-12` (Documentation and Decision Baseline,
-2 of 9 remaining). The last milestone of Phase 0. Not started.
+`P0-EPIC-11` (Test Infrastructure, **2 of 4 complete**) and `P0-EPIC-12` (Documentation and Decision
+Baseline, 2 of 9 remaining). The last milestone of Phase 0.
+
+The suite now brings its own database (`P0-TSK-035`) and knows what kind of test each of its
+members is (`P0-TSK-036`). What remains is a harness for provider failure modes that have no
+provider yet (`P0-TSK-037`), the convention making an invariant test prove it can fail
+(`P0-TSK-038`), the domain glossary, and the phase review itself.
 
 **M0.4 — API, observability and security baseline** — `P0-EPIC-08`, `-09` and `-10`, all
 `COMPLETE` (2026-09-02).
@@ -66,44 +71,73 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**`P0-TSK-036` - Test taxonomy and conventions**
+**`P0-TSK-037` - WireMock harness for provider adapters**
 Status: `READY` - not started.
 
-Bounded context: platform / test. Depends on `P0-TSK-035` (`COMPLETE`). **Risk: Low. Cx: M.**
+Bounded context: platform / test. Depends on `P0-TSK-036` (`COMPLETE`). **Risk: Low. Cx: M.**
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-11. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TSK-035` - Testcontainers integration test harness** - `COMPLETE` (2026-09-02).
+**`P0-TSK-036` - Test taxonomy and conventions** - `COMPLETE` (2026-09-03).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Integration tests run against real infrastructure in CI | Unchanged in kind - they already did - but now against a container the run owns rather than a shared stack |
-| No test depends on a developer's local services | **All 173 database tests pass with compose stopped.** `./gradlew databaseTest` needs Docker and nothing else |
+| Tiers runnable independently | `unitTest`, `architectureTest`, `sliceTest`, `databaseTest`, each registered once in the convention plugin. All four run and pass alone |
+| Documented | [`TESTING.md`](TESTING.md), enforced against the build in both directions |
+| CI runs all tiers | Asserted by test, and asserted **unqualified** - the `:platform:databaseTest` defect the `P0-TSK-027` review found |
 
-**No test changed, and that was the constraint rather than the outcome.** A `LauncherSessionListener`
-starts one PostgreSQL container per test JVM, applies the same `00-roles.sql` the compose stack runs
-on first initialisation, applies the real migrations through Flyway, and publishes the coordinates as
-the system properties every test already read. A harness needing 173 assertions edited would have
-been a change nobody could review.
+**A tier is what a test needs in order to run, and nothing else.** That is the only axis on which
+membership can be decided mechanically, and it is the one that matters for scheduling: a tier mixing
+requirements produces a task costing what its heaviest member costs and failing wherever that
+member's infrastructure is absent. Grouping by *intent* reads better in a document and cannot be
+checked.
 
-**PostgreSQL only.** The task named Kafka and Redis; there is no client for either, and a container
-nothing connects to tests nothing - the same argument ADR-0023 used for transports that do not exist.
+**Two of the five names the task asks for are deliberately not tiers.** `contract` is a *kind*, and
+its members have different requirements - `OpenApiContractTest` needs a Spring context,
+`ColumnClassificationTest` needs a database - so making it a tier would group two requirements under
+one name. `integration` is replaced by `database`, which says what is integrated with; a Kafka
+client gets its own tier rather than being folded into a word that would then mean two things.
 
-**Three things the change ran into, each recorded rather than worked around.**
-- Putting the harness in `testFixtures` so `app` could reach it exposed it to the ArchUnit sweep, and
-  two rules fired: a static container field (`noStaticMutableState`) and a constant named
-  `LOCAL_PASSWORD` (`secretsAreWrapped`). **Both fixed at source, neither exempted** - the field did
-  not need to be static, and the constant is the published marker rather than a credential. A harness
-  that holds credentials is the right place for those rules to apply.
-- `HealthReadinessDatabaseTest` asserted Flyway was unreachable by trying to load the class, and
-  **its own comment had predicted the failure**: *"a false positive if Flyway were ever added as a
-  test dependency of this module"*. The harness needs Flyway to apply migrations. It now checks the
-  module's **runtime** classpath, which is what ADR-0011's claim was always about.
-- The dependency controls from `P0-TSK-039` did their job and exposed a defect in the procedure
-  `P0-TSK-039` documented: locks block metadata generation and metadata blocks lock generation, so
-  **neither order works** - both flags must be passed in one invocation. README §7a corrected.
+**The tiers partition the hermetic suite exactly**: 418 + 54 + 68 = 540 = `test`. `build` still runs
+all three hermetic tiers, so nothing left CI's coverage as a side effect of the split.
+`./gradlew unitTest` is ~14 seconds against `build`'s minute.
+
+**The split ships with its guard, because splitting one task into four multiplies the ways to make
+the stale-list mistake.** `TestTaxonomyTest` holds the Gradle declaration, `TestTier`, every class's
+tag, `TESTING.md` and CI to each other. Nine mutations, all caught - **after the first one
+survived**.
+
+**Four defects, every one found by the task's own guards rather than by review.**
+- **The first mutation survived.** Removing `@Tag("database")` from a platform test left the guard
+  green, because it reads sibling modules' compiled test classes from disk and nothing had told
+  Gradle that - so it read a **stale class file**. Closed with `dependsOn` and a declared input,
+  derived from the subprojects rather than listed. Same defect class as the seven document-input
+  lines beside it, one module across.
+- **`ModuleBoundaryRulesTest` was skipped entirely** - the oldest and most fundamental rule suite
+  here, the one enforcing `app -> platform -> sharedkernel`. ArchUnit executes `@ArchTest`
+  **fields** under a class-level `@AnalyzeClasses`, and it declares no `@Test` method at all.
+- **`MoneyTest` was skipped**, because every test method lives in a `@Nested` class and the outer
+  class - where the tag has to go, since JUnit inherits it downward - carries no marker.
+- **A false positive narrowed the detection.** `NoDirectBrokerPublicationRulesTest`'s fixture
+  declares `OutboxWriter<java.sql.Connection>` to model production's shape and opens nothing.
+  Detection now keys on **acquisition** - `DriverManager`, a `DataSource`, a container, the harness
+  - because a rule that pushes a hermetic ArchUnit suite into the database tier is a rule somebody
+  turns off.
+
+**Twelve Spring-context tests and nine ArchUnit suites turned out to be in the default tier**, which
+was invisible before there was anything to be in the wrong tier of.
+
+**Two further guards added by review**, both from asking what CI actually executes: `build` runs
+`test` and **never the tier tasks**, and an empty tier task passes in a second having selected
+nothing and written no result file - so `noTierIsEmpty` checks repository-wide. And an unrecognised
+`@Tag` is *ignored* rather than rejected, so the vocabulary is now closed, with an empty non-tier
+list.
+
+**The recorded duplication is paid down.** Thirteen test classes opened connections through their own
+private helper; all now use `DatabaseRoles`, and what they had been copying was a connection as the
+**superuser**. All 173 database tests still pass, unchanged.
 
 ---
 
@@ -203,6 +237,21 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Test taxonomy (2026-09-03), `P0-TSK-036`:
+- Four tiers - unit, architecture, slice, database - defined by **what a test needs in order to
+  run**, which is the only axis on which membership can be decided mechanically
+- Each its own task; the tiers partition the hermetic suite exactly (418 + 54 + 68 = 540 = `test`),
+  and `unitTest` is ~14s against `build`'s minute
+- The default tier selects by **excluding** the others' tags, so a test can never run in no tier -
+  the silent failure an includeTags-only set of tasks creates
+- `contract` and `integration` deliberately not tiers, with the reason recorded rather than dropped
+- `TestTaxonomyTest` holds the Gradle declaration, `TestTier`, every class's tag, `TESTING.md` and
+  CI to each other; seven mutations caught, after the first one survived on a stale class file
+- Its own guards found `ModuleBoundaryRulesTest` and `MoneyTest` being skipped entirely, and a
+  false positive that narrowed detection from mentioning a connection to acquiring one
+- Thirteen test classes migrated off private connection helpers onto `DatabaseRoles`
+- ADR-0028 records the reasoning and the five rejected alternatives
 
 Tests bring their own database (2026-09-02), `P0-TSK-035`:
 - One PostgreSQL container per test JVM, with the same role script and the real migrations
@@ -819,7 +868,7 @@ carries, what triggers paying it down, and the owning phase.
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
-| **Thirteen test classes open connections through their own private helper.** `SimulatedInstance` and `DatabaseRoles` are the shared way, and only the audit tests and the new skew test use them | Found by `P0-TST-009`'s audit. Migrating thirteen files is a mechanical change touching no behaviour, and `EXECUTION_PROTOCOL.md` rule 4 forbids doing it opportunistically inside another task | **Low, and it is duplication rather than a defect**: the audit confirmed all seven multi-instance tests already open a connection per instance, so none of them is silently serialising. What it costs is that the convention has a shared harness most tests do not use, so a future test is as likely to copy a private helper as to find the shared one | `P0-TSK-036` (test taxonomy and conventions), which owns test structure | Phase 0, M0.5 |
+| ~~**Thirteen test classes open connections through their own private helper.**~~ — **closed** by `P0-TSK-036`. All thirteen now use `DatabaseRoles`, so the property names and the driver call have one definition. What they had been copying was a connection as the **superuser**, which `DatabaseRoles.bootstrap()` now documents as the wrong default and confines to tests making no privilege claim. All 173 database tests pass unchanged. | — | — | — | — |
 | **Kafka and Redis are plaintext with no enforcement.** The transport guard covers PostgreSQL only | There is no Kafka or Redis client on the classpath, so a guard for those connections would be guarding nothing - the same argument that kept a `Classification` enum out of `P0-TSK-033` | **None today**, because nothing connects to either. The expectations are documented per hop in `SECURITY_ARCHITECTURE.md`, so the gap is a decision rather than an omission; the risk arrives with the first client, which is also when it becomes enforceable | The first Kafka or Redis client | Phase 3 (broker adapter) |
 | **A caller can put personal or financial data into the correlation identifier.** The permitted charset is `[A-Za-z0-9._:@/+=-]` and a well-formed inbound `X-Correlation-Id` is accepted verbatim, so `jane.doe@example.com`, `acct:GB29NWBK60161331926819`, `customer-1990-05-14` and `+447700900123` are all valid - confirmed by probe during `P0-TSK-033` | Accepting a caller's identifier is deliberate and useful: it lets a client join its logs to ours (`P0-TSK-025`). The charset was chosen to be permissive enough for real client identifiers, and nobody asked what else fits through it | **Real, and the widest-reaching disclosure channel in the platform.** The value is written to every log line as a top-level ECS field, stamped on every span, stored in four tables and echoed in the response header and every problem-detail body - so it reaches a telemetry backend with different access control and months of retention, which is exactly what `INV-AUD-02` forbids. Bounded today only by there being no customers | Phase 1, when real callers exist. The fix is to constrain the value - generate our own and carry the caller's separately, or narrow the charset - never to relax the handling, since forbidding correlation in logs would defeat correlation | Phase 1 |
 | **No production code establishes a security scope.** `SecurityContext` exists and nothing calls it | Phase 0 has no request handler performing an auditable action and no module writing an audit record - the three registered platform actions are themselves recorded as not-yet-emitted. A caller wired now would establish a scope around nothing | **None today, and the failure mode is safe by construction.** `require()` refuses rather than defaulting, so the first caller that forgets fails loudly instead of recording the wrong party. The risk is not silent misattribution but a missing call, which is visible the first time it runs | The first audited action, which is the outbox relay emitting its registered actions or Phase 1's authentication | Phase 1 |
@@ -873,16 +922,16 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-036` - Test taxonomy and conventions**, the second of `P0-EPIC-11`'s four.
+**`P0-TSK-037` - WireMock harness for provider adapters**, the third of `P0-EPIC-11`'s four.
 
-Define unit / slice / integration / contract / architecture tiers, naming, tagging, and which tier
-a concern belongs to. Two tiers already exist in fact - `test` and `databaseTest`, separated so the
-hermetic one stays green with nothing running - so this is largely naming what is there and deciding
-where the gaps are.
+A reusable harness able to reproduce timeout, 5xx, malformed response, delayed response and
+duplicate-callback behaviour, so provider failure modes are testable from Phase 2 onward.
 
-It also owns the duplication `P0-TST-009` recorded: thirteen test classes open connections through
-their own private helper while `DatabaseRoles` and `SimulatedInstance` sit in
-`com.finapp.platform.testing`, now a test fixture both modules share.
+Its acceptance criterion is that the harness can reproduce **every** provider failure mode
+`CLAUDE.md` §Failure Engineering lists - which is a checkable claim rather than a description, and
+the sort this phase has repeatedly found to be false when checked. Note also that Phase 0 has no
+provider adapter and no HTTP client for one, so the same question `P0-TSK-035` faced about Kafka
+and Redis applies: a harness nothing connects to tests nothing.
 
 ---
 
@@ -890,6 +939,8 @@ their own private helper while `DatabaseRoles` and `SimulatedInstance` sit in
 
 | Date | Change |
 |------|--------|
+| 2026-09-03 | Task completion review of `P0-TSK-036`. **No critical findings; two gaps in the guard, both closed, and both found by asking what CI actually executes.** `./gradlew build --dry-run` shows `build` runs `:test` and **never the three hermetic tier tasks** - they are selection conveniences over the same tests, which is fine for coverage and not fine for the tasks themselves: `:sharedkernel:sliceTest` was run and **reports BUILD SUCCESSFUL in one second having selected nothing and written no result file**. A tier that quietly became empty would therefore be discovered by a developer wondering why their command was fast, and by nobody else. `noTierIsEmpty` closes it repository-wide, since per module an empty tier is legitimate. The second: **an unrecognised `@Tag` is ignored rather than rejected**, so `@Tag("databse")` reads as a tier and schedules nothing. Probing found it *was* caught - but by luck: the class was also a `@SpringBootTest`, so detection floored it at SLICE and the misspelling surfaced as "needs SLICE but is in UNIT". A class detection cannot see would have had no floor. The vocabulary is now closed, with an empty non-tier list, on the argument that makes `AuditableAction` closed. Both proven by mutation, bringing the task to **nine of nine**. Also confirmed: `TestTaxonomyTest` really does run inside `./gradlew build` (12 tests in `:app:test`'s results), so the taxonomy is enforced by the job CI runs rather than only by a task it does not. **Process note, third occurrence of the same trap:** `git checkout --` on a path reverted `MetricConventionTest` to HEAD while reverting a mutation, silently destroying this task's own change to it; caught by counting the slice tags afterwards rather than trusting the revert. 542 hermetic tests, 173 database tests. |
+| 2026-09-03 | `P0-TSK-036` complete. Four test tiers - unit, architecture, slice, database - defined by **what a test needs in order to run**, and by nothing else. That is the only axis on which membership can be decided mechanically, and it is the one that matters for scheduling: a tier mixing requirements produces a task costing what its heaviest member costs and failing wherever that member's infrastructure is absent. Grouping by intent reads better in a document and cannot be checked. **The default tier selects by EXCLUDING the others' tags** rather than including one of its own, so a test can never belong to no tier at all - the failure an includeTags-only set of tasks creates, and a silent one, since the test compiles, is never selected, reports nothing and is believed to be running. **Two of the five names the task asks for are deliberately not tiers, with the reason recorded rather than dropped**: `contract` is a *kind* whose members have different requirements - `OpenApiContractTest` needs a Spring context, `ColumnClassificationTest` needs a database - and `integration` is replaced by `database`, which says what is integrated with. The tiers **partition** the hermetic suite exactly (418 + 54 + 68 = 540 = `test`), so `build` still runs all three hermetic ones; `unitTest` is ~14s against `build`'s minute. **The split ships with its guard**, because splitting one task into four multiplies the ways to make the `:platform:databaseTest` mistake the `P0-TSK-027` review found: `TestTaxonomyTest` holds the Gradle declaration, `TestTier`, every class's tag, `TESTING.md` and CI to each other. **Seven mutations, all caught - after the first one survived.** Removing a tier tag from a platform test left the guard green, because it reads sibling modules' compiled test classes from disk and nothing had told Gradle that, so it read a **stale class file**; closed with `dependsOn` and a declared input derived from the subprojects. **Two more skips found by its own guards**, both whole classes: `ModuleBoundaryRulesTest` - the oldest rule suite here - because ArchUnit executes `@ArchTest` **fields** and it declares no `@Test` method, and `MoneyTest` because every test method lives in a `@Nested` class. And **one false positive that improved the rule**: `NoDirectBrokerPublicationRulesTest`'s fixture declares `OutboxWriter<java.sql.Connection>` and opens nothing, so detection now keys on **acquisition** rather than mention - a rule that pushes a hermetic suite into the database tier is a rule somebody turns off. Twelve Spring-context tests and nine ArchUnit suites turned out to be sitting in the default tier. The recorded duplication is paid down: thirteen test classes migrated off private connection helpers onto `DatabaseRoles`, and what they had been copying was a connection as the **superuser**. ADR-0028 recorded. 540 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-035`. **No critical or important findings; four properties measured rather than assumed, and two small corrections.** The tests really do reach a container, not a leftover compose stack - the published JDBC URL is `localhost:<random mapped port>`, printed by probe. The **documented escape hatch works**: with `FINAPP_DB_URL` set, zero containers are created and the suite runs against compose, which is the path for inspecting what a test left behind. **Nothing leaks**: the count of postgres containers is identical before and after a run, and the reaper is what makes that true. And the **cost did not survive measurement** - 14 seconds wall clock for 160 platform tests including container start, the role script and every migration, so the objection that a container per JVM would be slow was wrong. Two corrections: the "system property not set" message still told the reader the Gradle task supplies the URL, when since this task the task supplies the *image* and the harness supplies the URL - which is precisely the failure an IDE run produces, so the message now says so. And **Testcontainers mounts the Docker socket** into its reaper, which is control of the daemon granted to test-time code; not a new capability, since compose already required Docker, but named in ADR-0027 rather than left implicit. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | `P0-TSK-035` complete. Database tests now bring their own database: a `LauncherSessionListener` starts one PostgreSQL container per test JVM, applies the same `00-roles.sql` the compose stack runs and the real migrations through Flyway, and publishes the coordinates as the system properties every test already read - so **no test changed** and **all 173 pass with compose stopped**. That constraint was deliberate: a harness requiring 173 assertions to be edited would have been a change nobody could review. A `LauncherSessionListener` rather than an extension, because it runs before any test class loads and several suites open their connection in `@BeforeAll`. **PostgreSQL only** - the task named Kafka and Redis, there is no client for either, and a container nothing connects to tests nothing. **Three things it ran into.** Putting the harness in `testFixtures` so `app` could reach it exposed it to the ArchUnit sweep and two rules fired - a static container field and a constant named `LOCAL_PASSWORD` - and **both were fixed at source rather than exempted**, since the field did not need to be static and the constant is the published marker rather than a credential. `HealthReadinessDatabaseTest` asserted Flyway was unreachable by loading the class, and **its own comment had predicted the failure** - *"a false positive if Flyway were ever added as a test dependency of this module"* - so it now checks the module's runtime classpath, which is what ADR-0011's claim always meant. And `P0-TSK-039`'s controls exposed a defect in `P0-TSK-039`'s own procedure: locks block metadata generation and metadata blocks lock generation, so **neither order works** and both flags must be passed in one invocation. Testcontainers 2.x also moved `PostgreSQLContainer` and deprecated the old package, which `-Werror` turned into a build failure. ADR-0027 recorded. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-040`. **One important finding, and it is a comment that described behaviour the workflow does not have.** The `schedule:` block claimed the weekly cron was "for the scanner-pin freshness job only - every other job is gated to exclude scheduled runs". Only `pinned-images` carries an `if:`; the other four run too. `DEFINITION_OF_DONE.md` §3 forbids documentation describing behaviour that does not exist, and the correction is the more useful statement anyway: **two of the gates find things that change without the code changing** - `dependency-scan` fails on a CVE published against an artefact nobody touched, and `pinned-images` reports a scanner release - so neither is discoverable from a diff, and a weekly full run is the point rather than an accident. **Two properties verified rather than assumed.** Version ordering: `sort -V` puts `v8.9.0` before `v8.30.1` and `0.74.0` before `0.100.0`, which is the classic trap and the one that would have made the check silently report a release that does not exist, or miss one that does; the four comparisons the script actually performs were exercised directly. And the unreachable-registry path returns **exit 2, not 0** - proven by pointing the resolver at an invalid host - because a check that cannot run must not look like a check that passed. The `sort -V` dependency on GNU coreutils is now noted in the script rather than assumed. 528 hermetic tests, 173 database tests. |

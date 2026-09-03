@@ -2,13 +2,8 @@ package com.finapp.platform.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.finapp.platform.testing.DatabaseRoles;
-
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.platform.testing.RepositoryPaths;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -174,21 +169,15 @@ class ColumnClassificationTest {
         return columns;
     }
 
-    /** Walks upward, so the test does not assume a working directory (see {@code RepositoryPaths}). */
+    /**
+     * Walks upward, so the test does not assume a working directory.
+     *
+     * <p>This was a private copy of {@code RepositoryPaths}, which lived in {@code app}'s tests
+     * and so was unreachable from here. {@code P0-TSK-036} moved it into the shared fixtures,
+     * where both modules can use one definition — the same duplication, and the same fix, as the
+     * thirteen private connection helpers.
+     */
     private static String document() {
-        Path directory = Path.of("").toAbsolutePath();
-        while (directory != null) {
-            Path candidate = directory.resolve(DOCUMENT);
-            if (Files.isRegularFile(candidate)) {
-                try {
-                    return Files.readString(candidate, StandardCharsets.UTF_8);
-                } catch (IOException e) {
-                    throw new UncheckedIOException("Could not read " + candidate, e);
-                }
-            }
-            directory = directory.getParent();
-        }
-        throw new IllegalStateException(
-                "Could not find " + DOCUMENT + " above " + Path.of("").toAbsolutePath());
+        return RepositoryPaths.read(DOCUMENT);
     }
 }

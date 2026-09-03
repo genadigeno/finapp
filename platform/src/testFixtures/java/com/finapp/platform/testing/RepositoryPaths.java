@@ -1,4 +1,4 @@
-package com.finapp.app.api;
+package com.finapp.platform.testing;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

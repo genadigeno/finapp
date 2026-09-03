@@ -3,6 +3,7 @@ package com.finapp.app.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.api.ErrorCode;
+import com.finapp.platform.testing.RepositoryPaths;
 import com.tngtech.archunit.core.domain.JavaClass;
 import java.util.List;
 import java.util.Set;
@@ -10,6 +11,7 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.Test;
  * <p>Lives in {@code app} for the same reason as {@code AuditableActionRegistryTest}: codes
  * belong to the modules that raise them, so no single module sees the whole taxonomy.
  */
+@Tag("architecture")
 class ErrorCodeRegistryTest {
 
     private static final String CATALOGUE = "docs/architecture/ERROR_CONTRACT.md";

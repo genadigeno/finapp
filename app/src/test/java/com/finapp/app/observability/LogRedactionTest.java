@@ -7,6 +7,7 @@ import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.security.Sensitive;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
@@ -36,6 +37,7 @@ import tools.jackson.databind.json.JsonMapper;
  * no concatenation, nothing a reviewer stops at. The test does exactly that rather than something
  * more careful, because something more careful would prove a property nobody violates.
  */
+@Tag("slice")
 @SpringBootTest(properties = "spring.datasource.url=jdbc:postgresql://127.0.0.1:1/absent")
 @ExtendWith(OutputCaptureExtension.class)
 class LogRedactionTest {

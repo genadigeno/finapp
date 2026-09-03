@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.Tag;
 
 /**
  * Mechanical enforcement of the module boundaries in
@@ -50,6 +51,7 @@ import java.util.stream.Collectors;
  * boundary, and it is scoped default-deny over every class rather than by module, so keeping it
  * separate stops two different scoping rationales sharing one file.
  */
+@Tag("architecture")
 @AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class ModuleBoundaryRulesTest {
 
