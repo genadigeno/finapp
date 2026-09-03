@@ -45,6 +45,13 @@ Every operation touching shared state answers these before it is written:
 
 Every component with state, and what makes it safe for N instances.
 
+**This table is now an enforced exemption set, not only a record** (`P0-TSK-041`, ADR-0024). The
+build fails on `synchronized` (method or block), a process-local lock, ambient scheduling, or static
+mutable state in production code, and the only permitted process-local entries are the two
+`ThreadLocal`s below - named individually, because a type-wide exemption would admit the third one
+without anyone deciding. Adding a process-local mechanism means adding it here, with the reason it
+cannot affect correctness.
+
 | Component | State | Multi-instance strategy | Authoritative? |
 |---|---|---|---|
 | `Money`, `CurrencyCode`, `RoundingPolicy` | none — immutable values | No shared state to protect | n/a |
@@ -209,6 +216,12 @@ The relay says so above: it takes a lease, per aggregate, for the duration of on
 
 **Event consumers.** Duplicate-safe by inbox deduplication (`INV-IDEM-04`), and order-independent
 unless an ordering key is stated explicitly. Rebalance, replay and redelivery are normal.
+
+**Four single-instance patterns fail the build** (ADR-0024): `synchronized`, process-local locks,
+ambient scheduling and static mutable state. They are the mechanically detectable half of this
+document; the other half is the design question in §6, which no rule can answer. The
+`IdempotentExecutor` defect in §4 used none of the four - it was a clock comparison - so the rules
+narrow the ways to be wrong rather than closing them.
 
 **Read-modify-write is forbidden on shared state.** Use a conditional `UPDATE ... WHERE`, an
 optimistic version column, or a unique constraint. `SELECT` then `UPDATE` across two statements

@@ -87,6 +87,11 @@ dependencies {
     // view without needing to be moved.
     testImplementation(libs.archunit.junit5)
 
+    // Bytecode inspection for the one single-instance pattern ArchUnit cannot see: a
+    // `synchronized` block is a MONITORENTER instruction rather than an access flag, so it is
+    // invisible to a model built on accesses (P0-TSK-041, ADR-0024). Test scope: nothing ships.
+    testImplementation(libs.asm)
+
     // OpenAPI generation (P0-TSK-026), test scope only.
     //
     // springdoc READS the request mappings; it never changes them, so a document generated

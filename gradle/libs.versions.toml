@@ -41,6 +41,18 @@ springBoot = "4.1.1"
 # express: cross-module internals, cross-module entity references, framework leakage.
 archunit = "1.5.0"
 
+# ASM, TEST SCOPE ONLY (P0-TSK-041).
+#
+# ArchUnit models field and method ACCESSES, not bytecode instructions, so it can see a
+# `synchronized` METHOD (an access flag) and is blind to a `synchronized` BLOCK (a MONITORENTER
+# instruction) - verified by probe: the block method reports no modifiers at all. The acceptance
+# criterion requires failing on a planted block, so the check needs instruction-level access.
+#
+# Declared explicitly rather than taken from ArchUnit's shaded copy or from ByteBuddy's transitive
+# one: a shaded package is an internal detail that moves on upgrade, and a transitive dependency
+# can vanish when the library that brought it changes.
+asm = "9.7.1"
+
 # springdoc generates the OpenAPI document from the running application (P0-TSK-026).
 # 3.1.0 is the Spring Boot 4 / Spring Framework 7 line; the 2.8.x line targets Boot 3.
 #
@@ -156,6 +168,7 @@ junit-bom = { module = "org.junit:junit-bom", version.ref = "junitJupiter" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 # The -api starter, not -ui: a Swagger UI is an extra surface nobody here needs.
 springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }
 

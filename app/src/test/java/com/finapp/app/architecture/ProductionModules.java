@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.jar.JarEntry;
@@ -69,6 +71,28 @@ final class ProductionModules {
             }
         }
         return modules;
+    }
+
+    /**
+     * Main-output classpath entries, and the module each belongs to.
+     *
+     * <p>Shared with {@link MonitorInstructions} so the bytecode sweep and the ArchUnit coverage
+     * guard cannot disagree about what "production code" means. They did: the sweep matched only
+     * {@code build/classes/java/main} directories, while a consumed module arrives on the runtime
+     * classpath as a <strong>jar</strong> — so a {@code synchronized} block planted in
+     * {@code platform} was invisible, and a count-based vacuity guard passed happily on
+     * {@code app}'s classes alone.
+     */
+    static Map<Path, String> mainOutputEntries() {
+        Map<Path, String> entries = new LinkedHashMap<>();
+        for (String entry : System.getProperty("java.class.path").split(File.pathSeparator)) {
+            Path path = Path.of(entry);
+            String module = moduleOwning(path);
+            if (module != null && isMainOutput(path)) {
+                entries.put(path, module);
+            }
+        }
+        return entries;
     }
 
     /** The Gradle module a classpath entry belongs to: the element before {@code build}. */

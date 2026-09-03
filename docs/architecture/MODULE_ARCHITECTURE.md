@@ -756,6 +756,51 @@ one context map a log line carries; a transient value has no declaration to insp
 needs a logging facade that only accepts declared-safe arguments, which is a larger change than
 this task, and is recorded as debt.
 
+### Multi-instance execution
+
+ADR-0014 says every service runs as N concurrent instances and N is never 1. That was a written
+rule, and written rules decay — the audit that produced ADR-0014 found a real defect in reviewed
+code (`P0-TSK-016`'s lease compared one instance's clock against another's). These rules are the
+mechanically detectable half (`P0-TSK-041`, ADR-0024).
+
+- No production method is declared `synchronized`, and no production method enters a monitor —
+  that is, no `synchronized` **block** either. A monitor is held inside one JVM, so with N
+  instances the invariant it appears to protect is protected in none of them, and the code reads
+  as though the race was handled. The block check is **not** an ArchUnit rule: ArchUnit models
+  accesses, not instructions, and a block is a `MONITORENTER` with no access flag — verified by
+  probe, where the block method reported no modifiers at all. It reads bytecode directly.
+  *(ArchUnit: `noMethodIsSynchronized`; bytecode: `NoSingleInstanceAssumptionRulesTest.noSynchronizedBlocks`)*
+- No production class uses a process-local lock — `ReentrantLock`, `Semaphore`, `CountDownLatch`,
+  `CyclicBarrier` and their neighbours. They coordinate threads within one process and say nothing
+  to the other instances. Coordination that must hold across instances belongs in the database: an
+  advisory lock, a unique constraint, or a conditional `UPDATE` (`DISTRIBUTED_EXECUTION.md` §5).
+  *(ArchUnit: `nothingUsesAProcessLocalLock`)*
+- No production class schedules ambiently — `ScheduledExecutorService`, `Timer`, `@Scheduled`.
+  Every instance runs the scheduler, so a job with no lease runs N times; a scheduled financial
+  process must be idempotent per period (`INV-IDEM-02`) or take an explicit lease, and a bare
+  scheduler declares neither. *(ArchUnit: `nothingSchedulesAmbiently`)*
+- No production class holds static mutable state: a non-final static field, a static field of a
+  mutable type (arrays included — a `final` reference to an array protects nothing), or a mutable
+  collection built in a static initialiser. A cache, counter or registry
+  in a static field is per-instance, so every replica has a different answer and none is
+  authoritative (`CLAUDE.md` rule 12). *(ArchUnit: `noStaticMutableState`)*
+
+**The exemption set is the register**, not this rule's own list: the two `ThreadLocal`s recorded as
+non-authoritative in `DISTRIBUTED_EXECUTION.md` §3, named individually rather than by type. A
+type-wide exemption for `ThreadLocal` would admit the next one without anyone deciding, and the
+register exists to force that decision. Both are proven load-bearing — the same rule with an empty
+exemption set fires on both.
+
+**A known gap, stated rather than left to be discovered.** A mutable collection built by a
+*factory method* and assigned to an interface-typed static field escapes: the construction is not
+in the static initialiser and the field's type is an interface. Closing it would flag the common
+and correct pattern of building a local collection and returning an immutable copy.
+
+**What these do not claim.** They do not make a design multi-instance correct; no rule can. They
+remove the constructs that *only* mean something in one process, so a claim about coordination
+cannot be made silently. The design question — would this still be correct if ten instances ran it
+concurrently — stays a review question, and `P0-TST-009` is the test convention for it.
+
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).
 - **No foreign keys across module schemas.** Referential integrity across contexts is a

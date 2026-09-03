@@ -36,6 +36,20 @@ ADR-0001: one deployable is not one instance. &rarr;
 [ADR-0014](../adr/ADR-0014-multi-instance-execution.md),
 [`DISTRIBUTED_EXECUTION.md`](../architecture/DISTRIBUTED_EXECUTION.md)
 
+### Single-instance assumptions
+ADR-0014 made multi-instance execution a design rule, and design rules decay - the audit that
+produced it found a real defect in reviewed code, where a lease was judged against two instances'
+clocks and could produce two financial effects for one request. Four patterns now fail the build:
+`synchronized` (method **and** block), process-local locks, ambient scheduling, and static mutable
+state. Each means something only within one process, so its presence is a claim about coordination
+that is false the moment a second instance starts - and the code reads as though the race was
+handled, which is why it survives review. The exemption set is `DISTRIBUTED_EXECUTION.md` §3, named
+individually rather than by type. The block check is not an ArchUnit rule: ArchUnit models accesses,
+a block is a `MONITORENTER` instruction, so that one reads bytecode. **The limit is recorded**: the
+defect that motivated all this used none of the four, so the rules narrow the ways to be wrong
+rather than closing them. &rarr;
+[ADR-0024](../adr/ADR-0024-single-instance-assumptions-fail-the-build.md), ADR-0014
+
 ### API evolution
 The public HTTP contract is versioned in the path (`/v1`), applied once in the composition root so
 no controller declares or forgets it. The number increments only for a change that breaks a client;

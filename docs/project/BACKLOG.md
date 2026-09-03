@@ -674,7 +674,7 @@ Status: `IN_PROGRESS`
   application is never the TLS endpoint. Nothing is encrypted at rest and nothing needs to be yet;
   expectations recorded with owning phases. ADR-0023.
 
-**P0-TSK-041 — Architecture rule for single-instance assumptions**
+**P0-TSK-041 — Architecture rule for single-instance assumptions** — `COMPLETE` (2026-09-02)
 - Context: platform / architecture
 - Description: An ArchUnit rule failing the build on the mechanically detectable single-instance patterns — `synchronized` methods or blocks, `ReentrantLock`/`Semaphore`, static mutable collections, `ScheduledExecutorService` and ambient scheduling — with a named, justified exemption set for the non-authoritative uses recorded in `DISTRIBUTED_EXECUTION.md` §3.
 - Why: ADR-0014 is a design rule today and design rules decay. The `INV-MON-01` and no-ambient-time rules show the pattern works, and the P0-TSK-016 defect shows the assumption is easy to reintroduce.
@@ -683,6 +683,19 @@ Status: `IN_PROGRESS`
 - Risk: Medium
 - Cx: M
 - DoD: `DOD-ARCH`
+- **Outcome:** four rules - `synchronized` (method and block), process-local locks, ambient
+  scheduling, static mutable state - with the exemption set being `DISTRIBUTED_EXECUTION.md` §3
+  rather than a list the rule keeps for itself. Both criterion mutations proven: a planted
+  `synchronized` block and a planted static `ConcurrentHashMap` each fail the build. The block
+  check is **not** an ArchUnit rule: ArchUnit models accesses and a block is a `MONITORENTER`
+  instruction, verified by probe to be invisible, so it reads bytecode with ASM at test scope.
+  **Two defects found by the teeth tests**, both of which would have shipped rules that could not
+  fail: `noClasses().should(customCondition)` inverts events - the identical defect `P0-TST-008`
+  documented, reproduced one task later - and `haveModifier(SYNCHRONIZED)` on `classes()` checks
+  the class rather than its methods. A third was found by the criterion mutation itself: the
+  bytecode sweep walked only directories, so a consumed module arriving as a **jar** was never
+  scanned, and a count-based vacuity guard could not see it. Coverage is now asserted per module
+  from the shared classpath helper. ADR-0024.
 
 **P0-TST-009 — Multi-instance concurrency test convention**
 - Context: platform / test

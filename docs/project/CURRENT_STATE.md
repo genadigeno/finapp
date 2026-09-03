@@ -55,59 +55,58 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-041` - Architecture rule for single-instance assumptions**
+**`P0-TST-009` - Multi-instance concurrency test convention**
 Status: `READY` - not started.
 
-Bounded context: platform / architecture. Depends on `P0-TSK-007` and ADR-0014, both `COMPLETE`.
-**Risk: Medium.**
+Bounded context: platform / test. Depends on `P0-TSK-016` (`COMPLETE`) and `P0-TSK-035` (**not
+started**, `P0-EPIC-11`). **Risk: Medium.**
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-ARCH`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-TEST`.
+
+**Its dependency is unmet**, which needs a decision before starting: `P0-TSK-035` (Testcontainers
+harness) has not been done, and this project's existing database tests run against the developer's
+own compose stack rather than Testcontainers. Worth checking whether the dependency is real or is
+another backlog defect like `P0-TSK-004`'s.
 
 ### Just completed
 
-**`P0-TSK-034` - Transport and at-rest encryption baseline** - `COMPLETE` (2026-09-02).
+**`P0-TSK-041` - Architecture rule for single-instance assumptions** - `COMPLETE` (2026-09-02).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Documented | `SECURITY_ARCHITECTURE.md` §Transport encryption and §Encryption at rest: per-hop expectations, each labelled implemented or deferred with an owning phase |
-| Local setup does not normalise insecure defaults | `TransportSecurityGuard` refuses to start when a non-loopback database would be reached without `sslmode=verify-full` |
+| Fails on a planted `synchronized` block over shared state | A block planted in `OutboxRelay` fails the build |
+| Fails on a static mutable collection | A static `ConcurrentHashMap` planted in `OutboxRelay` fails the build |
+| Passes on the documented non-authoritative uses | Both `ThreadLocal`s accepted, and each **proven load-bearing**: the same rule with an empty exemption set fires on both |
+| Each exemption names why it cannot affect correctness | `DISTRIBUTED_EXECUTION.md` §3, which is now the exemption set rather than only a record |
 
-**The insecure default was the driver's own, and it was measured rather than assumed.** Against the
-local container, which runs `ssl = off`:
+**Four rules**: `synchronized` (method and block), process-local locks, ambient scheduling, static
+mutable state. Each is a construct that means something **only within one process**, so its presence
+is a claim about coordination that is false the moment a second instance starts - and the code reads
+as though the race was handled, which is why such things survive review.
 
-| `sslmode` | Result |
-|---|---|
-| unset | connects, **unencrypted**, silently |
-| `prefer` | connects, **unencrypted**, silently |
-| `require` | refused |
-| `verify-full` | refused |
+**The block check is not an ArchUnit rule.** ArchUnit models field and method *accesses*; a
+`synchronized` method is an access flag and it sees that, while a block is a `MONITORENTER`
+instruction and it is blind to it - verified by probe, where the block method reported
+`modifiers=[]`. The criterion requires failing on a planted block, so that one reads bytecode with
+ASM, declared at test scope.
 
-The platform sets no `sslmode`. Locally that is correct - the database is on loopback and the
-container offers no TLS. But it is the same file a deployment inherits, and there it is a plaintext
-connection to a remote database carrying every credential, amount and account identifier in the
-clear, with **nothing reporting it**: the pool connects, readiness returns UP, the logs are quiet.
-`prefer` is the worst available default precisely because it looks like it is trying.
+**Three defects, all caught by the task's own tests rather than by review.**
+- **`noClasses().should(customCondition)` inverts events**, so two rules were incapable of failing.
+  This is the *identical* defect `P0-TST-008` found in `secretsAreWrapped` and wrote up at length -
+  reproduced one task later by the person who wrote it up. The teeth tests are the only reason it
+  did not ship twice.
+- **`haveModifier(SYNCHRONIZED)` on `classes()`** checks the *class's* modifiers, and a class cannot
+  be synchronized - so that rule could not fire either. `noMethods()` is the correct target.
+- **The bytecode sweep walked only directories.** A consumed module reaches a dependent on the
+  runtime classpath as a **jar**, so `platform` and `sharedkernel` were never scanned and the
+  planted block was invisible. The vacuity guard counted methods and saw nothing wrong, because
+  `app`'s own classes are plenty. Coverage is now asserted **per module**, from the same classpath
+  helper the ArchUnit coverage guard uses.
 
-**`verify-full`, not `require`.** `require` encrypts and verifies nothing - it stops passive
-eavesdropping and not an active attacker presenting their own certificate, which is the threat on
-the path to a financial database. `verify-ca` checks the issuer but not the hostname. Only
-`verify-full` checks both.
-
-**Loopback is exempt, deliberately.** A loopback connection does not leave the host, and requiring
-TLS there would mean every developer provisioning certificates for a container - a setup step that
-elaborate is one people work around, which costs more security than it buys. `DOD-BUILD` also
-requires a clean clone to build with no machine-specific setup.
-
-**One finding, from a mutation that survived.** Reading `sslmode` only from the Hikari property and
-ignoring the JDBC URL passed every test - the two sources were combined in a private method no test
-reached. Fixing it raised a better question: which source does the driver actually honour? Measured:
-**the URL wins in both directions** (`url=require, props=disable` refused; `url=disable,
-props=require` connects). Rather than encode that, the guard now requires **every configured source
-to agree**, which cannot be wrong about a driver implementation detail that may change.
-
-**Nothing is encrypted at rest and nothing needs to be yet** - Phase 0 holds no customer data, no
-money and no credentials. Expectations recorded per concern with owning phases, so the absence is a
-decision rather than an oversight.
+**The limit is recorded rather than glossed.** The `IdempotentExecutor` defect that motivated
+ADR-0014 used no lock, no static state and no scheduler - it was a clock comparison, and these rules
+would not have caught it. They narrow the ways to be wrong; the design question stays a review
+question, and `P0-TST-009` is the convention that gives it teeth.
 
 ---
 
@@ -207,6 +206,20 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Single-instance assumptions fail the build (2026-09-02), `P0-TSK-041`:
+- Four rules: `synchronized` (method **and** block), process-local locks, ambient scheduling,
+  static mutable state
+- The exemption set is `DISTRIBUTED_EXECUTION.md` SS3 rather than a list the rule keeps, named
+  individually so a type-wide `ThreadLocal` exemption cannot admit the next one silently
+- Both exemptions proven load-bearing: the same rule with an empty exemption set fires on both
+- The block check reads **bytecode**, because ArchUnit models accesses and a `MONITORENTER` has no
+  access flag - verified by probe rather than assumed
+- Three defects caught by the task's own teeth tests: two rules that could not fail
+  (`noClasses()` inversion, and `haveModifier` on the wrong target) and a sweep that missed every
+  module arriving as a jar
+- The limit is stated: the defect that motivated ADR-0014 used none of the four patterns
+- ADR-0024 records the reasoning and the four rejected alternatives
 
 Transport and at-rest encryption (2026-09-02), `P0-TSK-034`:
 - `TransportSecurityGuard`: a non-loopback database must be reached with `sslmode=verify-full`, or
@@ -614,7 +627,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-041` is the next task.
+None in progress. `P0-TST-009` is the next task.
 
 ## Blockers
 
@@ -796,18 +809,18 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-041` - Architecture rule for single-instance assumptions**, the fifth of `P0-EPIC-10`'s
-eight and the first `DOD-ARCH` task in a while.
+**`P0-TST-009` - Multi-instance concurrency test convention**, the sixth of `P0-EPIC-10`'s eight.
 
-An ArchUnit rule failing the build on the mechanically detectable single-instance patterns -
-`synchronized` methods or blocks, `ReentrantLock`/`Semaphore`, static mutable collections,
-`ScheduledExecutorService` and ambient scheduling - with a named, justified exemption set for the
-non-authoritative uses recorded in `DISTRIBUTED_EXECUTION.md` §3.
+A convention and harness for tests that must simulate several instances: separate connections,
+separate component instances, and separate clocks where a clock participates in the decision. The
+motivation is recorded and concrete - the `P0-TSK-016` lease defect passed every test because they
+all ran in one JVM with one clock.
 
-That register is now current: `SecurityContext` was added to it during the `P0-TSK-032` review,
-which is exactly the dependency this task has on it. Worth reading §3 and §4 first - the audit
-recorded there found the codebase mechanically clean, so the rule should pass on arrival, and a
-rule that passes trivially needs its teeth proven especially carefully.
+**Check the dependency before starting.** It declares `P0-TSK-035` (Testcontainers harness), which
+has not been done and sits in `P0-EPIC-11`. This project's database tests already run against the
+developer's compose stack with separate connections and a `TestClock`, so the convention may be
+largely satisfiable today - and `P0-TSK-004` is precedent for a declared dependency being a backlog
+defect rather than a real constraint. Resolve that first rather than treating the task as blocked.
 
 ---
 
@@ -815,6 +828,8 @@ rule that passes trivially needs its teeth proven especially carefully.
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-041`. **No critical findings; one important one and two closed gaps, all found by probing shapes the rules were not designed against.** The important one: **a static final ARRAY was not flagged** - `private static final String[] CACHE = {...}` went straight through, and a `final` reference to an array protects nothing, so it is per-instance shared state exactly as a `HashMap` would be. Closed, with enum `$VALUES` excluded as **synthetic** - which is the only reason arrays can be flagged at all, since every enum the compiler writes has one. Re-proven in both directions, and the whole build still passes with four enums present. **A second gap is recorded rather than closed**: a mutable collection built by a *factory method* and assigned to an interface-typed static field escapes both halves of the rule - the construction is not in `<clinit>` and the field's type is an interface. Widening to "any mutable construction in the class" would flag the common and correct pattern of building a local collection and returning an immutable copy, so it is written down in ADR-0024 and `MODULE_ARCHITECTURE.md` §6 instead. **Three shapes verified to work that were never designed for**: a `@Scheduled` annotation - which is how a Spring developer would actually introduce ambient scheduling, and an annotation is not a field or a call - a `ReentrantLock` used only as a local variable, and a non-final static primitive. All caught, because the condition asks for direct dependencies rather than inspecting fields. Also confirmed the bytecode sweep works through **both** classpath shapes, jar and directory, by planting a block in `platform` and in `app` separately. Two code-quality fixes: a dead `noClasses` import left by the inversion repair, and a `DescribedPredicate` wrapper whose description was never used. 528 hermetic tests, 172 database tests. |
+| 2026-09-02 | `P0-TSK-041` complete. Four rules make the mechanically detectable half of ADR-0014 a build failure: `synchronized` (method **and** block), process-local locks, ambient scheduling, and static mutable state. Each means something **only within one process**, so its presence is a claim about coordination that is false the moment a second instance starts - and worse than no lock at all, because the code reads as though the race was handled. The exemption set is `DISTRIBUTED_EXECUTION.md` §3 rather than a list the rule keeps for itself, named individually because a type-wide `ThreadLocal` exemption would admit the third one without anyone deciding; both current entries are **proven load-bearing**, since the same rule with an empty exemption set fires on each. **The block check is not an ArchUnit rule**: ArchUnit models accesses, a block is a `MONITORENTER` instruction with no access flag - verified by probe, where the block method reported `modifiers=[]` - so it reads bytecode with ASM at test scope. **Three defects, every one caught by the task's own tests rather than by review.** `noClasses().should(customCondition)` **inverts events**, so two rules were incapable of failing - the *identical* defect `P0-TST-008` found in `secretsAreWrapped` and wrote up at length, reproduced one task later by the person who wrote it up. `haveModifier(SYNCHRONIZED)` on `classes()` checks the **class's** modifiers and a class cannot be synchronized, so that rule could not fire either. And the bytecode sweep walked only **directories** - a consumed module reaches a dependent as a **jar**, so `platform` and `sharedkernel` were never scanned and the planted block was invisible, while a count-based vacuity guard saw nothing wrong because `app`'s classes are plenty; coverage is now asserted per module from the same classpath helper the ArchUnit guard uses. **The limit is recorded rather than glossed**: the `IdempotentExecutor` defect that motivated ADR-0014 used no lock, no static state and no scheduler - it was a clock comparison - so these rules narrow the ways to be wrong rather than closing them, and the design question stays a review question. ADR-0024 recorded. 528 hermetic tests, 172 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-034`. **No critical findings; one important one, and it is the stale-list defect again.** The five modes the guard treats as insufficient - `disable`, `allow`, `prefer`, `require`, `verify-ca` - happened to be **exactly** the driver's other five, and nothing checked that. A driver upgrade adding a mode would have left it silently unclassified and untested, which is the same failure this repository has met in CI's job list, in an ArchUnit coverage guard and in a privilege check. The set is now derived from the driver's own `SslMode` enum at test time, by reflection because the driver is deliberately runtime-only, with a vacuity assertion so an unresolvable class fails loudly rather than comparing two empty sets. Proven by dropping a mode from the classified set. **Two bypass questions answered by disassembling the driver rather than reasoning**: it reads `sslmode` from **no environment variable** - `PGProperty` consults only the passed `Properties` - so there is no silent override; but a libpq **service file** (`?service=name` with `pg_service.conf`) is a source the application cannot see. That one fails in the safe direction only: a service file setting a weak mode is still refused, and one setting `verify-full` produces a false refusal. Documented rather than closed, because the alternative is trusting a file the application cannot read. Also confirmed `verify-full` is a real driver mode rather than a plausible-looking string, and added the two untested edges - a loopback database stays exempt with a weak mode configured, and both `sslmode` sources are load-bearing. Kafka and Redis remaining unguarded is recorded as debt with the reason that a guard for a connection with no client guards nothing. 515 hermetic tests, 172 database tests. |
 | 2026-09-02 | `P0-TSK-034` complete. The acceptance criterion's second clause - *local setup must not normalise insecure defaults into later environments* - turned out to name a real default, and it belongs to the **driver** rather than to this repository. Measured against the local container: `sslmode` unset and `prefer` both **connect unencrypted and report nothing**, while `require` and `verify-full` are refused. The platform sets no `sslmode`, which is correct locally and, in a deployment, a plaintext connection to a remote database carrying every credential, amount and account identifier in the clear - with the pool connected, readiness UP and the logs quiet. `prefer` is the worst available default precisely because it looks like it is trying. `TransportSecurityGuard` now refuses to start when a non-loopback database would be reached without **`verify-full`** - not `require`, which encrypts and verifies nothing and so stops passive eavesdropping but not an active attacker presenting their own certificate. Loopback is exempt deliberately: a connection that does not leave the host would otherwise cost every developer a certificate for a container, and `DOD-BUILD` requires a clean clone to build with no machine-specific setup. **One mutation survived and led somewhere better**: reading `sslmode` only from the Hikari property and ignoring the JDBC URL passed every test, because the two sources were combined in a private method no test reached. That raised the question of which source the driver honours - measured, **the URL wins in both directions** - and rather than encode a driver implementation detail the guard now requires **every configured source to agree**, which cannot be wrong about a precedence that may change. `DatabaseEndpoint` extracted so "is this database on this machine?" has one definition rather than two that drift. Kafka, Redis and inbound HTTP are documented rather than guarded - there is no client for the first two and the application is never the TLS endpoint - and a guard for a connection that does not exist would be guarding nothing. Nothing is encrypted at rest and nothing holds data that needs it; expectations recorded per concern with owning phases. **Process note:** `git checkout --` failed to revert a mutation in a NEW file, because the file was untracked and the command is a no-op there - caught by re-reading the file rather than trusting the command. Copy-based backup is the only reliable revert for untracked work. ADR-0023 recorded. 513 hermetic tests, 172 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-033`. **One critical finding, and the scheme itself is what produced it.** `correlation_id` was classified `INTERNAL` in four tables on the reasoning that it is operational metadata. Applying the ceiling rule to it exposed that it is **caller-supplied**: the permitted charset is `[A-Za-z0-9._:@/+=-]`, a well-formed inbound `X-Correlation-Id` is accepted verbatim, and `jane.doe@example.com`, `acct:GB29NWBK60161331926819`, `customer-1990-05-14` and `+447700900123` were all confirmed accepted by probe. That value is then written to **every log line** as a top-level ECS field, stamped on **every span**, stored in four tables, and echoed in the response header and every problem-detail body - so a caller can place personal or financial data into a telemetry backend with different access control and months of retention, which is exactly what `INV-AUD-02` forbids and what ADR-0017 and ADR-0018 keep SQL text and request-derived tags off spans and metrics to prevent. **The level stays `INTERNAL` and the value must change**: raising the classification would forbid correlation from appearing in logs, which defeats correlation. Recorded as debt for Phase 1 rather than fixed, since it is `P0-TSK-025`'s ingress behaviour (`EXECUTION_PROTOCOL.md` rule 4). §5 was rewritten around the distinction it had missed - free text whose ceiling is a *handling* rule, versus caller-supplied identifiers whose level is a *requirement on the value*. **One important defect in the guard**: the register parser matched `[a-z_]+`, so a column name containing a digit - `address_line_2`, `iso_4217_code` - could not be classified at all; the row would sit unparsed and the failure would read "this column has no entry" while the entry was right there. It fails safe and diagnoses the wrong thing, and Phase 3 would have met it. Found by planting such a column, fixed, and re-proven in both directions. 489 hermetic tests, 172 database tests. |
