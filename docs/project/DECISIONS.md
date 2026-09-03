@@ -156,6 +156,21 @@ owning phases are recorded so the absence is a decision. &rarr;
 [ADR-0023](../adr/ADR-0023-transport-security-confined-to-loopback.md),
 [`SECURITY_ARCHITECTURE.md`](../architecture/SECURITY_ARCHITECTURE.md)
 
+### Supply chain
+Every artefact the build resolves is checksum-verified (`gradle/verification-metadata.xml`) and
+version-locked (three `gradle.lockfile`s), both enforced by Gradle on every build and both proven by
+mutation. They are **not** redundant, and measuring showed why: verification recorded **69 of 342
+modules at more than one version** on its first generation, because different classpaths legitimately
+resolve different versions - so it cannot tell a deliberate resolution from drift between versions it
+already trusts. The lockfile can, and it is the only place the thirteen BOM-managed versions are
+written down at all. **The limit is stated rather than glossed: this is trust on first use.** The
+checksums record what was downloaded when they were written, so they catch a later substitution and
+not a first download that was already compromised. Signature verification is the answer to that and
+was measured - one narrow slice produced 11 signed artefacts and 49 trusted keys - then deferred to
+Phase 15, because a keyring is a trust decision of its own and every unsigned artefact still needs a
+checksum. &rarr;
+[ADR-0025](../adr/ADR-0025-dependency-verification-and-locking.md), [`README.md`](../../README.md) §7a
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

@@ -722,7 +722,7 @@ Status: `IN_PROGRESS`
   recorded in `DISTRIBUTED_EXECUTION.md` §5; `DatabaseRoles` moved to a shared test-support package
   so a harness need not live in the audit tests.
 
-**P0-TSK-039 — Dependency verification and locking**
+**P0-TSK-039 — Dependency verification and locking** — `COMPLETE` (2026-09-02)
 - Context: platform / security / build
 - Description: Gradle dependency verification (checksum and/or signature metadata) plus dependency locking, so the set of artefacts the build resolves is pinned and tamper-evident.
 - Why: Discovered during `P0-TSK-001`. The Gradle *distribution* is checksum-pinned, but every library the build resolves is currently trusted implicitly. For a platform whose stated posture is financial infrastructure, an unverified supply chain is a real exposure — a compromised or substituted artefact executes with full build privileges. `.claude/rules/security.md` requires treating external input as untrusted; a dependency is external input.
@@ -731,6 +731,16 @@ Status: `IN_PROGRESS`
 - Risk: Medium — over-strict verification is disruptive to routine upgrades; the update procedure must be practical or it will be bypassed.
 - Cx: M
 - DoD: `DOD-SEC`
+- **Outcome:** both controls present and enforced, each proven by mutation - an altered checksum
+  fails naming the artefact, a changed locked version fails naming the lock state. The interesting
+  part was that locking looked redundant at first, since verification already refuses any artefact
+  it does not know; measuring the generated file showed **69 of 342 modules recorded at more than
+  one version**, so verification cannot tell a deliberate resolution from drift between versions it
+  already trusts. The lockfile can, and it is the only place the thirteen BOM-managed versions
+  appear. Trust-on-first-use is stated rather than glossed; PGP was measured (11 signed artefacts,
+  49 trusted keys, from one narrow slice) and deferred to Phase 15. The update procedure is three
+  steps and a diff review, and regeneration was verified to **merge** rather than rewrite - which is
+  what makes it not "regenerate everything and hope". ADR-0025.
 
 **P0-TSK-040 — Update mechanism for pinned CI actions and scanner images**
 - Context: platform / build / security

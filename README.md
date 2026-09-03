@@ -327,6 +327,60 @@ the procedure is in [`SECRET_MANAGEMENT.md`](docs/architecture/SECRET_MANAGEMENT
 
 ---
 
+## 7a. Changing a dependency
+
+Every artefact the build resolves is checksum-verified and version-locked
+(`gradle/verification-metadata.xml` and the three `gradle.lockfile`s). Both are enforced, so
+changing a dependency is three steps rather than two:
+
+```bash
+# 1. Change the version in gradle/libs.versions.toml - the single source.
+# 2. Update the lockfiles.
+./gradlew --write-locks build databaseTest
+# 3. Add the new artefacts' checksums. This MERGES; it does not rewrite.
+./gradlew --write-verification-metadata sha256 build databaseTest
+```
+
+**`build-logic` is a separate included build and is regenerated separately.** A root
+`--write-locks` does not touch it - verified - so a change to the Kotlin DSL or toolchain
+dependencies needs:
+
+```bash
+cd build-logic && ../gradlew --write-locks build
+```
+
+Its artefacts are covered by the root verification metadata either way, because dependency
+verification is Gradle-wide and reaches included builds; only the version lock is separate.
+
+Then **read the diff**. That is the step that does the work:
+
+- the lockfile diff names every version that moved, including transitives a BOM bumped for you;
+- the metadata diff names every artefact whose bytes are now trusted.
+
+A change you cannot explain in those two diffs is the signal this exists for.
+
+**Both task lists matter.** `build databaseTest` is what covers every configuration; a narrower run
+adds only what it resolved. That is safe — regeneration merges, and existing entries survive,
+which is verified — but it will not *record* anything the narrow run did not touch, so a later full
+build fails with a missing-checksum error rather than a wrong one.
+
+**Removing a dependency leaves its entries behind.** Gradle merges and never prunes, so a superseded
+version stays trusted. Delete those entries by hand in the same change; the lockfile is what shows
+you which ones.
+
+**What this does and does not protect.** The checksums are trust-on-first-use: they record what was
+downloaded when they were written, so they catch a substitution *afterwards* and cannot catch a
+first download that was already compromised. The lockfile catches an accidental version drift, not
+an attacker — anyone who can edit it can edit the version catalog beside it. See
+[ADR-0025](docs/adr/ADR-0025-dependency-verification-and-locking.md).
+
+**If verification fails**, the report at `build/reports/dependency-verification/` names the artefact
+and the expected checksum. Treat a mismatch as a compromise until proven otherwise: check the
+artefact against the publisher's own published checksum, never against the one the build just
+downloaded.
+
+---
+
 ## 7. Troubleshooting
 
 **`PKIX path building failed` / `unable to find valid certification path`**

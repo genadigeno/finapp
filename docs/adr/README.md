@@ -10,7 +10,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 - **An accepted ADR is never edited to change its decision.** A changed decision is a new ADR
   that supersedes the old one; the old one is marked `Superseded by ADR-NNNN`.
 - Status: `Proposed` → `Accepted` → `Superseded`.
-- ADR-0001 through ADR-0024 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
+- ADR-0001 through ADR-0025 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
   once the decisions have been validated by implementation rather than only by argument.
 - A decision found in code but absent from this record is architectural debt.
 
@@ -42,6 +42,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0022](ADR-0022-data-classification-at-the-ceiling.md) | Data is classified per column, at its ceiling, before it holds anything | Proposed | 0 | Data |
 | [0023](ADR-0023-transport-security-confined-to-loopback.md) | A database off this machine is reached with verified TLS, or not at all | Proposed | 0 | Security |
 | [0024](ADR-0024-single-instance-assumptions-fail-the-build.md) | Single-instance assumptions fail the build | Proposed | 0 | Architecture |
+| [0025](ADR-0025-dependency-verification-and-locking.md) | Every resolved artefact is checksum-verified and version-locked | Proposed | 0 | Security |
 
 ## Anticipated ADRs
 

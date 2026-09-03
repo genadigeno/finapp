@@ -55,54 +55,48 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TSK-039` - Dependency verification and locking**
+**`P0-TSK-040` - Update mechanism for pinned CI actions and scanner images**
 Status: `READY` - not started.
 
-Bounded context: platform / security / build. Depends on `P0-TSK-004` (`COMPLETE`).
-**Risk: Medium** - over-strict verification is disruptive to routine upgrades, and an update
-procedure that is not practical will be bypassed.
+Bounded context: platform / build / security. Depends on `P0-TSK-004` (`COMPLETE`).
+**Risk: Low.**
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-SEC`.
+**It is the last task in `P0-EPIC-10`.**
 
 ### Just completed
 
-**`P0-TST-009` - Multi-instance concurrency test convention** - `COMPLETE` (2026-09-02).
+**`P0-TSK-039` - Dependency verification and locking** - `COMPLETE` (2026-09-02).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| A documented convention | `DISTRIBUTED_EXECUTION.md` §5: own connection, own component, own clock - and the skew measured against the **server**, never a fixture constant |
-| At least one test proving a clock-skew failure is detectable | `clockSkewCannotStealALiveClaim` now **fails** when the V004 fix is reverted. It did not before |
-| Existing concurrency tests audited against it | Seven audited, table recorded in §5 |
+| `gradle/verification-metadata.xml` present and enforced | 456 components, SHA-256, `verify-metadata` on. The build resolves nothing unrecorded |
+| A deliberately altered artefact checksum fails the build | Proven: altering one entry fails naming the artefact and the repository it came from |
+| The update procedure is documented and is not "regenerate everything and hope" | [`README.md`](../../README.md) §7a: three steps and a diff review. Regeneration was **verified to merge** rather than rewrite |
 
-**The audit found the criterion's own subject broken, which is the finding of this task.**
+**Locking looked redundant, and measuring the file proved otherwise.** Verification already refuses
+any artefact it does not know - confirmed by bumping a pinned version, which failed the build
+immediately. The first analysis was therefore that a lockfile would be a second copy of the same
+fact.
 
-`clockSkewCannotStealALiveClaim` was written alongside `P0-TSK-016`'s fix, precisely to prove that
-an instance with a fast clock could not steal a live claim. It built the fast instance's clock as
-`Clock.fixed(FIXED.plus(1 hour))` from a hard-coded `2026-09-01T12:00:00Z`. Measured against the
-running container - `SELECT now()` returned `2026-09-03 05:20` - that clock was about **forty hours
-behind** the server, not an hour ahead.
+Then the generated file was read: on its **first** generation it recorded **69 of 342 modules at
+more than one version** - `jackson-bom` at five, `jackson-databind` at three - because the
+buildscript, plugin, compile and test classpaths legitimately resolve different versions of the same
+module. So verification cannot tell a deliberate resolution from drift *between versions it already
+trusts*: both pass. A lockfile can, and it earns its place twice over, because **thirteen
+dependencies take their version from the Spring Boot BOM and that version is written down nowhere
+else in this repository** - a BOM bump moves them silently today.
 
-So the test exercised a **slow** instance, and a slow instance never believes anything has expired.
-It passed for a reason unrelated to the property it named. Proven: reverting the V004 fix so the
-lease is judged by the client's clock again left that test green while two unrelated tests failed.
+Both are enforced and both proven by mutation: an altered checksum fails naming the artefact; a
+changed locked version fails with *"Did not resolve ... which is part of the dependency lock state"*.
 
-Corrected by anchoring the skew on `SELECT now()` through a new `SimulatedInstance` harness, and it
-now fails under the same reintroduction. A **precondition** asserts the skew is real and in the
-dangerous direction, so the fixture cannot silently invert again.
-
-**The audit's other result is that everything else conforms, and for a reason worth recording.**
-Every multi-instance test already gives each instance its own connection. Most share a clock, and
-that is *correct*: eligibility, abandonment, leases and retention are all decided by the server's
-clock (§3), so no client clock participates in a cross-instance decision. The one place one did was
-the idempotency lease - the defect ADR-0014 exists for - and it is now server-side.
-
-**The declared dependency was a backlog defect**, the second of the class `P0-TSK-004` found.
-`P0-TSK-035` (Testcontainers) changes *where* the database comes from, not whether a test can give
-each instance its own connection, component and clock. Removed with the reasoning recorded.
-
-`DatabaseRoles` moved from the audit tests to a shared `com.finapp.platform.testing` package - it
-had been package-private in `audit`, which is why two earlier tasks put schema-wide tests in the
-audit package to reach it.
+**Trust on first use is the limit, and it is stated rather than glossed.** The checksums record what
+this machine downloaded on the day they were written. They catch a substitution afterwards; they
+cannot catch a first download that was already compromised, because the compromise would be recorded
+as the expected value. PGP signatures are the answer to that and were **measured** rather than
+argued about: one narrow slice of the graph produced 11 signed artefacts and required 49 trusted
+keys. Extrapolating that keyring is a trust decision of its own, and every unsigned artefact still
+needs a checksum, so it is deferred to Phase 15 with the rest of the supply-chain work.
 
 ---
 
@@ -202,6 +196,18 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Dependency verification and locking (2026-09-02), `P0-TSK-039`:
+- 456 artefacts checksum-verified and six lockfiles enforced, closing the largest remaining
+  supply-chain hole: a build-time dependency runs with full build privileges
+- Both proven by mutation - an altered checksum fails naming the artefact, a changed locked version
+  fails naming the lock state
+- Locking is **not** redundant, and measuring showed why: 69 of 342 modules are recorded at more
+  than one version, so verification cannot tell a resolution from drift between versions it trusts
+- The lockfile is the only place the thirteen BOM-managed dependency versions are written down
+- Trust-on-first-use stated as the limit; PGP measured (11 signed, 49 keys, one slice) and deferred
+- The update procedure is three steps and a diff review; regeneration verified to **merge**
+- ADR-0025 records the reasoning and the four rejected alternatives
 
 Multi-instance test convention (2026-09-02), `P0-TST-009`:
 - `SimulatedInstance`: own connection, own clock, and skew anchored on `SELECT now()` rather than a
@@ -635,7 +641,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-039` is the next task.
+None in progress. `P0-TSK-040` is the next task.
 
 ## Blockers
 
@@ -818,18 +824,20 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-039` - Dependency verification and locking**, the seventh of `P0-EPIC-10`'s eight.
+**`P0-TSK-040` - Update mechanism for pinned CI actions and scanner images**, the **last** task in
+`P0-EPIC-10`, after which only `P0-EPIC-11` (test infrastructure) and two `P0-EPIC-12` documents
+remain before the Phase 0 exit gate.
 
-Gradle dependency verification plus locking, so the artefacts the build resolves are pinned and
-tamper-evident. The Gradle *distribution* is already checksum-pinned; every library it resolves is
-currently trusted implicitly, which for a platform whose stated posture is financial infrastructure
-is a real exposure - a substituted artefact executes with full build privileges.
+Discovered during the `P0-TSK-004` review: pinning to a SHA removes the risk of a tag being
+repointed and freezes the action, so without an update path the pins rot and a security fix in
+`actions/checkout` or in a scanner is never picked up. Pinning without maintenance trades one
+supply-chain risk for a quieter one.
 
-Its own risk note is the thing to design against: **over-strict verification is disruptive to
-routine upgrades, and an update procedure that is not practical will be bypassed.** That is the same
-argument that kept TLS off loopback in `P0-TSK-034` and kept `key` out of the secret vocabulary in
-`P0-TSK-030` - a control people work around protects nothing. The acceptance criterion says as much:
-the procedure must not be "regenerate everything and hope".
+Note the scope has grown since it was written: `P0-TSK-031` moved gitleaks' digest into
+`infra/scripts/secret-scan.sh`, and `P0-TSK-039` added `gradle/verification-metadata.xml` and three
+lockfiles. Whatever raises the reviewable change should cover all of them, or it will cover the
+workflow file and quietly leave the rest to rot - which is the defect this task exists to prevent,
+reproduced one level down.
 
 ---
 
@@ -837,6 +845,8 @@ the procedure must not be "regenerate everything and hope".
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-039`. **No critical findings; one real coverage gap, closed.** The question the review had to answer is whether verification holds for the tasks **CI** runs, since CI has never executed and the metadata was generated against `build databaseTest` only. Both of CI's other Gradle invocations - `:platform:flywayValidate` and `:app:cyclonedxBom` - were run against the generated file and pass, so the SBOM job and the migration job will not fail on a missing checksum. **The gap was `build-logic`**: it is an included build with its own settings, so it never applied the convention plugin that enables locking and a root `--write-locks` does not reach it - verified. Its artefacts were already checksum-verified, because dependency verification is Gradle-wide and reaches included builds (confirmed by finding `gradle-kotlin-dsl-plugins` in the metadata), so only the version record was missing - and it matters as much as any, since a precompiled script plugin runs in every build with full privileges. Locked, generated from within the included build, and proven by mutating a real entry. **A process note worth keeping**: the first attempt at that mutation edited a version string that does not appear in that lockfile, so the `sed` matched nothing and the test "passed" - the third time in two tasks that a mutation was reported as caught when it had never been applied. Checking that the mutation actually landed is now part of applying one. A stray `verification-metadata.dryrun.xml` from an early probe was removed. 528 hermetic tests, 173 database tests. |
+| 2026-09-02 | `P0-TSK-039` complete. Every artefact the build resolves is now checksum-verified (456 components) and version-locked (three lockfiles), closing the largest remaining supply-chain hole - a build-time dependency executes with full build privileges, so it can read the source, the environment and any credential the build holds. Both controls proven by mutation: an altered checksum fails naming the artefact and the repository it came from, and a changed locked version fails with *"Did not resolve ... which is part of the dependency lock state"*. **Locking looked redundant and measuring the file proved otherwise.** Verification already refuses any artefact it does not know - confirmed by bumping a pinned version - so the first analysis was that a lockfile would be a second copy of the same fact. Then the generated file was read: on its **first** generation it recorded **69 of 342 modules at more than one version**, `jackson-bom` at five, because the buildscript, plugin, compile and test classpaths legitimately resolve different versions of the same module. Verification therefore cannot tell a deliberate resolution from drift *between versions it already trusts*; a lockfile can, and it earns its place twice over because **thirteen dependencies take their version from the Spring Boot BOM and that version is written down nowhere else** - a BOM bump moves them silently today. **Trust on first use is the limit and it is stated rather than glossed**: the checksums record what this machine downloaded on the day they were written, so they catch a later substitution and not a first download that was already compromised. PGP signatures are the answer and were **measured** rather than argued about - one narrow slice produced 11 signed artefacts and 49 trusted keys - then deferred to Phase 15, since a keyring is a trust decision of its own and every unsigned artefact still needs a checksum. The acceptance criterion's "not regenerate everything and hope" is met by verifying that regeneration **merges**: a narrow run preserved all 456 entries. Gradle never prunes, so removing a dependency leaves its entries trusted - recorded in the procedure. ADR-0025 recorded. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TST-009`. **No critical or important findings; the audit's own claims were verified rather than trusted, and two limits recorded.** The seven-row conformance table asserts every multi-instance test gives each instance its own connection - three of those I had checked directly, so the other four were traced: `OutboxCrashRecoveryTest` turned out to pass a connection *source* rather than a connection, and that source calls `DriverManager.getConnection` afresh each time, so eight relays really do contend; `IdempotencyRecordSchemaTest` opens `own` per racer inside the loop. The table holds. The corrected skew test was re-proven after the line-ending normalisation: reverting the V004 fix still makes it fail, which it did not do before this task. **The harness's own limit is now stated rather than implied**: nothing mechanically prevents `SimulatedInstance.serverNow()` being changed to read the JVM clock instead of the database's, and on a machine where the two agree - nearly true here, where the container drifts about half a second - every skew test would keep passing while measuring the wrong thing again. The precondition does not catch that either, and a guard would have to assume a drift that may not exist, so the defence is that the anchor is named in the convention and in the harness rather than enforced. **The duplication the audit exposed is recorded as debt**: thirteen test classes still open connections through their own private helper, which is not a defect - all seven multi-instance tests were confirmed correct - but it means the shared harness is one a future test is as likely to miss as to find. Owned by `P0-TSK-036`. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | `P0-TST-009` complete. **The audit found the criterion's own subject broken.** `clockSkewCannotStealALiveClaim` was written alongside `P0-TSK-016`'s fix precisely to prove that an instance with a fast clock could not steal a live claim - and it built that clock as `Clock.fixed(FIXED.plus(1 hour))` from a hard-coded `2026-09-01T12:00:00Z`. Measured against the running container, whose `SELECT now()` returned `2026-09-03 05:20`, that clock was about **forty hours behind** the server rather than an hour ahead. The test exercised a **slow** instance, and a slow instance never believes anything has expired, so it passed for a reason unrelated to the property it named - proven by reverting the V004 fix so the lease is judged by the client's clock again, which left that test green while two unrelated tests failed. Corrected by anchoring the skew on `SELECT now()` through a new `SimulatedInstance` harness; it now **fails** under the same reintroduction, which is what "a clock-skew failure is detectable" means. A precondition asserts the skew is real and in the dangerous direction, so the fixture cannot silently invert again. **The audit's other result is that everything else conforms, for a reason worth recording**: every multi-instance test already gives each instance its own connection, and a shared clock is *correct* because eligibility, abandonment, leases and retention are all decided by the server's clock - the one place a client clock decided anything was the idempotency lease, which is the defect ADR-0014 exists for and is now server-side. **The declared dependency was a backlog defect**, the second of the class `P0-TSK-004` found: `P0-TSK-035` (Testcontainers) changes where the database comes from, not whether a test can give each instance its own connection, component and clock. `DatabaseRoles` moved to a shared `com.finapp.platform.testing` package - it had been package-private in `audit`, which is why two earlier tasks put schema-wide tests in the audit package to reach it. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-041`. **No critical findings; one important one and two closed gaps, all found by probing shapes the rules were not designed against.** The important one: **a static final ARRAY was not flagged** - `private static final String[] CACHE = {...}` went straight through, and a `final` reference to an array protects nothing, so it is per-instance shared state exactly as a `HashMap` would be. Closed, with enum `$VALUES` excluded as **synthetic** - which is the only reason arrays can be flagged at all, since every enum the compiler writes has one. Re-proven in both directions, and the whole build still passes with four enums present. **A second gap is recorded rather than closed**: a mutable collection built by a *factory method* and assigned to an interface-typed static field escapes both halves of the rule - the construction is not in `<clinit>` and the field's type is an interface. Widening to "any mutable construction in the class" would flag the common and correct pattern of building a local collection and returning an immutable copy, so it is written down in ADR-0024 and `MODULE_ARCHITECTURE.md` §6 instead. **Three shapes verified to work that were never designed for**: a `@Scheduled` annotation - which is how a Spring developer would actually introduce ambient scheduling, and an annotation is not a field or a call - a `ReentrantLock` used only as a local variable, and a non-final static primitive. All caught, because the condition asks for direct dependencies rather than inspecting fields. Also confirmed the bytecode sweep works through **both** classpath shapes, jar and directory, by planting a block in `platform` and in `app` separately. Two code-quality fixes: a dead `noClasses` import left by the inversion repair, and a `DescribedPredicate` wrapper whose description was never used. 528 hermetic tests, 172 database tests. |

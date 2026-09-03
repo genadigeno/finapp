@@ -54,6 +54,29 @@ dependencies {
     "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
 }
 
+// ---------------------------------------------------------------------------
+// Dependency locking (P0-TSK-039).
+//
+// WHAT THIS ADDS OVER gradle/verification-metadata.xml, which already refuses any artefact
+// whose checksum is not recorded. The two are not the same control, and the difference was
+// measured rather than assumed: on its very first generation the verification file recorded
+// **69 of 342 modules at more than one version** - jackson-databind at three, jackson-bom at
+// five - because the buildscript, plugin, compile and test classpaths legitimately resolve
+// different versions of the same module. Verification therefore cannot tell a deliberate
+// resolution from a drift *between versions it already knows*: both pass.
+//
+// A lockfile records the version resolved per configuration, so that drift becomes a diff.
+// It matters most for the thirteen dependencies whose versions come from the Spring Boot BOM
+// and are written down nowhere in this repository - a BOM bump silently moves them today.
+//
+// The honest limit: this defends against accidental drift, not against an attacker. Someone
+// who can edit the lockfile can edit the version catalog beside it. The control against a
+// substituted artefact is the checksum; the control against a substituted VERSION is review,
+// and a lockfile is what gives review something to look at.
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 tasks.withType<JavaCompile>().configureEach {
     // Deterministic bytecode regardless of the building machine's default charset.
     options.encoding = "UTF-8"

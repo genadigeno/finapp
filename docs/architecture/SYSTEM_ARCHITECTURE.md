@@ -93,6 +93,30 @@ jobs so a failure names its own gate:
 | `secret-scan` | No secret anywhere in git history — not just at the tip, because a secret committed and later removed is still disclosed. A **net**, not the control: gitleaks is an entropy-and-pattern detector and does not catch `password: hunter2`. The control for that is a build rule in the `build` job (ADR-0020) |
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved runtime dependency set, via a CycloneDX SBOM |
 
+**Dependency verification and locking** (`P0-TSK-039`, ADR-0025). Two files, two different
+controls, both enforced on every build:
+
+| File | Refuses | Does not catch |
+|---|---|---|
+| `gradle/verification-metadata.xml` | an artefact whose bytes do not match the recorded SHA-256 | a *version* change to something it already records |
+| six `gradle.lockfile`s - three projects, the settings buildscript, and `build-logic` (project and settings) | a configuration resolving a version other than the locked one | a substituted artefact at the locked version |
+
+They are not redundant, and that was measured rather than assumed: on its first generation the
+verification file recorded **69 of 342 modules at more than one version** — `jackson-bom` at five —
+because the buildscript, plugin, compile and test classpaths legitimately resolve different
+versions of the same module. Verification cannot distinguish a deliberate resolution from drift
+*between versions it already knows*; the lockfile can, and it is the only place the thirteen
+BOM-managed dependency versions are written down at all.
+
+**The limit that matters, stated plainly: this is trust on first use.** The checksums record what
+this machine downloaded on the day they were generated. They detect a *later* substitution and they
+cannot detect that the first download was already compromised. Signature verification would address
+that and is not enabled — see ADR-0025.
+
+**Updating a dependency** is documented in [`README.md`](../../README.md) §7a. It is deliberately
+two commands and a diff review, not a regeneration: `--write-verification-metadata` **merges**, so
+existing entries survive a narrow run — verified — which is what makes a targeted update safe.
+
 **Supply-chain pinning.** Every third-party action is pinned to a commit SHA and every
 scanner to an image digest, never to a mutable tag: a tag can be repointed by whoever
 controls the source repository, a SHA cannot. This is the same reasoning that pins the
