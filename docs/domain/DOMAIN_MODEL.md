@@ -48,7 +48,7 @@ Credit Decision
 Loan Application
 Loan Offer
 Loan
-Installment
+Instalment
 Exposure
 Delinquency
 BNPL Agreement
@@ -65,6 +65,12 @@ Reconciliation Batch
 Reconciliation Break
 
 Important: these names are not automatically aggregates or tables. Determine domain ownership and lifecycle before implementation.
+
+Every term above is defined in [`GLOSSARY.md`](GLOSSARY.md), with an explicit statement of what it
+is **not** and the module that will own it. The glossary also defines the seven terms
+`CLAUDE.md` §Domain Distinctions forbids collapsing but this list never named, and contrasts all
+eight of its groups. `DomainGlossaryTest` fails the build when this list and the glossary stop
+agreeing, in either direction (`P0-DOC-011`).
 
 ---
 

@@ -910,7 +910,7 @@ Status: `IN_PROGRESS`
 **P0-DOC-009 — ADR-0001..ADR-0010** — *complete (Proposed; ratified to Accepted at the Phase 0 exit gate)*
 **P0-DOC-010 — `MODULE_ARCHITECTURE.md`** — *complete*
 
-**P0-DOC-011 — Domain glossary**
+**P0-DOC-011 — Domain glossary** — `COMPLETE` (2026-09-03)
 - Context: domain
 - Description: A precise glossary covering every term in `DOMAIN_MODEL.md`, with explicit statements of what each term is *not*.
 - Why: `CLAUDE.md` §Domain Distinctions forbids collapsing these concepts; a glossary makes violations visible in review.
@@ -919,6 +919,28 @@ Status: `IN_PROGRESS`
 - Risk: Low
 - Cx: M
 - DoD: `DOD-DOC`
+- **Outcome:** [`GLOSSARY.md`](../domain/GLOSSARY.md) — 62 terms, each with an `Is:`, a `Not:` and
+  the module that will own it, plus all eight distinction groups contrasted under headings that
+  repeat `CLAUDE.md`'s wording exactly.
+  **Comparing the two lists mechanically found they disagree**: seven terms are forbidden from
+  being collapsed that the canonical list never names — `Authentication`, `Transaction`,
+  `Operational Account`, `Underwriting`, `Customer Payment`, `Merchant Settlement` and `KYC` (which
+  is the *process*, distinct from the canonical `KYC Case`). The glossary is therefore the **union**
+  of both lists, and `DomainGlossaryTest` enforces exactly that — including the reverse direction,
+  so the glossary cannot become a second home for vocabulary its owning document should define.
+  **A spelling was settled**: the canonical list had `Installment` once against twenty uses of
+  `Instalment` elsewhere, including the module register that assigns its ownership. Corrected to
+  the majority spelling.
+  **`external` is an owner**, not a blank: a PSP is a company we contract with, and modelling one
+  as our own state is the first step towards a domain that belongs to a vendor (ADR-0008).
+  Nine mutations, all caught — after the guard found two defects in itself: `^` without
+  `Pattern.MULTILINE`, and a `### Term` inside a fenced code block read as a definition.
+  **Review found one contradiction with the module register**: `Risk Score` was attributed to
+  `risk` while `MODULE_ARCHITECTURE.md` §4 lists it under `credit`. The register is followed, since
+  ADR-0012 makes it the authority on ownership, and the underlying ambiguity — a credit-risk figure
+  or a fraud figure? — is recorded as a Phase 10/13 question rather than settled by a glossary.
+  Review added the guard that makes the next such contradiction a build failure, plus one asserting
+  every `INV-*` the glossary cites exists.
 
 **P0-DOC-012 — Phase 0 review record**
 - Context: project

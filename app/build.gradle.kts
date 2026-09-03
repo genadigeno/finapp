@@ -278,6 +278,16 @@ tasks.withType<Test>().configureEach {
         .withPropertyName("committedConfiguration")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // The fourteenth and fifteenth. DomainGlossaryTest holds the glossary to DOMAIN_MODEL.md's
+    // canonical term list and to CLAUDE.md's §Domain Distinctions. CLAUDE.md and
+    // MODULE_ARCHITECTURE.md are already declared above, so only these two are new.
+    inputs.files(rootProject.layout.projectDirectory.file("docs/domain/GLOSSARY.md"))
+        .withPropertyName("domainGlossary")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(rootProject.layout.projectDirectory.file("docs/domain/DOMAIN_MODEL.md"))
+        .withPropertyName("domainModel")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // The eleventh, twelfth and thirteenth. MutationDemonstrationTest holds the register of
     // mutation demonstrations, the invariant catalogue and the backlog to each other, so that
     // PHASE_GATES.md criterion 3 - every in-scope invariant has a test that FAILS when it is
