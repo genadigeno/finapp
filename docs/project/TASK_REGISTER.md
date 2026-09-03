@@ -20,7 +20,7 @@ Legend: ✅ complete · 🔵 next · ⚪ not started · 🟠 blocked
 
 # Phase 0 — Domain and Architecture Foundation
 
-**58 of 62 complete.** Phase 0 delivers a buildable, boundary-enforced modular monolith
+**59 of 62 complete.** Phase 0 delivers a buildable, boundary-enforced modular monolith
 containing the financial and platform kernel, with **zero business capability**. That
 constraint is deliberate: money representation, idempotency, outbox, audit and correlation
 cannot be retrofitted once financial history exists.
@@ -149,7 +149,7 @@ cannot be retrofitted once financial history exists.
 | ✅ | **P0-TSK-035** — Testcontainers integration test harness | One PostgreSQL container per test JVM, applying the same role script the compose stack runs and the real migrations through Flyway, publishing the coordinates as the system properties every test already read. **No test changed** — that was the constraint rather than the outcome, since a harness needing 173 assertions edited would have been a change nobody could review. PostgreSQL only: there is no Kafka or Redis client, and a container nothing connects to tests nothing. |
 | ✅ | **P0-TSK-036** — Test taxonomy and conventions | Four tiers — unit, architecture, slice, database — defined by **what a test needs in order to run**, because that is the only axis on which membership can be decided mechanically. The default tier selects by excluding the others' tags, so a test can never belong to no tier at all. `contract` is deliberately not a tier: its members have different requirements, and grouping two requirements under one name is the one thing a tier must not do. |
 | ✅ | **P0-TSK-037** — WireMock harness for provider adapters | `SimulatedProvider`, in two halves, because a provider is unreliable in **both directions**: outbound is its API, which we call; inbound is its callbacks, which it makes to us. A duplicated webhook and a late settlement are the provider acting on its own schedule, so no amount of stubbing its API reproduces them. The coverage claim is enforced in three links — every failure mode classified, every one naming a method that exists, and every such method actually called by the suite that proves the harness. |
-| 🔵 | **P0-TSK-038** — Mutation-style invariant verification convention | A convention requiring every invariant test to be **demonstrated to fail** when the invariant is deliberately broken, with the demonstration recorded. The phase exit gate already demands this; the convention makes it repeatable. A test that passes regardless of the code is worse than no test, because it is believed. |
+| ✅ | **P0-TSK-038** — Mutation-style invariant verification convention | A register recording, for all 17 Phase 0 invariants and all 9 `P0-TST-*` items, the mutation that breaks the property and what failed when it was applied. Each is labelled **in-suite** — a proof that runs on every build and cannot rot — or **recorded**, which only proves the test had teeth on the day it was written. The guard holds the register to the invariant catalogue and to the compiled test classes, which converts the phase exit gate's third criterion from a one-off human check into a continuous one. |
 
 ## P0-EPIC-12 — Documentation and Decision Baseline
 
@@ -164,7 +164,7 @@ cannot be retrofitted once financial history exists.
 | ✅ | **P0-DOC-008** — `DELIVERY_PLAN.md` | The master plan across all seventeen phases, with what each phase delivers and why it is sequenced where it is. |
 | ✅ | **P0-DOC-009** — ADR-0001 … ADR-0010 | The first ten architecture decision records: modular monolith, ledger authority, monetary representation, idempotency, outbox, boundary enforcement, phase-gated delivery, provider adapters, balance as projection, audit trail. Recorded as `Proposed`; they become `Accepted` at the Phase 0 exit gate. |
 | ✅ | **P0-DOC-010** — `MODULE_ARCHITECTURE.md` | The first architecture baseline: the module cut, ownership and boundaries. Later extended by `P0-DOC-002` into a document whose enforcement claims are checked against the enforced rules on every build. |
-| ⚪ | **P0-DOC-011** — Domain glossary | A precise definition of every term in `DOMAIN_MODEL.md`, including an explicit statement of what each term is **not**. `CLAUDE.md` forbids collapsing pairs like authorization and capture, or consent and authentication; a glossary is what makes a violation visible in review rather than arguable. |
+| 🔵 | **P0-DOC-011** — Domain glossary | A precise definition of every term in `DOMAIN_MODEL.md`, including an explicit statement of what each term is **not**. `CLAUDE.md` forbids collapsing pairs like authorization and capture, or consent and authentication; a glossary is what makes a violation visible in review rather than arguable. |
 | ⚪ | **P0-DOC-012** — Phase 0 review record | The written phase review covering all eight review areas, and the point at which the ADRs move from `Proposed` to `Accepted`. The final gate criterion of the phase. |
 
 ---

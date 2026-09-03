@@ -864,7 +864,7 @@ Status: `IN_PROGRESS`
   every `@SpringBootTest` in `app` — and it resolves to exactly **one** lockfile entry. `unit` tier,
   decided on the measured 1.3s. No new ADR: this is ADR-0008's own recorded follow-up.
 
-**P0-TSK-038 — Mutation-style invariant verification convention**
+**P0-TSK-038 — Mutation-style invariant verification convention** — `COMPLETE` (2026-09-03)
 - Context: platform / test
 - Description: Convention requiring that each invariant test is demonstrated to fail when the invariant is deliberately broken, with the demonstration recorded.
 - Why: Exit gate criterion 3 requires tests that *fail* when the invariant is broken — a test that passes regardless is worse than no test.
@@ -873,6 +873,26 @@ Status: `IN_PROGRESS`
 - Risk: Medium
 - Cx: S
 - DoD: `DOD-TEST`
+- **Outcome:** [`MUTATION_TESTING.md`](MUTATION_TESTING.md) — the convention, plus a register with
+  a row for all **17** Phase 0 invariants and all **9** `P0-TST-*` items. The criterion is the
+  narrower of the two obligations: `PHASE_GATES.md` criterion 3 asks for every in-scope `INV-*` to
+  have a test that fails when it is broken, so the register covers that too and
+  `MutationDemonstrationTest` checks it on every build — which converts criterion 3 from something
+  a human verifies once at the gate into something the build verifies continuously.
+  **A demonstration has two admissible forms**, and the distinction is the point: an *in-suite*
+  proof runs on every build and cannot rot, while a *recorded* procedure proves the test had teeth
+  on the day it was written. The register labels each, and the guard verifies that an in-suite row
+  names a **method that still exists** — so a claim of continuous proof cannot point at something
+  renamed away.
+  **The audit found a real gap.** `INV-MON-05` had a test and **no recorded demonstration**; its
+  identifier appeared nowhere in the project's records. Closed by performing the demonstration:
+  re-deriving the scale from the currency in `MoneyColumns.read` fails **exactly one** test, and
+  notably *not* the general round-trip test — which writes amounts whose scale already matches the
+  currency's current minor units, so re-derivation gives the same answer. That is why the register
+  names a **method** and not just a class.
+  Seven mutations, all caught, each by the intended assertion; review added two guards and closed
+  one register row whose observed result had been inferred rather than recorded, bringing it to
+  nine. Closes `P0-EPIC-11`.
 
 ---
 

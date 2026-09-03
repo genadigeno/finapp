@@ -26,13 +26,16 @@ financial history exists.
 ## Current Milestone
 
 **M0.5 — Test infrastructure and phase review**
-`P0-EPIC-11` (Test Infrastructure, **3 of 4 complete**) and `P0-EPIC-12` (Documentation and Decision
+`P0-EPIC-11` (Test Infrastructure, **COMPLETE**) and `P0-EPIC-12` (Documentation and Decision
 Baseline, 2 of 9 remaining). The last milestone of Phase 0.
 
-The suite now brings its own database (`P0-TSK-035`), knows what kind of test each of its members
-is (`P0-TSK-036`), and can make a provider fail in every way the platform says it must
-(`P0-TSK-037`). What remains is the convention making an invariant test prove it can fail
-(`P0-TSK-038`), the domain glossary, and the phase review itself.
+The test infrastructure is finished. The suite brings its own database (`P0-TSK-035`), knows what
+kind of test each of its members is (`P0-TSK-036`), can make a provider fail in every way the
+platform says it must (`P0-TSK-037`), and now records - and enforces - that every Phase 0 invariant
+has a test demonstrated to **fail** when the invariant is broken (`P0-TSK-038`).
+
+What remains in Phase 0 is documentation: the domain glossary (`P0-DOC-011`) and the phase review
+itself (`P0-DOC-012`), which is where the ADRs move from `Proposed` to `Accepted`.
 
 **M0.4 — API, observability and security baseline** — `P0-EPIC-08`, `-09` and `-10`, all
 `COMPLETE` (2026-09-02).
@@ -71,14 +74,55 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**`P0-TSK-038` - Mutation-style invariant verification convention**
+**`P0-DOC-011` - Domain glossary**
 Status: `READY` - not started.
 
-Bounded context: platform / test. Depends on `P0-TSK-036` (`COMPLETE`). **Risk: Medium. Cx: S.**
+Bounded context: domain. No dependencies. **Risk: Low. Cx: M.**
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-11. DoD profile: `DOD-TEST`.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-12. DoD profile: `DOD-DOC`.
 
 ### Just completed
+
+**`P0-TSK-038` - Mutation-style invariant verification convention** - `COMPLETE` (2026-09-03).
+**`P0-EPIC-11` closes with it.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Convention documented | [`MUTATION_TESTING.md`](MUTATION_TESTING.md) |
+| Applied to every `P0-TST-*` item | All nine, and all **17** Phase 0 invariants besides - enforced, not asserted |
+
+**The task's criterion is the narrower of two obligations.** It asks for the nine `P0-TST-*` items;
+`PHASE_GATES.md` criterion 3 asks for **every in-scope `INV-*`** to have a test that fails when the
+invariant is broken. The register covers both, and `MutationDemonstrationTest` checks it on every
+build - which converts criterion 3 from something a human verifies once at the gate into something
+the build verifies continuously.
+
+**A demonstration has two admissible forms, and the distinction is the whole point.** An *in-suite*
+proof - a fixture that violates the rule, asserted to be rejected - runs on every build and cannot
+rot. A *recorded* procedure proves the test had teeth **on the day it was written**; it is what a
+mutation must be when it drops a constraint, widens a grant or edits production code, because a
+build must not do those things to itself. The register labels each row, and the guard verifies that
+an in-suite row names a **method that still exists** - so a claim of continuous proof cannot point
+at something renamed away.
+
+**The audit found a real gap, which is what an audit is for.** `INV-MON-05` (precision preserved in
+persistence) had a test and **no recorded demonstration** - the identifier appeared nowhere in the
+project's records. Closed by performing the demonstration rather than asserting it: re-deriving the
+scale from the currency in `MoneyColumns.read` fails **exactly one** test, and notably **not** the
+general round-trip test, which writes amounts whose scale already matches the currency's current
+minor units so re-derivation gives the same answer. That is why the register names a **method**
+rather than only a class.
+
+**Two limits recorded rather than glossed.** `INV-AUD-01` is demonstrated only in half - the
+registry proves a *recorded* action is catalogued and cannot detect a privileged action that writes
+no record at all, which needs Phase 15's audit-completeness verification. And nothing checks that a
+*recorded* procedure still reproduces; that residual risk is exactly why the form column exists.
+
+Seven mutations, all caught, each by the intended assertion. Review added two more guards - the
+register was checked in one direction only - and found one row whose observed result had been
+inferred rather than recorded; nine in total.
+
+### Previously
 
 **`P0-TSK-037` - WireMock harness for provider adapters** - `COMPLETE` (2026-09-03).
 
@@ -290,6 +334,21 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Mutation demonstrations enforced (2026-09-03), `P0-TSK-038`:
+- [`MUTATION_TESTING.md`](MUTATION_TESTING.md): the convention, plus a register covering all **17**
+  Phase 0 invariants and all **9** `P0-TST-*` items
+- `PHASE_GATES.md` criterion 3 is now checked on every build rather than verified once at the gate
+- Two admissible forms, labelled per row: an **in-suite** proof runs continuously and cannot rot; a
+  **recorded** procedure proves the test had teeth on the day it was written
+- An in-suite row must name a **method that still exists**, so a claim of continuous proof cannot
+  point at something renamed away
+- The audit found `INV-MON-05` had a test and **no recorded demonstration**; closed by performing
+  it - re-deriving the scale from the currency fails **exactly one** test, and not the general
+  round-trip test, which is why the register names a method rather than only a class
+- `INV-AUD-01` recorded as demonstrated only in half, and the un-reproducibility of a recorded
+  procedure recorded as the residual risk the form column exists to make visible
+- Nine mutations, all caught, each by the intended assertion
 
 Provider failure simulation (2026-09-03), `P0-TSK-037`:
 - `SimulatedProvider` in two halves, because a provider is unreliable in **both directions**:
@@ -993,19 +1052,16 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-038` - Mutation-style invariant verification convention**, the last of `P0-EPIC-11`'s
-four.
+**`P0-DOC-011` - Domain glossary**, the first of `P0-EPIC-12`'s two remaining items.
 
-A convention requiring every invariant test to be **demonstrated to fail** when the invariant is
-deliberately broken, with the demonstration recorded. Phase exit gate criterion 3 already demands
-this and `DEFINITION_OF_DONE.md` §3 forbids the opposite - "a test that would still pass if the
-invariant it claims to protect were removed" - so the task is to make the practice repeatable
-rather than to introduce it.
+A precise definition of every term in `DOMAIN_MODEL.md`, including an explicit statement of what
+each term is **not**. `CLAUDE.md` §Domain Distinctions forbids collapsing pairs like authorization
+and capture, or consent and authentication; a glossary is what makes a violation visible in review
+rather than arguable.
 
-Its acceptance criterion is that the convention is "applied to every `P0-TST-*` item", which is
-checkable: those items exist and their demonstrations are recorded in the change log. Worth
-approaching with the same suspicion as the last two criteria - the interesting question is whether
-the *record* of each demonstration can be found and re-run, or only read.
+Its acceptance criterion — "every term in `DOMAIN_MODEL.md` defined, with the 'do not collapse'
+pairs explicitly contrasted" — is checkable in the same way the last four have been: the term list
+and the distinction list both exist in documents the build can read.
 
 ---
 
@@ -1013,6 +1069,8 @@ the *record* of each demonstration can be found and re-run, or only read.
 
 | Date | Change |
 |------|--------|
+| 2026-09-03 | Task completion review of `P0-TSK-038`. **No critical findings; two gaps in the guard and one wrong claim in the register, all closed — and the register's own guard is what found the wrong claim.** First gap: the register was checked in **one direction only**. `containsAll` says every Phase 0 invariant has a row and nothing about rows the catalogue does not know, so a planted `INV-ZZZ-99` row — an invariant that appears nowhere — passed cleanly. That is the "register describing something that does not exist" defect `ColumnClassificationTest` checks in both directions and `AuditableActionRegistryTest` in three, and it matters for the same reason: an entry that has quietly stopped applying to anything is indistinguishable from one that still does. Closed, deliberately **not** restricted to Phase 0, since a later-phase invariant demonstrated early is welcome and one that does not exist is a typo. Second gap: `everyInSuiteDemonstrationNamesAnExistingMethod` skipped a row whose class it could not resolve, deferring to a sibling test — so on its own it would have passed over an empty sweep having checked nothing. It now asserts it actually resolved every method-naming row. **The wrong claim is the more interesting finding.** Auditing the register against the recorded evidence showed one row where the observed result had been **inferred rather than recorded**: `INV-IDEM-03` cited `P0-TSK-016`'s mutation sweep, which never states that the fingerprint guard itself was mutated. Closed by performing it — removing `fingerprint.matches` from `resolveExistingClaim` fails **two** tests, both named for the property — and in writing that row I named a method that does not exist, which **the task's own guard caught**. That is the best available evidence the guard works, and it also showed the check applies to *every* row naming a method rather than only in-suite ones, so the test was renamed to say what it does. `DOD-DOC` forbids aspirational statements presented as current fact, and a register of demonstrations is exactly where that rule bites hardest. Nine mutations, all caught. 569 hermetic tests, 173 database tests. |
+| 2026-09-03 | `P0-TSK-038` complete; **`P0-EPIC-11` closes with it**. The convention requiring every invariant test to be **demonstrated to fail**, made repeatable and — more to the point — enforced. **The task's own criterion is the narrower of two obligations**: it asks for the nine `P0-TST-*` items, while `PHASE_GATES.md` criterion 3 asks for **every in-scope `INV-*`** to have a test that fails when the invariant is broken. The register covers both, all 17 Phase 0 invariants and all 9 items, and `MutationDemonstrationTest` holds it to the invariant catalogue, the backlog and the compiled test classes on every build — which converts criterion 3 from something a human verifies once at the gate into something the build verifies continuously. **A demonstration has two admissible forms and the distinction is the whole point**: an *in-suite* proof — a fixture that violates the rule, asserted to be rejected — runs on every build and cannot rot, while a *recorded* procedure only proves the test had teeth **on the day it was written**, which is what a mutation must be when it drops a constraint, widens a grant or edits production code, because a build must not do those things to itself. The register labels each row, and the guard verifies that an in-suite row names a **method that still exists**, so a claim of continuous proof cannot point at something renamed away. **The audit found a real gap, which is what an audit is for**: `INV-MON-05` (precision preserved in persistence) had a test and **no recorded demonstration** — its identifier appeared nowhere in the project's records. Closed by performing the demonstration rather than asserting it: re-deriving the scale from the currency in `MoneyColumns.read` fails **exactly one** test, and notably **not** `roundTripsEveryCurrencyScale`, which writes amounts whose scale already matches the currency's current minor units so re-derivation gives the same answer — a general test is not automatically the protecting one, and that is why the register names a **method** rather than only a class. **Two limits recorded rather than glossed**: `INV-AUD-01` is demonstrated only in half, since the registry proves a *recorded* action is catalogued and cannot detect a privileged action that writes no record at all (Phase 15 owns the other half); and nothing checks that a recorded procedure still reproduces, which is exactly the residual risk the form column exists to make visible. Seven mutations, all caught, each by the intended assertion. Three new build inputs declared — the register, the invariant catalogue and the backlog — bringing that list to thirteen. 568 hermetic tests, 173 database tests. |
 | 2026-09-03 | Task completion review of `P0-TSK-037`. **One important finding, and it was found by asking what the first real user would do rather than by reading the code.** Every stub was bound to a single HTTP method — most to `GET`, two to `POST` — so an adapter POSTing to create a payment, which is what every payment adapter does, got a **404 from a stub that claimed the provider succeeds**. Proven by probe before it was believed. That is the worst possible shape for the failure: a 404 reads as "the adapter called the wrong path", so the author would debug their own code against a harness that was quietly answering a different question. Fixed by making every mode verb-agnostic — a provider that is unavailable is unavailable for every verb, because the failure belongs to the provider and not to the request method — and locked with a regression test that fails when any single mode is bound back to one verb. **A second finding, and it is the same defect class as the two the implementation already hit**: the ADR check searched the whole of ADR-0008, and "timeout" appears there three times and "unknown state" twice, so both were satisfied by unrelated sentences — deleting the contract-test requirement entirely would have left the check green. Now bounded to that one sentence, and proven by deleting the requirement while leaving "timeout" elsewhere. **Third occurrence in one task of matching a whole document instead of bounding the region**, which is worth naming as a pattern rather than a coincidence. Also closed a silent overflow: WireMock's delay is an `int` and a plain cast turns `Duration.ofDays(30)` into **−1702967296**, so a long delay became a negative one; now `Math.toIntExact`, which is `INV-MON-06`'s reasoning applied outside money. Five consecutive runs green, so the timing assertions are not flaky. 562 hermetic tests, 173 database tests. |
 | 2026-09-03 | `P0-TSK-037` complete. `SimulatedProvider`, and the shape of it is the finding: **a provider is unreliable in both directions**, so the harness has two halves and a simulator with only the first cannot reach the modes that cost the most. Outbound is the provider's API - a real HTTP server we call - covering timeout, unavailable, 5xx, delayed, malformed body, garbage, unknown state, the retry sequence, and the request that is **received** before the response is lost. Inbound is the provider calling **us**: a duplicated webhook (`INV-IDEM-04`) and a late settlement (`INV-SET-03`) are the provider acting on its own schedule, and no amount of stubbing its API reproduces them. **The single most useful thing the harness offers is `requestCount`**, because it separates two failures that are identical from the caller's side - a request that never arrived, and one that arrived and was acted on before the answer was lost - which is exactly why `INV-LIFE-03` requires an explicit indeterminate state rather than a guess in either direction. **The acceptance criterion is a checkable claim, so it is checked**: `ProviderFailureCoverageTest` holds three links that must all hold at once - every bullet in `CLAUDE.md` §Failure Engineering is classified as a provider concern or explicitly not one *with the reason and where it is covered*; every provider concern names a harness method that **exists**; and every such method is **actually called** by the suite that proves the harness. The third link is what stops a mode being covered on paper, and it is the one a coverage list normally lacks. Six mutations, all caught, including a bullet added to `CLAUDE.md` - which also proved the new build-input declaration, since `CLAUDE.md` is the last file anyone would think to declare as a Gradle input. **Two defects, both found by the guard's own assertions**: the section regex read straight past `## Failure Engineering` into `## Definition of Done` and returned "auditability" as a failure mode, because `DOTALL` lets `.` match newlines so a single `- .*` swallows the rest of the file - replaced by line-walking with an explicit stop, which **cannot** over-read; and a literal match reported that ADR-0008 had stopped requiring "malformed response" when the ADR simply **wraps mid-phrase**. **WireMock standalone, measured rather than assumed**: it relocates Jetty and Jackson under `wiremock/` - zero classes at `org/eclipse/jetty` - so the harness cannot change which servlet container Spring Boot picks for every `@SpringBootTest` in `app`, and it resolves to exactly **one** lockfile entry. Version 3.13.2, the current stable, noting that Maven Central's `<latest>` *and* `<release>` markers both point at `4.0.0-beta.38`. `unit` tier, decided on the measured 1.3s. **No new ADR** - ADR-0008 already decided the harness exists and lists the modes, so this is its recorded follow-up, and that section now says so. 561 hermetic tests, 173 database tests. |
 | 2026-09-03 | Task completion review of `P0-TSK-036`. **No critical findings; two gaps in the guard, both closed, and both found by asking what CI actually executes.** `./gradlew build --dry-run` shows `build` runs `:test` and **never the three hermetic tier tasks** - they are selection conveniences over the same tests, which is fine for coverage and not fine for the tasks themselves: `:sharedkernel:sliceTest` was run and **reports BUILD SUCCESSFUL in one second having selected nothing and written no result file**. A tier that quietly became empty would therefore be discovered by a developer wondering why their command was fast, and by nobody else. `noTierIsEmpty` closes it repository-wide, since per module an empty tier is legitimate. The second: **an unrecognised `@Tag` is ignored rather than rejected**, so `@Tag("databse")` reads as a tier and schedules nothing. Probing found it *was* caught - but by luck: the class was also a `@SpringBootTest`, so detection floored it at SLICE and the misspelling surfaced as "needs SLICE but is in UNIT". A class detection cannot see would have had no floor. The vocabulary is now closed, with an empty non-tier list, on the argument that makes `AuditableAction` closed. Both proven by mutation, bringing the task to **nine of nine**. Also confirmed: `TestTaxonomyTest` really does run inside `./gradlew build` (12 tests in `:app:test`'s results), so the taxonomy is enforced by the job CI runs rather than only by a task it does not. **Process note, third occurrence of the same trap:** `git checkout --` on a path reverted `MetricConventionTest` to HEAD while reverting a mutation, silently destroying this task's own change to it; caught by counting the slice tags afterwards rather than trusting the revert. 542 hermetic tests, 173 database tests. |

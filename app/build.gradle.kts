@@ -278,6 +278,24 @@ tasks.withType<Test>().configureEach {
         .withPropertyName("committedConfiguration")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // The eleventh, twelfth and thirteenth. MutationDemonstrationTest holds the register of
+    // mutation demonstrations, the invariant catalogue and the backlog to each other, so that
+    // PHASE_GATES.md criterion 3 - every in-scope invariant has a test that FAILS when it is
+    // broken - is checked continuously rather than discovered at the gate.
+    //
+    // BACKLOG.md is a large and frequently edited file, so declaring it re-runs :app:test often.
+    // That is the correct trade: the alternative is a guard that goes stale precisely when a new
+    // P0-TST-* item is added, which is the one moment it exists for.
+    inputs.files(rootProject.layout.projectDirectory.file("docs/project/MUTATION_TESTING.md"))
+        .withPropertyName("mutationDemonstrationRegister")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(rootProject.layout.projectDirectory.file("docs/domain/FINANCIAL_INVARIANTS.md"))
+        .withPropertyName("invariantCatalogue")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(rootProject.layout.projectDirectory.file("docs/project/BACKLOG.md"))
+        .withPropertyName("backlog")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // The eighth and ninth. ProviderFailureCoverageTest holds CLAUDE.md's Failure Engineering
     // list and ADR-0008's contract-test requirement to the harness's capabilities. CLAUDE.md is
     // the project's own instruction file, so it is the last document anyone would think to declare

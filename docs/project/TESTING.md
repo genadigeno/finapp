@@ -212,9 +212,12 @@ that matters — without it the harness could claim a mode no test ever exercise
   slow rather than wrong.
 - **Nothing checks that a test is in the *lightest* tier that would work.** That is a review
   question, and the cost of getting it wrong is time rather than correctness.
-- **Nothing checks that a test asserts anything.** `DEFINITION_OF_DONE.md` §3 forbids a test that
-  would still pass if the invariant it protects were removed, and `P0-TSK-038` owns making the
-  demonstration of that a recorded convention.
+- **Nothing checks that a test asserts anything**, and nothing can. What is enforced instead is
+  that every Phase 0 invariant has a **recorded demonstration** that its test fails when the
+  invariant is broken — see [`MUTATION_TESTING.md`](MUTATION_TESTING.md), which `P0-TSK-038`
+  established and `MutationDemonstrationTest` holds to the invariant catalogue on every build.
+  What that still cannot check is whether a *recorded* procedure would reproduce today; only an
+  in-suite proof answers that, which is why the register records which form each one takes.
 
 ---
 
