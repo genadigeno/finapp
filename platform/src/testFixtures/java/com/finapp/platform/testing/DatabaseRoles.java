@@ -74,8 +74,12 @@ public final class DatabaseRoles {
         String value = System.getProperty(name);
         if (value == null || value.isBlank()) {
             throw new IllegalStateException(
-                    "System property " + name + " is not set. Run this through "
-                            + "'./gradlew :platform:databaseTest', which supplies it.");
+                    "System property "
+                            + name
+                            + " is not set. Run this through './gradlew databaseTest'. That task"
+                            + " supplies finapp.db.image, and DatabaseUnderTest then starts a"
+                            + " container and publishes these coordinates - so running the class"
+                            + " directly from an IDE lands here (P0-TSK-035).");
         }
         return value;
     }

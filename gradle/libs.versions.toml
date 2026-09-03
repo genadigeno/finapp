@@ -174,6 +174,9 @@ springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-w
 
 # --- Database migration -------------------------------------------------------
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 postgresql-driver = { module = "org.postgresql:postgresql", version.ref = "postgresqlDriver" }
 
 [plugins]

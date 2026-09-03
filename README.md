@@ -82,6 +82,12 @@ next command can fail against a database that is still initialising.
 | Kafka 4.3.1 (KRaft) | `localhost:29092` | Event transport. **Never** the accounting source of truth |
 | Redis 8.10.1 | `localhost:6379` | Cache, coordination, ephemeral state. **Never** financial truth |
 
+**Tests no longer need this stack.** Since `P0-TSK-035`, `./gradlew databaseTest` starts its own
+PostgreSQL container, applies `infra/postgres/initdb/00-roles.sql` and the real migrations, and
+throws it away afterwards — so a test run needs Docker and nothing else. Compose is still what
+`bootRun` and the Flyway build tasks connect to, and it is still useful when you want a database
+that outlives the run: set `FINAPP_DB_URL` and the harness steps aside.
+
 Everything binds to `127.0.0.1`, never `0.0.0.0`, so the stack is not reachable from the
 network. Default credentials are `finapp` / `local-development-only-not-a-secret` against
 database `finapp`, overridable via `FINAPP_DB_USER`, `FINAPP_DB_PASSWORD` and `FINAPP_DB_NAME`.
@@ -335,11 +341,15 @@ changing a dependency is three steps rather than two:
 
 ```bash
 # 1. Change the version in gradle/libs.versions.toml - the single source.
-# 2. Update the lockfiles.
-./gradlew --write-locks build databaseTest
-# 3. Add the new artefacts' checksums. This MERGES; it does not rewrite.
-./gradlew --write-verification-metadata sha256 build databaseTest
+# 2. Regenerate BOTH records in ONE invocation.
+./gradlew --write-locks --write-verification-metadata sha256 build databaseTest
 ```
+
+**One invocation, both flags** - this was two separate commands until `P0-TSK-035` added a
+dependency and found that neither order works. The lock refuses a version it does not know, so
+metadata generation cannot resolve; verification refuses an artefact it has no checksum for, so
+lock generation cannot resolve. Each control blocks the other's regeneration. Passing both flags
+together is the only sequence that succeeds.
 
 **`build-logic` is a separate included build and is regenerated separately.** A root
 `--write-locks` does not touch it - verified - so a change to the Kotlin DSL or toolchain

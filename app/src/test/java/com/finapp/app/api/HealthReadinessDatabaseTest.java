@@ -85,18 +85,26 @@ class HealthReadinessDatabaseTest {
         // history, which is the failure ADR-0014 exists to rule out.
         //
         // Asserted two ways, because each is weak alone. The context check is direct - it looks
-        // at the running application - but only sees beans that were created. The classpath check
-        // is indirect: it inspects the TEST classpath, which is a superset of the runtime one, so
-        // absence here implies absence there. Being a superset is what makes it sound; it would
-        // report a false positive if Flyway were ever added as a test dependency of this module,
-        // and that is the safe direction to be wrong in.
+        // at the running application - but only sees beans that were created.
+        //
+        // The second check reads the module's RUNTIME classpath, supplied by the build. It used
+        // to try loading the class instead, reasoning that the test classpath is a superset of
+        // the runtime one - and the comment here predicted its own failure: "it would report a
+        // false positive if Flyway were ever added as a test dependency of this module". That is
+        // exactly what P0-TSK-035 did, because the container harness applies the real migrations.
+        // The prediction was right and the fix is to assert what the claim always was: Flyway is
+        // not in what the application ships.
         assertThat(context.getBeanNamesForType(Object.class))
                 .as("no Flyway bean may exist in the running application")
                 .noneSatisfy(name -> assertThat(name.toLowerCase(Locale.ROOT)).contains("flyway"));
 
-        assertThat(canLoad("org.flywaydb.core.Flyway"))
-                .as("Flyway must not be reachable from the application at all")
-                .isFalse();
+        String runtime = System.getProperty("finapp.runtime.classpath");
+        assertThat(runtime)
+                .as("the build must supply the runtime classpath, or this assertion checks nothing")
+                .isNotBlank();
+        assertThat(runtime.toLowerCase(Locale.ROOT))
+                .as("Flyway must not be on the application's runtime classpath (ADR-0011)")
+                .doesNotContain("flyway");
     }
 
     // -----------------------------------------------------------------

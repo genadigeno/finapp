@@ -66,50 +66,44 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**`P0-TSK-035` - Testcontainers integration test harness**
-Status: `READY` - not started. Opens **`P0-EPIC-11`** and milestone **M0.5**.
+**`P0-TSK-036` - Test taxonomy and conventions**
+Status: `READY` - not started.
 
-Bounded context: platform / test. Depends on `P0-TSK-003` and `P0-TSK-005`, both `COMPLETE`.
-**Risk: Medium. Cx: L** - the largest remaining Phase 0 task.
+Bounded context: platform / test. Depends on `P0-TSK-035` (`COMPLETE`). **Risk: Low. Cx: M.**
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-11. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TSK-040` - Update mechanism for pinned CI actions and scanner images** - `COMPLETE`
-(2026-09-02). **`P0-EPIC-10` closes with it**, and milestone M0.4 with it.
+**`P0-TSK-035` - Testcontainers integration test harness** - `COMPLETE` (2026-09-02).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| An update produces a reviewable proposed change rather than requiring someone to remember | `.github/dependabot.yml` for the four SHA-pinned actions and both version catalogues; a weekly `pinned-images` job for the two scanner digests |
-| The procedure is documented alongside the pinning rationale | [`README.md`](../../README.md) §7b - a table of every pinned thing and its update path |
+| Integration tests run against real infrastructure in CI | Unchanged in kind - they already did - but now against a container the run owns rather than a shared stack |
+| No test depends on a developer's local services | **All 173 database tests pass with compose stopped.** `./gradlew databaseTest` needs Docker and nothing else |
 
-**Three mechanisms, because none of them reaches all of it.** Dependabot reads workflows and version
-catalogues. It does not read a shell-sourced file, so the two scanner digests need their own path -
-and they stay in `infra/scanner-pins.sh` deliberately, because moving them into the workflow so a bot
-could see them would put the same digest in two places and undo the single definition `P0-TSK-031`
-established.
+**No test changed, and that was the constraint rather than the outcome.** A `LauncherSessionListener`
+starts one PostgreSQL container per test JVM, applies the same `00-roles.sql` the compose stack runs
+on first initialisation, applies the real migrations through Flyway, and publishes the coordinates as
+the system properties every test already read. A harness needing 173 assertions edited would have
+been a change nobody could review.
 
-**Each pin is now three facts rather than one.** `scanner-pins.sh` records repository, version *and*
-digest. The version had been a comment beside the digest, and a comment cannot be checked - which is
-what made "is this digest still v8.30.1?" unanswerable. With the version as data,
-`check-pinned-images.sh` distinguishes two findings that deserve different reactions: the tag
-**moved** - the attack digest-pinning defends against, where the pin held and somebody should find
-out why - and a newer release exists, which is ordinary rot. **Both proven** against the real
-registries before the decision was written.
+**PostgreSQL only.** The task named Kafka and Redis; there is no client for either, and a container
+nothing connects to tests nothing - the same argument ADR-0023 used for transports that do not exist.
 
-**Trivy's digest moved out of a workflow `env:` value**, which is a place nothing reads, into the
-same record; both scanners are now invoked through `infra/scripts/`, so CI and a developer run the
-identical image and one check covers both.
-
-**A pull-request bot for the images was rejected in favour of a check that could be proven.** A
-workflow could open a PR with the built-in token, and it would be untestable here - this repository
-has no remote, so no workflow has ever run. The freshness check is the part that could be
-demonstrated, and it was.
-
-**Running the dependency scan for the first time made it fail.** See §Blockers: three HIGH/CRITICAL
-CVEs in the Tomcat that Spring Boot 4.1.1 brings. That gate had never been executed, because CI has
-never run and the scan was a `docker run` line inside a workflow until this task made it a script.
+**Three things the change ran into, each recorded rather than worked around.**
+- Putting the harness in `testFixtures` so `app` could reach it exposed it to the ArchUnit sweep, and
+  two rules fired: a static container field (`noStaticMutableState`) and a constant named
+  `LOCAL_PASSWORD` (`secretsAreWrapped`). **Both fixed at source, neither exempted** - the field did
+  not need to be static, and the constant is the published marker rather than a credential. A harness
+  that holds credentials is the right place for those rules to apply.
+- `HealthReadinessDatabaseTest` asserted Flyway was unreachable by trying to load the class, and
+  **its own comment had predicted the failure**: *"a false positive if Flyway were ever added as a
+  test dependency of this module"*. The harness needs Flyway to apply migrations. It now checks the
+  module's **runtime** classpath, which is what ADR-0011's claim was always about.
+- The dependency controls from `P0-TSK-039` did their job and exposed a defect in the procedure
+  `P0-TSK-039` documented: locks block metadata generation and metadata blocks lock generation, so
+  **neither order works** - both flags must be passed in one invocation. README §7a corrected.
 
 ---
 
@@ -209,6 +203,15 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Tests bring their own database (2026-09-02), `P0-TSK-035`:
+- One PostgreSQL container per test JVM, with the same role script and the real migrations
+- All 173 database tests pass with nothing running locally; the hermetic suite is untouched
+- No test changed: the harness publishes the system properties they already read
+- PostgreSQL only - there is no Kafka or Redis client, and a container nothing connects to tests
+  nothing
+- Two ArchUnit rules fired on the fixtures and both were fixed at source rather than exempted
+- ADR-0027 records the reasoning and the four rejected alternatives
 
 Keeping the pins fresh (2026-09-02), `P0-TSK-040`:
 - Dependabot for the four SHA-pinned actions and both version catalogues; a weekly registry check
@@ -671,7 +674,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-035` is the next task.
+None in progress. `P0-TSK-036` is the next task.
 
 ## Blockers
 
@@ -870,23 +873,16 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-035` - Testcontainers integration test harness**, opening `P0-EPIC-11` and milestone
-**M0.5**, the last of Phase 0.
+**`P0-TSK-036` - Test taxonomy and conventions**, the second of `P0-EPIC-11`'s four.
 
-Reusable PostgreSQL, Kafka and Redis containers with a shared lifecycle. `Cx: L` - the largest
-remaining Phase 0 task, and the only one that changes how 173 existing database tests obtain their
-database.
+Define unit / slice / integration / contract / architecture tiers, naming, tagging, and which tier
+a concern belongs to. Two tiers already exist in fact - `test` and `databaseTest`, separated so the
+hermetic one stays green with nothing running - so this is largely naming what is there and deciding
+where the gaps are.
 
-Two things to settle before starting, both recorded rather than assumed:
-
-- **`P0-TST-009` already found that the harness question is broader than containers.** Thirteen test
-  classes open connections through their own private helper while `DatabaseRoles` and
-  `SimulatedInstance` sit in `com.finapp.platform.testing`. Whatever Testcontainers changes about
-  *where* the database comes from, it should not add a fourteenth way of connecting to it.
-- **The acceptance criterion says "no test depends on a developer's local services"**, which is a
-  real change of posture: every database test currently runs against the compose stack, and
-  `SimulatedInstance.serverNow()` reads that server's clock deliberately. Containers must not
-  quietly break the skew convention `P0-TST-009` established.
+It also owns the duplication `P0-TST-009` recorded: thirteen test classes open connections through
+their own private helper while `DatabaseRoles` and `SimulatedInstance` sit in
+`com.finapp.platform.testing`, now a test fixture both modules share.
 
 ---
 
@@ -894,6 +890,8 @@ Two things to settle before starting, both recorded rather than assumed:
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-035`. **No critical or important findings; four properties measured rather than assumed, and two small corrections.** The tests really do reach a container, not a leftover compose stack - the published JDBC URL is `localhost:<random mapped port>`, printed by probe. The **documented escape hatch works**: with `FINAPP_DB_URL` set, zero containers are created and the suite runs against compose, which is the path for inspecting what a test left behind. **Nothing leaks**: the count of postgres containers is identical before and after a run, and the reaper is what makes that true. And the **cost did not survive measurement** - 14 seconds wall clock for 160 platform tests including container start, the role script and every migration, so the objection that a container per JVM would be slow was wrong. Two corrections: the "system property not set" message still told the reader the Gradle task supplies the URL, when since this task the task supplies the *image* and the harness supplies the URL - which is precisely the failure an IDE run produces, so the message now says so. And **Testcontainers mounts the Docker socket** into its reaper, which is control of the daemon granted to test-time code; not a new capability, since compose already required Docker, but named in ADR-0027 rather than left implicit. 528 hermetic tests, 173 database tests. |
+| 2026-09-02 | `P0-TSK-035` complete. Database tests now bring their own database: a `LauncherSessionListener` starts one PostgreSQL container per test JVM, applies the same `00-roles.sql` the compose stack runs and the real migrations through Flyway, and publishes the coordinates as the system properties every test already read - so **no test changed** and **all 173 pass with compose stopped**. That constraint was deliberate: a harness requiring 173 assertions to be edited would have been a change nobody could review. A `LauncherSessionListener` rather than an extension, because it runs before any test class loads and several suites open their connection in `@BeforeAll`. **PostgreSQL only** - the task named Kafka and Redis, there is no client for either, and a container nothing connects to tests nothing. **Three things it ran into.** Putting the harness in `testFixtures` so `app` could reach it exposed it to the ArchUnit sweep and two rules fired - a static container field and a constant named `LOCAL_PASSWORD` - and **both were fixed at source rather than exempted**, since the field did not need to be static and the constant is the published marker rather than a credential. `HealthReadinessDatabaseTest` asserted Flyway was unreachable by loading the class, and **its own comment had predicted the failure** - *"a false positive if Flyway were ever added as a test dependency of this module"* - so it now checks the module's runtime classpath, which is what ADR-0011's claim always meant. And `P0-TSK-039`'s controls exposed a defect in `P0-TSK-039`'s own procedure: locks block metadata generation and metadata blocks lock generation, so **neither order works** and both flags must be passed in one invocation. Testcontainers 2.x also moved `PostgreSQLContainer` and deprecated the old package, which `-Werror` turned into a build failure. ADR-0027 recorded. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-040`. **One important finding, and it is a comment that described behaviour the workflow does not have.** The `schedule:` block claimed the weekly cron was "for the scanner-pin freshness job only - every other job is gated to exclude scheduled runs". Only `pinned-images` carries an `if:`; the other four run too. `DEFINITION_OF_DONE.md` §3 forbids documentation describing behaviour that does not exist, and the correction is the more useful statement anyway: **two of the gates find things that change without the code changing** - `dependency-scan` fails on a CVE published against an artefact nobody touched, and `pinned-images` reports a scanner release - so neither is discoverable from a diff, and a weekly full run is the point rather than an accident. **Two properties verified rather than assumed.** Version ordering: `sort -V` puts `v8.9.0` before `v8.30.1` and `0.74.0` before `0.100.0`, which is the classic trap and the one that would have made the check silently report a release that does not exist, or miss one that does; the four comparisons the script actually performs were exercised directly. And the unreachable-registry path returns **exit 2, not 0** - proven by pointing the resolver at an invalid host - because a check that cannot run must not look like a check that passed. The `sort -V` dependency on GNU coreutils is now noted in the script rather than assumed. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | `P0-TSK-040` complete; **`P0-EPIC-10` and milestone M0.4 close with it**. Three mechanisms, because none reaches all of it: Dependabot for the four SHA-pinned actions and both version catalogues, and a weekly registry check for the two scanner digests it cannot read. **The scanner pins stay where Dependabot cannot see them, deliberately** - moving them into the workflow so a bot could read them would put the same digest in two places and undo the single definition `P0-TSK-031` established, which is what lets a developer and CI run the identical image. **Each pin is now three facts rather than one**: repository, version and digest. The version had been a comment beside the digest, and a comment cannot be checked - which is exactly what made "is this digest still v8.30.1?" unanswerable. With it as data the check distinguishes two findings that deserve different reactions: the tag **moved**, which is the attack digest-pinning defends against and means the pin held and somebody should find out why it had to, and a newer release exists, which is ordinary rot. Both proven against the real registries. Trivy's digest moved out of a workflow `env:` value - a place nothing reads - and both scanners are now invoked through `infra/scripts/`. **A PR-opening bot for the images was rejected in favour of a check that could be proven**: a workflow could open one with the built-in token and would be untestable here, since this repository has no remote and no workflow has ever run; the freshness check is the part that could be demonstrated, and it was, before the decision was written. **Making the dependency scan a script had an immediate consequence: it was run, and it fails** - three HIGH/CRITICAL CVEs in the Tomcat that Spring Boot 4.1.1 brings, fixed in Tomcat 11.0.25. That gate had never been executed by anyone. Recorded as a blocker rather than fixed, since a dependency upgrade belongs to its own change (`EXECUTION_PROTOCOL.md` rule 4). ADR-0026 recorded. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-039`. **No critical findings; one real coverage gap, closed.** The question the review had to answer is whether verification holds for the tasks **CI** runs, since CI has never executed and the metadata was generated against `build databaseTest` only. Both of CI's other Gradle invocations - `:platform:flywayValidate` and `:app:cyclonedxBom` - were run against the generated file and pass, so the SBOM job and the migration job will not fail on a missing checksum. **The gap was `build-logic`**: it is an included build with its own settings, so it never applied the convention plugin that enables locking and a root `--write-locks` does not reach it - verified. Its artefacts were already checksum-verified, because dependency verification is Gradle-wide and reaches included builds (confirmed by finding `gradle-kotlin-dsl-plugins` in the metadata), so only the version record was missing - and it matters as much as any, since a precompiled script plugin runs in every build with full privileges. Locked, generated from within the included build, and proven by mutating a real entry. **A process note worth keeping**: the first attempt at that mutation edited a version string that does not appear in that lockfile, so the `sed` matched nothing and the test "passed" - the third time in two tasks that a mutation was reported as caught when it had never been applied. Checking that the mutation actually landed is now part of applying one. A stray `verification-metadata.dryrun.xml` from an early probe was removed. 528 hermetic tests, 173 database tests. |

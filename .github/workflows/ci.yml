@@ -159,6 +159,10 @@ jobs:
       - name: Re-apply to prove migrations are idempotent
         run: ./gradlew :platform:flywayMigrate --stacktrace
 
+      # NOTE: since P0-TSK-035 this step no longer needs the compose stack - the shared harness
+      # starts its own container, applies the role script and the migrations, and publishes the
+      # coordinates. Compose is still started above because the FLYWAY BUILD TASKS need a
+      # database, and those are build-tool invocations rather than tests.
       - name: Run every test that needs a real database
         # Claims about PostgreSQL and its driver are only worth testing against a real one:
         # monetary round-trips preserving scale (INV-MON-05), privilege-level immutability

@@ -15,6 +15,10 @@ buildscript {
 
 plugins {
     id("finapp.java-conventions")
+    // Test fixtures, so the `app` module's database tests can reach the same harness
+    // (P0-TSK-035). A test class in platform/src/test is invisible to a dependent module; a
+    // fixture is the supported way to share it without inventing a new Gradle module.
+    `java-test-fixtures`
     // Flyway is applied to platform, not to the root build, because platform owns the
     // `platform` schema. Each module that owns a schema runs its own migrations against
     // its own history table — schema ownership and migration ownership are the same thing
@@ -145,6 +149,30 @@ dependencies {
     // is that BIGINT/CHAR(3)/SMALLINT return exactly what was written, and that is a claim
     // about the database and its driver, not about our code.
     testImplementation(libs.postgresql.driver)
+
+    // The database test harness (P0-TSK-035) lives in testFixtures so `app` can use it too.
+    // Fixture scope, which is test scope: nothing ships.
+    testFixturesImplementation(platform(libs.spring.boot.bom))
+    testFixturesImplementation(libs.testcontainers.postgresql)
+    testFixturesImplementation(libs.junit.platform.launcher)
+    testFixturesImplementation(libs.flyway.core)
+    testFixturesRuntimeOnly(libs.flyway.database.postgresql)
+    testFixturesImplementation(libs.postgresql.driver)
+    // DatabaseRoles asserts the connecting role cannot bypass privileges - the assertion that
+    // makes every denial test meaningful - so the fixtures need AssertJ.
+    testFixturesImplementation(libs.assertj.core)
+
+    // Test scope only: nothing ships.
+    //
+    // Flyway is otherwise on the BUILDSCRIPT classpath - it runs as a build tool. The harness
+    // applies the same migrations from Java, so a container gets the schema the same way a real
+    // database does, in the same order, with the same history table.
+    testImplementation(libs.testcontainers.postgresql)
+    // The LauncherSessionListener API. Gradle puts the launcher on a hidden configuration for
+    // running tests; compiling against it needs it declared.
+    testImplementation(libs.junit.platform.launcher)
+    testImplementation(libs.flyway.core)
+    testImplementation(libs.flyway.database.postgresql)
 }
 
 // ---------------------------------------------------------------------------
@@ -173,20 +201,30 @@ tasks.register<Test>("databaseTest") {
 
     // The same three environment variables the Flyway configuration above uses, so the
     // migration tool and the round-trip test can never be pointed at different databases.
-    systemProperty("finapp.db.url", dbUrl)
-    systemProperty("finapp.db.user", dbUser)
-    systemProperty("finapp.db.password", dbPassword)
+    // The container image, from the version catalog, so it is the same PostgreSQL compose runs
+    // and verifyInfrastructureVersions already guards (P0-TSK-035).
+    systemProperty("finapp.db.image", "postgres:" + libs.versions.postgresImage.get())
+
+    // The compose-stack coordinates are supplied ONLY when FINAPP_DB_URL is set explicitly.
+    // Left unset, DatabaseUnderTest starts a container and publishes its own - which is what
+    // makes "no test depends on a developer's local services" true. Setting the variable is the
+    // deliberate escape hatch for investigating something in a database that outlives the run.
+    if (providers.environmentVariable("FINAPP_DB_URL").isPresent) {
+        systemProperty("finapp.db.url", dbUrl)
+        systemProperty("finapp.db.user", dbUser)
+        systemProperty("finapp.db.password", dbPassword)
 
     // The application role. Tests asserting a privilege-level invariant MUST connect as this
     // and never as dbUser above, because a superuser ignores permission checks and would pass
     // whatever the grants said. DatabaseRoles asserts it is not a superuser for that reason.
-    systemProperty("finapp.db.app.user", appUser)
-    systemProperty("finapp.db.app.password", appPassword)
+        systemProperty("finapp.db.app.user", appUser)
+        systemProperty("finapp.db.app.password", appPassword)
 
     // The migrator, for fixtures that legitimately need DDL - a probe table, say. Application
     // behaviour is never exercised through it.
-    systemProperty("finapp.db.migrator.user", migratorUser)
-    systemProperty("finapp.db.migrator.password", migratorPassword)
+        systemProperty("finapp.db.migrator.user", migratorUser)
+        systemProperty("finapp.db.migrator.password", migratorPassword)
+    }
 
     // Never cached: the point is to exercise a real database, and a cached "up to date"
     // result would mean it had not.

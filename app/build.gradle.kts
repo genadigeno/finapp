@@ -81,6 +81,11 @@ dependencies {
     // published contract must not be a function of the web stack underneath it.
     testImplementation(libs.spring.boot.starter.test)
 
+    // The shared database test harness: a container, the role script and the migrations
+    // (P0-TSK-035). Without it, app's database tests would need a developer's compose stack -
+    // which is exactly what this task removes.
+    testImplementation(testFixtures(project(":platform")))
+
     // Architecture rules live here because `app` is the only module that sees every other
     // one — enforcing a boundary requires being able to observe both sides of it. As
     // business modules are added, `app` depends on them too, so the rules keep their full
@@ -149,6 +154,21 @@ tasks.register<Test>("databaseTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform { includeTags(databaseTag) }
+
+    // The container image, from the version catalog, exactly as platform's task supplies it.
+    // Without this the shared harness runs, finds no image, and returns - which is how these
+    // tests silently kept connecting to a developer's compose stack (P0-TSK-035).
+    systemProperty("finapp.db.image", "postgres:" + libs.versions.postgresImage.get())
+
+    // ADR-0011: migrations never run at startup, and the structural guarantee is that Flyway is
+    // not on the application's RUNTIME classpath. HealthReadinessDatabaseTest used to assert that
+    // by trying to load the class, reasoning that the test classpath is a superset of the runtime
+    // one - and its own comment predicted the failure that followed: P0-TSK-035's harness needs
+    // Flyway to apply migrations to a container, which put it on the test classpath and made the
+    // check report a false positive. Passing the real runtime classpath lets the test assert what
+    // it always meant.
+    val runtimeNames = configurations.runtimeClasspath.map { cfg -> cfg.files.joinToString(",") { it.name } }
+    doFirst { systemProperty("finapp.runtime.classpath", runtimeNames.get()) }
 
     // Never cached: the point is to exercise a real database, and a cached "up to date" result
     // would mean it had not.

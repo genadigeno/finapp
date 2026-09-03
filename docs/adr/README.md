@@ -10,7 +10,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 - **An accepted ADR is never edited to change its decision.** A changed decision is a new ADR
   that supersedes the old one; the old one is marked `Superseded by ADR-NNNN`.
 - Status: `Proposed` → `Accepted` → `Superseded`.
-- ADR-0001 through ADR-0026 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
+- ADR-0001 through ADR-0027 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
   once the decisions have been validated by implementation rather than only by argument.
 - A decision found in code but absent from this record is architectural debt.
 
@@ -44,6 +44,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0024](ADR-0024-single-instance-assumptions-fail-the-build.md) | Single-instance assumptions fail the build | Proposed | 0 | Architecture |
 | [0025](ADR-0025-dependency-verification-and-locking.md) | Every resolved artefact is checksum-verified and version-locked | Proposed | 0 | Security |
 | [0026](ADR-0026-keeping-pins-fresh.md) | A pin that nothing maintains is a pin that rots | Proposed | 0 | Security |
+| [0027](ADR-0027-tests-bring-their-own-database.md) | Tests bring their own database | Proposed | 0 | Testing |
 
 ## Anticipated ADRs
 

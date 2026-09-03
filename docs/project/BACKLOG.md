@@ -770,7 +770,7 @@ Status: `IN_PROGRESS`
 
 #### P0-FEAT-13 — Test foundations
 
-**P0-TSK-035 — Testcontainers integration test harness**
+**P0-TSK-035 — Testcontainers integration test harness** — `COMPLETE` (2026-09-02)
 - Context: platform / test
 - Description: Reusable PostgreSQL, Kafka and Redis containers with a shared lifecycle and fast startup.
 - Why: `.claude/rules/testing.md` — use Testcontainers for real infrastructure behaviour.
@@ -779,6 +779,15 @@ Status: `IN_PROGRESS`
 - Risk: Medium
 - Cx: L
 - DoD: `DOD-TEST`
+- **Outcome:** a `LauncherSessionListener` starts one PostgreSQL container per test JVM, applies
+  the same `00-roles.sql` and the real migrations, and publishes the coordinates as the system
+  properties every test already read - so **no test changed** and all 173 pass with nothing running
+  locally. PostgreSQL only: there is no Kafka or Redis client, and a container nothing connects to
+  tests nothing. Putting the harness in `testFixtures` so `app` could use it exposed it to the
+  ArchUnit sweep, and two rules fired - a static container field and a field named
+  `LOCAL_PASSWORD`; **both fixed at source rather than exempted**. `HealthReadinessDatabaseTest`
+  had to change and its own comment had predicted why: it checked the test classpath as a proxy for
+  the runtime one, and now checks the runtime classpath directly. ADR-0027.
 
 **P0-TSK-036 — Test taxonomy and conventions**
 - Context: platform / test

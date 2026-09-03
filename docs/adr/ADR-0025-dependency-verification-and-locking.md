@@ -86,8 +86,11 @@ what makes verification cheap here, not what makes it unnecessary.
 
 - A substituted artefact fails the build, naming the artefact and the repository.
 - An unexplained version change is a diff in a lockfile rather than a silent resolution.
-- **Changing a dependency is now three steps**, documented in `README.md` §7a: change the catalog,
-  `--write-locks`, `--write-verification-metadata`. The acceptance criterion asks that this not be
+- **Changing a dependency is one command with both flags**, documented in `README.md` §7a. It was
+  written here as two separate invocations, and `P0-TSK-035` found that neither order works: the
+  lock refuses a version it does not know, so metadata generation cannot resolve, and verification
+  refuses an artefact it has no checksum for, so lock generation cannot resolve. Each control blocks
+  the other's regeneration, which is only discoverable by adding a dependency. The acceptance criterion asks that this not be
   "regenerate everything and hope", and it is not: regeneration **merges**, so existing entries
   survive a narrow run — verified — and the diff is what the reviewer reads.
 - **Gradle never prunes.** Removing a dependency leaves its entries trusted, so superseded entries
