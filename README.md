@@ -346,9 +346,11 @@ misses `password: hunter2`, which is exactly what a human commits. Do **not** co
 here to test the scan — history is scanned, so it would stay red for ever. Use a throwaway clone;
 the procedure is in [`SECRET_MANAGEMENT.md`](docs/architecture/SECRET_MANAGEMENT.md) §6.
 
-> **Current limitation, stated plainly:** this repository has no git remote, so the pipeline
-> has never executed on a runner. All four jobs pass when run locally. This is the one
-> outstanding item in milestone M0.1.
+**The pipeline runs.** A remote was added on 2026-09-04 (`P0-TSK-042`) and the four jobs execute on
+every push to `main`. The first run failed, which is the gate working: it found two defects that
+could not be reached from a Windows machine at all — `gradlew` committed without its executable
+bit, and verification metadata that was complete only for a *warm* dependency cache. Both are
+fixed and described in §7a.
 
 ---
 
@@ -392,6 +394,24 @@ A change you cannot explain in those two diffs is the signal this exists for.
 adds only what it resolved. That is safe — regeneration merges, and existing entries survive,
 which is verified — but it will not *record* anything the narrow run did not touch, so a later full
 build fails with a missing-checksum error rather than a wrong one.
+
+**And so does a cold cache — this is the part that was missing.** Regenerating over a warm
+`GRADLE_USER_HOME` records *less* than a cold one needs, because Gradle does not re-read metadata
+descriptors it has already parsed. The first CI run failed on exactly that: `kotlinx-coroutines-bom
+:1.8.0.pom`, absent from a file generated on this machine over months of warm builds. Regenerating
+against an empty `GRADLE_USER_HOME` added **10 components and 23 artefacts**, every one of them a
+parent POM or a BOM `.module` — descriptors, never a jar. The file had been complete for this
+machine and incomplete for every other, CI and a new developer alike.
+
+If a regeneration is going to be trusted, do it cold:
+
+```bash
+GRADLE_USER_HOME=$(mktemp -d) ./gradlew --write-locks --write-verification-metadata sha256   build databaseTest
+```
+
+On a machine behind TLS interception, that temporary home needs the truststore setting from
+`CURRENT_STATE.md` §Local Environment Prerequisites — it is outside the repository by design, so a
+fresh home does not inherit it.
 
 **Removing a dependency leaves its entries behind.** Gradle merges and never prunes, so a superseded
 version stays trusted. Delete those entries by hand in the same change; the lockfile is what shows

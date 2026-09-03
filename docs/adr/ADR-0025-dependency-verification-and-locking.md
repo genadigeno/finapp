@@ -103,6 +103,15 @@ what makes verification cheap here, not what makes it unnecessary.
   every build with full privileges. The extra command is in the procedure.
 - Generation must cover every configuration. A narrow run records only what it resolved, so a later
   full build fails with a *missing* checksum — loud, and in the safe direction.
+- **Generation must also cover a cold cache, and this was missed until CI existed.** Over a warm
+  `GRADLE_USER_HOME` Gradle does not re-read metadata descriptors it has already parsed, so
+  generation records fewer artefacts than a cold resolution needs. The first CI run — the first
+  cold resolution this project ever had — failed on `kotlinx-coroutines-bom:1.8.0.pom`. Regenerating
+  against an empty home added **10 components and 23 artefacts**, every one a parent POM or a BOM
+  `.module`. The file had been complete for one machine and incomplete for every other, a new
+  developer included. This is the same shape as the criterion-7 failure that surfaced it: a control
+  verified only where it was written is a control with an untested precondition. The procedure in
+  `README.md` §7a now regenerates against a temporary home.
 - CI gains the control for free: verification is enforced by Gradle itself, so the existing `build`
   job fails on a bad artefact with no workflow change.
 
