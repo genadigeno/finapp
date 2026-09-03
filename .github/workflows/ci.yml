@@ -19,6 +19,18 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Weekly, and every job runs - which is deliberate rather than an oversight, though the first
+    # version of this comment claimed the opposite.
+    #
+    # Two of the gates find things that change without the code changing. `dependency-scan` fails
+    # on a CVE published against an artefact nobody touched, and `pinned-images` reports a scanner
+    # release or a moved tag. Neither is discoverable from a diff, so neither is discoverable at
+    # all unless something asks on a timer.
+    #
+    # `build` and `migrations` run too, and that is cheap insurance rather than a decision: a
+    # scheduled run that is green tells you the last merge is still green against today's world.
+    - cron: '0 6 * * 1'
 
 # Least privilege. No job here needs to write to the repository; anything that later does
 # must raise its own permissions explicitly, at the job level, and be reviewed.
@@ -33,15 +45,11 @@ concurrency:
   # justification for believing the build is sound.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-env:
-  # Scanners run as pinned container images rather than as marketplace actions: one less
-  # third-party action to trust, and the exact same command can be run locally.
-  #
-  # gitleaks' pin is NOT here. It lives in infra/scripts/secret-scan.sh, which this workflow
-  # calls, so the local invocation and the CI invocation are one definition rather than two
-  # that agree today. The comment above used to claim the command could be run locally while
-  # nothing existed to run (P0-TSK-031).
-  TRIVY_IMAGE: aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+# Scanner image pins are NOT here. Both live in infra/scanner-pins.sh, and both scanners are
+# invoked through infra/scripts/, which this workflow calls - so the local invocation and the CI
+# invocation are one definition rather than two that agree today (P0-TSK-031), and a tool can read
+# the pins to report when they rot (P0-TSK-040, ADR-0026). Trivy's digest was an `env:` value here
+# until then, which is a place nothing reads.
 
 jobs:
 
@@ -233,10 +241,35 @@ jobs:
         run: ./gradlew :app:cyclonedxBom --stacktrace
 
       - name: Scan SBOM for known vulnerabilities
-        # HIGH and CRITICAL fail the build. MEDIUM and below are reported but do not block:
-        # a gate that fires constantly is a gate people learn to bypass, and the threshold
-        # should tighten deliberately rather than by accident.
-        run: |
-          docker run --rm -v "$PWD:/scan" "$TRIVY_IMAGE" \
-            sbom --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress \
-            /scan/app/build/reports/cyclonedx/application.cdx.json
+        # The same script a developer runs. Its own header carries the threshold reasoning,
+        # and the pin lives in infra/scanner-pins.sh where check-pinned-images.sh can see it.
+        run: ./infra/scripts/dependency-scan.sh
+
+  # ---------------------------------------------------------------------------
+  # Are the scanner pins still current? (P0-TSK-040, ADR-0026)
+  #
+  # Dependabot proposes updates for the SHA-pinned actions above. It does not read a shell
+  # variable, so the two scanner image pins need their own mechanism - and they are the pins
+  # whose rot is least visible, because an outdated scanner does not fail. It reports nothing
+  # and looks exactly like a clean scan.
+  #
+  # This job asks two different questions, and distinguishes them: has the tag MOVED (the
+  # attack digest-pinning defends against, and the more serious answer), and is there a NEWER
+  # release (rot). A red scheduled run is the reviewable signal.
+  #
+  # Weekly rather than per-change: a pin does not rot between commits, and a check that fires
+  # on every push is one people learn to ignore.
+  # ---------------------------------------------------------------------------
+  pinned-images:
+    name: Scanner pin freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Scheduled and manual only. It talks to public registries, so it would otherwise fail on a
+    # fork's pull request for reasons unrelated to the change.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the pinned scanner images
+        run: ./infra/scripts/check-pinned-images.sh

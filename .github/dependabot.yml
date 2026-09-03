@@ -1,0 +1,67 @@
+# Automated update proposals for pinned dependencies (P0-TSK-040, ADR-0026).
+#
+# WHY. Pinning an action to a commit SHA removes the risk of a tag being repointed by whoever
+# controls the source repository - and it freezes the action. Without an update path the pins
+# rot, and a security fix in `actions/checkout` is never picked up. Pinning without maintenance
+# trades one supply-chain risk for a quieter one, which is what the P0-TSK-004 review found.
+#
+# WHAT THIS DOES NOT COVER, stated here so the gap is not mistaken for coverage: the two scanner
+# image digests. They live in infra/scanner-pins.sh, which Dependabot does not read, and they stay
+# there deliberately - moving them into the workflow so a bot could see them would put the same
+# digest in two places and undo the single definition P0-TSK-031 established. They are covered
+# instead by infra/scripts/check-pinned-images.sh, run weekly by the `pinned-images` job.
+
+version: 2
+updates:
+
+  # The four SHA-pinned actions in .github/workflows/ci.yml. Dependabot rewrites the SHA and
+  # updates the trailing `# vX.Y.Z` comment, so the pin stays readable.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+      - supply-chain
+
+  # Library versions in gradle/libs.versions.toml.
+  #
+  # A Dependabot pull request here will FAIL ITS OWN BUILD, and that is correct rather than a
+  # misconfiguration: a version bump leaves gradle/verification-metadata.xml and the six
+  # lockfiles stale, and dependency verification refuses an artefact it has no checksum for
+  # (ADR-0025). The bot does the discovery; a person runs the two regeneration commands in
+  # README.md section 7a and reviews the diff. That division is deliberate - the alternative is
+  # a bot with permission to write checksums, which is a bot that can trust an artefact nobody
+  # looked at.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+      - supply-chain
+
+  # build-logic is a separate included build with its own settings and its own lockfile, so it
+  # needs its own entry - the same reason ADR-0025 gives for locking it separately.
+  - package-ecosystem: gradle
+    directory: /build-logic
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+      - supply-chain

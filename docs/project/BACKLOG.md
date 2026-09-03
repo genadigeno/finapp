@@ -742,7 +742,7 @@ Status: `IN_PROGRESS`
   steps and a diff review, and regeneration was verified to **merge** rather than rewrite - which is
   what makes it not "regenerate everything and hope". ADR-0025.
 
-**P0-TSK-040 — Update mechanism for pinned CI actions and scanner images**
+**P0-TSK-040 — Update mechanism for pinned CI actions and scanner images** — `COMPLETE` (2026-09-02)
 - Context: platform / build / security
 - Description: An automated path for proposing updates to the commit-SHA-pinned GitHub Actions and digest-pinned scanner images in `.github/workflows/ci.yml` (Dependabot, or an equivalent that raises a reviewable change).
 - Why: Discovered during the `P0-TSK-004` review. Pinning to a SHA removes the risk of a tag being repointed, but it also freezes the action: without an update path the pins rot, and a security fix in `actions/checkout` or in a scanner is never picked up. Pinning without maintenance trades one supply-chain risk for another, quieter one.
@@ -751,6 +751,16 @@ Status: `IN_PROGRESS`
 - Risk: Low
 - Cx: S
 - DoD: `DOD-SEC`
+- **Outcome:** three mechanisms, because none reaches all of it. Dependabot for the four SHA-pinned
+  actions and the two version catalogues; a weekly `check-pinned-images.sh` for the two scanner
+  digests, which Dependabot cannot read and which stay in `infra/scanner-pins.sh` deliberately - moving
+  them into the workflow so a bot could see them would undo `P0-TSK-031`'s single definition. Each
+  pin is now three facts (repository, version, digest) rather than a digest with the version in an
+  uncheckable comment, so the check can distinguish a **moved tag** from **rot** - both proven.
+  Trivy's digest moved out of a workflow `env:` value into the same record, and both scanners are
+  now invoked through `infra/scripts/`. **Running the dependency scan for the first time made it
+  fail**: three HIGH/CRITICAL CVEs in the Tomcat Spring Boot 4.1.1 brings. Recorded as a blocker.
+  ADR-0026.
 
 ---
 

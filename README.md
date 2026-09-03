@@ -379,6 +379,39 @@ and the expected checksum. Treat a mismatch as a compromise until proven otherwi
 artefact against the publisher's own published checksum, never against the one the build just
 downloaded.
 
+## 7b. Keeping the pins fresh
+
+Everything here is pinned, which means everything here can rot. Three mechanisms, because no one
+of them reaches all of it (ADR-0026):
+
+| Pinned thing | Where | Update path |
+|---|---|---|
+| Four GitHub Actions (commit SHA) | `.github/workflows/ci.yml` | Dependabot, weekly - a pull request |
+| Library versions | `gradle/libs.versions.toml` | Dependabot, weekly - the PR **will fail its build** until you run §7a's regeneration |
+| Two scanner images (digest) | `infra/scanner-pins.sh` | `infra/scripts/check-pinned-images.sh`, weekly in CI |
+| Infrastructure images | `compose.yaml` + the catalog | `verifyInfrastructureVersions` fails the build on drift |
+| Gradle distribution | `gradle-wrapper.properties` | Manual, with the checksum from `services.gradle.org` |
+
+Check the scanner pins yourself at any time:
+
+```bash
+./infra/scripts/check-pinned-images.sh
+```
+
+It distinguishes two findings, and the distinction matters:
+
+- **the tag moved** - the digest no longer matches the version it claims. The pin held. Find out
+  why the tag changed *before* updating it;
+- **a newer release exists** - ordinary rot.
+
+To update a scanner: bump `VERSION` in `infra/scanner-pins.sh`, re-resolve the digest with
+`docker buildx imagetools inspect <repository>:<version>`, and re-run the check.
+
+**Why the scanner pins are not Dependabot's job.** They live in a shell-sourced file it does not
+read, and they stay there deliberately: both scanners are invoked through `infra/scripts/`, which
+CI calls, so a developer and CI run the identical image. Moving a digest into the workflow so a bot
+could see it would put the same fact in two places.
+
 ---
 
 ## 7. Troubleshooting

@@ -25,12 +25,24 @@ financial history exists.
 
 ## Current Milestone
 
-**M0.4 — API, observability and security baseline**
-`P0-EPIC-08` (API Conventions and Error Contract) is **COMPLETE** (2026-09-02): the platform has a
-versioned HTTP surface, an RFC 9457 error contract on every path, validation and correlation at the
-boundary, a published OpenAPI contract compared on every build, operational endpoints, and one
-conventions document holding it together. `P0-EPIC-09` (Observability Baseline) and `P0-EPIC-10`
-(Security Baseline) remain.
+**M0.5 — Test infrastructure and phase review**
+`P0-EPIC-11` (Test Infrastructure, 4 tasks) and `P0-EPIC-12` (Documentation and Decision Baseline,
+2 of 9 remaining). The last milestone of Phase 0. Not started.
+
+**M0.4 — API, observability and security baseline** — `P0-EPIC-08`, `-09` and `-10`, all
+`COMPLETE` (2026-09-02).
+
+The platform gained a versioned HTTP surface with an RFC 9457 error contract on every path and a
+published OpenAPI document compared byte for byte on every build; correlation on every log line,
+span and durable record, metrics whose names the build enforces, and a dashboard verified against a
+running instance; and a security baseline in which the unsafe option is generally *unreachable*
+rather than discouraged — no credential literal in committed configuration, no unestablished actor,
+no unclassified column, no remote database without verified TLS, no single-instance coordination
+primitive, and no artefact whose bytes or version nobody recorded.
+
+One exception is recorded rather than hidden: `P0-TSK-017` (`Idempotency-Key` header) remains
+`BLOCKED` — the HTTP surface it waited for now exists, so it is unblocked in fact and needs
+rescheduling rather than unblocking.
 
 **M0.3 — Correctness primitives** — `P0-EPIC-05`, `P0-EPIC-06` and `P0-EPIC-07`, all `COMPLETE`
 (2026-09-01), with one exception recorded rather than hidden: `P0-TSK-017` (`Idempotency-Key`
@@ -49,54 +61,55 @@ at the database privilege level, not in code.
 clean clone", cannot be met while the repository has no git remote. A clean clone was verified
 to reach a green build locally during `P0-DOC-001`.
 
-Subsequent Phase 0 milestones:
-- **M0.4** API, observability, security baseline — `P0-EPIC-08`, `-09`, `-10`
+Remaining Phase 0 milestone:
 - **M0.5** Test infrastructure and phase review — `P0-EPIC-11`, `P0-EPIC-12`
 
 ## Current Task
 
-**`P0-TSK-040` - Update mechanism for pinned CI actions and scanner images**
-Status: `READY` - not started.
+**`P0-TSK-035` - Testcontainers integration test harness**
+Status: `READY` - not started. Opens **`P0-EPIC-11`** and milestone **M0.5**.
 
-Bounded context: platform / build / security. Depends on `P0-TSK-004` (`COMPLETE`).
-**Risk: Low.**
+Bounded context: platform / test. Depends on `P0-TSK-003` and `P0-TSK-005`, both `COMPLETE`.
+**Risk: Medium. Cx: L** - the largest remaining Phase 0 task.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-SEC`.
-**It is the last task in `P0-EPIC-10`.**
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-11. DoD profile: `DOD-TEST`.
 
 ### Just completed
 
-**`P0-TSK-039` - Dependency verification and locking** - `COMPLETE` (2026-09-02).
+**`P0-TSK-040` - Update mechanism for pinned CI actions and scanner images** - `COMPLETE`
+(2026-09-02). **`P0-EPIC-10` closes with it**, and milestone M0.4 with it.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| `gradle/verification-metadata.xml` present and enforced | 456 components, SHA-256, `verify-metadata` on. The build resolves nothing unrecorded |
-| A deliberately altered artefact checksum fails the build | Proven: altering one entry fails naming the artefact and the repository it came from |
-| The update procedure is documented and is not "regenerate everything and hope" | [`README.md`](../../README.md) §7a: three steps and a diff review. Regeneration was **verified to merge** rather than rewrite |
+| An update produces a reviewable proposed change rather than requiring someone to remember | `.github/dependabot.yml` for the four SHA-pinned actions and both version catalogues; a weekly `pinned-images` job for the two scanner digests |
+| The procedure is documented alongside the pinning rationale | [`README.md`](../../README.md) §7b - a table of every pinned thing and its update path |
 
-**Locking looked redundant, and measuring the file proved otherwise.** Verification already refuses
-any artefact it does not know - confirmed by bumping a pinned version, which failed the build
-immediately. The first analysis was therefore that a lockfile would be a second copy of the same
-fact.
+**Three mechanisms, because none of them reaches all of it.** Dependabot reads workflows and version
+catalogues. It does not read a shell-sourced file, so the two scanner digests need their own path -
+and they stay in `infra/scanner-pins.sh` deliberately, because moving them into the workflow so a bot
+could see them would put the same digest in two places and undo the single definition `P0-TSK-031`
+established.
 
-Then the generated file was read: on its **first** generation it recorded **69 of 342 modules at
-more than one version** - `jackson-bom` at five, `jackson-databind` at three - because the
-buildscript, plugin, compile and test classpaths legitimately resolve different versions of the same
-module. So verification cannot tell a deliberate resolution from drift *between versions it already
-trusts*: both pass. A lockfile can, and it earns its place twice over, because **thirteen
-dependencies take their version from the Spring Boot BOM and that version is written down nowhere
-else in this repository** - a BOM bump moves them silently today.
+**Each pin is now three facts rather than one.** `scanner-pins.sh` records repository, version *and*
+digest. The version had been a comment beside the digest, and a comment cannot be checked - which is
+what made "is this digest still v8.30.1?" unanswerable. With the version as data,
+`check-pinned-images.sh` distinguishes two findings that deserve different reactions: the tag
+**moved** - the attack digest-pinning defends against, where the pin held and somebody should find
+out why - and a newer release exists, which is ordinary rot. **Both proven** against the real
+registries before the decision was written.
 
-Both are enforced and both proven by mutation: an altered checksum fails naming the artefact; a
-changed locked version fails with *"Did not resolve ... which is part of the dependency lock state"*.
+**Trivy's digest moved out of a workflow `env:` value**, which is a place nothing reads, into the
+same record; both scanners are now invoked through `infra/scripts/`, so CI and a developer run the
+identical image and one check covers both.
 
-**Trust on first use is the limit, and it is stated rather than glossed.** The checksums record what
-this machine downloaded on the day they were written. They catch a substitution afterwards; they
-cannot catch a first download that was already compromised, because the compromise would be recorded
-as the expected value. PGP signatures are the answer to that and were **measured** rather than
-argued about: one narrow slice of the graph produced 11 signed artefacts and required 49 trusted
-keys. Extrapolating that keyring is a trust decision of its own, and every unsigned artefact still
-needs a checksum, so it is deferred to Phase 15 with the rest of the supply-chain work.
+**A pull-request bot for the images was rejected in favour of a check that could be proven.** A
+workflow could open a PR with the built-in token, and it would be untestable here - this repository
+has no remote, so no workflow has ever run. The freshness check is the part that could be
+demonstrated, and it was.
+
+**Running the dependency scan for the first time made it fail.** See §Blockers: three HIGH/CRITICAL
+CVEs in the Tomcat that Spring Boot 4.1.1 brings. That gate had never been executed, because CI has
+never run and the scan was a `docker run` line inside a workflow until this task made it a script.
 
 ---
 
@@ -196,6 +209,23 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Keeping the pins fresh (2026-09-02), `P0-TSK-040`:
+- Dependabot for the four SHA-pinned actions and both version catalogues; a weekly registry check
+  for the two scanner digests it cannot read
+- Each scanner pin is repository, version **and** digest, so "is this digest still v8.30.1?" is an
+  answerable question - it had been a comment, which nothing can check
+- The check distinguishes a **moved tag** from **rot**, and both were proven against the real
+  registries
+- Trivy's digest moved out of a workflow `env:` value; both scanners now run through
+  `infra/scripts/`, so CI and a developer use the identical image
+- A PR-opening bot was rejected for a check that could actually be demonstrated, since no workflow
+  in this repository has ever executed
+- ADR-0026 records the reasoning and the four rejected alternatives
+- The pin record is `scanner-pins.sh`, not `.env`: `.gitignore` ignores `*.env` under its
+  Secrets section, so the first version was silently **never committed** and every CI job
+  calling a scanner would have failed sourcing a missing file. Caught by inspecting what was
+  actually staged rather than what was written
 
 Dependency verification and locking (2026-09-02), `P0-TSK-039`:
 - 456 artefacts checksum-verified and six lockfiles enforced, closing the largest remaining
@@ -641,11 +671,27 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-040` is the next task.
+None in progress. `P0-TSK-035` is the next task.
 
 ## Blockers
 
-None.
+**The `dependency-scan` CI gate fails.** Found by `P0-TSK-040` (2026-09-02), which made the scan a
+script a developer can run - and running it was the first time anyone had.
+
+Three HIGH/CRITICAL advisories, all in `org.apache.tomcat.embed:tomcat-embed-core:11.0.24`, which
+Spring Boot 4.1.1 brings: `CVE-2026-65182`, `CVE-2026-65905`, `CVE-2026-68525`. Trivy reports the
+fix in Tomcat `11.0.25`.
+
+**Why nobody knew.** The repository has no git remote, so CI has never executed, and until this task
+the scan was a `docker run` line inside a workflow - runnable only by copying it out by hand. This
+is the clearest example so far of the standing limitation below: a gate that has never run is a
+gate whose result nobody knows.
+
+**Not fixed here.** It is a dependency upgrade - a Spring Boot patch bump or a Tomcat override,
+plus the verification-metadata and lockfile regeneration ADR-0025 requires -
+and `EXECUTION_PROTOCOL.md` rule 4 forbids doing that inside another task. It needs its own change,
+and it is the first thing to do after `P0-EPIC-10` closes.
+
 
 `P0-TSK-004` (CI pipeline) was recorded as blocked. The 2026-08-31 task completion review
 found the blocker was a defect in the backlog, not in the work: `P0-TSK-004` declared
@@ -824,20 +870,23 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-040` - Update mechanism for pinned CI actions and scanner images**, the **last** task in
-`P0-EPIC-10`, after which only `P0-EPIC-11` (test infrastructure) and two `P0-EPIC-12` documents
-remain before the Phase 0 exit gate.
+**`P0-TSK-035` - Testcontainers integration test harness**, opening `P0-EPIC-11` and milestone
+**M0.5**, the last of Phase 0.
 
-Discovered during the `P0-TSK-004` review: pinning to a SHA removes the risk of a tag being
-repointed and freezes the action, so without an update path the pins rot and a security fix in
-`actions/checkout` or in a scanner is never picked up. Pinning without maintenance trades one
-supply-chain risk for a quieter one.
+Reusable PostgreSQL, Kafka and Redis containers with a shared lifecycle. `Cx: L` - the largest
+remaining Phase 0 task, and the only one that changes how 173 existing database tests obtain their
+database.
 
-Note the scope has grown since it was written: `P0-TSK-031` moved gitleaks' digest into
-`infra/scripts/secret-scan.sh`, and `P0-TSK-039` added `gradle/verification-metadata.xml` and three
-lockfiles. Whatever raises the reviewable change should cover all of them, or it will cover the
-workflow file and quietly leave the rest to rot - which is the defect this task exists to prevent,
-reproduced one level down.
+Two things to settle before starting, both recorded rather than assumed:
+
+- **`P0-TST-009` already found that the harness question is broader than containers.** Thirteen test
+  classes open connections through their own private helper while `DatabaseRoles` and
+  `SimulatedInstance` sit in `com.finapp.platform.testing`. Whatever Testcontainers changes about
+  *where* the database comes from, it should not add a fourteenth way of connecting to it.
+- **The acceptance criterion says "no test depends on a developer's local services"**, which is a
+  real change of posture: every database test currently runs against the compose stack, and
+  `SimulatedInstance.serverNow()` reads that server's clock deliberately. Containers must not
+  quietly break the skew convention `P0-TST-009` established.
 
 ---
 
@@ -845,6 +894,8 @@ reproduced one level down.
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TSK-040`. **One important finding, and it is a comment that described behaviour the workflow does not have.** The `schedule:` block claimed the weekly cron was "for the scanner-pin freshness job only - every other job is gated to exclude scheduled runs". Only `pinned-images` carries an `if:`; the other four run too. `DEFINITION_OF_DONE.md` §3 forbids documentation describing behaviour that does not exist, and the correction is the more useful statement anyway: **two of the gates find things that change without the code changing** - `dependency-scan` fails on a CVE published against an artefact nobody touched, and `pinned-images` reports a scanner release - so neither is discoverable from a diff, and a weekly full run is the point rather than an accident. **Two properties verified rather than assumed.** Version ordering: `sort -V` puts `v8.9.0` before `v8.30.1` and `0.74.0` before `0.100.0`, which is the classic trap and the one that would have made the check silently report a release that does not exist, or miss one that does; the four comparisons the script actually performs were exercised directly. And the unreachable-registry path returns **exit 2, not 0** - proven by pointing the resolver at an invalid host - because a check that cannot run must not look like a check that passed. The `sort -V` dependency on GNU coreutils is now noted in the script rather than assumed. 528 hermetic tests, 173 database tests. |
+| 2026-09-02 | `P0-TSK-040` complete; **`P0-EPIC-10` and milestone M0.4 close with it**. Three mechanisms, because none reaches all of it: Dependabot for the four SHA-pinned actions and both version catalogues, and a weekly registry check for the two scanner digests it cannot read. **The scanner pins stay where Dependabot cannot see them, deliberately** - moving them into the workflow so a bot could read them would put the same digest in two places and undo the single definition `P0-TSK-031` established, which is what lets a developer and CI run the identical image. **Each pin is now three facts rather than one**: repository, version and digest. The version had been a comment beside the digest, and a comment cannot be checked - which is exactly what made "is this digest still v8.30.1?" unanswerable. With it as data the check distinguishes two findings that deserve different reactions: the tag **moved**, which is the attack digest-pinning defends against and means the pin held and somebody should find out why it had to, and a newer release exists, which is ordinary rot. Both proven against the real registries. Trivy's digest moved out of a workflow `env:` value - a place nothing reads - and both scanners are now invoked through `infra/scripts/`. **A PR-opening bot for the images was rejected in favour of a check that could be proven**: a workflow could open one with the built-in token and would be untestable here, since this repository has no remote and no workflow has ever run; the freshness check is the part that could be demonstrated, and it was, before the decision was written. **Making the dependency scan a script had an immediate consequence: it was run, and it fails** - three HIGH/CRITICAL CVEs in the Tomcat that Spring Boot 4.1.1 brings, fixed in Tomcat 11.0.25. That gate had never been executed by anyone. Recorded as a blocker rather than fixed, since a dependency upgrade belongs to its own change (`EXECUTION_PROTOCOL.md` rule 4). ADR-0026 recorded. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-039`. **No critical findings; one real coverage gap, closed.** The question the review had to answer is whether verification holds for the tasks **CI** runs, since CI has never executed and the metadata was generated against `build databaseTest` only. Both of CI's other Gradle invocations - `:platform:flywayValidate` and `:app:cyclonedxBom` - were run against the generated file and pass, so the SBOM job and the migration job will not fail on a missing checksum. **The gap was `build-logic`**: it is an included build with its own settings, so it never applied the convention plugin that enables locking and a root `--write-locks` does not reach it - verified. Its artefacts were already checksum-verified, because dependency verification is Gradle-wide and reaches included builds (confirmed by finding `gradle-kotlin-dsl-plugins` in the metadata), so only the version record was missing - and it matters as much as any, since a precompiled script plugin runs in every build with full privileges. Locked, generated from within the included build, and proven by mutating a real entry. **A process note worth keeping**: the first attempt at that mutation edited a version string that does not appear in that lockfile, so the `sed` matched nothing and the test "passed" - the third time in two tasks that a mutation was reported as caught when it had never been applied. Checking that the mutation actually landed is now part of applying one. A stray `verification-metadata.dryrun.xml` from an early probe was removed. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | `P0-TSK-039` complete. Every artefact the build resolves is now checksum-verified (456 components) and version-locked (three lockfiles), closing the largest remaining supply-chain hole - a build-time dependency executes with full build privileges, so it can read the source, the environment and any credential the build holds. Both controls proven by mutation: an altered checksum fails naming the artefact and the repository it came from, and a changed locked version fails with *"Did not resolve ... which is part of the dependency lock state"*. **Locking looked redundant and measuring the file proved otherwise.** Verification already refuses any artefact it does not know - confirmed by bumping a pinned version - so the first analysis was that a lockfile would be a second copy of the same fact. Then the generated file was read: on its **first** generation it recorded **69 of 342 modules at more than one version**, `jackson-bom` at five, because the buildscript, plugin, compile and test classpaths legitimately resolve different versions of the same module. Verification therefore cannot tell a deliberate resolution from drift *between versions it already trusts*; a lockfile can, and it earns its place twice over because **thirteen dependencies take their version from the Spring Boot BOM and that version is written down nowhere else** - a BOM bump moves them silently today. **Trust on first use is the limit and it is stated rather than glossed**: the checksums record what this machine downloaded on the day they were written, so they catch a later substitution and not a first download that was already compromised. PGP signatures are the answer and were **measured** rather than argued about - one narrow slice produced 11 signed artefacts and 49 trusted keys - then deferred to Phase 15, since a keyring is a trust decision of its own and every unsigned artefact still needs a checksum. The acceptance criterion's "not regenerate everything and hope" is met by verifying that regeneration **merges**: a narrow run preserved all 456 entries. Gradle never prunes, so removing a dependency leaves its entries trusted - recorded in the procedure. ADR-0025 recorded. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TST-009`. **No critical or important findings; the audit's own claims were verified rather than trusted, and two limits recorded.** The seven-row conformance table asserts every multi-instance test gives each instance its own connection - three of those I had checked directly, so the other four were traced: `OutboxCrashRecoveryTest` turned out to pass a connection *source* rather than a connection, and that source calls `DriverManager.getConnection` afresh each time, so eight relays really do contend; `IdempotencyRecordSchemaTest` opens `own` per racer inside the loop. The table holds. The corrected skew test was re-proven after the line-ending normalisation: reverting the V004 fix still makes it fail, which it did not do before this task. **The harness's own limit is now stated rather than implied**: nothing mechanically prevents `SimulatedInstance.serverNow()` being changed to read the JVM clock instead of the database's, and on a machine where the two agree - nearly true here, where the container drifts about half a second - every skew test would keep passing while measuring the wrong thing again. The precondition does not catch that either, and a guard would have to assume a drift that may not exist, so the defence is that the anchor is named in the convention and in the harness rather than enforced. **The duplication the audit exposed is recorded as debt**: thirteen test classes still open connections through their own private helper, which is not a defect - all seven multi-instance tests were confirmed correct - but it means the shared harness is one a future test is as likely to miss as to find. Owned by `P0-TSK-036`. 528 hermetic tests, 173 database tests. |

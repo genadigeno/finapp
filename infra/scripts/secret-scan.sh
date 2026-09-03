@@ -19,12 +19,18 @@
 #   scan red for ever, and removing it needs a history rewrite.
 set -eu
 
-# Pinned by digest, never by tag: a tag can be repointed by whoever controls the source
-# repository, a digest cannot. This is the same reasoning that pins the Gradle distribution
-# and the wrapper jar by SHA-256. Keeping the pin maintained is P0-TSK-040.
+# The pin lives in infra/scanner-pins.sh - one definition, alongside Trivy's, so
+# infra/scripts/check-pinned-images.sh can check both and nothing has to be kept in step by
+# hand (P0-TSK-040, ADR-0026). It was inline here until then, with the version in a comment
+# that nothing could verify.
 #
-# gitleaks v8.30.1
-GITLEAKS_IMAGE="${GITLEAKS_IMAGE:-ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f}"
+# Pinned by digest, never by tag: a tag can be repointed by whoever controls the source
+# repository, a digest cannot. Same reasoning as the Gradle distribution and wrapper jar.
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+# shellcheck disable=SC1091
+. "$DIR/scanner-pins.sh"
+
+GITLEAKS_IMAGE="${GITLEAKS_IMAGE:-${GITLEAKS_REPOSITORY}@${GITLEAKS_DIGEST}}"
 
 REPO="${1:-$(pwd)}"
 

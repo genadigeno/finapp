@@ -171,6 +171,20 @@ Phase 15, because a keyring is a trust decision of its own and every unsigned ar
 checksum. &rarr;
 [ADR-0025](../adr/ADR-0025-dependency-verification-and-locking.md), [`README.md`](../../README.md) §7a
 
+### Keeping pins fresh
+Pinning removes one risk and creates another: a SHA cannot be repointed, and it also freezes the
+thing, so without an update path the pins rot and a fix is never picked up. Dependabot proposes
+updates for what it can read - the SHA-pinned actions and the version catalogues - and a Gradle
+pull request from it **will fail its own build**, which is correct rather than a misconfiguration:
+a version bump leaves the verification metadata and lockfiles stale, and the alternative is a bot
+with permission to write checksums. The two scanner digests stay in `infra/scanner-pins.sh` where
+Dependabot cannot read them, because moving them into the workflow would undo the single definition
+that lets a developer and CI run the identical image; they get a weekly check instead, which
+distinguishes a **moved tag** - the attack pinning defends against - from **rot**. A pull-request
+bot for those was rejected in favour of a check that could actually be **proven**, since this
+repository has no remote and no workflow has ever run. &rarr;
+[ADR-0026](../adr/ADR-0026-keeping-pins-fresh.md), ADR-0025
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
