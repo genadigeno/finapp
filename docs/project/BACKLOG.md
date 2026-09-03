@@ -1004,7 +1004,7 @@ Status: `IN_PROGRESS`
 Created by the Phase 0 → Phase 1 transition (2026-09-04). Not architectural work: the sole
 remaining gate failure is a fact about the repository's hosting, not about what Phase 0 built.
 
-**P0-TSK-042 — Add a git remote and observe CI green** — `TODO`
+**P0-TSK-042 — Add a git remote and observe CI green** — `COMPLETE` (2026-09-04)
 - Context: platform
 - Description: Push this repository to a remote that runs GitHub Actions, and observe all four
   jobs — `build`, `migrations`, `secret-scan`, `dependency-scan` — pass on a CI runner from a
@@ -1035,6 +1035,26 @@ remaining gate failure is a fact about the repository's hosting, not about what 
   routinely fails on path case, line endings and cache assumptions.
 - Cx: S (if it passes) to M (if the first run exposes machine-specific assumptions)
 - DoD: `DOD-BUILD`
+- **Outcome:** remote added; run
+  [33803262202](https://github.com/genadigeno/finapp/actions/runs/33803262202), commit `04f4a53`,
+  **all four jobs green** — 32 actionable tasks executed, 606 hermetic tests, migrations applied to
+  an empty database and re-applied idempotently, 173 database tests, 119 commits scanned, SBOM
+  clean. **Exit criterion 7 closes and Phase 0 is `COMPLETE`.**
+  **It took three runs, and the risk note was right about the class if not the specifics.** Two
+  defects that no local run on this machine could reach: `gradlew` committed mode `100644`, killing
+  four jobs on `Permission denied` — while `P0-TSK-001` had enforced *LF line endings* on that same
+  file so Linux CI would not break, reasoning about the bytes and not the mode; and
+  `verification-metadata.xml` complete for a **warm** dependency cache only, because Gradle does not
+  re-read metadata descriptors it has already parsed. Cold regeneration added 10 components and 23
+  artefacts, **every one a parent POM or a BOM `.module`** — not one jar, which is what identifies
+  the mechanism rather than guessing at it. The file had been complete for one machine and
+  incomplete for every other.
+  A third finding belongs to the scan: gitleaks met this repository's own history for the first
+  time — `P0-TSK-031` had proven its teeth only against a throwaway clone — and produced one **false
+  positive**, a UUID fixture named `A_KEY`. Allowlisted as that one literal in `.gitleaks.toml`,
+  narrowness demonstrated rather than asserted, after the first demonstration reported a pass having
+  planted AWS's own documentation key, which gitleaks allowlists by default.
+  **Nothing found was in what Phase 0 designed**; all of it was in the machinery that checks it.
 
 ---
 

@@ -11,28 +11,28 @@ Last updated: 2026-09-04
 ## Current Phase
 
 **Phase 0 — Domain and Architecture Foundation**
-Status: `IN_PROGRESS` — **eleven of twelve exit criteria hold.**
+Status: ✅ **`COMPLETE`** (2026-09-04) — **all twelve exit criteria hold.**
 
 **Phase 1 — Identity and Customer Foundation**
-Status: `PLANNED` — **entry gate satisfied except criterion 1.** Planned in full and not started.
+Status: **`READY`** — entry gate passed, all twelve criteria. Planned in full and **not started**.
 
 The formal Phase 0 → Phase 1 transition was conducted on 2026-09-04:
-[`reviews/PHASE_0_TO_1_TRANSITION.md`](reviews/PHASE_0_TO_1_TRANSITION.md).
+[`reviews/PHASE_0_TO_1_TRANSITION.md`](reviews/PHASE_0_TO_1_TRANSITION.md), with an addendum
+recording the close.
 
-**Why Phase 1 is `PLANNED` and not `READY`.** Every entry-gate criterion in `PHASE_GATES.md` §2 is
-met except criterion 1 — *the previous phase is `COMPLETE`* — and `PHASE_GATES.md` §1 is explicit
-that a phase may not become `READY` while a hard dependency is not `COMPLETE`. Phase 1 becomes
-`READY` automatically on the first green CI run, with no further planning work. Recording it as
-`READY` now would be exactly the *"shipping through a failed gate"* §1 names as the failure mode,
-and it would do so on the one criterion whose whole purpose is to prove the gates run at all.
+**Phase 0 closed on its last criterion, and the closing was not a formality.** A git remote was
+added and the CI workflow executed for the first time (`P0-TSK-042`): run
+[33803262202](https://github.com/genadigeno/finapp/actions/runs/33803262202), all four jobs green —
+606 hermetic tests, 173 database tests, migrations applied to an empty database and re-applied
+idempotently, 119 commits scanned, SBOM clean. It took **three runs**. The two failures were
+defects no local run on this machine could reach, and neither was in what Phase 0 designed:
+`gradlew` committed without its executable bit, and dependency-verification metadata that was
+complete only for a *warm* cache. Both are recorded under Change Log and in the review addendum.
 
-The Phase 0 backlog is complete — 62 of 62 — and the phase review is written. The review found two
-gate failures; the first — three CRITICAL Tomcat advisories — was closed on 2026-09-03 by pinning
-Tomcat to 11.0.25, and the dependency scan now reports zero vulnerabilities.
-
-**Criterion 7 is the only one left**, and it cannot be closed from inside the repository: the suite
-has never run in CI, because there is no git remote. Tracked as **`P0-TSK-042`**, the sole item of
-`P0-EPIC-13`. See [`reviews/PHASE_0_REVIEW.md`](reviews/PHASE_0_REVIEW.md) and its Addendum.
+**The transition's judgement was tested by that.** It had declined to record Phase 1 as `READY`
+while criterion 7 failed, on the argument that the blocking criterion was the one whose purpose is
+to prove the gates execute at all. The first CI run failed. Had the gate been waived, Phase 1 would
+have been entered on a build that could not run anywhere but one Windows machine.
 
 ### What Phase 1 will build
 
@@ -114,15 +114,10 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**`P0-TSK-042` — add a git remote and observe CI green.** The only open task in the repository,
-and the only thing between Phase 0 and `COMPLETE`. It cannot be done from inside the repository:
-it requires an action by the project owner.
+**None. Phase 0 is closed and Phase 1 has not been started.**
 
-The other two items recorded here on 2026-09-03 are closed. The Tomcat CVEs were fixed the same
-day; `P0-TSK-017` was rescheduled and completed, taking the Phase 0 backlog to 62 of 62.
-
-**The next implementation task after that is `P1-TSK-001`** — the data-access ADR — which must not
-be started while Phase 0 is not `COMPLETE`.
+`P0-TSK-042` completed on 2026-09-04, taking Phase 0 to twelve of twelve. **The next task is
+`P1-TSK-001`** — the data-access ADR — and Phase 1 is now `READY`, so it may be started.
 
 ### Just completed
 
@@ -1057,23 +1052,42 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-**None in progress.** The Phase 0 backlog is finished and Phase 1 is planned but not started.
+**None in progress.** Phase 0 is `COMPLETE` and Phase 1 is `READY` but not started.
 
-The last work performed was the **Phase 0 → Phase 1 transition** (2026-09-04), which is planning
-and governance rather than implementation: the gate audit, the phase review, the `INV-IDN` group,
-ADR-0029 through ADR-0032, `PHASE_1_PLAN.md`, and the elaboration of Phase 1 to task granularity.
-No application code was written, which is the constraint the transition was performed under.
+The last work performed was `P0-TSK-042` — a git remote, and the first three CI runs — and before
+it the **Phase 0 → Phase 1 transition** (2026-09-04), which is planning and governance rather than
+implementation: the gate audit, the phase review, the `INV-IDN` group, ADR-0029 through ADR-0032,
+`PHASE_1_PLAN.md`, and the elaboration of Phase 1 to task granularity. No application code was
+written, which is the constraint the transition was performed under.
 
 ## Blockers
 
-**The suite has never run in CI.** The repository has no git remote, so no CI runner has ever
-executed the four jobs. All four pass when run locally and `./gradlew build databaseTest` is green
-from a clean clone, but *green locally* and *green in CI* are different claims and only the second
-satisfies exit criterion 7.
+**None.**
 
-This is the standing limitation below, and it is the sole remaining Phase 0 gate failure. It closes
-on the first successful run after a remote is added — which also closes the Phase 0-specific "build
-green in CI from a clean clone" and the `DOD-BUILD` item outstanding against `P0-TSK-001`–`005`.
+~~**The suite has never run in CI.**~~ — **resolved 2026-09-04** by `P0-TSK-042`. The remote is
+`https://github.com/genadigeno/finapp`, and the four jobs run on every push to `main`. Run
+[33803262202](https://github.com/genadigeno/finapp/actions/runs/33803262202) is green on all four.
+This closes exit criterion 7, the Phase 0-specific "build green in CI from a clean clone", and the
+`DOD-BUILD` item outstanding against `P0-TSK-001`–`005` since the first week.
+
+**It took three runs, and *green locally* versus *green in CI* turned out to be exactly the
+distinction the criterion exists for.** Two defects, neither reachable from this machine:
+
+1. **`gradlew` was committed mode `100644`.** Four jobs died on `Permission denied`, exit 126.
+   `core.filemode` is false on Windows, so nothing here could observe it — and `P0-TSK-001` had
+   enforced *LF line endings* on that same file so *"Linux CI is not broken by a Windows
+   checkout"*, reasoning about the file's bytes and not its mode.
+2. **`gradle/verification-metadata.xml` was complete for a warm cache only.** Gradle does not
+   re-read metadata descriptors it has already parsed, so generation over a warm
+   `GRADLE_USER_HOME` records fewer artefacts than a cold resolution needs. Cold regeneration added
+   **10 components and 23 artefacts, every one a parent POM or a BOM `.module`** — not one jar,
+   which is what identifies the mechanism rather than guessing at it. The file had been complete
+   for this machine and incomplete for CI and for any new developer. `README.md` §7a now
+   regenerates against a temporary home.
+
+A third finding belongs to the secret scan rather than the build, and is recorded under Known
+Architectural Debt: gitleaks met this repository's own history for the first time and produced one
+false positive.
 
 ~~**The `dependency-scan` CI gate fails.**~~ — **resolved 2026-09-03.** Three **CRITICAL**
 advisories in `org.apache.tomcat.embed:tomcat-embed-core:11.0.24`, which Spring Boot 4.1.1 brings:
@@ -1194,7 +1208,7 @@ Recorded so it is not mistaken for a completed criterion.
 
 | Task | DoD item not yet met | Owning task |
 |------|---------------------|-------------|
-| `P0-TSK-001` — `P0-TSK-005` | `DOD-BUILD` requires "CI green". A pipeline now exists and all four jobs pass when run locally, but it has never executed on a CI runner because the repository has no git remote. This closes on the first successful run after a remote is added. | Adding a remote |
+| ~~`P0-TSK-001` — `P0-TSK-005`~~ | ~~`DOD-BUILD` requires "CI green"~~ — **closed 2026-09-04** by `P0-TSK-042`. All four jobs green on a runner, from a clean checkout: run [33803262202](https://github.com/genadigeno/finapp/actions/runs/33803262202). Outstanding since the first week, and closing it found two defects local runs could not reach. | — |
 | `P0-TSK-004` | The CycloneDX SBOM covers the whole resolved dependency set, test scope included (21 of ~61 components). Plugin 3.4.1 exposes no configuration filter. Adequate for vulnerability scanning — test libraries execute on CI runners, so they are legitimately in scope — but it means a HIGH/CRITICAL advisory in a test-only library fails the build though nothing vulnerable ships, and **the SBOM must not be published as shipping provenance in this form** because it overstates what is deployed. | Phase 15 (supply chain and provenance) |
 | `P0-TSK-004` | CI actions and scanner images are pinned by SHA/digest with no automated update path, so the pins will rot. | `P0-TSK-040` |
 | ~~`P0-TSK-002`~~ | ~~Boundary enforcement partial~~ — **closed**. Cross-module internals and entity references by `P0-TSK-007`; `INV-MON-01` by `P0-TSK-008`. | — |
@@ -1274,17 +1288,7 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-042` — add a git remote and observe CI green.**
-
-Closes exit criterion 7, the Phase 0-specific "build green in CI from a clean clone", and the
-`DOD-BUILD` item outstanding against `P0-TSK-001`–`005`. It is the last gate failure, and it cannot
-be done from inside the repository.
-
-Phase 0 becomes `COMPLETE` when CI has run green and the review record is amended to say so. Phase 1
-becomes `READY` at that moment and not before — `PHASE_GATES.md` §1: a phase may not become `READY`
-while a hard dependency is not `COMPLETE`.
-
-**Then, and only then: `P1-TSK-001` — ADR: data-access mechanism.** It is first because it is the
+**`P1-TSK-001` — ADR: data-access mechanism.** It is first because it is the
 one Phase 1 decision that constrains every table Phase 1 creates and, through `INV-LED-03` and
 `INV-HIST-01`, every table Phase 3 will create: Hibernate's dirty checking emits `UPDATE`s, and the
 application role holds no `UPDATE` privilege on append-only tables at all. Deciding it after the
@@ -1296,6 +1300,7 @@ first repository is written means writing the second one twice. It closes unreso
 
 | Date | Change |
 |------|--------|
+| 2026-09-04 | **`P0-TSK-042` complete. Exit criterion 7 closes; Phase 0 is `COMPLETE` — all twelve criteria — and Phase 1 is `READY`.** A remote was added and the CI workflow executed for the first time: run [33803262202](https://github.com/genadigeno/finapp/actions/runs/33803262202), commit `04f4a53`, **all four jobs green** — 32 actionable tasks executed, 606 hermetic tests, migrations applied to an empty database, `flywayValidate`, re-applied idempotently, 173 database tests, 119 commits scanned, SBOM clean. **It took three runs, and that is the finding rather than an inconvenience.** Two defects, neither in what Phase 0 designed and neither reachable from this machine. **First: `gradlew` was committed mode `100644`**, so four jobs died on `Permission denied`, exit 126; `core.filemode` is false on Windows so nothing here could observe it, and the sharp detail is that `P0-TSK-001` had explicitly enforced **LF line endings** on that same file so *"Linux CI is not broken by a Windows checkout"* — it reasoned about the file's bytes and not about its mode. Fixed with `git update-index --chmod=+x`; `gradlew.bat` stays 644, and `infra/scanner-pins.sh` stays 644 because it is **sourced, never executed**. **Second: `gradle/verification-metadata.xml` was complete for a warm dependency cache only.** Gradle does not re-read metadata descriptors it has already parsed, so `--write-verification-metadata` over a warm `GRADLE_USER_HOME` records fewer artefacts than a cold resolution needs; the file had only ever been generated on this machine, over months of warm builds, and was therefore complete here and incomplete for CI and for any new developer alike. Regenerating against an **empty** home added **10 components and 23 artefacts, every single one a parent POM or a BOM `.module`** — not one jar, which is what identifies the mechanism rather than guessing at it — and removed nothing, so ADR-0025's merge claim held and was checked rather than assumed. Proven on a **second, separate** empty home with verification enforced and no write flag. `README.md` §7a gains the cold-regeneration procedure and ADR-0025 the consequence; §7's "this repository has no git remote, so the pipeline has never executed" was true since the first week and is now corrected. **A third finding belongs to the scan rather than the build.** gitleaks met this repository's own 119 commits for the first time — `P0-TSK-031` proved its teeth against a *throwaway clone*, deliberately, because a dummy secret committed here would make the scan red for ever — and produced exactly one finding, a **false positive**: `generic-api-key` fired on `A_KEY`, a UUID fixture idempotency key. An idempotency key is not a secret, and that is not a convenience invented to clear a build: **ADR-0019 settled it** when choosing the vocabulary `secretsAreWrapped` matches on, and left `key` out of it because a rule with false positives is a rule somebody turns off. `.gitleaks.toml` allowlists **the exact literal and nothing else** — not the rule, which stays enabled everywhere; not the file, so a real credential added to that same test still fails; and not "UUIDs in test sources", which would mask a genuine UUID-shaped API key committed into a test. Proven narrow rather than asserted narrow: a random high-entropy credential planted in the same file, same line, same rule, in a throwaway clone, still fails with exit 1 — **after the first attempt at that demonstration reported a pass and was wrong**, having planted `AKIAIOSFODNN7EXAMPLE`, AWS's own documentation key, which gitleaks allowlists by default; the mutation had never landed, which is the fourth time this project has met that defect class. **Every one of the three sat in the machinery that checks the work rather than in the work**, which is the recurring finding this phase recorded across its last twenty tasks, arriving once more at the gate built to catch exactly that. **The transition's judgement was tested and held**: it had refused to record Phase 1 `READY` while criterion 7 failed, on the argument that the blocking criterion is the one whose purpose is to prove the gates execute at all — and the first run failed. Had the gate been waived, Phase 1 would have been entered on a build that could not run anywhere but one Windows machine. 606 hermetic tests, 173 database tests. |
 | 2026-09-04 | **Phase 0 → Phase 1 transition conducted.** The gate audit is the deliverable and its result is that **Phase 0 remains `IN_PROGRESS`**: 12 of 13 audit areas `PASS`, one `PARTIAL`, and 11 of 12 universal exit criteria hold — criterion 7 fails because the suite has never run in CI, there being no git remote. `PHASE_GATES.md` §4 prescribes the consequence and §1 is explicit that *"shipping through a failed gate"* is the failure; remediation is `P0-TSK-042`, the sole item of the new `P0-EPIC-13`, and it cannot be performed from inside the repository. **The transition found something a formality would have missed.** Phase 1's seven identity properties — credential irreversibility, per-credential derivation parameters, immediate session revocation, authentication-is-not-authorization, MFA bypass paths, recovery escalation, account enumeration — existed **only as exit-criteria prose** in `PHASE_GATES.md`: no stable ID, no enforcement mechanism ranked by strength, no named verification method, no mutation-demonstration row. Every other property on this platform gets all four, and the asymmetry was backwards, because Phase 1 is the phase whose *product* is security and the alternative was writing credential-handling code against prose. Catalogued as `INV-IDN-01`…`07`, taking the platform to **71 invariants** — and the Phase 0 mutation register was verified unaffected, since it is scoped to Phase 0 and a Phase 1 invariant with no test yet is correct rather than a gap. **Phase 1 is recorded `PLANNED`, not `READY`, and that is a deliberate deviation from the instruction that produced this work**: eleven of twelve entry criteria are met and criterion 1 — the previous phase is `COMPLETE` — is not, so §1 forbids `READY`; the criterion blocking it is precisely the one that proves the gates execute at all, which makes forcing it the worst available place to make an exception. It flips on the first green CI run with no further planning. **Four irreversible decisions taken rather than deferred into implementation.** ADR-0029: Party, Customer and Identity are three aggregates in two modules — the pressure to collapse them into one `users` table comes from the simplest first story, and the cost lands on a person who is not a customer, a customer who is not a person, a retired login, and staff; unpicking it later means migrating identity out of a table financial records already reference, where `INV-HIST-01` forbids rewriting the history pointing at it. ADR-0030: sessions are server-side and authoritative in PostgreSQL, because a self-contained JWT makes validity a property of a signature rather than of current state, so *"log out everywhere"* becomes a promise the architecture cannot keep (`INV-IDN-03`) — and **assurance is a level rather than an MFA boolean**, since every real bypass is a route producing a session a boolean calls fine. ADR-0031: permission at the boundary **and** ownership in the domain, always both — collapsing them is the most common authorization defect in financial software, where a customer with a legitimate `transfer:create` permission uses it against someone else's account and every check passes; `BOUNDED_CONTEXTS.md` context 2 renamed to *Identity, Authentication & Authorization*, since the list had been omitting a concept `CLAUDE.md` forbids collapsing. ADR-0032: a credential stores the derivation **and** the algorithm and parameters that produced it, because the decision usually missed is not which algorithm but where the parameters live — a global work factor cannot be raised, as raising it changes only new credentials and nothing records what the old ones used. Phase 1 planned in full: 3 bounded contexts, 6 aggregates, 16 commands, 10 events, 5 state machines, 9 tables, 14 endpoints, 12 failure scenarios, 7 milestones, and **25 backlog items** elaborated to task granularity with acceptance criteria and DoD profiles. The must-not-implement list is explicit and three minimal foundations are justified individually. No application code written. 606 hermetic tests, 173 database tests. |
 | 2026-09-03 | `P0-TSK-017` complete. **The Phase 0 backlog is 62 of 62.** `@RequiresIdempotencyKey` declares the requirement on a handler or its controller, and an **interceptor** enforces it. **An interceptor rather than a filter, and that is load-bearing twice**: a filter runs before the dispatcher has chosen a handler, so it could not know whether *this* endpoint declares the requirement without a second, drifting copy of the routing table; and a filter runs outside `@ExceptionHandler`, so its rejection would be the container's default page rather than the error contract — the problem `P0-TSK-025` had to work around by rendering the contract by hand inside its filters. Rejection happens **before the handler is entered**, asserted by counting handler entries rather than reading the response, because for a money-moving command the half of the work done before a late rejection is the half that matters. **The requirement is declared, not defaulted**: requiring the header everywhere would force it onto reads, where it means nothing and would train clients to send a value nobody uses, and the annotation is the greppable list of endpoints claiming to move money. New error code `api.IdempotencyKeyRequired` (422), distinct from `api.ValidationFailed` on purpose — a client can automate "generate a key and retry" but not "your request was invalid"; the published contract gained six lines, every difference `COMPATIBLE`, and no probe fixture leaked into it. **A real gap was found by following `DATA_CLASSIFICATION.md` §5**, which classifies this column as a caller-supplied identifier: `IdempotencyKey` bounds length and blankness because those are the table's `CHECK` constraints and carries **no charset**, so a caller could have put CR/LF into a value the platform logs, stores durably and will put on an audit record — a forged log line. Closed with the same default-deny charset the correlation identifier uses, and unit-tested rather than driven over HTTP because the JDK's own `HttpClient` refuses to **send** CR/LF, while a hostile client writing raw bytes to a socket is not bound by that politeness. **The audit clause was corrected rather than approximated**: the registry now exists, but `AuditRecord` has no field for a key and nothing in Phase 0 writes an audit record in an HTTP flow, so there is nothing to record it on. Adding a column would be a schema change nothing populates, and unlike actor attribution **no history is lost by waiting** — the test ADR-0010 applies. Transferred to Phase 4; the third Phase 0 criterion to need this correction after `P0-TSK-014` and `P0-TSK-028`. Five mutations, all caught. 606 hermetic tests, 173 database tests. |
 | 2026-09-03 | **Exit criterion 11 closed: the three Tomcat advisories are fixed and the dependency scan reports zero vulnerabilities.** `tomcat-embed-core` pinned to **11.0.25** in the version catalog and applied as a dependency **constraint** in `app`. **There was no patch release to move to** — Spring Boot 4.1.1 is the latest stable 4.1.x and `4.2.0-M1` is a milestone, so overriding the BOM was the only route, and it is the only deliberate deviation from it. A **constraint** rather than `force`, because `force` wins against a *higher* version too: a future Boot managing 11.0.26 would have been silently held back at 11.0.25, which is exactly the pin-rot ADR-0026 exists to prevent. All three embed artefacts are constrained together — only `-core` is affected, but they ship as one release and share internals. **Verified rather than assumed at four points**: the scan goes 3 CRITICAL → **0**; the lockfiles record 11.0.25 across every configuration; the 68 slice tests boot a real Tomcat 11.0.25 on a random port, so compatibility is demonstrated; and the verification metadata plus all six lockfiles were regenerated in **one invocation**, per the `P0-TSK-035` finding that neither order works alone. **The exposure is recorded accurately rather than dramatised**: all three are authentication and authorization bypasses — security-constraint bypass, DIGEST replay, FORM bypass — and Phase 0 has *no authentication at all*, so they were practically unexploitable here; the gate does not grade on exploitability and Phase 1 brings precisely what they attack. **One claim was corrected by probing**, which is the finding worth keeping: the build comment first said the lockfile would reject removing the constraint, and it does not — with the block deleted, resolution still yields 11.0.25 because the lock applies its own `{strictly 11.0.25}`. The lock *keeps* the version; it does not object to the loss. A regression needs the deletion **and** a lock regeneration, and the `dependency-scan` job is the control. No test was added to assert the version: it would duplicate the scan and need editing on every legitimate bump, which is the stale-list defect this repository has met four times. **Eleven of twelve exit criteria now hold**; criterion 7 — the suite has never run in CI — is the only one left and cannot be closed from inside the repository. 578 hermetic tests, 173 database tests. |

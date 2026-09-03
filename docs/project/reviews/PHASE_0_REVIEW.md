@@ -2,10 +2,16 @@
 
 **Phase:** 0 — Domain and Architecture Foundation
 **Conducted:** 2026-09-03, per [`PHASE_GATES.md`](../PHASE_GATES.md) §4 (`P0-DOC-012`)
-**Verdict:** **the exit gate does not pass.** Two of the twelve universal criteria failed when this
-review was conducted; **one has since been closed** — see the Addendum. **One remains.** Phase 0
-therefore **remains `IN_PROGRESS`**, which is what §4's closing rule prescribes: *"a review that
-finds a gate failure returns the phase to `IN_PROGRESS`."*
+**Verdict when conducted:** **the exit gate did not pass.** Two of the twelve universal criteria
+failed. **Both have since been closed** — see the Addendum: criterion 11 on 2026-09-03 and
+criterion 7 on 2026-09-04.
+
+**Verdict now: all twelve criteria hold. Phase 0 is `COMPLETE` (2026-09-04).**
+
+The intermediate state is left in this document rather than edited away. `PHASE_GATES.md` §1 is
+explicit that moving backwards from review is normal and that *"shipping through a failed gate"* is
+the failure; a review record rewritten to look as though it always passed would destroy the only
+evidence that the gate did its job.
 
 Both failures were known, recorded and external to the architecture. Neither is a defect in what
 Phase 0 built. Recording them is the point — `PHASE_GATES.md` §1 is explicit that moving backwards
@@ -23,7 +29,7 @@ from review is normal, and that *"shipping through a failed gate"* is the failur
 | 4 | Failure cases handled | **PASS** |
 | 5 | Security requirements implemented | **PASS** — with the scope Phase 0 actually has; see §5 |
 | 6 | Observability exists | **PASS** |
-| 7 | Integration tests pass | 🔴 **FAIL** — green locally, never observed in CI |
+| 7 | Integration tests pass | ✅ **PASS** — closed 2026-09-04; see the Addendum |
 | 8 | Documentation reflects reality | **PASS** — two drifts found and closed by this review |
 | 9 | `CURRENT_STATE.md` updated | **PASS** |
 | 10 | Relevant ADRs exist and are `Accepted` | **PASS** — ADR-0001…0028 moved to `Accepted` by this task |
@@ -437,7 +443,46 @@ and blankness because those are the table's `CHECK` constraints. A caller could 
 CR/LF into a value the platform logs, stores durably and will put on an audit record. Closed with
 the same default-deny charset the correlation identifier uses.
 
+### ✅ Criterion 7 closed — 2026-09-04. **The gate passes.**
+
+A remote was added (`P0-TSK-042`) and the workflow executed. Run
+[33803262202](https://github.com/genadigeno/finapp/actions/runs/33803262202), commit `04f4a53`,
+all four jobs green:
+
+| Job | Result |
+|---|---|
+| `build` | ✅ 3m 9s — **32 actionable tasks, 32 executed**; 606 hermetic tests |
+| `migrations` | ✅ applied to an empty database, `flywayValidate`, re-applied idempotently, 173 database tests |
+| `secret-scan` | ✅ 119 commits, no leaks |
+| `dependency-scan` | ✅ SBOM generated and scanned, no HIGH or CRITICAL |
+
+**It took three runs, and the two failures are the finding.** Both were defects that no local run
+on this machine could reach, which is the entire argument for the criterion:
+
+1. **`gradlew` was committed mode `100644`.** Four jobs died on `Permission denied`. `core.filemode`
+   is false on Windows, so nothing here could notice. `P0-TSK-001` had explicitly enforced LF line
+   endings on that exact file so *"Linux CI is not broken by a Windows checkout"* — it reasoned
+   about the file's bytes and not about its mode.
+2. **`gradle/verification-metadata.xml` was complete for a warm cache only.** Gradle does not
+   re-read metadata descriptors it has already parsed, so generation over a warm
+   `GRADLE_USER_HOME` records fewer artefacts than a cold resolution needs. Regenerating against an
+   empty home added **10 components and 23 artefacts, every one a parent POM or a BOM `.module`** —
+   not one jar, which is what identifies the mechanism rather than guessing at it. The file had
+   been complete for this machine and incomplete for CI and for any new developer.
+
+A third finding was the scan's, not the build's: gitleaks met this repository's own history for
+the first time — `P0-TSK-031` had proven its teeth only against a throwaway clone, deliberately —
+and produced one **false positive**, a UUID fixture named `A_KEY`. Allowlisted as that one literal,
+with the narrowness demonstrated rather than asserted. See `SECRET_MANAGEMENT.md` §6.
+
+**None of the three was in what Phase 0 designed.** All three were in the machinery that checks it,
+which is this phase's recurring finding arriving one final time, at the gate that exists to catch
+exactly this class.
+
 ### Revised verdict, final
 
-**Eleven of twelve criteria hold, and the backlog is complete.** Phase 0 remains `IN_PROGRESS` on
-criterion 7 alone — the suite has never run in CI, and that needs a git remote.
+**All twelve universal criteria hold. Phase 0 is `COMPLETE` as of 2026-09-04.**
+
+The financial-phase supplement (F1–F8) does not apply: Phase 0 creates no posting, moves no money
+and touches no balance. Phase 1's entry gate criterion 1 is satisfied by this, and Phase 1 becomes
+`READY`.

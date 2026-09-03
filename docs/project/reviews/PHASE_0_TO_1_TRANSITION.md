@@ -278,3 +278,44 @@ that §2 criterion 10 requires *is* the first activity of the entry gate, and it
 **One command from a different answer.** Adding a remote and observing one green run closes Phase 0
 criterion 7, which closes Phase 1 entry criterion 1, and Phase 1 becomes `READY` with no further
 analysis.
+
+---
+
+# Addendum — 2026-09-04, later the same day
+
+**Phase 0 is `COMPLETE`. Phase 1 is `READY`.**
+
+A remote was added and `P0-TSK-042` closed. Run
+[33803262202](https://github.com/genadigeno/finapp/actions/runs/33803262202), all four jobs green.
+Criterion 7 passes, so **all twelve universal exit criteria hold**, and Phase 1's entry criterion 1
+— *the previous phase is `COMPLETE`* — is satisfied. Phase 1 moves from `PLANNED` to `READY`
+exactly as this record said it would, with no further planning work.
+
+**The transition's judgement was tested and was right.** This document declined to record Phase 1
+as `READY` while criterion 7 failed, on the argument that the blocking criterion was the one whose
+purpose is to prove the gates execute at all. The first CI run failed. Had the gate been waived,
+Phase 1 would have been entered on a build that could not run anywhere but one Windows machine, and
+the two defects below would have been discovered by whoever tried to build it next — after Phase 1
+code existed to confuse them with.
+
+**What the first two runs found, none of it in what Phase 0 designed:**
+
+| | Defect | Why no local run could find it |
+|---|---|---|
+| 1 | `gradlew` committed mode `100644` | `core.filemode` is false on Windows. `P0-TSK-001` had enforced *LF line endings* on that same file so Linux CI would not break — it reasoned about the bytes, not the mode |
+| 2 | Verification metadata complete for a **warm** cache only | Gradle does not re-read metadata descriptors it has already parsed. Cold regeneration added 10 components and 23 artefacts, **all parent POMs and BOM `.module` files** |
+| 3 | One gitleaks false positive | `P0-TSK-031` proved the scan's teeth against a throwaway clone, deliberately — so it had never met our own 119 commits |
+
+All three sit in the machinery that checks the work rather than in the work, which is the recurring
+finding this phase recorded across its last twenty tasks, arriving once more at the gate built to
+catch it.
+
+**Amended verdicts:**
+
+| | Was | Now |
+|---|---|---|
+| Phase 0 | `IN_PROGRESS` — criterion 7 fails | ✅ **`COMPLETE`** — 12 of 12 |
+| Phase 1 | `PLANNED` — entry gate met except criterion 1 | ✅ **`READY`** — 12 of 12 |
+| `P0-TSK-042` | `TODO` | ✅ `COMPLETE` |
+
+**Phase 1 may now be entered.** The first task is `P1-TSK-001` — the data-access ADR.
