@@ -34,10 +34,18 @@ GITLEAKS_IMAGE="${GITLEAKS_IMAGE:-${GITLEAKS_REPOSITORY}@${GITLEAKS_DIGEST}}"
 
 REPO="${1:-$(pwd)}"
 
-# No allowlist configuration is passed, deliberately. The marked local-development default
-# in compose.yaml does not trigger gitleaks - verified, not assumed - so suppressing
-# anything would weaken the scan for no benefit. A genuine false positive is allowlisted as
-# that one finding, narrowly. A rule is never disabled.
+# No --config is passed, and that is not the same as no configuration: gitleaks loads
+# <source>/.gitleaks.toml on its own, so the repository's own file applies here and in CI
+# identically. Until 2026-09-04 there was no such file and this comment said there never
+# would be. The first CI run of this repository's history - the first time the scan met our
+# own commits rather than a throwaway clone - produced one finding, and it was a false
+# positive. It is allowlisted as that one literal, narrowly, exactly as the sentence below
+# always said it would be. A rule is never disabled. See .gitleaks.toml, which carries the
+# reasoning and the demonstration that the allowlist is narrow: a real credential in the
+# same file, on the same line, under the same rule still fails.
+#
+# The marked local-development default in compose.yaml does not trigger gitleaks - verified,
+# not assumed - so nothing about it is suppressed.
 #
 # `git`, not `dir`: a secret that was committed and later removed is still disclosed,
 # because it remains in the objects anyone can clone.

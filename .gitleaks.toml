@@ -1,0 +1,54 @@
+# gitleaks configuration.
+#
+# WHY THIS FILE EXISTS AT ALL
+#
+# It did not, until 2026-09-04, and the reason is worth recording: gitleaks had never been
+# run against THIS repository's history. `P0-TSK-031` proved the scan has teeth against a
+# throwaway clone - deliberately, because a dummy secret committed here would make the scan
+# red for ever and need a history rewrite to undo (see infra/scripts/secret-scan.sh). The
+# scan therefore worked, and had never met our own 119 commits. The first CI run did, and
+# found exactly one finding: a false positive.
+#
+# WHAT IS ALLOWLISTED, AND WHY IT IS NOT A WEAKENED GATE
+#
+# `generic-api-key` is an entropy-and-name detector: it fires on a high-entropy literal
+# assigned to an identifier whose name contains `key`, `token`, `secret` and similar. It
+# fired on
+#
+#     private static final String A_KEY = "<a UUID>";
+#
+# in IdempotencyKeyHeaderTest - a fixture idempotency key, shaped like the values real
+# clients send. An idempotency key is **not a secret**, which is not a convenient claim
+# invented here: ADR-0019 settled it when choosing the vocabulary the `secretsAreWrapped`
+# build rule matches on, and deliberately left `key` out of that vocabulary because a rule
+# with false positives is a rule somebody turns off. The same reasoning applies to the
+# scanner.
+#
+# The allowlist is the exact literal, and nothing else:
+#
+#   - not the rule, which stays enabled everywhere (ADR-0020: "A rule is never disabled");
+#   - not the file, so a real credential added to that same test still fails the scan;
+#   - not "UUIDs in test sources", which would mask a genuine UUID-shaped API key committed
+#     into a test - a classic real-world leak, not a hypothetical one.
+#
+# A second false positive gets a second entry and a second moment's thought. That friction
+# is the point.
+#
+# THE LIMIT
+#
+# This scanner is a **net, not the control**. `P0-TSK-031` measured it: gitleaks catches a
+# private key, a high-entropy token and an AWS pair, and misses `password: hunter2` - the
+# shape a human actually commits. The control for that is the build rule
+# `CommittedConfigurationHoldsNoSecretTest`, which is default-deny over configuration files
+# it discovers rather than lists. The two mechanisms are blind in different directions and
+# neither substitutes for the other. See docs/architecture/SECRET_MANAGEMENT.md.
+
+[extend]
+# Keep every default rule. This file adds an allowlist; it never removes detection.
+useDefault = true
+
+[allowlist]
+description = "Fixture idempotency key (P0-TSK-017). Not a credential - see ADR-0019."
+regexes = [
+  '''3f6d1a2e-9c47-4b18-8a0f-2b7c5d9e1104''',
+]

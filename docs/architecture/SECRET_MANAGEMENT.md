@@ -155,9 +155,38 @@ documentation about the scanner - would have weakened the scan to make room for 
 scan. So the tables above describe shapes, and the only key-shaped string this procedure produces
 exists for the few seconds it takes to prove the point.
 
-This is how the clause is verified today, because the repository has no git remote and CI has
-never executed on a runner. That limitation is recorded in `CURRENT_STATE.md`; it closes on the
-first successful run after a remote is added.
+This is how the clause is verified, and it remains the only safe way to verify it even now that
+CI runs.
+
+### The allowlist, and why it is one literal — *Implemented (2026-09-04)*
+
+`P0-TSK-042` added a git remote, and the first CI run scanned **this repository's own 119
+commits** — something no run had ever done, because the teeth of the scan were deliberately proven
+against a throwaway clone instead. It produced exactly one finding, and it was a **false
+positive**: `generic-api-key` fired on
+
+```java
+private static final String A_KEY = "<a UUID>";
+```
+
+a fixture idempotency key in `IdempotencyKeyHeaderTest`, shaped like the values real clients send.
+The rule is an entropy-and-name detector, and `A_KEY` is a name it looks for.
+
+**An idempotency key is not a secret**, and that is not a convenience invented to clear a build:
+ADR-0019 settled it when choosing the vocabulary `secretsAreWrapped` matches on, and deliberately
+left `key` out of it, because a rule with false positives is a rule somebody turns off. The same
+reasoning applies to the scanner.
+
+[`.gitleaks.toml`](../../.gitleaks.toml) therefore allowlists **the exact literal and nothing
+else** — not the rule, which stays enabled everywhere; not the file; and not "UUIDs in test
+sources", which would mask a genuine UUID-shaped API key committed into a test, a classic
+real-world leak rather than a hypothetical one.
+
+**Proven narrow, not asserted narrow.** A random high-entropy credential planted in the *same
+file*, on the *same line*, under the *same rule*, in a throwaway clone, still fails with exit 1.
+The first attempt at that demonstration used `AKIAIOSFODNN7EXAMPLE` and reported a pass — because
+that is AWS's own documentation key and gitleaks allowlists it by default. The mutation had never
+landed. Checking that a mutation actually applies is part of applying one.
 
 ## 7. What is deliberately not here
 
