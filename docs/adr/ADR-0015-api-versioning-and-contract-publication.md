@@ -1,6 +1,6 @@
 # ADR-0015 — API versioning in the path, with the contract generated and compared on every build
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

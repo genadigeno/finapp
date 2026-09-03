@@ -20,7 +20,7 @@ Legend: ✅ complete · 🔵 next · ⚪ not started · 🟠 blocked
 
 # Phase 0 — Domain and Architecture Foundation
 
-**60 of 62 complete.** Phase 0 delivers a buildable, boundary-enforced modular monolith
+**61 of 62 complete.** Phase 0 delivers a buildable, boundary-enforced modular monolith
 containing the financial and platform kernel, with **zero business capability**. That
 constraint is deliberate: money representation, idempotency, outbox, audit and correlation
 cannot be retrofitted once financial history exists.
@@ -165,7 +165,7 @@ cannot be retrofitted once financial history exists.
 | ✅ | **P0-DOC-009** — ADR-0001 … ADR-0010 | The first ten architecture decision records: modular monolith, ledger authority, monetary representation, idempotency, outbox, boundary enforcement, phase-gated delivery, provider adapters, balance as projection, audit trail. Recorded as `Proposed`; they become `Accepted` at the Phase 0 exit gate. |
 | ✅ | **P0-DOC-010** — `MODULE_ARCHITECTURE.md` | The first architecture baseline: the module cut, ownership and boundaries. Later extended by `P0-DOC-002` into a document whose enforcement claims are checked against the enforced rules on every build. |
 | ✅ | **P0-DOC-011** — Domain glossary | 62 terms — every canonical concept plus the seven the distinctions name and the canonical list never did — each with what it is, what it is **not**, and the module that will own it. The `Not:` line is the deliverable: a definition alone does not stop two people applying it to the same thing. The guard holds it to both source lists in both directions, so no term is silently undefined and the glossary cannot become a second home for vocabulary its owning document should define. |
-| 🔵 | **P0-DOC-012** — Phase 0 review record | The written phase review covering all eight review areas, and the point at which the ADRs move from `Proposed` to `Accepted`. The final gate criterion of the phase. |
+| ✅ | **P0-DOC-012** — Phase 0 review record | All eight review areas, and ADR-0001…0028 moved to `Accepted`. Two of them could not be conducted as written and say so: there is no posting to walk, and none of the three registered privileged actions is emitted. **The review finds the exit gate does not pass** — three Tomcat CVEs and a suite that has never run in CI — so the phase remains `IN_PROGRESS`, which is what the gate model prescribes. |
 
 ---
 

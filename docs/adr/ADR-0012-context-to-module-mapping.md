@@ -1,6 +1,6 @@
 # ADR-0012 — Context-to-module mapping: deliberate merges with recorded split triggers
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

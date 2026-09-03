@@ -1,6 +1,6 @@
 # ADR-0019 — A secret is unloggable by default, not redacted by remembering
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

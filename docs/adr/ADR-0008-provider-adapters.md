@@ -1,6 +1,6 @@
 # ADR-0008 — External providers sit behind anti-corruption adapters
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

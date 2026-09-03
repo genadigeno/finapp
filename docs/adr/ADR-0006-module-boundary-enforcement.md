@@ -1,6 +1,6 @@
 # ADR-0006 — Module boundaries are enforced mechanically
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

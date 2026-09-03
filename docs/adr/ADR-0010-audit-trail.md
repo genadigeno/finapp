@@ -1,6 +1,6 @@
 # ADR-0010 — The audit trail is a first-class append-only store, distinct from logs
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

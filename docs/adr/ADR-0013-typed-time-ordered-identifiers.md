@@ -1,6 +1,6 @@
 # ADR-0013 — Aggregate identifiers are typed and time-ordered (UUIDv7)
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-01
 

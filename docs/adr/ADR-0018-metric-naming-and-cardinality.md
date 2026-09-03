@@ -1,6 +1,6 @@
 # ADR-0018 — Metric names are a contract, and no tag value may come from a request
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

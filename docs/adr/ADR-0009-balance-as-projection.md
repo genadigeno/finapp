@@ -1,6 +1,6 @@
 # ADR-0009 — Balances are derived projections anchored to the ledger
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

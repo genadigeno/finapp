@@ -1,6 +1,6 @@
 # ADR-0025 — Every resolved artefact is checksum-verified and version-locked
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

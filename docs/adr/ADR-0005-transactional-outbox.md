@@ -1,6 +1,6 @@
 # ADR-0005 — Transactional outbox and inbox for reliable event exchange
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

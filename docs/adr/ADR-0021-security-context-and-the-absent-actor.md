@@ -1,6 +1,6 @@
 # ADR-0021 — An unestablished actor is an error, never the system actor
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

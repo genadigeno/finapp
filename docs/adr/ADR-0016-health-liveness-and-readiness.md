@@ -1,6 +1,6 @@
 # ADR-0016 — Liveness and readiness answer different questions, and only readiness consults dependencies
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

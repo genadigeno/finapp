@@ -10,7 +10,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 - **An accepted ADR is never edited to change its decision.** A changed decision is a new ADR
   that supersedes the old one; the old one is marked `Superseded by ADR-NNNN`.
 - Status: `Proposed` → `Accepted` → `Superseded`.
-- ADR-0001 through ADR-0028 move from `Proposed` to `Accepted` at the Phase 0 exit gate,
+- ADR-0001 through ADR-0028 are `Accepted`, moved there by the Phase 0 review (`P0-DOC-012`),
   once the decisions have been validated by implementation rather than only by argument.
 - A decision found in code but absent from this record is architectural debt.
 
@@ -18,34 +18,34 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 
 | ADR | Title | Status | Phase | Concern |
 |-----|-------|--------|-------|---------|
-| [0001](ADR-0001-modular-monolith.md) | Modular monolith as the initial deployment architecture | Proposed | 0 | Topology |
-| [0002](ADR-0002-ledger-authoritative-record.md) | Immutable double-entry journal postings are the authoritative financial record | Proposed | 0 | Financial truth |
-| [0003](ADR-0003-monetary-representation.md) | Monetary values are integer minor units with explicit currency and scale | Proposed | 0 | Money |
-| [0004](ADR-0004-idempotency-strategy.md) | Idempotency for money-moving commands is enforced at the database | Proposed | 0 | Idempotency |
-| [0005](ADR-0005-transactional-outbox.md) | Transactional outbox and inbox for reliable event exchange | Proposed | 0 | Events |
-| [0006](ADR-0006-module-boundary-enforcement.md) | Module boundaries are enforced mechanically | Proposed | 0 | Boundaries |
-| [0007](ADR-0007-phase-gated-delivery.md) | Phase-gated delivery with a formal status model | Proposed | 0 | Process |
-| [0008](ADR-0008-provider-adapters.md) | External providers sit behind anti-corruption adapters | Proposed | 0 | Integration |
-| [0009](ADR-0009-balance-as-projection.md) | Balances are derived projections anchored to the ledger | Proposed | 0 | Balances |
-| [0010](ADR-0010-audit-trail.md) | The audit trail is a first-class append-only store, distinct from logs | Proposed | 0 | Audit |
-| [0011](ADR-0011-forward-only-migrations.md) | Forward-only migrations with module-owned schema history | Proposed | 0 | Schema evolution |
-| [0012](ADR-0012-context-to-module-mapping.md) | Context-to-module mapping: deliberate merges with recorded split triggers | Proposed | 0 | Module boundaries |
-| [0013](ADR-0013-typed-time-ordered-identifiers.md) | Aggregate identifiers are typed and time-ordered (UUIDv7) | Proposed | 0 | Identifiers |
-| [0014](ADR-0014-multi-instance-execution.md) | Every service runs as N concurrent instances | Proposed | 0 | Distributed execution |
-| [0015](ADR-0015-api-versioning-and-contract-publication.md) | API versioning in the path, with the contract generated and compared on every build | Proposed | 0 | API evolution |
-| [0016](ADR-0016-health-liveness-and-readiness.md) | Liveness and readiness answer different questions, and only readiness consults dependencies | Proposed | 0 | Operability |
-| [0017](ADR-0017-tracing-and-correlation-on-spans.md) | Correlation is carried on spans; a trace identifier never replaces it | Proposed | 0 | Observability |
-| [0018](ADR-0018-metric-naming-and-cardinality.md) | Metric names are a contract, and no tag value may come from a request | Proposed | 0 | Observability |
-| [0019](ADR-0019-default-deny-redaction.md) | A secret is unloggable by default, not redacted by remembering | Proposed | 0 | Security |
-| [0020](ADR-0020-secret-management.md) | Secrets are externalised, and the local default is confined to loopback | Proposed | 0 | Security |
-| [0021](ADR-0021-security-context-and-the-absent-actor.md) | An unestablished actor is an error, never the system actor | Proposed | 0 | Security |
-| [0022](ADR-0022-data-classification-at-the-ceiling.md) | Data is classified per column, at its ceiling, before it holds anything | Proposed | 0 | Data |
-| [0023](ADR-0023-transport-security-confined-to-loopback.md) | A database off this machine is reached with verified TLS, or not at all | Proposed | 0 | Security |
-| [0024](ADR-0024-single-instance-assumptions-fail-the-build.md) | Single-instance assumptions fail the build | Proposed | 0 | Architecture |
-| [0025](ADR-0025-dependency-verification-and-locking.md) | Every resolved artefact is checksum-verified and version-locked | Proposed | 0 | Security |
-| [0026](ADR-0026-keeping-pins-fresh.md) | A pin that nothing maintains is a pin that rots | Proposed | 0 | Security |
-| [0027](ADR-0027-tests-bring-their-own-database.md) | Tests bring their own database | Proposed | 0 | Testing |
-| [0028](ADR-0028-test-tiers-by-requirement.md) | A test tier is what the test needs, not what it proves | Proposed | 0 | Testing |
+| [0001](ADR-0001-modular-monolith.md) | Modular monolith as the initial deployment architecture | Accepted | 0 | Topology |
+| [0002](ADR-0002-ledger-authoritative-record.md) | Immutable double-entry journal postings are the authoritative financial record | Accepted | 0 | Financial truth |
+| [0003](ADR-0003-monetary-representation.md) | Monetary values are integer minor units with explicit currency and scale | Accepted | 0 | Money |
+| [0004](ADR-0004-idempotency-strategy.md) | Idempotency for money-moving commands is enforced at the database | Accepted | 0 | Idempotency |
+| [0005](ADR-0005-transactional-outbox.md) | Transactional outbox and inbox for reliable event exchange | Accepted | 0 | Events |
+| [0006](ADR-0006-module-boundary-enforcement.md) | Module boundaries are enforced mechanically | Accepted | 0 | Boundaries |
+| [0007](ADR-0007-phase-gated-delivery.md) | Phase-gated delivery with a formal status model | Accepted | 0 | Process |
+| [0008](ADR-0008-provider-adapters.md) | External providers sit behind anti-corruption adapters | Accepted | 0 | Integration |
+| [0009](ADR-0009-balance-as-projection.md) | Balances are derived projections anchored to the ledger | Accepted | 0 | Balances |
+| [0010](ADR-0010-audit-trail.md) | The audit trail is a first-class append-only store, distinct from logs | Accepted | 0 | Audit |
+| [0011](ADR-0011-forward-only-migrations.md) | Forward-only migrations with module-owned schema history | Accepted | 0 | Schema evolution |
+| [0012](ADR-0012-context-to-module-mapping.md) | Context-to-module mapping: deliberate merges with recorded split triggers | Accepted | 0 | Module boundaries |
+| [0013](ADR-0013-typed-time-ordered-identifiers.md) | Aggregate identifiers are typed and time-ordered (UUIDv7) | Accepted | 0 | Identifiers |
+| [0014](ADR-0014-multi-instance-execution.md) | Every service runs as N concurrent instances | Accepted | 0 | Distributed execution |
+| [0015](ADR-0015-api-versioning-and-contract-publication.md) | API versioning in the path, with the contract generated and compared on every build | Accepted | 0 | API evolution |
+| [0016](ADR-0016-health-liveness-and-readiness.md) | Liveness and readiness answer different questions, and only readiness consults dependencies | Accepted | 0 | Operability |
+| [0017](ADR-0017-tracing-and-correlation-on-spans.md) | Correlation is carried on spans; a trace identifier never replaces it | Accepted | 0 | Observability |
+| [0018](ADR-0018-metric-naming-and-cardinality.md) | Metric names are a contract, and no tag value may come from a request | Accepted | 0 | Observability |
+| [0019](ADR-0019-default-deny-redaction.md) | A secret is unloggable by default, not redacted by remembering | Accepted | 0 | Security |
+| [0020](ADR-0020-secret-management.md) | Secrets are externalised, and the local default is confined to loopback | Accepted | 0 | Security |
+| [0021](ADR-0021-security-context-and-the-absent-actor.md) | An unestablished actor is an error, never the system actor | Accepted | 0 | Security |
+| [0022](ADR-0022-data-classification-at-the-ceiling.md) | Data is classified per column, at its ceiling, before it holds anything | Accepted | 0 | Data |
+| [0023](ADR-0023-transport-security-confined-to-loopback.md) | A database off this machine is reached with verified TLS, or not at all | Accepted | 0 | Security |
+| [0024](ADR-0024-single-instance-assumptions-fail-the-build.md) | Single-instance assumptions fail the build | Accepted | 0 | Architecture |
+| [0025](ADR-0025-dependency-verification-and-locking.md) | Every resolved artefact is checksum-verified and version-locked | Accepted | 0 | Security |
+| [0026](ADR-0026-keeping-pins-fresh.md) | A pin that nothing maintains is a pin that rots | Accepted | 0 | Security |
+| [0027](ADR-0027-tests-bring-their-own-database.md) | Tests bring their own database | Accepted | 0 | Testing |
+| [0028](ADR-0028-test-tiers-by-requirement.md) | A test tier is what the test needs, not what it proves | Accepted | 0 | Testing |
 
 ## Anticipated ADRs
 

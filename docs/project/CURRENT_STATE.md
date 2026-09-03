@@ -11,7 +11,15 @@ Last updated: 2026-09-03
 ## Current Phase
 
 **Phase 0 — Domain and Architecture Foundation**
-Status: `IN_PROGRESS`
+Status: `IN_PROGRESS` — **eleven of twelve exit criteria hold.**
+
+The backlog is finished and the phase review is written. The review found two gate failures; the
+first — three CRITICAL Tomcat advisories — was closed on 2026-09-03 by pinning Tomcat to 11.0.25,
+and the dependency scan now reports zero vulnerabilities.
+
+**Criterion 7 is the only one left**, and it cannot be closed from inside the repository: the suite
+has never run in CI, because there is no git remote. See
+[`reviews/PHASE_0_REVIEW.md`](reviews/PHASE_0_REVIEW.md) and its Addendum.
 
 Entry gate passed on 2026-08-31. All twelve entry-gate criteria in
 [`PHASE_GATES.md`](PHASE_GATES.md) §2 are satisfied: the delivery plan is written, bounded
@@ -26,17 +34,17 @@ financial history exists.
 ## Current Milestone
 
 **M0.5 — Test infrastructure and phase review**
-`P0-EPIC-11` (Test Infrastructure, **COMPLETE**) and `P0-EPIC-12` (Documentation and Decision
-Baseline, **1 of 9 remaining**). The last milestone of Phase 0.
+`P0-EPIC-11` and `P0-EPIC-12`, both **COMPLETE**. The last milestone of Phase 0, and with it the
+phase backlog.
 
 The test infrastructure is finished. The suite brings its own database (`P0-TSK-035`), knows what
 kind of test each of its members is (`P0-TSK-036`), can make a provider fail in every way the
 platform says it must (`P0-TSK-037`), and now records - and enforces - that every Phase 0 invariant
 has a test demonstrated to **fail** when the invariant is broken (`P0-TSK-038`).
 
-The glossary is written (`P0-DOC-011`). What remains in Phase 0 is a single item: the phase review
-itself (`P0-DOC-012`), which is where the ADRs move from `Proposed` to `Accepted` - and which
-cannot pass while the dependency scan is red (exit criterion 11, see Blockers).
+The glossary is written and the phase review is conducted. All 28 ADRs are now `Accepted`. What
+remains is not backlog work: the review found two gate failures, and both are recorded under
+Blockers rather than left to be discovered at the gate.
 
 **M0.4 — API, observability and security baseline** — `P0-EPIC-08`, `-09` and `-10`, all
 `COMPLETE` (2026-09-02).
@@ -75,14 +83,52 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**`P0-DOC-012` - Phase 0 review record**
-Status: `READY` - not started. **The last item in Phase 0.**
+**None. Phase 0's backlog is finished; its exit gate is not passed.**
 
-Bounded context: project. Depends on all Phase 0 items. **Risk: Low. Cx: S.**
+Every task except `P0-TSK-017` is `COMPLETE`, and the phase review has been conducted. What remains
+is not backlog work but the two gate failures below, neither of which is architectural:
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-12. DoD profile: `DOD-DOC`.
+1. **Upgrade past the three Tomcat CVEs** — its own change, with the verification-metadata and
+   lockfile regeneration ADR-0025 requires (`EXECUTION_PROTOCOL.md` rule 4).
+2. **Add a git remote and observe CI green** — closes exit criterion 7 and the `DOD-BUILD` item
+   outstanding since `P0-TSK-001`.
+3. **Reschedule `P0-TSK-017`**, which is recorded `BLOCKED` on an HTTP surface and an audit
+   registry that both now exist.
 
 ### Just completed
+
+**`P0-DOC-012` - Phase 0 review record** - `COMPLETE` (2026-09-03).
+**`P0-EPIC-12` closes with it, and with it the Phase 0 backlog.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Review record covering all eight review areas | [`reviews/PHASE_0_REVIEW.md`](reviews/PHASE_0_REVIEW.md) |
+| ADRs moved to `Accepted` | ADR-0001…0028, all 28 |
+
+**The review finds the exit gate does not pass, and that is what conducting one is for.** Ten of
+the twelve universal criteria hold. Criterion 11 fails on three HIGH/CRITICAL Tomcat CVEs and
+criterion 7 on a suite that has never run in CI. `PHASE_GATES.md` §4 prescribes the consequence -
+the phase **remains `IN_PROGRESS`** - and §1 is explicit that moving backwards from review is
+normal while *"shipping through a failed gate"* is the failure.
+
+**Two of the eight areas could not be conducted as written, and say so rather than reporting a
+pass.** Area 2 asks for one real posting walked end to end and Phase 0 creates none; what it can
+verify - the kernel a posting will be built from - it does. Area 5 enumerates three registered
+privileged actions and finds **none of them is emitted**, which is the most important sentence in
+that section.
+
+**The ADRs were accepted despite the open failures, and the reasoning is recorded.** Criterion 10
+is a *precondition* of the gate rather than a reward for passing it: the gate requires the ADRs to
+be accepted, so accepting them is work toward it. Holding ADR-0003 at `Proposed` because Tomcat has
+a CVE would be theatre - the decisions were taken, implemented and tested, and none is contingent
+on either failure.
+
+**Two documentation drifts, found by hand-diffing what no guard covers.** The pinned-version table
+in `SYSTEM_ARCHITECTURE.md` omitted Prometheus, Grafana and WireMock - the first two being
+`compose.yaml` images that `verifyInfrastructureVersions` guards, so the table under-reported the
+coverage of the check described in the same section. Both closed.
+
+### Previously
 
 **`P0-DOC-011` - Domain glossary** - `COMPLETE` (2026-09-03).
 
@@ -908,22 +954,35 @@ None in progress. `P0-TSK-036` is the next task.
 
 ## Blockers
 
-**The `dependency-scan` CI gate fails.** Found by `P0-TSK-040` (2026-09-02), which made the scan a
-script a developer can run - and running it was the first time anyone had.
+**The suite has never run in CI.** The repository has no git remote, so no CI runner has ever
+executed the four jobs. All four pass when run locally and `./gradlew build databaseTest` is green
+from a clean clone, but *green locally* and *green in CI* are different claims and only the second
+satisfies exit criterion 7.
 
-Three HIGH/CRITICAL advisories, all in `org.apache.tomcat.embed:tomcat-embed-core:11.0.24`, which
-Spring Boot 4.1.1 brings: `CVE-2026-65182`, `CVE-2026-65905`, `CVE-2026-68525`. Trivy reports the
-fix in Tomcat `11.0.25`.
+This is the standing limitation below, and it is the sole remaining Phase 0 gate failure. It closes
+on the first successful run after a remote is added — which also closes the Phase 0-specific "build
+green in CI from a clean clone" and the `DOD-BUILD` item outstanding against `P0-TSK-001`–`005`.
 
-**Why nobody knew.** The repository has no git remote, so CI has never executed, and until this task
-the scan was a `docker run` line inside a workflow - runnable only by copying it out by hand. This
-is the clearest example so far of the standing limitation below: a gate that has never run is a
-gate whose result nobody knows.
+~~**The `dependency-scan` CI gate fails.**~~ — **resolved 2026-09-03.** Three **CRITICAL**
+advisories in `org.apache.tomcat.embed:tomcat-embed-core:11.0.24`, which Spring Boot 4.1.1 brings:
+`CVE-2026-65182` (security-constraint bypass), `CVE-2026-65905` (DIGEST authenticator replay) and
+`CVE-2026-68525` (FORM authentication bypass).
 
-**Not fixed here.** It is a dependency upgrade - a Spring Boot patch bump or a Tomcat override,
-plus the verification-metadata and lockfile regeneration ADR-0025 requires -
-and `EXECUTION_PROTOCOL.md` rule 4 forbids doing that inside another task. It needs its own change,
-and it is the first thing to do after `P0-EPIC-10` closes.
+Fixed by pinning Tomcat to **11.0.25** in the version catalog and applying it as a dependency
+**constraint** — Spring Boot 4.1.1 is the latest stable 4.1.x, so there was no patch release to
+move to, and 4.2.0-M1 is a milestone. A constraint rather than `force`, so a future Boot managing
+11.0.26 still wins. The scan now reports **zero** vulnerabilities, and the 68 slice tests boot a
+real Tomcat 11.0.25, so compatibility is proven rather than assumed.
+
+**The exposure was recorded honestly rather than overstated**: all three are authentication and
+authorization bypasses, and Phase 0 has no authentication at all. Practically unexploitable here —
+but the gate does not grade on exploitability, and Phase 1 brings exactly what they attack.
+
+**One claim was corrected by probing.** The first version of the build comment said the lockfile
+would reject removing the constraint. It does not: with the block deleted, resolution still yields
+11.0.25 because the lock applies its own `{strictly 11.0.25}`. The lock *keeps* the version; it
+does not object to the loss. A regression needs both the deletion and a lock regeneration, and the
+`dependency-scan` job is the control.
 
 
 `P0-TSK-004` (CI pipeline) was recorded as blocked. The 2026-08-31 task completion review
@@ -1103,17 +1162,20 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-DOC-012` - Phase 0 review record.** The last item in the phase.
+**`P0-TSK-017` — `Idempotency-Key` header handling.** The last item in the Phase 0 backlog, and the
+only one not `COMPLETE`. Recorded `BLOCKED` on an HTTP surface (`P0-EPIC-08`) and an auditable-action
+registry (`P0-TSK-023`) that both now exist, so it is unblocked in fact and needs doing rather than
+unblocking.
 
-A written phase review per [`PHASE_GATES.md`](PHASE_GATES.md) §4, covering all eight review areas,
-after which ADR-0001 through ADR-0028 move from `Proposed` to `Accepted`.
+After it, one thing remains that cannot be done from inside the repository:
 
-**It cannot pass yet, and the reason is recorded rather than discovered at the gate.** Exit
-criterion 11 requires no unresolved critical or high issue, and the `dependency-scan` gate is red
-on three HIGH/CRITICAL Tomcat CVEs (see Blockers). Criterion 7 - the full suite green against real
-infrastructure *in CI* - has also never been observed, because the repository has no git remote.
-Both are known, neither is a surprise, and the review record must state them rather than assert a
-clean gate.
+**Add a git remote and observe CI green.** Closes exit criterion 7, the Phase 0-specific "build green
+in CI from a clean clone", and the `DOD-BUILD` item outstanding against `P0-TSK-001`–`005`. It is the
+last gate failure.
+
+Phase 0 becomes `COMPLETE` when CI has run green and the review record is amended to say so.
+**Phase 1 must not be entered before that** — `PHASE_GATES.md` §1: a phase may not become `READY`
+while a hard dependency is not `COMPLETE`.
 
 ---
 
@@ -1121,6 +1183,8 @@ clean gate.
 
 | Date | Change |
 |------|--------|
+| 2026-09-03 | **Exit criterion 11 closed: the three Tomcat advisories are fixed and the dependency scan reports zero vulnerabilities.** `tomcat-embed-core` pinned to **11.0.25** in the version catalog and applied as a dependency **constraint** in `app`. **There was no patch release to move to** — Spring Boot 4.1.1 is the latest stable 4.1.x and `4.2.0-M1` is a milestone, so overriding the BOM was the only route, and it is the only deliberate deviation from it. A **constraint** rather than `force`, because `force` wins against a *higher* version too: a future Boot managing 11.0.26 would have been silently held back at 11.0.25, which is exactly the pin-rot ADR-0026 exists to prevent. All three embed artefacts are constrained together — only `-core` is affected, but they ship as one release and share internals. **Verified rather than assumed at four points**: the scan goes 3 CRITICAL → **0**; the lockfiles record 11.0.25 across every configuration; the 68 slice tests boot a real Tomcat 11.0.25 on a random port, so compatibility is demonstrated; and the verification metadata plus all six lockfiles were regenerated in **one invocation**, per the `P0-TSK-035` finding that neither order works alone. **The exposure is recorded accurately rather than dramatised**: all three are authentication and authorization bypasses — security-constraint bypass, DIGEST replay, FORM bypass — and Phase 0 has *no authentication at all*, so they were practically unexploitable here; the gate does not grade on exploitability and Phase 1 brings precisely what they attack. **One claim was corrected by probing**, which is the finding worth keeping: the build comment first said the lockfile would reject removing the constraint, and it does not — with the block deleted, resolution still yields 11.0.25 because the lock applies its own `{strictly 11.0.25}`. The lock *keeps* the version; it does not object to the loss. A regression needs the deletion **and** a lock regeneration, and the `dependency-scan` job is the control. No test was added to assert the version: it would duplicate the scan and need editing on every legitimate bump, which is the stale-list defect this repository has met four times. **Eleven of twelve exit criteria now hold**; criterion 7 — the suite has never run in CI — is the only one left and cannot be closed from inside the repository. 578 hermetic tests, 173 database tests. |
+| 2026-09-03 | `P0-DOC-012` complete; **`P0-EPIC-12` closes, and with it the Phase 0 backlog**. The phase review, all eight `PHASE_GATES.md` §4 areas in order, and ADR-0001 through ADR-0028 moved to `Accepted`. **The review finds the exit gate does not pass, which is what conducting one is for.** Ten of twelve universal criteria hold; criterion 11 fails on three HIGH/CRITICAL Tomcat CVEs and criterion 7 on a suite that has never run in CI. §4's closing rule prescribes the consequence — the phase **remains `IN_PROGRESS`** — and §1 is explicit that moving backwards from review is normal while *"shipping through a failed gate"* is the failure. Neither failure is architectural: Phase 0's design work is done. **Two areas could not be conducted as written and say so rather than reporting a pass.** Area 2 asks for one real posting walked end to end and Phase 0 creates none, so it verifies the kernel a posting will be built from instead and names what it cannot check. Area 5 enumerates the three registered privileged actions and finds **none of them is emitted** — an abandoned event, meaning consumers permanently not receiving a fact that happened, is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. **The ADRs were accepted despite the open failures, and the reasoning is recorded rather than assumed**: criterion 10 is a *precondition* of the gate rather than a reward for passing it, so accepting them is work toward it — holding ADR-0003 at `Proposed` because Tomcat has a CVE would be theatre, since the decisions were taken, implemented and tested and none is contingent on either failure. **Two documentation drifts found by hand-diffing what no guard covers**: the pinned-version table in `SYSTEM_ARCHITECTURE.md` omitted Prometheus, Grafana and WireMock — the first two being `compose.yaml` images that `verifyInfrastructureVersions` guards, so the table under-reported the coverage of the very check described beneath it. Both closed. The review also records the phase's recurring finding in one place: across the last twenty tasks the defect was almost never in production code but in the thing doing the checking — a rule that could not fail, a sweep reading a stale class file, a regex that read past its section, a coverage list checked in one direction, a register asserting a demonstration nobody had performed. 578 hermetic tests, 173 database tests. |
 | 2026-09-03 | Task completion review of `P0-DOC-011`. **One important finding, and it is the one a glossary is most dangerous for: a factual contradiction with the document that owns the decision.** `Risk Score` was attributed to `risk`, while `MODULE_ARCHITECTURE.md` §4 lists it under `credit` beside `Credit Score`. Found by auditing all 62 owner attributions against every `Owns:` line rather than by reading — 15 are this document's judgement because the register does not name them, and exactly one of the remaining 47 disagreed. The register is followed, because ADR-0012 makes it the authority on ownership and `P0-TSK-006` verified single ownership by script; **a glossary must not settle an ownership question by quietly disagreeing with the document that owns it.** The underlying ambiguity is real and is recorded rather than resolved: if a risk score measures fraud and abuse — which is how `CLAUDE.md` contrasts it with a credit score — then `risk` is where it belongs, and that is a Phase 10 or 13 decision. Two guards added, both proven by mutation: an owner contradicting the register now fails the build, and every `INV-*` the glossary cites must exist. The second was written after auditing all **23** citations by hand and finding them sound — a check worth having anyway, since nothing else would notice one going stale. Nine mutations, all caught. 578 hermetic tests, 173 database tests. |
 | 2026-09-03 | `P0-DOC-011` complete. The domain glossary: 62 terms, each with what it **is**, what it is **not**, and the module that will own it — plus all eight `CLAUDE.md` §Domain Distinctions groups contrasted under headings that repeat the group wording exactly. **The `Not:` line is the deliverable rather than decoration**: a definition alone does not stop a collapse, because two definitions can each be correct and still be applied to the same thing by two people; naming the concept a term is confused with is what turns "these are different" into something a reviewer can point at. **Comparing the two lists mechanically found they disagree** — seven terms are forbidden from being collapsed that the canonical list never names (`Authentication`, `Transaction`, `Operational Account`, `Underwriting`, `Customer Payment`, `Merchant Settlement`, and `KYC`, which is the *process* and distinct from the canonical `KYC Case`), so a glossary covering only the canonical list would have left undefined exactly the terms the rule is about. It is therefore the **union**, and `DomainGlossaryTest` enforces that in both directions: the reverse check stops the glossary becoming a second, unguarded home for vocabulary its owning document should define, which is the same rule that keeps `ERROR_CONTRACT.md` the only list of error codes. **`external` is an owner, not a blank** — a PSP is a company we contract with, and modelling one as our own state is the first step towards a domain that belongs to a vendor (ADR-0008). **Nothing in the glossary is implemented and it says so**, checked rather than assumed: no production class is named for any of the 62 terms, which is what `DOD-DOC`'s ban on aspirational statements demands be stated. **A spelling was settled**: the canonical list had `Installment` once against twenty uses of `Instalment` elsewhere, including the module register that assigns its ownership. Seven mutations, all caught — after the guard found **two defects in itself**: `^` without `Pattern.MULTILINE`, which is the defect the `P0-TSK-033` review found in a register parser reproduced here and caught only because this check asserts *presence*; and a `### Term` inside a fenced code block being read as a definition. Two new build inputs, bringing that list to fifteen. 576 hermetic tests, 173 database tests. |
 | 2026-09-03 | Task completion review of `P0-TSK-038`. **No critical findings; two gaps in the guard and one wrong claim in the register, all closed — and the register's own guard is what found the wrong claim.** First gap: the register was checked in **one direction only**. `containsAll` says every Phase 0 invariant has a row and nothing about rows the catalogue does not know, so a planted `INV-ZZZ-99` row — an invariant that appears nowhere — passed cleanly. That is the "register describing something that does not exist" defect `ColumnClassificationTest` checks in both directions and `AuditableActionRegistryTest` in three, and it matters for the same reason: an entry that has quietly stopped applying to anything is indistinguishable from one that still does. Closed, deliberately **not** restricted to Phase 0, since a later-phase invariant demonstrated early is welcome and one that does not exist is a typo. Second gap: `everyInSuiteDemonstrationNamesAnExistingMethod` skipped a row whose class it could not resolve, deferring to a sibling test — so on its own it would have passed over an empty sweep having checked nothing. It now asserts it actually resolved every method-naming row. **The wrong claim is the more interesting finding.** Auditing the register against the recorded evidence showed one row where the observed result had been **inferred rather than recorded**: `INV-IDEM-03` cited `P0-TSK-016`'s mutation sweep, which never states that the fingerprint guard itself was mutated. Closed by performing it — removing `fingerprint.matches` from `resolveExistingClaim` fails **two** tests, both named for the property — and in writing that row I named a method that does not exist, which **the task's own guard caught**. That is the best available evidence the guard works, and it also showed the check applies to *every* row naming a method rather than only in-suite ones, so the test was renamed to say what it does. `DOD-DOC` forbids aspirational statements presented as current fact, and a register of demonstrations is exactly where that rule bites hardest. Nine mutations, all caught. 569 hermetic tests, 173 database tests. |

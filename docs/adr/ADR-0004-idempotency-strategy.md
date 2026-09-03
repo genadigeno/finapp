@@ -1,6 +1,6 @@
 # ADR-0004 — Idempotency for money-moving commands is enforced at the database
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

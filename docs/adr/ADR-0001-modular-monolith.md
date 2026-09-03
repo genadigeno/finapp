@@ -1,6 +1,6 @@
 # ADR-0001 — Modular monolith as the initial deployment architecture
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

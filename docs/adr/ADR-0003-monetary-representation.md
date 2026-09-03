@@ -1,6 +1,6 @@
 # ADR-0003 — Monetary values are integer minor units with explicit currency and scale
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

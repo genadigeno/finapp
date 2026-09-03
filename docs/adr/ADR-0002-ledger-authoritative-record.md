@@ -1,6 +1,6 @@
 # ADR-0002 — Immutable double-entry journal postings are the authoritative financial record
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

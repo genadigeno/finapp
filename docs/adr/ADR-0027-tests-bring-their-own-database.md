@@ -1,6 +1,6 @@
 # ADR-0027 — Tests bring their own database
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

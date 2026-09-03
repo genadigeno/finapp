@@ -1,6 +1,6 @@
 # ADR-0017 — Correlation is carried on spans; a trace identifier never replaces it
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

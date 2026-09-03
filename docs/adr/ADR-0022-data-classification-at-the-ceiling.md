@@ -1,6 +1,6 @@
 # ADR-0022 — Data is classified per column, at its ceiling, before it holds anything
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

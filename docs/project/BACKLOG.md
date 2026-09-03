@@ -942,7 +942,7 @@ Status: `IN_PROGRESS`
   Review added the guard that makes the next such contradiction a build failure, plus one asserting
   every `INV-*` the glossary cites exists.
 
-**P0-DOC-012 — Phase 0 review record**
+**P0-DOC-012 — Phase 0 review record** — `COMPLETE` (2026-09-03)
 - Context: project
 - Description: Written phase review per `PHASE_GATES.md` §4.
 - Why: Gate criterion 12.
@@ -951,6 +951,21 @@ Status: `IN_PROGRESS`
 - Risk: Low
 - Cx: S
 - DoD: `DOD-DOC`
+- **Outcome:** [`reviews/PHASE_0_REVIEW.md`](reviews/PHASE_0_REVIEW.md), all eight areas in order,
+  and ADR-0001…0028 moved to `Accepted`.
+  **The review finds the exit gate does not pass**, which is the point of conducting one: criterion
+  11 fails on three HIGH/CRITICAL Tomcat CVEs and criterion 7 on a suite that has never run in CI.
+  `PHASE_GATES.md` §4 prescribes what follows — the phase **remains `IN_PROGRESS`** — and §1 is
+  explicit that moving backwards is normal while *"shipping through a failed gate"* is the failure.
+  **Two areas could not be conducted as written and say so** rather than being reported as passed:
+  area 2 asks for one real posting walked end to end, and Phase 0 creates none; area 5's three
+  registered privileged actions are none of them emitted.
+  **The ADRs were accepted anyway, and the reasoning is recorded**: criterion 10 is a *precondition*
+  of the gate rather than a reward for passing it, so accepting them is work toward it. Holding
+  ADR-0003 at `Proposed` because Tomcat has a CVE would be theatre.
+  Two documentation drifts found by hand-diffing what no guard covers, both closed — the
+  pinned-version table omitted three components including two the drift check it describes actually
+  guards.
 
 ---
 

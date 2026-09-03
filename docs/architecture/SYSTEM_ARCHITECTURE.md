@@ -54,10 +54,14 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | Java | 21 (LTS) | Pinned by Gradle toolchain, not by ambient `JAVA_HOME` |
 | Gradle | 9.7.1 | Distribution and wrapper jar verified by SHA-256 |
 | Spring Boot | 4.1.1 | Brings Spring Framework 7 and Jackson 3 |
+| Tomcat | 11.0.25 | **Pinned above the BOM**, which manages 11.0.24 — three CRITICAL advisories. The only deliberate deviation; see the catalog note |
 | PostgreSQL | 18.6 | Debian-based image, ICU collation provider |
 | Kafka | 4.3.1 | KRaft mode, no ZooKeeper |
 | Redis | 8.10.1 | AOF persistence enabled locally |
+| Prometheus | v3.14.0 | Scrapes `/actuator/prometheus`; also guarded by `verifyInfrastructureVersions` |
+| Grafana | 12.4.10 | Renders the reviewed dashboard in git; UI edits disabled (ADR-0018) |
 | Flyway | 12.4.0 | Matches the Spring Boot BOM; forward-only (ADR-0011) |
+| WireMock | 3.13.2 | Provider failure simulation, test scope; standalone artefact (ADR-0008, `P0-TSK-037`) |
 | PostgreSQL JDBC | 42.7.13 | Matches the Spring Boot BOM |
 | CycloneDX Gradle plugin | 3.4.1 | Produces the SBOM the dependency scan consumes |
 | gitleaks | v8.30.1 | Secret scanning; pinned by image digest in `infra/scripts/secret-scan.sh`, which CI calls |

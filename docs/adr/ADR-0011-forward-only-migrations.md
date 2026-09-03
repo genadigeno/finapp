@@ -1,6 +1,6 @@
 # ADR-0011 — Forward-only migrations with module-owned schema history
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-31
 

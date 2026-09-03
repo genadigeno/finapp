@@ -63,6 +63,26 @@ asm = "9.7.1"
 # every deployment - and it is one fewer library in the shipped dependency set.
 springdoc = "3.1.0"
 
+# Tomcat, pinned ABOVE what the Spring Boot BOM manages.
+#
+# Spring Boot 4.1.1 brings tomcat-embed-core 11.0.24, which carries three CRITICAL advisories -
+# CVE-2026-65182 (security-constraint bypass), CVE-2026-65905 (DIGEST authenticator replay) and
+# CVE-2026-68525 (FORM authentication bypass). All three are fixed in 11.0.25, and 4.1.1 is the
+# latest stable 4.1.x: there is no patch release to move to, and 4.2.0-M1 is a milestone.
+#
+# So the version is overridden here and applied as a dependency CONSTRAINT in app/build.gradle.kts.
+# A constraint rather than `force`: it participates in conflict resolution, so when a future Spring
+# Boot manages 11.0.26 the newer version still wins and this entry does not hold the platform back.
+#
+# This is a deliberate deviation from the BOM and it is the only one. Revisit it when Spring Boot
+# manages 11.0.25 or later, at which point the constraint becomes redundant - harmless, but one
+# fewer thing to explain.
+#
+# The three embed artefacts are constrained together. Only -core is affected, but they are released
+# as one and share internals; a build running 11.0.25 core against 11.0.24 el is a configuration
+# nobody tested.
+tomcat = "11.0.25"
+
 junitJupiter = "6.0.3"
 assertj = "3.27.7"
 
@@ -124,6 +144,10 @@ spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" 
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 # The HTTP surface, added by P0-TSK-024 - the first task with anything outward-facing.
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
+# Tomcat, constrained above the BOM to clear three CRITICAL advisories — see the version note.
+tomcat-embed-core = { module = "org.apache.tomcat.embed:tomcat-embed-core", version.ref = "tomcat" }
+tomcat-embed-el = { module = "org.apache.tomcat.embed:tomcat-embed-el", version.ref = "tomcat" }
+tomcat-embed-websocket = { module = "org.apache.tomcat.embed:tomcat-embed-websocket", version.ref = "tomcat" }
 # Jakarta Bean Validation, added by P0-TSK-025: rejection at the boundary, declared on the
 # request type rather than written by hand in every handler.
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }

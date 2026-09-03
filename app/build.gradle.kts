@@ -52,6 +52,37 @@ dependencies {
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)
 
+    // Tomcat above what the Spring Boot BOM manages, to clear three CRITICAL advisories in
+    // 11.0.24 (CVE-2026-65182, -65905, -68525). The reasoning and the revisit condition are in
+    // the version catalog beside the pin.
+    //
+    // CONSTRAINTS, not a forced version and not a direct dependency:
+    //   - a direct dependency would make `app` declare a servlet container it does not use
+    //     directly, and the starter is what should own that edge;
+    //   - `force` would win against a HIGHER version too, so a future Spring Boot managing
+    //     11.0.26 would be silently held back at 11.0.25 - the failure mode of a pin nobody
+    //     revisits, which is what ADR-0026 exists to avoid;
+    //   - a constraint raises the floor and loses to anything newer, which is what is wanted.
+    //
+    // WHAT PROTECTS THIS, stated accurately - the first version of this comment claimed the
+    // lockfile "rejects" removing the block, and probing showed that is false. With the
+    // constraints deleted, resolution still yields 11.0.25, because the lock applies its own
+    // `{strictly 11.0.25}`. The lock KEEPS the version; it does not object to the loss.
+    //
+    // A regression therefore needs two steps: delete this block AND regenerate the locks. The
+    // second produces a reviewable diff showing 11.0.25 -> 11.0.24 across five configurations,
+    // and the `dependency-scan` job then fails on the regenerated SBOM. That is the control -
+    // the scan, not the lock.
+    //
+    // No test asserts the version, deliberately. It would duplicate the scan and would need
+    // editing on every legitimate Tomcat bump, which is the stale-list defect this repository
+    // has met four times.
+    constraints {
+        implementation(libs.tomcat.embed.core)
+        implementation(libs.tomcat.embed.el)
+        implementation(libs.tomcat.embed.websocket)
+    }
+
     // Health, readiness and build info (P0-TSK-027).
     implementation(libs.spring.boot.starter.actuator)
 

@@ -1,6 +1,6 @@
 # ADR-0026 — A pin that nothing maintains is a pin that rots
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

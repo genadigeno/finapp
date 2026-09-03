@@ -1,6 +1,6 @@
 # ADR-0020 — Secrets are externalised, and the local default is confined to loopback
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

@@ -1,6 +1,6 @@
 # ADR-0023 — A database off this machine is reached with verified TLS, or not at all
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 

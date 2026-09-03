@@ -1,6 +1,6 @@
 # ADR-0014 — Every service runs as N concurrent instances
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-01
 

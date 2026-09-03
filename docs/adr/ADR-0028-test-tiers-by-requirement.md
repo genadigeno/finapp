@@ -1,6 +1,6 @@
 # ADR-0028 — A test tier is what the test needs, not what it proves
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-03
 

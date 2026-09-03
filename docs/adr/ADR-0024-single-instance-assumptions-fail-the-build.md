@@ -1,6 +1,6 @@
 # ADR-0024 — Single-instance assumptions fail the build
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-02
 
