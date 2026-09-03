@@ -3,6 +3,7 @@ package com.finapp.app.api;
 import com.finapp.platform.api.ApiVersion;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.HandlerTypePredicate;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -46,5 +47,22 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
     public void configurePathMatch(PathMatchConfigurer configurer) {
         configurer.addPathPrefix(
                 ApiVersion.CURRENT_PREFIX, HandlerTypePredicate.forBasePackage(OUR_HANDLERS));
+    }
+
+    /**
+     * Registers the {@code Idempotency-Key} check (`P0-TSK-017`).
+     *
+     * <p>Registered for every path rather than a list of them, deliberately: the interceptor
+     * decides from the handler's own {@code @RequiresIdempotencyKey} declaration, so a path list
+     * here would be a second copy of that decision and would go stale the first time an endpoint
+     * was added — the "list of one that went stale" defect the {@code P0-TSK-027} review found in
+     * CI's task list.
+     *
+     * <p>It runs on actuator paths too and does nothing there, because no actuator handler carries
+     * the annotation and most are {@code GET} anyway.
+     */
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new IdempotencyKeyInterceptor());
     }
 }

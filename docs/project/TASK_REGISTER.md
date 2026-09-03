@@ -20,7 +20,7 @@ Legend: ✅ complete · 🔵 next · ⚪ not started · 🟠 blocked
 
 # Phase 0 — Domain and Architecture Foundation
 
-**61 of 62 complete.** Phase 0 delivers a buildable, boundary-enforced modular monolith
+**62 of 62 complete.** Phase 0 delivers a buildable, boundary-enforced modular monolith
 containing the financial and platform kernel, with **zero business capability**. That
 constraint is deliberate: money representation, idempotency, outbox, audit and correlation
 cannot be retrofitted once financial history exists.
@@ -80,7 +80,7 @@ cannot be retrofitted once financial history exists.
 |---|---|---|
 | ✅ | **P0-TSK-015** — Idempotency record schema | A table keyed on (scope, idempotency key) with a unique constraint, proven under 16-way contention against a real PostgreSQL. The state machine is checked in the schema as well as in code, using a trigger where a `CHECK` constraint cannot see the previous row. The fingerprint's algorithm is recorded on the record, so `INV-IDEM-03` cannot be weakened by a silent algorithm change. |
 | ✅ | **P0-TSK-016** — Idempotent execution wrapper | Claim the key, execute, record the outcome — all inside the caller's transaction, so no crash can leave a financial effect that no record describes. Eight concurrent duplicates produce one execution, one effect and eight identical responses. A live claim is reported rather than assumed failed; a stale one is taken over, with the staleness test in the database so two reclaims cannot both win. |
-| 🟠 | **P0-TSK-017** — `Idempotency-Key` header handling | Header extraction and validation, plus a policy marking which endpoints require it, so idempotency is a boundary contract rather than an internal convenience. Recorded as `BLOCKED` when written, on an HTTP surface and an audit registry that did not exist; both now do, so it is **unblocked in fact and needs rescheduling** rather than unblocking. |
+| ✅ | **P0-TSK-017** — `Idempotency-Key` header handling | `@RequiresIdempotencyKey` declares the requirement; an interceptor enforces it before the handler is entered. An interceptor rather than a filter, because a filter cannot see which handler was chosen and its rejection would bypass the error contract. Found and closed a gap the classification document pointed at: the key carried no charset, so a caller could have put CR/LF into a value the platform logs and stores durably. |
 | ✅ | **P0-TST-004** — Idempotency concurrency and retry tests | Five failure modes driven at the kernel: observed contention, contention outlasting the bounded wait, a response lost after commit, expiry on both sides of the retention sweep, and an instance crashing mid-command. Contention is proven by observing PostgreSQL's own lock waits rather than by hoping threads overlap, so the test cannot pass while contention is broken. |
 
 ## P0-EPIC-06 — Reliable Messaging: Envelope, Outbox, Inbox

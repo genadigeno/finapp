@@ -324,19 +324,49 @@ Status: `IN_PROGRESS`
 - Cx: L
 - DoD: `DOD-KERNEL`
 
-**P0-TSK-017 — `Idempotency-Key` header handling**
+**P0-TSK-017 — `Idempotency-Key` header handling** — `COMPLETE` (2026-09-03)
 - Context: platform / api
 - Description: Header extraction, validation, and a policy marking which endpoints require it.
 - Why: Idempotency must be a boundary contract, not an internal convenience.
 - Deps: P0-TSK-016, P0-TSK-023
 - Accept: An endpoint declared as requiring the header rejects requests without one; key format validated; the header is never logged as sensitive data but is recorded in audit.
-- **BLOCKED (recorded 2026-09-01).** Two of its three requirements have no subject yet. Its own
-  declared dependency `P0-TSK-023` (auditable-action registry) is in `P0-EPIC-07` and not
-  started, so "recorded in audit" cannot be satisfied; and "an endpoint declared as requiring
-  the header" needs an HTTP surface, which `P0-EPIC-08` introduces in M0.4 — there is no
-  servlet, controller or web starter in the build today. Unblocks after `P0-TSK-023` and
-  `P0-EPIC-08`. Not a gap in `P0-TSK-016`, which built and proved the mechanism this task will
-  expose at the boundary.
+- ~~**BLOCKED (recorded 2026-09-01).**~~ Unblocked by `P0-TSK-023` and `P0-EPIC-08`, both of which
+  landed in M0.4. The original note is preserved in the change log.
+- **Acceptance corrected (2026-09-03).** Two of the three clauses were met as written. The third —
+  *"is recorded in audit"* — **still has no subject**, and for a different reason than when the
+  task was blocked: the auditable-action registry now exists, but `AuditRecord` has no field for an
+  idempotency key and **nothing in Phase 0 writes an audit record in an HTTP flow**. The three
+  registered platform actions are outbox operations, and none is emitted. There is nothing to
+  record the key *on*.
+  Adding a column and a field now would be a schema change nothing populates, for actions that
+  never happen — `EXECUTION_PROTOCOL.md` rule 3 (a seam, not future-phase functionality). And no
+  history is lost by waiting, which is the test ADR-0010 applies: unlike actor attribution, there
+  are no audit records being written today that could never gain the key later.
+  **The clause transfers to Phase 4**, the first phase with an audited money-moving action. This is
+  the same correction `P0-TSK-014` and `P0-TSK-028` needed, for the same reason: a criterion naming
+  a component that does not exist can only be satisfied on paper.
+  The *decision* the clause encodes — that the key is not sensitive, is not redacted, and must be
+  traceable — is implemented and proven.
+- **Outcome:** `@RequiresIdempotencyKey` declares the requirement on a handler or its controller,
+  and an **interceptor** enforces it. An interceptor rather than a filter, and that is load-bearing
+  twice: a filter runs before the dispatcher has chosen a handler, so it could not know whether
+  *this* endpoint declares the requirement without a second copy of the routing table; and a filter
+  runs outside `@ExceptionHandler`, so its rejection would be the container's default page rather
+  than the error contract — the problem `P0-TSK-025` had to work around by rendering the contract
+  by hand inside its filters.
+  Rejection happens **before the handler is entered**, asserted by counting handler entries: for a
+  money-moving command, the half of the work done before a late rejection is the half that matters.
+  New error code `api.IdempotencyKeyRequired` (422), distinct from `api.ValidationFailed` on
+  purpose — a client can automate "generate a key and retry" but not "your request was invalid".
+  The published contract gained six lines, every difference `COMPATIBLE`.
+  **A real gap was found by following `DATA_CLASSIFICATION.md` §5**, which classifies this column
+  as a caller-supplied identifier: `IdempotencyKey` bounds length and blankness because those are
+  the table's `CHECK` constraints, and carries **no charset** — so a caller could put CR/LF into a
+  value the platform logs and stores durably. Closed with the same default-deny charset the
+  correlation identifier uses. It is unit-tested rather than driven over HTTP because the JDK's
+  own `HttpClient` refuses to *send* CR/LF, and a hostile client writing raw bytes is not bound by
+  that politeness.
+  Five mutations, all caught.
 - Risk: Medium
 - Cx: S
 - DoD: `DOD-API`

@@ -27,6 +27,23 @@ public enum PlatformErrorCode implements ErrorCode {
      */
     VALIDATION_FAILED("api.ValidationFailed", 422, "The request was not valid."),
 
+    /**
+     * An endpoint that requires {@code Idempotency-Key} was called without one.
+     *
+     * <p>Its own code rather than {@link #VALIDATION_FAILED}, because the remediation is
+     * different in kind and a client can automate it: generate a key and retry. "Your request was
+     * not valid" tells a client library to stop; "you owe me an idempotency key" tells it exactly
+     * what to add. That is what a machine-readable code is for.
+     *
+     * <p>422 rather than 400: the request was syntactically fine. It is the same distinction
+     * {@link #VALIDATION_FAILED} draws, applied to a missing header rather than a missing field.
+     *
+     * <p>A key that is <em>present and unusable</em> is {@link #VALIDATION_FAILED}, not this: the
+     * client supplied one and must fix it, which is the ordinary validation shape.
+     */
+    IDEMPOTENCY_KEY_REQUIRED(
+            "api.IdempotencyKeyRequired", 422, "This operation requires an idempotency key."),
+
     /** No route matches. */
     NOT_FOUND("api.NotFound", 404, "The requested resource does not exist."),
 

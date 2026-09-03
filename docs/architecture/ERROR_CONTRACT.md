@@ -68,6 +68,7 @@ Failures of the *protocol*, raised before any business module is reached.
 | `api.PayloadTooLarge` | 413 | The request body exceeded the accepted size. |
 | `api.UnsupportedMediaType` | 415 | The body's media type is not read here. |
 | `api.ValidationFailed` | 422 | Well-formed, and not valid. |
+| `api.IdempotencyKeyRequired` | 422 | An operation requiring `Idempotency-Key` was called without one. |
 | `api.InternalError` | 500 | Something failed that the client cannot act on. |
 
 **400 versus 422** is the distinction between "your serialiser is wrong" and "your data is
@@ -88,6 +89,8 @@ Untrusted input is refused before any domain code runs (`P0-TSK-025`).
 | Rejected | Code | Where |
 |---|---|---|
 | Body fails declared constraints | `api.ValidationFailed` (422) | Bean Validation, before the handler is entered |
+| No `Idempotency-Key` where one is required | `api.IdempotencyKeyRequired` (422) | An interceptor, before the handler is entered |
+| `Idempotency-Key` present and unusable | `api.ValidationFailed` (422) | The same interceptor - the client supplied one and must fix it |
 | Body exceeds the size limit | `api.PayloadTooLarge` (413) | A filter, before the body is read |
 | Body will not parse | `api.MalformedRequest` (400) | The message converter |
 

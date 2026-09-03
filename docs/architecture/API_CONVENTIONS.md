@@ -127,21 +127,37 @@ an error message becomes a vector (`INV-AUD-02`).
 *Proven by `RequestValidationTest`, which counts handler entries rather than reading the response —
 a 422 returned after the handler ran and did half the work looks identical from outside.*
 
-## 6. Idempotency — **Decided, not yet implemented** (`P0-TSK-017`, first used in Phase 4)
+## 6. Idempotency — **Implemented** (`P0-TSK-017`; first *used* in Phase 4)
 
-Nothing reads this header today. There is no money-moving endpoint, and `P0-TSK-017` owns the
-implementation.
+**The boundary contract is enforced. Nothing declares it yet**, because Phase 0 has no
+money-moving endpoint — the first will be Phase 4's `POST /transfers`.
 
-**Every money-moving command requires `Idempotency-Key`.** Safe methods (`GET`, `HEAD`) ignore it;
-a command that can move money and does not require it is a defect, not a relaxation.
+**Every money-moving command requires `Idempotency-Key`.** Safe methods (`GET`, `HEAD`, and also
+`OPTIONS`/`TRACE`) ignore it; a command that can move money and does not require it is a defect,
+not a relaxation.
+
+An endpoint says so with **`@RequiresIdempotencyKey`**, on the handler or on its controller. A
+declaration rather than a default: requiring the header everywhere would force it onto reads, where
+it means nothing and would train clients to send a value nobody uses. The annotation is also the
+greppable list of endpoints claiming to move money, which is a list worth being able to review.
+
+Enforcement is an **interceptor**, not a filter, and that is load-bearing twice: a filter runs
+before the dispatcher has chosen a handler, so it could not know whether *this* endpoint declares
+the requirement without a second copy of the routing table; and a filter runs outside
+`@ExceptionHandler`, so its rejection would be the container's default page rather than the error
+contract. The rejection happens **before the handler is entered** — asserted by counting handler
+entries, because a rejection issued after a command did half its work looks identical from outside.
 
 | Rule | Behaviour |
 |---|---|
-| Missing on an endpoint that requires it | Rejected — the request is not attempted |
+| Missing on an endpoint that requires it | `api.IdempotencyKeyRequired` (422). The request is not attempted |
+| Present and unusable — blank, or over the bound | `api.ValidationFailed` (422). A different code on purpose: the client supplied one and must fix it, which is a different remediation from "generate one" |
 | Same key, same request | The **original** outcome is returned. Exactly one financial effect (`INV-IDEM-01`) |
 | Same key, materially different request | `api.Conflict` (409). Never a silent second effect, never the first response (`INV-IDEM-03`) |
 | Key still in progress | Reported as in progress; the caller retries. Never assumed failed |
-| Key format | Client-generated, bounded, and validated at the boundary. A UUID is the expected shape |
+| Key format | Client-generated, bounded, and validated at the boundary against **`IdempotencyKey`'s own limits**, so a request cannot pass the boundary and fail three layers down on a `CHECK` constraint. A UUID is the expected shape |
+| A rejected value | **Never echoed** in the response. It is the caller's own input, and reflecting it is how a header becomes a reflection vector (`INV-AUD-02`). The caller already knows what it sent |
+| A valid value | **Never rewritten.** A key the platform silently adjusted would not match the caller's retry, which is the one thing that must never happen: the retry would create a second financial effect |
 
 **The key is scoped, not global.** Two callers must not collide by both choosing `1`, so the
 uniqueness constraint covers a scope (the operation, and the authenticated principal once Phase 1
@@ -154,8 +170,21 @@ deduplicates requests, and what must be deduplicated is *financial effects*.
 retrying after an outage gets a second effect; too long and the table grows without limit
 (`DATA_MIGRATIONS.md` §8). A retry after expiry is a new request.
 
-**Logging:** the key is not sensitive and is not redacted, but it is recorded on the audit record
-for the action, so a disputed operation can be traced to the request that caused it.
+**Logging:** the key is **not sensitive and is not redacted** — `secretsAreWrapped` deliberately
+excludes `key` from its vocabulary (`P0-TSK-030`), because a rule with false positives is a rule
+somebody turns off. An accepted key passes through intact; a *rejected* one is never echoed back.
+
+It is validated against a **default-deny charset**, the same one the correlation identifier uses.
+`IdempotencyKey` bounds length and blankness because those are the `CHECK` constraints on the
+table, and the table has no charset — so without this a caller could put CR/LF in a value the
+platform logs and stores, which is a forged log line (`INV-AUD-02`). The limit: a key arriving by
+some future non-HTTP path gets no charset check from the HTTP boundary and needs its own.
+
+**Recording it on the audit record is *not yet implemented*** — owned by Phase 4, the first phase
+with an audited money-moving action. `AuditRecord` has no field for it and nothing in Phase 0
+writes an audit record in an HTTP flow, so there is nothing to record it *on*. When there is, the
+key travels as a normal command parameter rather than as ambient state, so no context mechanism is
+needed for it (the distinction `P0-TSK-032` drew for the actor, in the opposite direction).
 
 ## 7. Pagination — **Decided, not yet implemented** (first collection endpoint, Phase 3+)
 

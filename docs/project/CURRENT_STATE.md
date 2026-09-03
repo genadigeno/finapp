@@ -13,7 +13,7 @@ Last updated: 2026-09-03
 **Phase 0 — Domain and Architecture Foundation**
 Status: `IN_PROGRESS` — **eleven of twelve exit criteria hold.**
 
-The backlog is finished and the phase review is written. The review found two gate failures; the
+The backlog is complete - 62 of 62 - and the phase review is written. The review found two gate failures; the
 first — three CRITICAL Tomcat advisories — was closed on 2026-09-03 by pinning Tomcat to 11.0.25,
 and the dependency scan now reports zero vulnerabilities.
 
@@ -97,8 +97,48 @@ is not backlog work but the two gate failures below, neither of which is archite
 
 ### Just completed
 
+**`P0-TSK-017` - `Idempotency-Key` header handling** - `COMPLETE` (2026-09-03).
+**The Phase 0 backlog is now 62 of 62.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A declared endpoint rejects a request without the header | 422 `api.IdempotencyKeyRequired`, with the handler proven never entered |
+| Key format validated | Blank, over-long and outside the charset all refused, at the bound the store enforces |
+| Never logged as sensitive data | Not wrapped, not redacted, accepted keys pass through intact, rejected ones are never echoed |
+| Recorded in audit | **Corrected** - no subject; transfers to Phase 4. See below |
+
+**An interceptor, not a filter, and that is load-bearing twice.** A filter runs before the
+dispatcher has chosen a handler, so it could not know whether *this* endpoint declares the
+requirement without a second, drifting copy of the routing table. And a filter runs outside
+`@ExceptionHandler`, so its rejection would be the container's default page rather than the error
+contract - the problem `P0-TSK-025` had to work around by rendering the contract by hand inside its
+filters. Rejection happens **before the handler is entered**, asserted by counting handler entries:
+for a money-moving command, the half of the work done before a late rejection is the half that
+matters.
+
+**The requirement is declared, not defaulted.** `@RequiresIdempotencyKey` on a handler or its
+controller. Requiring the header everywhere would force it onto reads, where it means nothing and
+would train clients to send a value nobody uses; the annotation is also the greppable list of
+endpoints claiming to move money.
+
+**A real gap was found by following `DATA_CLASSIFICATION.md` §5**, which classifies this column as a
+caller-supplied identifier. `IdempotencyKey` bounds length and blankness because those are the
+table's `CHECK` constraints, and carries **no charset** - so a caller could put CR/LF into a value
+the platform logs, stores durably and will put on an audit record. A newline in it is a forged log
+line. Closed with the same default-deny charset the correlation identifier uses, unit-tested rather
+than driven over HTTP because the JDK's own `HttpClient` refuses to *send* CR/LF - and a hostile
+client writing raw bytes to a socket is not bound by that politeness.
+
+**The audit clause was corrected rather than approximated.** The registry now exists, but
+`AuditRecord` has no field for a key and **nothing in Phase 0 writes an audit record in an HTTP
+flow** - the three registered platform actions are outbox operations and none is emitted. Adding a
+column now would be a schema change nothing populates, and unlike actor attribution no history is
+lost by waiting, which is the test ADR-0010 applies. Transferred to Phase 4.
+
+### Previously
+
 **`P0-DOC-012` - Phase 0 review record** - `COMPLETE` (2026-09-03).
-**`P0-EPIC-12` closes with it, and with it the Phase 0 backlog.**
+**`P0-EPIC-12` closes with it.**
 
 | Acceptance criterion | Evidence |
 |---|---|
@@ -1162,12 +1202,9 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-017` — `Idempotency-Key` header handling.** The last item in the Phase 0 backlog, and the
-only one not `COMPLETE`. Recorded `BLOCKED` on an HTTP surface (`P0-EPIC-08`) and an auditable-action
-registry (`P0-TSK-023`) that both now exist, so it is unblocked in fact and needs doing rather than
-unblocking.
+**None. The Phase 0 backlog is complete — 62 of 62.**
 
-After it, one thing remains that cannot be done from inside the repository:
+One thing remains, and it cannot be done from inside the repository:
 
 **Add a git remote and observe CI green.** Closes exit criterion 7, the Phase 0-specific "build green
 in CI from a clean clone", and the `DOD-BUILD` item outstanding against `P0-TSK-001`–`005`. It is the
@@ -1183,6 +1220,7 @@ while a hard dependency is not `COMPLETE`.
 
 | Date | Change |
 |------|--------|
+| 2026-09-03 | `P0-TSK-017` complete. **The Phase 0 backlog is 62 of 62.** `@RequiresIdempotencyKey` declares the requirement on a handler or its controller, and an **interceptor** enforces it. **An interceptor rather than a filter, and that is load-bearing twice**: a filter runs before the dispatcher has chosen a handler, so it could not know whether *this* endpoint declares the requirement without a second, drifting copy of the routing table; and a filter runs outside `@ExceptionHandler`, so its rejection would be the container's default page rather than the error contract — the problem `P0-TSK-025` had to work around by rendering the contract by hand inside its filters. Rejection happens **before the handler is entered**, asserted by counting handler entries rather than reading the response, because for a money-moving command the half of the work done before a late rejection is the half that matters. **The requirement is declared, not defaulted**: requiring the header everywhere would force it onto reads, where it means nothing and would train clients to send a value nobody uses, and the annotation is the greppable list of endpoints claiming to move money. New error code `api.IdempotencyKeyRequired` (422), distinct from `api.ValidationFailed` on purpose — a client can automate "generate a key and retry" but not "your request was invalid"; the published contract gained six lines, every difference `COMPATIBLE`, and no probe fixture leaked into it. **A real gap was found by following `DATA_CLASSIFICATION.md` §5**, which classifies this column as a caller-supplied identifier: `IdempotencyKey` bounds length and blankness because those are the table's `CHECK` constraints and carries **no charset**, so a caller could have put CR/LF into a value the platform logs, stores durably and will put on an audit record — a forged log line. Closed with the same default-deny charset the correlation identifier uses, and unit-tested rather than driven over HTTP because the JDK's own `HttpClient` refuses to **send** CR/LF, while a hostile client writing raw bytes to a socket is not bound by that politeness. **The audit clause was corrected rather than approximated**: the registry now exists, but `AuditRecord` has no field for a key and nothing in Phase 0 writes an audit record in an HTTP flow, so there is nothing to record it on. Adding a column would be a schema change nothing populates, and unlike actor attribution **no history is lost by waiting** — the test ADR-0010 applies. Transferred to Phase 4; the third Phase 0 criterion to need this correction after `P0-TSK-014` and `P0-TSK-028`. Five mutations, all caught. 606 hermetic tests, 173 database tests. |
 | 2026-09-03 | **Exit criterion 11 closed: the three Tomcat advisories are fixed and the dependency scan reports zero vulnerabilities.** `tomcat-embed-core` pinned to **11.0.25** in the version catalog and applied as a dependency **constraint** in `app`. **There was no patch release to move to** — Spring Boot 4.1.1 is the latest stable 4.1.x and `4.2.0-M1` is a milestone, so overriding the BOM was the only route, and it is the only deliberate deviation from it. A **constraint** rather than `force`, because `force` wins against a *higher* version too: a future Boot managing 11.0.26 would have been silently held back at 11.0.25, which is exactly the pin-rot ADR-0026 exists to prevent. All three embed artefacts are constrained together — only `-core` is affected, but they ship as one release and share internals. **Verified rather than assumed at four points**: the scan goes 3 CRITICAL → **0**; the lockfiles record 11.0.25 across every configuration; the 68 slice tests boot a real Tomcat 11.0.25 on a random port, so compatibility is demonstrated; and the verification metadata plus all six lockfiles were regenerated in **one invocation**, per the `P0-TSK-035` finding that neither order works alone. **The exposure is recorded accurately rather than dramatised**: all three are authentication and authorization bypasses — security-constraint bypass, DIGEST replay, FORM bypass — and Phase 0 has *no authentication at all*, so they were practically unexploitable here; the gate does not grade on exploitability and Phase 1 brings precisely what they attack. **One claim was corrected by probing**, which is the finding worth keeping: the build comment first said the lockfile would reject removing the constraint, and it does not — with the block deleted, resolution still yields 11.0.25 because the lock applies its own `{strictly 11.0.25}`. The lock *keeps* the version; it does not object to the loss. A regression needs the deletion **and** a lock regeneration, and the `dependency-scan` job is the control. No test was added to assert the version: it would duplicate the scan and need editing on every legitimate bump, which is the stale-list defect this repository has met four times. **Eleven of twelve exit criteria now hold**; criterion 7 — the suite has never run in CI — is the only one left and cannot be closed from inside the repository. 578 hermetic tests, 173 database tests. |
 | 2026-09-03 | `P0-DOC-012` complete; **`P0-EPIC-12` closes, and with it the Phase 0 backlog**. The phase review, all eight `PHASE_GATES.md` §4 areas in order, and ADR-0001 through ADR-0028 moved to `Accepted`. **The review finds the exit gate does not pass, which is what conducting one is for.** Ten of twelve universal criteria hold; criterion 11 fails on three HIGH/CRITICAL Tomcat CVEs and criterion 7 on a suite that has never run in CI. §4's closing rule prescribes the consequence — the phase **remains `IN_PROGRESS`** — and §1 is explicit that moving backwards from review is normal while *"shipping through a failed gate"* is the failure. Neither failure is architectural: Phase 0's design work is done. **Two areas could not be conducted as written and say so rather than reporting a pass.** Area 2 asks for one real posting walked end to end and Phase 0 creates none, so it verifies the kernel a posting will be built from instead and names what it cannot check. Area 5 enumerates the three registered privileged actions and finds **none of them is emitted** — an abandoned event, meaning consumers permanently not receiving a fact that happened, is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. **The ADRs were accepted despite the open failures, and the reasoning is recorded rather than assumed**: criterion 10 is a *precondition* of the gate rather than a reward for passing it, so accepting them is work toward it — holding ADR-0003 at `Proposed` because Tomcat has a CVE would be theatre, since the decisions were taken, implemented and tested and none is contingent on either failure. **Two documentation drifts found by hand-diffing what no guard covers**: the pinned-version table in `SYSTEM_ARCHITECTURE.md` omitted Prometheus, Grafana and WireMock — the first two being `compose.yaml` images that `verifyInfrastructureVersions` guards, so the table under-reported the coverage of the very check described beneath it. Both closed. The review also records the phase's recurring finding in one place: across the last twenty tasks the defect was almost never in production code but in the thing doing the checking — a rule that could not fail, a sweep reading a stale class file, a regex that read past its section, a coverage list checked in one direction, a register asserting a demonstration nobody had performed. 578 hermetic tests, 173 database tests. |
 | 2026-09-03 | Task completion review of `P0-DOC-011`. **One important finding, and it is the one a glossary is most dangerous for: a factual contradiction with the document that owns the decision.** `Risk Score` was attributed to `risk`, while `MODULE_ARCHITECTURE.md` §4 lists it under `credit` beside `Credit Score`. Found by auditing all 62 owner attributions against every `Owns:` line rather than by reading — 15 are this document's judgement because the register does not name them, and exactly one of the remaining 47 disagreed. The register is followed, because ADR-0012 makes it the authority on ownership and `P0-TSK-006` verified single ownership by script; **a glossary must not settle an ownership question by quietly disagreeing with the document that owns it.** The underlying ambiguity is real and is recorded rather than resolved: if a risk score measures fraud and abuse — which is how `CLAUDE.md` contrasts it with a credit score — then `risk` is where it belongs, and that is a Phase 10 or 13 decision. Two guards added, both proven by mutation: an owner contradicting the register now fails the build, and every `INV-*` the glossary cites must exist. The second was written after auditing all **23** citations by hand and finding them sound — a check worth having anyway, since nothing else would notice one going stale. Nine mutations, all caught. 578 hermetic tests, 173 database tests. |

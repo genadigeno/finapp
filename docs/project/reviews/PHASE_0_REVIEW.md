@@ -246,10 +246,10 @@ This review diffed the remainder by hand and found **two drifts, both closed**:
 2. **`DOMAIN_MODEL.md` spelled `Installment` once** against twenty uses of `Instalment` elsewhere,
    including the module register that assigns its ownership. Corrected during `P0-DOC-011`.
 
-**One documented status is knowingly stale and is not a drift but a scheduling debt:**
-`P0-TSK-017` is recorded `BLOCKED` on an HTTP surface and an audit registry that both now exist. It
-is unblocked in fact and needs rescheduling. It is the only Phase 0 item other than this review that
-is not `COMPLETE`.
+**One documented status was knowingly stale and is not a drift but a scheduling debt:**
+`P0-TSK-017` was recorded `BLOCKED` on an HTTP surface and an audit registry that both now exist.
+It was unblocked in fact and needed doing rather than unblocking. **Done on 2026-09-03** — see the
+Addendum; the backlog is now 62 of 62.
 
 ---
 
@@ -338,11 +338,12 @@ the first week. It closes on the first successful run after a remote is added.
    review finding a gate failure returns the phase, and §1 that *"shipping through a failed gate"*
    is the failure — not moving backwards.
 
-3. **What closes the gate**, in order:
-   - upgrade Tomcat past the three CVEs, with the metadata and lockfile regeneration ADR-0025
-     requires — its own change;
-   - add a git remote and observe CI green;
-   - reschedule `P0-TSK-017`, which is unblocked in fact.
+3. **What closes the gate**, in order — all three were actioned; see the Addendum for the two that
+   are done:
+   - ~~upgrade Tomcat past the three CVEs~~ **done**;
+   - **add a git remote and observe CI green** — the one that remains, and the only item here that
+     cannot be done from inside the repository;
+   - ~~reschedule `P0-TSK-017`~~ **done**.
 
 Nothing on that list is architectural. Phase 0's design work is done.
 
@@ -414,3 +415,29 @@ run. This is the last thing between Phase 0 and a passed gate.
 ### Revised verdict
 
 **Eleven of twelve criteria hold. Phase 0 remains `IN_PROGRESS` on criterion 7 alone.**
+
+### ✅ `P0-TSK-017` closed — the backlog is 62 of 62
+
+The last backlog item, recorded `BLOCKED` on an HTTP surface and an auditable-action registry that
+both landed in M0.4. `@RequiresIdempotencyKey` declares the requirement; an interceptor enforces it
+before the handler is entered.
+
+**Its audit clause was corrected rather than approximated.** *"Recorded in audit"* still has no
+subject: `AuditRecord` has no field for a key and nothing in Phase 0 writes an audit record in an
+HTTP flow — the three registered platform actions are outbox operations and none is emitted. Adding
+a column now would be a schema change nothing populates, and unlike actor attribution **no history
+is lost by waiting**, which is the test ADR-0010 applies. Transferred to Phase 4. This is the third
+Phase 0 criterion to need that correction, after `P0-TSK-014` and `P0-TSK-028`, and for the same
+reason each time: a criterion naming a component that does not exist can only be satisfied on paper.
+
+**It also closed a security gap the review's own §7 method surfaced.** Following
+`DATA_CLASSIFICATION.md` §5 — which classifies `idempotency_record.idempotency_key` as a
+caller-supplied identifier — showed that `IdempotencyKey` carries **no charset**: it bounds length
+and blankness because those are the table's `CHECK` constraints. A caller could therefore have put
+CR/LF into a value the platform logs, stores durably and will put on an audit record. Closed with
+the same default-deny charset the correlation identifier uses.
+
+### Revised verdict, final
+
+**Eleven of twelve criteria hold, and the backlog is complete.** Phase 0 remains `IN_PROGRESS` on
+criterion 7 alone — the suite has never run in CI, and that needs a git remote.
