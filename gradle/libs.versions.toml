@@ -66,6 +66,22 @@ springdoc = "3.1.0"
 junitJupiter = "6.0.3"
 assertj = "3.27.7"
 
+# WireMock, TEST SCOPE ONLY (P0-TSK-037). The provider failure-simulation harness ADR-0008
+# names, so that "every adapter is contract-tested against simulated failure" is a thing an
+# adapter author reaches for rather than rebuilds.
+#
+# 3.13.2 is the current STABLE line. Maven Central's <latest> and <release> markers both point
+# at 4.0.0-beta.38 - a pre-release - so "the newest version" and "the newest version you should
+# use" are different answers here, and a tool that reads the marker gets the wrong one.
+# Dependabot skips pre-releases unless the project is already on one, which this is not.
+#
+# The STANDALONE artefact, deliberately. WireMock embeds Jetty, and Spring Boot picks its
+# servlet container by what is on the classpath - so an unshaded WireMock would put a second
+# container in front of every @SpringBootTest in `app`. The standalone jar relocates Jetty and
+# Jackson 2 out of the way, which keeps a test harness from changing what the tests under it
+# run on. Measured, not assumed: see the P0-TSK-037 notes in CURRENT_STATE.md.
+wiremock = "3.13.2"
+
 # Flyway and the JDBC driver are pinned to exactly what Spring Boot 4.1.1 manages, for the
 # same reason as JUnit and AssertJ: one version across the build. Flyway in particular must
 # not differ between the tool that applies migrations and any runtime that validates them —
@@ -169,6 +185,8 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
+# Standalone (shaded) rather than the plain artefact - see the version note above.
+wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
 # The -api starter, not -ui: a Swagger UI is an extra surface nobody here needs.
 springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }
 

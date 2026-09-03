@@ -117,6 +117,7 @@ acquire the ability to have one casually.
 | `DatabaseUnderTest` | `…testing.database` | Starts one PostgreSQL container per test JVM, applies the role script and the real migrations, and publishes the coordinates (ADR-0027) |
 | `DatabaseRoles` | `…testing.database` | A connection as each role, and the assertion that the connected role cannot bypass the privileges under test |
 | `SimulatedInstance` | `…testing.database` | One simulated instance: its own connection and its own clock, server-anchored |
+| `SimulatedProvider` | `…testing.provider` | An external provider that misbehaves on demand (`P0-TSK-037`) |
 | `RepositoryPaths` | `…testing` | Locates a repository file without assuming a working directory |
 
 **The database harnesses have their own package, and the tier rule is why.** They first sat beside
@@ -138,6 +139,54 @@ grants correct, with the grants wrong, and with no grants at all. That is the wo
 and it is why `assertCannotBypassPrivileges` exists.
 
 ---
+
+## 5a. Simulating a provider
+
+`SimulatedProvider` is the harness ADR-0008 requires, so that "every adapter is contract-tested
+against simulated failure" is something an adapter author reaches for rather than rebuilds.
+
+**A provider is unreliable in both directions, so the harness has two halves.** A simulator with
+only the first cannot reach the failure modes that cost the most:
+
+| Half | What it is | Modes |
+|---|---|---|
+| **Outbound** | the provider's API, a real HTTP server on loopback that we call | timeout, unavailable, 5xx, delayed, malformed body, garbage, unknown state, retry sequence, **request received then response lost** |
+| **Inbound** | the provider's callbacks, which it makes to us | **duplicate webhook**, late settlement |
+
+A duplicated webhook (`INV-IDEM-04`) and a late settlement (`INV-SET-03`) are the provider acting
+on its own schedule. No amount of stubbing its API reproduces them.
+
+**No WireMock type appears in the harness's signature.** That is ADR-0008's own argument one layer
+down: an adapter that leaks provider vocabulary couples the domain to a vendor, and a test that
+reaches past the harness to raw stubbing couples the suite to the simulator. A caller sees a list
+of ways a provider fails.
+
+**The single most useful assertion is `requestCount`.** It separates two failures that are
+identical from the caller's side — a request that never arrived, and a request that arrived and
+was acted on before the answer was lost. That distinction is why `INV-LIFE-03` requires an explicit
+indeterminate state rather than a guess in either direction.
+
+**A failure mode applies whatever verb the adapter uses.** A provider that is unavailable is
+unavailable for `GET` and `POST` alike — the failure belongs to the provider, not to the request
+method. The first version bound each stub to one verb, which meant an adapter POSTing to create a
+payment got a `404` from a stub that claimed the provider *succeeds*; found by review, and the
+worst possible shape for the failure, because a 404 reads as "the adapter called the wrong path".
+
+**`deliverCallbackAfter` sleeps real time**, which is the crude form and is usually not what a test
+needs. `INV-SET-03`'s "late" is *logical* — the callback arrives after the operation completed —
+and a plain `deliverCallback` at the right moment already gives that. Reach for the delaying
+variant only when wall-clock separation is the property under test.
+
+**Which tier.** `unit` — WireMock is an in-JVM server on loopback, needing no container, no Docker
+and no external service. That is a judgement rather than a reading of the axis, and it was made on
+measurement: the whole provider suite costs **1.3 seconds** including server start. If it grows
+enough to slow the inner loop, the escalation is its own tier, on the same grounds `slice` has one.
+
+**`ProviderFailureCoverageTest` is what makes the coverage claim real**, in three links that must
+hold at once: every bullet in `CLAUDE.md` §Failure Engineering is classified as a provider concern
+or explicitly not one; every provider concern names a harness method that **exists**; and every
+such method is **actually called** by the suite that proves the harness. The third link is the one
+that matters — without it the harness could claim a mode no test ever exercises.
 
 ## 6. What is enforced, and what is not
 

@@ -278,7 +278,20 @@ tasks.withType<Test>().configureEach {
         .withPropertyName("committedConfiguration")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
-    // The eighth. TestTaxonomyTest holds this document and the tier declaration to each other:
+    // The eighth and ninth. ProviderFailureCoverageTest holds CLAUDE.md's Failure Engineering
+    // list and ADR-0008's contract-test requirement to the harness's capabilities. CLAUDE.md is
+    // the project's own instruction file, so it is the last document anyone would think to declare
+    // as a build input - and a bullet added to it is exactly the change this guard exists to catch.
+    inputs.files(rootProject.layout.projectDirectory.file("CLAUDE.md"))
+        .withPropertyName("failureEngineeringList")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(
+        rootProject.layout.projectDirectory.file("docs/adr/ADR-0008-provider-adapters.md")
+    )
+        .withPropertyName("providerAdapterAdr")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The tenth. TestTaxonomyTest holds this document and the tier declaration to each other:
     // the document must name exactly the tiers that exist, with the task and tag each one
     // actually uses. Same reason as every line above it.
     inputs.files(rootProject.layout.projectDirectory.file("docs/project/TESTING.md"))

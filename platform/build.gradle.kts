@@ -162,6 +162,16 @@ dependencies {
     // makes every denial test meaningful - so the fixtures need AssertJ.
     testFixturesImplementation(libs.assertj.core)
 
+    // The provider failure-simulation harness (P0-TSK-037), in testFixtures for the same reason
+    // as the database one: `app` must be able to use it without a second copy.
+    //
+    // `implementation`, NOT `api`. No WireMock type appears in SimulatedProvider's signature, so
+    // a consumer compiles against the failure modes and never against WireMock - which is
+    // ADR-0008's own argument one layer down: a test that reaches past the harness to raw
+    // stubbing has coupled itself to the simulator the same way an adapter that leaks provider
+    // vocabulary couples the domain to a vendor.
+    testFixturesImplementation(libs.wiremock.standalone)
+
     // Test scope only: nothing ships.
     //
     // Flyway is otherwise on the BUILDSCRIPT classpath - it runs as a build tool. The harness

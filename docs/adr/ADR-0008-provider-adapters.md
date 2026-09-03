@@ -95,7 +95,12 @@ a definitive failure. The adapter surfaces indeterminacy instead of resolving it
 
 ## Follow-up
 
-- Phase 0: reusable WireMock failure-simulation harness.
+- ~~Phase 0: reusable WireMock failure-simulation harness.~~ **Delivered by `P0-TSK-037`**
+  (2026-09-03): `SimulatedProvider` in `platform`'s test fixtures, with every mode named above
+  reproduced through a real HTTP client and `ProviderFailureCoverageTest` holding this ADR,
+  `CLAUDE.md` §Failure Engineering and the harness to each other. No separate ADR: this is this
+  decision's follow-up rather than a new decision, and the design notes are in
+  [`TESTING.md`](../project/TESTING.md) §5a.
 - Phase 2: first real adapters (screening, document verification).
 - Phase 5: PSP adapter; provider-state mapping tables; reconciliation-by-query sweeper for
   unknown states.

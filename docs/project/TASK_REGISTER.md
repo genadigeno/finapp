@@ -20,7 +20,7 @@ Legend: ✅ complete · 🔵 next · ⚪ not started · 🟠 blocked
 
 # Phase 0 — Domain and Architecture Foundation
 
-**57 of 62 complete.** Phase 0 delivers a buildable, boundary-enforced modular monolith
+**58 of 62 complete.** Phase 0 delivers a buildable, boundary-enforced modular monolith
 containing the financial and platform kernel, with **zero business capability**. That
 constraint is deliberate: money representation, idempotency, outbox, audit and correlation
 cannot be retrofitted once financial history exists.
@@ -148,8 +148,8 @@ cannot be retrofitted once financial history exists.
 |---|---|---|
 | ✅ | **P0-TSK-035** — Testcontainers integration test harness | One PostgreSQL container per test JVM, applying the same role script the compose stack runs and the real migrations through Flyway, publishing the coordinates as the system properties every test already read. **No test changed** — that was the constraint rather than the outcome, since a harness needing 173 assertions edited would have been a change nobody could review. PostgreSQL only: there is no Kafka or Redis client, and a container nothing connects to tests nothing. |
 | ✅ | **P0-TSK-036** — Test taxonomy and conventions | Four tiers — unit, architecture, slice, database — defined by **what a test needs in order to run**, because that is the only axis on which membership can be decided mechanically. The default tier selects by excluding the others' tags, so a test can never belong to no tier at all. `contract` is deliberately not a tier: its members have different requirements, and grouping two requirements under one name is the one thing a tier must not do. |
-| 🔵 | **P0-TSK-037** — WireMock harness for provider adapters | A reusable harness able to reproduce timeout, 5xx, malformed response, delayed response and duplicate-callback behaviour. Provider failure modes must be testable from Phase 2 onward, and building the harness once is both cheaper and more consistent than each adapter inventing its own. |
-| ⚪ | **P0-TSK-038** — Mutation-style invariant verification convention | A convention requiring every invariant test to be **demonstrated to fail** when the invariant is deliberately broken, with the demonstration recorded. The phase exit gate already demands this; the convention makes it repeatable. A test that passes regardless of the code is worse than no test, because it is believed. |
+| ✅ | **P0-TSK-037** — WireMock harness for provider adapters | `SimulatedProvider`, in two halves, because a provider is unreliable in **both directions**: outbound is its API, which we call; inbound is its callbacks, which it makes to us. A duplicated webhook and a late settlement are the provider acting on its own schedule, so no amount of stubbing its API reproduces them. The coverage claim is enforced in three links — every failure mode classified, every one naming a method that exists, and every such method actually called by the suite that proves the harness. |
+| 🔵 | **P0-TSK-038** — Mutation-style invariant verification convention | A convention requiring every invariant test to be **demonstrated to fail** when the invariant is deliberately broken, with the demonstration recorded. The phase exit gate already demands this; the convention makes it repeatable. A test that passes regardless of the code is worse than no test, because it is believed. |
 
 ## P0-EPIC-12 — Documentation and Decision Baseline
 

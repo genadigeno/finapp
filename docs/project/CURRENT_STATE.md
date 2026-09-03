@@ -26,12 +26,12 @@ financial history exists.
 ## Current Milestone
 
 **M0.5 — Test infrastructure and phase review**
-`P0-EPIC-11` (Test Infrastructure, **2 of 4 complete**) and `P0-EPIC-12` (Documentation and Decision
+`P0-EPIC-11` (Test Infrastructure, **3 of 4 complete**) and `P0-EPIC-12` (Documentation and Decision
 Baseline, 2 of 9 remaining). The last milestone of Phase 0.
 
-The suite now brings its own database (`P0-TSK-035`) and knows what kind of test each of its
-members is (`P0-TSK-036`). What remains is a harness for provider failure modes that have no
-provider yet (`P0-TSK-037`), the convention making an invariant test prove it can fail
+The suite now brings its own database (`P0-TSK-035`), knows what kind of test each of its members
+is (`P0-TSK-036`), and can make a provider fail in every way the platform says it must
+(`P0-TSK-037`). What remains is the convention making an invariant test prove it can fail
 (`P0-TSK-038`), the domain glossary, and the phase review itself.
 
 **M0.4 — API, observability and security baseline** — `P0-EPIC-08`, `-09` and `-10`, all
@@ -71,14 +71,67 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**`P0-TSK-037` - WireMock harness for provider adapters**
+**`P0-TSK-038` - Mutation-style invariant verification convention**
 Status: `READY` - not started.
 
-Bounded context: platform / test. Depends on `P0-TSK-036` (`COMPLETE`). **Risk: Low. Cx: M.**
+Bounded context: platform / test. Depends on `P0-TSK-036` (`COMPLETE`). **Risk: Medium. Cx: S.**
 
 Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-11. DoD profile: `DOD-TEST`.
 
 ### Just completed
+
+**`P0-TSK-037` - WireMock harness for provider adapters** - `COMPLETE` (2026-09-03).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Reproduces every `CLAUDE.md` §Failure Engineering mode involving a provider | Seven modes, each driven through a real HTTP client over a real socket; and the claim is *enforced* rather than asserted - see below |
+
+**A provider is unreliable in both directions, so the harness has two halves.** Outbound is the
+provider's API, a real HTTP server we call: timeout, unavailable, 5xx, delayed, malformed body,
+garbage, unknown state, the retry sequence, and the request that is **received** before the
+response is lost. Inbound is the provider calling **us** - a duplicated webhook (`INV-IDEM-04`) and
+a late settlement (`INV-SET-03`) are the provider acting on its own schedule, and no amount of
+stubbing its API reproduces them. A simulator with only the first half cannot reach the modes that
+cost the most.
+
+**The single most useful thing the harness offers is `requestCount`.** It separates two failures
+that are identical from the caller's side - a request that never arrived, and one that arrived and
+was acted on before the answer was lost. That distinction is exactly why `INV-LIFE-03` requires an
+explicit indeterminate state rather than a guess in either direction.
+
+**The criterion is a checkable claim, so it is checked.** `ProviderFailureCoverageTest` holds three
+links that must all hold at once: every bullet in `CLAUDE.md` §Failure Engineering is classified as
+a provider concern or explicitly not one, with the reason and where it *is* covered; every provider
+concern names a harness method that **exists**; and every such method is **actually called** by the
+suite that proves the harness. The third link is the one that stops a mode being covered on paper.
+Seven mutations, all caught - including a bullet added to `CLAUDE.md`, which also proved the new
+build-input declaration works.
+
+**Two defects, both found by the guard's own assertions rather than by review.**
+- The section regex **read straight past** `## Failure Engineering` into `## Definition of Done`,
+  returning "auditability" and "observability" as failure modes - because `DOTALL` makes `.` match
+  newlines, so a single `- .*` swallows the rest of the file. Replaced by line-walking with an
+  explicit stop at the next heading, which **cannot** over-read; that is better than a guard
+  against over-reading, and the vacuity check now also asserts the set is bounded.
+- A literal match reported that **ADR-0008 had stopped requiring "malformed response"**. It had
+  not: the ADR wraps mid-phrase. Whitespace-normalised.
+
+**WireMock is the standalone artefact, and that was measured.** It relocates Jetty and Jackson
+under `wiremock/` - zero classes at `org/eclipse/jetty` - so the harness cannot change which
+servlet container Spring Boot picks for every `@SpringBootTest` in `app`, and it resolves to
+exactly **one** lockfile entry rather than a tree. Version **3.13.2**, the current stable: Maven
+Central's `<latest>` *and* `<release>` markers both point at `4.0.0-beta.38`, so "the newest
+version" and "the newest version you should use" are different answers here.
+
+**`unit` tier, decided on measurement**: the whole provider suite costs 1.3 seconds including
+server start. WireMock needs a loopback port and nothing else - no container, no Docker, no
+external service.
+
+**No new ADR**, deliberately: ADR-0008 already decided the harness exists and lists the modes, so
+this is its recorded follow-up rather than a new decision. ADR-0008's follow-up section now says so
+and points at [`TESTING.md`](TESTING.md) §5a.
+
+### Previously
 
 **`P0-TSK-036` - Test taxonomy and conventions** - `COMPLETE` (2026-09-03).
 
@@ -237,6 +290,24 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Provider failure simulation (2026-09-03), `P0-TSK-037`:
+- `SimulatedProvider` in two halves, because a provider is unreliable in **both directions**:
+  outbound, a real HTTP server we call; inbound, the provider calling us
+- Outbound covers timeout, unavailable, 5xx, delayed, malformed body, garbage, unknown state, the
+  retry sequence, and the request **received** before the response is lost
+- Inbound covers the duplicated webhook and the late settlement - the provider acting on its own
+  schedule, which no stubbing of its API reproduces
+- `requestCount` separates a request that never arrived from one that arrived and was acted on,
+  which is the distinction `INV-LIFE-03` exists for
+- No WireMock type in the harness's signature: ADR-0008's anti-corruption argument, one layer down
+- `ProviderFailureCoverageTest` makes the criterion real in three links - classified, exists,
+  actually called - so a mode cannot be covered on paper; seven mutations, all caught
+- Two defects found by its own assertions: a regex that read past the section into the next
+  heading, and a literal match defeated by ADR-0008 wrapping mid-phrase
+- WireMock **standalone**, measured: Jetty and Jackson relocated, one lockfile entry, no servlet
+  container added to `app`'s test classpath
+- No new ADR - this is ADR-0008's own recorded follow-up, and it now says so
 
 Test taxonomy (2026-09-03), `P0-TSK-036`:
 - Four tiers - unit, architecture, slice, database - defined by **what a test needs in order to
@@ -922,16 +993,19 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TSK-037` - WireMock harness for provider adapters**, the third of `P0-EPIC-11`'s four.
+**`P0-TSK-038` - Mutation-style invariant verification convention**, the last of `P0-EPIC-11`'s
+four.
 
-A reusable harness able to reproduce timeout, 5xx, malformed response, delayed response and
-duplicate-callback behaviour, so provider failure modes are testable from Phase 2 onward.
+A convention requiring every invariant test to be **demonstrated to fail** when the invariant is
+deliberately broken, with the demonstration recorded. Phase exit gate criterion 3 already demands
+this and `DEFINITION_OF_DONE.md` §3 forbids the opposite - "a test that would still pass if the
+invariant it claims to protect were removed" - so the task is to make the practice repeatable
+rather than to introduce it.
 
-Its acceptance criterion is that the harness can reproduce **every** provider failure mode
-`CLAUDE.md` §Failure Engineering lists - which is a checkable claim rather than a description, and
-the sort this phase has repeatedly found to be false when checked. Note also that Phase 0 has no
-provider adapter and no HTTP client for one, so the same question `P0-TSK-035` faced about Kafka
-and Redis applies: a harness nothing connects to tests nothing.
+Its acceptance criterion is that the convention is "applied to every `P0-TST-*` item", which is
+checkable: those items exist and their demonstrations are recorded in the change log. Worth
+approaching with the same suspicion as the last two criteria - the interesting question is whether
+the *record* of each demonstration can be found and re-run, or only read.
 
 ---
 
@@ -939,6 +1013,8 @@ and Redis applies: a harness nothing connects to tests nothing.
 
 | Date | Change |
 |------|--------|
+| 2026-09-03 | Task completion review of `P0-TSK-037`. **One important finding, and it was found by asking what the first real user would do rather than by reading the code.** Every stub was bound to a single HTTP method — most to `GET`, two to `POST` — so an adapter POSTing to create a payment, which is what every payment adapter does, got a **404 from a stub that claimed the provider succeeds**. Proven by probe before it was believed. That is the worst possible shape for the failure: a 404 reads as "the adapter called the wrong path", so the author would debug their own code against a harness that was quietly answering a different question. Fixed by making every mode verb-agnostic — a provider that is unavailable is unavailable for every verb, because the failure belongs to the provider and not to the request method — and locked with a regression test that fails when any single mode is bound back to one verb. **A second finding, and it is the same defect class as the two the implementation already hit**: the ADR check searched the whole of ADR-0008, and "timeout" appears there three times and "unknown state" twice, so both were satisfied by unrelated sentences — deleting the contract-test requirement entirely would have left the check green. Now bounded to that one sentence, and proven by deleting the requirement while leaving "timeout" elsewhere. **Third occurrence in one task of matching a whole document instead of bounding the region**, which is worth naming as a pattern rather than a coincidence. Also closed a silent overflow: WireMock's delay is an `int` and a plain cast turns `Duration.ofDays(30)` into **−1702967296**, so a long delay became a negative one; now `Math.toIntExact`, which is `INV-MON-06`'s reasoning applied outside money. Five consecutive runs green, so the timing assertions are not flaky. 562 hermetic tests, 173 database tests. |
+| 2026-09-03 | `P0-TSK-037` complete. `SimulatedProvider`, and the shape of it is the finding: **a provider is unreliable in both directions**, so the harness has two halves and a simulator with only the first cannot reach the modes that cost the most. Outbound is the provider's API - a real HTTP server we call - covering timeout, unavailable, 5xx, delayed, malformed body, garbage, unknown state, the retry sequence, and the request that is **received** before the response is lost. Inbound is the provider calling **us**: a duplicated webhook (`INV-IDEM-04`) and a late settlement (`INV-SET-03`) are the provider acting on its own schedule, and no amount of stubbing its API reproduces them. **The single most useful thing the harness offers is `requestCount`**, because it separates two failures that are identical from the caller's side - a request that never arrived, and one that arrived and was acted on before the answer was lost - which is exactly why `INV-LIFE-03` requires an explicit indeterminate state rather than a guess in either direction. **The acceptance criterion is a checkable claim, so it is checked**: `ProviderFailureCoverageTest` holds three links that must all hold at once - every bullet in `CLAUDE.md` §Failure Engineering is classified as a provider concern or explicitly not one *with the reason and where it is covered*; every provider concern names a harness method that **exists**; and every such method is **actually called** by the suite that proves the harness. The third link is what stops a mode being covered on paper, and it is the one a coverage list normally lacks. Six mutations, all caught, including a bullet added to `CLAUDE.md` - which also proved the new build-input declaration, since `CLAUDE.md` is the last file anyone would think to declare as a Gradle input. **Two defects, both found by the guard's own assertions**: the section regex read straight past `## Failure Engineering` into `## Definition of Done` and returned "auditability" as a failure mode, because `DOTALL` lets `.` match newlines so a single `- .*` swallows the rest of the file - replaced by line-walking with an explicit stop, which **cannot** over-read; and a literal match reported that ADR-0008 had stopped requiring "malformed response" when the ADR simply **wraps mid-phrase**. **WireMock standalone, measured rather than assumed**: it relocates Jetty and Jackson under `wiremock/` - zero classes at `org/eclipse/jetty` - so the harness cannot change which servlet container Spring Boot picks for every `@SpringBootTest` in `app`, and it resolves to exactly **one** lockfile entry. Version 3.13.2, the current stable, noting that Maven Central's `<latest>` *and* `<release>` markers both point at `4.0.0-beta.38`. `unit` tier, decided on the measured 1.3s. **No new ADR** - ADR-0008 already decided the harness exists and lists the modes, so this is its recorded follow-up, and that section now says so. 561 hermetic tests, 173 database tests. |
 | 2026-09-03 | Task completion review of `P0-TSK-036`. **No critical findings; two gaps in the guard, both closed, and both found by asking what CI actually executes.** `./gradlew build --dry-run` shows `build` runs `:test` and **never the three hermetic tier tasks** - they are selection conveniences over the same tests, which is fine for coverage and not fine for the tasks themselves: `:sharedkernel:sliceTest` was run and **reports BUILD SUCCESSFUL in one second having selected nothing and written no result file**. A tier that quietly became empty would therefore be discovered by a developer wondering why their command was fast, and by nobody else. `noTierIsEmpty` closes it repository-wide, since per module an empty tier is legitimate. The second: **an unrecognised `@Tag` is ignored rather than rejected**, so `@Tag("databse")` reads as a tier and schedules nothing. Probing found it *was* caught - but by luck: the class was also a `@SpringBootTest`, so detection floored it at SLICE and the misspelling surfaced as "needs SLICE but is in UNIT". A class detection cannot see would have had no floor. The vocabulary is now closed, with an empty non-tier list, on the argument that makes `AuditableAction` closed. Both proven by mutation, bringing the task to **nine of nine**. Also confirmed: `TestTaxonomyTest` really does run inside `./gradlew build` (12 tests in `:app:test`'s results), so the taxonomy is enforced by the job CI runs rather than only by a task it does not. **Process note, third occurrence of the same trap:** `git checkout --` on a path reverted `MetricConventionTest` to HEAD while reverting a mutation, silently destroying this task's own change to it; caught by counting the slice tags afterwards rather than trusting the revert. 542 hermetic tests, 173 database tests. |
 | 2026-09-03 | `P0-TSK-036` complete. Four test tiers - unit, architecture, slice, database - defined by **what a test needs in order to run**, and by nothing else. That is the only axis on which membership can be decided mechanically, and it is the one that matters for scheduling: a tier mixing requirements produces a task costing what its heaviest member costs and failing wherever that member's infrastructure is absent. Grouping by intent reads better in a document and cannot be checked. **The default tier selects by EXCLUDING the others' tags** rather than including one of its own, so a test can never belong to no tier at all - the failure an includeTags-only set of tasks creates, and a silent one, since the test compiles, is never selected, reports nothing and is believed to be running. **Two of the five names the task asks for are deliberately not tiers, with the reason recorded rather than dropped**: `contract` is a *kind* whose members have different requirements - `OpenApiContractTest` needs a Spring context, `ColumnClassificationTest` needs a database - and `integration` is replaced by `database`, which says what is integrated with. The tiers **partition** the hermetic suite exactly (418 + 54 + 68 = 540 = `test`), so `build` still runs all three hermetic ones; `unitTest` is ~14s against `build`'s minute. **The split ships with its guard**, because splitting one task into four multiplies the ways to make the `:platform:databaseTest` mistake the `P0-TSK-027` review found: `TestTaxonomyTest` holds the Gradle declaration, `TestTier`, every class's tag, `TESTING.md` and CI to each other. **Seven mutations, all caught - after the first one survived.** Removing a tier tag from a platform test left the guard green, because it reads sibling modules' compiled test classes from disk and nothing had told Gradle that, so it read a **stale class file**; closed with `dependsOn` and a declared input derived from the subprojects. **Two more skips found by its own guards**, both whole classes: `ModuleBoundaryRulesTest` - the oldest rule suite here - because ArchUnit executes `@ArchTest` **fields** and it declares no `@Test` method, and `MoneyTest` because every test method lives in a `@Nested` class. And **one false positive that improved the rule**: `NoDirectBrokerPublicationRulesTest`'s fixture declares `OutboxWriter<java.sql.Connection>` and opens nothing, so detection now keys on **acquisition** rather than mention - a rule that pushes a hermetic suite into the database tier is a rule somebody turns off. Twelve Spring-context tests and nine ArchUnit suites turned out to be sitting in the default tier. The recorded duplication is paid down: thirteen test classes migrated off private connection helpers onto `DatabaseRoles`, and what they had been copying was a connection as the **superuser**. ADR-0028 recorded. 540 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-035`. **No critical or important findings; four properties measured rather than assumed, and two small corrections.** The tests really do reach a container, not a leftover compose stack - the published JDBC URL is `localhost:<random mapped port>`, printed by probe. The **documented escape hatch works**: with `FINAPP_DB_URL` set, zero containers are created and the suite runs against compose, which is the path for inspecting what a test left behind. **Nothing leaks**: the count of postgres containers is identical before and after a run, and the reaper is what makes that true. And the **cost did not survive measurement** - 14 seconds wall clock for 160 platform tests including container start, the role script and every migration, so the objection that a container per JVM would be slow was wrong. Two corrections: the "system property not set" message still told the reader the Gradle task supplies the URL, when since this task the task supplies the *image* and the harness supplies the URL - which is precisely the failure an IDE run produces, so the message now says so. And **Testcontainers mounts the Docker socket** into its reaper, which is control of the daemon granted to test-time code; not a new capability, since compose already required Docker, but named in ADR-0027 rather than left implicit. 528 hermetic tests, 173 database tests. |

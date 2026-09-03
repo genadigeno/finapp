@@ -825,7 +825,7 @@ Status: `IN_PROGRESS`
   and an unrecognised `@Tag` is ignored rather than rejected, so the vocabulary is now closed.
   ADR-0028.
 
-**P0-TSK-037 — WireMock harness for provider adapters**
+**P0-TSK-037 — WireMock harness for provider adapters** — `COMPLETE` (2026-09-03)
 - Context: platform / test
 - Description: Reusable harness supporting timeout, 5xx, malformed response, delayed response and duplicate-callback simulation.
 - Why: Provider failure modes must be testable from Phase 2 onward; building the harness once is cheaper and more consistent.
@@ -834,6 +834,35 @@ Status: `IN_PROGRESS`
 - Risk: Low
 - Cx: M
 - DoD: `DOD-TEST`
+- **Outcome:** `SimulatedProvider`, in two halves, because **a provider is unreliable in both
+  directions** and a simulator with only the first cannot reach the modes that cost the most.
+  Outbound is a real HTTP server we call — timeout, unavailable, 5xx, delayed, malformed body,
+  garbage, unknown state, retry sequence, and the request that is *received* before the response is
+  lost. Inbound is the provider calling **us**: a duplicated webhook (`INV-IDEM-04`) and a late
+  settlement (`INV-SET-03`) are the provider acting on its own schedule, and no stubbing of its API
+  reproduces them.
+  **The acceptance criterion is a checkable claim, so it is checked** — `ProviderFailureCoverageTest`
+  holds three links that must all hold: every bullet in `CLAUDE.md` §Failure Engineering is
+  classified as a provider concern or explicitly not one (with the reason and where it *is*
+  covered); every provider concern names a harness method that **exists**; and every such method is
+  **actually called** by the suite that proves the harness. The third link is what stops a mode
+  being covered on paper. Seven mutations, all caught.
+  **Review found one important defect**, by asking what the first real user would do rather than by
+  reading: every stub was bound to a single HTTP method, so an adapter POSTing to create a payment
+  got a **404 from a stub claiming the provider succeeds** — the worst shape for the failure, since
+  a 404 reads as "wrong path". Every mode is now verb-agnostic, with a regression test. Review also
+  bounded the ADR check to its one sentence — "timeout" appears three times in ADR-0008, so
+  deleting the contract-test requirement had left the check green — and closed a silent `int`
+  overflow on long delays.
+  **Two defects, both found by the guard's own assertions**: the section regex read straight past
+  `## Failure Engineering` into `## Definition of Done` and returned "auditability" as a failure
+  mode, because `DOTALL` lets `.` match newlines — replaced by line-walking with an explicit stop,
+  which cannot over-read; and a literal match on ADR-0008 reported that it had stopped requiring
+  "malformed response", when the ADR simply **wraps mid-phrase**.
+  WireMock is the **standalone** artefact, measured rather than assumed: it relocates Jetty and
+  Jackson under `wiremock/`, so a harness cannot change the servlet container Spring Boot picks for
+  every `@SpringBootTest` in `app` — and it resolves to exactly **one** lockfile entry. `unit` tier,
+  decided on the measured 1.3s. No new ADR: this is ADR-0008's own recorded follow-up.
 
 **P0-TSK-038 — Mutation-style invariant verification convention**
 - Context: platform / test

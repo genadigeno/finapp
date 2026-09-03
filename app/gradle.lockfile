@@ -158,6 +158,7 @@ org.testcontainers:testcontainers-database-commons:2.0.5=testRuntimeClasspath
 org.testcontainers:testcontainers-jdbc:2.0.5=testRuntimeClasspath
 org.testcontainers:testcontainers-postgresql:2.0.5=testRuntimeClasspath
 org.testcontainers:testcontainers:2.0.5=testRuntimeClasspath
+org.wiremock:wiremock-standalone:3.13.2=testRuntimeClasspath
 org.xmlunit:xmlunit-core:2.11.0=testCompileClasspath,testRuntimeClasspath
 org.yaml:snakeyaml:2.6=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 tools.jackson.core:jackson-core:3.1.5=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath

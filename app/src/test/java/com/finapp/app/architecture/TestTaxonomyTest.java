@@ -380,12 +380,31 @@ class TestTaxonomyTest {
         // expensive direction: it matched every test class the document mentions —
         // ErrorCodeRegistryTest, ColumnClassificationTest — and reported them as tier tasks that
         // no longer exist. A guard that fires on correct prose is a guard someone deletes.
+        // Scanned within the tier section only, not across the document. Matching the ROW SHAPE
+        // anywhere was the first version, and P0-TSK-037 immediately broke it: §5a describes the
+        // provider harness with an | **Outbound** | ... | table, which is the same shape, so the
+        // guard reported two tiers that do not exist. Bounding the section makes the collision
+        // impossible rather than guarding against it - the identical correction
+        // ProviderFailureCoverageTest needed for CLAUDE.md's bullet list, in the same session.
         Map<String, String> rows = new TreeMap<>();
-        Matcher tableRow =
-                Pattern.compile("(?m)^\\|\\s*\\*\\*(\\w+)\\*\\*\\s*\\|(.*)$")
-                        .matcher(readRepositoryFile(TESTING_DOCUMENT));
-        while (tableRow.find()) {
-            rows.put(tableRow.group(1), tableRow.group(2));
+        Pattern tableRow = Pattern.compile("^\\|\\s*\\*\\*(\\w+)\\*\\*\\s*\\|(.*)$");
+        boolean inTierSection = false;
+
+        for (String line : readRepositoryFile(TESTING_DOCUMENT).split("\\R")) {
+            if (line.startsWith("## ")) {
+                if (inTierSection) {
+                    break;
+                }
+                inTierSection = line.startsWith("## 1.");
+                continue;
+            }
+            if (!inTierSection) {
+                continue;
+            }
+            Matcher row = tableRow.matcher(line);
+            if (row.matches()) {
+                rows.put(row.group(1), row.group(2));
+            }
         }
 
         assertThat(rows.keySet())
