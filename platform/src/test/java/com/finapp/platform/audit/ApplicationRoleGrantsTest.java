@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.platform.testing.DatabaseRoles;
+
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;

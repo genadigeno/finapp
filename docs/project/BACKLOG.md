@@ -697,15 +697,30 @@ Status: `IN_PROGRESS`
   scanned, and a count-based vacuity guard could not see it. Coverage is now asserted per module
   from the shared classpath helper. ADR-0024.
 
-**P0-TST-009 — Multi-instance concurrency test convention**
+**P0-TST-009 — Multi-instance concurrency test convention** — `COMPLETE` (2026-09-02)
 - Context: platform / test
 - Description: A convention and harness for tests that must simulate several instances: separate connections, separate component instances, and separate clocks where a clock participates in the decision.
 - Why: The P0-TSK-016 lease defect passed every test because they ran in one JVM with one clock. A concurrency test that shares a connection serialises itself, and one that shares a clock cannot see skew — both look like concurrency tests and prove far less.
-- Deps: P0-TSK-016, P0-TSK-035
+- Deps: P0-TSK-016. ~~P0-TSK-035~~ **removed - a backlog defect, second occurrence of the
+  class `P0-TSK-004` found.** Testcontainers changes *where* the database comes from, not
+  whether a test can give each simulated instance its own connection, component and clock.
+  Every database test already runs against a real PostgreSQL with per-thread connections;
+  the convention was expressible today and the dependency would have blocked it for a task
+  in another epic.
 - Accept: A documented convention plus at least one test proving a clock-skew failure is detectable; existing concurrency tests audited against it.
 - Risk: Medium
 - Cx: M
 - DoD: `DOD-TEST`
+- **Outcome:** the audit found the criterion's own subject broken.
+  `clockSkewCannotStealALiveClaim` - written with `P0-TSK-016`'s fix to prove skew could not steal
+  a live claim - built the "fast" instance's clock from a hard-coded fixture instant that was,
+  measured against the running container, about **forty hours behind** the server rather than an
+  hour ahead. It passed, and it went on passing when the defect was deliberately reintroduced,
+  because a slow instance never believes anything has expired. Corrected to anchor on
+  `SELECT now()` via a new `SimulatedInstance` harness, and now **fails** under that
+  reintroduction - which is what "a clock-skew failure is detectable" means. Convention and audit
+  recorded in `DISTRIBUTED_EXECUTION.md` §5; `DatabaseRoles` moved to a shared test-support package
+  so a harness need not live in the audit tests.
 
 **P0-TSK-039 — Dependency verification and locking**
 - Context: platform / security / build

@@ -234,6 +234,57 @@ boundary. Anything crossing a broker or a provider is eventually consistent and 
 a clock is involved. A test that shares one connection serialises itself; a test that shares one
 clock cannot see skew. Both look like concurrency tests and prove much less.
 
+### The multi-instance test convention (`P0-TST-009`)
+
+A test that claims to simulate N instances gives each of them:
+
+1. **its own connection** — two "instances" on one session cannot contend for a row lock, because
+   the second statement simply waits for the first on the same session;
+2. **its own component instance** — a shared object is one instance wearing eight hats;
+3. **its own clock, where a clock participates in the decision** — and the skew must be measured
+   **against the server**, never against a fixture constant.
+
+`SimulatedInstance` supplies all three. `skewedBy(Duration)` anchors the clock on `SELECT now()`,
+which is the correction this task exists for.
+
+**Why the third point is stated so bluntly.** `clockSkewCannotStealALiveClaim` was written with
+`P0-TSK-016`'s fix precisely to prove skew could not steal a live claim. It built the fast
+instance's clock as `FIXED.plus(1 hour)` from a hard-coded `2026-09-01T12:00:00Z` — which, measured
+against the running container, was about **forty hours behind** the server rather than an hour
+ahead. The test passed. It also passed when the defect was deliberately reintroduced, because a
+*slow* instance never believes anything has expired. It was named for a property it did not
+exercise, and nothing said so for two tasks.
+
+Every skew test therefore carries a **precondition** asserting the skew is real and in the
+dangerous direction, exactly as the redaction tests assert their appenders received the line.
+
+**The harness's own limit, stated rather than implied.** Nothing mechanically prevents
+`SimulatedInstance.serverNow()` being changed to read the JVM's clock instead of the database's. On
+a machine where the two happen to agree - which is most of them, and is nearly true here, where the
+container drifts only about half a second - every skew test would keep passing while measuring the
+wrong thing again. The precondition does not catch it either, for the same reason. A guard would
+have to assume a drift that may not exist, so the defence is that the anchor is named here and in
+the harness, not that a test enforces it.
+
+### The audit, 2026-09-02
+
+| Test | Own connection per instance | Own clock | Verdict |
+|---|---|---|---|
+| `IdempotentExecutorTest` (8-way race, reclaim, skew) | yes | yes, now server-anchored | conforms |
+| `IdempotencyFailureModeTest` | yes | yes | conforms |
+| `InboxConsumerTest` (8 instances, one redelivery) | yes | shared — correct, see below | conforms |
+| `OutboxRelayTest` (8 instances drain a backlog) | yes | shared — correct, see below | conforms |
+| `OutboxCrashRecoveryTest` | yes | shared — correct | conforms |
+| `AuditWriterTest` (concurrent audit writes) | yes | shared — no clock in the decision | conforms |
+| `IdempotencyRecordSchemaTest` (16-way contention) | yes | n/a | conforms |
+
+**A shared clock is correct in every case but one, and that is the design working.** Eligibility,
+abandonment, leases and retention are all decided by the *server's* clock (§3), so no client clock
+participates in a cross-instance decision. The single place one did was the idempotency lease —
+which was the defect ADR-0014 was written for, and is now server-side. A test sharing a clock is
+therefore not a finding; a test sharing a clock **where a client clock decides something** would
+be, and there is nowhere left for that to happen.
+
 ---
 
 ## 6. Completion question

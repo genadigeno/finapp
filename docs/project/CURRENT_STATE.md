@@ -55,58 +55,54 @@ Subsequent Phase 0 milestones:
 
 ## Current Task
 
-**`P0-TST-009` - Multi-instance concurrency test convention**
+**`P0-TSK-039` - Dependency verification and locking**
 Status: `READY` - not started.
 
-Bounded context: platform / test. Depends on `P0-TSK-016` (`COMPLETE`) and `P0-TSK-035` (**not
-started**, `P0-EPIC-11`). **Risk: Medium.**
+Bounded context: platform / security / build. Depends on `P0-TSK-004` (`COMPLETE`).
+**Risk: Medium** - over-strict verification is disruptive to routine upgrades, and an update
+procedure that is not practical will be bypassed.
 
-Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-TEST`.
-
-**Its dependency is unmet**, which needs a decision before starting: `P0-TSK-035` (Testcontainers
-harness) has not been done, and this project's existing database tests run against the developer's
-own compose stack rather than Testcontainers. Worth checking whether the dependency is real or is
-another backlog defect like `P0-TSK-004`'s.
+Full definition: [`BACKLOG.md`](BACKLOG.md) §P0-EPIC-10. DoD profile: `DOD-SEC`.
 
 ### Just completed
 
-**`P0-TSK-041` - Architecture rule for single-instance assumptions** - `COMPLETE` (2026-09-02).
+**`P0-TST-009` - Multi-instance concurrency test convention** - `COMPLETE` (2026-09-02).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Fails on a planted `synchronized` block over shared state | A block planted in `OutboxRelay` fails the build |
-| Fails on a static mutable collection | A static `ConcurrentHashMap` planted in `OutboxRelay` fails the build |
-| Passes on the documented non-authoritative uses | Both `ThreadLocal`s accepted, and each **proven load-bearing**: the same rule with an empty exemption set fires on both |
-| Each exemption names why it cannot affect correctness | `DISTRIBUTED_EXECUTION.md` §3, which is now the exemption set rather than only a record |
+| A documented convention | `DISTRIBUTED_EXECUTION.md` §5: own connection, own component, own clock - and the skew measured against the **server**, never a fixture constant |
+| At least one test proving a clock-skew failure is detectable | `clockSkewCannotStealALiveClaim` now **fails** when the V004 fix is reverted. It did not before |
+| Existing concurrency tests audited against it | Seven audited, table recorded in §5 |
 
-**Four rules**: `synchronized` (method and block), process-local locks, ambient scheduling, static
-mutable state. Each is a construct that means something **only within one process**, so its presence
-is a claim about coordination that is false the moment a second instance starts - and the code reads
-as though the race was handled, which is why such things survive review.
+**The audit found the criterion's own subject broken, which is the finding of this task.**
 
-**The block check is not an ArchUnit rule.** ArchUnit models field and method *accesses*; a
-`synchronized` method is an access flag and it sees that, while a block is a `MONITORENTER`
-instruction and it is blind to it - verified by probe, where the block method reported
-`modifiers=[]`. The criterion requires failing on a planted block, so that one reads bytecode with
-ASM, declared at test scope.
+`clockSkewCannotStealALiveClaim` was written alongside `P0-TSK-016`'s fix, precisely to prove that
+an instance with a fast clock could not steal a live claim. It built the fast instance's clock as
+`Clock.fixed(FIXED.plus(1 hour))` from a hard-coded `2026-09-01T12:00:00Z`. Measured against the
+running container - `SELECT now()` returned `2026-09-03 05:20` - that clock was about **forty hours
+behind** the server, not an hour ahead.
 
-**Three defects, all caught by the task's own tests rather than by review.**
-- **`noClasses().should(customCondition)` inverts events**, so two rules were incapable of failing.
-  This is the *identical* defect `P0-TST-008` found in `secretsAreWrapped` and wrote up at length -
-  reproduced one task later by the person who wrote it up. The teeth tests are the only reason it
-  did not ship twice.
-- **`haveModifier(SYNCHRONIZED)` on `classes()`** checks the *class's* modifiers, and a class cannot
-  be synchronized - so that rule could not fire either. `noMethods()` is the correct target.
-- **The bytecode sweep walked only directories.** A consumed module reaches a dependent on the
-  runtime classpath as a **jar**, so `platform` and `sharedkernel` were never scanned and the
-  planted block was invisible. The vacuity guard counted methods and saw nothing wrong, because
-  `app`'s own classes are plenty. Coverage is now asserted **per module**, from the same classpath
-  helper the ArchUnit coverage guard uses.
+So the test exercised a **slow** instance, and a slow instance never believes anything has expired.
+It passed for a reason unrelated to the property it named. Proven: reverting the V004 fix so the
+lease is judged by the client's clock again left that test green while two unrelated tests failed.
 
-**The limit is recorded rather than glossed.** The `IdempotentExecutor` defect that motivated
-ADR-0014 used no lock, no static state and no scheduler - it was a clock comparison, and these rules
-would not have caught it. They narrow the ways to be wrong; the design question stays a review
-question, and `P0-TST-009` is the convention that gives it teeth.
+Corrected by anchoring the skew on `SELECT now()` through a new `SimulatedInstance` harness, and it
+now fails under the same reintroduction. A **precondition** asserts the skew is real and in the
+dangerous direction, so the fixture cannot silently invert again.
+
+**The audit's other result is that everything else conforms, and for a reason worth recording.**
+Every multi-instance test already gives each instance its own connection. Most share a clock, and
+that is *correct*: eligibility, abandonment, leases and retention are all decided by the server's
+clock (§3), so no client clock participates in a cross-instance decision. The one place one did was
+the idempotency lease - the defect ADR-0014 exists for - and it is now server-side.
+
+**The declared dependency was a backlog defect**, the second of the class `P0-TSK-004` found.
+`P0-TSK-035` (Testcontainers) changes *where* the database comes from, not whether a test can give
+each instance its own connection, component and clock. Removed with the reasoning recorded.
+
+`DatabaseRoles` moved from the audit tests to a shared `com.finapp.platform.testing` package - it
+had been package-private in `audit`, which is why two earlier tasks put schema-wide tests in the
+audit package to reach it.
 
 ---
 
@@ -206,6 +202,18 @@ Correlation propagation (2026-09-01), `P0-TST-003`:
 - A negative control asserting an unwrapped handoff loses it, so the test cannot pass by accident
 - `CorrelationSinkCoverageTest` fails the build when a new platform concern appears without a
   decision about whether correlation must reach it
+
+Multi-instance test convention (2026-09-02), `P0-TST-009`:
+- `SimulatedInstance`: own connection, own clock, and skew anchored on `SELECT now()` rather than a
+  fixture constant
+- The existing skew test was **named for a property it did not exercise** - its "fast" clock was
+  forty hours behind the server, so it passed under a deliberate reintroduction of the defect
+- Corrected, and now fails under that reintroduction, with a precondition asserting the skew is
+  real and in the dangerous direction
+- Seven concurrency tests audited: all give each instance its own connection; a shared clock is
+  correct everywhere because every cross-instance decision uses the server's clock
+- The declared `P0-TSK-035` dependency removed as a backlog defect, with the reasoning recorded
+- `DatabaseRoles` moved to a shared test-support package
 
 Single-instance assumptions fail the build (2026-09-02), `P0-TSK-041`:
 - Four rules: `synchronized` (method **and** block), process-local locks, ambient scheduling,
@@ -627,7 +635,7 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TST-009` is the next task.
+None in progress. `P0-TSK-039` is the next task.
 
 ## Blockers
 
@@ -756,6 +764,7 @@ carries, what triggers paying it down, and the owning phase.
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
+| **Thirteen test classes open connections through their own private helper.** `SimulatedInstance` and `DatabaseRoles` are the shared way, and only the audit tests and the new skew test use them | Found by `P0-TST-009`'s audit. Migrating thirteen files is a mechanical change touching no behaviour, and `EXECUTION_PROTOCOL.md` rule 4 forbids doing it opportunistically inside another task | **Low, and it is duplication rather than a defect**: the audit confirmed all seven multi-instance tests already open a connection per instance, so none of them is silently serialising. What it costs is that the convention has a shared harness most tests do not use, so a future test is as likely to copy a private helper as to find the shared one | `P0-TSK-036` (test taxonomy and conventions), which owns test structure | Phase 0, M0.5 |
 | **Kafka and Redis are plaintext with no enforcement.** The transport guard covers PostgreSQL only | There is no Kafka or Redis client on the classpath, so a guard for those connections would be guarding nothing - the same argument that kept a `Classification` enum out of `P0-TSK-033` | **None today**, because nothing connects to either. The expectations are documented per hop in `SECURITY_ARCHITECTURE.md`, so the gap is a decision rather than an omission; the risk arrives with the first client, which is also when it becomes enforceable | The first Kafka or Redis client | Phase 3 (broker adapter) |
 | **A caller can put personal or financial data into the correlation identifier.** The permitted charset is `[A-Za-z0-9._:@/+=-]` and a well-formed inbound `X-Correlation-Id` is accepted verbatim, so `jane.doe@example.com`, `acct:GB29NWBK60161331926819`, `customer-1990-05-14` and `+447700900123` are all valid - confirmed by probe during `P0-TSK-033` | Accepting a caller's identifier is deliberate and useful: it lets a client join its logs to ours (`P0-TSK-025`). The charset was chosen to be permissive enough for real client identifiers, and nobody asked what else fits through it | **Real, and the widest-reaching disclosure channel in the platform.** The value is written to every log line as a top-level ECS field, stamped on every span, stored in four tables and echoed in the response header and every problem-detail body - so it reaches a telemetry backend with different access control and months of retention, which is exactly what `INV-AUD-02` forbids. Bounded today only by there being no customers | Phase 1, when real callers exist. The fix is to constrain the value - generate our own and carry the caller's separately, or narrow the charset - never to relax the handling, since forbidding correlation in logs would defeat correlation | Phase 1 |
 | **No production code establishes a security scope.** `SecurityContext` exists and nothing calls it | Phase 0 has no request handler performing an auditable action and no module writing an audit record - the three registered platform actions are themselves recorded as not-yet-emitted. A caller wired now would establish a scope around nothing | **None today, and the failure mode is safe by construction.** `require()` refuses rather than defaulting, so the first caller that forgets fails loudly instead of recording the wrong party. The risk is not silent misattribution but a missing call, which is visible the first time it runs | The first audited action, which is the outbox relay emitting its registered actions or Phase 1's authentication | Phase 1 |
@@ -809,18 +818,18 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P0-TST-009` - Multi-instance concurrency test convention**, the sixth of `P0-EPIC-10`'s eight.
+**`P0-TSK-039` - Dependency verification and locking**, the seventh of `P0-EPIC-10`'s eight.
 
-A convention and harness for tests that must simulate several instances: separate connections,
-separate component instances, and separate clocks where a clock participates in the decision. The
-motivation is recorded and concrete - the `P0-TSK-016` lease defect passed every test because they
-all ran in one JVM with one clock.
+Gradle dependency verification plus locking, so the artefacts the build resolves are pinned and
+tamper-evident. The Gradle *distribution* is already checksum-pinned; every library it resolves is
+currently trusted implicitly, which for a platform whose stated posture is financial infrastructure
+is a real exposure - a substituted artefact executes with full build privileges.
 
-**Check the dependency before starting.** It declares `P0-TSK-035` (Testcontainers harness), which
-has not been done and sits in `P0-EPIC-11`. This project's database tests already run against the
-developer's compose stack with separate connections and a `TestClock`, so the convention may be
-largely satisfiable today - and `P0-TSK-004` is precedent for a declared dependency being a backlog
-defect rather than a real constraint. Resolve that first rather than treating the task as blocked.
+Its own risk note is the thing to design against: **over-strict verification is disruptive to
+routine upgrades, and an update procedure that is not practical will be bypassed.** That is the same
+argument that kept TLS off loopback in `P0-TSK-034` and kept `key` out of the secret vocabulary in
+`P0-TSK-030` - a control people work around protects nothing. The acceptance criterion says as much:
+the procedure must not be "regenerate everything and hope".
 
 ---
 
@@ -828,6 +837,8 @@ defect rather than a real constraint. Resolve that first rather than treating th
 
 | Date | Change |
 |------|--------|
+| 2026-09-02 | Task completion review of `P0-TST-009`. **No critical or important findings; the audit's own claims were verified rather than trusted, and two limits recorded.** The seven-row conformance table asserts every multi-instance test gives each instance its own connection - three of those I had checked directly, so the other four were traced: `OutboxCrashRecoveryTest` turned out to pass a connection *source* rather than a connection, and that source calls `DriverManager.getConnection` afresh each time, so eight relays really do contend; `IdempotencyRecordSchemaTest` opens `own` per racer inside the loop. The table holds. The corrected skew test was re-proven after the line-ending normalisation: reverting the V004 fix still makes it fail, which it did not do before this task. **The harness's own limit is now stated rather than implied**: nothing mechanically prevents `SimulatedInstance.serverNow()` being changed to read the JVM clock instead of the database's, and on a machine where the two agree - nearly true here, where the container drifts about half a second - every skew test would keep passing while measuring the wrong thing again. The precondition does not catch that either, and a guard would have to assume a drift that may not exist, so the defence is that the anchor is named in the convention and in the harness rather than enforced. **The duplication the audit exposed is recorded as debt**: thirteen test classes still open connections through their own private helper, which is not a defect - all seven multi-instance tests were confirmed correct - but it means the shared harness is one a future test is as likely to miss as to find. Owned by `P0-TSK-036`. 528 hermetic tests, 173 database tests. |
+| 2026-09-02 | `P0-TST-009` complete. **The audit found the criterion's own subject broken.** `clockSkewCannotStealALiveClaim` was written alongside `P0-TSK-016`'s fix precisely to prove that an instance with a fast clock could not steal a live claim - and it built that clock as `Clock.fixed(FIXED.plus(1 hour))` from a hard-coded `2026-09-01T12:00:00Z`. Measured against the running container, whose `SELECT now()` returned `2026-09-03 05:20`, that clock was about **forty hours behind** the server rather than an hour ahead. The test exercised a **slow** instance, and a slow instance never believes anything has expired, so it passed for a reason unrelated to the property it named - proven by reverting the V004 fix so the lease is judged by the client's clock again, which left that test green while two unrelated tests failed. Corrected by anchoring the skew on `SELECT now()` through a new `SimulatedInstance` harness; it now **fails** under the same reintroduction, which is what "a clock-skew failure is detectable" means. A precondition asserts the skew is real and in the dangerous direction, so the fixture cannot silently invert again. **The audit's other result is that everything else conforms, for a reason worth recording**: every multi-instance test already gives each instance its own connection, and a shared clock is *correct* because eligibility, abandonment, leases and retention are all decided by the server's clock - the one place a client clock decided anything was the idempotency lease, which is the defect ADR-0014 exists for and is now server-side. **The declared dependency was a backlog defect**, the second of the class `P0-TSK-004` found: `P0-TSK-035` (Testcontainers) changes where the database comes from, not whether a test can give each instance its own connection, component and clock. `DatabaseRoles` moved to a shared `com.finapp.platform.testing` package - it had been package-private in `audit`, which is why two earlier tasks put schema-wide tests in the audit package to reach it. 528 hermetic tests, 173 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-041`. **No critical findings; one important one and two closed gaps, all found by probing shapes the rules were not designed against.** The important one: **a static final ARRAY was not flagged** - `private static final String[] CACHE = {...}` went straight through, and a `final` reference to an array protects nothing, so it is per-instance shared state exactly as a `HashMap` would be. Closed, with enum `$VALUES` excluded as **synthetic** - which is the only reason arrays can be flagged at all, since every enum the compiler writes has one. Re-proven in both directions, and the whole build still passes with four enums present. **A second gap is recorded rather than closed**: a mutable collection built by a *factory method* and assigned to an interface-typed static field escapes both halves of the rule - the construction is not in `<clinit>` and the field's type is an interface. Widening to "any mutable construction in the class" would flag the common and correct pattern of building a local collection and returning an immutable copy, so it is written down in ADR-0024 and `MODULE_ARCHITECTURE.md` §6 instead. **Three shapes verified to work that were never designed for**: a `@Scheduled` annotation - which is how a Spring developer would actually introduce ambient scheduling, and an annotation is not a field or a call - a `ReentrantLock` used only as a local variable, and a non-final static primitive. All caught, because the condition asks for direct dependencies rather than inspecting fields. Also confirmed the bytecode sweep works through **both** classpath shapes, jar and directory, by planting a block in `platform` and in `app` separately. Two code-quality fixes: a dead `noClasses` import left by the inversion repair, and a `DescribedPredicate` wrapper whose description was never used. 528 hermetic tests, 172 database tests. |
 | 2026-09-02 | `P0-TSK-041` complete. Four rules make the mechanically detectable half of ADR-0014 a build failure: `synchronized` (method **and** block), process-local locks, ambient scheduling, and static mutable state. Each means something **only within one process**, so its presence is a claim about coordination that is false the moment a second instance starts - and worse than no lock at all, because the code reads as though the race was handled. The exemption set is `DISTRIBUTED_EXECUTION.md` §3 rather than a list the rule keeps for itself, named individually because a type-wide `ThreadLocal` exemption would admit the third one without anyone deciding; both current entries are **proven load-bearing**, since the same rule with an empty exemption set fires on each. **The block check is not an ArchUnit rule**: ArchUnit models accesses, a block is a `MONITORENTER` instruction with no access flag - verified by probe, where the block method reported `modifiers=[]` - so it reads bytecode with ASM at test scope. **Three defects, every one caught by the task's own tests rather than by review.** `noClasses().should(customCondition)` **inverts events**, so two rules were incapable of failing - the *identical* defect `P0-TST-008` found in `secretsAreWrapped` and wrote up at length, reproduced one task later by the person who wrote it up. `haveModifier(SYNCHRONIZED)` on `classes()` checks the **class's** modifiers and a class cannot be synchronized, so that rule could not fire either. And the bytecode sweep walked only **directories** - a consumed module reaches a dependent as a **jar**, so `platform` and `sharedkernel` were never scanned and the planted block was invisible, while a count-based vacuity guard saw nothing wrong because `app`'s classes are plenty; coverage is now asserted per module from the same classpath helper the ArchUnit guard uses. **The limit is recorded rather than glossed**: the `IdempotentExecutor` defect that motivated ADR-0014 used no lock, no static state and no scheduler - it was a clock comparison - so these rules narrow the ways to be wrong rather than closing them, and the design question stays a review question. ADR-0024 recorded. 528 hermetic tests, 172 database tests. |
 | 2026-09-02 | Task completion review of `P0-TSK-034`. **No critical findings; one important one, and it is the stale-list defect again.** The five modes the guard treats as insufficient - `disable`, `allow`, `prefer`, `require`, `verify-ca` - happened to be **exactly** the driver's other five, and nothing checked that. A driver upgrade adding a mode would have left it silently unclassified and untested, which is the same failure this repository has met in CI's job list, in an ArchUnit coverage guard and in a privilege check. The set is now derived from the driver's own `SslMode` enum at test time, by reflection because the driver is deliberately runtime-only, with a vacuity assertion so an unresolvable class fails loudly rather than comparing two empty sets. Proven by dropping a mode from the classified set. **Two bypass questions answered by disassembling the driver rather than reasoning**: it reads `sslmode` from **no environment variable** - `PGProperty` consults only the passed `Properties` - so there is no silent override; but a libpq **service file** (`?service=name` with `pg_service.conf`) is a source the application cannot see. That one fails in the safe direction only: a service file setting a weak mode is still refused, and one setting `verify-full` produces a false refusal. Documented rather than closed, because the alternative is trusting a file the application cannot read. Also confirmed `verify-full` is a real driver mode rather than a plausible-looking string, and added the two untested edges - a loopback database stays exempt with a weak mode configured, and both `sslmode` sources are load-bearing. Kafka and Redis remaining unguarded is recorded as debt with the reason that a guard for a connection with no client guards nothing. 515 hermetic tests, 172 database tests. |

@@ -2,6 +2,8 @@ package com.finapp.platform.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.platform.testing.DatabaseRoles;
+
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.sharedkernel.correlation.CorrelationId;

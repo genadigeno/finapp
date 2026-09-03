@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.platform.testing.SimulatedInstance;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -455,42 +456,64 @@ class IdempotentExecutorTest {
         // claim just made by its neighbour abandoned, took it over, and ran the command while
         // the neighbour was still running it - two financial effects for one request.
         //
-        // Every earlier test passed because they all ran in one JVM with one clock. This one
-        // gives the second instance a clock an hour ahead, which is far more skew than any real
-        // deployment, and the lease must still hold.
+        // THE SKEW IS RELATIVE TO THE SERVER, and that correction is P0-TST-009's finding. This
+        // test used to build B's clock from the fixture's hard-coded FIXED instant - which,
+        // measured against the running container, was about FORTY HOURS BEHIND the server rather
+        // than an hour ahead. It passed, and it went on passing when the defect was deliberately
+        // reintroduced, because a slow instance never thinks anything has expired. It was named
+        // for a property it did not exercise.
+        //
+        // Leases are set and judged by the server's clock, so a skewed instance must be skewed
+        // against that. SimulatedInstance.skewedBy does it from SELECT now().
         IdempotencyKey key = uniqueKey();
         RequestFingerprint fingerprint = RequestFingerprint.sha256("live".getBytes(StandardCharsets.UTF_8));
 
         // Instance A claims the key and is still working.
-        try (Connection instanceA = openConnection()) {
-            instanceA.setAutoCommit(false);
+        try (SimulatedInstance instanceA = SimulatedInstance.inAgreementWithTheServer()) {
             new JdbcIdempotencyRecordStore()
-                    .claim(instanceA, key, fingerprint, CorrelationId.of("instance-a"), FIXED,
-                            FIXED.plus(RETENTION), LEASE);
+                    .claim(instanceA.connection(), key, fingerprint, CorrelationId.of("instance-a"),
+                            instanceA.clock().instant(),
+                            instanceA.clock().instant().plus(RETENTION), LEASE);
             instanceA.commit();
         }
 
-        // Instance B's clock is an hour ahead of A's.
-        IdempotentExecutor skewed =
-                new IdempotentExecutor(
-                        new JdbcIdempotencyRecordStore(),
-                        Clock.fixed(FIXED.plus(Duration.ofHours(1)), ZoneOffset.UTC),
-                        RETENTION,
-                        LEASE);
+        // Instance B's clock is an hour ahead of the SERVER's - the dangerous direction, because a
+        // fast instance is the one that believes a fresh claim has already expired.
+        try (SimulatedInstance instanceB = SimulatedInstance.skewedBy(Duration.ofHours(1))) {
+            IdempotentExecutor skewed =
+                    new IdempotentExecutor(
+                            new JdbcIdempotencyRecordStore(), instanceB.clock(), RETENTION, LEASE);
 
-        AtomicInteger executions = new AtomicInteger();
-        assertThatExceptionOfType(IdempotencyInProgressException.class)
-                .as("the lease is the database's, so B's fast clock buys it nothing")
-                .isThrownBy(
-                        () ->
-                                inScope(() -> skewed.execute(
-                                        connection, key, fingerprint,
-                                        unitOfWork -> recordEffect(unitOfWork, executions, "stolen"))));
-        connection.rollback();
+            AtomicInteger executions = new AtomicInteger();
+            assertThatExceptionOfType(IdempotencyInProgressException.class)
+                    .as("the lease is the database's, so B's fast clock buys it nothing")
+                    .isThrownBy(
+                            () ->
+                                    inScope(() -> skewed.execute(
+                                            instanceB.connection(), key, fingerprint,
+                                            unitOfWork -> recordEffect(unitOfWork, executions, "stolen"))));
+            instanceB.rollback();
 
-        assertThat(executions.get()).as("the live command must not have been run a second time").isZero();
+            assertThat(executions.get())
+                    .as("the live command must not have been run a second time")
+                    .isZero();
+        }
         assertThat(effectCount()).isZero();
     }
+
+    @Test
+    @DisplayName("the skewed instance really is ahead of the server, or the test above proves nothing")
+    void theSkewIsRealAndInTheDangerousDirection() throws Exception {
+        // The precondition the previous version lacked. Without it a fixture whose "fast" clock is
+        // actually slow produces a green test exercising the opposite scenario - which is exactly
+        // what happened, undetected, from P0-TSK-016 until P0-TST-009.
+        try (SimulatedInstance fast = SimulatedInstance.skewedBy(Duration.ofHours(1))) {
+            assertThat(fast.clock().instant())
+                    .as("a fast instance must be ahead of the server it shares a lease table with")
+                    .isAfter(SimulatedInstance.serverNow());
+        }
+    }
+
 
     // -----------------------------------------------------------------
     // Wiring

@@ -2,6 +2,8 @@ package com.finapp.platform.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.platform.testing.DatabaseRoles;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;

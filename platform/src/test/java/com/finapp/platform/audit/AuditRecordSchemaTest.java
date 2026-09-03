@@ -5,6 +5,8 @@ import com.finapp.platform.security.ActorType;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.platform.testing.DatabaseRoles;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
