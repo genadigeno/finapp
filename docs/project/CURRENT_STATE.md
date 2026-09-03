@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ---
 
@@ -13,13 +13,44 @@ Last updated: 2026-09-03
 **Phase 0 — Domain and Architecture Foundation**
 Status: `IN_PROGRESS` — **eleven of twelve exit criteria hold.**
 
-The backlog is complete - 62 of 62 - and the phase review is written. The review found two gate failures; the
-first — three CRITICAL Tomcat advisories — was closed on 2026-09-03 by pinning Tomcat to 11.0.25,
-and the dependency scan now reports zero vulnerabilities.
+**Phase 1 — Identity and Customer Foundation**
+Status: `PLANNED` — **entry gate satisfied except criterion 1.** Planned in full and not started.
+
+The formal Phase 0 → Phase 1 transition was conducted on 2026-09-04:
+[`reviews/PHASE_0_TO_1_TRANSITION.md`](reviews/PHASE_0_TO_1_TRANSITION.md).
+
+**Why Phase 1 is `PLANNED` and not `READY`.** Every entry-gate criterion in `PHASE_GATES.md` §2 is
+met except criterion 1 — *the previous phase is `COMPLETE`* — and `PHASE_GATES.md` §1 is explicit
+that a phase may not become `READY` while a hard dependency is not `COMPLETE`. Phase 1 becomes
+`READY` automatically on the first green CI run, with no further planning work. Recording it as
+`READY` now would be exactly the *"shipping through a failed gate"* §1 names as the failure mode,
+and it would do so on the one criterion whose whole purpose is to prove the gates run at all.
+
+The Phase 0 backlog is complete — 62 of 62 — and the phase review is written. The review found two
+gate failures; the first — three CRITICAL Tomcat advisories — was closed on 2026-09-03 by pinning
+Tomcat to 11.0.25, and the dependency scan now reports zero vulnerabilities.
 
 **Criterion 7 is the only one left**, and it cannot be closed from inside the repository: the suite
-has never run in CI, because there is no git remote. See
-[`reviews/PHASE_0_REVIEW.md`](reviews/PHASE_0_REVIEW.md) and its Addendum.
+has never run in CI, because there is no git remote. Tracked as **`P0-TSK-042`**, the sole item of
+`P0-EPIC-13`. See [`reviews/PHASE_0_REVIEW.md`](reviews/PHASE_0_REVIEW.md) and its Addendum.
+
+### What Phase 1 will build
+
+Objective: **a Party can exist, become a Customer, hold an Identity, prove it, hold a session with
+a recorded assurance level, and have every privileged action authorised and audited** — with no
+money, no account and no ledger anywhere in it.
+
+Six aggregates in three bounded contexts (`party`, `identity`, `audit`), nine tables, fourteen
+endpoints, seven milestones, 25 backlog items. Planned in
+[`PHASE_1_PLAN.md`](PHASE_1_PLAN.md); decisions in ADR-0029 through ADR-0032; the properties it
+must protect are the new `INV-IDN-01`…`INV-IDN-07` group in
+[`FINANCIAL_INVARIANTS.md`](../domain/FINANCIAL_INVARIANTS.md).
+
+**The transition's own finding**: the seven identity properties existed only as Phase 1 *exit
+criteria* prose — no stable ID, no ranked enforcement mechanism, no named verification method, no
+mutation-demonstration row. That is a materially weaker regime than every other property on the
+platform gets, and it was backwards: Phase 1 is the phase whose *product* is security. Catalogued
+before any credential-handling code is written against prose.
 
 Entry gate passed on 2026-08-31. All twelve entry-gate criteria in
 [`PHASE_GATES.md`](PHASE_GATES.md) §2 are satisfied: the delivery plan is written, bounded
@@ -83,19 +114,55 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None. Phase 0's backlog is finished; its exit gate is not passed.**
+**`P0-TSK-042` — add a git remote and observe CI green.** The only open task in the repository,
+and the only thing between Phase 0 and `COMPLETE`. It cannot be done from inside the repository:
+it requires an action by the project owner.
 
-Every task except `P0-TSK-017` is `COMPLETE`, and the phase review has been conducted. What remains
-is not backlog work but the two gate failures below, neither of which is architectural:
+The other two items recorded here on 2026-09-03 are closed. The Tomcat CVEs were fixed the same
+day; `P0-TSK-017` was rescheduled and completed, taking the Phase 0 backlog to 62 of 62.
 
-1. **Upgrade past the three Tomcat CVEs** — its own change, with the verification-metadata and
-   lockfile regeneration ADR-0025 requires (`EXECUTION_PROTOCOL.md` rule 4).
-2. **Add a git remote and observe CI green** — closes exit criterion 7 and the `DOD-BUILD` item
-   outstanding since `P0-TSK-001`.
-3. **Reschedule `P0-TSK-017`**, which is recorded `BLOCKED` on an HTTP surface and an audit
-   registry that both now exist.
+**The next implementation task after that is `P1-TSK-001`** — the data-access ADR — which must not
+be started while Phase 0 is not `COMPLETE`.
 
 ### Just completed
+
+**Phase 0 → Phase 1 transition** — **CONDUCTED** (2026-09-04).
+[`reviews/PHASE_0_TO_1_TRANSITION.md`](reviews/PHASE_0_TO_1_TRANSITION.md)
+
+| Part | Outcome |
+|---|---|
+| Phase 0 gate audit, 13 areas | 12 `PASS`, 1 `PARTIAL` (invariants — see the finding below) |
+| 12 universal exit criteria | 11 `PASS`, **criterion 7 `FAIL`** — never run in CI |
+| Phase 0 verdict | **remains `IN_PROGRESS`**; remediation task `P0-TSK-042` created |
+| Phase 1 established | Objective, 3 contexts, 6 aggregates, 9 tables, 14 endpoints, 7 milestones |
+| Phase 1 backlog | 25 items at task granularity, each with acceptance criteria |
+| Phase 1 decisions | ADR-0029…0032, all `Proposed` |
+| Phase 1 status | **`PLANNED`**, entry gate satisfied except criterion 1 |
+
+**The transition's own finding, and it is the reason a transition is a separate act rather than a
+formality.** Phase 1's seven identity properties existed **only as exit-criteria prose** in
+`PHASE_GATES.md` — no stable ID to cite, no enforcement mechanism ranked by strength, no named
+verification method, and no row in `MUTATION_TESTING.md`. Every other property on this platform
+gets all four. The asymmetry was backwards, because Phase 1 is the phase whose *product* is
+security, and it would have meant writing credential-handling code against prose. Catalogued as
+`INV-IDN-01`…`INV-IDN-07`, taking the platform to **71 invariants**.
+
+**Phase 1 is `PLANNED` rather than `READY`, deliberately, and against the letter of the request.**
+Eleven of twelve entry criteria are met; criterion 1 — *the previous phase is `COMPLETE`* — is not,
+because Phase 0's criterion 7 fails. `PHASE_GATES.md` §1 forbids `READY` while a hard dependency is
+not `COMPLETE`, and the criterion in question is the one that proves the gates execute at all.
+Marking it `READY` would be the failure §1 names. It flips on the first green CI run with no
+further planning work.
+
+**Four decisions were taken rather than deferred into implementation**, because each is
+irreversible once data exists: Party/Customer/Identity as three aggregates (ADR-0029); server-side
+sessions with assurance as a *level* rather than an MFA boolean (ADR-0030); permission at the
+boundary **and** ownership in the domain, always both (ADR-0031); and credentials storing the
+derivation *with* the parameters that produced it (ADR-0032). A fifth — the data-access mechanism,
+unresolved question 12 — is `P1-TSK-001` rather than an ADR written here, because it is a Phase 1
+decision and writing it during the transition would have been Phase 1 work under another name.
+
+### Previously
 
 **`P0-TSK-017` - `Idempotency-Key` header handling** - `COMPLETE` (2026-09-03).
 **The Phase 0 backlog is now 62 of 62.**
@@ -990,7 +1057,12 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-None in progress. `P0-TSK-036` is the next task.
+**None in progress.** The Phase 0 backlog is finished and Phase 1 is planned but not started.
+
+The last work performed was the **Phase 0 → Phase 1 transition** (2026-09-04), which is planning
+and governance rather than implementation: the gate audit, the phase review, the `INV-IDN` group,
+ADR-0029 through ADR-0032, `PHASE_1_PLAN.md`, and the elaboration of Phase 1 to task granularity.
+No application code was written, which is the constraint the transition was performed under.
 
 ## Blockers
 
@@ -1188,7 +1260,7 @@ it begins.
 | 9 | Which payment rail to simulate first, and its finality semantics | Phase 5 | Medium — first rail shapes the abstraction (mitigated by designing to `PAYMENT_LIFECYCLES.md`) |
 | 10 | Which jurisdiction-neutral compliance abstractions belong in the MVP | Phase 2 | Medium |
 | 11 | Fail-safe policy for risk evaluation: block or allow on unavailability | Phase 13 | High — a wrong default is either an outage or an open door |
-| 12 | **Data-access mechanism: JPA/Hibernate, Spring Data JDBC, or plain JDBC** | Phase 3 | Medium–High — surfaced by `P0-TSK-011`, whose description said "a reusable embeddable" while no ADR had chosen an ORM. It matters here more than usual: Hibernate's dirty checking emits `UPDATE`s, and `INV-LED-03`/`INV-HIST-01` say posted financial records are never updated, with the application role holding no `UPDATE` privilege at all. `MoneyColumns` was written mechanism-agnostic so the decision is not made by accident; it must be made before the ledger schema exists |
+| 12 | **Data-access mechanism: JPA/Hibernate, Spring Data JDBC, or plain JDBC** | **Phase 1** — brought forward by the transition, owned by `P1-TSK-001`, ADR-0033 | Medium–High — surfaced by `P0-TSK-011`, whose description said "a reusable embeddable" while no ADR had chosen an ORM. It matters here more than usual: Hibernate's dirty checking emits `UPDATE`s, and `INV-LED-03`/`INV-HIST-01` say posted financial records are never updated, with the application role holding no `UPDATE` privilege at all. `MoneyColumns` was written mechanism-agnostic so the decision is not made by accident; it must be made before the ledger schema exists — and Phase 1 creates nine tables, so it is now needed before those |
 
 Resolved during initiation:
 - ~~Which modules form the initial modular-monolith cut?~~ → [`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md)
@@ -1202,17 +1274,21 @@ Resolved during initiation:
 
 ## Next Task
 
-**None. The Phase 0 backlog is complete — 62 of 62.**
+**`P0-TSK-042` — add a git remote and observe CI green.**
 
-One thing remains, and it cannot be done from inside the repository:
+Closes exit criterion 7, the Phase 0-specific "build green in CI from a clean clone", and the
+`DOD-BUILD` item outstanding against `P0-TSK-001`–`005`. It is the last gate failure, and it cannot
+be done from inside the repository.
 
-**Add a git remote and observe CI green.** Closes exit criterion 7, the Phase 0-specific "build green
-in CI from a clean clone", and the `DOD-BUILD` item outstanding against `P0-TSK-001`–`005`. It is the
-last gate failure.
-
-Phase 0 becomes `COMPLETE` when CI has run green and the review record is amended to say so.
-**Phase 1 must not be entered before that** — `PHASE_GATES.md` §1: a phase may not become `READY`
+Phase 0 becomes `COMPLETE` when CI has run green and the review record is amended to say so. Phase 1
+becomes `READY` at that moment and not before — `PHASE_GATES.md` §1: a phase may not become `READY`
 while a hard dependency is not `COMPLETE`.
+
+**Then, and only then: `P1-TSK-001` — ADR: data-access mechanism.** It is first because it is the
+one Phase 1 decision that constrains every table Phase 1 creates and, through `INV-LED-03` and
+`INV-HIST-01`, every table Phase 3 will create: Hibernate's dirty checking emits `UPDATE`s, and the
+application role holds no `UPDATE` privilege on append-only tables at all. Deciding it after the
+first repository is written means writing the second one twice. It closes unresolved question 12.
 
 ---
 
@@ -1220,6 +1296,7 @@ while a hard dependency is not `COMPLETE`.
 
 | Date | Change |
 |------|--------|
+| 2026-09-04 | **Phase 0 → Phase 1 transition conducted.** The gate audit is the deliverable and its result is that **Phase 0 remains `IN_PROGRESS`**: 12 of 13 audit areas `PASS`, one `PARTIAL`, and 11 of 12 universal exit criteria hold — criterion 7 fails because the suite has never run in CI, there being no git remote. `PHASE_GATES.md` §4 prescribes the consequence and §1 is explicit that *"shipping through a failed gate"* is the failure; remediation is `P0-TSK-042`, the sole item of the new `P0-EPIC-13`, and it cannot be performed from inside the repository. **The transition found something a formality would have missed.** Phase 1's seven identity properties — credential irreversibility, per-credential derivation parameters, immediate session revocation, authentication-is-not-authorization, MFA bypass paths, recovery escalation, account enumeration — existed **only as exit-criteria prose** in `PHASE_GATES.md`: no stable ID, no enforcement mechanism ranked by strength, no named verification method, no mutation-demonstration row. Every other property on this platform gets all four, and the asymmetry was backwards, because Phase 1 is the phase whose *product* is security and the alternative was writing credential-handling code against prose. Catalogued as `INV-IDN-01`…`07`, taking the platform to **71 invariants** — and the Phase 0 mutation register was verified unaffected, since it is scoped to Phase 0 and a Phase 1 invariant with no test yet is correct rather than a gap. **Phase 1 is recorded `PLANNED`, not `READY`, and that is a deliberate deviation from the instruction that produced this work**: eleven of twelve entry criteria are met and criterion 1 — the previous phase is `COMPLETE` — is not, so §1 forbids `READY`; the criterion blocking it is precisely the one that proves the gates execute at all, which makes forcing it the worst available place to make an exception. It flips on the first green CI run with no further planning. **Four irreversible decisions taken rather than deferred into implementation.** ADR-0029: Party, Customer and Identity are three aggregates in two modules — the pressure to collapse them into one `users` table comes from the simplest first story, and the cost lands on a person who is not a customer, a customer who is not a person, a retired login, and staff; unpicking it later means migrating identity out of a table financial records already reference, where `INV-HIST-01` forbids rewriting the history pointing at it. ADR-0030: sessions are server-side and authoritative in PostgreSQL, because a self-contained JWT makes validity a property of a signature rather than of current state, so *"log out everywhere"* becomes a promise the architecture cannot keep (`INV-IDN-03`) — and **assurance is a level rather than an MFA boolean**, since every real bypass is a route producing a session a boolean calls fine. ADR-0031: permission at the boundary **and** ownership in the domain, always both — collapsing them is the most common authorization defect in financial software, where a customer with a legitimate `transfer:create` permission uses it against someone else's account and every check passes; `BOUNDED_CONTEXTS.md` context 2 renamed to *Identity, Authentication & Authorization*, since the list had been omitting a concept `CLAUDE.md` forbids collapsing. ADR-0032: a credential stores the derivation **and** the algorithm and parameters that produced it, because the decision usually missed is not which algorithm but where the parameters live — a global work factor cannot be raised, as raising it changes only new credentials and nothing records what the old ones used. Phase 1 planned in full: 3 bounded contexts, 6 aggregates, 16 commands, 10 events, 5 state machines, 9 tables, 14 endpoints, 12 failure scenarios, 7 milestones, and **25 backlog items** elaborated to task granularity with acceptance criteria and DoD profiles. The must-not-implement list is explicit and three minimal foundations are justified individually. No application code written. 606 hermetic tests, 173 database tests. |
 | 2026-09-03 | `P0-TSK-017` complete. **The Phase 0 backlog is 62 of 62.** `@RequiresIdempotencyKey` declares the requirement on a handler or its controller, and an **interceptor** enforces it. **An interceptor rather than a filter, and that is load-bearing twice**: a filter runs before the dispatcher has chosen a handler, so it could not know whether *this* endpoint declares the requirement without a second, drifting copy of the routing table; and a filter runs outside `@ExceptionHandler`, so its rejection would be the container's default page rather than the error contract — the problem `P0-TSK-025` had to work around by rendering the contract by hand inside its filters. Rejection happens **before the handler is entered**, asserted by counting handler entries rather than reading the response, because for a money-moving command the half of the work done before a late rejection is the half that matters. **The requirement is declared, not defaulted**: requiring the header everywhere would force it onto reads, where it means nothing and would train clients to send a value nobody uses, and the annotation is the greppable list of endpoints claiming to move money. New error code `api.IdempotencyKeyRequired` (422), distinct from `api.ValidationFailed` on purpose — a client can automate "generate a key and retry" but not "your request was invalid"; the published contract gained six lines, every difference `COMPATIBLE`, and no probe fixture leaked into it. **A real gap was found by following `DATA_CLASSIFICATION.md` §5**, which classifies this column as a caller-supplied identifier: `IdempotencyKey` bounds length and blankness because those are the table's `CHECK` constraints and carries **no charset**, so a caller could have put CR/LF into a value the platform logs, stores durably and will put on an audit record — a forged log line. Closed with the same default-deny charset the correlation identifier uses, and unit-tested rather than driven over HTTP because the JDK's own `HttpClient` refuses to **send** CR/LF, while a hostile client writing raw bytes to a socket is not bound by that politeness. **The audit clause was corrected rather than approximated**: the registry now exists, but `AuditRecord` has no field for a key and nothing in Phase 0 writes an audit record in an HTTP flow, so there is nothing to record it on. Adding a column would be a schema change nothing populates, and unlike actor attribution **no history is lost by waiting** — the test ADR-0010 applies. Transferred to Phase 4; the third Phase 0 criterion to need this correction after `P0-TSK-014` and `P0-TSK-028`. Five mutations, all caught. 606 hermetic tests, 173 database tests. |
 | 2026-09-03 | **Exit criterion 11 closed: the three Tomcat advisories are fixed and the dependency scan reports zero vulnerabilities.** `tomcat-embed-core` pinned to **11.0.25** in the version catalog and applied as a dependency **constraint** in `app`. **There was no patch release to move to** — Spring Boot 4.1.1 is the latest stable 4.1.x and `4.2.0-M1` is a milestone, so overriding the BOM was the only route, and it is the only deliberate deviation from it. A **constraint** rather than `force`, because `force` wins against a *higher* version too: a future Boot managing 11.0.26 would have been silently held back at 11.0.25, which is exactly the pin-rot ADR-0026 exists to prevent. All three embed artefacts are constrained together — only `-core` is affected, but they ship as one release and share internals. **Verified rather than assumed at four points**: the scan goes 3 CRITICAL → **0**; the lockfiles record 11.0.25 across every configuration; the 68 slice tests boot a real Tomcat 11.0.25 on a random port, so compatibility is demonstrated; and the verification metadata plus all six lockfiles were regenerated in **one invocation**, per the `P0-TSK-035` finding that neither order works alone. **The exposure is recorded accurately rather than dramatised**: all three are authentication and authorization bypasses — security-constraint bypass, DIGEST replay, FORM bypass — and Phase 0 has *no authentication at all*, so they were practically unexploitable here; the gate does not grade on exploitability and Phase 1 brings precisely what they attack. **One claim was corrected by probing**, which is the finding worth keeping: the build comment first said the lockfile would reject removing the constraint, and it does not — with the block deleted, resolution still yields 11.0.25 because the lock applies its own `{strictly 11.0.25}`. The lock *keeps* the version; it does not object to the loss. A regression needs the deletion **and** a lock regeneration, and the `dependency-scan` job is the control. No test was added to assert the version: it would duplicate the scan and need editing on every legitimate bump, which is the stale-list defect this repository has met four times. **Eleven of twelve exit criteria now hold**; criterion 7 — the suite has never run in CI — is the only one left and cannot be closed from inside the repository. 578 hermetic tests, 173 database tests. |
 | 2026-09-03 | `P0-DOC-012` complete; **`P0-EPIC-12` closes, and with it the Phase 0 backlog**. The phase review, all eight `PHASE_GATES.md` §4 areas in order, and ADR-0001 through ADR-0028 moved to `Accepted`. **The review finds the exit gate does not pass, which is what conducting one is for.** Ten of twelve universal criteria hold; criterion 11 fails on three HIGH/CRITICAL Tomcat CVEs and criterion 7 on a suite that has never run in CI. §4's closing rule prescribes the consequence — the phase **remains `IN_PROGRESS`** — and §1 is explicit that moving backwards from review is normal while *"shipping through a failed gate"* is the failure. Neither failure is architectural: Phase 0's design work is done. **Two areas could not be conducted as written and say so rather than reporting a pass.** Area 2 asks for one real posting walked end to end and Phase 0 creates none, so it verifies the kernel a posting will be built from instead and names what it cannot check. Area 5 enumerates the three registered privileged actions and finds **none of them is emitted** — an abandoned event, meaning consumers permanently not receiving a fact that happened, is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. **The ADRs were accepted despite the open failures, and the reasoning is recorded rather than assumed**: criterion 10 is a *precondition* of the gate rather than a reward for passing it, so accepting them is work toward it — holding ADR-0003 at `Proposed` because Tomcat has a CVE would be theatre, since the decisions were taken, implemented and tested and none is contingent on either failure. **Two documentation drifts found by hand-diffing what no guard covers**: the pinned-version table in `SYSTEM_ARCHITECTURE.md` omitted Prometheus, Grafana and WireMock — the first two being `compose.yaml` images that `verifyInfrastructureVersions` guards, so the table under-reported the coverage of the very check described beneath it. Both closed. The review also records the phase's recurring finding in one place: across the last twenty tasks the defect was almost never in production code but in the thing doing the checking — a rule that could not fail, a sweep reading a stale class file, a regex that read past its section, a coverage list checked in one direction, a register asserting a demonstration nobody had performed. 578 hermetic tests, 173 database tests. |

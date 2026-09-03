@@ -201,6 +201,54 @@ build and CI to each other. &rarr;
 [ADR-0028](../adr/ADR-0028-test-tiers-by-requirement.md),
 [`TESTING.md`](TESTING.md)
 
+### Party, Customer and Identity
+Three aggregates, in two modules, with three lifecycles — never one `users` table. Party is *who
+exists*, Customer is *a role a Party plays toward the platform*, Identity is *a means of proving
+presence*. The pressure to collapse comes from the simplest first story, and the cost arrives in
+four places the collapsed model cannot represent: a person who is not a customer (a beneficial
+owner), a customer who is not a person, a person whose login is retired and replaced, and staff —
+who are Identities and never Customers. Unpicking it later means migrating identity data out of a
+table financial records already reference, at which point `INV-HIST-01` forbids rewriting the
+history that points at it. `identity` references `PartyId` **by value**: no cross-module foreign
+key, because a database-level FK across a module boundary is coupling Gradle and ArchUnit cannot
+see. &rarr; [ADR-0029](../adr/ADR-0029-party-customer-identity-are-three-aggregates.md)
+
+### Sessions and assurance
+Sessions are **server-side and authoritative in PostgreSQL**, so revocation is immediate by
+construction on every instance (`INV-IDN-03`). A self-contained JWT was rejected on exactly that
+point: validity is a property of the signature rather than of any current state, so every
+revocation mitigation reintroduces the lookup the token was chosen to avoid — and "logout
+everywhere" becomes a promise the architecture cannot keep. Redis was rejected as the *authority*:
+a session store whose durability is weaker than the account it protects can resurrect a revoked
+session after a restore, and no test on a healthy system finds that.
+**Assurance is a level, not an MFA boolean.** Every real MFA bypass is a route that produces a
+session a boolean says is fine; a level moves the check from every producer to every consumer, and
+consumers are the ones with the requirement. &rarr;
+[ADR-0030](../adr/ADR-0030-server-side-sessions-and-assurance-level.md)
+
+### Authorization
+Two checks, always both: **permission** at the boundary (may an actor of this kind do this at all?)
+and **ownership** in the domain (may *this* actor do it to *this* resource?). Collapsing them is
+the most common authorization defect in financial software — a customer with a legitimate
+`transfer:create` permission uses it against someone else's account, every check passes, and
+nothing is logged as a denial. Ownership is never checked at the boundary, because the boundary
+knows only an identifier from the request and trusting that *is* the defect. RBAC rather than a
+policy engine: a rules engine is right when policy changes faster than code, which is true for
+Phase 13's **risk** decisions and not for authorization. Authorization stays in `identity` as a
+recorded merge with a named split trigger, and `BOUNDED_CONTEXTS.md` context 2 is renamed so the
+list stops omitting a concept `CLAUDE.md` forbids collapsing. &rarr;
+[ADR-0031](../adr/ADR-0031-authorization-model.md)
+
+### Credential storage
+A credential row stores the derivation **and the algorithm and parameters that produced it**. The
+decision usually missed is not which algorithm but where the parameters live: a global work factor
+cannot be raised, because raising the setting changes only new credentials and nothing records what
+the old ones used. The store becomes a mix of strengths with no way to find or upgrade the weak
+ones. Argon2id via a vetted library, upgrade-on-use inside the verification transaction — the only
+moment the platform legitimately holds the plaintext — and a dummy verification of equivalent cost
+for an absent identity, because skipping the work turns response time into an account oracle.
+&rarr; [ADR-0032](../adr/ADR-0032-credential-storage-and-rotation.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
@@ -252,7 +300,7 @@ where later capability is structurally needed earlier, the earlier phase defines
 → [ADR-0007](../adr/ADR-0007-phase-gated-delivery.md), [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md)
 
 ### Invariant governance
-Sixty-four financial, security and operational invariants are catalogued with stable IDs,
+Seventy-one financial, security and operational invariants are catalogued with stable IDs,
 enforcement mechanisms and verification methods. Phases declare the invariants they protect
 at the entry gate and prove them by test at the exit gate. →
 [`FINANCIAL_INVARIANTS.md`](../domain/FINANCIAL_INVARIANTS.md)

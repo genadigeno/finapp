@@ -46,6 +46,10 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0026](ADR-0026-keeping-pins-fresh.md) | A pin that nothing maintains is a pin that rots | Accepted | 0 | Security |
 | [0027](ADR-0027-tests-bring-their-own-database.md) | Tests bring their own database | Accepted | 0 | Testing |
 | [0028](ADR-0028-test-tiers-by-requirement.md) | A test tier is what the test needs, not what it proves | Accepted | 0 | Testing |
+| [0029](ADR-0029-party-customer-identity-are-three-aggregates.md) | Party, Customer and Identity are three aggregates | Proposed | 1 | Domain |
+| [0030](ADR-0030-server-side-sessions-and-assurance-level.md) | Server-side sessions, and assurance is a level rather than a flag | Proposed | 1 | Security |
+| [0031](ADR-0031-authorization-model.md) | Roles grant permissions; ownership is checked separately | Proposed | 1 | Security |
+| [0032](ADR-0032-credential-storage-and-rotation.md) | Credentials store a derivation and the parameters that produced it | Proposed | 1 | Security |
 
 ## Anticipated ADRs
 

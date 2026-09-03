@@ -30,8 +30,8 @@ elaborated to the depth that is currently *knowable*:
 
 | Phases | Depth | Elaborated |
 |--------|-------|-----------|
-| 0 | Epic → Capability → Feature → Task / Test / Doc | Now |
-| 1 | Epic → Capability → Feature | Now; tasks at Phase 1 entry gate |
+| 0 | Epic → Capability → Feature → Task / Test / Doc | Complete |
+| 1 | Epic → Capability → Feature → Task / Doc | **Elaborated 2026-09-04** by the Phase 0 → Phase 1 transition |
 | 2–4 | Epic → Capability | Now; features at phase entry gate |
 | 5–16 | Epic | Now; capabilities at phase entry gate |
 
@@ -999,58 +999,430 @@ Status: `IN_PROGRESS`
 
 ---
 
+## P0-EPIC-13 — Exit gate remediation
+
+Created by the Phase 0 → Phase 1 transition (2026-09-04). Not architectural work: the sole
+remaining gate failure is a fact about the repository's hosting, not about what Phase 0 built.
+
+**P0-TSK-042 — Add a git remote and observe CI green** — `TODO`
+- Context: platform
+- Description: Push this repository to a remote that runs GitHub Actions, and observe all four
+  jobs — `build`, `migrations`, `secret-scan`, `dependency-scan` — pass on a CI runner from a
+  clean checkout.
+- Why: **Phase 0 exit criterion 7 is failing on this and nothing else.** All four jobs pass when
+  run locally and `./gradlew build databaseTest` is green from a clean clone, but *green locally*
+  and *green in CI* are different claims and only the second satisfies the criterion. Until a
+  runner has executed the workflow, every gate the Definition of Done depends on is a gate that
+  has never actually run — `SYSTEM_ARCHITECTURE.md` §Continuous Integration says a gate that is
+  not automated is a gate that will be skipped, and one that is automated but never executed is
+  the same thing wearing a badge. Closing it also closes the `DOD-BUILD` "CI green" item
+  outstanding against `P0-TSK-001`–`005` and the Phase 0-specific "build green in CI from a clean
+  clone" criterion.
+- Deps: none in the repository. **This task cannot be completed from inside it** — it requires an
+  action by the project owner.
+- Implementation:
+  - Create the remote and add it; push `main`.
+  - Observe the four jobs. Expect real failures the local runs cannot produce: a case-sensitive
+    filesystem, an LF-only checkout, a runner without the TLS interception this machine has, a
+    cold Gradle cache exercising dependency verification against the real repositories, and
+    Docker-in-CI behaviour for the `migrations` job.
+  - Fix what fails **in the workflow or the build**, never by relaxing a gate.
+- Tests: the four CI jobs themselves are the test. No new test is added: a test asserting "CI has
+  run" could only assert its own environment, which is the vacuity these guards exist to avoid.
+- Accept: All four jobs green on a CI runner, from a clean checkout, at a commit on `main`; the
+  run is linked from `reviews/PHASE_0_REVIEW.md`; `CURRENT_STATE.md` records the date.
+- Risk: Medium — the first CI run of a build that has only ever run on one Windows machine
+  routinely fails on path case, line endings and cache assumptions.
+- Cx: S (if it passes) to M (if the first run exposes machine-specific assumptions)
+- DoD: `DOD-BUILD`
+
+---
+
 # Phase 1 — Identity and Customer Foundation
 
-Status: `PLANNED` — features listed; tasks elaborated at the Phase 1 entry gate.
+Status: `PLANNED` — entry gate satisfied except criterion 1 (Phase 0 not yet `COMPLETE`).
+Elaborated to task granularity 2026-09-03 by the Phase 0 → Phase 1 transition.
+
+The engineering plan is [`PHASE_1_PLAN.md`](PHASE_1_PLAN.md): scope, domain model, security model,
+data model, API model, events, failure scenarios, testing, observability, milestones and the
+explicit out-of-scope list. This section is the task list.
+
+**IDs use this document's scheme** (`P1-TSK-nnn`), not a parallel one. §ID Scheme: *IDs are
+permanent*, and a second numbering for one phase would be the kind of drift every guard in this
+repository exists to prevent.
 
 ## P1-EPIC-01 — Party and Customer
-- **P1-CAP-01** Party registration and lifecycle
-  - P1-FEAT-01 Party aggregate and registration
-  - P1-FEAT-02 Customer relationship distinct from Party
-  - P1-FEAT-03 Party profile read/update with change audit
-- **P1-CAP-02** Party data protection
-  - P1-FEAT-04 PII classification applied to party data
-  - P1-FEAT-05 Party data access authorization
+
+### P1-CAP-01 — A person exists and is registered
+
+#### P1-FEAT-01 — Foundations before persistence
+
+**P1-TSK-001 — ADR: data-access mechanism**
+- Context: platform / architecture
+- Description: Decide between JPA/Hibernate, Spring Data JDBC and plain JDBC, and record it.
+- Why: Unresolved question 12, raised by `P0-TSK-011` and deferred because Phase 0 had no
+  persistence beyond the kernel. Phase 1 introduces six aggregates. It matters more than usual
+  here: Hibernate's dirty checking emits `UPDATE`s, and `INV-LED-03`/`INV-HIST-01` say posted
+  financial records are never updated — the application role holds no `UPDATE` privilege at all.
+  `MoneyColumns` was written mechanism-agnostic so this would not be decided by accident.
+- Deps: none
+- Implementation: ADR-0033 with alternatives and consequences; no code.
+- Tests: none (ADR).
+- Accept: ADR-0033 exists in `Proposed`; the decision explains how it interacts with append-only
+  tables and with the application role's privileges; unresolved question 12 is closed in
+  `CURRENT_STATE.md`.
+- Risk: Medium. Cx: M. DoD: `DOD-ARCH`
+
+**P1-TSK-002 — Constrain the correlation identifier**
+- Context: platform / security
+- Description: Stop a caller placing personal or financial data into `X-Correlation-Id`.
+- Why: Recorded Phase 0 debt and the transition's **risk R1**. The charset permits
+  `jane.doe@example.com` and `acct:GB29NWBK…` (confirmed by probe), a well-formed inbound value is
+  accepted verbatim, and it reaches every log line, every span, four tables and every response.
+  That is a disclosure into a telemetry backend with different access control (`INV-AUD-02`),
+  bounded today only by there being no customers. **Phase 1 is when customers arrive**, so this
+  lands before any customer-facing endpoint.
+- Deps: none
+- Implementation: generate the platform's own correlation identifier always; carry any caller value
+  separately as a distinct, non-propagated field, or narrow the accepted charset — the ADR-level
+  choice is part of the task. Never relax the handling: forbidding correlation in logs defeats
+  correlation.
+- Tests: a caller-supplied value that would be PII cannot reach a log line, a span or a stored
+  column; the client can still join its own logs to ours.
+- Accept: no caller-controlled value reaches an unbounded-retention sink; the debt row is closed.
+- Risk: Medium. Cx: M. DoD: `DOD-SEC`
+
+**P1-TSK-003 — `party` and `identity` module skeletons**
+- Context: party, identity
+- Description: Two modules, their Gradle wiring, their schemas and their Flyway histories.
+- Why: The first modules other than `platform` to own a schema. The boundary must exist before the
+  aggregates do — `P0-TSK-002`'s lesson, one phase on.
+- Deps: P1-TSK-001
+- Implementation: modules in the documented dependency direction; schema-per-module (ADR-0011);
+  `AuditableAction` enum per module, catalogued.
+- Tests: boundary rules see both modules; no cross-module entity reference; migrations apply to an
+  empty database; both enums reconciled with `AUDITABLE_ACTIONS.md`.
+- Accept: `./gradlew build` green with both modules; `ProductionModules` coverage includes them, so
+  every existing architecture rule now protects them without being edited.
+- Risk: Low. Cx: M. DoD: `DOD-BUILD`
+
+**P1-TSK-004 — Connection-pool sizing for N instances**
+- Context: platform / ops
+- Description: Size and document the pool against `max_connections` for a realistic instance count.
+- Why: Recorded debt and transition **risk R6**. Hikari's default is 10 per instance; ten instances
+  exhaust PostgreSQL's default `max_connections` of 100 before any connection does work. The
+  failure presents as instances failing readiness for pool exhaustion rather than for anything
+  wrong with the database. ADR-0014 says N is never 1, so this is arithmetic owed before the ledger
+  — and Phase 1 is the first phase with real pool usage.
+- Deps: P1-TSK-003
+- Implementation: sizing derived from a stated instance count and `max_connections`, both
+  configuration; a startup guard or a documented check.
+- Tests: the arithmetic asserted against the configured values, so a change to either that breaks
+  the relationship fails the build.
+- Accept: the relationship between instances, pool size and `max_connections` is written down and
+  checked rather than assumed.
+- Risk: Medium. Cx: S. DoD: `DOD-OBS`
+
+#### P1-FEAT-02 — Registration
+
+**P1-TSK-005 — Party, Customer and Identity aggregates**
+- Context: party, identity
+- Description: The three aggregates, their state machines, their schemas and their constraints.
+- Why: ADR-0029. `DELIVERY_PLAN.md` §17 names collapsing them as the phase's top risk.
+- Deps: P1-TSK-003
+- Implementation: three aggregates in two modules; `identity` references `PartyId` **by value**, no
+  cross-module foreign key; state machines with terminal states enforced by the aggregate;
+  `CHECK` constraints generated from the enums (`P0-TSK-022` pattern); every column classified.
+- Tests: each state machine's invalid transitions rejected **by the aggregate**, not merely
+  unreachable through an API (`INV-LIFE-02`); a closed Customer cannot be reopened
+  (`INV-LIFE-04`); one Party with two Identities and with zero Customers are both representable;
+  `ColumnClassificationTest` green.
+- Accept: the three are separately persisted with distinct lifecycles — the Phase 1 exit criterion
+  — proven by a test that fails if any two are merged.
+- Risk: **High**. Cx: L. DoD: `DOD-KERNEL`
+
+**P1-TSK-006 — `POST /v1/registrations`, idempotent**
+- Context: party / api
+- Description: One transaction creating Party, Customer, Identity and Credential, with audit and
+  outbox rows.
+- Why: The first vertical slice, and the first real user of `P0-TSK-017`'s
+  `@RequiresIdempotencyKey`.
+- Deps: P1-TSK-005, P1-TSK-007
+- Implementation: one transaction across two modules — permitted and required by ADR-0001; the
+  idempotency kernel at the financial boundary (`INV-IDEM-01`); enumeration-safe collision
+  handling.
+- Tests: atomicity — a failure leaves no Party, Customer, Identity, audit row or outbox row;
+  a retry with the same key creates nothing more and replays the original response byte for byte;
+  a differing fingerprint on a known key is a distinct conflict (`INV-IDEM-03`); an email collision
+  is indistinguishable from an unrelated failure (`INV-IDN-07`).
+- Accept: all four, over real HTTP.
+- Risk: **High**. Cx: L. DoD: `DOD-API`
 
 ## P1-EPIC-02 — Identity and Credentials
-- **P1-CAP-03** Credential management
-  - P1-FEAT-06 Argon2id password credential with per-credential parameters
-  - P1-FEAT-07 Credential rotation and change flow
-  - P1-FEAT-08 Credential compromise handling
-- **P1-CAP-04** Identity lifecycle
-  - P1-FEAT-09 Identity creation linked to Party
-  - P1-FEAT-10 Identity suspension and closure
 
-## P1-EPIC-03 — Authentication
-- **P1-CAP-05** Primary authentication
-  - P1-FEAT-11 Login with enumeration-safe responses
-  - P1-FEAT-12 Brute-force and credential-stuffing controls
-- **P1-CAP-06** Multi-factor authentication
-  - P1-FEAT-13 TOTP enrolment and verification
-  - P1-FEAT-14 WebAuthn / passkey registration and assertion
-  - P1-FEAT-15 Step-up authentication mechanism (consumed from Phase 4)
-- **P1-CAP-07** Account recovery
-  - P1-FEAT-16 Recovery initiation, verification and abuse controls
+### P1-CAP-02 — That person can authenticate
 
-## P1-EPIC-04 — Session and Device
-- **P1-CAP-08** Session management
-  - P1-FEAT-17 Session issuance, refresh and rotation
-  - P1-FEAT-18 Session listing and immediate revocation
-- **P1-CAP-09** Device management
-  - P1-FEAT-19 Device registration and trust
-  - P1-FEAT-20 Device revocation
+#### P1-FEAT-03 — Credentials
 
-## P1-EPIC-05 — Authorization
-- **P1-CAP-10** Access control model
-  - P1-FEAT-21 Role and permission model
-  - P1-FEAT-22 Ownership-scoped resource authorization
-  - P1-FEAT-23 Privileged/administrative role separation
+**P1-TSK-007 — Credential storage**
+- Context: identity / security
+- Description: Argon2id derivation with algorithm and parameters stored per credential.
+- Why: ADR-0032. A global work factor cannot be raised without invalidating every credential.
+- Deps: P1-TSK-003
+- Implementation: vetted library only; derivation, algorithm and queryable parameters; `Sensitive`
+  wrapping; partial unique index on active credential per identity and type; supersede rather than
+  edit (`INV-HIST-01`'s reasoning).
+- Tests: no persisted or emitted representation contains the input (`INV-IDN-01`); parameters
+  recorded (`INV-IDN-02`); a credential is superseded, never updated.
+- Accept: both invariants demonstrated to fail when broken.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
-## P1-EPIC-06 — Actor-Attributed Audit
-- **P1-CAP-11** Audit integration
-  - P1-FEAT-24 Real actor populated into the Phase 0 security context
-  - P1-FEAT-25 Authentication and authorization events audited
-  - P1-FEAT-26 Security metrics and alerting
+**P1-TSK-008 — Verification and upgrade-on-use**
+- Context: identity / security
+- Description: Constant-time verification; re-derive under current parameters on success.
+- Why: The only moment the platform legitimately holds the plaintext, and the only moment an
+  upgrade is possible without a forced reset.
+- Deps: P1-TSK-007
+- Implementation: constant-time comparison; dummy verification of equivalent cost for an absent
+  identity; upgrade inside the verification transaction.
+- Tests: a credential under weak parameters verifies and is upgraded; timing for an absent identity
+  is equivalent to a wrong credential (`INV-IDN-07`).
+- Accept: the store converges without a forced reset, proven by a test.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
+
+**P1-TSK-009 — `P1-TST-001`: credentials never leak**
+- Context: identity / test
+- Description: A credential appears in no log, event, response, span or metric.
+- Why: `INV-AUD-02` and `INV-IDN-01`. `P0-TST-008` found the rule protecting this was structurally
+  incapable of failing; this is its first real subject.
+- Deps: P1-TSK-008
+- Implementation: assertions over emitted output on every appender, over published events, and over
+  API responses — each with a negative control.
+- Tests: as above.
+- Accept: fails when a credential field is added without wrapping.
+- Risk: Medium. Cx: M. DoD: `DOD-TEST`
+
+#### P1-FEAT-04 — Authentication
+
+**P1-TSK-010 — `POST /v1/authentications`, enumeration-safe**
+- Context: identity / api
+- Description: Password authentication returning one response shape for every failure.
+- Why: `INV-IDN-07`. Enumeration turns a credential-stuffing list into a targeted one.
+- Deps: P1-TSK-008, P1-TSK-013
+- Implementation: one shape and equivalent timing for unknown identity, wrong credential and locked
+  account; `AuthenticationSucceeded` / `AuthenticationFailed` events, the latter carrying **no**
+  identity identifier; audit record carrying the attempted identifier.
+- Tests: responses and timing compared across existing and absent accounts; the failure event
+  proven to carry no identifier.
+- Accept: `INV-IDN-07` demonstrated to fail when the responses diverge.
+- Risk: **High**. Cx: M. DoD: `DOD-API`
+
+**P1-TSK-011 — Brute-force and credential-stuffing controls**
+- Context: identity / security
+- Description: Failure counting, lockout and rate limiting on every credential endpoint.
+- Why: ADR-0032 makes verification deliberately expensive, so the login endpoint is the platform's
+  most CPU-costly operation and a denial-of-service target. Not an extra — part of the same design.
+- Deps: P1-TSK-010
+- Implementation: **database-backed counters**, never process-local (ADR-0024, and transition risk
+  R7); lockout indistinguishable from an ordinary failure; per-identity and per-source limits.
+- Tests: concurrent attempts across simulated instances produce one correct count (`P0-TST-009`
+  convention); a locked account's response is unchanged; the counter survives an instance restart.
+- Accept: the limit is not bypassable by concurrency, proven under real contention.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
+
+**P1-TSK-012 — `P1-TST-002`: authentication failure modes**
+- Context: identity / test
+- Description: The `PHASE_1_PLAN.md` §8 scenarios that concern authentication.
+- Deps: P1-TSK-011
+- Tests: invalid credential; lockout; concurrent login and credential change; database unavailable
+  fails closed with no session issued.
+- Accept: each demonstrated to fail when the control is removed.
+- Risk: Low. Cx: M. DoD: `DOD-TEST`
+
+## P1-EPIC-03 — Sessions and Devices
+
+### P1-CAP-03 — Sessions are real and revocation is immediate
+
+#### P1-FEAT-05 — Session lifecycle
+
+**P1-TSK-013 — Session aggregate and issuance**
+- Context: identity
+- Description: Server-side sessions with an opaque identifier, assurance level, device and two
+  expiry bounds.
+- Why: ADR-0030. An eventually-revoked session is an unrevoked session.
+- Deps: P1-TSK-003
+- Implementation: authoritative in PostgreSQL, **no Redis**; opaque random identifier; idle and
+  absolute expiry both recorded on the row so a policy change does not retroactively extend
+  existing sessions; assurance level as a level, never a boolean.
+- Tests: expiry bounds enforced; an expired session is indistinguishable from a revoked one.
+- Accept: no process-local session state anywhere, asserted.
+- Risk: **High**. Cx: M. DoD: `DOD-KERNEL`
+
+**P1-TSK-014 — Revocation, immediate and multi-instance**
+- Context: identity
+- Description: Revoke one session, revoke all, and revoke on credential change.
+- Why: `INV-IDN-03`.
+- Deps: P1-TSK-013
+- Implementation: revocation is a state transition to a terminal state; credential change revokes
+  every other session in the same transaction.
+- Tests: revoke on one simulated instance, assert refusal on another; concurrent login and
+  revocation — revocation wins.
+- Accept: `INV-IDN-03` demonstrated to fail when a session cache is introduced.
+- Risk: **High**. Cx: M. DoD: `DOD-KERNEL`
+
+**P1-TSK-015 — Rotation on privilege change**
+- Context: identity / security
+- Description: A new session identifier on login, step-up and credential change.
+- Why: Session fixation. Elevating in place lets a stolen pre-elevation identifier become elevated.
+- Deps: P1-TSK-013
+- Tests: the pre-rotation identifier is refused after rotation; the elevated session is a different
+  identifier.
+- Accept: no privilege change leaves the identifier unchanged.
+- Risk: Medium. Cx: S. DoD: `DOD-SEC`
+
+**P1-TSK-016 — Session and device endpoints**
+- Context: identity / api
+- Description: `GET /v1/sessions`, `DELETE /v1/sessions/{id}`, `DELETE /v1/sessions/current`,
+  device recorded on the session.
+- Deps: P1-TSK-014, P1-TSK-020
+- Implementation: ownership checked in the domain, never at the boundary from a request parameter;
+  device recorded, **never scored** — trust is a Phase 13 risk decision.
+- Tests: a negative ownership test — one identity cannot list or revoke another's sessions.
+- Accept: the negative ownership test passes and fails when the check is removed.
+- Risk: Medium. Cx: M. DoD: `DOD-API`
+
+## P1-EPIC-04 — Multi-Factor Authentication
+
+### P1-CAP-04 — A second factor that cannot be bypassed
+
+**P1-TSK-017 — TOTP enrolment**
+- Context: identity / security
+- Description: Enrol a TOTP factor, with the secret encrypted at rest and never emitted.
+- Deps: P1-TSK-013
+- Implementation: vetted library; secret wrapped and encrypted; enrolment is not complete until
+  confirmed by a valid code.
+- Tests: a partially enrolled factor never satisfies a challenge; the secret appears in no
+  response, log or event.
+- Accept: partial enrolment leaves assurance unchanged.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
+
+**P1-TSK-018 — Challenge, verification and assurance elevation**
+- Context: identity / security
+- Description: `POST /v1/authentications/mfa`; a verified challenge produces a `MULTI_FACTOR`
+  session.
+- Deps: P1-TSK-017, P1-TSK-015
+- Implementation: replay refused; elevation produces a **new** session identifier; the level is
+  recorded on the session, and operations ask for a minimum level.
+- Tests: a replayed code is refused; elevation rotates the identifier.
+- Accept: an operation requiring `MULTI_FACTOR` refuses a `PASSWORD` session.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
+
+**P1-TSK-019 — `P1-TST-003`: MFA cannot be bypassed**
+- Context: identity / test
+- Description: One test per enumerated alternative path to a session.
+- Why: `INV-IDN-05`. Every real MFA bypass is a path nobody enumerated, which is why the paths are
+  enumerated here rather than the property asserted once.
+- Deps: P1-TSK-018
+- Tests: an older `PASSWORD` session; a refresh; re-enrolment of a second factor; recovery
+  (once M1.6 exists); a direct call to any endpoint that issues a session.
+- Accept: each path either requires the factor or cannot produce a `MULTI_FACTOR` session; the
+  suite fails if the level check is replaced by a boolean.
+- Risk: **High**. Cx: M. DoD: `DOD-TEST`
+
+## P1-EPIC-05 — Authorization and Actor-Attributed Audit
+
+### P1-CAP-05 — Every action is permitted and attributable
+
+**P1-TSK-020 — Roles, permissions and the boundary check**
+- Context: identity / security
+- Description: Role and permission model; a declarative, deny-by-default permission check before
+  the handler.
+- Why: ADR-0031, `INV-IDN-04`, `INV-AUD-03`.
+- Deps: P1-TSK-013
+- Implementation: roles assigned to identities; the check declared per endpoint and enforced before
+  dispatch — the `P0-TSK-017` interceptor pattern; an endpoint with no declaration is refused.
+- Tests: a **negative authorization test for every protected endpoint** — the Phase 1 exit
+  criterion; an undeclared endpoint is refused rather than permitted.
+- Accept: deny-by-default demonstrated by adding an endpoint with no declaration and watching it be
+  refused.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
+
+**P1-TSK-021 — Ownership checks in the domain**
+- Context: identity, party
+- Description: Resource-scoped operations check ownership against authoritative state.
+- Why: ADR-0031. The most common authorization defect is a legitimate permission used against
+  someone else's resource — every check passes and nothing is logged as a denial.
+- Deps: P1-TSK-020
+- Implementation: the check lives in the module that owns the state, never at the boundary from a
+  request parameter.
+- Tests: a negative ownership test per resource-scoped operation.
+- Accept: each fails when the ownership check is removed. **Recorded limit:** no build rule detects
+  a missing ownership check; this is a review question, on the same terms as ADR-0024's limit.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
+
+**P1-TSK-022 — Actor-attributed audit**
+- Context: identity, party, platform
+- Description: Every privileged action writes an `AuditRecord` naming the real actor, in the same
+  transaction as its effect.
+- Why: The phase's reason for existing. Phase 0 built the trail and recorded that nothing writes to
+  it; this is its first real writer, and `SecurityContext.enterSystem()` call sites are revisited
+  as `SECURITY_ARCHITECTURE.md` says they must be.
+- Deps: P1-TSK-020
+- Implementation: `SecurityContext` established per authenticated request; `require()` satisfied by
+  a real actor; audit written in the effect's transaction; `AuditableAction` enums extended and
+  catalogued.
+- Tests: an audit record per privileged action with all seven fields; the record is immutable at
+  the privilege level (`INV-HIST-03`, already enforced); a request with no established actor is
+  refused rather than attributed to the system.
+- Accept: `INV-AUD-01` holds for every Phase 1 privileged action; the number of `enterSystem()`
+  call sites is reduced to those that are genuinely the platform acting, and each is justified.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
+
+## P1-EPIC-06 — Account Recovery
+
+### P1-CAP-06 — Recovery that is not the way in
+
+**P1-TSK-023 — Account recovery**
+- Context: identity / security
+- Description: Initiation, channel verification, single-use expiring token, completion, and
+  notification as an outbox event.
+- Why: `INV-IDN-06`. `DELIVERY_PLAN.md` §17 names recovery becoming the weakest link as a top risk;
+  it bypasses the credential by design, which is exactly why it is built last, against a working
+  MFA, session and audit model.
+- Deps: P1-TSK-019, P1-TSK-022
+- Implementation: proof of control of a **previously registered and verified** channel; token
+  hashed at rest like a credential; single use, expiring; rate limits and cooling-off; notification
+  emitted as an outbox event with **no delivery adapter** — that is Phase 15's; recovery never
+  lowers the assurance required to reach the account.
+- Tests: the `INV-IDN-06` abuse cases, each its own test — replayed token, unverified channel,
+  recently changed channel, concurrent recovery and login, recovery used to reach an operation
+  requiring `MULTI_FACTOR`.
+- Accept: every abuse case refused; `INV-IDN-06` demonstrated to fail when the channel-verification
+  check is removed.
+- Risk: **High**. Cx: L. DoD: `DOD-SEC`
+
+## P1-EPIC-07 — Phase Review
+
+**P1-TSK-024 — Extend the mutation register to Phase 1**
+- Context: platform / test
+- Description: A row in `MUTATION_TESTING.md` for every `INV-IDN-*`, and the guard extended to
+  require them.
+- Why: `MutationDemonstrationTest` currently enforces demonstrations for Phase 0 invariants only.
+  Seven new invariants without it would be exactly the regime `INV-IDN` was created to escape.
+- Deps: all `P1-TSK-*`
+- Implementation: extend the guard from "Phase 0" to "every phase up to and including the current
+  one", so the extension is not needed again in Phase 2.
+- Tests: proven by mutation — a Phase 1 invariant with no register row fails the build.
+- Accept: all seven `INV-IDN-*` have a recorded demonstration; the guard covers them.
+- Risk: Low. Cx: S. DoD: `DOD-TEST`
+
+**P1-DOC-001 — Phase 1 review record**
+- Context: project
+- Description: The written phase review per `PHASE_GATES.md` §4, and ADR-0029…0033 to `Accepted`.
+- Deps: all Phase 1 items
+- Accept: all eight review areas covered; the twelve universal and six Phase 1-specific exit
+  criteria assessed with evidence.
+- Risk: Low. Cx: S. DoD: `DOD-DOC`
 
 ---
 

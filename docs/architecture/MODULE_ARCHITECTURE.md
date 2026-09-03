@@ -97,7 +97,7 @@ evidence says otherwise.
 | # | Bounded context | Module | Phase | Note |
 |---|-----------------|--------|-------|------|
 | 1 | Party & Customer | `party` | 1 | |
-| 2 | Identity & Authentication | `identity` | 1 | Deliberately separate from `party` |
+| 2 | Identity, Authentication & Authorization | `identity` | 1 | Deliberately separate from `party`. **Authorization merged — see ADR-0031** for the justification and split trigger |
 | 3 | KYC/KYB | `kyc` | 2 | |
 | 4 | Consent | `consent` | 2 | |
 | 5 | Accounts | `accounts` | 3 | |

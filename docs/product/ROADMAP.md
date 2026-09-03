@@ -34,6 +34,13 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
+**Current position (2026-09-04).** Phase 0 is `IN_PROGRESS` with its backlog complete (62 of 62)
+and eleven of twelve exit criteria met; criterion 7 — the suite has never run in CI, because the
+repository has no git remote — is the one failure, tracked as `P0-TSK-042`. Phase 1 is **planned in
+full** (`PHASE_1_PLAN.md`, `ADR-0029`…`ADR-0032`, `INV-IDN-01`…`07`, 25 backlog items) and is
+`PLANNED` rather than `READY`: `PHASE_GATES.md` §1 forbids a phase becoming `READY` while a hard
+dependency is not `COMPLETE`. It becomes `READY` on the first green CI run.
+
 ---
 
 ## Sequencing Rationale

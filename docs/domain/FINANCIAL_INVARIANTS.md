@@ -621,6 +621,91 @@ separately recorded.
 
 ---
 
+# Identity, Credentials and Sessions — `INV-IDN`
+
+Added by the Phase 0 → Phase 1 transition (2026-09-03). **Why this group did not exist and now
+does:** these seven properties were written down as Phase 1 *exit criteria* in `PHASE_GATES.md`,
+which is a materially weaker regime than every other property in the platform gets — no stable ID
+to cite, no named enforcement mechanism ranked by strength, no named verification method, and no
+row in `MUTATION_TESTING.md`. The asymmetry was backwards: Phase 1 is the phase whose *product* is
+security. Catalogued now, before any credential-handling code is written against prose.
+
+### INV-IDN-01 — A credential is never recoverable
+**Statement:** No credential is stored, logged, transmitted or backed up in a form from which the
+original secret can be recovered. Verification compares derivations, never values.
+**Why:** A credential store that can be reversed turns one breach into an account takeover at
+every other platform the customer reused that password on.
+**Enforce:** `DOMAIN` (no reversible field) + `STATIC` (`secretsAreWrapped`) + `DB-CONSTRAINT`
+(the column stores a derivation, and its classification forbids anything else).
+**Verify:** Test asserting no persisted or emitted representation contains the input; schema review.
+**Phase:** 1
+
+### INV-IDN-02 — Credential derivation parameters are recorded per credential
+**Statement:** Every stored credential records the algorithm and parameters used to derive it.
+**Why:** Parameters must increase as hardware improves, and a store with one global setting cannot
+be migrated without either invalidating every credential or knowing what each one used. This is
+`INV-HIST-04`'s rule applied to the thing that authenticates a person.
+**Enforce:** `DB-CONSTRAINT` (`NOT NULL` algorithm and parameters).
+**Verify:** Test that a credential written under old parameters still verifies and is upgraded on
+next successful use.
+**Phase:** 1
+
+### INV-IDN-03 — Session revocation is immediate
+**Statement:** A revoked session is refused on the next request, on every instance. Revocation is
+never eventually consistent.
+**Why:** An eventually-revoked session is an unrevoked session. "Log out everywhere" after a
+suspected compromise is worthless if it takes effect when a cache expires.
+**Enforce:** `DOMAIN` — authoritative session state in the database, checked per request; no
+process-local session cache (ADR-0030, ADR-0024).
+**Verify:** Multi-instance test: revoke on one instance, assert refusal on another (`P0-TST-009`
+convention).
+**Phase:** 1
+
+### INV-IDN-04 — Authentication is not authorization, and neither is consent
+**Statement:** An authenticated session grants no permission by itself. Every protected operation
+evaluates authorization explicitly, and neither authentication nor authorization is ever treated
+as a lawful basis for processing.
+**Why:** `CLAUDE.md` §Domain Distinctions. Treating authentication as authorization means anyone
+who logs in can do anything; treating either as consent means data is processed with no lawful
+basis (`INV-CRD-03`).
+**Enforce:** `DOMAIN` — deny by default; no operation is permitted by the absence of a rule.
+**Verify:** A passing **negative** authorization test for every protected endpoint.
+**Phase:** 1
+
+### INV-IDN-05 — MFA cannot be bypassed by an alternative path
+**Statement:** Where MFA is required, no alternative route — recovery, a second factor enrolment,
+a refresh, an older session, a different endpoint — yields an equivalent session without it.
+**Why:** MFA is defeated by its weakest alternative path, not by its strongest factor. Every real
+bypass is a path nobody enumerated.
+**Enforce:** `DOMAIN` — the session records the assurance level it was established at, and an
+operation requiring MFA checks that level rather than a boolean.
+**Verify:** Enumerated bypass-attempt tests, one per alternative path, each asserting refusal.
+**Phase:** 1
+
+### INV-IDN-06 — Recovery cannot elevate an attacker
+**Statement:** No account-recovery flow grants access, changes a credential or removes a factor
+without proving control of a previously registered and verified channel. Recovery never lowers the
+assurance required to reach an account.
+**Why:** Recovery is the classic account-takeover vector precisely because it exists to bypass the
+credential. `DELIVERY_PLAN.md` §17 names it as a top Phase 1 risk.
+**Enforce:** `DOMAIN` + `PROCESS` (rate limits, cooling-off, notification to the registered
+channel).
+**Verify:** Abuse-case tests: unverified channel, recently changed channel, concurrent recovery and
+login, replayed recovery token.
+**Phase:** 1
+
+### INV-IDN-07 — Authentication outcomes do not disclose whether an account exists
+**Statement:** Responses and timing for a failed authentication, a registration collision and a
+recovery request are indistinguishable between an existing and a non-existent account.
+**Why:** Account enumeration turns a credential-stuffing list into a targeted one, and it is
+usually leaked by an error message or a status code rather than by an intentional API.
+**Enforce:** `DOMAIN` — one response shape for all outcomes of the class.
+**Verify:** Tests comparing responses across existing and absent accounts; enumeration review of
+every new endpoint.
+**Phase:** 1
+
+---
+
 # Invariant Index
 
 | Group | IDs | Concern |
@@ -640,6 +725,7 @@ separately recorded.
 | `INV-ACC` | 01–05 | Accounting and reporting |
 | `INV-AUD` | 01–04 | Security and audit |
 | `INV-CRD` | 01–04 | Credit decisioning |
+| `INV-IDN` | 01–07 | Identity, credentials and sessions |
 
-**64 invariants.** Every one must be enforced and verified before the phase that owns it can
+**71 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate.

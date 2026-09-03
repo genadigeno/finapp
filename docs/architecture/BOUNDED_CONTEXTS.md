@@ -9,7 +9,7 @@ no declared context. This records decisions already taken elsewhere — it is no
 decision.
 
 1. Party & Customer
-2. Identity & Authentication
+2. Identity, Authentication & Authorization
 3. KYC/KYB
 4. Consent
 5. Accounts
