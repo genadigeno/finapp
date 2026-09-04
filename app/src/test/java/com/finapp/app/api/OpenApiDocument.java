@@ -53,6 +53,14 @@ final class OpenApiDocument {
     static final String CORRELATION_HEADER = CorrelationFilter.HEADER;
 
     /**
+     * The response header carrying the caller's own value back (ADR-0034).
+     *
+     * <p>Published because a client is told to use it. It is set only when the caller supplied a
+     * well-formed request header, so unlike {@link #CORRELATION_HEADER} it is not {@code required}.
+     */
+    static final String CLIENT_CORRELATION_HEADER = CorrelationFilter.CLIENT_HEADER;
+
+    /**
      * The component name of the shared problem-detail schema.
      *
      * <p>One definition because it is written in two places - as a component key and as the
@@ -130,8 +138,20 @@ final class OpenApiDocument {
         header.put("required", true);
         header.set("schema", MAPPER.createObjectNode().put("type", "string"));
 
+        ObjectNode clientHeader = MAPPER.createObjectNode();
+        clientHeader.put(
+                "description",
+                "The value supplied in the request's X-Correlation-Id header, returned unchanged. "
+                        + "It is never adopted as the flow's identifier (ADR-0034) and reaches no "
+                        + "log, span or stored record; it exists so a caller that no longer holds "
+                        + "the connection can match a response to a request. Present only when a "
+                        + "well-formed value was supplied.");
+        clientHeader.put("required", false);
+        clientHeader.set("schema", MAPPER.createObjectNode().put("type", "string"));
+
         ObjectNode headers = MAPPER.createObjectNode();
         headers.set(CORRELATION_HEADER, header);
+        headers.set(CLIENT_CORRELATION_HEADER, clientHeader);
         return headers;
     }
 
@@ -153,11 +173,12 @@ final class OpenApiDocument {
     }
 
     private static ObjectNode errorResponse(ErrorCode code) {
-        ObjectNode headerRef = MAPPER.createObjectNode();
-        headerRef.put("$ref", "#/components/headers/" + CORRELATION_HEADER);
-
         ObjectNode responseHeaders = MAPPER.createObjectNode();
-        responseHeaders.set(CORRELATION_HEADER, headerRef);
+        for (String name : new String[] {CORRELATION_HEADER, CLIENT_CORRELATION_HEADER}) {
+            responseHeaders.set(
+                    name,
+                    MAPPER.createObjectNode().put("$ref", "#/components/headers/" + name));
+        }
 
         ObjectNode media = MAPPER.createObjectNode();
         media.set("schema", problemSchemaFor(code));

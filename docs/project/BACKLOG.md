@@ -1130,7 +1130,7 @@ repository exists to prevent.
   `DISTRIBUTED_EXECUTION.md` §3 gains **no row**: no new shared state, and every Phase 0
   concurrency protocol stays expressible unchanged. Four mutations, all caught.
 
-**P1-TSK-002 — Constrain the correlation identifier**
+**P1-TSK-002 — Constrain the correlation identifier** — `COMPLETE` (2026-09-04)
 - Context: platform / security
 - Description: Stop a caller placing personal or financial data into `X-Correlation-Id`.
 - Why: Recorded Phase 0 debt and the transition's **risk R1**. The charset permits
@@ -1148,6 +1148,37 @@ repository exists to prevent.
   column; the client can still join its own logs to ours.
 - Accept: no caller-controlled value reaches an unbounded-retention sink; the debt row is closed.
 - Risk: Medium. Cx: M. DoD: `DOD-SEC`
+- **Outcome:**
+  [ADR-0034](../adr/ADR-0034-the-platform-owns-the-correlation-identifier.md) — **the platform
+  mints the correlation identifier on every request and never adopts an inbound one.** A
+  well-formed caller value becomes a *client reference*, echoed in `X-Client-Correlation-Id` and
+  carried nowhere else.
+  **The finding is that narrowing the charset — the option the task offered first and the one most
+  people would reach for — does not work.** A date of birth, a phone number and an account number
+  are alphanumeric, so any charset still able to carry a UUID or a W3C trace value carries them
+  too. Of the four values `P0-TSK-033` probed, narrowing to `[A-Za-z0-9_-]` would have stopped
+  `jane.doe@example.com` and `acct:GB29NWBK…` and **left `customer-1990-05-14` and
+  `447700900123`**. A lexical control cannot express the property; the control had to be
+  structural.
+  **The test asserts at the source, not sink by sink.** All four durable columns, the MDC and the
+  span attribute read from one `CorrelationContext`, so `CallerCorrelationIsNotPropagatedTest`
+  asserts what that context holds during a request — which covers sinks that do not exist yet. The
+  span is checked separately because it is stamped by a span processor rather than by anything
+  reading the context on that thread. The four probed values are the test data on purpose: a
+  synthetic `client-flow-77` would prove the mechanism and not the risk.
+  **The client keeps its join** — it logs the identifier we return, and `X-Client-Correlation-Id`
+  lets a gateway match a response to a request. What is deliberately lost is searching *our* logs
+  by a caller-chosen string, which is the property that made the disclosure possible.
+  **A recorded flake was closed on the way past**: `doesNotContain("bad")` fails about one run in
+  137, because a UUIDv7 hex string contains `bad` roughly 0.7% of the time. Replaced by pinning the
+  *shape* — a platform-minted UUIDv7 — which nothing derived from caller input can satisfy.
+  Four mutations, all caught; the MDC leak was caught twice, the second time by
+  `onlyCorrelationContextWritesTheMdc` from `P0-TST-008`.
+  **The completion gate found one real gap, in the published contract rather than the code**:
+  `X-Client-Correlation-Id` is set on every response and documented in `API_CONVENTIONS.md`, and
+  was absent from `openapi.json` — that document's response headers are hand-injected by
+  `OpenApiDocument`, so nothing would ever have added it. Published with `required: false`;
+  the diff is 43 added lines and zero removed.
 
 **P1-TSK-003 — `party` and `identity` module skeletons**
 - Context: party, identity

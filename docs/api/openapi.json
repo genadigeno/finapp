@@ -1,6 +1,13 @@
 {
   "components": {
     "headers": {
+      "X-Client-Correlation-Id": {
+        "description": "The value supplied in the request's X-Correlation-Id header, returned unchanged. It is never adopted as the flow's identifier (ADR-0034) and reaches no log, span or stored record; it exists so a caller that no longer holds the connection can match a response to a request. Present only when a well-formed value was supplied.",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
       "X-Correlation-Id": {
         "description": "The identifier of this request flow. Quote it when reporting a problem; it is what joins a client report to the record of what happened.",
         "required": true,
@@ -37,6 +44,9 @@
         },
         "description": "[409] The request conflicts with the current state.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -69,6 +79,9 @@
         },
         "description": "[403] You do not have permission to do that.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -101,6 +114,9 @@
         },
         "description": "[422] This operation requires an idempotency key.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -133,6 +149,9 @@
         },
         "description": "[500] Something went wrong on our side.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -165,6 +184,9 @@
         },
         "description": "[400] The request could not be understood.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -197,6 +219,9 @@
         },
         "description": "[405] That method is not allowed here.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -229,6 +254,9 @@
         },
         "description": "[406] No acceptable representation is available.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -261,6 +289,9 @@
         },
         "description": "[404] The requested resource does not exist.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -293,6 +324,9 @@
         },
         "description": "[413] The request was too large.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -325,6 +359,9 @@
         },
         "description": "[401] Authentication is required.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -357,6 +394,9 @@
         },
         "description": "[415] That media type is not supported.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }
@@ -389,6 +429,9 @@
         },
         "description": "[422] The request was not valid.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
           "X-Correlation-Id": {
             "$ref": "#/components/headers/X-Correlation-Id"
           }

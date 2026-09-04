@@ -92,17 +92,36 @@ Every response carries **`X-Correlation-Id`**, on success and on failure, and th
 appears in the problem detail's `correlationId`. It is the one thing that usefully connects a
 person reporting a problem to the record of what happened, so a client should log it and quote it.
 
-A client **may** supply the header to join its own logs to ours. That value is untrusted:
+**The platform mints it, always.** A client **may** supply `X-Correlation-Id`, but that value is
+**never adopted as the flow's identifier** (ADR-0034). It is echoed back in
+**`X-Client-Correlation-Id`** and carried nowhere else — not a log line, not a span, not a stored
+column, not the problem detail.
+
+That value is untrusted, and is validated before it is echoed:
 
 - allowed characters are `A-Z a-z 0-9 . _ : @ / + = -`
 - maximum length 128
-- a value failing either rule is **replaced, not sanitised**, and the request still succeeds
+- a value failing either rule is **dropped, not sanitised**, and the request still succeeds
 
-Replacement rather than sanitisation is deliberate: a silently rewritten identifier breaks the
-client's own correlation without telling anyone — they log one value, we log another, and the two
-can never be joined. And a malformed diagnostic hint is never a reason to decline a payment.
+**Why it is not adopted.** A correlation identifier reaches every log line, every span, four
+durable columns and every problem-detail body. A caller could therefore place personal or financial
+data into systems with different access control and months of retention (`INV-AUD-02`) —
+`jane.doe@example.com`, `acct:GB29NWBK60161331926819`, `customer-1990-05-14` and `+447700900123`
+were all confirmed accepted by probe. Narrowing the charset does not fix it: a date of birth, a
+phone number and an account number are alphanumeric, and a charset narrow enough to exclude them
+cannot carry a UUID or a trace value.
 
-*Proven by `RequestValidationTest`; charset and bound live in `CorrelationId`.*
+**You can still join your logs to ours.** Log the `X-Correlation-Id` we return — it identifies the
+flow on our side — and use `X-Client-Correlation-Id` to match a response to a request you no longer
+hold a connection for. What you cannot do is search our logs by a value you chose, which is
+precisely the property that made the disclosure possible.
+
+Dropping rather than sanitising is deliberate: a silently rewritten identifier would come back
+subtly different from what was sent, which is worse than not coming back at all. And a malformed
+diagnostic hint is never a reason to decline a payment.
+
+*Proven by `CallerCorrelationIsNotPropagatedTest` and `RequestValidationTest`; charset and bound
+live in `CorrelationId`.*
 
 ## 5. Request limits and validation — **Implemented**
 

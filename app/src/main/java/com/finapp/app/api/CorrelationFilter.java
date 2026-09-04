@@ -9,6 +9,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
@@ -34,24 +35,59 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * relay defect, where a {@code catch} attached to a try-with-resources ran after the resource
  * closed.
  *
- * <h2>The inbound header is untrusted</h2>
+ * <h2>The platform owns the identifier; the caller's value is only echoed</h2>
  *
- * <p>A client may supply {@value #HEADER} so its own logs and ours can be joined. That value
- * arrives from outside and is treated accordingly: {@code CorrelationId} validates it against a
- * default-deny charset and rejects rather than sanitises, because a correlation identifier ends
- * up in log lines and a permissive one is a log-injection vector.
+ * <p>ADR-0034. The correlation identifier is <strong>always</strong> minted here. An inbound
+ * {@value #HEADER} is never adopted as it, because that value reaches every log line, every span,
+ * four durable columns and every problem-detail body — and a caller can put anything in it.
+ * Probing during {@code P0-TSK-033} confirmed {@code jane.doe@example.com},
+ * {@code acct:GB29NWBK60161331926819}, {@code customer-1990-05-14} and {@code +447700900123} were
+ * all accepted verbatim, which is a caller writing personal and financial data into systems with
+ * different access control and months of retention ({@code INV-AUD-02}).
+ *
+ * <p><strong>Narrowing the charset was considered and does not work</strong>, which is why this is
+ * structural rather than lexical. A date of birth, a phone number and an account number are all
+ * alphanumeric, and any charset narrow enough to exclude them cannot carry a UUID or a W3C trace
+ * value — which is the entire reason the header is accepted. A lexical control cannot express the
+ * property required.
+ *
+ * <p>A well-formed inbound value therefore becomes a <em>client reference</em>: echoed back in
+ * {@value #CLIENT_HEADER} and carried nowhere else. Not the MDC, not a span, not a column, not the
+ * problem detail. The client keeps its join — it logs our identifier from the response, and a
+ * gateway can match a response to a request it no longer holds a connection for — and our logs
+ * stop being searchable by a caller-chosen string, which is precisely the property that made the
+ * disclosure possible.
+ *
+ * <p>The charset and bound remain, and are still enforced by {@code CorrelationId}. They are no
+ * longer the disclosure control — they never could be — but they are still what stops the echoed
+ * value being a log-injection or response-splitting vector, and what bounds it.
  *
  * <p>A rejected header does <strong>not</strong> fail the request. A malformed diagnostic hint is
- * not a reason to refuse someone's payment: the platform generates its own identifier and carries
- * on. The rejection is logged — without echoing the offending value, which would put the very
- * bytes we refused into the log we were protecting.
+ * not a reason to refuse someone's payment: the platform's identifier is unaffected and nothing is
+ * echoed. The rejection is logged — without the offending value, which would put the very bytes we
+ * refused into the log we were protecting.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationFilter extends OncePerRequestFilter {
 
-    /** The inbound and outbound header. Also the name clients quote in support requests. */
+    /**
+     * The platform's identifier, on every response. The name clients quote in support requests.
+     *
+     * <p>Accepted on a request too, but since ADR-0034 an inbound value is a <em>hint returned to
+     * the sender</em> rather than the identifier of the flow.
+     */
     public static final String HEADER = "X-Correlation-Id";
+
+    /**
+     * The caller's own value, echoed back untouched.
+     *
+     * <p>Present only when the caller supplied a well-formed {@value #HEADER}. It exists so an
+     * asynchronous caller or a gateway can match a response to a request, and it reaches no sink:
+     * echoing a validated, bounded value back to whoever sent it discloses nothing they did not
+     * already have.
+     */
+    public static final String CLIENT_HEADER = "X-Client-Correlation-Id";
 
     private static final Logger log = LoggerFactory.getLogger(CorrelationFilter.class);
 
@@ -67,9 +103,12 @@ public class CorrelationFilter extends OncePerRequestFilter {
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
-        CorrelationId correlationId = inboundOrGenerated(request);
-        // Set before the chain runs, so it is present even if the response is committed early.
+        // Always ours. Never the caller's (ADR-0034).
+        CorrelationId correlationId = CorrelationId.generate(ids);
+
+        // Set before the chain runs, so both are present even if the response is committed early.
         response.setHeader(HEADER, correlationId.value());
+        clientReference(request).ifPresent(reference -> response.setHeader(CLIENT_HEADER, reference));
 
         try (CorrelationContext.Scope ignored =
                 CorrelationContext.enter(Correlation.startingWith(correlationId))) {
@@ -77,22 +116,31 @@ public class CorrelationFilter extends OncePerRequestFilter {
         }
     }
 
-    private CorrelationId inboundOrGenerated(HttpServletRequest request) {
+    /**
+     * The caller's value, if it is safe to echo.
+     *
+     * <p>Validated through {@link CorrelationId} rather than by a second copy of the rules: the
+     * charset and bound that make a value safe to put in a response header are the same ones that
+     * made it safe to put in a log line, and two copies would drift. The returned {@code String}
+     * is deliberately not a {@code CorrelationId} — it is not one, and giving it that type is how
+     * it would end up being passed to something that propagates it.
+     */
+    private Optional<String> clientReference(HttpServletRequest request) {
         String supplied = request.getHeader(HEADER);
         if (supplied == null || supplied.isBlank()) {
-            return CorrelationId.generate(ids);
+            return Optional.empty();
         }
         try {
-            return CorrelationId.of(supplied);
+            return Optional.of(CorrelationId.of(supplied).value());
         } catch (IllegalArgumentException | NullPointerException rejected) {
             // Deliberately not logging the value. CorrelationId refuses it precisely because it
             // could contain characters that corrupt a log line, and writing it out to explain
             // that we refused it would achieve exactly what the refusal prevented.
             log.warn(
-                    "Rejected a malformed {} header on {}; generating one instead",
+                    "Rejected a malformed {} header on {}; it is not echoed",
                     HEADER,
                     request.getRequestURI());
-            return CorrelationId.generate(ids);
+            return Optional.empty();
         }
     }
 }

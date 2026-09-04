@@ -268,6 +268,21 @@ application's runtime classpath — closing a gap where §6 had forbidden JPA in
 which is not where anyone would add one. &rarr;
 [ADR-0033](../adr/ADR-0033-explicit-sql-and-no-object-relational-mapper.md)
 
+### Correlation identifiers
+The platform **mints the correlation identifier on every request** and never adopts an inbound one.
+That value reaches every log line, every span, four durable columns and every problem-detail body,
+so accepting a caller's string let a caller write personal or financial data into systems with
+different access control and months of retention (`INV-AUD-02`) — `jane.doe@example.com`,
+`acct:GB29NWBK60161331926819`, `customer-1990-05-14` and `+447700900123` were all confirmed
+accepted by probe. **Narrowing the charset was the obvious repair and does not work**: a date of
+birth, a phone number and an account number are alphanumeric, and any charset still able to carry a
+UUID or a W3C trace value carries them too, so a lexical control cannot express the property. A
+well-formed caller value is echoed back in `X-Client-Correlation-Id` and reaches no sink; the client
+keeps its join by logging the identifier we return. What is deliberately lost is the ability to
+search our logs by a caller-chosen string — which is precisely the property that made the
+disclosure possible. &rarr;
+[ADR-0034](../adr/ADR-0034-the-platform-owns-the-correlation-identifier.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

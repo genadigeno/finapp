@@ -15,6 +15,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -215,8 +216,12 @@ class RequestValidationTest {
     }
 
     @Test
-    @DisplayName("a correlation identifier the client supplies is honoured")
-    void aSuppliedIdentifierIsUsed() throws Exception {
+    @DisplayName("a correlation identifier the client supplies is echoed, never adopted")
+    void aSuppliedIdentifierIsEchoedNotAdopted() throws Exception {
+        // Reversed by ADR-0034. This previously asserted the caller value WAS the flow identifier,
+        // which is how personal data reached every log line, every span and four durable columns.
+        // The sink-by-sink proof is CallerCorrelationIsNotPropagatedTest; what is asserted here is
+        // the contract a client sees, beside this class other response-shape assertions.
         HttpResponse<String> response =
                 CLIENT.send(
                         HttpRequest.newBuilder(uri("/probe/transfers"))
@@ -226,12 +231,22 @@ class RequestValidationTest {
                                 .build(),
                         HttpResponse.BodyHandlers.ofString());
 
-        assertThat(response.headers().firstValue(CorrelationFilter.HEADER)).contains("client-flow-77");
-        assertThat(response.body()).contains("client-flow-77");
+        assertThat(response.headers().firstValue(CorrelationFilter.CLIENT_HEADER))
+                .as("the caller own value comes back, so a gateway can match response to request")
+                .contains("client-flow-77");
+
+        String flowId = response.headers().firstValue(CorrelationFilter.HEADER).orElseThrow();
+        assertThat(UUID.fromString(flowId).version())
+                .as("the flow identifier is one we minted")
+                .isEqualTo(7);
+        assertThat(response.body())
+                .as("the problem detail carries ours, never theirs")
+                .contains(flowId)
+                .doesNotContain("client-flow-77");
     }
 
     @Test
-    @DisplayName("a malformed correlation header is replaced, not reflected, and does not fail the request")
+    @DisplayName("a malformed correlation header is not reflected, and does not fail the request")
     void aMalformedIdentifierIsReplaced() throws Exception {
         // The header is untrusted input that ends up in log lines, so CorrelationId refuses
         // anything outside its charset. Refusing the REQUEST over it would be wrong: a malformed
@@ -258,13 +273,18 @@ class RequestValidationTest {
         // than sanitises, because a silently rewritten identifier breaks the client's own
         // correlation without telling anyone - they log one value, we log another, and the two
         // can never be joined.
+        // Asserted as a SHAPE, not as the absence of substrings, which closes a recorded defect:
+        // doesNotContain("bad") fails about one run in 137, because a UUIDv7 hex string contains
+        // "bad" roughly 0.7% of the time. The intent was right and the method was wrong - three
+        // hex fragments are also valid output. Pinning "a platform-minted UUIDv7" says what the
+        // value must BE, which nothing derived from the caller input can satisfy.
         String issued = response.headers().firstValue(CorrelationFilter.HEADER).orElseThrow();
-        assertThat(issued).isNotBlank();
-        assertThat(issued)
-                .as("nothing derived from what the caller sent")
-                .doesNotContain("bad")
-                .doesNotContain("value")
-                .doesNotContain("spaces");
+        assertThat(UUID.fromString(issued).version())
+                .as("a platform-minted UUIDv7, never anything derived from the caller")
+                .isEqualTo(7);
+        assertThat(response.headers().firstValue(CorrelationFilter.CLIENT_HEADER))
+                .as("a value we refused is not echoed either")
+                .isEmpty();
         assertThat(injection).isNotBlank();
     }
 

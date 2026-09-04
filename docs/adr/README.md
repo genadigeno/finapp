@@ -51,6 +51,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0031](ADR-0031-authorization-model.md) | Roles grant permissions; ownership is checked separately | Proposed | 1 | Security |
 | [0032](ADR-0032-credential-storage-and-rotation.md) | Credentials store a derivation and the parameters that produced it | Proposed | 1 | Security |
 | [0033](ADR-0033-explicit-sql-and-no-object-relational-mapper.md) | Explicit SQL, and no object-relational mapper | Proposed | 1 | Data |
+| [0034](ADR-0034-the-platform-owns-the-correlation-identifier.md) | The platform owns the correlation identifier | Proposed | 1 | Security |
 
 ## Anticipated ADRs
 

@@ -172,9 +172,11 @@ correlation identifier is written to every log line as a top-level ECS field, st
 stored in four tables, and echoed back in the `X-Correlation-Id` response header and in every
 problem-detail body. There is nowhere for it to be anything else.
 
-**Today that requirement is not enforced, and this scheme is what made it visible.** The permitted
-charset is `[A-Za-z0-9._:@/+=-]`, a well-formed caller value is accepted verbatim
-(`CorrelationFilter`), and all four of these were confirmed accepted by probe:
+**This scheme is what made the gap visible, and `P1-TSK-002` closed it.** It is recorded here in
+full rather than deleted, because the reasoning is what keeps the requirement true for the next
+caller-supplied column. Until 2026-09-04 the permitted charset was `[A-Za-z0-9._:@/+=-]`, a
+well-formed caller value was accepted verbatim as the flow's identifier (`CorrelationFilter`), and
+all four of these were confirmed accepted by probe:
 
 | Supplied as `X-Correlation-Id` | Would be |
 |---|---|
@@ -188,19 +190,30 @@ telemetry backend with different access control and months of retention — whic
 `INV-AUD-02` forbids and what ADR-0017 and ADR-0018 keep SQL text and request-derived tags off
 spans and metrics to prevent.
 
-**The fix is to constrain the value, not to relax the handling.** Raising the classification would
-be the wrong repair: it would forbid correlation from appearing in logs, which is the entire point
-of correlation. The platform must instead stop propagating caller-controlled text — by generating
-its own identifier and carrying the caller's separately, or by narrowing the charset so the value
-cannot carry a payload.
+**The fix was to constrain the value, not to relax the handling.** Raising the classification would
+have been the wrong repair: it would forbid correlation from appearing in logs, which is the entire
+point of correlation.
 
-That is a change to `P0-TSK-025`'s ingress behaviour, so it is **recorded rather than fixed here**
-(`EXECUTION_PROTOCOL.md` rule 4) and is in `CURRENT_STATE.md` §Known Architectural Debt with an
-owning phase.
+**Closed by ADR-0034 (`P1-TSK-002`, 2026-09-04): the platform now mints the correlation identifier
+on every request and never adopts an inbound one.** A well-formed caller value is echoed back in
+`X-Client-Correlation-Id` and reaches no sink.
+
+**Narrowing the charset was the other candidate and does not work** — which is the finding worth
+keeping, because it is the repair most people would reach for. A date of birth, a phone number and
+an account number are alphanumeric, so any charset still able to carry a UUID or a W3C trace value
+also carries them. Of the four probed values above, narrowing to `[A-Za-z0-9_-]` would have stopped
+two and left two. **The control had to be structural, not lexical.**
+
+`CallerCorrelationIsNotPropagatedTest` asserts it at the source — what `CorrelationContext` holds
+during a request — because all four columns, the MDC and the span attribute read from there, so the
+property covers sinks that do not exist yet.
 
 **The scheme's weakest point, stated rather than glossed:** no build rule checks what a caller
-writes into a free-text or caller-supplied column. The nearest mechanical control is the output
-scrubber already recorded as debt for Phase 1, and it is a deny-list.
+writes into a free-text column. `correlation_id` is no longer among them — nothing caller-supplied
+reaches it — but `audit_record.reason`, `idempotency_record.idempotency_key` and
+`inbox_message.dedupe_key` still hold whatever a caller or an operator put there. The nearest
+mechanical control is the output scrubber already recorded as debt for Phase 1, and it is a
+deny-list.
 
 ## 6. What is deliberately not here
 

@@ -75,6 +75,7 @@ build if one is missing, or if a row names a test class or method that does not 
 | `INV-EVT-04` | `InboxDeliveryOrderTest` | Recorded | Delete a dedupe record, as a sweep running inside the producer's redelivery window would | The message runs twice with nothing reporting it (`P0-TST-006`) |
 | `INV-AUD-01` | `AuditableActionRegistryTest` | Recorded | Plant any of three faults: an action declared but not catalogued, one catalogued but not declared, a `requiresReason` flag that disagrees | Each caught (`P0-TSK-023`). **Partial — see §3** |
 | `INV-AUD-02` | `NoUnwrappedSecretRulesTest#rulesRejectTheirViolations` | In-suite | A record component and a getter-only field, each holding an unwrapped secret; and a production write to the MDC | Rejected on every build (`P0-TST-008`, which found the rule could not fail at all before it) |
+| `INV-AUD-02` | `CallerCorrelationIsNotPropagatedTest#personalDataReachesNoSink` | In-suite | A **second** enforcement of the same invariant, added by `P1-TSK-002`: the wrapper rule above governs what a *type stores*, and cannot see a caller-supplied identifier the platform propagates on purpose. Mutations: adopt the inbound header again; leak it into the MDC; echo it unvalidated | All rejected. The MDC leak fails **twice** - here and at `onlyCorrelationContextWritesTheMdc` - which is the two enforcements meeting (ADR-0034) |
 
 ## 3. What the register does not claim
 
