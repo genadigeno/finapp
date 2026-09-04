@@ -10,8 +10,8 @@ import java.util.Objects;
 /**
  * Plain-JDBC audit writer.
  *
- * <p>Plain JDBC because no data-access mechanism has been chosen (unresolved question 12), and
- * it matters more here than anywhere: Hibernate's dirty checking emits {@code UPDATE}s, and the
+ * <p>Explicit SQL, which ADR-0033 makes the platform-wide decision rather than a local one. It
+ * mattered more here than anywhere, and this class is why: Hibernate's dirty checking emits {@code UPDATE}s, and the
  * application role holds no {@code UPDATE} on this table at all. An ORM mapping of an audit
  * record is a mapping of an entity that can never be updated, which most ORMs have no way to
  * express — so this adapter stays deliberately small, and callers depend on {@link AuditWriter}.

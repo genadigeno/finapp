@@ -8,12 +8,13 @@ import java.util.Optional;
 /**
  * Storage for idempotency claims.
  *
- * <p><strong>Why this is a port.</strong> The platform has not chosen a data-access mechanism —
- * JPA, Spring Data JDBC or plain JDBC is unresolved question 12, due Phase 3 — and it matters
- * more than usual, because Hibernate's dirty checking emits {@code UPDATE}s while
- * {@code INV-LED-03} and {@code INV-HIST-01} say posted financial records are never updated.
- * {@link IdempotentExecutor} depends on this interface so that decision stays open and is not
- * made by accident here, exactly as {@code MoneyColumns} avoided making it in P0-TSK-011.
+ * <p><strong>Why this is a port.</strong> It was written before the platform had chosen a
+ * data-access mechanism, so that the choice would not be made by accident here — exactly as
+ * {@code MoneyColumns} avoided making it in P0-TSK-011. ADR-0033 has since made it, and the
+ * argument this javadoc anticipated is the one that decided it: an ORM's dirty checking emits
+ * {@code UPDATE}s while {@code INV-LED-03} and {@code INV-HIST-01} say posted financial records
+ * are never updated. The port remains, because {@link IdempotentExecutor} depending on an
+ * interface rather than on a `Jdbc` class is right on its own merits.
  *
  * <p><strong>The transaction is the caller's.</strong> Every method operates inside a
  * transaction the caller owns and commits. ADR-0004 requires the claim and the command's
@@ -21,8 +22,9 @@ import java.util.Optional;
  * impossible and would silently reintroduce the crash window the whole design avoids. The unit
  * of work is passed in, never created here.
  *
- * @param <T> the transactional unit of work — a JDBC {@code Connection} today, whatever the
- *     Phase 3 decision produces later
+ * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033.
+ *     The type parameter remains because removing it is a refactor of proven code with no
+ *     correctness benefit, not because another binding is expected
  */
 public interface IdempotencyRecordStore<T> {
 

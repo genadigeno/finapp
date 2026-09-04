@@ -15,12 +15,14 @@ import java.time.Instant;
  * make one of them inevitable — so the unit of work is passed in and never created here, the
  * same reason {@link com.finapp.platform.outbox.OutboxWriter} takes one.
  *
- * <p><strong>Why a port.</strong> No data-access mechanism has been chosen (unresolved question
- * 12, due Phase 3). {@link InboxConsumer} depends on this interface so the decision stays open
- * rather than being made by accident here.
+ * <p><strong>Why a port.</strong> It was written before a data-access mechanism had been chosen,
+ * so that {@link InboxConsumer} would not make the choice by accident. ADR-0033 has since made it
+ * — explicit SQL, no ORM — and the port remains because depending on an interface rather than on a
+ * `Jdbc` class is right on its own merits.
  *
- * @param <T> the transactional unit of work — a JDBC {@code Connection} today, whatever the
- *     Phase 3 decision produces later
+ * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033.
+ *     The type parameter remains because removing it is a refactor of proven code with no
+ *     correctness benefit, not because another binding is expected
  */
 public interface InboxRecordStore<T> {
 

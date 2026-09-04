@@ -14,7 +14,13 @@ Last updated: 2026-09-04
 Status: ✅ **`COMPLETE`** (2026-09-04) — **all twelve exit criteria hold.**
 
 **Phase 1 — Identity and Customer Foundation**
-Status: **`READY`** — entry gate passed, all twelve criteria. Planned in full and **not started**.
+Status: **`IN_PROGRESS`** — entry gate passed, all twelve criteria. Started 2026-09-04.
+
+## Current Milestone
+
+**M1.1 — A person exists and is registered.** `P1-TSK-001` … `P1-TSK-006`; **1 of 6 complete.**
+Objective: one transaction creates a Party, a Customer and an Identity, and the three are provably
+separate.
 
 The formal Phase 0 → Phase 1 transition was conducted on 2026-09-04:
 [`reviews/PHASE_0_TO_1_TRANSITION.md`](reviews/PHASE_0_TO_1_TRANSITION.md), with an addendum
@@ -114,10 +120,67 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None. Phase 0 is closed and Phase 1 has not been started.**
+**None in progress.** `P1-TSK-001` completed 2026-09-04. **Next: `P1-TSK-002`** — constrain the
+correlation identifier.
 
-`P0-TSK-042` completed on 2026-09-04, taking Phase 0 to twelve of twelve. **The next task is
-`P1-TSK-001`** — the data-access ADR — and Phase 1 is now `READY`, so it may be started.
+### Just completed
+
+**`P1-TSK-001` — ADR: data-access mechanism** — `COMPLETE` (2026-09-04). **Phase 1's first task,
+and it closes unresolved question 12**, open since `P0-TSK-011` and brought forward from Phase 3 by
+the transition.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| ADR-0033 exists in `Proposed` | [ADR-0033](../adr/ADR-0033-explicit-sql-and-no-object-relational-mapper.md) |
+| Explains the interaction with append-only tables and the application role's privileges | The Context and Option A sections; it is the decisive argument rather than a consideration |
+| Unresolved question 12 closed in `CURRENT_STATE.md` | Moved to §Unresolved Architectural Questions → *Resolved since* |
+
+**Decision: explicit SQL through `JdbcClient`. No ORM, no persistence context, no generated
+repositories.** No new dependency — `spring-jdbc` has been on the runtime classpath since
+`P0-TSK-027` added a `DataSource` for the readiness check.
+
+**The decisive argument is the privilege model, not taste.** `INV-HIST-03`, `INV-HIST-01` and
+`INV-LED-03` are enforced at `DB-PRIVILEGE` by `finapp_app` holding **no `UPDATE` and no
+`DELETE`** — and that is worth exactly as much as the guarantee that nothing emits a statement
+nobody wrote. Hibernate's dirty checking emits `UPDATE` on its own initiative, at a flush point
+decided by code far from the write, so whether the forbidden statement is issued depends on whether
+an entity happened to be dirty. That is the shape of defect that passes every test and fails in
+production. `DB-PRIVILEGE` ranks second to `DB-CONSTRAINT` in the catalogue, but it is the
+strongest mechanism available for *forbidding an operation*: a `CHECK` constraint cannot express
+"this role may not `UPDATE`".
+
+**Spring Data JDBC came far closer and was rejected on two concrete behaviours**, not general
+unease: `save()` deletes and re-inserts child collections, and against superseded credentials those
+children *are* the history; and application-minted UUIDv7 identifiers arrive non-null, so it
+defaults to `UPDATE` on a new aggregate — the `Persistable.isNew()` trap, sitting precisely on the
+registration path. Both are workaroundable; needing a workaround on the **first** aggregate is the
+signal.
+
+**The seam it closes was explicit in the code.** Four kernel ports are generic over the unit of
+work, and three said *"a JDBC `Connection` today, whatever the Phase 3 decision produces later"*.
+`T` is now `Connection` permanently. The type parameter **stays** — removing it is a refactor of
+proven Phase 0 code with no correctness benefit (`EXECUTION_PROTOCOL.md` rule 4) — and all five
+javadocs were corrected, because they described a decision that had moved phases and then been
+taken.
+
+**Enforced rather than recorded**, which `DOD-ARCH` requires. `NoObjectRelationalMapperTest` fails
+the build if a JPA, Hibernate or Spring Data artefact reaches the application's **runtime**
+classpath, catching one that arrives transitively behind a starter — the way it would actually
+arrive. Writing it **found a real gap**: `MODULE_ARCHITECTURE.md` §6 had forbidden JPA in
+`sharedkernel` only, and `sharedkernel` is not where anyone would add an ORM.
+
+**A false positive was caught before commit, and it is the finding worth keeping.** The first
+forbidden list matched `hibernate-` and **failed on the real classpath**: `hibernate-validator` is
+Bean Validation, arrives with `spring-boot-starter-validation` from `P0-TSK-025`, and has nothing
+to do with persistence. A rule that forbids a correct dependency is a rule somebody turns off —
+ADR-0019's own reasoning for keeping `key` out of the `secretsAreWrapped` vocabulary. The list now
+names the ORM's own artefacts, and a test keeps the carve-out honest by asserting it is still
+needed, the way `P0-TSK-041` proved its two exemptions load-bearing.
+
+**No new shared state.** `DISTRIBUTED_EXECUTION.md` §3 gains no row, and that absence is the
+argument: every Phase 0 concurrency protocol — claim-by-insert, bounded `lock_timeout`, conditional
+`UPDATE … WHERE`, transaction-scoped advisory locks, savepoints, writing on the caller's connection
+— stays expressible unchanged. Four mutations, all caught.
 
 ### Just completed
 
@@ -1274,7 +1337,9 @@ it begins.
 | 9 | Which payment rail to simulate first, and its finality semantics | Phase 5 | Medium — first rail shapes the abstraction (mitigated by designing to `PAYMENT_LIFECYCLES.md`) |
 | 10 | Which jurisdiction-neutral compliance abstractions belong in the MVP | Phase 2 | Medium |
 | 11 | Fail-safe policy for risk evaluation: block or allow on unavailability | Phase 13 | High — a wrong default is either an outage or an open door |
-| 12 | **Data-access mechanism: JPA/Hibernate, Spring Data JDBC, or plain JDBC** | **Phase 1** — brought forward by the transition, owned by `P1-TSK-001`, ADR-0033 | Medium–High — surfaced by `P0-TSK-011`, whose description said "a reusable embeddable" while no ADR had chosen an ORM. It matters here more than usual: Hibernate's dirty checking emits `UPDATE`s, and `INV-LED-03`/`INV-HIST-01` say posted financial records are never updated, with the application role holding no `UPDATE` privilege at all. `MoneyColumns` was written mechanism-agnostic so the decision is not made by accident; it must be made before the ledger schema exists — and Phase 1 creates nine tables, so it is now needed before those |
+
+Resolved since:
+- ~~Data-access mechanism: JPA/Hibernate, Spring Data JDBC, or plain JDBC?~~ &rarr; [ADR-0033](../adr/ADR-0033-explicit-sql-and-no-object-relational-mapper.md) (`P1-TSK-001`, 2026-09-04). Explicit SQL through `JdbcClient`; no ORM. Open since `P0-TSK-011`, scheduled for Phase 3, brought forward because Phase 1 creates nine tables
 
 Resolved during initiation:
 - ~~Which modules form the initial modular-monolith cut?~~ → [`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md)
@@ -1288,11 +1353,14 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-001` — ADR: data-access mechanism.** It is first because it is the
-one Phase 1 decision that constrains every table Phase 1 creates and, through `INV-LED-03` and
-`INV-HIST-01`, every table Phase 3 will create: Hibernate's dirty checking emits `UPDATE`s, and the
-application role holds no `UPDATE` privilege on append-only tables at all. Deciding it after the
-first repository is written means writing the second one twice. It closes unresolved question 12.
+**`P1-TSK-002` — constrain the correlation identifier.**
+
+It lands before any customer-facing endpoint, which is the point of its position. The permitted
+charset accepts `jane.doe@example.com` and `acct:GB29NWBK…` — confirmed by probe during
+`P0-TSK-033` — a well-formed inbound `X-Correlation-Id` is accepted verbatim, and the value reaches
+every log line, every span, four tables and every response body. That is a disclosure into a
+telemetry backend with different access control and months of retention (`INV-AUD-02`), bounded
+today only by there being no customers. **Phase 1 is when customers arrive.**
 
 ---
 
@@ -1300,6 +1368,7 @@ first repository is written means writing the second one twice. It closes unreso
 
 | Date | Change |
 |------|--------|
+| 2026-09-04 | **`P1-TSK-001` complete — Phase 1 is `IN_PROGRESS`, milestone M1.1, 1 of 6.** ADR-0033: **explicit SQL through `JdbcClient`; no ORM, no persistence context, no generated repositories.** It closes unresolved question 12, open since `P0-TSK-011` and brought forward from Phase 3 by the transition because Phase 1 creates nine tables and deciding after the first repository is written means writing the second one twice. No new dependency — `spring-jdbc` has been on the runtime classpath since `P0-TSK-027` added a `DataSource` for readiness. **The decisive argument is the privilege model rather than taste**: `INV-HIST-03`, `INV-HIST-01` and `INV-LED-03` are enforced at `DB-PRIVILEGE` by `finapp_app` holding **no `UPDATE` and no `DELETE`**, and that is worth exactly as much as the guarantee that nothing emits a statement nobody wrote — Hibernate's dirty checking emits `UPDATE` on its own initiative, at a flush point decided by code far from the write, so whether the forbidden statement is issued depends on whether an entity happened to be dirty. That is the shape of defect that passes every test and fails in production. `DB-PRIVILEGE` ranks second to `DB-CONSTRAINT` in the catalogue, but it is the strongest mechanism available for **forbidding an operation**: a `CHECK` constraint cannot express "this role may not `UPDATE`". **Spring Data JDBC came far closer and was rejected on two concrete behaviours rather than general unease**: `save()` deletes and re-inserts child collections, and against superseded credentials those children *are* the history; and application-minted UUIDv7 identifiers arrive non-null, so it defaults to `UPDATE` on a new aggregate — the `Persistable.isNew()` trap, sitting precisely on the registration path. Both are workaroundable, and needing a workaround on the **first** aggregate is the signal. **The seam it closes was explicit in the code**: four kernel ports are generic over the unit of work and three said *"a JDBC `Connection` today, whatever the Phase 3 decision produces later"*. `T` is now `Connection` permanently; the type parameter **stays**, because removing it is a refactor of proven Phase 0 code with no correctness benefit (`EXECUTION_PROTOCOL.md` rule 4), and all five javadocs were corrected because they described a decision that had moved phases and then been taken. **Transactions are begun explicitly** (`TransactionTemplate`), since `@Transactional` fails *silently* on self-invocation and registration must write two modules plus audit plus outbox in one commit. **Enforced rather than recorded**, which `DOD-ARCH` requires: `NoObjectRelationalMapperTest` fails the build if a JPA, Hibernate or Spring Data artefact reaches the application's **runtime** classpath — catching one that arrives transitively behind a starter, the way it would actually arrive — and writing it **found a real gap**, since `MODULE_ARCHITECTURE.md` §6 had forbidden JPA in `sharedkernel` **only**, which is not where anyone would add an ORM. **A false positive was caught before commit and is the finding worth keeping**: the first forbidden list matched `hibernate-` and **failed on the real classpath**, because `hibernate-validator` is Bean Validation, arrives with `spring-boot-starter-validation` from `P0-TSK-025`, and has nothing to do with persistence. A rule that forbids a correct dependency is a rule somebody turns off — ADR-0019's own reasoning for keeping `key` out of the `secretsAreWrapped` vocabulary — so the list now names the ORM's own artefacts, and a test keeps the carve-out honest by asserting it is still needed, the way `P0-TSK-041` proved its two exemptions load-bearing. The classpath property moved from `databaseTest` alone to **every** test task, because a second guard in a second tier is exactly the `:platform:databaseTest` shape the `P0-TSK-027` review found: a list of one that goes stale the moment there are two. **No new shared state** — `DISTRIBUTED_EXECUTION.md` §3 gains no row, and that absence is the argument: claim-by-insert, bounded `lock_timeout`, conditional `UPDATE … WHERE`, transaction-scoped advisory locks, savepoints and writing on the caller's connection all stay expressible unchanged. Four mutations, all caught - the fourth added by the completion gate, which found that §6 named a class and nothing checked it existed. 610 hermetic tests, 173 database tests. |
 | 2026-09-04 | **`P0-TSK-042` complete. Exit criterion 7 closes; Phase 0 is `COMPLETE` — all twelve criteria — and Phase 1 is `READY`.** A remote was added and the CI workflow executed for the first time: run [33803262202](https://github.com/genadigeno/finapp/actions/runs/33803262202), commit `04f4a53`, **all four jobs green** — 32 actionable tasks executed, 606 hermetic tests, migrations applied to an empty database, `flywayValidate`, re-applied idempotently, 173 database tests, 119 commits scanned, SBOM clean. **It took three runs, and that is the finding rather than an inconvenience.** Two defects, neither in what Phase 0 designed and neither reachable from this machine. **First: `gradlew` was committed mode `100644`**, so four jobs died on `Permission denied`, exit 126; `core.filemode` is false on Windows so nothing here could observe it, and the sharp detail is that `P0-TSK-001` had explicitly enforced **LF line endings** on that same file so *"Linux CI is not broken by a Windows checkout"* — it reasoned about the file's bytes and not about its mode. Fixed with `git update-index --chmod=+x`; `gradlew.bat` stays 644, and `infra/scanner-pins.sh` stays 644 because it is **sourced, never executed**. **Second: `gradle/verification-metadata.xml` was complete for a warm dependency cache only.** Gradle does not re-read metadata descriptors it has already parsed, so `--write-verification-metadata` over a warm `GRADLE_USER_HOME` records fewer artefacts than a cold resolution needs; the file had only ever been generated on this machine, over months of warm builds, and was therefore complete here and incomplete for CI and for any new developer alike. Regenerating against an **empty** home added **10 components and 23 artefacts, every single one a parent POM or a BOM `.module`** — not one jar, which is what identifies the mechanism rather than guessing at it — and removed nothing, so ADR-0025's merge claim held and was checked rather than assumed. Proven on a **second, separate** empty home with verification enforced and no write flag. `README.md` §7a gains the cold-regeneration procedure and ADR-0025 the consequence; §7's "this repository has no git remote, so the pipeline has never executed" was true since the first week and is now corrected. **A third finding belongs to the scan rather than the build.** gitleaks met this repository's own 119 commits for the first time — `P0-TSK-031` proved its teeth against a *throwaway clone*, deliberately, because a dummy secret committed here would make the scan red for ever — and produced exactly one finding, a **false positive**: `generic-api-key` fired on `A_KEY`, a UUID fixture idempotency key. An idempotency key is not a secret, and that is not a convenience invented to clear a build: **ADR-0019 settled it** when choosing the vocabulary `secretsAreWrapped` matches on, and left `key` out of it because a rule with false positives is a rule somebody turns off. `.gitleaks.toml` allowlists **the exact literal and nothing else** — not the rule, which stays enabled everywhere; not the file, so a real credential added to that same test still fails; and not "UUIDs in test sources", which would mask a genuine UUID-shaped API key committed into a test. Proven narrow rather than asserted narrow: a random high-entropy credential planted in the same file, same line, same rule, in a throwaway clone, still fails with exit 1 — **after the first attempt at that demonstration reported a pass and was wrong**, having planted `AKIAIOSFODNN7EXAMPLE`, AWS's own documentation key, which gitleaks allowlists by default; the mutation had never landed, which is the fourth time this project has met that defect class. **Every one of the three sat in the machinery that checks the work rather than in the work**, which is the recurring finding this phase recorded across its last twenty tasks, arriving once more at the gate built to catch exactly that. **The transition's judgement was tested and held**: it had refused to record Phase 1 `READY` while criterion 7 failed, on the argument that the blocking criterion is the one whose purpose is to prove the gates execute at all — and the first run failed. Had the gate been waived, Phase 1 would have been entered on a build that could not run anywhere but one Windows machine. 606 hermetic tests, 173 database tests. |
 | 2026-09-04 | **Phase 0 → Phase 1 transition conducted.** The gate audit is the deliverable and its result is that **Phase 0 remains `IN_PROGRESS`**: 12 of 13 audit areas `PASS`, one `PARTIAL`, and 11 of 12 universal exit criteria hold — criterion 7 fails because the suite has never run in CI, there being no git remote. `PHASE_GATES.md` §4 prescribes the consequence and §1 is explicit that *"shipping through a failed gate"* is the failure; remediation is `P0-TSK-042`, the sole item of the new `P0-EPIC-13`, and it cannot be performed from inside the repository. **The transition found something a formality would have missed.** Phase 1's seven identity properties — credential irreversibility, per-credential derivation parameters, immediate session revocation, authentication-is-not-authorization, MFA bypass paths, recovery escalation, account enumeration — existed **only as exit-criteria prose** in `PHASE_GATES.md`: no stable ID, no enforcement mechanism ranked by strength, no named verification method, no mutation-demonstration row. Every other property on this platform gets all four, and the asymmetry was backwards, because Phase 1 is the phase whose *product* is security and the alternative was writing credential-handling code against prose. Catalogued as `INV-IDN-01`…`07`, taking the platform to **71 invariants** — and the Phase 0 mutation register was verified unaffected, since it is scoped to Phase 0 and a Phase 1 invariant with no test yet is correct rather than a gap. **Phase 1 is recorded `PLANNED`, not `READY`, and that is a deliberate deviation from the instruction that produced this work**: eleven of twelve entry criteria are met and criterion 1 — the previous phase is `COMPLETE` — is not, so §1 forbids `READY`; the criterion blocking it is precisely the one that proves the gates execute at all, which makes forcing it the worst available place to make an exception. It flips on the first green CI run with no further planning. **Four irreversible decisions taken rather than deferred into implementation.** ADR-0029: Party, Customer and Identity are three aggregates in two modules — the pressure to collapse them into one `users` table comes from the simplest first story, and the cost lands on a person who is not a customer, a customer who is not a person, a retired login, and staff; unpicking it later means migrating identity out of a table financial records already reference, where `INV-HIST-01` forbids rewriting the history pointing at it. ADR-0030: sessions are server-side and authoritative in PostgreSQL, because a self-contained JWT makes validity a property of a signature rather than of current state, so *"log out everywhere"* becomes a promise the architecture cannot keep (`INV-IDN-03`) — and **assurance is a level rather than an MFA boolean**, since every real bypass is a route producing a session a boolean calls fine. ADR-0031: permission at the boundary **and** ownership in the domain, always both — collapsing them is the most common authorization defect in financial software, where a customer with a legitimate `transfer:create` permission uses it against someone else's account and every check passes; `BOUNDED_CONTEXTS.md` context 2 renamed to *Identity, Authentication & Authorization*, since the list had been omitting a concept `CLAUDE.md` forbids collapsing. ADR-0032: a credential stores the derivation **and** the algorithm and parameters that produced it, because the decision usually missed is not which algorithm but where the parameters live — a global work factor cannot be raised, as raising it changes only new credentials and nothing records what the old ones used. Phase 1 planned in full: 3 bounded contexts, 6 aggregates, 16 commands, 10 events, 5 state machines, 9 tables, 14 endpoints, 12 failure scenarios, 7 milestones, and **25 backlog items** elaborated to task granularity with acceptance criteria and DoD profiles. The must-not-implement list is explicit and three minimal foundations are justified individually. No application code written. 606 hermetic tests, 173 database tests. |
 | 2026-09-03 | `P0-TSK-017` complete. **The Phase 0 backlog is 62 of 62.** `@RequiresIdempotencyKey` declares the requirement on a handler or its controller, and an **interceptor** enforces it. **An interceptor rather than a filter, and that is load-bearing twice**: a filter runs before the dispatcher has chosen a handler, so it could not know whether *this* endpoint declares the requirement without a second, drifting copy of the routing table; and a filter runs outside `@ExceptionHandler`, so its rejection would be the container's default page rather than the error contract — the problem `P0-TSK-025` had to work around by rendering the contract by hand inside its filters. Rejection happens **before the handler is entered**, asserted by counting handler entries rather than reading the response, because for a money-moving command the half of the work done before a late rejection is the half that matters. **The requirement is declared, not defaulted**: requiring the header everywhere would force it onto reads, where it means nothing and would train clients to send a value nobody uses, and the annotation is the greppable list of endpoints claiming to move money. New error code `api.IdempotencyKeyRequired` (422), distinct from `api.ValidationFailed` on purpose — a client can automate "generate a key and retry" but not "your request was invalid"; the published contract gained six lines, every difference `COMPATIBLE`, and no probe fixture leaked into it. **A real gap was found by following `DATA_CLASSIFICATION.md` §5**, which classifies this column as a caller-supplied identifier: `IdempotencyKey` bounds length and blankness because those are the table's `CHECK` constraints and carries **no charset**, so a caller could have put CR/LF into a value the platform logs, stores durably and will put on an audit record — a forged log line. Closed with the same default-deny charset the correlation identifier uses, and unit-tested rather than driven over HTTP because the JDK's own `HttpClient` refuses to **send** CR/LF, while a hostile client writing raw bytes to a socket is not bound by that politeness. **The audit clause was corrected rather than approximated**: the registry now exists, but `AuditRecord` has no field for a key and nothing in Phase 0 writes an audit record in an HTTP flow, so there is nothing to record it on. Adding a column would be a schema change nothing populates, and unlike actor attribution **no history is lost by waiting** — the test ADR-0010 applies. Transferred to Phase 4; the third Phase 0 criterion to need this correction after `P0-TSK-014` and `P0-TSK-028`. Five mutations, all caught. 606 hermetic tests, 173 database tests. |

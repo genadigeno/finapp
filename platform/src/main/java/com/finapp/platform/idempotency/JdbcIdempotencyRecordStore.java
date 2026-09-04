@@ -16,8 +16,8 @@ import java.util.Optional;
 /**
  * Plain-JDBC storage for idempotency claims.
  *
- * <p>Plain JDBC because no data-access mechanism has been chosen yet (unresolved question 12).
- * This adapter is deliberately small and replaceable; {@link IdempotentExecutor} depends on
+ * <p>Explicit SQL, which ADR-0033 makes the platform-wide decision. This adapter is deliberately
+ * small; {@link IdempotentExecutor} depends on
  * {@link IdempotencyRecordStore}, not on this class.
  *
  * <p><strong>Isolation this relies on.</strong> PostgreSQL's default {@code READ COMMITTED}. Two

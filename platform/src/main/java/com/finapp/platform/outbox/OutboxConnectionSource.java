@@ -14,9 +14,10 @@ import java.sql.SQLException;
  * and those boundaries are what stop two instances from publishing the same aggregate at once.
  *
  * <p>A {@code javax.sql.DataSource} satisfies this as {@code dataSource::getConnection}. It is
- * not required as the parameter type because no connection pool has been chosen and no
- * data-access mechanism has been decided (unresolved question 12); a one-method interface keeps
- * that decision open and keeps a test double to one lambda.
+ * not required as the parameter type because the relay needs a connection rather than a pool:
+ * narrowing to what is actually used keeps a test double to one lambda. ADR-0033 has since fixed
+ * the data-access mechanism, and a {@code DataSource} remains the wrong parameter for the same
+ * reason it was before — this asks for the one operation it performs.
  */
 @FunctionalInterface
 public interface OutboxConnectionSource {

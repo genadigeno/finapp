@@ -249,6 +249,25 @@ moment the platform legitimately holds the plaintext — and a dummy verificatio
 for an absent identity, because skipping the work turns response time into an account oracle.
 &rarr; [ADR-0032](../adr/ADR-0032-credential-storage-and-rotation.md)
 
+### Data access
+Authoritative writes and aggregate loads use **explicit SQL through `JdbcClient`**. No ORM, no
+persistence context, no generated repositories. The decisive argument is not taste: three of the
+strongest invariants in the catalogue — `INV-HIST-03`, `INV-HIST-01`, `INV-LED-03` — are enforced
+at `DB-PRIVILEGE` by the application role holding **no `UPDATE` and no `DELETE`**, and a privilege
+model is worth exactly as much as the guarantee that nothing emits a statement nobody wrote.
+Hibernate's dirty checking emits `UPDATE` on its own initiative, at a flush point decided by code
+far from the write. Spring Data JDBC came far closer and was rejected on two concrete behaviours:
+`save()` deletes and re-inserts child collections — against superseded credentials those children
+*are* the history — and application-minted UUIDv7 identifiers make it default to `UPDATE` on a new
+aggregate. Every concurrency protocol Phase 0 proved (claim-by-insert, bounded `lock_timeout`,
+conditional `UPDATE … WHERE`, transaction-scoped advisory locks, savepoints, writing on the
+caller's connection) stays expressible, and `DISTRIBUTED_EXECUTION.md` §3 gains no row. Transactions
+are begun explicitly, because `@Transactional` fails *silently* on self-invocation. Enforced rather
+than recorded: `NoObjectRelationalMapperTest` fails the build if an ORM artefact reaches the
+application's runtime classpath — closing a gap where §6 had forbidden JPA in `sharedkernel` only,
+which is not where anyone would add one. &rarr;
+[ADR-0033](../adr/ADR-0033-explicit-sql-and-no-object-relational-mapper.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

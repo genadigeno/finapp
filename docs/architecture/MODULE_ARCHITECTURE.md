@@ -210,7 +210,7 @@ phases must satisfy, not a description of code.
 
 ### `app` — Phase 0
 - **Responsibility:** composition root. Wires modules together and hosts the HTTP surface and configuration. Owns no business capability.
-- **Owns:** no persistent state; configuration only — plus the JDBC connection pool, which is infrastructure rather than state. Readiness has to be answered through the pool the application actually uses, since a health check with its own connection reports healthy while the pool is exhausted. A pool is not a data-access mechanism: unresolved question 12 stays open (ADR-0016 §5).
+- **Owns:** no persistent state; configuration only — plus the JDBC connection pool, which is infrastructure rather than state. Readiness has to be answered through the pool the application actually uses, since a health check with its own connection reports healthy while the pool is exhausted. A pool is not a data-access mechanism: that was unresolved question 12, left open by ADR-0016 §5 and **settled by ADR-0033** — explicit SQL through `JdbcClient`, no ORM.
 - **Transaction:** opens none of its own. It delegates to the module that owns the transaction.
 - **Consistency:** n/a — holds no state.
 - **APIs:** the platform's outward HTTP surface — routing, content negotiation and error rendering against the `platform` error contract. Declares no business endpoints of its own.
@@ -800,6 +800,46 @@ and correct pattern of building a local collection and returning an immutable co
 remove the constructs that *only* mean something in one process, so a claim about coordination
 cannot be made silently. The design question — would this still be correct if ten instances ran it
 concurrently — stays a review question, and `P0-TST-009` is the test convention for it.
+
+### Persistence boundary
+
+Authoritative writes and aggregate loads use **explicit SQL through `JdbcClient`**. There is no
+object-relational mapper (ADR-0033, `P1-TSK-001`).
+
+**Why a build failure and not a convention.** Three of the strongest invariants in the catalogue
+are statements about a privilege the application must *not* hold — `INV-HIST-03` (audit
+append-only), `INV-HIST-01` (financial history never edited) and `INV-LED-03` (posted entries
+immutable), all enforced at `DB-PRIVILEGE` by `finapp_app` holding no `UPDATE` and no `DELETE`
+(`V008`, `V009`). A privilege model is worth exactly as much as the guarantee that nothing emits a
+statement nobody wrote, and dirty checking emits `UPDATE` on its own initiative at a flush point
+decided by code far from the write.
+
+`NoObjectRelationalMapperTest` asserts that no JPA, Hibernate or Spring Data artefact is on the
+application's **runtime** classpath, which also catches one arriving transitively behind a starter
+— the way it would actually arrive. It is a classpath assertion rather than an ArchUnit rule, so it
+is named here in prose, as `SharedKernelIsolationTest` is. *(test:
+`NoObjectRelationalMapperTest`)*
+
+**The gap this closed.** Until `P1-TSK-001` this section forbade JPA and Hibernate in
+`sharedkernel` only — and `sharedkernel` is not where an ORM would ever be added. `platform`,
+`app`, `party` and `identity` were unprotected.
+
+**A carve-out, proven load-bearing.** `hibernate-validator` is Bean Validation and stays: it
+arrives with `spring-boot-starter-validation`, which `P0-TSK-025` added to reject requests at the
+boundary. The first version of the forbidden list matched `hibernate-` and failed on the real
+classpath. The names are therefore the ORM's own artefacts rather than its publisher's prefix, and
+a test asserts the carve-out is still needed — a rule that forbids a correct dependency is a rule
+somebody turns off.
+
+**The unit of work is a JDBC `Connection`.** The four kernel ports generic over it —
+`AuditWriter<T>`, `OutboxWriter<T>`, `InboxRecordStore<T>`, `IdempotencyRecordStore<T>` — keep the
+type parameter, which is a deliberate non-change rather than an oversight: removing it is a
+refactor of proven Phase 0 code with no correctness benefit.
+
+**Transactions are begun explicitly** — `TransactionTemplate`, not `@Transactional` on service
+methods, because `@Transactional` fails *silently* on self-invocation and
+`DEFINITION_OF_DONE.md` §1.4 requires a boundary that is deliberate rather than an accident of
+annotation placement. *(review)*
 
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).

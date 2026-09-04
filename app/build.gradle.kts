@@ -89,9 +89,10 @@ dependencies {
     // A DataSource, and nothing more. Readiness must be answered through the pool the
     // application uses, so the application has to have one.
     //
-    // NOT spring-boot-starter-data-jpa: the data-access mechanism is unresolved question 12 and
-    // belongs to Phase 3. MoneyColumns was written mechanism-agnostic for the same reason, and
-    // this must not become the answer by accident.
+    // NOT spring-boot-starter-data-jpa, and since ADR-0033 that is a decision rather than a
+    // deferral: authoritative writes use explicit SQL through JdbcClient, which lives in
+    // spring-jdbc. NoObjectRelationalMapperTest fails the build if an ORM reaches this classpath,
+    // so the comment is no longer the only thing holding the line.
     implementation(libs.spring.boot.starter.jdbc)
     runtimeOnly(libs.postgresql.driver)
 
@@ -176,21 +177,34 @@ springBoot {
 // configuration the application actually has, rather than through a second set of values a test
 // fixture chose.
 // ---------------------------------------------------------------------------
+// The application's RUNTIME classpath, supplied to EVERY test task rather than to one of them.
+//
+// Two guards now assert on it, and they are in different tiers:
+//   - HealthReadinessDatabaseTest  (database) - ADR-0011: Flyway is absent, so "migrations never
+//     run at startup" is structural rather than a setting;
+//   - NoObjectRelationalMapperTest (architecture) - ADR-0033: no ORM is present, so nothing can
+//     emit a statement nobody wrote against a table the application role holds no UPDATE on.
+//
+// It is wired with `withType` rather than named per tier deliberately. This property was set on
+// `databaseTest` alone, and a second guard in a second tier is exactly the shape of the
+// `:platform:databaseTest` defect the P0-TSK-027 review found: a list of one that goes stale the
+// moment there are two. `test` also runs both tiers' tests, so naming tiers individually would
+// have needed three entries kept in step by hand.
+//
+// A missing property does not weaken either guard - both assert it is non-blank first, so a check
+// that cannot see the classpath fails loudly instead of reporting that it found nothing wrong.
+val applicationRuntimeArtefacts =
+    configurations.runtimeClasspath.map { cfg -> cfg.files.joinToString(",") { it.name } }
+
+tasks.withType<Test>().configureEach {
+    doFirst { systemProperty("finapp.runtime.classpath", applicationRuntimeArtefacts.get()) }
+}
+
 tasks.named<Test>("databaseTest") {
     // The container image, from the version catalog, exactly as platform's task supplies it.
     // Without this the shared harness runs, finds no image, and returns - which is how these
     // tests silently kept connecting to a developer's compose stack (P0-TSK-035).
     systemProperty("finapp.db.image", "postgres:" + libs.versions.postgresImage.get())
-
-    // ADR-0011: migrations never run at startup, and the structural guarantee is that Flyway is
-    // not on the application's RUNTIME classpath. HealthReadinessDatabaseTest used to assert that
-    // by trying to load the class, reasoning that the test classpath is a superset of the runtime
-    // one - and its own comment predicted the failure that followed: P0-TSK-035's harness needs
-    // Flyway to apply migrations to a container, which put it on the test classpath and made the
-    // check report a false positive. Passing the real runtime classpath lets the test assert what
-    // it always meant.
-    val runtimeNames = configurations.runtimeClasspath.map { cfg -> cfg.files.joinToString(",") { it.name } }
-    doFirst { systemProperty("finapp.runtime.classpath", runtimeNames.get()) }
 
     // `outputs.upToDateWhen { false }` is applied by the convention plugin to every tier needing
     // external infrastructure, so it is not repeated here.

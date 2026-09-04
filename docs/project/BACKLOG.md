@@ -1060,7 +1060,7 @@ remaining gate failure is a fact about the repository's hosting, not about what 
 
 # Phase 1 — Identity and Customer Foundation
 
-Status: `PLANNED` — entry gate satisfied except criterion 1 (Phase 0 not yet `COMPLETE`).
+Status: `IN_PROGRESS` — entry gate passed 2026-09-04 (all twelve criteria), first task complete.
 Elaborated to task granularity 2026-09-03 by the Phase 0 → Phase 1 transition.
 
 The engineering plan is [`PHASE_1_PLAN.md`](PHASE_1_PLAN.md): scope, domain model, security model,
@@ -1077,7 +1077,7 @@ repository exists to prevent.
 
 #### P1-FEAT-01 — Foundations before persistence
 
-**P1-TSK-001 — ADR: data-access mechanism**
+**P1-TSK-001 — ADR: data-access mechanism** — `COMPLETE` (2026-09-04)
 - Context: platform / architecture
 - Description: Decide between JPA/Hibernate, Spring Data JDBC and plain JDBC, and record it.
 - Why: Unresolved question 12, raised by `P0-TSK-011` and deferred because Phase 0 had no
@@ -1092,6 +1092,43 @@ repository exists to prevent.
   tables and with the application role's privileges; unresolved question 12 is closed in
   `CURRENT_STATE.md`.
 - Risk: Medium. Cx: M. DoD: `DOD-ARCH`
+- **Outcome:**
+  [ADR-0033](../adr/ADR-0033-explicit-sql-and-no-object-relational-mapper.md) — **explicit SQL
+  through `JdbcClient`. No ORM, no persistence context, no generated repositories.** No new
+  dependency: `spring-jdbc` has been on the runtime classpath since `P0-TSK-027`.
+  **The decisive argument is the privilege model, not taste.** `INV-HIST-03`, `INV-HIST-01` and
+  `INV-LED-03` are enforced at `DB-PRIVILEGE` by `finapp_app` holding **no `UPDATE` and no
+  `DELETE`**, and that is worth exactly as much as the guarantee that nothing emits a statement
+  nobody wrote. Hibernate's dirty checking emits `UPDATE` on its own initiative, at a flush point
+  decided by code far from the write — so whether the forbidden statement is issued depends on
+  whether an entity happened to be dirty.
+  **Spring Data JDBC came far closer and was rejected on two concrete behaviours**, not general
+  unease: `save()` deletes and re-inserts child collections, and against superseded credentials
+  those children *are* the history; and application-minted UUIDv7 identifiers arrive non-null, so
+  it defaults to `UPDATE` on a new aggregate — the `Persistable.isNew()` trap, sitting precisely on
+  the registration path.
+  **The seam it closes was explicit in the code**: four kernel ports are generic over the unit of
+  work and three said *"a JDBC `Connection` today, whatever the Phase 3 decision produces later"*.
+  `T` is now `Connection` permanently; the type parameter **stays**, because removing it is a
+  refactor of proven Phase 0 code with no correctness benefit (`EXECUTION_PROTOCOL.md` rule 4). All
+  five javadocs corrected — they described a decision that had moved phases and then been taken.
+  **Transactions are begun explicitly** (`TransactionTemplate`), because `@Transactional` fails
+  *silently* on self-invocation and registration must write two modules plus audit plus outbox in
+  one commit.
+  **Enforced rather than recorded** (`DOD-ARCH`): `NoObjectRelationalMapperTest` fails the build if
+  a JPA, Hibernate or Spring Data artefact reaches the application's **runtime** classpath — which
+  also catches one arriving transitively behind a starter, the way it would actually arrive.
+  Writing it **found a real gap**: §6 had forbidden JPA in `sharedkernel` only, and `sharedkernel`
+  is not where anyone would add an ORM.
+  **A false positive was caught before commit, and it is the useful finding.** The first forbidden
+  list matched `hibernate-` and **failed on the real classpath**: `hibernate-validator` is Bean
+  Validation, arrives with `spring-boot-starter-validation` from `P0-TSK-025`, and has nothing to
+  do with persistence. A rule that forbids a correct dependency is a rule somebody turns off —
+  ADR-0019's reasoning for keeping `key` out of the `secretsAreWrapped` vocabulary. The list now
+  names the ORM's own artefacts, and a test keeps the carve-out honest by asserting it is still
+  needed.
+  `DISTRIBUTED_EXECUTION.md` §3 gains **no row**: no new shared state, and every Phase 0
+  concurrency protocol stays expressible unchanged. Four mutations, all caught.
 
 **P1-TSK-002 — Constrain the correlation identifier**
 - Context: platform / security

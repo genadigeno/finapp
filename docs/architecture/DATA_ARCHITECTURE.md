@@ -21,6 +21,19 @@ module owns its schema and its migration history, and a change to a financial ta
 treated as a financial operation: history is not edited, corrections are new forward steps,
 and evidence is preserved.
 
+## Data Access
+
+Authoritative writes and aggregate loads use **explicit SQL through `JdbcClient`** — no
+object-relational mapper, no persistence context (ADR-0033). The reason is the privilege model
+above rather than a preference: `INV-HIST-03`, `INV-HIST-01` and `INV-LED-03` are enforced by the
+application role holding no `UPDATE` and no `DELETE`, which is only meaningful while nothing emits
+a statement nobody wrote.
+
+The unit of work is a JDBC `Connection`, transactions are begun explicitly, and
+`NoObjectRelationalMapperTest` fails the build if an ORM artefact reaches the application's runtime
+classpath. This decision governs **authoritative state only**; derived read models and reporting
+projections are Phase 14's decision.
+
 ## Data Rules
 
 - Use constraints to enforce important invariants.

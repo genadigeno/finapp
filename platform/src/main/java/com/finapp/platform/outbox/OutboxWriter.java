@@ -19,8 +19,9 @@ import com.finapp.sharedkernel.event.EventEnvelope;
  * (P0-TSK-020), and no domain code may do it at all — enforced by
  * {@code NoDirectBrokerPublicationRulesTest}.
  *
- * @param <T> the transactional unit of work — a JDBC {@code Connection} today, whatever the
- *     Phase 3 data-access decision produces later
+ * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033.
+ *     The type parameter remains because removing it is a refactor of proven code with no
+ *     correctness benefit, not because another binding is expected
  */
 public interface OutboxWriter<T> {
 

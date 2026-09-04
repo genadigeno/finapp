@@ -58,7 +58,7 @@ import org.slf4j.LoggerFactory;
  * larger inbox. This is stated because a dedupe wrapper is precisely the component people later
  * assume solved ordering too.
  *
- * @param <T> the transactional unit of work — a JDBC {@code Connection} today
+ * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */
 public final class InboxConsumer<T> {
 

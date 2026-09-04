@@ -23,7 +23,7 @@ package com.finapp.platform.audit;
  * database grants ({@code V009}, {@code INV-HIST-03}), because the next writer may not be this
  * interface at all.
  *
- * @param <T> the transactional unit of work — a JDBC {@code Connection} today
+ * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */
 public interface AuditWriter<T> {
 

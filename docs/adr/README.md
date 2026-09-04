@@ -50,6 +50,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0030](ADR-0030-server-side-sessions-and-assurance-level.md) | Server-side sessions, and assurance is a level rather than a flag | Proposed | 1 | Security |
 | [0031](ADR-0031-authorization-model.md) | Roles grant permissions; ownership is checked separately | Proposed | 1 | Security |
 | [0032](ADR-0032-credential-storage-and-rotation.md) | Credentials store a derivation and the parameters that produced it | Proposed | 1 | Security |
+| [0033](ADR-0033-explicit-sql-and-no-object-relational-mapper.md) | Explicit SQL, and no object-relational mapper | Proposed | 1 | Data |
 
 ## Anticipated ADRs
 

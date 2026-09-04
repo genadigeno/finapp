@@ -14,8 +14,8 @@ import java.util.Objects;
 /**
  * Plain-JDBC storage for inbox records.
  *
- * <p>Plain JDBC because no data-access mechanism has been chosen (unresolved question 12). This
- * adapter is deliberately small and replaceable; {@link InboxConsumer} depends on
+ * <p>Explicit SQL, which ADR-0033 makes the platform-wide decision. This adapter is deliberately
+ * small; {@link InboxConsumer} depends on
  * {@link InboxRecordStore}, not on this class.
  *
  * <p><strong>Isolation this relies on.</strong> PostgreSQL's default {@code READ COMMITTED}. A

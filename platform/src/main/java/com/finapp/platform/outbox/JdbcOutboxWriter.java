@@ -10,8 +10,8 @@ import java.util.Objects;
 /**
  * Plain-JDBC outbox writer.
  *
- * <p>Plain JDBC because no data-access mechanism has been chosen (unresolved question 12), and
- * this adapter is small and replaceable for that reason. Callers depend on {@link OutboxWriter}.
+ * <p>Explicit SQL, which ADR-0033 makes the platform-wide decision. The adapter is small, and
+ * callers depend on {@link OutboxWriter} rather than on this class.
  *
  * <p>The insert happens on the connection it is handed and nothing else: no commit, no rollback,
  * no connection of its own. That is what makes {@code INV-EVT-01} true rather than intended.
