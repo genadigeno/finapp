@@ -1214,6 +1214,12 @@ repository exists to prevent.
   One defect found by probing: an unescaped apostrophe in a schema `COMMENT` (`the platform's`),
   which Flyway rejected at 42601. Found by applying the migration to a real database rather than by
   reading it.
+  **The completion gate found two more hardcoded `platform` names, both fixed**: the column
+  classification guard queried one schema, so ADR-0022's guarantee had become true for one schema
+  in three; and the database test harness applied one module's migrations, so every database test
+  ran against a database missing two thirds of its schemas. With CI's `:platform:flywayMigrate`
+  that is three names in one task — each correct when written — so all three now derive their set
+  rather than naming it.
 
 **P1-TSK-004 — Connection-pool sizing for N instances**
 - Context: platform / ops

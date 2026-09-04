@@ -1,6 +1,11 @@
 package com.finapp.platform.testing.database;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.flywaydb.core.Flyway;
 import org.junit.platform.launcher.LauncherSession;
 import org.junit.platform.launcher.LauncherSessionListener;
@@ -113,23 +118,73 @@ public final class DatabaseUnderTest implements LauncherSessionListener {
     }
 
     /**
-     * Applies the real migrations, in order, with the real history table.
+     * Applies the real migrations of <strong>every</strong> schema-owning module, in order, each
+     * with its own history table.
      *
      * <p>Not a schema dump and not raw SQL: {@code flywayValidate} is a CI gate, and a database
      * whose schema arrived by another route would not have the history to validate against.
+     *
+     * <p><strong>Modules are discovered, not listed.</strong> This applied {@code platform} alone
+     * until {@code P1-TSK-003} added two more schema-owning modules, at which point every database
+     * test ran against a database where two thirds of the schemas did not exist — silently, because
+     * nothing referenced them yet. It was the third instance of the same defect in that one task,
+     * after CI's {@code :platform:flywayMigrate} and {@code ColumnClassificationTest}'s
+     * {@code table_schema = 'platform'}: a name written once, correct at the time, and stale the
+     * moment there were two.
+     *
+     * <p>So the set comes from the repository layout — each {@code <module>/src/main/resources/db/
+     * migration/<module>} directory that exists — and a fourth module is covered without anyone
+     * remembering. Each module keeps its own schema and its own history, exactly as its Gradle task
+     * configures it, because schema ownership and migration ownership are the same thing (ADR-0011).
      */
     private void migrate() {
-        Flyway.configure()
-                .dataSource(container.getJdbcUrl(), "finapp_migrator", MARKED_LOCAL_DEFAULT)
-                .schemas("platform")
-                .defaultSchema("platform")
-                .locations("filesystem:" + repositoryRoot().resolve("platform/src/main/resources/db/migration/platform"))
-                .cleanDisabled(true)
-                .validateOnMigrate(true)
-                .outOfOrder(false)
-                .baselineOnMigrate(false)
-                .load()
-                .migrate();
+        for (String module : schemaOwningModules()) {
+            Flyway.configure()
+                    .dataSource(container.getJdbcUrl(), "finapp_migrator", MARKED_LOCAL_DEFAULT)
+                    .schemas(module)
+                    .defaultSchema(module)
+                    .locations("filesystem:" + migrationsOf(module))
+                    .cleanDisabled(true)
+                    .validateOnMigrate(true)
+                    .outOfOrder(false)
+                    .baselineOnMigrate(false)
+                    .load()
+                    .migrate();
+        }
+    }
+
+    /**
+     * Every module with a migration directory named after itself.
+     *
+     * <p>Sorted, so the order is stable rather than filesystem-dependent — and {@code platform}
+     * first, because it is the module every other one depends on and the one whose absence would
+     * make a failure elsewhere hard to read. There is no cross-schema foreign key, so no other
+     * ordering constraint exists (ADR-0006).
+     */
+    private static List<String> schemaOwningModules() {
+        List<String> modules = new ArrayList<>();
+        try (java.util.stream.Stream<Path> entries = Files.list(repositoryRoot())) {
+            entries.filter(Files::isDirectory)
+                    .map(directory -> directory.getFileName().toString())
+                    .filter(module -> Files.isDirectory(migrationsOf(module)))
+                    .sorted()
+                    .forEach(modules::add);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not scan " + repositoryRoot() + " for migrations", e);
+        }
+        if (modules.isEmpty()) {
+            throw new IllegalStateException(
+                    "No module has a db/migration directory under " + repositoryRoot()
+                            + ". A harness that applies no migrations gives every database test an "
+                            + "empty database and fails in ways that look like defects in the tests.");
+        }
+        modules.remove("platform");
+        modules.add(0, "platform");
+        return modules;
+    }
+
+    private static Path migrationsOf(String module) {
+        return repositoryRoot().resolve(module + "/src/main/resources/db/migration/" + module);
     }
 
     /**

@@ -8,6 +8,10 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeSet;
@@ -151,22 +155,95 @@ class ColumnClassificationTest {
         return new TreeSet<>(rows);
     }
 
+    /**
+     * Every column in every schema this repository owns.
+     *
+     * <p><strong>Derived, not hardcoded to {@code platform}.</strong> It was hardcoded until
+     * {@code P1-TSK-003} added the {@code party} and {@code identity} schemas, at which point
+     * ADR-0022's guarantee — *a migration adding a column the register does not classify fails the
+     * build* — silently became true for one schema out of three. The next task creates the
+     * platform's first {@code RESTRICTED-PII} columns in quantity, in exactly the two schemas the
+     * guard could not see.
+     *
+     * <p>The set comes from the database rather than from a list here, so a fourth schema-owning
+     * module is covered without anyone remembering — the same reasoning as
+     * {@code ProductionModules} and the unqualified {@code flywayMigrate} in CI. Schemas PostgreSQL
+     * ships are excluded by name; everything else in this database is ours by construction, because
+     * the migrator role created it.
+     */
     private static Set<String> columnsInTheSchema() throws SQLException {
         Set<String> columns = new TreeSet<>();
         try (Connection migrator = DatabaseRoles.migrator();
                 Statement statement = migrator.createStatement();
                 ResultSet rows =
                         statement.executeQuery(
-                                "SELECT table_name, column_name FROM information_schema.columns"
-                                        + " WHERE table_schema = 'platform'"
+                                "SELECT table_schema, table_name, column_name"
+                                        + " FROM information_schema.columns"
+                                        + " WHERE table_schema NOT IN ('pg_catalog', 'information_schema')"
                                         + " AND table_name <> '"
                                         + NOT_OURS
                                         + "'")) {
             while (rows.next()) {
-                columns.add(rows.getString(1) + "." + rows.getString(2));
+                columns.add(rows.getString(2) + "." + rows.getString(3));
             }
         }
         return columns;
+    }
+
+    /**
+     * The register keys rows on {@code table.column} with no schema, so two schemas must not both
+     * define a table of the same name.
+     *
+     * <p>Not a hypothetical: {@code audit_record} is a name any module might reasonably reuse, and a
+     * collision would silently merge two tables' columns into one set — after which the register
+     * could classify a column that exists in a different schema from the one the reader assumes,
+     * and the comparison above would still pass. Failing here says which name collided; the
+     * alternative is a register that is quietly about the wrong table.
+     *
+     * <p>When a collision does arrive, the fix is to key the register on {@code schema.table.column}
+     * rather than to rename a table. This assertion is what forces that decision to be made rather
+     * than discovered.
+     */
+    @Test
+    @DisplayName("no two schemas define a table of the same name, so table.column is unambiguous")
+    void tableNamesAreUniqueAcrossSchemas() throws SQLException {
+        Map<String, List<String>> schemasByTable = new TreeMap<>();
+        try (Connection migrator = DatabaseRoles.migrator();
+                Statement statement = migrator.createStatement();
+                ResultSet rows =
+                        statement.executeQuery(
+                                "SELECT DISTINCT table_schema, table_name FROM information_schema.tables"
+                                        + " WHERE table_schema NOT IN ('pg_catalog', 'information_schema')"
+                                        + " AND table_name <> '"
+                                        + NOT_OURS
+                                        + "'")) {
+            while (rows.next()) {
+                schemasByTable
+                        .computeIfAbsent(rows.getString(2), name -> new ArrayList<>())
+                        .add(rows.getString(1));
+            }
+        }
+
+        assertThat(schemasByTable)
+                .as("the register must have seen some tables, or this asserts nothing")
+                .isNotEmpty();
+
+        Map<String, List<String>> collisions = new TreeMap<>();
+        schemasByTable.forEach(
+                (table, schemas) -> {
+                    if (schemas.size() > 1) {
+                        collisions.put(table, schemas);
+                    }
+                });
+
+        assertThat(collisions)
+                .as(
+                        "%s keys rows on table.column with no schema. Two schemas defining the same "
+                                + "table name would merge into one set, and the register would be "
+                                + "about a table the reader did not mean. Key the register on "
+                                + "schema.table.column instead of renaming a table.",
+                        DOCUMENT)
+                .isEmpty();
     }
 
     /**
