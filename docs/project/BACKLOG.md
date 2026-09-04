@@ -1180,7 +1180,7 @@ repository exists to prevent.
   `OpenApiDocument`, so nothing would ever have added it. Published with `required: false`;
   the diff is 43 added lines and zero removed.
 
-**P1-TSK-003 — `party` and `identity` module skeletons**
+**P1-TSK-003 — `party` and `identity` module skeletons** — `COMPLETE` (2026-09-04)
 - Context: party, identity
 - Description: Two modules, their Gradle wiring, their schemas and their Flyway histories.
 - Why: The first modules other than `platform` to own a schema. The boundary must exist before the
@@ -1193,6 +1193,27 @@ repository exists to prevent.
 - Accept: `./gradlew build` green with both modules; `ProductionModules` coverage includes them, so
   every existing architecture rule now protects them without being edited.
 - Risk: Low. Cx: M. DoD: `DOD-BUILD`
+- **Outcome:** two modules, `party` and `identity`, each owning a schema and its own Flyway
+  history. Three schemas now exist, all owned by `finapp_migrator` (never a superuser), each with
+  `REVOKE ALL ... FROM PUBLIC` and `finapp_app` granted `USAGE` and nothing else — verified against
+  a live database, not asserted.
+  **The acceptance criterion was proven rather than assumed.** A `double` planted in
+  `PartyAuditAction` fails **two** floating-point rules in `:app:test` — so every existing
+  architecture rule protects the new modules without being edited, because `ProductionModules`
+  derives its coverage from the classpath.
+  **Each module has a real test, and the guard is what forced it**: `TestTaxonomyTest` failed with
+  *"a module contributing no test classes means the sweep did not reach it"*. The tests assert the
+  ADR-0029 boundary structurally — neither module may see the other, nor `app` — with a
+  non-vacuity half asserting each *does* see `platform` and `sharedkernel`.
+  **CI's `:platform:flywayMigrate` was a list of one** and is now unqualified, so a fourth
+  schema-owning module is covered without anyone remembering — the `:platform:databaseTest` shape
+  the `P0-TSK-027` review found.
+  Two auditable actions in `identity` and one in `party`, catalogued and reconciled in both
+  directions by the existing registry test. Deliberately few: a registry may list an action before
+  its code exists, but not before its *design* does.
+  One defect found by probing: an unescaped apostrophe in a schema `COMMENT` (`the platform's`),
+  which Flyway rejected at 42601. Found by applying the migration to a real database rather than by
+  reading it.
 
 **P1-TSK-004 — Connection-pool sizing for N instances**
 - Context: platform / ops
@@ -1490,6 +1511,31 @@ repository exists to prevent.
 - Risk: **High**. Cx: L. DoD: `DOD-SEC`
 
 ## P1-EPIC-07 — Phase Review
+
+**P1-TSK-025 — `@ArchTest` rules do not run in the `architectureTest` tier** — `TODO`
+- Context: platform / testing
+- Description: `./gradlew architectureTest` executes the `@Test` methods of an ArchUnit suite and
+  **not its `@ArchTest` rule fields**, so the tier named for architecture rules runs none of them.
+- Why: Found by `P1-TSK-003`, which planted a `double` in a new module to prove the existing rules
+  now cover it. `:app:architectureTest` reported **BUILD SUCCESSFUL**; `:app:test` failed two
+  rules on the same code. `NoFloatingPointMoneyRulesTest` contributes **2 cases to
+  `architectureTest` and 7 to `test`** — the five missing ones are the rules themselves, including
+  the coverage guard.
+  **Enforcement is not lost**: `build` runs `test`, which runs all seven, so CI has always been
+  checking them. What is lost is the tier task's meaning — a developer running `architectureTest`
+  before pushing is told the architecture is fine by a task that checked none of it, which is the
+  "green while checking nothing" failure this repository has met five times.
+  This is the same root cause as the `ModuleBoundaryRulesTest` skip that `P0-TSK-036` found: ArchUnit
+  executes `@ArchTest` **fields** under its own JUnit engine, and the tier task's tag filtering does
+  not select them.
+- Deps: none
+- Implementation: make the ArchUnit engine's rule fields selectable by the tier task, or make
+  `TestTaxonomyTest` assert per suite that the tier runs as many cases as `test` does.
+- Tests: the taxonomy guard must fail when a suite's rules are selected by one task and not the
+  other — proven by mutation, not asserted.
+- Accept: a `double` planted in production code fails `./gradlew architectureTest`, not only
+  `./gradlew build`.
+- Risk: Low — no enforcement gap to close, only a misleading task. Cx: S. DoD: `DOD-TEST`
 
 **P1-TSK-024 — Extend the mutation register to Phase 1**
 - Context: platform / test

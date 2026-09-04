@@ -357,7 +357,7 @@ fixed and described in §7a.
 ## 7a. Changing a dependency
 
 Every artefact the build resolves is checksum-verified and version-locked
-(`gradle/verification-metadata.xml` and the three `gradle.lockfile`s). Both are enforced, so
+(`gradle/verification-metadata.xml` and a `gradle.lockfile` per project). Both are enforced, so
 changing a dependency is three steps rather than two:
 
 ```bash

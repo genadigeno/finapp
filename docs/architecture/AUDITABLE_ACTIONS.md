@@ -56,7 +56,40 @@ question, not a refactor.
 | `outbox.EventRetryAuthorised` | **Yes** | An operator cleared an event's abandonment and returned it to the relay's queue. |
 | `outbox.EventDiscarded` | **Yes** | An operator accepted that an event will never be published, leaving a permanent gap in what consumers received. |
 
-**None of these is emitted yet**, and that is not an oversight. Two describe the manual procedure
+### `party` — `PartyAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `party.ProfileChanged` | No | A party's profile data was changed, recording what was held before and after. |
+
+Audited because this module holds personal data, and a change to it changes what the platform
+believes about a person — which later decisions, including KYC and credit, are taken against. No
+reason is required: this is ordinarily the customer maintaining their own details, and a mandatory
+reason on a routine action produces a column of `"update"` (§4). A staff-initiated change on
+someone else's behalf is a different action and will be declared when it exists.
+
+### `identity` — `IdentityAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
+| `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
+
+**Deliberately only two.** Authentication, session revocation, credential change and MFA enrolment
+are audited too and are *not* declared yet: each belongs to the task that builds it, where
+`requiresReason()` can be decided against real behaviour. A registry may list an action before its
+code exists; it should not list one before its *design* does.
+
+Both require a reason because both are things a human chose to do that the system would not have
+done by itself, taken **against someone else's account** — and this is the module where an insider
+with a legitimate permission does the most damage. Role assignment is the more consequential of the
+two: it is the action by which every other authorization decision can be quietly widened, so an
+assignment nobody has to justify is privilege escalation with a clean audit trail.
+
+`INV-AUD-04`'s four-eyes requirement is not yet modelled — `audit_record` records one actor — and
+that is recorded debt rather than an omission here.
+
+**None of the actions above is emitted yet**, and that is not an oversight. Two describe the manual procedure
 in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today
 with raw SQL and no audit record at all; the third is a relay decision currently visible only as a
 log line, which ADR-0010 is explicit does not count. A completeness registry is precisely the list

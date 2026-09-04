@@ -23,7 +23,7 @@ external input.
 | File | Refuses | Does not catch |
 |---|---|---|
 | `gradle/verification-metadata.xml` | an artefact whose bytes do not match the recorded SHA-256 | a *version* change to something it already records |
-| six `gradle.lockfile`s | a configuration resolving a version other than the locked one | a substituted artefact at the locked version |
+| a `gradle.lockfile` per project, and per settings buildscript | a configuration resolving a version other than the locked one | a substituted artefact at the locked version |
 
 The lockfiles are one per project (`app`, `platform`, `sharedkernel`), one for the settings
 buildscript, and two for `build-logic` (its own project and its own settings) — see the

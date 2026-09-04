@@ -42,4 +42,11 @@ dependencyResolutionManagement {
 // ---------------------------------------------------------------------------
 include("sharedkernel")
 include("platform")
+
+// Phase 1 business modules (P1-TSK-003). Declared before `app`, which depends on both, so the
+// documented direction app -> business modules -> platform -> sharedkernel is the one Gradle
+// enforces structurally rather than one ArchUnit merely asserts.
+include("party")
+include("identity")
+
 include("app")

@@ -48,6 +48,13 @@ dependencies {
     // none exist yet.
     implementation(project(":platform"))
 
+    // The Phase 1 business modules (P1-TSK-003). app is the composition root and the only module
+    // that sees every other one, which is what lets the architecture rules observe both sides of
+    // a boundary - so a business module must be on app's classpath or ProductionModules cannot
+    // derive it and every rule silently stops protecting it.
+    implementation(project(":party"))
+    implementation(project(":identity"))
+
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)

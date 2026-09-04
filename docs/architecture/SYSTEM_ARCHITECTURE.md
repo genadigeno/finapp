@@ -103,7 +103,7 @@ controls, both enforced on every build:
 | File | Refuses | Does not catch |
 |---|---|---|
 | `gradle/verification-metadata.xml` | an artefact whose bytes do not match the recorded SHA-256 | a *version* change to something it already records |
-| six `gradle.lockfile`s - three projects, the settings buildscript, and `build-logic` (project and settings) | a configuration resolving a version other than the locked one | a substituted artefact at the locked version |
+| a `gradle.lockfile` per project, plus one for each settings buildscript (the root and `build-logic`) | a configuration resolving a version other than the locked one | a substituted artefact at the locked version |
 
 They are not redundant, and that was measured rather than assumed: on its first generation the
 verification file recorded **69 of 342 modules at more than one version** — `jackson-bom` at five —

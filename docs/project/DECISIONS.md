@@ -158,7 +158,7 @@ owning phases are recorded so the absence is a decision. &rarr;
 
 ### Supply chain
 Every artefact the build resolves is checksum-verified (`gradle/verification-metadata.xml`) and
-version-locked (three `gradle.lockfile`s), both enforced by Gradle on every build and both proven by
+version-locked (a `gradle.lockfile` per project), both enforced by Gradle on every build and both proven by
 mutation. They are **not** redundant, and measuring showed why: verification recorded **69 of 342
 modules at more than one version** on its first generation, because different classpaths legitimately
 resolve different versions - so it cannot tell a deliberate resolution from drift between versions it

@@ -149,15 +149,20 @@ jobs:
         run: docker compose up -d postgres --wait
 
       - name: Apply migrations to an empty database
-        run: ./gradlew :platform:flywayMigrate --stacktrace
+        # Unqualified, not `:platform:flywayMigrate`. Three modules now own a schema
+        # (P1-TSK-003) and a module-qualified task name is a list of one that goes stale the
+        # moment there are two - the `:platform:databaseTest` defect the P0-TSK-027 review
+        # found. Unqualified, Gradle runs the task in every project that has it, so a fourth
+        # schema-owning module is covered without anyone remembering.
+        run: ./gradlew flywayMigrate --stacktrace
 
       - name: Validate applied migrations against the repository
         # Fails if an already-applied migration was edited (ADR-0011). This is the
         # automation of P0-TSK-005's "checksum drift fails the build".
-        run: ./gradlew :platform:flywayValidate --stacktrace
+        run: ./gradlew flywayValidate --stacktrace
 
       - name: Re-apply to prove migrations are idempotent
-        run: ./gradlew :platform:flywayMigrate --stacktrace
+        run: ./gradlew flywayMigrate --stacktrace
 
       # NOTE: since P0-TSK-035 this step no longer needs the compose stack - the shared harness
       # starts its own container, applies the role script and the migrations, and publishes the
