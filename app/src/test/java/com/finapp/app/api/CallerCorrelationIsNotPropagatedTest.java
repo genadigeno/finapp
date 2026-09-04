@@ -126,9 +126,8 @@ class CallerCorrelationIsNotPropagatedTest {
                     .noneMatch(value -> value != null && value.contains(personal));
 
             // A second mechanism: the attribute is stamped by a span processor, not by this thread.
-            assertThat(correlationAttributes())
+            assertThat(awaitCorrelationAttributes())
                     .as("no span attribute may carry %s", personal)
-                    .isNotEmpty()
                     .noneMatch(value -> value.contains(personal));
 
             // And the response body/headers the client gets back.
@@ -201,12 +200,42 @@ class CallerCorrelationIsNotPropagatedTest {
 
         assertThat(ContextProbe.seenCorrelation).as("the probe must have run").isNotNull();
         assertThat(ContextProbe.seenMdc).as("the MDC must have been captured").isNotEmpty();
-        assertThat(correlationAttributes())
+        assertThat(awaitCorrelationAttributes())
                 .as("at least one span must carry the correlation attribute")
                 .isNotEmpty();
     }
 
     // -----------------------------------------------------------------
+
+    /**
+     * The correlation attributes on recorded spans, waited for rather than sampled.
+     *
+     * <p><strong>Why a wait, and why this shape.</strong> The server span ends after the response
+     * has been written, so the client can hold a complete response while the span it produced has
+     * not yet reached the exporter. Asserting immediately therefore races, and it races in the
+     * worst direction: {@code isNotEmpty} on an empty list fails, but a {@code noneMatch} over an
+     * empty list <em>passes</em> — so the guard would silently stop checking the span sink on a
+     * loaded machine while still reporting green.
+     *
+     * <p>This was not theoretical. It passed locally on every run and **failed on the first CI
+     * run**, which is precisely the difference the CI gate exists to expose. {@code RecordedSpans}'
+     * own javadoc predicted it: *"a test that waits for telemetry is a test that fails
+     * intermittently on a loaded machine"* — the answer is to wait on the **condition** rather
+     * than for a duration, which is what this does. The bound is generous because exceeding it is
+     * a failure, never a pass.
+     */
+    private List<String> awaitCorrelationAttributes() throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        List<String> attributes = correlationAttributes();
+        while (attributes.isEmpty() && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+            attributes = correlationAttributes();
+        }
+        assertThat(attributes)
+                .as("a span carrying the correlation attribute must be recorded, or this asserts nothing")
+                .isNotEmpty();
+        return attributes;
+    }
 
     private List<String> correlationAttributes() {
         AttributeKey<String> key = AttributeKey.stringKey(TraceAttributes.CORRELATION_ID);

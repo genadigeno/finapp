@@ -162,7 +162,7 @@ because a UUIDv7 hex string contains `bad` roughly 0.7% of the time; the intent 
 method was wrong. Replaced by pinning the *shape* — a platform-minted UUIDv7 — which nothing derived
 from caller input can satisfy.
 
-Four mutations, all caught. The MDC leak was caught **twice**, the second time by
+**A flake I introduced was caught by CI on the first run and not locally** - the fifth finding of this class, and the clearest. `correlationAttributes()` was sampled immediately, but the server span ends *after* the response is written, so the client can hold a complete response while the span it produced has not reached the exporter. It raced in the worst direction: `isNotEmpty` on an empty list fails, but the `noneMatch` beside it **passes** over an empty list - so on a loaded machine the guard would have stopped checking the span sink while still reporting green. `RecordedSpans`' own javadoc had predicted it. Fixed by waiting on the **condition** rather than for a duration, with the bound generous because exceeding it is a failure and never a pass; five consecutive runs green, and the mutations re-proven to still fail with the wait in place, since a wait must not be what makes a test pass. `TracingTest` has the same latent race and has not yet been bitten - recorded, not fixed here. Four mutations, all caught. The MDC leak was caught **twice**, the second time by
 `onlyCorrelationContextWritesTheMdc` from `P0-TST-008` — defence in depth working without being
 asked to.
 
