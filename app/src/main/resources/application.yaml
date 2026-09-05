@@ -40,6 +40,25 @@ spring:
       # exhausted, which is a genuine reason to stop taking traffic.
       connection-timeout: 5000
       validation-timeout: 2000
+
+      # POOL SIZE, and the arithmetic behind it (P1-TSK-004).
+      #
+      # Small on purpose. A pool is not a budget to spend: every connection is a backend
+      # process on the server, and PostgreSQL throughput stops improving once the machine's
+      # cores are busy - past that, extra connections queue INSIDE the database, where the
+      # queueing is invisible to the application and shows up as latency on every query
+      # rather than as a timeout on one.
+      #
+      # The fleet must also fit. 10 instances x 8 = 80, against 100 max_connections less 12
+      # reserved = 88. ConnectionPoolSizingGuard refuses to start if that stops holding, and
+      # the numbers below are what it reads - see finapp.database.
+      #
+      # minimum-idle EQUALS maximum-pool-size, so the pool is fixed-size. That is what
+      # HikariCP recommends, and it is what makes the arithmetic meaningful: a pool that only
+      # sometimes reaches its maximum would make the check a statement about the average, and
+      # a server is exhausted by the worst case.
+      maximum-pool-size: 8
+      minimum-idle: 8
       data-source-properties:
         # How long to wait for the TCP connect, in seconds. The driver's default is 10, which
         # is longer than a probe interval; a blackholed database would otherwise leave
@@ -49,6 +68,36 @@ spring:
         # choosing that number without any real queries to measure would be a guess that
         # aborts legitimate work later. It belongs with Phase 3, where the queries exist.
         ApplicationName: finapp
+
+# ---------------------------------------------------------------------------
+# The connection-limit arithmetic (P1-TSK-004, ADR-0014).
+#
+# Three numbers that live in three different places - the pool size is application
+# configuration, the instance count is a deployment's replica count, and max_connections is a
+# database setting - so nothing brings them together and nothing notices when one moves. Each
+# is changed by someone with no reason to be thinking about the other two; scaling from eight
+# instances to twelve is an ordinary operational act.
+#
+# Declared here and checked by ConnectionPoolSizingGuard at startup. The defaults below are
+# PostgreSQL's own defaults and a deliberately modest fleet, which is what makes them safe as
+# defaults: they describe the smallest realistic deployment rather than an aspiration. A real
+# deployment states its own.
+#
+# THE GUARD CANNOT VERIFY server-max-connections against the live server, and does not pretend
+# to - it runs before the pool is used, and one that queried the database would fail for a
+# database that is merely down. It is a DECLARATION, and a wrong declaration is a wrong answer.
+# ---------------------------------------------------------------------------
+finapp:
+  database:
+    # ADR-0014: N is never 1.
+    instances: ${FINAPP_DB_INSTANCES:10}
+    server-max-connections: ${FINAPP_DB_SERVER_MAX_CONNECTIONS:100}
+    # PostgreSQL reserves 3 for superusers, so they were never ours. The rest is operational
+    # headroom: a migration runs as finapp_migrator during a deploy, and an operator diagnosing
+    # an incident connects with psql. If the fleet is sized to consume every remaining
+    # connection, the one thing nobody can do when the fleet is in trouble is connect to the
+    # database to find out why.
+    reserved-connections: ${FINAPP_DB_RESERVED_CONNECTIONS:12}
 
 # ---------------------------------------------------------------------------
 # Logging (P0-TSK-030).

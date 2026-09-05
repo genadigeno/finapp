@@ -1221,7 +1221,7 @@ repository exists to prevent.
   that is three names in one task — each correct when written — so all three now derive their set
   rather than naming it.
 
-**P1-TSK-004 — Connection-pool sizing for N instances**
+**P1-TSK-004 — Connection-pool sizing for N instances** — `COMPLETE` (2026-09-04)
 - Context: platform / ops
 - Description: Size and document the pool against `max_connections` for a realistic instance count.
 - Why: Recorded debt and transition **risk R6**. Hikari's default is 10 per instance; ten instances
@@ -1237,6 +1237,28 @@ repository exists to prevent.
 - Accept: the relationship between instances, pool size and `max_connections` is written down and
   checked rather than assumed.
 - Risk: Medium. Cx: S. DoD: `DOD-OBS`
+- **Outcome:** `instances x maximum-pool-size <= server max_connections - reserved`, declared as
+  configuration and enforced by `ConnectionPoolSizingGuard` at startup. Shipped: 10 x 8 = 80
+  against 100 - 12 = 88.
+  **The obvious repair is the wrong one, and that is the finding.** Dividing `max_connections` by
+  the instance count treats the limit as a budget to spend; it is a ceiling not to hit. Every
+  connection is a backend process, and PostgreSQL throughput stops improving once the machine's
+  cores are busy — past that, extra connections queue **inside** the database, where the queueing is
+  invisible to the application and shows up as latency on every query rather than as a pool timeout
+  on one. So the pool is sized small for throughput, and "does the fleet fit" is a separate question
+  asked afterwards.
+  **Checked in two places, because they are two claims.** The guard proves it at startup;
+  `ConnectionPoolSizingIsConfiguredTest` proves the *shipped* numbers satisfy it in the build — a
+  guard alone would leave a violating configuration to be discovered by a rolling restart, one
+  instance at a time.
+  **Verified against a running instance** (`DOD-OBS`), in all three directions: the shipped
+  configuration starts; `FINAPP_DB_INSTANCES=20` is refused with the arithmetic and the fix in the
+  message; and raising `max_connections` to 200 is accepted, so the guard does not force the pool to
+  be the thing that gives way.
+  **Two limits stated rather than implied**: the guard cannot verify `max_connections` against the
+  live server and does not try — it is a declaration, and a wrong one is a wrong answer; and the
+  arithmetic assumes each instance holds its full pool, which is why `minimum-idle` equals
+  `maximum-pool-size` and why a test asserts it.
 
 #### P1-FEAT-02 — Registration
 

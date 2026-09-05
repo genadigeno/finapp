@@ -206,6 +206,67 @@ same category of mistake as floating-point money. Replaced with integer millisec
 
 ---
 
+## 4a. The connection budget
+
+**Every instance holds connections, and the database has a finite number of them.** That is the one
+resource N instances contend for which is not solved by any of the protocols above — no lock, no
+constraint and no idempotency key makes a connection available.
+
+The arithmetic (`P1-TSK-004`):
+
+```
+instances × maximum-pool-size  ≤  server max_connections − reserved
+```
+
+**The defaults fail it, which is why this is a guard and not a note.** Hikari's default pool is 10
+and PostgreSQL's default `max_connections` is 100, so **ten instances exhaust the server before a
+single connection does any work** — and §1 says N is never 1. Nothing in either default notices.
+Each instance starts, fills its pool, and the instances that lose the race fail readiness with
+*connection is not available*, which reads as the pool being too small or the database being slow.
+It is neither. It is arithmetic nobody did.
+
+It is the worst shape of operational failure: it appears only during a full deploy, a scale-out or a
+restart storm — the moments when diagnosis is hardest — and the symptom points away from the cause.
+
+**Dividing `max_connections` by the instance count is the wrong repair**, and it is the obvious one.
+That treats the limit as a budget to spend; it is a ceiling not to hit. Every connection is a
+backend process with its own memory, and PostgreSQL throughput stops improving once the machine's
+cores are busy — past that the extra connections queue *inside* the database, where the queueing is
+invisible to the application and appears as latency on every query rather than as a pool timeout on
+one. So the pool is sized small for throughput, and the budget check is a separate question asked
+afterwards: given that pool, does the whole fleet still fit?
+
+**Why anything is reserved.** PostgreSQL keeps `superuser_reserved_connections` (3 by default), so
+those were never ours. The rest is operational headroom: a migration runs as `finapp_migrator`
+during a deploy, and an operator diagnosing an incident connects with `psql`. If the fleet is sized
+to consume every remaining connection, the one thing nobody can do when the fleet is in trouble is
+connect to the database to find out why.
+
+**Enforced at startup**, by `ConnectionPoolSizingGuard`, because the three numbers live in three
+places — application configuration, a deployment's replica count, and a database setting — so
+nothing brings them together and nothing notices when one moves. Each is changed by someone with no
+reason to be thinking about the other two, and scaling from eight instances to twelve is an ordinary
+operational act. `ConnectionPoolSizingIsConfiguredTest` additionally checks the shipped numbers in
+the build, so a violation is caught in the change that introduced it rather than by a rolling
+restart discovering it one instance at a time.
+
+**Two limits, stated rather than implied.**
+
+- The guard **cannot verify `max_connections` against the live server** and does not try: it runs
+  before the pool is used, and one that queried the database would fail for a database that is
+  merely down. `finapp.database.server-max-connections` is a *declaration* by the deployment, and a
+  wrong declaration is a wrong answer. That is why it has no silent default in a deployment's own
+  configuration.
+- The arithmetic assumes each instance holds its **full** pool. True here because `minimum-idle`
+  equals `maximum-pool-size`, which is both HikariCP's recommendation and what makes the check
+  meaningful — a pool that only sometimes reaches its maximum would make this a statement about the
+  average, and a server is exhausted by the worst case.
+
+**What it does not do:** shrink the pool to make the numbers work. That would change a deployment's
+capacity on its own initiative, silently, when the right answer is often to raise `max_connections`
+or run fewer instances — decisions this code has no business taking. It reports the largest pool
+that would fit and refuses.
+
 ## 5. Standing rules for future work
 
 **Scheduled jobs.** Every instance runs the scheduler. A job is either idempotent under
