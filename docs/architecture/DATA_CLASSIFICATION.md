@@ -91,7 +91,8 @@ applies to the error-code catalogue, because a second copy drifts while looking 
 
 ## 4. Column register — *Implemented*
 
-Every column in the `platform` schema, at its ceiling.
+Every column in every schema this repository owns — `platform`, `party` and `identity` — at its
+ceiling.
 `ColumnClassificationTest` fails the build if this table and the live schema disagree in either
 direction — so a migration that adds a column without a classification decision cannot land. That
 guard, not this table, is what makes the scheme "referenced by later data-model tasks".
@@ -147,6 +148,44 @@ no business data.
 | `outbox_event` | `next_attempt_at` | `INTERNAL` | |
 | `outbox_event` | `dead_lettered_at` | `INTERNAL` | |
 | `outbox_event` | `last_error` | `CONFIDENTIAL` | A broker or adapter error. `V006` already forbids the payload here; an error string can still carry a host or endpoint |
+
+### `party` and `identity` — *added by `P1-TSK-005`*
+
+**The platform's first `RESTRICTED-PII` columns in quantity**, and the phase in which the
+classification stops being a hypothetical. Every one below is classified at what it *may ever*
+hold, not what it holds on the day it was created — a column cannot be reclassified once it has
+data, because by then the handling it was given for its whole life is already settled and may be in
+a log aggregator, an event stream or a backup (ADR-0022).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `party` | `id` | `INTERNAL` | A generated identifier. UUIDv7 discloses creation time by construction (ADR-0013) |
+| `party` | `kind` | `INTERNAL` | An enumeration of two values. Says nothing about a particular person |
+| `party` | `display_name` | `RESTRICTED-PII` | A person's name. The clearest `RESTRICTED-PII` column on the platform, and the reason `Party.toString()` omits it and `PartyName.toString()` masks it |
+| `party` | `registered_at` | `CONFIDENTIAL` | When someone became known to us. Not a name, but a behavioural fact about a person, and one that correlates with events they would not expect us to publish |
+| `customer` | `id` | `INTERNAL` | Generated |
+| `customer` | `party_id` | `INTERNAL` | An identifier of a person, not a fact about them. `RESTRICTED-PII` here would forbid it from a log line and defeat the traceability the audit trail is for; what must never be logged is what it *resolves to* |
+| `customer` | `status` | `CONFIDENTIAL` | Whether someone is suspended is a fact about them that neither they nor we would want disclosed. Not PII on its own — it identifies nobody — but it must not be public |
+| `customer` | `opened_at` | `CONFIDENTIAL` | As `party.registered_at` |
+| `customer` | `status_changed_at` | `CONFIDENTIAL` | When a suspension happened, which is more disclosive than the status alone |
+| `identity` | `id` | `INTERNAL` | Generated |
+| `identity` | `party_id` | `INTERNAL` | As `customer.party_id` |
+| `identity` | `login_identifier` | `CONFIDENTIAL` | **Not `RESTRICTED-PII`, and the reasoning matters.** It is not itself personal data — it is a handle the platform issued or the person chose. What it carries is *existence*: knowing one is in use tells an attacker an account exists, which is the enumeration risk `INV-IDN-07` exists for. That is a confidentiality requirement, not a privacy one, and it is why `Identity.toString()` omits it |
+| `identity` | `status` | `CONFIDENTIAL` | Whether a login is suspended. As `customer.status` |
+| `identity` | `created_at` | `CONFIDENTIAL` | As `party.registered_at` |
+| `identity` | `status_changed_at` | `CONFIDENTIAL` | As `customer.status_changed_at` |
+
+**Why no column here is `RESTRICTED-FINANCIAL`.** Phase 1 holds no money, no account and no
+balance. When `target_id` on an audit record points at one of these rows it is still the audit
+table's column and keeps that table's classification; nothing in `party` or `identity` becomes
+financial by being referenced.
+
+**The one judgement worth challenging** is `party_id` at `INTERNAL`. It identifies a person, and
+the argument for `RESTRICTED-PII` is real. It is classified `INTERNAL` because the alternative is
+unworkable rather than because the risk is absent: correlation and audit both require an identifier
+to appear in records, and a level that forbade it would forbid the traceability those records exist
+to provide — the same trap `correlation_id` presents in §5. What must never appear beside it is
+what it *resolves to*, and that is enforced where the name lives, not here.
 
 ## 5. The columns whose content the platform does not decide
 

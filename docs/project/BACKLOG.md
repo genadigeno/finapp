@@ -1262,7 +1262,7 @@ repository exists to prevent.
 
 #### P1-FEAT-02 — Registration
 
-**P1-TSK-005 — Party, Customer and Identity aggregates**
+**P1-TSK-005 — Party, Customer and Identity aggregates** — `COMPLETE` (2026-09-05)
 - Context: party, identity
 - Description: The three aggregates, their state machines, their schemas and their constraints.
 - Why: ADR-0029. `DELIVERY_PLAN.md` §17 names collapsing them as the phase's top risk.
@@ -1277,6 +1277,29 @@ repository exists to prevent.
 - Accept: the three are separately persisted with distinct lifecycles — the Phase 1 exit criterion
   — proven by a test that fails if any two are merged.
 - Risk: **High**. Cx: L. DoD: `DOD-KERNEL`
+- **Outcome:** three aggregates in two modules, three tables in two schemas, fifteen columns each
+  classified at its ceiling.
+  **The acceptance criterion is a test that fails if any two are merged**, and it is written as the
+  four shapes a merged model cannot represent rather than as an abstract claim: a person who is not
+  a customer (a beneficial owner), a customer who is not a person (an organisation), one Party
+  holding a retired login and its replacement, and lifecycles that move independently — suspending
+  a login must not suspend the commercial relationship.
+  **Two invariants are enforced only by the database, because no aggregate can enforce them**: at
+  most one *live* customer relationship per party, and a login identifier used once ever. Both are
+  rules *across* aggregates of the same type, so only the database arbitrates between two concurrent
+  transactions — which ADR-0014 says is the normal case.
+  **The two uniqueness rules deliberately point opposite ways.** A closed relationship frees the
+  party for a new one (partial index); a closed login **never** frees its identifier (total index),
+  because reissuing it would let a new person authenticate with a name appearing in someone else's
+  audit history.
+  **`identity.identity.party_id` has no `REFERENCES` clause**, asserted in the migration and in a
+  test. The cost is stated rather than hidden: the database permits an identity for a party that
+  does not exist, and what prevents it is the registration transaction, not the schema.
+  **`Party` has no lifecycle**, which looks like an omission and is the design: existence has no
+  states, and every state people reach for — inactive, closed, archived — is a statement about a
+  relationship or a login, each of which has its own table.
+  Five mutations, all caught: `CLOSED` made non-terminal, the aggregate's transition check removed,
+  the partial index dropped, a status added to `Party`, and a cross-schema foreign key introduced.
 
 **P1-TSK-006 — `POST /v1/registrations`, idempotent**
 - Context: party / api
