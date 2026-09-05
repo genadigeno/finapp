@@ -1298,8 +1298,15 @@ repository exists to prevent.
   **`Party` has no lifecycle**, which looks like an omission and is the design: existence has no
   states, and every state people reach for — inactive, closed, archived — is a statement about a
   relationship or a login, each of which has its own table.
-  Five mutations, all caught: `CLOSED` made non-terminal, the aggregate's transition check removed,
-  the partial index dropped, a status added to `Party`, and a cross-schema foreign key introduced.
+  Seven mutations, all caught: `CLOSED` made non-terminal, the aggregate's transition check
+  removed, the partial index dropped, a status added to `Party`, a cross-schema foreign key
+  introduced, the `PartyName` mask removed, and `@` permitted in a login identifier.
+  **The completion gate found two gaps and closed both**: `DOD-KERNEL` requires concurrency proven
+  by integration test and there was none - while the argument for these rules living in the
+  database is that only the database arbitrates between concurrent transactions, which had been
+  asserted *sequentially*; and `INV-AUD-02` was claimed through masked `toString()` overrides that
+  nothing tested. Ten racers, each with its own connection, plus the crash half: a rolled-back
+  attempt must not consume the uniqueness slot.
 
 **P1-TSK-006 — `POST /v1/registrations`, idempotent**
 - Context: party / api
