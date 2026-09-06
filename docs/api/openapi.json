@@ -87,6 +87,41 @@
           }
         }
       },
+      "api.IdempotencyInProgress": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.IdempotencyInProgress"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.IdempotencyInProgress"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] That request is still being processed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "api.IdempotencyKeyRequired": {
         "content": {
           "application/problem+json": {
@@ -436,6 +471,41 @@
             "$ref": "#/components/headers/X-Correlation-Id"
           }
         }
+      },
+      "party.RegistrationRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "party.RegistrationRefused"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/party.RegistrationRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] This registration could not be completed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
       }
     },
     "schemas": {
@@ -472,6 +542,27 @@
           "code"
         ],
         "type": "object"
+      },
+      "RegistrationRequest": {
+        "properties": {
+          "displayName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "[^\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Cn}]+",
+            "type": "string"
+          },
+          "loginIdentifier": {
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "[A-Za-z0-9._-]+",
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "loginIdentifier"
+        ],
+        "type": "object"
       }
     }
   },
@@ -481,5 +572,36 @@
     "version": "1"
   },
   "openapi": "3.1.0",
-  "paths": { }
+  "paths": {
+    "/v1/registrations": {
+      "post": {
+        "operationId": "register",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    }
+  }
 }

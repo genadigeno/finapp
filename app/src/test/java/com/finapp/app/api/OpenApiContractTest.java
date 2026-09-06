@@ -227,9 +227,14 @@ class OpenApiContractTest {
         String document = publishedDocument();
 
         assertThat(document).doesNotContain("probe");
+
+        // Every published path must be one this platform means to publish. The assertion used to
+        // be that there were none at all, which was true while Phase 0 had no endpoint and stopped
+        // being a check the moment `P1-TSK-006` added one. A list is the honest replacement: adding
+        // an endpoint is a deliberate act, and this is one of the places it has to be declared.
         assertThat(OpenApiDocument.parse(document).path("paths").propertyNames())
-                .as("Phase 0 publishes no business endpoint")
-                .isEmpty();
+                .as("a route in the published contract that nobody declared here")
+                .containsExactlyInAnyOrder(ApiVersion.CURRENT_PREFIX + "/registrations");
     }
 
     // -----------------------------------------------------------------

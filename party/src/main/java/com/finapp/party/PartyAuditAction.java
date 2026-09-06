@@ -36,6 +36,26 @@ public enum PartyAuditAction implements AuditableAction {
      * ({@code AUDITABLE_ACTIONS.md} §4). A staff-initiated change on someone else's behalf is a
      * different action and will be declared separately when it exists.
      */
+    /**
+     * A party was registered and a customer relationship opened for it, in one transaction
+     * (`P1-TSK-006`).
+     *
+     * <p><strong>One action for two writes, deliberately.</strong> {@code PHASE_1_PLAN.md} §4
+     * lists {@code RegisterParty} and {@code OpenCustomerRelationship} as separate commands, and
+     * they are — but registration performs both atomically and neither is separately reachable, so
+     * two audit records would describe one decision twice and invite a reader to wonder what it
+     * means when only one of them is present. It cannot be.
+     *
+     * <p>No reason required: the request is the justification. A reason exists to explain an action
+     * taken <em>against</em> someone, and self-registration is not one — which is why
+     * {@link #PARTY_PROFILE_CHANGED} sits at {@code false} too and the two administrative actions
+     * in {@code identity} do not.
+     */
+    CUSTOMER_REGISTERED(
+            "party.CustomerRegistered",
+            "A party was registered and a customer relationship was opened for it.",
+            false),
+
     PARTY_PROFILE_CHANGED(
             "party.ProfileChanged",
             "A party's profile data was changed, recording what was held before and after.",

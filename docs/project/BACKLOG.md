@@ -1308,7 +1308,8 @@ repository exists to prevent.
   nothing tested. Ten racers, each with its own connection, plus the crash half: a rolled-back
   attempt must not consume the uniqueness slot.
 
-**P1-TSK-006 — `POST /v1/registrations`, idempotent**
+**P1-TSK-006 — `POST /v1/registrations`, idempotent** — `COMPLETE` (2026-09-06),
+**less the credential**
 - Context: party / api
 - Description: One transaction creating Party, Customer, Identity and Credential, with audit and
   outbox rows.
@@ -1322,8 +1323,48 @@ repository exists to prevent.
   a retry with the same key creates nothing more and replays the original response byte for byte;
   a differing fingerprint on a known key is a distinct conflict (`INV-IDEM-03`); an email collision
   is indistinguishable from an unrelated failure (`INV-IDN-07`).
-- Accept: all four, over real HTTP.
+- Accept: all four, over real HTTP. **All four met.**
 - Risk: **High**. Cx: L. DoD: `DOD-API`
+- **Delivered without the credential leg, and the reason is recorded rather than absorbed.** This
+  item declares `Deps: P1-TSK-007`, which is `TODO`; the work was scoped to this task alone on
+  instruction. Two consequences follow and are carried as `P1-TSK-026`:
+  1. **A registered Identity cannot yet acquire a credential.** `POST /v1/me/credential` requires a
+     session, a session requires authentication, and authentication requires a credential. There is
+     no path from *registered* to *able to log in* until `P1-TSK-007` and `P1-TSK-008` land.
+  2. **Adding `password` to this request body later is a `BREAKING` change** to a published `/v1`
+     contract (ADR-0015), on the platform's first endpoint. It is the right change and it will be
+     labelled honestly; there is no client, so the cost is a diff review rather than a migration.
+- **Completion gate found two defects and fixed both.** A NUL byte in `displayName` produced
+  `500 api.InternalError` — a caller's mistake reported as ours (`ERROR_CONTRACT.md` §3) — and
+  control characters were being accepted into a `RESTRICTED-PII` column. Closed in `PartyName`, at
+  the request boundary and as a `CHECK` in `party` `V003`. Separately, the `409
+  api.IdempotencyInProgress` branch was exercised by no test: the ten-way race returns 201 to all
+  ten, so the branch is now driven by writing the row a still-running instance leaves behind.
+- **Backlog defect found while executing it:** this task sits in milestone **M1.1** and depends on
+  `P1-TSK-007`, which is in **M1.2**. `PHASE_1_PLAN.md` §11 puts `POST /v1/registrations` in M1.1
+  and states M1.1's acceptance as *"a Party, a Customer and an Identity"* with no credential, so the
+  plan and this item's `Deps`/`Description` disagree. The plan is the one that is internally
+  consistent; the dependency should be on the milestone that owns the credential. Same class of
+  defect as `P0-TSK-004`'s unsatisfiable dependency and `P0-TST-009`'s spurious one — the third.
+
+**P1-TSK-026 — Registration takes a credential** — `TODO`
+- Context: party / identity / api
+- Description: Extend `POST /v1/registrations` to accept and store a credential, closing the
+  bootstrap gap `P1-TSK-006` left.
+- Why: Without it a registered Identity can never authenticate — see `P1-TSK-006`'s two recorded
+  consequences. This is `P1-TSK-006`'s remaining half, not new scope.
+- Deps: P1-TSK-006, P1-TSK-007
+- Implementation: a required `password` field; derived **before** any insert, so both the success
+  and the collision paths pay the same cost and timing does not become an account oracle
+  (`INV-IDN-07`); the credential row inside the same transaction; **the credential stays out of the
+  request fingerprint** (`RegistrationService.canonicalForm`), because `request_fingerprint` is a
+  durable single-round SHA-256 and hashing a body containing a password would store an
+  offline-crackable derivation of it (`INV-IDN-01`).
+- Tests: a registration produces exactly one active credential; the plaintext appears in no
+  persisted or emitted representation; the fingerprint is unchanged by the password; timing is
+  equivalent for an existing and an absent identifier.
+- Accept: all four; and the `openapi.json` diff labelled `BREAKING` with the decision recorded.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 ## P1-EPIC-02 — Identity and Credentials
 

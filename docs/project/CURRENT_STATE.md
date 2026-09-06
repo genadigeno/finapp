@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-05
+Last updated: 2026-09-06
 
 ---
 
@@ -18,9 +18,12 @@ Status: **`IN_PROGRESS`** — entry gate passed, all twelve criteria. Started 20
 
 ## Current Milestone
 
-**M1.1 — A person exists and is registered.** `P1-TSK-001` … `P1-TSK-006`; **5 of 6 complete.**
-Objective: one transaction creates a Party, a Customer and an Identity, and the three are provably
-separate.
+**M1.1 — A person exists and is registered.** `P1-TSK-001` … `P1-TSK-006`; **6 of 6 complete**
+(2026-09-06). Objective: one transaction creates a Party, a Customer and an Identity, and the three
+are provably separate. **Met**, over real HTTP against a real PostgreSQL.
+
+**The credential is not part of it**, and that is `P1-TSK-006`'s recorded consequence rather than an
+oversight — see §Just completed and the new `P1-TSK-026`.
 
 The formal Phase 0 → Phase 1 transition was conducted on 2026-09-04:
 [`reviews/PHASE_0_TO_1_TRANSITION.md`](reviews/PHASE_0_TO_1_TRANSITION.md), with an addendum
@@ -120,10 +123,161 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-005` completed 2026-09-05. **Next: `P1-TSK-006`** —
-`POST /v1/registrations`, idempotent, which closes milestone M1.1.
+**None in progress.** `P1-TSK-006` completed 2026-09-06, closing milestone **M1.1**.
+**Next: `P1-TSK-007`** — credential storage, which opens M1.2 and is what `P1-TSK-026` then needs.
 
 ### Just completed
+
+**`P1-TSK-006` — `POST /v1/registrations`, idempotent** — `COMPLETE` (2026-09-06). The platform's
+**first endpoint**, its **first domain events**, its **first emitted audit records**, and the first
+real user of `P0-TSK-017`'s `@RequiresIdempotencyKey`.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Atomicity — a failure leaves no Party, Customer, Identity, audit row or outbox row | `RegistrationAtomicityDatabaseTest`; an intermediate commit fails all four of its tests |
+| A retry with the same key creates nothing more and replays the original response | `aRetryIsIdempotent`, `aReplayIsNotAnnounced` |
+| A differing fingerprint on a known key is a distinct conflict (`INV-IDEM-03`) | `409 api.Conflict`, and nothing created |
+| A collision is indistinguishable from an unrelated failure (`INV-IDN-07`) | One refusal shape; a mutation that says *why* fails the test |
+
+**Delivered without the credential leg.** The task declares `Deps: P1-TSK-007`, which is `TODO`, and
+the instruction was to implement this task alone. Two consequences are recorded rather than absorbed,
+and carried as **`P1-TSK-026`**: a registered Identity **cannot yet acquire a credential** —
+`POST /v1/me/credential` needs a session, a session needs authentication, authentication needs a
+credential — and adding a required `password` later is a **`BREAKING`** change to a published `/v1`
+contract, on the platform's first endpoint. Neither is fatal, since there is no client; both are
+worse if left implicit.
+
+**The response body is empty, and that is a security decision rather than laziness.**
+`API_CONVENTIONS.md` §6 states that the idempotency key **is not a secret and is not redacted**, so
+anyone who has seen a key — from a proxy log, an access log, a client's own logging — can replay this
+unauthenticated endpoint and receive whatever it returns. Publishing the Party, Customer and Identity
+identifiers would hand a stranger three identifiers belonging to someone else. Nothing in Phase 1's
+API surface consumes them. There is no replay header for the same reason: telling the caller it was a
+replay tells a replaying stranger that the login identifier exists.
+
+**Registration is permanently the one endpoint whose idempotency scope cannot carry a principal**,
+because it is the endpoint that creates one — ADR-0004 asks for the command type **and** the owning
+principal. The residual is stated rather than glossed: an attacker holding a key *and* knowing the
+exact login identifier and display name can obtain a replay, and what bounds it is precisely the
+empty body, so what they learn is that the request succeeded and nothing more.
+
+**The credential is deliberately excluded from the request fingerprint, and stays excluded.**
+`request_fingerprint` is a durable single-round SHA-256; hashing a body containing a password would
+store an offline-crackable derivation of it — `INV-IDN-01` violated by the idempotency mechanism.
+`RequestFingerprint` leaves the choice of significant fields to each command precisely so a command
+can make that call.
+
+**A savepoint is what makes a collision reportable at all.** A taken login identifier arrives as a
+unique-index violation, and PostgreSQL *aborts the transaction* when it raises one — so without a
+savepoint nothing further could be written, the idempotency outcome included, and the client's retry
+would re-run the command rather than replay its refusal. **A pre-flight `SELECT` is not a substitute
+and is documented as such**: two instances would both see the identifier free, both insert, and one
+would get `23505` anyway. A pre-check makes the defect rarer, not absent, which is worse.
+
+**`enterSystem()` — and this one stays.** The caller is unauthenticated, so the platform is the only
+honest actor. Attributing the action to the Party it creates is circular and, decisively,
+*unavailable on the refusal path* where nothing was created; an actor that differs between success
+and failure is worse than a uniform honest one. What carries the information is the audit record's
+**target**, which is the attempted login identifier on both paths — the one place `PHASE_1_PLAN.md`
+§10 permits an attempted identifier to appear. "Revisit every `enterSystem()`" reads as "remove every
+`enterSystem()`", and `SECURITY_ARCHITECTURE.md` now says why that is wrong here.
+
+**`app` orchestrates and owns nothing.** Registration spans two bounded contexts and belongs wholly
+to neither; either module hosting it would have to depend on the other, which the isolation tests
+forbid. So `app` contributes **two calls and a transaction**, and each module writes its own rows,
+its own events and its own audit record. `MODULE_ARCHITECTURE.md` §Transaction boundary listed the
+permitted cross-module transactions and **was stale** — it named only transfer-plus-posting and
+resolution-plus-adjustment, neither of which exists yet; registration is the first of the three to be
+real.
+
+**`EventPayload` is a builder with a charset, not an object mapper, and it earned that on its first
+run.** `INV-AUD-02` keeps personal data out of event payloads, and a general mapper would serialise
+`put("displayName", name)` happily. It rejects any value that is not an identifier or an enumerated
+name — and it immediately caught a real mistake, because `EntityId.toString()` renders `PartyId(uuid)`
+rather than a bare UUID. Its limit is written down: an event needing richer structure needs the
+wire-format decision taken, not worked around here.
+
+**Causation at a flow root had no answer and now has one.** `Correlation` leaves `causationId` null
+at a root, deliberately, so a root is distinguishable from a cycle; `EventEnvelope` requires it
+non-null. The request is the cause — a value that looks self-referential and is not, because the
+correlation identifier is on the idempotency record and on the audit record of the same transaction,
+so the chain terminates at something real rather than at nothing.
+
+**Two defects in the published contract, both found by generating it rather than reasoning about
+it.** springdoc published **`"200": "OK"`** for an endpoint that has never returned 200, because a
+`ResponseEntity` gives it no status to read — a generated client would have treated the real response
+as unexpected. Fixed with `@ResponseStatus(CREATED)`, which is the only form that reaches the
+document. And it tagged the operation **`registration-controller`**, publishing an internal class
+name that an ordinary rename would turn into a contract diff; stripped, for the same reason `servers`
+already was.
+
+**A third defect was in the contract harness itself.** `OpenApiDocument` *replaced* the whole
+`components` node, which was correct while `paths` was empty and silently wrong the moment a handler
+declared a request body: the published document referenced
+`#/components/schemas/RegistrationRequest`, which had just been discarded. Caught by
+`everyReferenceResolves` — a guard the `P0-TSK-026` review added against exactly this class of
+defect, working two tasks later.
+
+**The `BREAKING` labels on the contract diff were reviewed and accepted.** `/paths` going from `{}`
+to populated, a new schema's `required` list, and `requestBody: required` are all additions of
+structure that did not exist; no client can be broken by an endpoint that was never there.
+`PHASE_1_PLAN.md` §7 says additive endpoints are compatible, and the classifier erring in the safe
+direction is the design (`P0-TSK-026`: a false BREAKING is visible and fixable, a false COMPATIBLE
+fails at the customer).
+
+**Seven mutations. One survived, and it found a real gap in a security test.**
+`aReplayIsNotAnnounced` compared response header **names**, so an injected `Idempotent-Replay:
+false`/`true` walked straight through — the header name is identical on both, and the value is the
+whole disclosure. It now compares names *and* values, excluding only the correlation identifiers and
+`Date`, which differ per request by design. All seven are caught now.
+
+**One defect in my own test, found by the full tier rather than in isolation.** The
+referential-integrity check asked whether *any* orphaned identity existed anywhere, and
+`PartyAndIdentitySchemaDatabaseTest` creates orphans **on purpose**, to prove ADR-0029's missing
+foreign key really is missing. Both facts are true and about different things: the schema permits an
+orphan, and the registration transaction does not produce one. Scoped to the registration under test.
+
+**One guard was generalised rather than extended.** `FinappApplicationTest` listed the three modules
+allowed to contribute beans, and `party` and `identity` now legitimately do. The allowed set is
+**derived from the classpath** instead — the stale-list defect this repository has met in CI's task
+list, in a coverage guard and in a privilege check, closed the way it has been closed each time.
+
+**The completion gate found two more, both by probing rather than reading.**
+
+**A NUL byte in `displayName` produced `500 api.InternalError`** — a caller's mistake reported as a
+platform failure, which `ERROR_CONTRACT.md` §3 forbids and which the `P0-TSK-024` review already
+fixed once for a different input. PostgreSQL cannot store U+0000 in a `text` column at all, so the
+driver rejected it three layers below the boundary. The same probe showed CR, LF, tab and a
+bidirectional override being accepted **into a `RESTRICTED-PII` column** — a forged log line waiting
+for the first component that ever prints a name, which is the weak point `DATA_CLASSIFICATION.md` §5
+names in this exact scheme. Closed in three places: `PartyName` (five Unicode categories), the
+request boundary (so a caller gets `422` naming the field), and `V003` as a `CHECK`, because
+`DEFINITION_OF_DONE.md` §1.3 says an invariant a database constraint can carry is enforced there and
+the application is not the only thing that will ever write that table. **The constraint is
+deliberately narrower than the domain rule and says so**: a POSIX class expresses the C0/C1 ranges
+exactly, and one written to *look* like parity while silently missing three categories would be
+worse, because the next reader would trust it. `PartyName` still refuses a charset restriction, and
+that is not a contradiction — what is excluded is in nobody's name, which is the same test that
+rejects an allow-list of scripts.
+
+**The `409 api.IdempotencyInProgress` branch was never exercised**, and the ten-way race hid it:
+printing the status distribution showed **all ten racers got 201**, because the winner commits in
+milliseconds and the losers replay. An untested error path on an `INV-LIFE-03` contract — *an
+unknown outcome is reported as unknown, never assumed failed*. Now driven deterministically by
+writing the row a crashed or still-running instance leaves behind: a committed `IN_PROGRESS` claim
+with a live lease and a **matching fingerprint**, since a different one would produce
+`api.Conflict` and the test would pass for the wrong reason.
+
+**And the gate nearly repeated a trap this repository has already recorded.** The first attempt to
+demonstrate the new constraint dropped it from the **compose** database — which the test harness
+never uses, since `P0-TSK-035` gives each test JVM its own container. That is the false pass the
+`P1-TSK-003` review found. Mutating the migration instead is what actually proves it.
+
+**Eleven mutations, all caught.**
+
+686 hermetic tests, 215 database tests.
+
+### Previously
 
 **`P1-TSK-005` — Party, Customer and Identity aggregates** — `COMPLETE` (2026-09-05). The phase's
 highest-risk task: `DELIVERY_PLAN.md` §17 names collapsing the three as Phase 1's top risk.
@@ -832,6 +986,25 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Registration, end to end (2026-09-06), `P1-TSK-006`:
+- `POST /v1/registrations` - the platform's **first endpoint**, first domain events, first emitted
+  audit records, and the first declared `@RequiresIdempotencyKey`
+- One transaction across `party` and `identity`: Party, Customer, Identity, two audit records and
+  three outbox rows commit together or not at all, proven by injecting a failure at the **last**
+  write of the command and by terminating the connection mid-transaction
+- **The response body is empty**, because the idempotency key is explicitly not a secret and anyone
+  holding one can replay an unauthenticated endpoint; and there is no replay header, because that
+  would tell a replaying stranger the login identifier exists (`INV-IDN-07`)
+- A collision and any other refusal are byte-identical - `422 party.RegistrationRefused`, no detail
+- **A savepoint**, because a unique violation aborts the transaction: without it the idempotency
+  outcome could not be recorded and a retry would re-run rather than replay. A pre-flight `SELECT`
+  is documented as *not* a substitute
+- Ten concurrent racers for one identifier produce exactly one person; ten retries of one request
+  produce exactly one effect, and every non-201 is a 409 rather than an assumed failure
+- `EventPayload` refuses any value that is not an identifier or an enumerated name, so
+  `INV-AUD-02` is enforced rather than remembered - and it caught a real mistake on its first run
+- **No credential**, which is `P1-TSK-026`'s recorded remainder rather than an omission
+
 Mutation demonstrations enforced (2026-09-03), `P0-TSK-038`:
 - [`MUTATION_TESTING.md`](MUTATION_TESTING.md): the convention, plus a register covering all **17**
   Phase 0 invariants and all **9** `P0-TST-*` items
@@ -1522,7 +1695,7 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
-| **Broker adapter behind `EventPublisher`.** The relay publishes through a port; nothing implements it | An adapter decides the wire format, topic scheme and producer acknowledgement configuration, and puts a broker client on the classpath — four decisions belonging to the phase with events to publish. `EVENT_ARCHITECTURE.md` already defers the wire format | **None today.** Nothing produces events yet, so an unpublished outbox is an empty outbox. The relay's own correctness is proven against a publisher that fails on demand, which no real broker does reliably | The first module that emits a domain event | Phase 3 (ledger) |
+| **Broker adapter behind `EventPublisher`.** The relay publishes through a port; nothing implements it | An adapter decides the topic scheme, the broker wire format and the producer acknowledgement configuration, and puts a broker client on the classpath. The **stored** payload format is no longer deferred - `P1-TSK-006` settled it as `application/json` via `EventPayload`, because the first producer could not leave it open | **The trigger has now been reached**: `P1-TSK-006` emits three domain events, so the outbox is no longer empty and nothing publishes them. The risk is still bounded rather than absent - there is no consumer either, so the events are durable and unread rather than lost, and `INV-EVT-01` holds. It becomes real with the first consumer | Reached 2026-09-06. **No backlog task owns it**, although `PHASE_1_PLAN.md` §12 names it a required minimal foundation - a gap recorded here rather than closed, since creating it is another task | Phase 1 |
 | **Outbox retention.** Published rows are never deleted | `V005` says a published row may be deleted once retained long enough for diagnosis; the sweep is a scheduled job with its own cluster-safety question, and no task owned it | Unbounded table growth. The partial pending index does **not** grow with it — published rows leave it — so the cost is storage and vacuum, not relay latency | Table size becoming operationally material | Phase 15 (data retention and deletion) |
 | ~~**Relay metrics.**~~ - **partly paid** by `P0-TSK-029`. Outbox depth and age are gauges over the database (`finapp.outbox.pending`, `finapp.outbox.oldest`), so a stalled aggregate is alertable rather than discoverable by reading logs - and readable precisely when the relay is down. **Still open:** throughput, failure and dead-letter counts from `RelayPollResult`, which need a relay that actually runs | Nothing schedules a relay, so those meters would be structurally always zero - which reads as "nothing is failing" rather than "nothing is running" | The remaining risk is narrower: a relay that is running but failing is visible as a growing backlog, not as a failure count | A scheduled relay | Phase 3 |
 | **Inbox retention sweep.** Records are never deleted | The sweep is a scheduled job with its own cluster-safety question, and `V007` deliberately adds no `expires_at` index until its predicate is written | Unbounded growth of a table whose only index is its primary key. **Not** a correctness risk in this direction: a record that is never swept deduplicates forever, and it is early expiry that admits a duplicate (`DATA_MIGRATIONS.md` §9) | Table size becoming operationally material, or the first consumer going live | Phase 15 (data retention and deletion) |
@@ -1535,13 +1708,14 @@ carries, what triggers paying it down, and the owning phase.
 | ~~**Thirteen test classes open connections through their own private helper.**~~ — **closed** by `P0-TSK-036`. All thirteen now use `DatabaseRoles`, so the property names and the driver call have one definition. What they had been copying was a connection as the **superuser**, which `DatabaseRoles.bootstrap()` now documents as the wrong default and confines to tests making no privilege claim. All 173 database tests pass unchanged. | — | — | — | — |
 | **Kafka and Redis are plaintext with no enforcement.** The transport guard covers PostgreSQL only | There is no Kafka or Redis client on the classpath, so a guard for those connections would be guarding nothing - the same argument that kept a `Classification` enum out of `P0-TSK-033` | **None today**, because nothing connects to either. The expectations are documented per hop in `SECURITY_ARCHITECTURE.md`, so the gap is a decision rather than an omission; the risk arrives with the first client, which is also when it becomes enforceable | The first Kafka or Redis client | Phase 3 (broker adapter) |
 | ~~**A caller can put personal or financial data into the correlation identifier.**~~ - **closed 2026-09-04** by `P1-TSK-002` / ADR-0034. The platform now mints the identifier on every request and never adopts an inbound one; a well-formed caller value is echoed in `X-Client-Correlation-Id` and reaches no sink. **Narrowing the charset was the obvious repair and does not work** - a date of birth, a phone number and an account number are alphanumeric, so any charset still able to carry a UUID carries them; of the four probed values it would have stopped two and left two. The control had to be structural. | - | - | - | - |
-| **No production code establishes a security scope.** `SecurityContext` exists and nothing calls it | Phase 0 has no request handler performing an auditable action and no module writing an audit record - the three registered platform actions are themselves recorded as not-yet-emitted. A caller wired now would establish a scope around nothing | **None today, and the failure mode is safe by construction.** `require()` refuses rather than defaulting, so the first caller that forgets fails loudly instead of recording the wrong party. The risk is not silent misattribution but a missing call, which is visible the first time it runs | The first audited action, which is the outbox relay emitting its registered actions or Phase 1's authentication | Phase 1 |
+| ~~**No production code establishes a security scope.**~~ - **closed 2026-09-06** by `P1-TSK-006`. `RegistrationService` establishes one for `POST /v1/registrations`, and the actor is `enterSystem()` because the caller is **unauthenticated** - which is a call site that *stays* after Phase 1 revisits it, not one to be removed. The alternative, attributing the action to the Party it creates, is circular and is unavailable on the refusal path where nothing was created; an actor that differs between success and failure is worse than a uniform honest one. The information is carried by the audit record's **target** instead - the attempted login identifier, on both paths. | - | - | - | - |
 | **The loopback guard covers one credential.** `DatabaseCredentialGuard` knows about the datasource password and nothing else | It is the only credential that exists. A general mechanism - every externalised credential declaring its own marked default and being checked - would be designed against one example, which is how you get an abstraction that fits nothing later | **Low today.** The build rule is already general: any credential-named key in any configuration file is covered, so a second credential cannot arrive as a literal. What it would not get is the loopback confinement, so a second published default could be aimed anywhere | The second credential, which is Phase 1's authentication or Phase 5's provider adapters | Phase 1 |
 | **No output scrubber for text the platform does not control.** A secret held only in a local and passed straight to a log call, or one inside a third-party library's message, is not covered | The field and accessor rules cover what a type *stores*; a transient value has no declaration to inspect. Closing it needs a logging facade accepting only declared-safe arguments, which changes every log statement - disproportionate against eight of them | **Low today, and it grows with the codebase.** Nothing in Phase 0 handles a credential; the risk arrives with Phase 1's authentication. A scrubber is a deny-list and must never be mistaken for the control | A business module logging real flows | Phase 1 |
 | **The scrape endpoint widens the unauthenticated surface to three.** `/actuator/prometheus` joins health and info | `DOD-OBS` requires the dashboard to render live data from a running instance, which needs a scrape endpoint, and there is no authentication anywhere yet | A scrape publishes JVM internals, HTTP route templates and pool statistics - a description of the running system rather than its secrets. The **content** is constrained by a build failure: no tag may carry a request-influenced value | `P0-EPIC-10` landing | Phase 0, M0.4 |
 | **The operational endpoints are unauthenticated.** `/actuator/health/*` and `/actuator/info` are reachable by anyone who can reach the port | `DOD-API` requires a negative authentication test for every new surface, and there is no authentication anywhere in the platform yet - `P0-EPIC-10` is the epic that brings it. Building one authentication mechanism for the actuator alone would be a second scheme to retire | **Low, and bounded by what is published.** The bodies are pinned by exact-match test to a status and, for the aggregate, its group names; details, components, environment, JVM and OS are all off, and twelve other endpoints are proven absent. What remains is that an unauthenticated caller can learn the instance is up and which build it runs | `P0-EPIC-10` landing, at which point `show-details: when-authorized` also becomes available | Phase 0, M0.4 |
 | ~~**Connection-pool sizing is not reasoned about across instances.**~~ - **closed 2026-09-04** by `P1-TSK-004`. The relationship `instances x pool <= max_connections - reserved` is declared as configuration and enforced by `ConnectionPoolSizingGuard` at startup, with the shipped numbers additionally checked in the build. **The obvious repair - divide `max_connections` by the instance count - is the wrong one**: that treats the limit as a budget to spend when it is a ceiling not to hit, and PostgreSQL throughput stops improving once the cores are busy, after which extra connections queue *inside* the database where the queueing is invisible. The pool is sized small for throughput and the fleet check is a separate question asked afterwards. `DISTRIBUTED_EXECUTION.md` §4a. | - | - | - | - |
 | **`@ArchTest` rules do not run in the `architectureTest` tier.** `./gradlew architectureTest` executes an ArchUnit suite's `@Test` methods and **not its `@ArchTest` rule fields** - `NoFloatingPointMoneyRulesTest` contributes 2 cases there and 7 to `test` | ArchUnit executes rule fields under its own JUnit engine, and the tier task's tag filtering does not select them. Same root cause as the `ModuleBoundaryRulesTest` skip `P0-TSK-036` found | **No enforcement gap**: `build` runs `test`, which runs all seven, so CI has always checked them. What is lost is the tier task's meaning - a developer running `architectureTest` before pushing is told the architecture is fine by a task that checked none of it, which is the "green while checking nothing" failure this repository has met five times | Found by `P1-TSK-003`'s acceptance probe; owned by `P1-TSK-025` | Phase 1 |
+| **`POST /v1/registrations` is unauthenticated and unthrottled.** Anyone who can reach the port can create Parties, Customers and Identities without limit | There is no rate-limiting mechanism anywhere on the platform. `P1-TSK-011` builds one for **authentication** - failure counting and lockout keyed on an identity - and none of that applies to an endpoint whose whole point is that no identity exists yet. Building a second, differently-shaped mechanism here before that one exists would be designing the general case from one example | **Resource exhaustion, not disclosure.** Every response is identical whatever is sent, so flooding discloses nothing (`INV-IDN-07` holds); what it does is fill three tables and the outbox. The idempotency key does not help - a flooder simply generates a fresh one. Bounded today only by the fact that nothing is deployed | `P1-TSK-011` landing, which is when a throttling mechanism exists to extend rather than invent | Phase 1 |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
 
 None of these is financial-correctness debt.
@@ -1589,12 +1763,12 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-006` — `POST /v1/registrations`, idempotent.**
+**`P1-TSK-007` — Credential storage.**
 
-One transaction creating Party, Customer, Identity and Credential, with audit and outbox rows — the
-phase's first vertical slice and the first real user of `P0-TSK-017`'s `Idempotency-Key` mechanism.
-It closes milestone M1.1, and it is where the no-cross-schema-foreign-key decision is paid for: the
-registration transaction is what makes referential integrity across that boundary true.
+Argon2id derivation with the algorithm and parameters stored **per credential** (ADR-0032), opening
+milestone M1.2. It is also the prerequisite for `P1-TSK-026`, which closes the bootstrap gap
+`P1-TSK-006` deliberately left: until a credential can be stored, a registered Identity cannot
+authenticate and therefore cannot reach any endpoint that would give it one.
 
 ---
 
@@ -1602,6 +1776,7 @@ registration transaction is what makes referential integrity across that boundar
 
 | Date | Change |
 |------|--------|
+| 2026-09-06 | **`P1-TSK-006` complete - milestone M1.1 closes, 6 of 6.** The platform's **first endpoint**, its **first domain events**, its **first emitted audit records**, and the first real user of `P0-TSK-017`'s `@RequiresIdempotencyKey` - which arrived two phases earlier than `API_CONVENTIONS.md` expected. One transaction creates a Party, a Customer and an Identity or none of them, across two modules and two schemas, and it is what makes ADR-0029's deliberately absent cross-schema foreign key true. **Delivered without the credential leg**, on instruction to implement this task alone: the item declares `Deps: P1-TSK-007`, which is `TODO`. Two consequences are recorded rather than absorbed and carried as the new `P1-TSK-026` - a registered Identity **cannot yet acquire a credential**, because `POST /v1/me/credential` needs a session, a session needs authentication and authentication needs a credential; and adding a required `password` later is a **`BREAKING`** change to a published `/v1` contract on the platform's first endpoint. Neither is fatal, since no client exists; both are worse left implicit. **A backlog defect was found in the course of it**, the third of its class here: this task sits in M1.1 and depends on a task in M1.2, while `PHASE_1_PLAN.md` §11 states M1.1's acceptance as *"a Party, a Customer and an Identity"* with no credential - so the plan and the item's own `Deps` disagree, and the plan is the internally consistent one. **The response body is empty, and that is a security decision rather than laziness.** `API_CONVENTIONS.md` §6 states plainly that the idempotency key **is not a secret and is not redacted**, so anybody who has seen one - from a proxy log, an access log, a client's own logging - can replay this unauthenticated endpoint and receive whatever it returns; publishing the three identifiers would hand a stranger identifiers belonging to somebody else, and nothing in Phase 1's API surface consumes them. There is no replay header for the same reason: telling a caller it was a replay tells a replaying stranger that the login identifier exists. **Registration is permanently the one endpoint whose idempotency scope cannot carry a principal**, because it is the endpoint that creates one, and ADR-0004 asks for the command type *and* the owning principal. The residual is stated rather than glossed - an attacker holding a key *and* knowing the exact login identifier and display name can obtain a replay - and what bounds it is precisely the empty body, so what they learn is that the request succeeded and nothing more. Scoping by the login identifier instead was considered and **rejected**: it is `CONFIDENTIAL` and `idempotency_record.scope` is `INTERNAL`, so it would have forced a Phase 0 column to be reclassified, which is the one thing ADR-0022 says must not happen. **The credential is deliberately excluded from the request fingerprint and stays excluded** when `P1-TSK-007` lands: `request_fingerprint` is a durable single-round SHA-256, so hashing a body containing a password would store an offline-crackable derivation of it - `INV-IDN-01` violated by the idempotency mechanism itself. **A savepoint is what makes a collision reportable at all**: a taken login identifier arrives as a unique-index violation and PostgreSQL *aborts the transaction* when it raises one, so without a savepoint nothing further could be written - the idempotency outcome included - and the client's retry would re-run the command rather than replay its refusal. **A pre-flight `SELECT` is not a substitute and is documented as such**: two instances would both see the identifier free, both insert, and one would get `23505` anyway, so a pre-check makes the defect rarer rather than absent, which is worse. **`enterSystem()`, and this call site stays.** The caller is unauthenticated, so the platform is the only honest actor; attributing the action to the Party it creates is circular and, decisively, unavailable on the refusal path where nothing was created, and an actor that differs between success and failure is worse than a uniform honest one. What carries the information is the audit record's **target** - the attempted login identifier, on both paths, which is the one place `PHASE_1_PLAN.md` §10 permits it. `SECURITY_ARCHITECTURE.md` now says why "revisit every `enterSystem()`" does not mean "remove every `enterSystem()`". **`app` orchestrates and owns nothing**: registration spans two bounded contexts and belongs wholly to neither, and either module hosting it would have to depend on the other, which the isolation tests forbid - so `app` contributes two calls and a transaction while each module writes its own rows, events and audit record. `MODULE_ARCHITECTURE.md` §Transaction boundary listed the permitted cross-module transactions and **was stale**, naming only transfer-plus-posting and resolution-plus-adjustment, neither of which exists; registration is the first of the three to be real. **`EventPayload` is a builder with a charset rather than an object mapper, and it earned that on its first run** - `INV-AUD-02` keeps personal data out of event payloads and a general mapper would serialise `put("displayName", name)` happily, so it refuses any value that is not an identifier or an enumerated name, and it immediately caught a real mistake because `EntityId.toString()` renders `PartyId(uuid)` rather than a bare UUID. Its limit is written down: an event needing richer structure needs the wire-format decision taken, not worked around. **Causation at a flow root had no answer and now has one** - `Correlation` leaves it null so a root is distinguishable from a cycle while `EventEnvelope` requires it non-null, and the honest answer is that the request caused it: a value that looks self-referential and is not, because the correlation identifier is on the idempotency record and on the audit record of the same transaction. **Two defects in the published contract, both found by generating it rather than reasoning about it**: springdoc published **`"200": "OK"`** for an endpoint that has never returned 200, because a `ResponseEntity` gives it no status to read and a generated client would have treated the real response as unexpected - fixed with `@ResponseStatus(CREATED)`, the only form that reaches the document; and it tagged the operation **`registration-controller`**, publishing an internal class name that an ordinary rename would turn into a contract diff, now stripped for the same reason `servers` already was. **A third defect was in the contract harness itself**: `OpenApiDocument` *replaced* the whole `components` node, correct while `paths` was empty and silently wrong the moment a handler declared a request body, so the published document referenced a `RegistrationRequest` schema that had just been discarded - caught by `everyReferenceResolves`, a guard the `P0-TSK-026` review added against exactly this class of defect, working two tasks later. **The `BREAKING` labels on the diff were reviewed and accepted**: `/paths` going from `{}` to populated, a new schema's `required` list and `requestBody: required` are all additions of structure that did not exist, and no client can be broken by an endpoint that was never there. **Seven mutations. One survived, and it found a real gap in a security test** - `aReplayIsNotAnnounced` compared response header **names**, so an injected `Idempotent-Replay: false`/`true` walked straight through it, the name being identical on both while the value is the whole disclosure; it now compares names *and* values, excluding only the correlation identifiers and `Date`. **One defect in my own test, found by the full tier rather than in isolation**: the referential-integrity check asked whether *any* orphaned identity existed anywhere, and `PartyAndIdentitySchemaDatabaseTest` creates orphans **on purpose** to prove ADR-0029's missing foreign key really is missing - both facts are true and about different things, so it is now scoped to the registration under test. **And one guard was generalised rather than extended**: `FinappApplicationTest` listed the three modules allowed to contribute beans and `party` and `identity` now legitimately do, so the allowed set is derived from the classpath - the stale-list defect this repository has met in CI's task list, in a coverage guard and in a privilege check, closed the way it has been closed each time. 686 hermetic tests, 215 database tests. |
 | 2026-09-05 | **`P1-TSK-005` complete - M1.1 is 5 of 6.** The phase's highest-risk task: three aggregates in two modules, three tables in two schemas, fifteen columns each classified at its ceiling. `DELIVERY_PLAN.md` §17 names collapsing them as Phase 1's top risk, so **the acceptance criterion is a test that fails if any two are merged** - written as the four shapes a merged model *cannot represent* rather than as an abstract claim: a person who is not a customer (a beneficial owner we must record for KYB), a customer who is not a person (an organisation), one Party holding a retired login and its replacement, and lifecycles that move independently, because a credential compromise must suspend the login and not the commercial relationship. A status added to `Party` fails it. **Two invariants are enforced only by the database, because no aggregate can enforce them**: at most one *live* relationship per party, and a login identifier used once ever, are rules **across** aggregates of the same type - an aggregate sees only itself, so only the database arbitrates between two concurrent transactions, which ADR-0014 says is the normal case rather than the exception. **The two uniqueness rules deliberately point opposite ways, and that asymmetry is the sharpest decision here**: a closed relationship frees the party for a new one (a partial index, because re-establishing a relationship is legitimate), while a closed login **never** frees its identifier (a total index, because reissuing it would let a new person authenticate with a name appearing in someone else's audit history, making every record naming it ambiguous about which person it meant). **`identity.identity.party_id` carries no `REFERENCES` clause**, asserted in the migration and by a test that fails if one is added, and the cost is stated rather than hidden: the database will accept an identity for a party that does not exist, and what prevents it is the registration transaction writing both in one commit - a property a test can assert, not the schema. An FK there would be coupling neither Gradle nor ArchUnit can see and would turn ADR-0001's stated escape into a data migration. **`Party` has no lifecycle**, which reads as an omission and is the design: existence has no states, and every state people reach for - inactive, closed, archived - is a statement about a relationship or a login, each of which has its own table, so a status on `Party` would be one fact recorded in two places and free to disagree. **`LoginIdentifier` is deliberately not an email address** - an identifier that is also a contact channel cannot be changed without changing how someone logs in, nor verified without blocking login - and its charset excludes `@` specifically, so the confusion cannot arrive silently through the first person who types an address. **One deliberate non-change, recorded rather than left implicit**: the transition exceptions carry their states but not the identifier, because an exception is serializable and `EntityId` is not, and making it so would oblige every existing identifier type to declare a `serialVersionUID` - a change to proven Phase 0 code this task has no business making (`EXECUTION_PROTOCOL.md` rule 4). It is the third time this project has met that requirement, after `CurrencyCode` and `IdempotencyKey`. **Five mutations, all caught**: `CLOSED` made non-terminal (four tests), the aggregate's transition check removed (six), the partial unique index dropped, a status added to `Party`, and a cross-schema foreign key introduced. 668 hermetic tests, 187 database tests. |
 | 2026-09-04 | **`P1-TSK-004` complete - M1.1 is 4 of 6.** The connection budget: `instances x maximum-pool-size <= server max_connections - reserved`, declared as configuration and enforced by `ConnectionPoolSizingGuard` at startup. Shipped as 10 x 8 = 80 against 100 - 12 = 88. **The defaults fail it, which is why this is a guard and not a note**: Hikari's default pool is 10 and PostgreSQL's `max_connections` is 100, so ten instances exhaust the server **before a single connection does any work** - and ADR-0014 says N is never 1. Nothing in either default notices; the instances that lose the race fail readiness with *connection is not available*, which reads as the pool being too small or the database being slow, and is neither. It is the worst shape of operational failure, appearing only during a deploy, a scale-out or a restart storm - the moments when diagnosis is hardest - with the symptom pointing away from the cause. **The obvious repair is the wrong one, and that is the finding**: dividing `max_connections` by the instance count treats the limit as a budget to spend when it is a ceiling not to hit. Every connection is a backend process with its own memory, and PostgreSQL throughput stops improving once the machine's cores are busy - past that the extra connections queue **inside** the database, where the queueing is invisible to the application and appears as latency on every query rather than as a pool timeout on one. So the pool is sized small for throughput, and "does the fleet fit" is a separate question asked afterwards; conflating them produces a pool that is both too large and, at scale, still not enough. **Checked in two places because they are two claims**: the guard proves the rule at startup, and `ConnectionPoolSizingIsConfiguredTest` proves the shipped numbers satisfy it in the build - a guard alone would leave a violating configuration to be discovered by a rolling restart, one instance at a time. **Verified against a running instance**, which `DOD-OBS` requires, in all three directions: the shipped configuration starts; `FINAPP_DB_INSTANCES=20` is refused with the arithmetic and the fix in the message; and raising `max_connections` to 200 is accepted, so the guard never forces the pool to be the thing that gives way. **Two limits stated rather than implied**: it cannot verify `max_connections` against the live server and does not try - it runs before the pool is used and one that queried the database would fail for a database that is merely down, so the value is a **declaration** and a wrong declaration is a wrong answer; and the arithmetic assumes each instance holds its **full** pool, which is why `minimum-idle` equals `maximum-pool-size` and why a test asserts that rather than trusting it. **It also does not shrink the pool to make the numbers work** - that would change a deployment's capacity on its own initiative when the right answer is often to raise `max_connections` or run fewer instances. `DISTRIBUTED_EXECUTION.md` gains §4a, the one contended resource none of the protocols in §3 can help with: no lock, no constraint and no idempotency key makes a connection available. 628 hermetic tests, 174 database tests. |
 | 2026-09-04 | **`P1-TSK-003` complete - M1.1 is 3 of 6.** `party` and `identity` exist: two modules, the documented dependency direction, a schema each with its own Flyway history, and an `AuditableAction` enum each. **Three schemas now, all owned by `finapp_migrator` and never a superuser**, each `REVOKE ALL ... FROM PUBLIC` with `finapp_app` granted `USAGE` and nothing else - checked against a live database rather than asserted, and the migrations apply to an empty database, validate, and re-apply idempotently, which is exactly what CI does. **The acceptance criterion was proven rather than assumed**: a `double` planted in `PartyAuditAction` fails **two** floating-point rules in `:app:test`, so every existing architecture rule protects the new modules without being edited - which is what deriving coverage from the classpath was for. **No cross-module dependency, enforced structurally**: `PartyModuleIsolationTest` and `IdentityModuleIsolationTest` assert neither module sees the other nor `app`, each with a non-vacuity half asserting it *does* see `platform` and `sharedkernel`. That is ADR-0029's boundary at the classpath - `entitiesAreNotReferencedAcrossModules` catches the reference, this catches the dependency that would make one possible, and a compile-time edge between them is the first step toward the shared `users` table the ADR exists to prevent. **Those tests exist because a guard demanded them**: `TestTaxonomyTest` failed with *"a module contributing no test classes means the sweep did not reach it"*. **CI's `:platform:flywayMigrate` was a list of one** and two more schema-owning modules made it stale; now unqualified, so a fourth is covered without anyone remembering - the `:platform:databaseTest` shape the `P0-TSK-027` review found. **Three auditable actions catalogued**, one in `party` and two in `identity`, both admin actions requiring a reason because they are taken against someone else's account and this is the module where an insider with a legitimate permission does the most damage; deliberately few, because a registry may list an action before its code exists but not before its **design** does. **One defect found by applying the migration rather than reading it**: an unescaped apostrophe in a schema `COMMENT` (`the platform's`), rejected at SQLState 42601. **And one pre-existing defect found by the acceptance probe, recorded not fixed** (`P1-TSK-025`): `./gradlew architectureTest` runs an ArchUnit suite's `@Test` methods and **not its `@ArchTest` rule fields**, so the tier named for architecture rules executes none of them - 2 cases against `test`'s 7. Enforcement is intact because `build` runs `test`; what is lost is the tier task's meaning, which is the "green while checking nothing" failure met five times here and the same root cause as the `ModuleBoundaryRulesTest` skip `P0-TSK-036` found. 619 hermetic tests, 174 database tests. |

@@ -2,6 +2,7 @@ package com.finapp.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.architecture.ProductionModules;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -35,19 +36,28 @@ class FinappApplicationTest {
     }
 
     @Test
-    @DisplayName("every application bean comes from a module that exists in Phase 0")
-    void exposesNoBusinessCapability() {
-        // Phase 0 delivers a skeleton and the platform kernel only. A business module
-        // appearing in the context means scope has leaked forward, violating
-        // EXECUTION_PROTOCOL rule 3.
+    @DisplayName("every application bean comes from a module that actually exists")
+    void everyBeanBelongsToARealModule() {
+        // A business module appearing in the context that does not exist on the classpath means
+        // scope has leaked forward, violating EXECUTION_PROTOCOL rule 3.
         //
-        // Asserted structurally, by the package a bean's class actually lives in, rather
-        // than by matching substrings against bean names. A name-based check only catches
-        // business concepts that someone happened to name recognisably, which is more
-        // assurance than it earns. This version fails for any com.finapp package that is
-        // not one of the three modules Phase 0 has created, whatever the bean is called.
+        // Asserted structurally, by the package a bean's class actually lives in, rather than by
+        // matching substrings against bean names: a name-based check only catches business concepts
+        // somebody happened to name recognisably, which is more assurance than it earns.
+        //
+        // The allowed set is DERIVED from the classpath rather than listed. It was a list of three
+        // until `P1-TSK-006` wired the first `party` and `identity` beans, and a list would have had
+        // to be edited every time a module started contributing one - which is the stale-list defect
+        // this repository has met in CI's task list, in a coverage guard and in a privilege check.
+        // Derived, the guard keeps working and keeps meaning the same thing.
         List<String> allowedModulePackages =
-                List.of("com.finapp.app.", "com.finapp.platform.", "com.finapp.sharedkernel.");
+                ProductionModules.onClasspathWithProductionClasses().stream()
+                        .map(module -> "com.finapp." + module + ".")
+                        .toList();
+
+        assertThat(allowedModulePackages)
+                .as("the derivation must see the modules, or this guard checks nothing")
+                .contains("com.finapp.app.", "com.finapp.platform.", "com.finapp.sharedkernel.");
 
         List<String> unexpected = Arrays.stream(context.getBeanDefinitionNames())
                 .map(context::getType)
@@ -60,7 +70,7 @@ class FinappApplicationTest {
                 .toList();
 
         assertThat(unexpected)
-                .as("beans belonging to modules that do not exist in Phase 0")
+                .as("beans belonging to modules that do not exist")
                 .isEmpty();
     }
 }

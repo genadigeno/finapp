@@ -58,6 +58,39 @@ kernel to a serialisation library. The envelope provides a canonical textual for
 set and order are pinned by test, so the contract cannot drift silently; the transport format is
 the outbox's and the relay's decision (`P0-EPIC-06`).
 
+### The stored payload format — decided by the first producer (`P1-TSK-006`)
+
+The *broker* wire format remains the adapter's decision and is still open. The format of the bytes
+**in the outbox row** could not stay open past the first module that emits an event, so it is
+settled here as ADR-0005's recorded follow-up rather than as a new decision:
+
+**`application/json`, a flat object of identifiers and enumerated names, built by
+`platform.outbox.EventPayload`.**
+
+**It is a builder with a charset rather than an object mapper, and that is the point.**
+`INV-AUD-02` keeps personal data out of event payloads and `PHASE_1_PLAN.md` §4 states the rule for
+every Phase 1 event — *no credential material and no unnecessary PII*. A general mapper would
+serialise `put("displayName", name)` happily; `EventPayload` rejects any value that is not an
+identifier or an enum constant, so the accidental disclosure is a failing test instead. It also
+means **no value that reaches the output ever needs escaping**, which is asserted rather than
+assumed.
+
+**The limit is stated:** this is not a general event serialiser and must not become one. An event
+that genuinely needs a nested object, a monetary amount or a list needs the wire-format decision
+taken, not worked around — at which point `EventPayload` is replaced rather than extended.
+
+### Causation at the root of a flow
+
+`Correlation` leaves `causationId` **null** at a flow's root, deliberately, so a root is
+distinguishable from a cycle. `EventEnvelope` requires it **non-null**, because every event has a
+cause. An HTTP-initiated event sits exactly between those two rules: no message caused it.
+
+**The request caused it.** A producer at a flow root sets `causationId` to the flow's correlation
+identifier. That looks self-referential and is not: the correlation identifier names a real,
+recorded thing — it is on the idempotency record and on the audit record written in the same
+transaction — so the causal chain terminates at the request rather than at nothing. Minting a fresh
+identifier there would be worse, because it would point at something that exists nowhere.
+
 ## Publication
 
 Events are published by the **outbox relay** (`P0-TSK-020`) and by nothing else — enforced by

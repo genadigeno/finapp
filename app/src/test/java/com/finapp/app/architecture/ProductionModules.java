@@ -31,7 +31,7 @@ import java.util.stream.Stream;
  * module added to the build is protected without anyone remembering to add it here, and a
  * module that silently stops being analysed fails the build.
  */
-final class ProductionModules {
+public final class ProductionModules {
 
     private static final String ROOT = "com.finapp.";
 
@@ -58,7 +58,7 @@ final class ProductionModules {
      * {@code package-info}. A module holding only {@code package-info} contributes nothing for
      * ArchUnit to import, which is why it is excluded rather than treated as a failure.
      */
-    static Set<String> onClasspathWithProductionClasses() {
+    public static Set<String> onClasspathWithProductionClasses() {
         Set<String> modules = new TreeSet<>();
         for (String entry : System.getProperty("java.class.path").split(File.pathSeparator)) {
             Path path = Path.of(entry);

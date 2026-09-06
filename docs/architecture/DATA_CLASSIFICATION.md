@@ -175,6 +175,15 @@ a log aggregator, an event stream or a backup (ADR-0022).
 | `identity` | `created_at` | `CONFIDENTIAL` | As `party.registered_at` |
 | `identity` | `status_changed_at` | `CONFIDENTIAL` | As `customer.status_changed_at` |
 
+**Where a login identifier legitimately appears outside this table** (`P1-TSK-006`):
+`audit_record.target_id`, which is classified `RESTRICTED-FINANCIAL` and so comfortably above
+`CONFIDENTIAL`. That is deliberate and is the only such place — `PHASE_1_PLAN.md` §10 makes the
+audit trail the one artefact where an *attempted* identifier may appear, because it is
+access-controlled and is the regulatory record. It is **not** in `idempotency_record.scope`, which
+is `INTERNAL` and holds the command name alone; putting it there would have forced a Phase 0 column
+to be reclassified, which ADR-0022 says must not happen. And it is not in any event payload, which
+`EventPayload`'s charset makes structurally impossible rather than merely discouraged.
+
 **Why no column here is `RESTRICTED-FINANCIAL`.** Phase 1 holds no money, no account and no
 balance. When `target_id` on an audit record points at one of these rows it is still the audit
 table's column and keeps that table's classification; nothing in `party` or `identity` becomes

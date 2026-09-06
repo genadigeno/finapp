@@ -96,6 +96,12 @@ diverge — a divergence that would silently corrupt every downstream projection
 ## Follow-up
 
 - Phase 0: crash-between-commit-and-publish test; duplicate-delivery test.
+- Phase 1 (`P1-TSK-006`): the **stored payload format**, settled by the first module to emit an
+  event — `application/json`, a flat object of identifiers and enumerated names, built by
+  `EventPayload`, whose charset rejects free text so that `INV-AUD-02` is enforced rather than
+  remembered. The *broker* wire format is still the adapter's decision and remains open. Recorded
+  in [`EVENT_ARCHITECTURE.md`](../architecture/EVENT_ARCHITECTURE.md), not as a separate ADR: this
+  is this decision's consequence arriving, the way `P0-TSK-037` was ADR-0008's.
 - Phase 15: schema registry and compatibility enforcement; dead-letter handling and replay.
 - Phase 16: relay throughput under load; consider CDC only if polling becomes a measured
   bottleneck.

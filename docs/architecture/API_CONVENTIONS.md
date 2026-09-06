@@ -146,10 +146,14 @@ an error message becomes a vector (`INV-AUD-02`).
 *Proven by `RequestValidationTest`, which counts handler entries rather than reading the response —
 a 422 returned after the handler ran and did half the work looks identical from outside.*
 
-## 6. Idempotency — **Implemented** (`P0-TSK-017`; first *used* in Phase 4)
+## 6. Idempotency — **Implemented** (`P0-TSK-017`; first *used* by `P1-TSK-006`)
 
-**The boundary contract is enforced. Nothing declares it yet**, because Phase 0 has no
-money-moving endpoint — the first will be Phase 4's `POST /transfers`.
+**One endpoint declares it: `POST /v1/registrations`** (`P1-TSK-006`), which is the mechanism's
+first real user and arrived two phases earlier than expected. Registration **moves no money**, so
+`INV-IDEM-01`'s money-moving clause is vacuous for it — and it is made idempotent anyway, because a
+retried registration that creates a second Party is a duplicate person, which is expensive in a
+different way and unpickable later for the same reason ADR-0029 gives. Phase 4's `POST /transfers`
+is still the first money-moving one.
 
 **Every money-moving command requires `Idempotency-Key`.** Safe methods (`GET`, `HEAD`, and also
 `OPTIONS`/`TRACE`) ignore it; a command that can move money and does not require it is a defect,
@@ -179,8 +183,22 @@ entries, because a rejection issued after a command did half its work looks iden
 | A valid value | **Never rewritten.** A key the platform silently adjusted would not match the caller's retry, which is the one thing that must never happen: the retry would create a second financial effect |
 
 **The key is scoped, not global.** Two callers must not collide by both choosing `1`, so the
-uniqueness constraint covers a scope (the operation, and the authenticated principal once Phase 1
-provides one) alongside the key. See ADR-0004.
+uniqueness constraint covers a scope (the operation, and the authenticated principal where there is
+one) alongside the key. See ADR-0004.
+
+**Registration is permanently the exception to the principal half**, and that is a property of what
+it does rather than an omission: it is the endpoint that *creates* a principal, so there is none to
+scope by. The residual is stated rather than glossed — an attacker who holds a key *and* knows the
+exact login identifier and display name can obtain a replay. What bounds it is that the endpoint
+returns **no body** and no replay indication, so a replay discloses only that the request succeeded;
+no session, no credential and no identifier are handed over. This is inherent to making an
+unauthenticated endpoint idempotent, and it is bounded by the retention window.
+
+**What a command hashes into its fingerprint is the command's decision** (`RequestFingerprint`), and
+registration's is worth recording: the **semantically significant fields only**, and — when
+`P1-TSK-007` adds one — **never the credential**. `request_fingerprint` is a durable single-round
+SHA-256, so hashing a body containing a password would store an offline-crackable derivation of it,
+which is `INV-IDN-01` violated by the idempotency mechanism.
 
 **It is enforced by a database constraint**, never by a cache or an HTTP filter — a filter
 deduplicates requests, and what must be deduplicated is *financial effects*.

@@ -37,6 +37,23 @@ public enum IdentityAuditAction implements AuditableAction {
      * abuse vector otherwise. The justification is what separates the two afterwards, and there is
      * no later moment at which it can be reconstructed.
      */
+    /**
+     * A login was created for a party (`P1-TSK-006`).
+     *
+     * <p>Recorded in the registration's own transaction, so an identity that exists always has the
+     * record of its creation and one that does not exist has none. {@code INV-AUD-01} calls for
+     * every action of consequence to be attributable, and creating the thing that will later
+     * authenticate as a person is one.
+     *
+     * <p>No reason required. The two actions below are taken <em>against</em> somebody else's
+     * account by an administrator, which is the case a justification exists for; creating your own
+     * login is not.
+     */
+    IDENTITY_CREATED(
+            "identity.IdentityCreated",
+            "A login was created for a party.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

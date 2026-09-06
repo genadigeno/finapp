@@ -2,8 +2,11 @@ package com.finapp.app.api;
 
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.ErrorCode;
+import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.api.ProblemDetail;
+import com.finapp.platform.idempotency.IdempotencyConflictException;
+import com.finapp.platform.idempotency.IdempotencyInProgressException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -146,6 +149,52 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
                         .sorted()
                         .collect(java.util.stream.Collectors.joining("; "));
         return validationFailed(detail, request);
+    }
+
+    /**
+     * A known idempotency key presented with a materially different request ({@code INV-IDEM-03}).
+     *
+     * <p>409, never a silent second effect and never the first request's response. Replaying a
+     * stored outcome here would answer a question nobody asked; re-executing would produce the
+     * second effect the whole mechanism exists to prevent.
+     *
+     * <p>The detail names neither the key nor the difference. The key is the caller's own input and
+     * echoing it is how a header becomes a reflection vector; what the two requests disagree about
+     * is something only the caller can know and only the caller needs to.
+     */
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ProblemDetailBody> handleIdempotencyConflict(
+            IdempotencyConflictException exception, HttpServletRequest request) {
+
+        LOGGER.warn("Idempotency key reused for a different request on {}", request.getRequestURI());
+        return render(
+                ProblemDetail.of(
+                        PlatformErrorCode.CONFLICT,
+                        request.getRequestURI(),
+                        "This " + IdempotencyKeyHeader.NAME
+                                + " was already used for a different request. Use a new key for a"
+                                + " new action, or resend the original request unchanged."));
+    }
+
+    /**
+     * The key is claimed by a command whose outcome is not yet known.
+     *
+     * <p>Its own code rather than {@code api.Conflict}: this one means <em>wait and retry the same
+     * request</em>, and the other means <em>stop</em>. It is deliberately not reported as a
+     * failure - assuming a command failed because its outcome is unknown is the assumption
+     * {@code INV-LIFE-03} exists to forbid.
+     */
+    @ExceptionHandler(IdempotencyInProgressException.class)
+    public ResponseEntity<ProblemDetailBody> handleIdempotencyInProgress(
+            IdempotencyInProgressException exception, HttpServletRequest request) {
+
+        LOGGER.warn("Idempotency key still in progress on {}", request.getRequestURI());
+        return render(
+                ProblemDetail.of(
+                        PlatformErrorCode.IDEMPOTENCY_IN_PROGRESS,
+                        request.getRequestURI(),
+                        "An identical request is still being processed. Retry it shortly with the"
+                                + " same " + IdempotencyKeyHeader.NAME + "."));
     }
 
     /**

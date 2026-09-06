@@ -161,6 +161,36 @@ class PartyAndIdentitySchemaDatabaseTest {
     }
 
     @Test
+    @DisplayName("a control character in a display name is refused by the database too")
+    void theDisplayNameControlCharacterRuleIsEnforcedInTheSchema() throws SQLException {
+        // Added by the `P1-TSK-006` gate (V003). PartyName enforces this for anything going through
+        // the domain and the API boundary reports it as 422; the column enforces it for everything
+        // else - a migration, an operator, a writer nobody has written yet.
+        //
+        // The constraint is deliberately NARROWER than PartyName, covering the C0/C1 control ranges
+        // rather than five Unicode categories, because that is what a POSIX class expresses exactly.
+        // Asserting the narrow part is the honest test; claiming parity would be the dishonest one.
+        try (Connection app = DatabaseRoles.application()) {
+            assertThatThrownBy(() -> insertParty(app, "PERSON", "Ada" + (char) 0x0A + "Lovelace"))
+                    .as("a line feed in a RESTRICTED-PII column is a forged log line in waiting")
+                    .isInstanceOf(SQLException.class)
+                    .extracting(e -> ((SQLException) e).getSQLState())
+                    .isEqualTo(CHECK_VIOLATION);
+
+            assertThatThrownBy(() -> insertParty(app, "PERSON", "Ada" + (char) 0x0D + "Lovelace"))
+                    .isInstanceOf(SQLException.class)
+                    .extracting(e -> ((SQLException) e).getSQLState())
+                    .isEqualTo(CHECK_VIOLATION);
+        }
+
+        // The other half: a real name with an accent and a non-Latin script still stores, which is
+        // what stops this constraint from having become the charset restriction PartyName refuses.
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(insertParty(app, "PERSON", "Ægir Þórsson 李雷")).isNotNull();
+        }
+    }
+
+    @Test
     @DisplayName("customer references party by foreign key; identity does not")
     void theForeignKeyExistsWithinASchemaAndNotAcross() throws SQLException {
         // ADR-0029's boundary, asserted from both sides. Within `party` an FK is correct and

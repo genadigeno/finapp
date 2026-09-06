@@ -44,6 +44,26 @@ public enum PlatformErrorCode implements ErrorCode {
     IDEMPOTENCY_KEY_REQUIRED(
             "api.IdempotencyKeyRequired", 422, "This operation requires an idempotency key."),
 
+    /**
+     * A known idempotency key is claimed by a command that has not finished.
+     *
+     * <p>Its own code rather than {@link #CONFLICT}, although both are 409, because the two say
+     * opposite things to a client. {@code api.Conflict} means <em>you sent a different request
+     * under a key you already used</em> — the request will never succeed and a retry is pointless.
+     * This one means <em>the request you sent is running and its outcome is not yet known</em>, and
+     * the correct client behaviour is to retry the identical request shortly. Collapsing them
+     * would leave a client library no way to tell "stop" from "wait".
+     *
+     * <p><strong>It is never reported as a failure.</strong> Assuming a command failed because its
+     * outcome is unknown is the assumption {@code INV-LIFE-03} exists to forbid, and
+     * {@code IdempotentExecutor} refuses to make it. This code is how that refusal reaches a
+     * client honestly.
+     */
+    IDEMPOTENCY_IN_PROGRESS(
+            "api.IdempotencyInProgress",
+            409,
+            "That request is still being processed."),
+
     /** No route matches. */
     NOT_FOUND("api.NotFound", 404, "The requested resource does not exist."),
 

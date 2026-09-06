@@ -209,7 +209,7 @@ Modules from Phase 1 onward do not exist yet. Their entries are the design contr
 phases must satisfy, not a description of code.
 
 ### `app` — Phase 0
-- **Responsibility:** composition root. Wires modules together and hosts the HTTP surface and configuration. Owns no business capability.
+- **Responsibility:** composition root. Wires modules together and hosts the HTTP surface and configuration. Owns no business capability. **It may sequence two modules inside one transaction** where a use case spans bounded contexts and belongs wholly to neither — registration (`P1-TSK-006`) is the first, and `app` is the only module that *can* host it, since either business module hosting it would have to depend on the other and the isolation tests forbid that. The limit is that `app` owns no rule, no event and no audit record: each module writes its own, and `app` contributes two calls and a transaction. A class here that started deciding *what* to write would be a business module wearing the composition root's name.
 - **Owns:** no persistent state; configuration only — plus the JDBC connection pool, which is infrastructure rather than state. Readiness has to be answered through the pool the application actually uses, since a health check with its own connection reports healthy while the pool is exhausted. A pool is not a data-access mechanism: that was unresolved question 12, left open by ADR-0016 §5 and **settled by ADR-0033** — explicit SQL through `JdbcClient`, no ORM.
 - **Transaction:** opens none of its own. It delegates to the module that owns the transaction.
 - **Consistency:** n/a — holds no state.
@@ -851,8 +851,13 @@ annotation placement. *(review)*
 ### Transaction boundary
 - A transaction never spans a call to an external provider.
 - A transaction never spans two modules' authoritative state **except** where a documented
-  ADR justifies it — currently only transfer-plus-posting and resolution-plus-adjustment,
-  both of which are the explicit reason for choosing a monolith.
+  ADR justifies it — currently registration (`party` plus `identity`, ADR-0029),
+  transfer-plus-posting and resolution-plus-adjustment, all three of which are the explicit
+  reason for choosing a monolith. Registration is the first of them to exist: `P1-TSK-006`
+  creates a Party, a Customer and an Identity in one commit, and because ADR-0029 deliberately
+  places **no foreign key** across the schema boundary, that transaction is the only thing
+  making the Identity's reference to its Party true. The list was stale before this task —
+  it had been written when neither of the other two existed either.
 - The outbox write always shares the transaction of the state change (`INV-EVT-01`).
 
 ### Consistency boundary

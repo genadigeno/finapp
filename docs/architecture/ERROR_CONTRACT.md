@@ -65,11 +65,37 @@ Failures of the *protocol*, raised before any business module is reached.
 | `api.MethodNotAllowed` | 405 | The route exists; the method does not. |
 | `api.NotAcceptable` | 406 | No representation this endpoint produces is acceptable. |
 | `api.Conflict` | 409 | The request conflicts with current state. |
+| `api.IdempotencyInProgress` | 409 | An identical request is still being processed. |
 | `api.PayloadTooLarge` | 413 | The request body exceeded the accepted size. |
 | `api.UnsupportedMediaType` | 415 | The body's media type is not read here. |
 | `api.ValidationFailed` | 422 | Well-formed, and not valid. |
 | `api.IdempotencyKeyRequired` | 422 | An operation requiring `Idempotency-Key` was called without one. |
 | `api.InternalError` | 500 | Something failed that the client cannot act on. |
+
+### `party` — `PartyErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `party.RegistrationRefused` | 422 | This registration could not be completed. |
+
+**One code for every reason a registration can fail, and that coarseness is the design**
+(`P1-TSK-006`, `INV-IDN-07`). The commonest reason is that the login identifier is already in use,
+and saying so would make `POST /v1/registrations` an account-existence oracle: anyone could submit
+identifiers and read the answer off the status code. A collision and any other domain refusal
+therefore produce a byte-identical response, and a legitimate caller who picks a taken identifier
+gets no explanation. That cost is real and accepted; it is the same trade every serious platform
+makes for an email address.
+
+**422 rather than 409.** A 409 says *this conflicts with something that exists*, which is precisely
+the fact that must not be disclosed.
+
+**The two idempotency codes are different answers to different questions.** `api.Conflict` means
+*you sent a different request under a key you already used* — the request will never succeed and a
+retry is pointless. `api.IdempotencyInProgress` means *the request you sent is running and its
+outcome is not yet known*, and the correct client behaviour is to retry the identical request
+shortly. Collapsing them would leave a client library no way to tell "stop" from "wait", and the
+second is never reported as a failure: assuming a command failed because its outcome is unknown is
+the assumption `INV-LIFE-03` exists to forbid.
 
 **400 versus 422** is the distinction between "your serialiser is wrong" and "your data is
 wrong", and it is worth keeping: a client can act on the second and only a developer can act on

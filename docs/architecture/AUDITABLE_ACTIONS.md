@@ -60,10 +60,24 @@ question, not a refactor.
 
 | Code | Reason required | What it is |
 |---|---|---|
+| `party.CustomerRegistered` | No | A party was registered and a customer relationship was opened for it. |
 | `party.ProfileChanged` | No | A party's profile data was changed, recording what was held before and after. |
 
-Audited because this module holds personal data, and a change to it changes what the platform
-believes about a person — which later decisions, including KYC and credit, are taken against. No
+`party.CustomerRegistered` is **one action for two writes**, deliberately. `PHASE_1_PLAN.md` §4
+lists `RegisterParty` and `OpenCustomerRelationship` as separate commands, and they are — but
+registration performs both atomically and neither is separately reachable, so two records would
+describe one decision twice and invite a reader to wonder what it means when only one is present.
+It cannot be. It is the **first action on this platform that is actually emitted** (`P1-TSK-006`),
+which is why the closing paragraph of this section now says "none of the *platform* actions".
+
+Its target is the attempted **login identifier**, not the Party's own identifier — including on the
+refusal path, where no Party exists. That is deliberate: the audit trail is the one place an
+attempted identifier may appear (`PHASE_1_PLAN.md` §10), and a record keyed on an identifier that
+was never created would be unfindable from the only value anyone will search by if a registration
+is later disputed.
+
+The other actions are audited because this module holds personal data, and a change to it changes
+what the platform believes about a person — which later decisions, including KYC and credit, are taken against. No
 reason is required: this is ordinarily the customer maintaining their own details, and a mandatory
 reason on a routine action produces a column of `"update"` (§4). A staff-initiated change on
 someone else's behalf is a different action and will be declared when it exists.
@@ -72,15 +86,19 @@ someone else's behalf is a different action and will be declared when it exists.
 
 | Code | Reason required | What it is |
 |---|---|---|
+| `identity.IdentityCreated` | No | A login was created for a party. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
 
-**Deliberately only two.** Authentication, session revocation, credential change and MFA enrolment
+`identity.IdentityCreated` requires no reason: creating your own login is not an action taken
+against anybody. The two below it are, which is the whole distinction §4 draws.
+
+**Deliberately few.** Authentication, session revocation, credential change and MFA enrolment
 are audited too and are *not* declared yet: each belongs to the task that builds it, where
 `requiresReason()` can be decided against real behaviour. A registry may list an action before its
 code exists; it should not list one before its *design* does.
 
-Both require a reason because both are things a human chose to do that the system would not have
+The two administrative actions require a reason because both are things a human chose to do that the system would not have
 done by itself, taken **against someone else's account** — and this is the module where an insider
 with a legitimate permission does the most damage. Role assignment is the more consequential of the
 two: it is the action by which every other authorization decision can be quietly widened, so an
@@ -89,7 +107,8 @@ assignment nobody has to justify is privilege escalation with a clean audit trai
 `INV-AUD-04`'s four-eyes requirement is not yet modelled — `audit_record` records one actor — and
 that is recorded debt rather than an omission here.
 
-**None of the actions above is emitted yet**, and that is not an oversight. Two describe the manual procedure
+**The two registration actions are emitted; none of the three `platform` actions is**, and that is
+not an oversight. Two describe the manual procedure
 in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today
 with raw SQL and no audit record at all; the third is a relay decision currently visible only as a
 log line, which ADR-0010 is explicit does not count. A completeness registry is precisely the list

@@ -80,6 +80,48 @@ class PartyNameTest {
     }
 
     @Test
+    @DisplayName("a control character is refused, and that is not a charset restriction")
+    void controlCharactersAreRefused() {
+        // Added by the `P1-TSK-006` gate, after a probe found that a NUL in a display name reached
+        // PostgreSQL - which cannot store one in a text column at all - and surfaced as a 500: a
+        // caller's mistake reported as ours. The rule is narrow on purpose. It excludes five
+        // Unicode categories that contain no character of any name, so it rejects nothing the test
+        // above accepts, and that is exactly what separates it from the charset restriction this
+        // type refuses.
+        for (int hostile : new int[] {0x00, 0x0A, 0x0D, 0x09, 0x08, 0x7F, 0x202E, 0x200D}) {
+            String name = "Ada" + (char) hostile + "Lovelace";
+            assertThatThrownBy(() -> new PartyName(name))
+                    .as("U+%04X is in nobody's name", hostile)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    @DisplayName("the rejection does not repeat the name it refused")
+    void theRejectionDoesNotEchoTheName() {
+        // A RESTRICTED-PII value, and an exception message reaches a log line (INV-AUD-02). Naming
+        // the offending character would echo the input one code point at a time.
+        assertThatThrownBy(() -> new PartyName("Ada" + (char) 0x00 + "Lovelace"))
+                .hasMessageNotContaining("Ada")
+                .hasMessageNotContaining("Lovelace");
+    }
+
+    @Test
+    @DisplayName("an emoji is a code point, not a surrogate, so it is still a legal name")
+    void emojiSurviveTheSurrogateExclusion() {
+        // The exclusion covers unpaired surrogates. A valid pair is one code point in the Symbol
+        // category, and asserting so is what stops a well-meant tightening from breaking a name
+        // that contains one.
+        String withEmoji = "Ada " + new String(Character.toChars(0x1F600));
+        assertThatCode(() -> new PartyName(withEmoji)).doesNotThrowAnyException();
+
+        // And a lone surrogate is refused - the half that would otherwise be an untested claim.
+        String loneSurrogate = "Ada" + (char) 0xD83D;
+        assertThatThrownBy(() -> new PartyName(loneSurrogate))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("blank and over-long are refused, because those are the two the column enforces")
     void theBoundsAreEnforced() {
         assertThatThrownBy(() -> new PartyName("")).isInstanceOf(IllegalArgumentException.class);

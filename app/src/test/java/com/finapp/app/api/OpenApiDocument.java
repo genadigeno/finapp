@@ -93,9 +93,33 @@ final class OpenApiDocument {
         // or offer two ways to say the same thing.
         document.remove("servers");
 
-        document.set("components", components());
+        // springdoc tags every operation with a name derived from the controller class -
+        // "registration-controller". That publishes an internal class name in a document clients
+        // read, and it would change under an ordinary rename, turning a refactor into a contract
+        // diff. Removed for the same reason as `servers`: it is a fact about our implementation
+        // rather than about the contract.
+        stripControllerTags(document);
+
+        document.set("components", components(document.get("components")));
 
         return canonicalJson(document);
+    }
+
+    private static void stripControllerTags(ObjectNode document) {
+        JsonNode paths = document.get("paths");
+        if (paths == null) {
+            return;
+        }
+        paths.values()
+                .forEach(
+                        path ->
+                                path.values()
+                                        .forEach(
+                                                operation -> {
+                                                    if (operation instanceof ObjectNode node) {
+                                                        node.remove("tags");
+                                                    }
+                                                }));
     }
 
     /** Parses a published document back into a tree, for comparison. */
@@ -121,11 +145,38 @@ final class OpenApiDocument {
         return info;
     }
 
-    private static ObjectNode components() {
+    /**
+     * The published {@code components}: ours, plus the request and response schemas springdoc
+     * derived from the endpoints.
+     *
+     * <p><strong>Merged rather than replaced, and that distinction only became visible when the
+     * platform had its first endpoint.</strong> This method used to build the node from nothing,
+     * which was correct while {@code paths} was empty and silently wrong the moment a handler
+     * declared a request body: springdoc emits {@code $ref: "#/components/schemas/X"} on the
+     * operation, and discarding its schemas left the published document pointing at something that
+     * does not exist. Caught by {@code everyReferenceResolves}, which was added by the
+     * {@code P0-TSK-026} review against exactly this class of defect.
+     *
+     * <p>Ours win on a name collision, because the error contract is authored and springdoc's view
+     * of it is a derivation.
+     */
+    private static ObjectNode components(JsonNode generated) {
         ObjectNode components = MAPPER.createObjectNode();
         components.set("headers", headers());
         components.set("responses", errorResponses());
-        components.set("schemas", schemas());
+
+        ObjectNode schemas = schemas();
+        if (generated != null && generated.has("schemas")) {
+            generated.get("schemas")
+                    .properties()
+                    .forEach(
+                            schema -> {
+                                if (!schemas.has(schema.getKey())) {
+                                    schemas.set(schema.getKey(), schema.getValue());
+                                }
+                            });
+        }
+        components.set("schemas", schemas);
         return components;
     }
 

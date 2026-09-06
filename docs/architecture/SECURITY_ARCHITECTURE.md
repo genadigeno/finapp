@@ -141,12 +141,18 @@ searchable list of places Phase 1 must revisit. Reading `Actor.SYSTEM` anywhere 
 (`onlyTheSecurityContextClaimsTheSystemActor`), because every audit record needs an actor and the
 constant is the shortest way to make a call site compile when none was established.
 
-**Nothing in production establishes a scope yet, and that is deliberate rather than unfinished.**
-Phase 0 has no request handler that performs an auditable action and no module that writes an audit
-record - the three registered platform actions are recorded as not-yet-emitted debt. So this is a
-seam in `EXECUTION_PROTOCOL.md` rule 3's sense: a named mechanism with documented behaviour and
-nothing built behind it. The first caller arrives with the first audited action, and the guarantee
-that matters is already enforced - a caller who forgets is refused rather than defaulted.
+**The first caller arrived with `P1-TSK-006`, and it is an `enterSystem()` that stays.**
+`RegistrationService` establishes the scope for `POST /v1/registrations`, and the actor is the
+platform because the caller is **unauthenticated**: there is no other honest answer. Attributing the
+action to the Party it creates was considered and rejected - it is circular, and it is unavailable
+on the refusal path, where nothing was created, so the actor would differ between success and
+failure. What carries the information instead is the audit record's **target**, which is the
+attempted login identifier on both paths.
+
+Phase 1 revisits these call sites and this one survives the review. The `enterSystem()` sites that
+must go are the ones where a real actor exists and was not established; a public registration
+endpoint is not one of them, and the distinction is worth writing down because "revisit every
+`enterSystem()`" reads as "remove every `enterSystem()`" and would be wrong here.
 
 The actor is deliberately not part of the correlation context. A correlation identifier names one
 execution and attributes nothing to anybody; an actor names a party. Merging them would put a
