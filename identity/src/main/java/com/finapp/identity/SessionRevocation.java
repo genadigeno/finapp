@@ -1,0 +1,152 @@
+package com.finapp.identity;
+
+import com.finapp.platform.audit.AuditId;
+import com.finapp.platform.audit.AuditOutcome;
+import com.finapp.platform.audit.AuditRecord;
+import com.finapp.platform.audit.AuditWriter;
+import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.security.SecurityContext;
+import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.sharedkernel.id.IdGenerator;
+import java.sql.Connection;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.Optional;
+
+/**
+ * Ends sessions, and records who decided to (`P1-TSK-014`, {@code INV-IDN-03}).
+ *
+ * <h2>One audit record per operation, never per session</h2>
+ *
+ * <p>Revoking forty sessions writes <strong>one</strong> record, with the count in the change
+ * summary. Forty would bury the decision under its consequences — the argument {@code P1-TSK-011}
+ * already made for auditing the lockout crossing once rather than every attempt afterwards.
+ *
+ * <p>The division of labour is clean, and it is what makes one record sufficient: <strong>the
+ * session row says when each session ended; the audit record says who decided and why.</strong> An
+ * investigator asking "when did session S end?" reads {@code revoked_at} on the row; asking "who
+ * ended it?" reads the trail.
+ *
+ * <h2>The action requires no reason, and that is a statement about which action this is</h2>
+ *
+ * <p>Logging yourself out — or having your other sessions ended because you changed your password —
+ * is not an action taken against anybody. {@code PHASE_1_PLAN.md} §5 lists <em>"forced session
+ * revocation"</em> separately among privileged actions: that is an administrator acting on somebody
+ * else's account, it is a different action, and it belongs to the task that builds it.
+ *
+ * <h2>Nothing calls this yet</h2>
+ *
+ * <p>{@code P1-TSK-016} builds the endpoints and {@code P1-TSK-026} the credential change that ends
+ * every other session. The capability is this task; the callers are theirs. That is the same seam
+ * {@code P1-TSK-013} left for issuance.
+ */
+public final class SessionRevocation {
+
+    /** What an audit record for a single revocation points at. */
+    public static final String SESSION_TARGET_TYPE = "identity.Session";
+
+    /** What a bulk revocation points at: the identity, because that is what was acted on. */
+    public static final String IDENTITY_TARGET_TYPE = "identity.Identity";
+
+    private final SessionStore<Connection> sessions;
+    private final IdGenerator ids;
+    private final Clock clock;
+    private final AuditWriter<Connection> auditWriter;
+
+    public SessionRevocation(
+            SessionStore<Connection> sessions,
+            IdGenerator ids,
+            Clock clock,
+            AuditWriter<Connection> auditWriter) {
+        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
+        this.ids = Objects.requireNonNull(ids, "ids must not be null");
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
+    }
+
+    /**
+     * Ends one session.
+     *
+     * <p>Audited only when something was actually ended. A record for a revocation that revoked
+     * nothing would put a caller's <em>guess</em> at a session identifier into the trail, and the
+     * trail would then answer questions about identifiers that were never real.
+     *
+     * @return whether a live session was ended
+     */
+    public boolean revoke(Connection unitOfWork, SessionId sessionId, IdentityId owner) {
+        Objects.requireNonNull(sessionId, "sessionId must not be null");
+        Objects.requireNonNull(owner, "owner must not be null");
+
+        Instant at = Instant.now(clock);
+        boolean revoked = sessions.revoke(unitOfWork, sessionId, at);
+        if (revoked) {
+            audit(unitOfWork, at, SESSION_TARGET_TYPE, sessionId.value().toString(),
+                    "identity=" + owner);
+        }
+        return revoked;
+    }
+
+    /** Ends every live session of an identity. */
+    public int revokeAll(Connection unitOfWork, IdentityId identityId) {
+        Instant at = Instant.now(clock);
+        int revoked = sessions.revokeAllFor(unitOfWork, identityId, at);
+        if (revoked > 0) {
+            audit(unitOfWork, at, IDENTITY_TARGET_TYPE, identityId.value().toString(),
+                    "sessionsRevoked=" + revoked);
+        }
+        return revoked;
+    }
+
+    /**
+     * Ends every live session of an identity except the one named — what a credential change does.
+     *
+     * <p>The count is recorded even when it is zero-worthy in the caller's eyes, because <em>"the
+     * password was changed and no other session was open"</em> is a different fact from <em>"and
+     * eleven were closed"</em>, and only the second suggests somebody else was using the account.
+     */
+    public int revokeAllExcept(Connection unitOfWork, IdentityId identityId, SessionId spare) {
+        Objects.requireNonNull(spare, "spare must not be null");
+
+        Instant at = Instant.now(clock);
+        int revoked = sessions.revokeAllForExcept(unitOfWork, identityId, spare, at);
+        if (revoked > 0) {
+            audit(unitOfWork, at, IDENTITY_TARGET_TYPE, identityId.value().toString(),
+                    "sessionsRevoked=" + revoked + " spared=" + spare);
+        }
+        return revoked;
+    }
+
+    // -----------------------------------------------------------------
+
+    private void audit(
+            Connection unitOfWork,
+            Instant at,
+            String targetType,
+            String targetId,
+            String changeSummary) {
+        Correlation correlation =
+                CorrelationContext.current()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "A revocation must run inside a correlation scope:"
+                                                    + " the audit record carries the identifier, and"
+                                                    + " a fabricated one would point at no flow at"
+                                                    + " all (P0-TSK-014)"));
+
+        auditWriter.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        SecurityContext.require(),
+                        at,
+                        IdentityAuditAction.SESSION_REVOKED,
+                        targetType,
+                        targetId,
+                        Optional.empty(),
+                        AuditOutcome.SUCCEEDED,
+                        correlation.correlationId(),
+                        Optional.of(changeSummary)));
+    }
+}

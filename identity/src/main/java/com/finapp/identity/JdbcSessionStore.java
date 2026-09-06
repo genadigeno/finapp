@@ -42,6 +42,18 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(session, "session must not be null");
 
+        // NO EXPLICIT LOCK HERE, and that is a measured decision rather than an omission.
+        //
+        // The first version took one, on the reasoning that both sides of the race must. A mutation
+        // removing it SURVIVED, and the pair of mutations explains why: removing the FOR UPDATE from
+        // revokeAll is caught, removing this is not. PostgreSQL takes a FOR KEY SHARE lock on the
+        // referenced row for every insert that has a foreign key, and FOR UPDATE conflicts with it -
+        // so the serialisation this needed already existed, supplied by
+        // `identity_id REFERENCES identity.identity (id)`.
+        //
+        // Keeping a redundant lock would read as the mechanism and hide the real one, which is worse
+        // than not having it: the next person to remove the foreign key would see a lock two lines
+        // away and conclude the serialisation was safe.
         String sql =
                 "INSERT INTO " + TABLE + " (" + COLUMNS + ")"
                         + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -92,6 +104,93 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
         } catch (SQLException e) {
             throw new IdentityStorageException(
                     DatabaseFailure.describe("Could not read a session by token", e));
+        }
+    }
+
+    @Override
+    public boolean revoke(Connection unitOfWork, SessionId sessionId, Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(sessionId, "sessionId must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+
+        // Conditional, and the row count is the outcome: ten instances revoking one session produce
+        // one transition and nine are told they lost. No read-then-write, so nothing to lose.
+        //
+        // No identity lock here: this targets one row by primary key, and a concurrent insert of a
+        // DIFFERENT session is not in conflict with it.
+        String sql =
+                "UPDATE " + TABLE + " SET status = 'REVOKED', revoked_at = ?"
+                        + " WHERE id = ? AND status = 'ACTIVE'";
+        try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
+            update.setTimestamp(1, Timestamp.from(at));
+            update.setObject(2, sessionId.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not revoke session " + sessionId, e));
+        }
+    }
+
+    @Override
+    public int revokeAllFor(Connection unitOfWork, IdentityId identityId, Instant at) {
+        return revokeAll(unitOfWork, identityId, null, at);
+    }
+
+    @Override
+    public int revokeAllForExcept(
+            Connection unitOfWork, IdentityId identityId, SessionId spare, Instant at) {
+        Objects.requireNonNull(spare, "spare must not be null");
+        return revokeAll(unitOfWork, identityId, spare, at);
+    }
+
+    private int revokeAll(
+            Connection unitOfWork, IdentityId identityId, SessionId spare, Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(identityId, "identityId must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+
+        lockIdentity(unitOfWork, identityId);
+
+        // Scoped by identity_id, and that scope is load-bearing rather than obvious: a predicate of
+        // `id <> ?` alone would revoke every session on the platform except one.
+        String sql =
+                "UPDATE " + TABLE + " SET status = 'REVOKED', revoked_at = ?"
+                        + " WHERE identity_id = ? AND status = 'ACTIVE'"
+                        + (spare == null ? "" : " AND id <> ?");
+        try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
+            update.setTimestamp(1, Timestamp.from(at));
+            update.setObject(2, identityId.value());
+            if (spare != null) {
+                update.setObject(3, spare.value());
+            }
+            return update.executeUpdate();
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not revoke the sessions of " + identityId, e));
+        }
+    }
+
+    /**
+     * Serialises session issuance against bulk revocation, on the identity's own row.
+     *
+     * <p>The row is only read - nothing about the identity changes - and the lock is released when
+     * the caller's transaction ends. It exists so that the two operations cannot interleave: either
+     * a session is inserted before a revocation and the revocation catches it, or the revocation
+     * commits first and the login that would have issued the session verifies against whatever the
+     * same transaction changed.
+     *
+     * <p>Verified before it was written: without it, a session issued concurrently with a revoke-all
+     * is <strong>still live</strong> afterwards.
+     */
+    private static void lockIdentity(Connection unitOfWork, IdentityId identityId) {
+        try (PreparedStatement lock =
+                unitOfWork.prepareStatement(
+                        "SELECT 1 FROM identity.identity WHERE id = ? FOR UPDATE")) {
+            lock.setObject(1, identityId.value());
+            lock.executeQuery().close();
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not lock identity " + identityId, e));
         }
     }
 

@@ -90,6 +90,7 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.AuthenticationSucceeded` | No | An identity was authenticated. |
 | `identity.AuthenticationFailed` | No | An authentication attempt failed. |
 | `identity.AuthenticationLocked` | No | An identity was locked after repeated failed authentications. |
+| `identity.SessionRevoked` | No | One or more sessions were ended. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
 
@@ -109,6 +110,11 @@ pattern, which is exactly why it must be recorded — a lock is the first eviden
 being attacked, and a spike across many identities is a credential-stuffing campaign in progress
 (`P1-TSK-011`). It is written by the attempt that **crosses** the threshold, never by the attempts
 afterwards, because repeating it while an account stays locked buries the event under copies of it.
+
+**`identity.SessionRevoked` is recorded once per *operation*, not once per session** (`P1-TSK-014`).
+Revoking forty sessions writes one record with the count in its change summary. The division is
+deliberate: the session rows carry `revoked_at` and answer *when each one ended*; the audit record
+answers *who decided*. Forty records would bury the decision under its consequences.
 
 **Neither authentication action records *why* a failure failed.** Unknown identity, wrong password,
 suspended identity and an identity with no credential are deliberately not distinguished anywhere -

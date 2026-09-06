@@ -1685,16 +1685,38 @@ repository exists to prevent.
 - **Eight mutations, all caught.**
 - Risk: **High**. Cx: M. DoD: `DOD-KERNEL`
 
-**P1-TSK-014 — Revocation, immediate and multi-instance**
+**P1-TSK-014 — Revocation, immediate and multi-instance** — `COMPLETE` (2026-09-07)
 - Context: identity
 - Description: Revoke one session, revoke all, and revoke on credential change.
 - Why: `INV-IDN-03`.
 - Deps: P1-TSK-013
-- Implementation: revocation is a state transition to a terminal state; credential change revokes
-  every other session in the same transaction.
-- Tests: revoke on one simulated instance, assert refusal on another; concurrent login and
-  revocation — revocation wins.
-- Accept: `INV-IDN-03` demonstrated to fail when a session cache is introduced.
+- Implementation: `SessionStore.revoke` / `revokeAllFor` / `revokeAllForExcept` (conditional
+  `UPDATE`, row count as the outcome), `SessionRevocation` (audit), `IdentityAuditAction`
+  `SESSION_REVOKED`, and `V006` adding the partial by-identity index `V005` deliberately omitted
+  because no query needed one — bulk revocation is that query.
+- Accept: **met** — `INV-IDN-03` demonstrated to fail when a session cache is introduced, and
+  caught **twice**: the behavioural test fails and `NoProcessLocalSessionStateTest` fails
+  independently.
+- **The hard reading of `PHASE_1_PLAN.md` §8 was broken, and it was verified broken before the fix
+  was written.** *"A session must never survive a concurrent revoke"* — a session **issued**
+  concurrently with a revoke-all was still live afterwards, so an attacker holding the old password
+  kept a live session across a password change, with every revoke-then-look-up test passing.
+- **One explicit lock, not two, and a surviving mutation is what established that.** Bulk revocation
+  takes `FOR UPDATE` on the identity; a session insert already takes `FOR KEY SHARE` on the same row
+  **through its foreign key**, and the two conflict. An explicit lock on the issuing side was
+  written, proved redundant, and removed — keeping it would read as the mechanism and hide the real
+  one, so the next person to drop the foreign key would see a lock two lines away and conclude the
+  serialisation was safe.
+- **The race test asserts the coordination, not the outcome.** Its first version asserted the end
+  state and a mutation removing the lock survived it: with the lock the insert serialises after the
+  revoke and the new session is live; without it the insert races and the new session is also live.
+  Same rows, opposite mechanisms. It now waits for PostgreSQL to report the issuer **blocked**.
+- **One audit record per operation, never per session**: forty sessions ended by one decision is one
+  record with the count in its change summary. The rows carry `revoked_at` and say *when*; the trail
+  says *who decided*.
+- **Nothing calls it yet** — endpoints are `P1-TSK-016`, the credential change is `P1-TSK-026`.
+- **Five mutations. Three caught, one caught twice, and one survived correctly**, having removed
+  redundant code.
 - Risk: **High**. Cx: M. DoD: `DOD-KERNEL`
 
 **P1-TSK-015 — Rotation on privilege change**

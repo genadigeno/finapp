@@ -108,6 +108,26 @@ public enum IdentityAuditAction implements AuditableAction {
             "An identity was locked after repeated failed authentications.",
             false),
 
+    /**
+     * One or more sessions were ended (`P1-TSK-014`).
+     *
+     * <p><strong>One record per operation, not per session.</strong> Revoking forty writes one, with
+     * the count in the change summary — the session rows carry {@code revoked_at} and answer
+     * <em>when</em> each ended, while this answers <em>who decided</em>. Forty records would bury the
+     * decision under its consequences, which is the argument {@code AUTHENTICATION_LOCKED} already
+     * makes for recording the crossing rather than every attempt after it.
+     *
+     * <p>No reason required: logging yourself out, or having your other sessions ended because you
+     * changed your password, is not an action taken against anybody. {@code PHASE_1_PLAN.md} §5
+     * lists <em>"forced session revocation"</em> separately among privileged actions — an
+     * administrator ending somebody else's sessions is a different action, and it will need a reason
+     * for the same reason {@code IDENTITY_SUSPENDED} does.
+     */
+    SESSION_REVOKED(
+            "identity.SessionRevoked",
+            "One or more sessions were ended.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",
