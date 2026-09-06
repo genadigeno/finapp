@@ -149,11 +149,29 @@ Financial impact:
 
 ## Follow-up
 
-- **An output scrubber**, as a net for text the platform does not control — a driver exception, a
-  third-party log line. Recorded as debt; it is a deny-list and must never be mistaken for the
-  control.
-- **A logging facade** (alternative C) when there is a business module logging real flows.
+- ~~**An output scrubber**~~ and ~~**a logging facade** (alternative C)~~ — **both declined by
+  `P1-TSK-009`** (2026-09-06), when the trigger was reached: `identity` is a business module logging
+  real flows. The reasoning is the one alternative B already gives, made sharper by having a real
+  subject — a scrubber is a deny-list, and to recognise a secret it must be *given* the secret, so
+  the plaintext travels **further**, into a filter on every log statement in the platform, rather
+  than less far. What replaces it is the checkable opposite: a plaintext reaches a sink only if
+  something first *unwraps* it, and every unwrap is an `expose()` call, so the **set of unwrap sites
+  is pinned** — four production classes, all in `identity`
+  (`SecretsAreUnwrappedInOnePlaceTest`). The residual is recorded in `CURRENT_STATE.md`: inside
+  `identity` a plaintext could still be handed to a log call, bounded by the set being four classes
+  rather than a codebase.
 - **`P0-TST-008`** asserts sensitive markers never appear across all appenders; `secretsAreWrapped`
   already satisfies its acceptance criterion, which that task should confirm rather than duplicate.
+- **The compound-word vocabulary did not work as this ADR describes it**, and `P1-TSK-009` measured
+  it rather than reading it. This document says the vocabulary *"names the compound forms (`apiKey`,
+  `privateKey`) rather than the bare word"*, and the matching compared single **words** after
+  splitting on camel-case boundaries — so `apiKey` split to `[api, Key]` and **no compound entry
+  could ever match**. Six of twenty-two were unreachable: `apikey`, `privatekey`, `signingkey`,
+  `cardnumber`, `mfacode`, `sessionid`. A production `String cardNumber` passed the build, which is
+  the field this ADR names to keep PCI scope from widening quietly. **The decision was right and the
+  implementation did not deliver it**, so this is a correction rather than a superseding ADR: the
+  matcher now tests adjacent word pairs as well as single words, which catches the six without
+  substring matching and therefore without reintroducing the false positives that keep `key` out of
+  the vocabulary.
 - **PII beyond credentials** — names, addresses, identifiers — is a data-classification question
   that arrives with the first real customer record in Phase 1.

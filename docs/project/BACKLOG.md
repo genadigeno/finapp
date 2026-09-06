@@ -1438,16 +1438,42 @@ repository exists to prevent.
   (`P1-TSK-010`), lockout (`P1-TSK-011`), session issuance (`P1-TSK-013`), audit and events
   (`P1-TSK-010`).
 
-**P1-TSK-009 — `P1-TST-001`: credentials never leak**
+**P1-TSK-009 — `P1-TST-001`: credentials never leak** — `COMPLETE` (2026-09-06)
 - Context: identity / test
 - Description: A credential appears in no log, event, response, span or metric.
 - Why: `INV-AUD-02` and `INV-IDN-01`. `P0-TST-008` found the rule protecting this was structurally
   incapable of failing; this is its first real subject.
 - Deps: P1-TSK-008
-- Implementation: assertions over emitted output on every appender, over published events, and over
-  API responses — each with a negative control.
-- Tests: as above.
-- Accept: fails when a credential field is added without wrapping.
+- Implementation: `SecretsAreUnwrappedInOnePlaceTest` (architecture),
+  `CredentialNeverReachesALogTest` (slice), `CredentialReachesNoEmittedSinkTest` (unit),
+  `CredentialVerifierLogsNothingSensitiveDatabaseTest` (database). Four tiers, because a tier is
+  what a test needs in order to run (ADR-0028) and one class would have cost the heaviest member's
+  price everywhere.
+- Accept: **met, and it was already met before the task started** — probed against real production
+  code rather than the existing fixture: an unwrapped `String lastPassword` in `CredentialVerifier`
+  fails `secretsAreWrapped` twice, for the field and for the accessor. So the delivered work is the
+  gap between the item's *description* and its *acceptance clause*, which are different claims.
+- **The scrubber debt was answered, not carried forward.** The Phase 0 row *"no output scrubber for
+  text the platform does not control"* named its trigger as a business module logging real flows.
+  It is **not built**: a scrubber is a deny-list, and to recognise a secret it must be given the
+  secret, so the plaintext travels further rather than less far. Replaced by the checkable opposite
+  — every `expose()` call site pinned, four classes, all in `identity`.
+- **Three of the five sinks have no credential-carrying producer yet**, so for those the deliverable
+  is the mechanism that will refuse one, never an assertion of absence over an empty stream.
+- **Two limits stated in the tests**: `EventPayload` is a charset and would publish `hunter2`; the
+  whitelist says where a secret may be unwrapped, not what happens next.
+- **The completion gate found `secretsAreWrapped`'s vocabulary was one third dead.** The splitter
+  separates `apiKey` into `[api, Key]`, so its six *compound* entries — `apikey`, `privatekey`,
+  `signingkey`, `cardnumber`, `mfacode`, `sessionid` — could never match. Measured in both
+  directions: a production `String cardNumber` passed the build before the fix and fails after it.
+  Closed by adjacent-pair matching, with the false-positive direction re-proven.
+- **Three further gate findings, all in this task's own work**: a coverage guard that could not see
+  `app` leave the sweep (`contains` where every sibling asserts equality); a contract guard reading
+  JSON keys and not values, so an OpenAPI parameter named `token` was invisible; and a second copy
+  of the secret vocabulary that had already drifted, now reconciled by test.
+- **A mutation reported SURVIVED having never landed, twice** — a marker that did not match the
+  document's formatting, and a backup file that silently failed to be written. Every mutation is now
+  applied with the plant asserted present first. Eleven mutations, all caught.
 - Risk: Medium. Cx: M. DoD: `DOD-TEST`
 
 #### P1-FEAT-04 — Authentication

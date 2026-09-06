@@ -168,6 +168,7 @@ class NoUnwrappedSecretRulesTest {
         // this form; deviating from them is what hid the defect.
         assertRejects(secretsAreWrapped, Leaky.class);
         assertRejects(secretsAreWrapped, HiddenBehindAGetter.class);
+        assertRejects(secretsAreWrapped, CompoundSecrets.class);
         assertRejects(onlyCorrelationContextWritesTheMdc, WritesTheMdc.class);
     }
 
@@ -204,9 +205,28 @@ class NoUnwrappedSecretRulesTest {
     /**
      * Names that contain a secret word as a substring but are not secrets. {@code idempotencyKey}
      * is the important one: it is recorded in audit on purpose.
+     *
+     * <p>These are the false positives the adjacent-pair matching must NOT produce. Their pairs are
+     * {@code idempotencykey}, {@code companyname} and {@code spinlockname} - none in the vocabulary.
      */
     @SuppressWarnings("unused")
     private record Innocent(String idempotencyKey, String companyName, String spinLockName) {}
+
+    /**
+     * The camel-case compound spellings, which the rule claimed to catch and did not.
+     *
+     * <p>One fixture per dead entry, because an aggregate probe reporting "caught" tells you nothing
+     * about which of the six it caught - the lesson the {@code P0-TSK-032} review recorded when five
+     * bypass shapes were probed together.
+     */
+    @SuppressWarnings("unused")
+    private record CompoundSecrets(
+            String apiKey,
+            String privateKey,
+            String signingKey,
+            String cardNumber,
+            String mfaCode,
+            String sessionId) {}
 
     /**
      * The MDC path, which no wrapper can protect.
@@ -332,9 +352,40 @@ class NoUnwrappedSecretRulesTest {
     }
 
     /** True when any camel-case word of {@code fieldName} is in the secret vocabulary. */
+    /**
+     * Whether {@code fieldName} names a secret.
+     *
+     * <h2>Adjacent pairs as well as single words, and this was a real hole</h2>
+     *
+     * <p>The vocabulary above deliberately uses <strong>compound</strong> forms where the bare word
+     * has innocent uses - {@code apikey}, {@code privatekey}, {@code cardnumber}. The first version
+     * of this method compared only <em>single</em> words, and the splitter separates
+     * {@code apiKey} into {@code [api, Key]} - so <strong>none of those compound entries could ever
+     * match the camel-case spelling a Java developer actually writes</strong>.
+     *
+     * <p>Measured during the {@code P1-TSK-009} gate rather than reasoned about. Six of the
+     * twenty-two entries were dead: {@code apikey}, {@code privatekey}, {@code signingkey},
+     * {@code cardnumber}, {@code mfacode} and {@code sessionid}. {@code secretKey} was caught, but
+     * only by accident - {@code secret} is also a standalone entry. So {@code String cardNumber}
+     * passed cleanly, which is exactly the field ADR-0019 named to stop PCI scope widening quietly,
+     * and {@code String sessionId} passed too.
+     *
+     * <p>A control reporting coverage it does not have is the {@code P0-TST-008} shape again: worse
+     * than none, because it is believed. Closed by testing <strong>adjacent word pairs</strong> as
+     * well as single words, which is precise rather than fuzzy - {@code idempotencyKey} yields the
+     * pair {@code idempotencykey}, which is not in the vocabulary and stays clean, as do
+     * {@code companyName} and {@code spinLock}. Substring matching would have caught the six and
+     * reintroduced exactly the false positives ADR-0019 excluded {@code key} to avoid.
+     */
     private static boolean namesASecret(String fieldName) {
-        for (String word : WORD_BOUNDARY.split(fieldName)) {
-            if (SECRET_WORDS.contains(word.toLowerCase(Locale.ROOT))) {
+        String[] words = WORD_BOUNDARY.split(fieldName);
+        for (int index = 0; index < words.length; index++) {
+            if (SECRET_WORDS.contains(words[index].toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+            if (index + 1 < words.length
+                    && SECRET_WORDS.contains(
+                            (words[index] + words[index + 1]).toLowerCase(Locale.ROOT))) {
                 return true;
             }
         }
