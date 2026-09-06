@@ -104,23 +104,62 @@ public final class AuthenticationThrottle {
                   FROM identity.identity
                  WHERE login_identifier = ?
                 ON CONFLICT (identity_id) DO UPDATE SET
-                    -- A window that has elapsed starts a fresh run. A LOCKED row does not reset,
-                    -- or an attacker would wait out the window rather than the lock.
+                    -- WHEN A RUN OF FAILURES ENDS. Two ways, and they are deliberately not one
+                    -- condition, which the completion gate established by probing rather than
+                    -- reading:
+                    --
+                    --   * A SERVED LOCK ends it, whatever the window says. The lock is the
+                    --     punishment; once it has been served the run is over. Making this depend
+                    --     on the window as well looks equivalent - in the SHIPPED policy the window
+                    --     and the lock are both 15 minutes, and window_started_at always precedes
+                    --     locked_until, so an expired lock implies an expired window - and it is
+                    --     coincidence, not equivalence: LockoutPolicy(3, 60min, 1min) is legal and
+                    --     expires the lock while the window is live.
+                    --   * AN ELAPSED WINDOW ends it, provided NO LOCK IS LIVE. Without the second
+                    --     half an attacker waits out the window instead of the lock.
+                    --
+                    -- The first version had one condition - "locked_until IS NULL AND the window
+                    -- elapsed" - and it never reset a row that had ever been locked. ONE failure
+                    -- after a lock expired incremented to threshold + 1 and re-locked, so an
+                    -- account locked once was locked FOR EVER at one failure per lock period. That
+                    -- is the permanent lockout this table's own comment says must not exist, and it
+                    -- is the attack the design claims to avoid.
                     failures = CASE
-                        WHEN identity.authentication_failure.locked_until IS NULL
-                             AND identity.authentication_failure.window_started_at < now() - ?::interval
+                        WHEN (
+                             -- A served lock ends the run, whatever the window says.
+                             (identity.authentication_failure.locked_until IS NOT NULL
+                              AND identity.authentication_failure.locked_until <= now())
+                             -- Otherwise an elapsed window ends it, provided no lock is live.
+                             OR (identity.authentication_failure.locked_until IS NULL
+                                 AND identity.authentication_failure.window_started_at
+                                     < now() - ?::interval)
+                         )
                         THEN 1
                         ELSE identity.authentication_failure.failures + 1
                     END,
                     window_started_at = CASE
-                        WHEN identity.authentication_failure.locked_until IS NULL
-                             AND identity.authentication_failure.window_started_at < now() - ?::interval
+                        WHEN (
+                             -- A served lock ends the run, whatever the window says.
+                             (identity.authentication_failure.locked_until IS NOT NULL
+                              AND identity.authentication_failure.locked_until <= now())
+                             -- Otherwise an elapsed window ends it, provided no lock is live.
+                             OR (identity.authentication_failure.locked_until IS NULL
+                                 AND identity.authentication_failure.window_started_at
+                                     < now() - ?::interval)
+                         )
                         THEN now()
                         ELSE identity.authentication_failure.window_started_at
                     END,
                     locked_until = CASE
-                        WHEN identity.authentication_failure.locked_until IS NULL
-                             AND identity.authentication_failure.window_started_at < now() - ?::interval
+                        WHEN (
+                             -- A served lock ends the run, whatever the window says.
+                             (identity.authentication_failure.locked_until IS NOT NULL
+                              AND identity.authentication_failure.locked_until <= now())
+                             -- Otherwise an elapsed window ends it, provided no lock is live.
+                             OR (identity.authentication_failure.locked_until IS NULL
+                                 AND identity.authentication_failure.window_started_at
+                                     < now() - ?::interval)
+                         )
                         THEN NULL
                         WHEN identity.authentication_failure.failures + 1 >= ?
                         THEN now() + ?::interval

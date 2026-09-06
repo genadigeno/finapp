@@ -1586,7 +1586,15 @@ repository exists to prevent.
   the security scope, and every lockout test failed with *"no actor has been established"*. That is
   `P0-TSK-032`'s refusal to default the actor doing its job — a default would have accepted the
   mistake silently and recorded the wrong party permanently (`INV-HIST-03`).
-- **Five mutations, all caught.**
+- **The completion gate found the lock was PERMANENT**, and the suite passed over it: after a lock
+  expired, one failure re-locked the account for another full period, for ever. The tests missed it
+  because the expired-lock test authenticated *successfully* afterwards, and a success deletes the
+  row. The first fix was still wrong - it worked only because the shipped policy makes window and
+  lock both 15 minutes, which is coincidence, not equivalence. The rule is now two independent
+  clauses: a **served lock** ends the run whatever the window says; an **elapsed window** ends it
+  provided no lock is live. Both proven load-bearing, with a test under a policy whose window and
+  lock differ.
+- **Seven mutations, all caught.**
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 **P1-TSK-012 — `P1-TST-002`: authentication failure modes**

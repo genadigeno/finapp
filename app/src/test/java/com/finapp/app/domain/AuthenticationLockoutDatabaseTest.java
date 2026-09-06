@@ -177,6 +177,81 @@ class AuthenticationLockoutDatabaseTest {
     }
 
     @Test
+    @DisplayName("after a lock expires, ONE failure does not re-lock: the count starts again")
+    void anExpiredLockResetsTheCount() throws SQLException {
+        // The gap this suite had, and the critical defect it hid. `anExpiredLockClearsItself`
+        // authenticates SUCCESSFULLY after the lock expires, and a success deletes the row - so it
+        // never exercised the path where the next attempt is another FAILURE.
+        //
+        // With the reset guarded on `locked_until IS NULL` alone, that path incremented to
+        // threshold + 1 and re-locked immediately. Since window_started_at always precedes
+        // locked_until, an expired lock implies an expired window, so the guard blocked the reset
+        // exactly when it was due: an account locked once was locked for ever, at one failure per
+        // lock period. Permanent lockout - which is the attack the whole design says it avoids.
+        LoginIdentifier login = givenAnIdentityWithACredential();
+        lockIt(login);
+        expireTheLock(login);
+
+        assertThat(authenticate(login, "wrong"))
+                .as("still the wrong password, so still refused")
+                .isEqualTo(AuthenticationService.Outcome.REFUSED);
+
+        assertThat(failures(login))
+                .as("the count starts again rather than continuing from the locked run")
+                .isEqualTo(1);
+        assertThat(lockedUntil(login))
+                .as("and one failure after an expired lock must not re-lock, or an attacker locks"
+                        + " somebody out for ever at one attempt per lock period")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("a served lock ends the run even when the window is still live")
+    void aServedLockEndsTheRunIndependentlyOfTheWindow() throws SQLException {
+        // The shipped policy has window == lockFor, so "the lock expired" and "the window elapsed"
+        // coincide and either condition alone appears to work. That coincidence is what let the
+        // first version look correct. This policy breaks it: a one-minute lock inside a
+        // sixty-minute window, which LockoutPolicy accepts and which a future tuning could ship.
+        LockoutPolicy shortLock =
+                new LockoutPolicy(3, Duration.ofMinutes(60), Duration.ofMinutes(1));
+        LoginIdentifier login = givenAnIdentityWithACredential();
+
+        for (int attempt = 0; attempt < shortLock.threshold(); attempt++) {
+            recordOneFailureUnder(shortLock, login);
+        }
+        assertThat(lockedUntil(login)).as("precondition: locked").isNotNull();
+
+        // The lock expires; the window has 59 minutes left.
+        expireTheLock(login);
+
+        recordOneFailureUnder(shortLock, login);
+
+        assertThat(failures(login))
+                .as("a served lock ends the run: making the reset depend on the window as well"
+                        + " would re-lock this account on one failure, for ever")
+                .isEqualTo(1);
+        assertThat(lockedUntil(login)).isNull();
+    }
+
+    @Test
+    @DisplayName("a live lock still accumulates, so waiting out the window is not a way around it")
+    void aLiveLockDoesNotReset() throws SQLException {
+        // The other half of the same condition, and it must not be lost to the fix above. While the
+        // lock is LIVE the window elapsing must not reset anything, or an attacker waits out the
+        // window instead of the lock.
+        LoginIdentifier login = givenAnIdentityWithACredential();
+        lockIt(login);
+        expireTheWindowButNotTheLock(login);
+
+        assertThat(authenticate(login, "wrong")).isEqualTo(AuthenticationService.Outcome.REFUSED);
+
+        assertThat(failures(login))
+                .as("still counting up, because the lock is live")
+                .isEqualTo(POLICY.threshold() + 1);
+        assertThat(lockedUntil(login)).as("and still locked").isNotNull();
+    }
+
+    @Test
     @DisplayName("an unknown login identifier is counted nowhere and creates no row")
     void anUnknownIdentifierIsNotCounted() throws SQLException {
         LoginIdentifier unknown = new LoginIdentifier(someLogin());
@@ -310,11 +385,45 @@ class AuthenticationLockoutDatabaseTest {
         }
     }
 
+    @SuppressWarnings("try")
+    private void recordOneFailureUnder(LockoutPolicy policy, LoginIdentifier login)
+            throws SQLException {
+        try (CorrelationContext.Scope ignored =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                com.finapp.platform.security.SecurityContext.Scope actor =
+                        com.finapp.platform.security.SecurityContext.enterSystem();
+                Connection own = transactional()) {
+            new AuthenticationThrottle(policy, IDS, CLOCK, new JdbcAuditWriter())
+                    .recordFailure(own, login);
+            own.commit();
+        }
+    }
+
     private void lockIt(LoginIdentifier login) throws SQLException {
         for (int attempt = 0; attempt < POLICY.threshold(); attempt++) {
             authenticate(login, "wrong");
         }
         assertThat(lockedUntil(login)).as("precondition: it really is locked").isNotNull();
+    }
+
+    /**
+     * Elapses the window while leaving the lock live.
+     *
+     * <p>Reachable only by moving {@code window_started_at} back, because the table's own
+     * {@code CHECK} requires the lock to follow the window — which is also why an expired lock
+     * always implies an expired window in production, and why the first reset condition was wrong.
+     */
+    private void expireTheWindowButNotTheLock(LoginIdentifier login) throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            execute(
+                    app,
+                    "UPDATE identity.authentication_failure"
+                        + " SET window_started_at = now() - interval '99 minutes'"
+                        + " WHERE identity_id = (SELECT id FROM identity.identity"
+                        + " WHERE login_identifier = ?)",
+                    login.value());
+        }
     }
 
     private void expireTheLock(LoginIdentifier login) throws SQLException {
