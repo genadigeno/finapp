@@ -1,5 +1,6 @@
 package com.finapp.app.authentication;
 
+import com.finapp.identity.AuthenticationThrottle;
 import com.finapp.identity.CredentialVerifier;
 import com.finapp.identity.IdentityAuthentication;
 import com.finapp.identity.IdentityId;
@@ -66,7 +67,21 @@ public final class AuthenticationService {
     /** {@code finapp.<module>.<noun>}, enforced against the live registry by the build. */
     static final String AUTHENTICATION_COUNTER = "finapp.identity.authentication";
 
+    /**
+     * Locks, counted separately from failures (`PHASE_1_PLAN.md` §10).
+     *
+     * <p>A separate meter rather than a third tag value on the counter above, because the two answer
+     * different questions: a failure rate is noisy and mostly benign, while <em>a spike in locks is
+     * a credential-stuffing campaign</em>. Folding it into an `outcome` tag would bury the second
+     * signal inside the first's noise.
+     *
+     * <p>No tag identifies which account (ADR-0018). A metric answers <em>how many</em>; <em>which
+     * one</em> is the audit trail's question, and it is answered there.
+     */
+    static final String LOCKOUT_COUNTER = "finapp.identity.lockout";
+
     private final CredentialVerifier verifier;
+    private final AuthenticationThrottle throttle;
     private final IdentityAuthentication authentications;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
@@ -74,11 +89,13 @@ public final class AuthenticationService {
 
     public AuthenticationService(
             CredentialVerifier verifier,
+            AuthenticationThrottle throttle,
             IdentityAuthentication authentications,
             TransactionTemplate transactions,
             DataSource dataSource,
             MeterRegistry meters) {
         this.verifier = Objects.requireNonNull(verifier, "verifier must not be null");
+        this.throttle = Objects.requireNonNull(throttle, "throttle must not be null");
         this.authentications =
                 Objects.requireNonNull(authentications, "authentications must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
@@ -117,6 +134,15 @@ public final class AuthenticationService {
     @SuppressWarnings("try") // The Scope is used for its close side effect.
     private Outcome attempt(
             Connection unitOfWork, LoginIdentifier login, Sensitive<String> secret) {
+        // VERIFICATION FIRST, UNCONDITIONALLY - the throttle is never consulted before it.
+        //
+        // The instinct is the opposite: check the lock, and refuse a locked account without paying
+        // for a derivation, which is the CPU relief lockout appears to be for. It is an
+        // account-existence oracle. Attempt often enough against any identifier: if it exists it
+        // locks, if it does not nothing happens - and afterwards the locked one answers in a
+        // millisecond while the unknown one still takes ~46 ms. `INV-IDN-07` lost to the control
+        // added beside it. So a lock costs exactly what every other failure costs, and the relief a
+        // fail-fast would buy belongs to a per-source rate limit, which is a different key.
         VerificationOutcome verified = verify(unitOfWork, login, secret);
 
         // The security scope is entered AFTER verification, because until then nobody knows who is
@@ -129,6 +155,15 @@ public final class AuthenticationService {
             try (SecurityContext.Scope ignored =
                     SecurityContext.enter(
                             new Actor(identityId.value().toString(), ActorType.CUSTOMER))) {
+
+                // A CORRECT PASSWORD IS STILL REFUSED WHILE LOCKED, and the counter is NOT cleared.
+                // A lock a correct guess clears is not a lock - it is a signal that the guess was
+                // right, which is the one thing an attacker is trying to learn.
+                if (throttle.isLocked(unitOfWork, identityId)) {
+                    authentications.failed(unitOfWork, login);
+                    return Outcome.REFUSED;
+                }
+                throttle.clear(unitOfWork, identityId);
                 authentications.succeeded(unitOfWork, identityId, login);
             }
             return Outcome.AUTHENTICATED;
@@ -136,7 +171,21 @@ public final class AuthenticationService {
 
         // No established actor, and possibly no identity: the platform is the only honest answer.
         // What carries the information is the audit record's target - the attempted identifier.
+        //
+        // The throttle writes an audit record of its own when a failure crosses the threshold, so it
+        // MUST run inside this scope. The first version had it outside and every lockout test failed
+        // with "no actor has been established" - the guard from P0-TSK-032 doing exactly its job,
+        // and a reminder that a default actor would have accepted the mistake silently and recorded
+        // the wrong party permanently (INV-HIST-03).
         try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
+            // Counted only where there is an identity to count against, and the throttle decides
+            // that in ONE statement rather than telling this service anything about existence.
+            // Keyed on the login identifier for the same reason VerificationOutcome carries no
+            // identity on failure: a caller handed one is a caller that can leak one.
+            AuthenticationThrottle.Lock lock = throttle.recordFailure(unitOfWork, login);
+            if (lock.lockedByThisFailure()) {
+                meters.counter(LOCKOUT_COUNTER).increment();
+            }
             authentications.failed(unitOfWork, login);
         }
         return Outcome.REFUSED;

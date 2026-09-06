@@ -226,6 +226,24 @@ what it *resolves to*, and that is enforced where the name lives, not here.
 Some columns hold what a caller or an operator put there, so their classification is not a property
 of the column. There are two kinds, and the second was missed on the first pass.
 
+
+### `identity.authentication_failure` — *added by `P1-TSK-011`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `authentication_failure` | `identity_id` | `INTERNAL` | As `credential.identity_id` — an identifier of a thing |
+| `authentication_failure` | `failures` | `CONFIDENTIAL` | **Not `INTERNAL`.** A count near the threshold says *this account is being attacked right now*, which is a targeting aid: an attacker who could read it would learn which accounts somebody else has already found worth attacking, and which are close to locking |
+| `authentication_failure` | `window_started_at` | `CONFIDENTIAL` | With `failures`, it dates an attack. As `credential.superseded_at`, which is `CONFIDENTIAL` because it dates a password change |
+| `authentication_failure` | `locked_until` | `CONFIDENTIAL` | Whether an identity can authenticate at this moment. As `identity.status` and `credential.status`, and for the same reason: it is a fact about a person's access |
+| `authentication_failure` | `updated_at` | `CONFIDENTIAL` | Dates the most recent failed attempt |
+
+**The whole table is classified at what it *implies*, not at what it stores.** Every column here is
+a number or a timestamp, and the naive reading is that a counter is operational metadata. What the
+row actually says is *somebody is trying to get into this account* — which is why the presence of a
+row is itself the disclosure, and why nothing here records the login identifier that was attempted.
+That fact lives on the audit record, where the trail is the regulatory artefact and the application
+role cannot edit it.
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

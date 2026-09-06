@@ -70,6 +70,8 @@ cannot affect correctness.
 | `InboxConsumer` / `JdbcInboxRecordStore` | none — all state in the row | Insert-then-handle in the caller's transaction; a bounded `lock_timeout`, then report `CONTENDED` and let the broker redeliver | Delegates to the row |
 | `platform.audit_record` | durable | Append-only by **privilege**, not by convention: the application role holds no `UPDATE` or `DELETE`, so no instance can edit the trail whatever its code does | **Yes** |
 | `AuditWriter` / `JdbcAuditWriter` | none | Writes on the caller's connection and opens nothing of its own; insert-only, so there is no lost update to have | Delegates to the row |
+| `identity.authentication_failure` | durable | **One row per identity, updated by one atomic statement** — `INSERT … ON CONFLICT DO UPDATE … RETURNING`, so the post-increment count is produced *by the write*. There is no read-then-write to lose, which is what `INV-CON-03` means by a limit that is not bypassable: with a read-then-count, ten concurrent attempts at the threshold all read nine and all proceed. Every window and expiry decision uses the **server's** `now()` (`V004`, ADR-0014) | **Yes** |
+| `AuthenticationThrottle` | none — all state in the row | Keys off the login identifier and resolves it in a subselect *inside the same statement*, so an absent account and a present one run the same query shape — the two-query alternative is a timing difference that discloses existence | Delegates to the row |
 
 ### `IdGenerator` — why a per-instance counter is acceptable
 

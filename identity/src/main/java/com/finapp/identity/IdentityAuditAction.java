@@ -91,6 +91,23 @@ public enum IdentityAuditAction implements AuditableAction {
             "An authentication attempt failed.",
             false),
 
+    /**
+     * An identity was locked after repeated failed authentications (`P1-TSK-011`).
+     *
+     * <p>No reason required, and no actor to ask for one: nobody <em>chose</em> this. It is the
+     * platform reacting to a pattern, which is precisely why it must be recorded - a lock is the
+     * first evidence that somebody is being attacked, and a spike across many identities is a
+     * credential-stuffing campaign in progress.
+     *
+     * <p>Written by the attempt that <strong>crosses</strong> the threshold, not by every attempt
+     * afterwards: repeating the record while an account stays locked buries the event that matters
+     * under copies of it.
+     */
+    AUTHENTICATION_LOCKED(
+            "identity.AuthenticationLocked",
+            "An identity was locked after repeated failed authentications.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

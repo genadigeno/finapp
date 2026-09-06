@@ -1,6 +1,7 @@
 package com.finapp.app.authentication;
 
 import com.finapp.identity.Argon2PasswordDeriver;
+import com.finapp.identity.AuthenticationThrottle;
 import com.finapp.identity.CredentialStore;
 import com.finapp.identity.CredentialVerifier;
 import com.finapp.identity.DerivationParameters;
@@ -8,6 +9,7 @@ import com.finapp.identity.IdentityAuthentication;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.JdbcCredentialStore;
 import com.finapp.identity.JdbcIdentityStore;
+import com.finapp.identity.LockoutPolicy;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -71,6 +73,19 @@ class AuthenticationBeans {
         return new CredentialVerifier(identityStore, credentialStore, passwordDeriver, ids, clock);
     }
 
+    /**
+     * The lockout counter.
+     *
+     * <p>{@link LockoutPolicy#current()} rather than configuration, for ADR-0032's reason applied
+     * one level up: a control whose strength is a deployment setting is a control nobody can reason
+     * about, and the first incident is where somebody discovers it had been turned down.
+     */
+    @Bean
+    AuthenticationThrottle authenticationThrottle(
+            IdGenerator ids, Clock clock, AuditWriter<Connection> auditWriter) {
+        return new AuthenticationThrottle(LockoutPolicy.current(), ids, clock, auditWriter);
+    }
+
     @Bean
     IdentityAuthentication identityAuthentication(
             IdGenerator ids,
@@ -107,12 +122,14 @@ class AuthenticationBeans {
     @Bean
     AuthenticationService authenticationService(
             CredentialVerifier credentialVerifier,
+            AuthenticationThrottle authenticationThrottle,
             IdentityAuthentication identityAuthentication,
             TransactionTemplate authenticationTransactions,
             DataSource dataSource,
             MeterRegistry meters) {
         return new AuthenticationService(
                 credentialVerifier,
+                authenticationThrottle,
                 identityAuthentication,
                 authenticationTransactions,
                 dataSource,

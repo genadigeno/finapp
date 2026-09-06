@@ -151,6 +151,11 @@ class AuthenticationCostsTheSameDatabaseTest {
         return new AuthenticationService(
                 new CredentialVerifier(
                         new JdbcIdentityStore(), new JdbcCredentialStore(), deriver, IDS, CLOCK),
+                new com.finapp.identity.AuthenticationThrottle(
+                        com.finapp.identity.LockoutPolicy.current(),
+                        IDS,
+                        CLOCK,
+                        new com.finapp.platform.audit.JdbcAuditWriter()),
                 new IdentityAuthentication(
                         IDS,
                         CLOCK,

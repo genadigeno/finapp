@@ -89,6 +89,7 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.IdentityCreated` | No | A login was created for a party. |
 | `identity.AuthenticationSucceeded` | No | An identity was authenticated. |
 | `identity.AuthenticationFailed` | No | An authentication attempt failed. |
+| `identity.AuthenticationLocked` | No | An identity was locked after repeated failed authentications. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
 
@@ -101,6 +102,13 @@ point rather than an accident (`P1-TSK-010`). A failure rate against identifiers
 is credential stuffing, and it is invisible if only real accounts are recorded. Its target is the
 attempted login identifier - the one place `PHASE_1_PLAN.md` §10 permits an attempted identifier to
 appear, because the audit trail is the regulatory artefact and is not client-visible.
+
+**`identity.AuthenticationLocked` requires no reason and has no human actor**, and that is the
+distinction §4 draws from the other side: nobody *chose* it. It is the platform reacting to a
+pattern, which is exactly why it must be recorded — a lock is the first evidence that somebody is
+being attacked, and a spike across many identities is a credential-stuffing campaign in progress
+(`P1-TSK-011`). It is written by the attempt that **crosses** the threshold, never by the attempts
+afterwards, because repeating it while an account stays locked buries the event under copies of it.
 
 **Neither authentication action records *why* a failure failed.** Unknown identity, wrong password,
 suspended identity and an identity with no credential are deliberately not distinguished anywhere -

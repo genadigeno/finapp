@@ -1545,17 +1545,48 @@ repository exists to prevent.
 - Accept: M1.2's stated acceptance is met end to end.
 - Risk: Medium. Cx: S. DoD: `DOD-API`
 
-**P1-TSK-011 — Brute-force and credential-stuffing controls**
+**P1-TSK-011 — Brute-force and credential-stuffing controls** — `COMPLETE` (2026-09-06)
 - Context: identity / security
 - Description: Failure counting, lockout and rate limiting on every credential endpoint.
 - Why: ADR-0032 makes verification deliberately expensive, so the login endpoint is the platform's
   most CPU-costly operation and a denial-of-service target. Not an extra — part of the same design.
 - Deps: P1-TSK-010
-- Implementation: **database-backed counters**, never process-local (ADR-0024, and transition risk
-  R7); lockout indistinguishable from an ordinary failure; per-identity and per-source limits.
-- Tests: concurrent attempts across simulated instances produce one correct count (`P0-TST-009`
-  convention); a locked account's response is unchanged; the counter survives an instance restart.
-- Accept: the limit is not bypassable by concurrency, proven under real contention.
+- **The task is two controls with two keys, and only one of them can be built honestly now.**
+  Lockout (per identity) stops *guessing* and **must not change cost or response**; a rate limit
+  (per source) stops *resource exhaustion* and may refuse cheaply, because it says nothing about any
+  account. Conflating them is what produces a locked account that answers in a millisecond while an
+  unknown one takes ~46 ms — `INV-IDN-07` defeated by the control added beside it.
+- **Per-source is NOT built, and the reason is that building it would be harmful.**
+  `SYSTEM_ARCHITECTURE.md` §Multi-Instance Execution commits to N replicas behind a load balancer,
+  so `getRemoteAddr()` is the balancer: every user shares one bucket, the threshold is reached in
+  seconds, and **authentication goes down for everyone**. `X-Forwarded-For` is caller-supplied, and
+  ADR-0034 settled that caller-supplied values are not trusted — there is no trusted-proxy
+  configuration anywhere in this repository. The missing input is a deployment topology, not effort.
+  Recorded as debt with that trigger.
+- Implementation: `identity.authentication_failure` (V004) — **one row per identity**, updated by one
+  atomic `INSERT … ON CONFLICT DO UPDATE … RETURNING`. `AuthenticationThrottle`, `LockoutPolicy`,
+  `IdentityAuditAction.AUTHENTICATION_LOCKED`, `finapp.identity.lockout`.
+- **A row per identity, not per attempt**, and that is `INV-CON-03`: counting rows in a window is a
+  read-then-count, so ten concurrent attempts at the threshold all read nine and all proceed. The
+  invariant is catalogued at Phase 13 and is **first enforced here**.
+- **Keyed on the login identifier, resolved by a subselect in the same statement.** The obvious
+  alternative — look the identity up, then record if found — runs one query when the account is
+  absent and two when present, which is a timing difference that discloses existence. It also keeps
+  `VerificationOutcome` opaque: having verification report which identity it tried would put back
+  the field `P1-TSK-008` removed.
+- **The lock is time-bounded and self-healing, with no operator unlock.** Lockout is itself an
+  attack — anyone who knows a login identifier can lock its owner out — and a lock needing an
+  operator converts that cheap attack into a support-desk denial of service.
+- Tests: threshold locks; a **correct** password is refused while locked and does not clear it; a
+  locked identity costs the same **counted** derivation as an unknown one; success clears; the lock
+  expires by the server's clock; an unknown identifier creates no row; **ten instances produce
+  exactly ten**; the counter survives a restart; the lock is audited exactly once.
+- Accept: **met** — the limit is not bypassable by concurrency, proven under real contention.
+- **One defect found by the platform's own guard**: `recordFailure` wrote its audit record outside
+  the security scope, and every lockout test failed with *"no actor has been established"*. That is
+  `P0-TSK-032`'s refusal to default the actor doing its job — a default would have accepted the
+  mistake silently and recorded the wrong party permanently (`INV-HIST-03`).
+- **Five mutations, all caught.**
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 **P1-TSK-012 — `P1-TST-002`: authentication failure modes**
