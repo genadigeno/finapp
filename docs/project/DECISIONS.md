@@ -249,6 +249,13 @@ moment the platform legitimately holds the plaintext — and a dummy verificatio
 for an absent identity, because skipping the work turns response time into an account oracle.
 &rarr; [ADR-0032](../adr/ADR-0032-credential-storage-and-rotation.md)
 
+**Implemented by `P1-TSK-007`**, and one part landed stronger than the ADR asked for: `INV-IDN-01`
+is enforced at **`DB-CONSTRAINT`**, not only at `DOMAIN` and `STATIC`. The derivation column refuses
+a value that is not in its algorithm's encoded form, so a plaintext cannot physically be stored by
+any writer - a migration, an operator, or code nobody has written yet. The measured cost is ~46 ms
+per derivation at the shipped parameters, recorded rather than asserted, because a *stated*
+verification time that nobody measured is not stated.
+
 ### Data access
 Authoritative writes and aggregate loads use **explicit SQL through `JdbcClient`**. No ORM, no
 persistence context, no generated repositories. The decisive argument is not taste: three of the

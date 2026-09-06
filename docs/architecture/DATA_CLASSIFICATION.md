@@ -175,6 +175,31 @@ a log aggregator, an event stream or a backup (ADR-0022).
 | `identity` | `created_at` | `CONFIDENTIAL` | As `party.registered_at` |
 | `identity` | `status_changed_at` | `CONFIDENTIAL` | As `customer.status_changed_at` |
 
+### `identity.credential` — *added by `P1-TSK-007`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `credential` | `id` | `INTERNAL` | Generated |
+| `credential` | `identity_id` | `INTERNAL` | As `identity.party_id` — an identifier of a thing, not a fact about it |
+| `credential` | `type` | `INTERNAL` | An enumeration with one member today. Which *kinds* of credential exist is a property of the platform, not of a person |
+| `credential` | `derivation` | `RESTRICTED-PII` | **The most sensitive column on the platform.** Not the plaintext, and it does not need to be: it is exactly what an attacker with a copy of the database attacks offline, and a break yields the password itself — which people reuse. `RESTRICTED-PII` rather than a level of its own because the scheme has five and inventing a sixth for one column would weaken the other four by comparison |
+| `credential` | `algorithm` | `CONFIDENTIAL` | **Not `INTERNAL`, and the reasoning is the same shape as `login_identifier`'s.** It is not personal data; what it carries is *how weakly this particular account is protected*, which is a targeting aid. Knowing the platform uses Argon2id is public; knowing that *this* credential does not is not |
+| `credential` | `memory_kib` | `CONFIDENTIAL` | As `algorithm`. The cost factors are the answer to "how long would this one take to crack" |
+| `credential` | `iterations` | `CONFIDENTIAL` | As `memory_kib` |
+| `credential` | `parallelism` | `CONFIDENTIAL` | As `memory_kib` |
+| `credential` | `status` | `CONFIDENTIAL` | Whether an identity currently has a usable credential. As `identity.status` |
+| `credential` | `created_at` | `CONFIDENTIAL` | When somebody last set a password — a behavioural fact, and one that indicates which accounts have stale credentials |
+| `credential` | `superseded_at` | `CONFIDENTIAL` | More disclosive than `created_at`: it dates a password change, which often dates a compromise |
+
+**The four parameter columns are the one judgement here worth challenging.** They are configuration
+values, and the argument for `INTERNAL` is that they say nothing about a person. They are
+`CONFIDENTIAL` because of what a *set* of them discloses: an attacker who could read them would know
+which accounts to attack first, and that is precisely the ranking an upgrade campaign exists to
+eliminate. The same query serves both purposes, which is why the level has to assume the hostile
+reader.
+
+**Nothing here is `RESTRICTED-FINANCIAL`.** Phase 1 holds no money — as for `party` and `identity`.
+
 **Where a login identifier legitimately appears outside this table** (`P1-TSK-006`):
 `audit_record.target_id`, which is classified `RESTRICTED-FINANCIAL` and so comfortably above
 `CONFIDENTIAL`. That is deliberate and is the only such place — `PHASE_1_PLAN.md` §10 makes the

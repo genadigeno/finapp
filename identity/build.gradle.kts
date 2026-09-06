@@ -66,6 +66,21 @@ dependencies {
     implementation(platform(libs.spring.boot.bom))
     testImplementation(platform(libs.spring.boot.bom))
 
+    // Argon2id (ADR-0032). A vetted library, because the ADR forbids a custom primitive, a
+    // hand-rolled comparison and a bespoke salting scheme - exactly what this provides.
+    // `implementation`: the encoder is an implementation detail behind PasswordDeriver, and nothing
+    // outside this module should compile against Spring Security because it depended on identity.
+    implementation(libs.spring.security.crypto)
+
+    // NOT optional, despite spring-security-crypto's POM, which declares only an optional assertj.
+    // The encoder needs BouncyCastle to derive and spring-core to verify; both gaps were found by
+    // running the real encoder, each as its own NoClassDefFoundError. `identity` therefore does take
+    // a Spring Framework runtime dependency - stated rather than described away, since the module
+    // boundary rules permit it and the honest description matters more than the tidy one.
+    implementation(libs.spring.core)
+    runtimeOnly(libs.bouncycastle.provider)
+    testRuntimeOnly(libs.bouncycastle.provider)
+
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)

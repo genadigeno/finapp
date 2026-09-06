@@ -61,6 +61,22 @@ asm = "9.7.1"
 # application that ships. Keeping it out of the runtime means the contract is a reviewed
 # build artefact rather than an unauthenticated /v3/api-docs endpoint that changes with
 # every deployment - and it is one fewer library in the shipped dependency set.
+# BouncyCastle, RUNTIME (P1-TSK-007).
+#
+# spring-security-crypto's Argon2PasswordEncoder delegates to BouncyCastle's Argon2BytesGenerator
+# and declares the dependency as optional, so it has to be named here or credential derivation
+# fails at run time with NoClassDefFoundError rather than at build time.
+#
+# Pinned here and not taken from the Spring Boot BOM because the BOM does not manage it - checked,
+# rather than assumed: spring-boot-dependencies 4.1.1 has a spring-security.version property and no
+# bouncycastle one. This is one of the few versions the BOM does not decide for us, so it needs the
+# same review on upgrade that any other catalog entry gets.
+#
+# bcprov-jdk18on is the JDK 1.8+ artefact line; 1.85.2 is the current release, confirmed against
+# Maven Central's own <release> marker rather than a search result (the P0-TSK-037 lesson, where
+# <latest> and <release> both pointed at a beta).
+bouncycastle = "1.85.2"
+
 springdoc = "3.1.0"
 
 # Tomcat, pinned ABOVE what the Spring Boot BOM manages.
@@ -212,6 +228,42 @@ asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 # Standalone (shaded) rather than the plain artefact - see the version note above.
 wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
 # The -api starter, not -ui: a Swagger UI is an extra surface nobody here needs.
+# Argon2id (P1-TSK-007, ADR-0032).
+#
+# ADR-0032 forbids a custom primitive, a hand-rolled comparison and a bespoke salting scheme, which
+# is precisely the set of things Argon2PasswordEncoder provides. It brings no filter chain and
+# enables no web security: nothing here is Spring Security the framework.
+#
+# WHAT IT ACTUALLY NEEDS AT RUN TIME IS NOT WHAT ITS POM SAYS, and that was established by running
+# it rather than by reading. The POM's only declared dependency is an OPTIONAL assertj. In fact the
+# encoder needs BouncyCastle to derive and spring-core to verify, and each gap surfaced as a
+# separate NoClassDefFoundError from a test using the real encoder - one at construction, one at
+# `matches`. A fake would have found neither, and the application would have failed on its first
+# real login.
+#
+# VERSION-MANAGED BY THE SPRING BOOT BOM (spring-security.version = 7.1.1), so no version.ref. That
+# is deliberate: this and any later Spring Security artefact must move together.
+spring-security-crypto = { module = "org.springframework.security:spring-security-crypto" }
+
+# Required at run time by spring-security-crypto, despite its POM (P1-TSK-007).
+#
+# `AbstractValidatingPasswordEncoder.matches` calls org.springframework.util.StringUtils, and the
+# encoder's constructor calls commons-logging - which spring-core depends on directly, Spring
+# Framework 7 having dropped the repackaged spring-jcl bridge (last released 6.2.19).
+#
+# So `identity` does take a Spring Framework runtime dependency, which is worth stating plainly
+# rather than describing the jar as standalone. It is permitted: MODULE_ARCHITECTURE.md section 6
+# keeps Spring out of `sharedkernel`, and `platform` already carries slf4j and micrometer. The
+# alternative was BouncyCastle's Argon2BytesGenerator directly, which would mean writing the salt
+# generation, the PHC encoding and the constant-time comparison by hand - the three things ADR-0032
+# names as the risk.
+#
+# Version-managed by the Spring Boot BOM.
+spring-core = { module = "org.springframework:spring-core" }
+
+# The Argon2 implementation the encoder delegates to. Runtime-only: no code compiles against it.
+bouncycastle-provider = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
+
 springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }
 
 # --- Database migration -------------------------------------------------------

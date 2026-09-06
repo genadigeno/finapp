@@ -108,6 +108,41 @@ is classified at its ceiling before it holds anything).
 
 ## Follow-up
 
+### Implemented by `P1-TSK-007` (2026-09-06)
+
+**Measured cost, because "a stated verification time" that nobody measured is not stated.** At the
+shipped parameters — **m = 19456 KiB, t = 2, p = 1**, OWASP's Argon2id baseline — one derivation
+takes **~46 ms** on the development machine, asserted continuously by a floor rather than a ceiling
+(a ceiling is a flaky test on a loaded machine; a derivation completing in under a millisecond is
+the failure actually worth catching). 46 ms is at the fast end of the usual interactive-login
+target. It is **not** raised here, deliberately: raising the work factor is a capacity decision that
+belongs beside the rate limiting this ADR already names as part of the same design (`P1-TSK-011`),
+and a per-derivation cost of 19 MiB means ten concurrent logins on one instance is ~190 MiB of
+transient allocation. Raising it is now a one-line edit to `DerivationParameters.current()`, pinned
+by a test so it cannot drift silently.
+
+**`INV-IDN-01` is enforced at `DB-CONSTRAINT`, not only at `DOMAIN` and `STATIC`.** The derivation
+column will not accept a value that is not in its algorithm's encoded form, so **a plaintext
+password cannot physically be stored** — not by a migration, an operator, or code nobody has written
+yet. That is stronger than this ADR asked for and is the right place for the platform's most
+consequential secret.
+
+**The library needs more than its POM declares, and that was found by running it.**
+`spring-security-crypto` 7.1.1 lists exactly one dependency: an *optional* assertj. In fact it needs
+**BouncyCastle** to derive and **spring-core** to verify, each surfacing as a separate
+`NoClassDefFoundError` from a test that used the real encoder — one at construction, one at
+`matches`. A test double would have found neither and the failure would have arrived at the first
+real login. It follows that `identity` does take a Spring Framework runtime dependency, which is
+recorded plainly rather than described away.
+
+**Deferred within this ADR, with the owning task named.** Upgrade-on-use is `P1-TSK-008`:
+`DerivationParameters.isWeakerThan` and `Credential.isWeakerThan` exist and are tested, and nothing
+calls them yet. The dummy verification for an absent identity, constant-time response shaping and
+session revocation on change all belong to the tasks that have an authentication path to attach them
+to.
+
+
+
 - WebAuthn/passkey credentials are a different credential *type* in the same aggregate, not a
   different table: they share the lifecycle and differ in what verification means. Phase 1,
   milestone M1.4.

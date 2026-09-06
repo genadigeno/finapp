@@ -1372,7 +1372,7 @@ repository exists to prevent.
 
 #### P1-FEAT-03 — Credentials
 
-**P1-TSK-007 — Credential storage**
+**P1-TSK-007 — Credential storage** — `COMPLETE` (2026-09-06)
 - Context: identity / security
 - Description: Argon2id derivation with algorithm and parameters stored per credential.
 - Why: ADR-0032. A global work factor cannot be raised without invalidating every credential.
@@ -1382,8 +1382,28 @@ repository exists to prevent.
   edit (`INV-HIST-01`'s reasoning).
 - Tests: no persisted or emitted representation contains the input (`INV-IDN-01`); parameters
   recorded (`INV-IDN-02`); a credential is superseded, never updated.
-- Accept: both invariants demonstrated to fail when broken.
+- Accept: both invariants demonstrated to fail when broken. **Both demonstrated**; seven mutations,
+  all caught.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
+- **`INV-IDN-01` landed at `DB-CONSTRAINT`, stronger than the item asked for.** The derivation
+  column refuses a value that is not in its algorithm's encoded form, so a plaintext cannot
+  physically be stored by a migration, an operator, or code nobody has written yet.
+- **Measured, not asserted:** ~46 ms per derivation at m=19456/t=2/p=1, recorded in ADR-0032's
+  follow-up. ADR-0032 asks for parameters chosen against a *stated* verification time, and a stated
+  time nobody measured is not stated.
+- **The library needs more at run time than its POM declares**, found by running the real encoder
+  rather than reading: `spring-security-crypto` lists one optional assertj and in fact needs
+  BouncyCastle to derive and spring-core to verify. `identity` therefore takes a Spring Framework
+  runtime dependency, recorded plainly rather than described away.
+- **Completion gate found and fixed one defect**, and it is the one that mattered:
+  `Credential.derived` took the algorithm, parameters and derivation as three independent arguments,
+  so a caller could record parameters that were not the ones used - `INV-IDN-02` satisfied in form
+  and defeated in substance, since an upgrade campaign would skip a weak credential while believing
+  it had been assessed. Closed by construction: `Credential.forPassword` takes the deriver, so the
+  three facts come from one place. Eight mutations, all caught.
+- **Not in scope, with the owning task named:** verification and upgrade-on-use (`P1-TSK-008`);
+  the endpoint and registration integration (`P1-TSK-026`); session revocation on change (M1.3).
+  `isWeakerThan` exists and is tested; nothing calls it yet.
 
 **P1-TSK-008 — Verification and upgrade-on-use**
 - Context: identity / security

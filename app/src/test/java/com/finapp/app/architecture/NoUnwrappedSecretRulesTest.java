@@ -234,13 +234,40 @@ class NoUnwrappedSecretRulesTest {
                 .hasMessageContaining(violation.getSimpleName());
     }
 
+    /**
+     * Whether {@code field} is an enum constant.
+     *
+     * <p><strong>A structural exclusion, not an exemption.</strong> An enum constant is a value of
+     * its own enum type and can never hold a secret - {@code CredentialType.PASSWORD} is the name
+     * of a <em>kind of credential</em>, not a password. The rule fired on it (`P1-TSK-007`), and
+     * the alternative was to rename correct domain vocabulary to satisfy a check, which is the tail
+     * wagging the dog: {@code PASSWORD} is exactly what that constant should be called, and every
+     * future {@code TokenType.BEARER} or {@code FactorType.OTP} would hit the same thing.
+     *
+     * <p>ADR-0019 chose this rule's vocabulary on the principle that <em>a rule with false positives
+     * is a rule somebody turns off</em>, and left {@code key} out of it for exactly that reason.
+     * This is the same judgement applied to a shape rather than to a word.
+     *
+     * <p>The precedent is {@code P0-TSK-041}, which excluded the compiler-generated {@code $VALUES}
+     * array from the static-mutable-state rule: also an enum artefact, also excluded because it is
+     * structurally incapable of being the thing the rule is looking for. <strong>It narrows nothing
+     * else</strong> - a field of any other kind, in an enum or anywhere else, is still checked, and
+     * the fixture tests below still fail the rule as they did.
+     */
+    private static boolean isAnEnumConstant(JavaField field) {
+        return field.getOwner().isEnum()
+                && field.getModifiers().contains(com.tngtech.archunit.core.domain.JavaModifier.STATIC)
+                && field.getRawType().equals(field.getOwner());
+    }
+
     private static ArchCondition<JavaClass> notDeclareAnUnwrappedSecretField() {
         return new ArchCondition<>(
                 "not declare a field or accessor whose name says it holds a secret without wrapping it") {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
                 for (JavaField field : javaClass.getFields()) {
-                    if (!namesASecret(field.getName()) || isWrapped(field.getRawType())) {
+                    if (isAnEnumConstant(field) || !namesASecret(field.getName())
+                            || isWrapped(field.getRawType())) {
                         continue;
                     }
                     events.add(

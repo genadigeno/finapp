@@ -635,9 +635,14 @@ security. Catalogued now, before any credential-handling code is written against
 original secret can be recovered. Verification compares derivations, never values.
 **Why:** A credential store that can be reversed turns one breach into an account takeover at
 every other platform the customer reused that password on.
-**Enforce:** `DOMAIN` (no reversible field) + `STATIC` (`secretsAreWrapped`) + `DB-CONSTRAINT`
-(the column stores a derivation, and its classification forbids anything else).
-**Verify:** Test asserting no persisted or emitted representation contains the input; schema review.
+**Enforce:** `DOMAIN` (no reversible field) + `STATIC` (`secretsAreWrapped`) + `DB-CONSTRAINT` —
+and the constraint is stronger than "classification forbids it": `credential_derivation_is_encoded`
+requires the value to be in its algorithm's encoded form, so **a plaintext cannot physically be
+stored in the column** by any writer, including one that never passes through the domain
+(`P1-TSK-007`).
+**Verify:** `CredentialNeverLeaksDatabaseTest` asserts the input appears in **no column** of the
+stored row — the column list derived from `information_schema`, so a column added later is
+inspected without anyone remembering. Demonstrated to fail when the constraint is dropped.
 **Phase:** 1
 
 ### INV-IDN-02 — Credential derivation parameters are recorded per credential
@@ -645,9 +650,11 @@ every other platform the customer reused that password on.
 **Why:** Parameters must increase as hardware improves, and a store with one global setting cannot
 be migrated without either invalidating every credential or knowing what each one used. This is
 `INV-HIST-04`'s rule applied to the thing that authenticates a person.
-**Enforce:** `DB-CONSTRAINT` (`NOT NULL` algorithm and parameters).
-**Verify:** Test that a credential written under old parameters still verifies and is upgraded on
-next successful use.
+**Enforce:** `DB-CONSTRAINT` (`NOT NULL` algorithm and the three cost factors, each `> 0`).
+**Verify:** Schema tests asserting each is refused when null (`P1-TSK-007`), and that the values in
+the queryable columns are the ones inside the encoded derivation — the two are stored separately on
+purpose (ADR-0032 Option D) and duplication nothing reconciles is drift waiting to happen. The
+upgrade-on-use half is `P1-TSK-008`; `isWeakerThan` exists and is tested, and nothing calls it yet.
 **Phase:** 1
 
 ### INV-IDN-03 — Session revocation is immediate
