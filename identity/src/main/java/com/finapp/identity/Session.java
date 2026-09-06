@@ -150,19 +150,6 @@ public final class Session {
                 && at.isBefore(absoluteExpiresAt);
     }
 
-    /**
-     * The idle bound this session would have after being used at {@code at}.
-     *
-     * <p><strong>Never beyond the absolute bound.</strong> Extending past it would make the absolute
-     * lifetime advisory, and an attacker holding a stolen identifier and using it steadily would
-     * keep the session alive for ever — which is the exact failure the second bound exists to
-     * prevent.
-     */
-    public Instant idleBoundAfterUseAt(Instant at, SessionPolicy policy) {
-        Instant extended = at.plus(policy.idleTimeout());
-        return extended.isAfter(absoluteExpiresAt) ? absoluteExpiresAt : extended;
-    }
-
     public SessionId id() {
         return id;
     }

@@ -1672,7 +1672,17 @@ repository exists to prevent.
 - **`secretsAreWrapped` fired on `Session.tokenHash` and the rule had the better argument**: a token
   hash in a log is a precise identifier of one customer's live session. Wrapped — the third time in
   this phase the right answer was to change the code rather than the rule.
-- **Five mutations, all caught.**
+- **The completion gate found a migration comment claiming a test that covers a different enum.**
+  `V005` named `IdentityEnumMigrationTest` for `AssuranceLevel` and `SessionStatus`; it covers
+  `IdentityStatus` alone, and nothing reconciled either new enum with its constraint —
+  `P1-TSK-007` had established the pattern and this task did not follow it. `SessionMigrationTest`
+  closes it.
+- **Two aggregate methods were dead code with confident javadoc.** `idleBoundAfterUseAt` deleted;
+  `isLiveAt` kept and made load-bearing, because it is the definition of liveness and the SQL is an
+  implementation of it.
+- **`AssuranceLevel` had no test**, which for `INV-IDN-05`'s named enforcement mechanism is the
+  wrong number. Now swept over every pair, with the declaration order pinned.
+- **Eight mutations, all caught.**
 - Risk: **High**. Cx: M. DoD: `DOD-KERNEL`
 
 **P1-TSK-014 — Revocation, immediate and multi-instance**

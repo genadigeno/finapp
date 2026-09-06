@@ -59,11 +59,15 @@ CREATE TABLE identity.session (
     -- treats expiry, and a nullable column costs nothing.
     revoked_at           timestamptz,
 
-    -- Generated from AssuranceLevel; IdentityEnumMigrationTest fails the build if they drift.
+    -- Generated from AssuranceLevel; SessionMigrationTest fails the build if they drift.
+    -- (The first version of this comment named IdentityEnumMigrationTest, which covers
+    -- IdentityStatus and nothing else - a claim about a test that did not cover the thing
+    -- it named, found by the completion gate.)
     CONSTRAINT session_assurance_is_known
         CHECK (assurance IN ('PASSWORD', 'MULTI_FACTOR', 'STRONG')),
 
-    -- Generated from SessionStatus. There is deliberately no EXPIRED: expiry is DERIVED from the
+    -- Generated from SessionStatus, reconciled by SessionMigrationTest. There is
+    -- deliberately no EXPIRED: expiry is DERIVED from the
     -- bounds above, because a stored one needs a sweep to write it and until that sweep runs the
     -- database would say ACTIVE about a session that is not.
     CONSTRAINT session_status_is_known
