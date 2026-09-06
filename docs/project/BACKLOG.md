@@ -1405,7 +1405,7 @@ repository exists to prevent.
   the endpoint and registration integration (`P1-TSK-026`); session revocation on change (M1.3).
   `isWeakerThan` exists and is tested; nothing calls it yet.
 
-**P1-TSK-008 — Verification and upgrade-on-use**
+**P1-TSK-008 — Verification and upgrade-on-use** — `COMPLETE` (2026-09-06)
 - Context: identity / security
 - Description: Constant-time verification; re-derive under current parameters on success.
 - Why: The only moment the platform legitimately holds the plaintext, and the only moment an
@@ -1415,8 +1415,28 @@ repository exists to prevent.
   identity; upgrade inside the verification transaction.
 - Tests: a credential under weak parameters verifies and is upgraded; timing for an absent identity
   is equivalent to a wrong credential (`INV-IDN-07`).
-- Accept: the store converges without a forced reset, proven by a test.
+- Accept: the store converges without a forced reset, proven by a test. **Proven**: a weak
+  credential verifies, is re-derived at policy, and the same password works afterwards.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
+- **Timing is asserted by counting work, not by reading a clock.** A counting deriver proves all
+  four failing paths - absent identity, suspended identity, no credential, wrong password - perform
+  exactly one full verification. A wall-clock assertion would be flaky and would measure the machine.
+- **Two defects found while building it.** An auto-commit connection made `setSavepoint` throw and
+  the upgrade's catch-all swallowed it, so every login would have verified correctly and upgraded
+  nothing, permanently, with nothing failing; the verifier now refuses such a connection outright.
+  And a surviving mutation showed the concurrency test asserted the *outcome* rather than the
+  *coordination* - ignoring the conditional supersede's answer still produced one upgrade, via the
+  unique index and the catch-all. Now counted.
+- **The completion gate found a third defect, wider than this task.** PostgreSQL puts the entire
+  refused row in a `CHECK` violation's `DETAIL`, and our storage exceptions carried the driver
+  exception as a cause - so the constraint that stops a plaintext being *stored* caused it to be
+  *logged* when it fired, and the same route carried a person's name out of `party.party` and a
+  login identifier out of `identity.identity`. Closed across all three tables by
+  `DatabaseFailure.describe`, and by removing the cause-taking constructor so the unsafe path does
+  not compile. Seven mutations, all caught.
+- **Not in scope, with the owning task named:** the endpoint and its response shaping
+  (`P1-TSK-010`), lockout (`P1-TSK-011`), session issuance (`P1-TSK-013`), audit and events
+  (`P1-TSK-010`).
 
 **P1-TSK-009 — `P1-TST-001`: credentials never leak**
 - Context: identity / test

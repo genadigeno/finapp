@@ -135,11 +135,33 @@ consequential secret.
 real login. It follows that `identity` does take a Spring Framework runtime dependency, which is
 recorded plainly rather than described away.
 
-**Deferred within this ADR, with the owning task named.** Upgrade-on-use is `P1-TSK-008`:
-`DerivationParameters.isWeakerThan` and `Credential.isWeakerThan` exist and are tested, and nothing
-calls them yet. The dummy verification for an absent identity, constant-time response shaping and
-session revocation on change all belong to the tasks that have an authentication path to attach them
-to.
+### Verification and upgrade-on-use, by `P1-TSK-008` (2026-09-06)
+
+**The store converges with no forced reset**, proven rather than argued: a credential written under
+weaker parameters verifies, is re-derived at current policy inside the same transaction, and the
+same password works afterwards. The customer notices nothing.
+
+**Every failing path performs a full verification.** Four ways to fail - no identity, an identity
+that cannot authenticate, an identity with no credential, and a wrong password - and all four run
+Argon2id against a throwaway derivation computed once at construction. The middle two are the ones an
+implementation skips, and a suspended account answering instantly tells an attacker both that it
+exists and that it is suspended. **Asserted by counting derivations rather than by reading a clock**:
+a wall-clock test is flaky and measures the machine, while a counting deriver measures the property.
+
+**One residual, stated.** The dummy runs at *current* parameters and a real credential may be at
+weaker ones, so verifying a stale credential is genuinely cheaper than failing. What bounds it is
+this ADR's own upgrade-on-use: the store converges and the gap closes itself.
+
+**An upgrade failure never fails a correct authentication.** The customer typed the right thing, so
+the upgrade sits behind a savepoint and any failure of it is discarded. Refusing a valid login
+because a background optimisation collided would be a self-inflicted outage.
+
+**Deferred, with the owning task named.** Constant-time *response shaping* and the timing of the
+endpoint as a whole are `P1-TSK-010`; lockout is `P1-TSK-011`; session revocation on credential
+change is M1.3.
+
+**Deferred within this ADR, with the owning task named.** The dummy verification for an absent
+identity is now built (`P1-TSK-008`). What remains is the endpoint that calls it.
 
 
 

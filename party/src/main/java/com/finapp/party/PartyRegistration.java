@@ -8,6 +8,7 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.platform.persistence.DatabaseFailure;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.event.EventEnvelope;
@@ -189,7 +190,8 @@ public final class PartyRegistration {
             insert.executeUpdate();
         } catch (SQLException e) {
             // The message names no column value: this row holds a person's name (INV-AUD-02).
-            throw new PartyStorageException("Could not insert party " + party.id(), e);
+            throw new PartyStorageException(
+                    DatabaseFailure.describe("Could not insert party " + party.id(), e));
         }
     }
 
@@ -205,7 +207,8 @@ public final class PartyRegistration {
             insert.setTimestamp(5, Timestamp.from(customer.statusChangedAt()));
             insert.executeUpdate();
         } catch (SQLException e) {
-            throw new PartyStorageException("Could not insert customer " + customer.id(), e);
+            throw new PartyStorageException(
+                    DatabaseFailure.describe("Could not insert customer " + customer.id(), e));
         }
     }
 

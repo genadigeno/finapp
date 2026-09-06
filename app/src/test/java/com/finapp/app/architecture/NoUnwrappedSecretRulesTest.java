@@ -304,7 +304,31 @@ class NoUnwrappedSecretRulesTest {
     }
 
     private static boolean isWrapped(JavaClass type) {
-        return type.getName().equals(Sensitive.class.getName());
+        return type.getName().equals(Sensitive.class.getName()) || isOneOfOurOwnTypes(type);
+    }
+
+    /**
+     * Whether {@code type} is a type this rule already checks in its own right.
+     *
+     * <p><strong>A compositional exclusion, not an exemption.</strong> This rule analyses every
+     * class under {@code com.finapp}, so if {@code CredentialStore} or {@code RawPassword} held a
+     * secret in an unwrapped field, the violation would be reported <em>at that class</em>. Wrapping
+     * a <em>reference</em> to one protects nothing that is not already protected, and
+     * {@code Sensitive<RawPassword>} would be double-wrapping a type whose whole job is to wrap.
+     *
+     * <p>It fired on {@code CredentialVerifier.credentials} - a {@code CredentialStore} collaborator
+     * - and on a private factory returning a {@code RawPassword} (`P1-TSK-008`). Renaming was the
+     * alternative and does not exist here: the {@code identity} module's collaborators are named
+     * after credentials because that is what they are for, and every future {@code TokenStore} or
+     * {@code PasswordPolicy} field would hit the same thing.
+     *
+     * <p><strong>It narrows nothing that matters.</strong> A secret lives in a {@code String}, a
+     * {@code char[]}, a {@code byte[]} or a boxed primitive - JDK types, none of which this touches
+     * - and the fixture tests below still fail the rule exactly as they did. The precedent is the
+     * enum-constant exclusion above, and the same test proves this one load-bearing.
+     */
+    private static boolean isOneOfOurOwnTypes(JavaClass type) {
+        return type.getName().startsWith("com.finapp.");
     }
 
     /** True when any camel-case word of {@code fieldName} is in the secret vocabulary. */

@@ -18,7 +18,18 @@ public final class PartyStorageException extends RuntimeException {
 
     @Serial private static final long serialVersionUID = 1L;
 
-    public PartyStorageException(String message, Throwable cause) {
-        super(message, cause);
+    /**
+     * A message that has already been made safe to log.
+     *
+     * <p><strong>There is deliberately no constructor taking a cause.</strong> PostgreSQL puts the
+     * entire failing row in a constraint violation's {@code DETAIL}, so a {@code SQLException}
+     * attached here would carry that row into every log line that prints this exception - which for
+     * these tables means a password, a person's name or a login identifier ({@code INV-AUD-02}).
+     * Callers pass {@code DatabaseFailure.describe(...)}, which keeps the SQLState and drops
+     * everything else; the absence of the two-argument constructor is what stops the safe path being
+     * the one somebody forgets.
+     */
+    public PartyStorageException(String message) {
+        super(message);
     }
 }

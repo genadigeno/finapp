@@ -18,9 +18,9 @@ Status: **`IN_PROGRESS`** — entry gate passed, all twelve criteria. Started 20
 
 ## Current Milestone
 
-**M1.2 — That person can authenticate.** `P1-TSK-007` … `P1-TSK-012`; **1 of 6 complete.**
-Objective: password authentication that is enumeration-safe and cannot be brute-forced. The
-credential store exists; nothing verifies against it yet.
+**M1.2 — That person can authenticate.** `P1-TSK-007` … `P1-TSK-012`; **2 of 6 complete.**
+Objective: password authentication that is enumeration-safe and cannot be brute-forced. Credentials
+are stored and verified, and a weak one is upgraded on use; nothing calls it over HTTP yet.
 
 **M1.1 — A person exists and is registered.** `P1-TSK-001` … `P1-TSK-006`; **6 of 6 complete**
 (2026-09-06). Objective: one transaction creates a Party, a Customer and an Identity, and the three
@@ -127,11 +127,119 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-007` completed 2026-09-06, opening milestone **M1.2**.
-**Next: `P1-TSK-008`** — verification and upgrade-on-use, which is what makes the parameters this
-task recorded per credential actually do something.
+**None in progress.** `P1-TSK-008` completed 2026-09-06. **M1.2 is 2 of 6.**
+**Next: `P1-TSK-009`** — `P1-TST-001`, the credential-never-leaks suite, which extends
+`P1-TSK-007`'s storage assertions to logs, events, responses, spans and metrics.
 
 ### Just completed
+
+**`P1-TSK-008` — Verification and upgrade-on-use** — `COMPLETE` (2026-09-06). The platform can
+decide whether somebody knows the secret, and strengthens the credential while it is legitimately in
+hand.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A credential under weak parameters verifies and is upgraded | `aWeakCredentialIsUpgraded`: old superseded, new at policy, same password still works |
+| Timing for an absent identity is equivalent to a wrong credential (`INV-IDN-07`) | `everyFailingPathDoesTheWork`, counting derivations rather than reading a clock |
+| The store converges without a forced reset | The same test; nothing is asked of the customer |
+
+**Every failing path performs a full Argon2id verification** — four of them: no identity, an
+identity that cannot authenticate, an identity with no credential, and a wrong password. The middle
+two are the ones an implementation skips, and they are the ones that matter: **a suspended account
+answering instantly tells an attacker both that it exists and that it is suspended.** That is
+`INV-IDN-07` lost through the timing channel rather than the response body, which is the harder half
+to notice and the harder half to test.
+
+**Asserted by counting work, not by reading a clock.** A wall-clock timing test is flaky and
+measures the machine; a counting deriver is deterministic and measures the property actually at
+stake — *did the expensive path run at all?* Each failing path is asserted to perform exactly one
+verification.
+
+**`VerificationOutcome` carries no reason, and that is structural.** A failure has no reason code, no
+status, no `Optional` that is empty in one case and populated in another — and every failure is
+literally the *same object*, so not even reference identity distinguishes them. A caller branches on
+whatever it is handed; a `reason` field is an enumeration oracle with a delay fuse, harmless the day
+it is added and a second response shape the day somebody maps it to a message. A test derives the
+type's members reflectively, so adding one fails the build.
+
+**An upgrade failure never fails a correct authentication.** The customer typed the right thing;
+refusing them because a background optimisation collided would be a self-inflicted outage. The
+upgrade sits behind a savepoint and every failure of it is discarded — proven by injecting one and
+asserting both that the login succeeds *and* that the credential is left intact rather than
+superseded with no replacement, which would lock the person out permanently.
+
+**This is the platform's first genuine read-then-write**, so `P1-TSK-007`'s claim that there is "no
+read-then-write anywhere" does not extend here and is not relied on. What makes it safe is that the
+write is **conditional**: `supersede` moves the row only while it is still `ACTIVE`, and its row
+count is the outcome.
+
+### Two defects found while building it
+
+**An auto-commit connection made the upgrade silently not happen.** `setSavepoint` throws on such a
+connection, and the upgrade's catch-all discarded it as an ordinary collision — so every login would
+have verified correctly and upgraded **nothing, permanently**, with a warning nobody reads and no
+test failing. A control reporting success for work it did not do, which is the shape this repository
+keeps meeting. Closed by refusing an auto-commit connection **up front**, with a message about the
+mistake rather than about the mechanism — the `JdbcInboxRecordStore` precedent.
+
+**A surviving mutation showed the concurrency test asserted the outcome rather than the
+coordination.** Ignoring the conditional supersede's answer *still* produced exactly one upgrade —
+because the nine losers then collided with the partial unique index and the catch-all swallowed it.
+Same result, worse mechanism, and the javadoc's claim that *"the index is never even reached"* would
+have been false with nothing failing. The test now counts **inserts attempted**: one, not ten.
+
+**A third security-rule false positive, answered by narrowing the rule compositionally.**
+`secretsAreWrapped` fired on a `CredentialStore` collaborator field and on a private factory
+returning a `RawPassword`. Renaming was not available — the `identity` module's collaborators are
+named after credentials because that is what they are for. The narrowing is principled rather than
+convenient: **a field whose type is one of our own types is already checked at its own declaration**,
+so wrapping the reference protects nothing, and `Sensitive<RawPassword>` would double-wrap a type
+whose whole job is to wrap. It touches no JDK type, which is where a secret actually lives, and it is
+**proven load-bearing** — removed, the rule fires three times again.
+
+### The completion gate found a leak in the mechanism protecting the secret
+
+**PostgreSQL puts the entire refused row in a `CHECK` violation's `DETAIL`**, and the driver puts
+that in `SQLException.getMessage()`. Probed rather than reasoned about:
+
+```
+ERROR:  new row for relation "credential" violates check constraint
+        "credential_derivation_is_encoded"
+DETAIL:  Failing row contains (…, ARGON2ID, 1024, 1, 1, hunter2-my-actual-secret-password, …)
+```
+
+Our storage exceptions carried that `SQLException` as a cause, so **the constraint that exists to
+stop a plaintext being stored caused the plaintext to be logged when it fired** — `INV-AUD-02`
+defeated by the mechanism protecting `INV-IDN-01`.
+
+**It was never confined to credentials.** The same `DETAIL` carries a person's name out of
+`party.party` (`display_name`, `RESTRICTED-PII`, and `V003`'s control-character `CHECK` fires on
+exactly the input a caller controls) and a login identifier out of `identity.identity`
+(`CONFIDENTIAL`, because it carries existence). Three tables, one defect, introduced progressively
+across `P1-TSK-005`, `-006` and `-007` — each new `CHECK` constraint made it reachable in one more
+place.
+
+**Closed by making the safe path the only path.** `DatabaseFailure.describe` keeps the operation,
+the identifier and the **SQLState** — five characters saying which class of failure — and drops the
+`SQLException` entirely. The three storage exceptions **no longer have a constructor taking a
+cause**, so attaching one is a compile error rather than a decision somebody makes at 5pm. The cost
+is real and accepted: an operator loses the driver's own frames on these tables, which is a smaller
+loss than a log aggregator holding passwords with months of retention.
+
+**The guard that survives is the reflective one.** An earlier version drove the `party` path and
+could pass vacuously — it guarded on whether anything was thrown at all, which is the "green while
+checking nothing" shape this repository has now met six times. The constructor check cannot: it
+fails the moment the unsafe path exists again, proven by mutation.
+
+**And the correlation-sink guard fired for the eighth time**, on the new `platform.persistence`
+package, forcing a decision about whether correlation reaches it before the package could land. It
+does not — the concern shapes what a log line *says* and carries no identifier of its own.
+
+**Seven mutations, all caught** — after one survived and improved a test.
+
+718 hermetic tests, 249 database tests.
+
+### Previously
 
 **`P1-TSK-007` — Credential storage** — `COMPLETE` (2026-09-06). The platform can hold a secret it
 cannot recover, and can say per credential how strongly it was protected.
@@ -1097,6 +1205,21 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Verification and upgrade-on-use (2026-09-06), `P1-TSK-008`:
+- A weak credential verifies and is **re-derived at current policy in the same transaction** - the
+  only moment the platform legitimately holds the plaintext, and the only moment an upgrade is
+  possible without involving the customer
+- **Four failing paths, all of which do the full work**: no identity, an identity that cannot
+  authenticate, an identity with no credential, a wrong password. Counting derivations rather than
+  reading a clock is what makes "equivalent cost" a fact instead of a hope
+- `VerificationOutcome` gives a caller **nothing to branch on** when it fails - no reason, no status,
+  and every failure the same object - so `INV-IDN-07` cannot be lost by a future author mapping a
+  reason to a message
+- An upgrade failure is discarded behind a savepoint: a correct password is a successful login
+  whatever the upgrade did
+- The platform's **first genuine read-then-write**, made safe by a conditional `UPDATE ... WHERE`
+  whose row count is the outcome; ten instances produce one upgrade and **one insert attempted**
+
 Credential storage (2026-09-06), `P1-TSK-007`:
 - `identity.credential`: an Argon2id derivation **plus the algorithm and cost factors that produced
   it**, per credential (`INV-IDN-02`) - because a global work factor cannot be raised
@@ -1888,24 +2011,19 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-008` — Verification and upgrade-on-use.**
+**`P1-TSK-009` — `P1-TST-001`: credentials never leak.**
 
-What makes the parameters `P1-TSK-007` recorded per credential actually do something: a credential
-verifying under parameters weaker than current policy is re-derived inside the same transaction —
-the only moment the platform legitimately holds the plaintext, and the only moment an upgrade is
-possible without involving the customer (ADR-0032). `DerivationParameters.isWeakerThan` and
-`Credential.isWeakerThan` exist and are tested, and nothing calls them.
+A credential must appear in no log, event, response, span or metric. `P1-TSK-007` proved the
+*storage* half - no column of the row contains the input - and this extends it to emitted output on
+every appender, with a negative control each time. `P0-TST-008` found the rule protecting this was
+structurally incapable of failing; this is its first real subject.
 
-It also carries the timing half of `INV-IDN-07`: an absent identity must perform a dummy
-verification of equivalent cost, because skipping ~46 ms of work turns response time into an
-account oracle.
-
----
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-06 | **`P1-TSK-008` complete - M1.2 is 2 of 6.** Verification, and the upgrade that makes `P1-TSK-007`'s per-credential parameters do something. **The store converges with no forced reset**, proven rather than argued: a credential written under weaker parameters verifies, is re-derived at current policy inside the same transaction, and the same password works afterwards - the customer notices nothing. **Every failing path performs a full Argon2id verification**, and there are four: no identity, an identity that cannot authenticate, an identity with no credential, and a wrong password. The middle two are the ones an implementation skips and the ones that matter - **a suspended account answering instantly tells an attacker both that it exists and that it is suspended**, which is `INV-IDN-07` lost through the timing channel rather than the response body, the harder half to notice and the harder half to test. **Asserted by counting work, not by reading a clock**: a wall-clock timing test is flaky and measures the machine, while a counting deriver is deterministic and measures the property actually at stake - did the expensive path run at all? **One residual is stated rather than glossed**: the dummy derivation runs at *current* parameters while a real credential may be at weaker ones, so verifying a stale credential is genuinely cheaper than failing against the dummy - and what bounds it is precisely the upgrade, because the store converges and the gap closes itself. **`VerificationOutcome` carries no reason, and that is structural rather than stylistic**: a failure has no reason code, no status and no `Optional` that is empty in one case and populated in another, and every failure is literally the **same object**, so not even reference identity distinguishes them. A caller branches on whatever it is handed, so a `reason` field is an enumeration oracle with a delay fuse - harmless the day it is added, a second response shape the day somebody maps it to a message. A test derives the type's members reflectively, so adding one fails the build. **An upgrade failure never fails a correct authentication**: the customer typed the right thing, and refusing them because a background optimisation collided would be a self-inflicted outage - so the upgrade sits behind a savepoint and every failure of it is discarded, proven by injecting one and asserting both that the login succeeds *and* that the credential is left intact rather than superseded with no replacement, which would lock the person out permanently. **This is the platform's first genuine read-then-write**, so `P1-TSK-007`'s claim that there is "no read-then-write anywhere" does not extend here and is deliberately not relied on; what makes it safe is that the write is **conditional** - `supersede` moves the row only while it is still `ACTIVE`, and its row count is the outcome. **Two defects found while building it.** An **auto-commit connection made the upgrade silently not happen**: `setSavepoint` throws on such a connection and the upgrade's catch-all discarded it as an ordinary collision, so every login would have verified correctly and upgraded **nothing, permanently**, with a warning nobody reads and no test failing - a control reporting success for work it did not do, which is the shape this repository keeps meeting. Closed by refusing an auto-commit connection **up front**, with a message about the mistake rather than about the mechanism, which is the `JdbcInboxRecordStore` precedent. And **a surviving mutation showed the concurrency test asserted the outcome rather than the coordination**: ignoring the conditional supersede's answer *still* produced exactly one upgrade, because the nine losers then collided with the partial unique index and the catch-all swallowed it - same result, worse mechanism, and the javadoc's claim that *"the index is never even reached"* would have been false with nothing failing. The test now counts **inserts attempted**: one, not ten. **A third security-rule false positive, answered by narrowing the rule compositionally rather than by renaming.** `secretsAreWrapped` fired on a `CredentialStore` collaborator field and on a private factory returning a `RawPassword`, and renaming was not available - the `identity` module's collaborators are named after credentials because that is what they are for, and every future `TokenStore` would hit the same thing. The narrowing is principled: **a field whose type is one of our own types is already checked at its own declaration**, so wrapping the reference protects nothing, and `Sensitive<RawPassword>` would double-wrap a type whose whole job is to wrap. It touches no JDK type, which is where a secret actually lives, and it is **proven load-bearing** - removed, the rule fires three times again. **Six mutations, all caught**, after one survived and improved a test. 718 hermetic tests, 249 database tests. |
 | 2026-09-06 | **`P1-TSK-007` complete - milestone M1.2 opens, 1 of 6.** The platform can hold a secret it cannot recover and can say, per credential, how strongly it was protected. **The decision this task exists for is not which algorithm - it is where the parameters live** (ADR-0032). A platform whose work factor is a global setting **cannot raise it**: changing the setting changes what *new* credentials use, nothing records what the old ones used, the store silently becomes a mix of strengths, and the only exits are a forced reset for every customer or a guess. Recorded per credential, *"how strongly was this one protected?"* is answerable permanently and *"which are below current policy?"* is an **indexed query** - which is the entire reason the cost factors are columns as well as being inside the encoded derivation, a duplication ADR-0032 Option D takes deliberately and which a test reconciles, because duplication nothing reconciles is drift waiting to happen. **`INV-IDN-01` landed at `DB-CONSTRAINT`, stronger than the task asked for**: the derivation column refuses a value that is not in its algorithm's encoded form, so **a plaintext password cannot physically be stored** - not by a migration, not by an operator, not by code nobody has written yet. `DB-CONSTRAINT` outranks `DOMAIN` and `STATIC` in the catalogue, and this is the platform's most consequential secret, so it gets the strongest mechanism rather than the most convenient one. The leak test asserts against **every column of the row**, with the column list derived from `information_schema` rather than listed - the obvious version checks the column its author was thinking of and would pass against an implementation that also wrote the password somewhere else. **A `BEFORE UPDATE` trigger makes "superseded, never edited" a schema property**: the application role holds `UPDATE` because superseding needs it, so without the trigger the grant would be wider than the intent, and a rewritten derivation is how the evidence of *when protection changed* disappears. The `P0-TSK-015` pattern, applied for the same reason. **The two uniqueness rules in `identity` now point opposite ways, and that is the second time this phase has had to say so**: a superseded credential **frees** its slot, because replacing a password is the ordinary thing a person does, while a retired login identifier **never** frees its name. Same mechanism, opposite answers, both deliberate, and both asserted so that making them "consistent" is a failing test rather than a tidy-up. **Measured, not asserted: ~46 ms per derivation** at m=19456 / t=2 / p=1. ADR-0032 asks for parameters chosen against a *stated* verification time, and a stated time nobody measured is not stated. The assertion is a **floor, not a ceiling** - a ceiling is a flaky test on a loaded machine, while a derivation completing in under a millisecond is the failure actually worth catching. 46 ms is at the fast end of the usual target and is deliberately **not** raised here: raising the work factor is a capacity decision belonging beside the rate limiting ADR-0032 already names as part of the same design (`P1-TSK-011`), and 19 MiB *per concurrent derivation* means ten simultaneous logins on one instance is ~190 MiB of transient allocation. **The library needs more at run time than its POM declares, and only running it found that**: `spring-security-crypto` 7.1.1 lists exactly one dependency, an *optional* assertj, and in fact needs **BouncyCastle** to derive and **spring-core** to verify - each arriving as a separate `NoClassDefFoundError` from a test using the real encoder, one at construction and one at `matches`. A test double would have found neither and the failure would have arrived at the first real login. So `identity` **does** take a Spring Framework runtime dependency, recorded plainly rather than described away, because the tidy description - "a standalone jar" - was mine and was wrong three times running. **The cold regeneration earned its place on its first outing since `P0-TSK-042`**: a **warm** regeneration recorded three new components, and the mandated **cold** run added a fourth - `jackson-base-2.21.5.pom`, a **descriptor and not a jar**, which is exactly that finding's signature. Proven complete by a second run against a separate empty `GRADLE_USER_HOME` with enforcement on and no write flags. **Two existing security rules fired, and they got different answers.** `secretsAreWrapped` flagged `CredentialType.PASSWORD` - an **enum constant**, a value of its own enum type that can never be a secret; renaming was the alternative and `PASSWORD` is exactly what that constant should be called, with every future `TokenType.BEARER` hitting the same thing. The rule gained a **structural exclusion for enum constants**, with the `P0-TSK-041` precedent (the synthetic `$VALUES` array, excluded for the same reason), **proven load-bearing** by removing it and watching the rule fire again. **The second I answered by deleting my own code, and that is the more useful finding**: the rule then flagged `passwordDeriver()` and `credentialStore()` - `@Bean` factory methods, not accessors - which was the *second* security-rule modification in one task and a signal worth heeding rather than pushing through. The honest answer was that **the wiring should not exist**: nothing consumes either bean, `EXECUTION_PROTOCOL.md` rule 3 asks for a seam only, and the port is the seam. Deleting them removed the false positives without touching a control. A third - a `COMMENT ON` body reading as `secret: <value>` - was answered by rewording prose, which cost nothing; the rule's inability to tell a SQL comment from a credential assignment is recorded rather than widened. **Scope kept, with the owning task named for each omission**: verification and upgrade-on-use are `P1-TSK-008` (`isWeakerThan` exists, is tested, and is called by nothing), the endpoint and registration integration are `P1-TSK-026`, session revocation on change is M1.3, and each enum carries one value because rule 3 forbids WebAuthn now while the enum *existing* is the seam ADR-0032's follow-up needs. **Seven mutations, all caught.** 713 hermetic tests, 235 database tests. |
 | 2026-09-06 | **`P1-TSK-006` complete - milestone M1.1 closes, 6 of 6.** The platform's **first endpoint**, its **first domain events**, its **first emitted audit records**, and the first real user of `P0-TSK-017`'s `@RequiresIdempotencyKey` - which arrived two phases earlier than `API_CONVENTIONS.md` expected. One transaction creates a Party, a Customer and an Identity or none of them, across two modules and two schemas, and it is what makes ADR-0029's deliberately absent cross-schema foreign key true. **Delivered without the credential leg**, on instruction to implement this task alone: the item declares `Deps: P1-TSK-007`, which is `TODO`. Two consequences are recorded rather than absorbed and carried as the new `P1-TSK-026` - a registered Identity **cannot yet acquire a credential**, because `POST /v1/me/credential` needs a session, a session needs authentication and authentication needs a credential; and adding a required `password` later is a **`BREAKING`** change to a published `/v1` contract on the platform's first endpoint. Neither is fatal, since no client exists; both are worse left implicit. **A backlog defect was found in the course of it**, the third of its class here: this task sits in M1.1 and depends on a task in M1.2, while `PHASE_1_PLAN.md` §11 states M1.1's acceptance as *"a Party, a Customer and an Identity"* with no credential - so the plan and the item's own `Deps` disagree, and the plan is the internally consistent one. **The response body is empty, and that is a security decision rather than laziness.** `API_CONVENTIONS.md` §6 states plainly that the idempotency key **is not a secret and is not redacted**, so anybody who has seen one - from a proxy log, an access log, a client's own logging - can replay this unauthenticated endpoint and receive whatever it returns; publishing the three identifiers would hand a stranger identifiers belonging to somebody else, and nothing in Phase 1's API surface consumes them. There is no replay header for the same reason: telling a caller it was a replay tells a replaying stranger that the login identifier exists. **Registration is permanently the one endpoint whose idempotency scope cannot carry a principal**, because it is the endpoint that creates one, and ADR-0004 asks for the command type *and* the owning principal. The residual is stated rather than glossed - an attacker holding a key *and* knowing the exact login identifier and display name can obtain a replay - and what bounds it is precisely the empty body, so what they learn is that the request succeeded and nothing more. Scoping by the login identifier instead was considered and **rejected**: it is `CONFIDENTIAL` and `idempotency_record.scope` is `INTERNAL`, so it would have forced a Phase 0 column to be reclassified, which is the one thing ADR-0022 says must not happen. **The credential is deliberately excluded from the request fingerprint and stays excluded** when `P1-TSK-007` lands: `request_fingerprint` is a durable single-round SHA-256, so hashing a body containing a password would store an offline-crackable derivation of it - `INV-IDN-01` violated by the idempotency mechanism itself. **A savepoint is what makes a collision reportable at all**: a taken login identifier arrives as a unique-index violation and PostgreSQL *aborts the transaction* when it raises one, so without a savepoint nothing further could be written - the idempotency outcome included - and the client's retry would re-run the command rather than replay its refusal. **A pre-flight `SELECT` is not a substitute and is documented as such**: two instances would both see the identifier free, both insert, and one would get `23505` anyway, so a pre-check makes the defect rarer rather than absent, which is worse. **`enterSystem()`, and this call site stays.** The caller is unauthenticated, so the platform is the only honest actor; attributing the action to the Party it creates is circular and, decisively, unavailable on the refusal path where nothing was created, and an actor that differs between success and failure is worse than a uniform honest one. What carries the information is the audit record's **target** - the attempted login identifier, on both paths, which is the one place `PHASE_1_PLAN.md` §10 permits it. `SECURITY_ARCHITECTURE.md` now says why "revisit every `enterSystem()`" does not mean "remove every `enterSystem()`". **`app` orchestrates and owns nothing**: registration spans two bounded contexts and belongs wholly to neither, and either module hosting it would have to depend on the other, which the isolation tests forbid - so `app` contributes two calls and a transaction while each module writes its own rows, events and audit record. `MODULE_ARCHITECTURE.md` §Transaction boundary listed the permitted cross-module transactions and **was stale**, naming only transfer-plus-posting and resolution-plus-adjustment, neither of which exists; registration is the first of the three to be real. **`EventPayload` is a builder with a charset rather than an object mapper, and it earned that on its first run** - `INV-AUD-02` keeps personal data out of event payloads and a general mapper would serialise `put("displayName", name)` happily, so it refuses any value that is not an identifier or an enumerated name, and it immediately caught a real mistake because `EntityId.toString()` renders `PartyId(uuid)` rather than a bare UUID. Its limit is written down: an event needing richer structure needs the wire-format decision taken, not worked around. **Causation at a flow root had no answer and now has one** - `Correlation` leaves it null so a root is distinguishable from a cycle while `EventEnvelope` requires it non-null, and the honest answer is that the request caused it: a value that looks self-referential and is not, because the correlation identifier is on the idempotency record and on the audit record of the same transaction. **Two defects in the published contract, both found by generating it rather than reasoning about it**: springdoc published **`"200": "OK"`** for an endpoint that has never returned 200, because a `ResponseEntity` gives it no status to read and a generated client would have treated the real response as unexpected - fixed with `@ResponseStatus(CREATED)`, the only form that reaches the document; and it tagged the operation **`registration-controller`**, publishing an internal class name that an ordinary rename would turn into a contract diff, now stripped for the same reason `servers` already was. **A third defect was in the contract harness itself**: `OpenApiDocument` *replaced* the whole `components` node, correct while `paths` was empty and silently wrong the moment a handler declared a request body, so the published document referenced a `RegistrationRequest` schema that had just been discarded - caught by `everyReferenceResolves`, a guard the `P0-TSK-026` review added against exactly this class of defect, working two tasks later. **The `BREAKING` labels on the diff were reviewed and accepted**: `/paths` going from `{}` to populated, a new schema's `required` list and `requestBody: required` are all additions of structure that did not exist, and no client can be broken by an endpoint that was never there. **Seven mutations. One survived, and it found a real gap in a security test** - `aReplayIsNotAnnounced` compared response header **names**, so an injected `Idempotent-Replay: false`/`true` walked straight through it, the name being identical on both while the value is the whole disclosure; it now compares names *and* values, excluding only the correlation identifiers and `Date`. **One defect in my own test, found by the full tier rather than in isolation**: the referential-integrity check asked whether *any* orphaned identity existed anywhere, and `PartyAndIdentitySchemaDatabaseTest` creates orphans **on purpose** to prove ADR-0029's missing foreign key really is missing - both facts are true and about different things, so it is now scoped to the registration under test. **And one guard was generalised rather than extended**: `FinappApplicationTest` listed the three modules allowed to contribute beans and `party` and `identity` now legitimately do, so the allowed set is derived from the classpath - the stale-list defect this repository has met in CI's task list, in a coverage guard and in a privilege check, closed the way it has been closed each time. 686 hermetic tests, 215 database tests. |
 | 2026-09-05 | **`P1-TSK-005` complete - M1.1 is 5 of 6.** The phase's highest-risk task: three aggregates in two modules, three tables in two schemas, fifteen columns each classified at its ceiling. `DELIVERY_PLAN.md` §17 names collapsing them as Phase 1's top risk, so **the acceptance criterion is a test that fails if any two are merged** - written as the four shapes a merged model *cannot represent* rather than as an abstract claim: a person who is not a customer (a beneficial owner we must record for KYB), a customer who is not a person (an organisation), one Party holding a retired login and its replacement, and lifecycles that move independently, because a credential compromise must suspend the login and not the commercial relationship. A status added to `Party` fails it. **Two invariants are enforced only by the database, because no aggregate can enforce them**: at most one *live* relationship per party, and a login identifier used once ever, are rules **across** aggregates of the same type - an aggregate sees only itself, so only the database arbitrates between two concurrent transactions, which ADR-0014 says is the normal case rather than the exception. **The two uniqueness rules deliberately point opposite ways, and that asymmetry is the sharpest decision here**: a closed relationship frees the party for a new one (a partial index, because re-establishing a relationship is legitimate), while a closed login **never** frees its identifier (a total index, because reissuing it would let a new person authenticate with a name appearing in someone else's audit history, making every record naming it ambiguous about which person it meant). **`identity.identity.party_id` carries no `REFERENCES` clause**, asserted in the migration and by a test that fails if one is added, and the cost is stated rather than hidden: the database will accept an identity for a party that does not exist, and what prevents it is the registration transaction writing both in one commit - a property a test can assert, not the schema. An FK there would be coupling neither Gradle nor ArchUnit can see and would turn ADR-0001's stated escape into a data migration. **`Party` has no lifecycle**, which reads as an omission and is the design: existence has no states, and every state people reach for - inactive, closed, archived - is a statement about a relationship or a login, each of which has its own table, so a status on `Party` would be one fact recorded in two places and free to disagree. **`LoginIdentifier` is deliberately not an email address** - an identifier that is also a contact channel cannot be changed without changing how someone logs in, nor verified without blocking login - and its charset excludes `@` specifically, so the confusion cannot arrive silently through the first person who types an address. **One deliberate non-change, recorded rather than left implicit**: the transition exceptions carry their states but not the identifier, because an exception is serializable and `EntityId` is not, and making it so would oblige every existing identifier type to declare a `serialVersionUID` - a change to proven Phase 0 code this task has no business making (`EXECUTION_PROTOCOL.md` rule 4). It is the third time this project has met that requirement, after `CurrencyCode` and `IdempotencyKey`. **Five mutations, all caught**: `CLOSED` made non-terminal (four tests), the aggregate's transition check removed (six), the partial unique index dropped, a status added to `Party`, and a cross-schema foreign key introduced. 668 hermetic tests, 187 database tests. |

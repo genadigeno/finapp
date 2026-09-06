@@ -281,6 +281,15 @@ two and left two. **The control had to be structural, not lexical.**
 during a request — because all four columns, the MDC and the span attribute read from there, so the
 property covers sinks that do not exist yet.
 
+**A route out of a classified column that the scheme did not anticipate, found by the `P1-TSK-008`
+gate and closed.** PostgreSQL reports a `CHECK` violation with a `DETAIL` line containing the
+**entire refused row**, and the JDBC driver puts it in the exception message — so any code attaching
+that exception as a cause carried a `RESTRICTED-PII` derivation, a person's name or a login
+identifier into every log line that printed it. The classification was correct and the handling was
+being bypassed by the error path. Closed by `platform.persistence.DatabaseFailure`, which keeps the
+SQLState and drops the driver exception, and by removing the cause-taking constructor from the three
+storage exceptions so the unsafe path does not compile.
+
 **The scheme's weakest point, stated rather than glossed:** no build rule checks what a caller
 writes into a free-text column. `correlation_id` is no longer among them — nothing caller-supplied
 reaches it — but `audit_record.reason`, `idempotency_record.idempotency_key` and

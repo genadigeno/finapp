@@ -1,5 +1,7 @@
 package com.finapp.identity;
 
+import com.finapp.platform.persistence.DatabaseFailure;
+
 import com.finapp.sharedkernel.security.Sensitive;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -58,7 +60,8 @@ public final class JdbcCredentialStore implements CredentialStore<Connection> {
             // Neither message names the derivation or anything derived from it (INV-AUD-02). The
             // credential's identifier is safe: it identifies a row and says nothing about a secret.
             throw new CredentialStorageException(
-                    "Could not insert credential " + credential.id(), e);
+                    DatabaseFailure.describe(
+                            "Could not insert credential " + credential.id(), e));
         }
     }
 
@@ -83,7 +86,8 @@ public final class JdbcCredentialStore implements CredentialStore<Connection> {
             return update.executeUpdate() == 1;
         } catch (SQLException e) {
             throw new CredentialStorageException(
-                    "Could not supersede credential " + credentialId, e);
+                    DatabaseFailure.describe(
+                            "Could not supersede credential " + credentialId, e));
         }
     }
 
@@ -112,14 +116,14 @@ public final class JdbcCredentialStore implements CredentialStore<Connection> {
                     // authentication that quietly used whichever credential the planner returned.
                     throw new CredentialStorageException(
                             "More than one active credential for identity " + identityId
-                                    + "; the partial unique index is not doing its job",
-                            null);
+                                    + "; the partial unique index is not doing its job");
                 }
                 return Optional.of(credential);
             }
         } catch (SQLException e) {
             throw new CredentialStorageException(
-                    "Could not read the active credential for identity " + identityId, e);
+                    DatabaseFailure.describe(
+                            "Could not read the active credential for identity " + identityId, e));
         }
     }
 

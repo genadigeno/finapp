@@ -8,6 +8,7 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.platform.persistence.DatabaseFailure;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.event.EventEnvelope;
@@ -162,7 +163,8 @@ public final class IdentityRegistration {
             }
             // Neither message names the identifier: it is CONFIDENTIAL and an exception message
             // reaches a log line (INV-AUD-02).
-            throw new IdentityStorageException("Could not insert identity " + identity.id(), e);
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not insert identity " + identity.id(), e));
         }
     }
 

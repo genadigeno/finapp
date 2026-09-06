@@ -96,6 +96,18 @@ class CorrelationSinkCoverageTest {
                     // Not a sink. MoneyColumns is a persistence convention with no flow of its
                     // own; correlation reaches the tables that use it, not the convention.
                     "money",
+                    // NOT a sink, and it exists to keep something OUT rather than to carry
+                    // something in (`P1-TSK-008`). DatabaseFailure turns a driver exception into a
+                    // message safe to log, because PostgreSQL puts the entire failing row in a
+                    // constraint violation's DETAIL - so an exception carrying a SQLException
+                    // carries a password, a person's name or a login identifier into every log line
+                    // that prints it (INV-AUD-02).
+                    //
+                    // Correlation reaches the log line itself, through the MDC, which is asserted
+                    // under "correlation". This concern shapes what the line SAYS and never carries
+                    // an identifier of its own; giving it one would imply it knew about a flow,
+                    // which it deliberately does not - it is handed an exception and a sentence.
+                    "persistence",
                     // NOT a sink, and the distinction is the point rather than a technicality.
                     // SecurityContext answers WHO is acting; correlation answers WHICH FLOW this
                     // is. They travel together and are established at the same entry points, which
