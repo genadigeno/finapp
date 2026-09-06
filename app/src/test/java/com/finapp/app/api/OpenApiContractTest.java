@@ -54,6 +54,24 @@ import tools.jackson.databind.JsonNode;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OpenApiContractTest {
 
+    static {
+        // `Sensitive<T>` is a wrapper with no accessible property, so springdoc models it as an
+        // EMPTY schema and publishes `password: {$ref: SensitiveString}` pointing at `{}`. A
+        // generated client would then model a password as an untyped object and would not know to
+        // send a JSON string - a broken contract that still parses, still diffs, and still resolves
+        // every $ref.
+        //
+        // Found by generating the document rather than reasoning about it (`P1-TSK-010`), which is
+        // how the two `P1-TSK-006` contract defects were found as well.
+        //
+        // Told to springdoc rather than patched afterwards in OpenApiDocument: on the wire the value
+        // IS a string, so this is the model being made correct rather than the output being
+        // corrected. It lives in test scope because springdoc does (ADR-0015) - the running
+        // application ships no documentation library and must not carry an annotation for one.
+        org.springdoc.core.utils.SpringDocUtils.getConfig()
+                .replaceWithClass(com.finapp.sharedkernel.security.Sensitive.class, String.class);
+    }
+
     /** The committed contract. Reviewed, versioned in git, and what clients are written against. */
     private static final String BASELINE = "docs/api/openapi.json";
 
@@ -234,7 +252,39 @@ class OpenApiContractTest {
         // an endpoint is a deliberate act, and this is one of the places it has to be declared.
         assertThat(OpenApiDocument.parse(document).path("paths").propertyNames())
                 .as("a route in the published contract that nobody declared here")
-                .containsExactlyInAnyOrder(ApiVersion.CURRENT_PREFIX + "/registrations");
+                .containsExactlyInAnyOrder(
+                        ApiVersion.CURRENT_PREFIX + "/registrations",
+                        ApiVersion.CURRENT_PREFIX + "/authentications");
+    }
+
+    @Test
+    @DisplayName("no published schema is empty, so no client models a value as an untyped object")
+    void everyPublishedSchemaSaysWhatItIs() throws Exception {
+        // The guard for the defect `P1-TSK-010` hit: a wrapper type with no accessible property
+        // publishes as `{}`, and every other check passes over it - it parses, it diffs, and
+        // `everyReferenceResolves` is satisfied because the schema exists. What a client generator
+        // does with it is model the value as an untyped object.
+        //
+        // Asserted on the whole document rather than on the one type, because the next wrapper will
+        // not be called Sensitive.
+        var schemas = OpenApiDocument.parse(publishedDocument()).path("components").path("schemas");
+
+        assertThat(schemas.propertyNames())
+                .as("precondition: there must be schemas to inspect")
+                .isNotEmpty();
+
+        List<String> empty = new java.util.ArrayList<>();
+        schemas.propertyNames()
+                .forEach(
+                        name -> {
+                            if (schemas.get(name).isEmpty()) {
+                                empty.add(name);
+                            }
+                        });
+
+        assertThat(empty)
+                .as("an empty schema tells a generated client nothing about the value it models")
+                .isEmpty();
     }
 
     // -----------------------------------------------------------------

@@ -54,6 +54,43 @@ public enum IdentityAuditAction implements AuditableAction {
             "A login was created for a party.",
             false),
 
+    /**
+     * Somebody proved they know an identity's secret (`P1-TSK-010`).
+     *
+     * <p>No reason required: authenticating to your own account is not a decision anybody has to
+     * justify. It is recorded because {@code INV-AUD-01} asks for every action of consequence to be
+     * attributable, and *when an account was used, and from which flow* is the first question asked
+     * after a compromise.
+     *
+     * <p>This is the platform's first audit record naming a <strong>real actor</strong>: the
+     * identity is proven at the moment it is written, so it is attributed to
+     * {@code ActorType.CUSTOMER} rather than to the platform. {@code PHASE_1_PLAN.md} §5 says the
+     * {@code enterSystem()} call sites are revisited in this phase, and this is the first one that
+     * had a better answer available.
+     */
+    AUTHENTICATION_SUCCEEDED(
+            "identity.AuthenticationSucceeded",
+            "An identity was authenticated.",
+            false),
+
+    /**
+     * An authentication attempt did not succeed (`P1-TSK-010`).
+     *
+     * <p>No reason required, and it is recorded for identities that <strong>do not exist</strong> -
+     * which is the point. A failure rate against identifiers nobody registered is credential
+     * stuffing, and it is invisible if only real accounts are recorded.
+     *
+     * <p>The actor is the platform: on this path there is no established identity, and there may be
+     * no identity at all. The information a reader needs is carried by the record's
+     * <strong>target</strong>, which is the attempted login identifier - the one place
+     * {@code PHASE_1_PLAN.md} §10 permits an attempted identifier to appear, because the audit trail
+     * is the regulatory artefact and is not client-visible.
+     */
+    AUTHENTICATION_FAILED(
+            "identity.AuthenticationFailed",
+            "An authentication attempt failed.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

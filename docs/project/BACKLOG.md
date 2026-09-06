@@ -1478,18 +1478,72 @@ repository exists to prevent.
 
 #### P1-FEAT-04 — Authentication
 
-**P1-TSK-010 — `POST /v1/authentications`, enumeration-safe**
+**P1-TSK-010 — `POST /v1/authentications`, enumeration-safe** — `COMPLETE` (2026-09-06)
 - Context: identity / api
 - Description: Password authentication returning one response shape for every failure.
 - Why: `INV-IDN-07`. Enumeration turns a credential-stuffing list into a targeted one.
 - Deps: P1-TSK-008, P1-TSK-013
-- Implementation: one shape and equivalent timing for unknown identity, wrong credential and locked
-  account; `AuthenticationSucceeded` / `AuthenticationFailed` events, the latter carrying **no**
-  identity identifier; audit record carrying the attempted identifier.
-- Tests: responses and timing compared across existing and absent accounts; the failure event
-  proven to carry no identifier.
-- Accept: `INV-IDN-07` demonstrated to fail when the responses diverge.
+- **`P1-TSK-013` is `TODO`, and the plan contradicts itself about where it belongs.**
+  `PHASE_1_PLAN.md` §11 puts *session issuance* in **M1.2's scope** and makes M1.2's acceptance
+  *"an identity authenticates and receives a session"* — while listing M1.2's tasks as
+  `P1-TSK-007 … P1-TSK-012`, which excludes the session task. Fourth backlog defect of this class.
+  Unlike `P1-TSK-006`'s, here the **`Deps` line is right and the milestone boundary is wrong**:
+  "that person can authenticate" is not a meaningful milestone without a session. Recorded, not
+  silently corrected — moving a task between milestones is a planning act.
+- **Delivered without session issuance.** A success returns `204` and issues nothing a client can
+  hold, so **M1.2 cannot close on `P1-TSK-012`**. The remainder is `P1-TSK-027`.
+- Implementation: `AuthenticationController` (204 / 401), `AuthenticationService` (one transaction,
+  refusal **returned not thrown**), `IdentityAuthentication` (audit + event, both paths),
+  `IdentityErrorCode.AUTHENTICATION_FAILED`, two new `IdentityAuditAction` constants.
+- Accept: **met.** The four failing causes are asserted **equal to each other** rather than each
+  against a remembered expectation, and the **timing** half is asserted by counting derivations.
+- **Not idempotent, and that is stronger than "the money-moving clause is vacuous":** an idempotency
+  key is explicitly not a secret, so a stored success keyed on one would let anybody who saw the key
+  replay a *successful authentication*. The mechanism that makes registration safe would make this
+  an authentication bypass.
+- **The platform's first real actor.** A success is attributed to `Actor(identityId, CUSTOMER)`;
+  a failure to the platform, because there may be no identity at all. The asymmetry is correct
+  information rather than a channel — the audit trail is not client-visible.
+- **`secretsAreWrapped` found a real defect in the request DTO**: a `String password` component
+  prints itself through a record's generated `toString`. Wrapped, which needed the Jackson
+  *deserialiser* — the symmetric half of `P0-TSK-030`'s masking serialiser.
+- **Two contract defects, found by generating the document**: the wrapper published as an empty
+  `SensitiveString` schema, so a client would model a password as an untyped object; and
+  `P1-TSK-009`'s contract guard fired, correctly, on a framing that forbade a secret *anywhere* —
+  narrowed to *a secret may be sent, never returned and never put in a URL or header*.
+- **Six mutations. One survived and produced a new test**; one survived correctly, having targeted
+  the log field rather than the response.
+- **The completion gate found a javadoc claiming a test that did not exist** — `AuthenticationRequest`
+  said "a test asserts they still match" and none did, while the sibling `RegistrationRequest` had
+  one. Written, sweeping every code point the boundary admits.
+- **Three further gate findings, all from probing**: eight request shapes over real HTTP, none
+  producing a 500, now pinned; a "hardening" null-check in the deserialiser that was **unreachable
+  code** with a comment describing a mechanism that is not the real one, removed after probing
+  Jackson directly; and a correlation exclusion in the response comparison that was a hole rather
+  than an allowance, now asserted non-vacuous.
+- **The throttling debt is recorded**: this endpoint is a CPU and memory amplifier, ~46 ms and
+  ~19 MiB per attempt by design (ADR-0032). Owned by `P1-TSK-011`.
 - Risk: **High**. Cx: M. DoD: `DOD-API`
+
+**P1-TSK-027 — Authentication issues a session**
+- Context: identity / api
+- Description: `POST /v1/authentications` returns a session on success.
+- Why: `PHASE_1_PLAN.md` §11's M1.2 acceptance is *"an identity authenticates and **receives a
+  session**"*, and `P1-TSK-010` delivered the endpoint without one because its declared dependency
+  `P1-TSK-013` sits in M1.3. **M1.2 cannot close until this lands.** This is `P1-TSK-010`'s recorded
+  remainder, not new scope — the `P1-TSK-026` precedent.
+- Deps: P1-TSK-010, P1-TSK-013
+- Implementation: issue the session inside the authentication transaction, so a session that exists
+  always has the audit record of the login that produced it. The response gains a body, which is an
+  **additive** contract change; `204` becomes `201`.
+- **The plan's milestone boundary should be corrected rather than worked around**: §11 names session
+  issuance in M1.2's scope while numbering the session tasks into M1.3. Either `P1-TSK-013` moves
+  into M1.2, or M1.2's acceptance drops the session clause — a planning decision, recorded here
+  rather than taken by an implementation task.
+- Tests: a success returns a usable session; the failure shape is unchanged, so `INV-IDN-07` still
+  holds with a body present on one path only.
+- Accept: M1.2's stated acceptance is met end to end.
+- Risk: Medium. Cx: S. DoD: `DOD-API`
 
 **P1-TSK-011 — Brute-force and credential-stuffing controls**
 - Context: identity / security

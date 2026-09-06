@@ -4,6 +4,9 @@ import com.finapp.sharedkernel.security.Sensitive;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonParser;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.ValueDeserializer;
 import tools.jackson.databind.JacksonModule;
 import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueSerializer;
@@ -43,6 +46,13 @@ class SensitiveSerialization {
         @SuppressWarnings({"rawtypes", "unchecked"})
         ValueSerializer<Sensitive> masking = (ValueSerializer) new MaskingSerializer();
         module.addSerializer(Sensitive.class, masking);
+
+        // The symmetric half, added by `P1-TSK-010`: a request body may now CARRY a secret, and
+        // without this Jackson cannot construct the wrapper at all. Registering it here rather
+        // than in a second module keeps both directions of one decision in one place.
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        ValueDeserializer<Sensitive> wrapping = (ValueDeserializer) new WrappingDeserializer();
+        module.addDeserializer(Sensitive.class, wrapping);
         return module;
     }
 
@@ -58,6 +68,37 @@ class SensitiveSerialization {
         @Override
         public void serialize(Sensitive<?> value, JsonGenerator generator, SerializationContext context) {
             generator.writeString(Sensitive.MASK);
+        }
+    }
+
+    /**
+     * Reads a JSON string into a {@link Sensitive} wrapper.
+     *
+     * <p>So that a password can arrive in a request body <strong>already wrapped</strong>, rather
+     * than existing as a bare {@code String} on a record whose generated {@code toString} prints
+     * every component. That is the accident {@code Sensitive} exists for, and the request DTO is
+     * where a plaintext password enters the platform - the first place it could be logged.
+     *
+     * <p><strong>Only {@code Sensitive<String>} is producible</strong>, and that is a limit rather
+     * than an oversight: the wrapper's type parameter is erased at run time, so this cannot know
+     * what to build for any other. A request body carrying a wrapped non-string secret would need
+     * this to become type-aware, and there is no such body.
+     */
+    private static final class WrappingDeserializer extends ValueDeserializer<Sensitive<String>> {
+
+        @Override
+        public Sensitive<String> deserialize(JsonParser parser, DeserializationContext context) {
+            // A scalar is coerced rather than type-checked: a caller sending a number where a
+            // secret was expected has made a mistake about the shape of the request, not about the
+            // secret, and refusing it here would add a response shape to a path where INV-IDN-07
+            // wants exactly two. It fails authentication like any other wrong value.
+            //
+            // Anything with no string form - an object, an array - never reaches this method:
+            // Jackson raises MismatchedInputException while resolving the token, and the error
+            // contract already renders that as `api.MalformedRequest` (400). Measured, not assumed
+            // - the completion gate's first "fix" here was a null-check for that case, which was
+            // unreachable code with a comment claiming it handled something it never saw.
+            return Sensitive.of(parser.getValueAsString());
         }
     }
 }

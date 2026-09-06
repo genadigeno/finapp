@@ -472,6 +472,41 @@
           }
         }
       },
+      "identity.AuthenticationFailed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "identity.AuthenticationFailed"
+                    },
+                    "status": {
+                      "const": 401
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/identity.AuthenticationFailed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[401] Authentication failed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "party.RegistrationRefused": {
         "content": {
           "application/problem+json": {
@@ -509,6 +544,24 @@
       }
     },
     "schemas": {
+      "AuthenticationRequest": {
+        "properties": {
+          "loginIdentifier": {
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "[A-Za-z0-9._-]+",
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "loginIdentifier",
+          "password"
+        ],
+        "type": "object"
+      },
       "ProblemDetail": {
         "description": "An RFC 9457 problem detail. Clients switch on `code`; `title` is prose and may be reworded, and several codes share a status. Absent members are absent, never null.",
         "properties": {
@@ -573,6 +626,26 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/authentications": {
+      "post": {
+        "operationId": "authenticate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthenticationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/v1/registrations": {
       "post": {
         "operationId": "register",

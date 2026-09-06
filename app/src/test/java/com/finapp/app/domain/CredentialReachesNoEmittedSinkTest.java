@@ -167,29 +167,44 @@ class CredentialReachesNoEmittedSinkTest {
     // -----------------------------------------------------------------
 
     @Test
-    @DisplayName("the published contract declares no property whose name says it holds a secret")
-    void thePublishedContractCarriesNoSecret() {
-        // Today this has no subject: the one request body carries a display name and a login
-        // identifier. It becomes load-bearing the day P1-TSK-026 adds a password to registration or
-        // P1-TSK-010 publishes an authentication request - which is exactly when nobody will be
-        // thinking about whether a password belongs in a RESPONSE schema, an error example, or a
-        // header.
+    @DisplayName("a secret appears in the published contract only where a caller must send one")
+    void thePublishedContractCarriesASecretOnlyInARequestBody() {
+        // This guard was written by `P1-TSK-009` with no subject, and `P1-TSK-010` gave it one
+        // the very next task - which is what it was for. It then FIRED, and it was right to fire
+        // and wrong about why: it forbade a credential-named member anywhere, and an
+        // authentication request body must declare a password or no client can call the endpoint.
         //
-        // Asserted over the whole document as text rather than by walking schemas, because the
-        // places a secret could appear are not only properties: a header name, a parameter, an
-        // example value and a description all reach a generated client.
+        // The precise property is narrower and more useful: a secret may be SENT and must never be
+        // RETURNED or put where a URL goes. A password in a response schema is a password in a
+        // client's memory and logs; in a query parameter or a header it is in every access log,
+        // proxy log and browser history between here and the caller. A request body is the one
+        // place it legitimately appears, and it is the place this platform already protects - the
+        // idempotency fingerprint deliberately excludes it (`P1-TSK-006`), and `Sensitive` wraps it
+        // the moment it is deserialised (`P1-TSK-010`).
         String contract = readRepositoryFile("docs/api/openapi.json");
 
         assertThat(contract)
                 .as("precondition: the document must be there to inspect")
                 .contains("\"openapi\"");
 
-        assertThat(secretNamedMembersIn(contract))
+        assertThat(secretNamedMembersOutsideRequestBodiesIn(contract))
                 .as(
-                        "the published contract is what a generated client models and what an access"
-                            + " log records; a credential-named member here is a credential in"
-                            + " somebody's HTTP tooling (INV-AUD-02)")
+                        "a secret may be sent, never returned and never put in a URL or a header:"
+                            + " those reach access logs, proxies and browser history (INV-AUD-02)")
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName("the exemption is exactly one request body, not a hole")
+    void theRequestBodyExemptionIsBounded() {
+        // Without this the exemption could quietly widen: every schema in the document is
+        // reachable from SOME request body once there are enough endpoints, and the guard would
+        // then permit a secret anywhere while still looking like a control.
+        String contract = readRepositoryFile("docs/api/openapi.json");
+
+        assertThat(schemasReachableFromRequestBodies(contract))
+                .as("the schemas a secret is permitted in, named so that widening is visible")
+                .containsExactly("AuthenticationRequest", "RegistrationRequest");
     }
 
     @Test
@@ -250,6 +265,62 @@ class CredentialReachesNoEmittedSinkTest {
                                                         PASSWORD))))
                 .as("asked to read parameters out of something that is not a derivation")
                 .hasMessageNotContaining(PASSWORD);
+    }
+
+    /**
+     * The schemas a request body refers to, by name.
+     *
+     * <p>Read structurally rather than by regex, because this decides what the guard
+     * <em>permits</em> and a loose match here silently widens the exemption.
+     */
+    private static java.util.SortedSet<String> schemasReachableFromRequestBodies(String document) {
+        java.util.SortedSet<String> reachable = new java.util.TreeSet<>();
+        collectRequestBodySchemas(
+                tools.jackson.databind.json.JsonMapper.builder().build().readTree(document),
+                false,
+                reachable);
+        return reachable;
+    }
+
+    private static void collectRequestBodySchemas(
+            tools.jackson.databind.JsonNode node,
+            boolean insideARequestBody,
+            java.util.Set<String> reachable) {
+        if (node.isObject()) {
+            for (String field : node.propertyNames()) {
+                boolean nowInside = insideARequestBody || "requestBody".equals(field);
+                tools.jackson.databind.JsonNode child = node.get(field);
+                if (nowInside && "$ref".equals(field) && child.isString()) {
+                    String reference = child.stringValue();
+                    reachable.add(reference.substring(reference.lastIndexOf('/') + 1));
+                }
+                collectRequestBodySchemas(child, nowInside, reachable);
+            }
+        } else if (node.isArray()) {
+            node.forEach(child -> collectRequestBodySchemas(child, insideARequestBody, reachable));
+        }
+    }
+
+    /**
+     * Secret-named members anywhere except inside a schema a request body refers to.
+     *
+     * <p>A secret may be <strong>sent</strong>; it must never be <strong>returned</strong>, and it
+     * must never be somewhere a URL or a header goes. Everything outside the permitted schemas is
+     * scanned as text, so a header name, a parameter name and a response property are all covered
+     * by one rule rather than by three that could each be forgotten.
+     */
+    private static List<String> secretNamedMembersOutsideRequestBodiesIn(String document) {
+        tools.jackson.databind.JsonNode root =
+                tools.jackson.databind.json.JsonMapper.builder().build().readTree(document);
+        java.util.SortedSet<String> permitted = schemasReachableFromRequestBodies(document);
+
+        tools.jackson.databind.node.ObjectNode pruned =
+                (tools.jackson.databind.node.ObjectNode) root.deepCopy();
+        tools.jackson.databind.JsonNode schemas = pruned.path("components").path("schemas");
+        if (schemas.isObject()) {
+            permitted.forEach(name -> ((tools.jackson.databind.node.ObjectNode) schemas).remove(name));
+        }
+        return secretNamedMembersIn(pruned.toString());
     }
 
     // -----------------------------------------------------------------

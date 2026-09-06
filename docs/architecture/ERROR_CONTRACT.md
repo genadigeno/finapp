@@ -108,6 +108,28 @@ never succeed, and a spike of malformed requests would otherwise be indistinguis
 outage. An unmapped 4xx becomes `api.MalformedRequest` and is logged as a warning, so the gap is
 visible rather than quietly approximated.
 
+
+### `identity` — `IdentityErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `identity.AuthenticationFailed` | 401 | Authentication failed. |
+
+**One code for every reason an authentication can fail** (`P1-TSK-010`, `INV-IDN-07`): unknown
+identity, wrong password, suspended identity, and an identity that has no credential yet all
+produce byte-identical responses. The response body is only half of it — `P1-TSK-008` made every
+one of those paths perform a full Argon2id verification, so they are indistinguishable by *timing*
+as well. A suspended account answering instantly would tell an attacker both that it exists and
+that it is suspended, which is the invariant lost through the channel that is harder to notice.
+
+**Not `api.Unauthenticated`, deliberately.** That code means *authentication is required* — a
+protected route reached with no credentials at all. Here credentials **were** presented and were not
+accepted. They are different facts, a client handles them differently, and giving one string two
+meanings is what §4 forbids.
+
+**401 and not 403**: 403 means authenticated and not permitted, which presupposes an established
+identity — and presupposing one here would disclose that there is one.
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

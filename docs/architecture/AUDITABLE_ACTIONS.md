@@ -87,11 +87,25 @@ someone else's behalf is a different action and will be declared when it exists.
 | Code | Reason required | What it is |
 |---|---|---|
 | `identity.IdentityCreated` | No | A login was created for a party. |
+| `identity.AuthenticationSucceeded` | No | An identity was authenticated. |
+| `identity.AuthenticationFailed` | No | An authentication attempt failed. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
 
-`identity.IdentityCreated` requires no reason: creating your own login is not an action taken
-against anybody. The two below it are, which is the whole distinction §4 draws.
+`identity.IdentityCreated` and the two authentication actions require no reason: using your own
+login is not an action taken against anybody. The two admin actions below them are, which is the
+whole distinction §4 draws.
+
+**`identity.AuthenticationFailed` is recorded for identifiers that do not exist**, and that is the
+point rather than an accident (`P1-TSK-010`). A failure rate against identifiers nobody registered
+is credential stuffing, and it is invisible if only real accounts are recorded. Its target is the
+attempted login identifier - the one place `PHASE_1_PLAN.md` §10 permits an attempted identifier to
+appear, because the audit trail is the regulatory artefact and is not client-visible.
+
+**Neither authentication action records *why* a failure failed.** Unknown identity, wrong password,
+suspended identity and an identity with no credential are deliberately not distinguished anywhere -
+a field that distinguishes them is a field somebody eventually maps to a response, and
+`INV-IDN-07` is then lost through the audit trail's own vocabulary.
 
 **Deliberately few.** Authentication, session revocation, credential change and MFA enrolment
 are audited too and are *not* declared yet: each belongs to the task that builds it, where

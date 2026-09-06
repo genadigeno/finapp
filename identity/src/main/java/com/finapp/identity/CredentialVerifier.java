@@ -149,6 +149,20 @@ public final class CredentialVerifier {
         return VerificationOutcome.succeeded(identity.get().id());
     }
 
+    /**
+     * Fails, having done the work an attempt would have cost (`P1-TSK-010`).
+     *
+     * <p>For a caller that cannot even construct a {@link RawPassword} from what it was given - a
+     * value below the minimum length, say. That must not be a fast path: this endpoint has exactly
+     * two outcomes, and a rejection that skips the derivation is a third one readable from a clock.
+     *
+     * <p>It touches no database, so it needs no transaction; the caller has not reached one yet.
+     */
+    public VerificationOutcome verifyNothing() {
+        deriver.matches(throwawayPassword(), dummyDerivation);
+        return VerificationOutcome.failed();
+    }
+
     // -----------------------------------------------------------------
 
     /**
