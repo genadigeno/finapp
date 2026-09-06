@@ -91,10 +91,10 @@ class AuthenticationFailsClosedDatabaseTest {
     @Test
     @DisplayName("an unreachable database reports no success and writes nothing")
     void anUnreachableDatabaseFailsClosed() throws SQLException {
-        LoginIdentifier login = givenAnIdentityWithACredential();
+        Fixture fixture = givenAnIdentityWithACredential();
 
         try (HikariDataSource closedPort = pointingAtAClosedPort()) {
-            Throwable thrown = catchThrowable(() -> authenticateThrough(closedPort, login, PASSWORD));
+            Throwable thrown = catchThrowable(() -> authenticateThrough(closedPort, fixture.login(), PASSWORD));
 
             assertThat(thrown)
                     .as("it fails, and it fails LOUDLY: a caller told nothing would be a caller"
@@ -102,7 +102,7 @@ class AuthenticationFailsClosedDatabaseTest {
                     .isNotNull();
         }
 
-        assertNothingWasRecordedFor(login);
+        assertNothingWasRecordedFor(fixture);
     }
 
     @Test
@@ -111,16 +111,16 @@ class AuthenticationFailsClosedDatabaseTest {
         // The case that matters. Verification has already succeeded in memory - the password was
         // right - and the process then loses its connection before the commit. An implementation
         // that returned its in-memory answer would report a login that never happened.
-        LoginIdentifier login = givenAnIdentityWithACredential();
+        Fixture fixture = givenAnIdentityWithACredential();
 
         Throwable thrown =
-                catchThrowable(() -> authenticateAndKillTheConnectionMidFlight(login));
+                catchThrowable(() -> authenticateAndKillTheConnectionMidFlight(fixture.login()));
 
         assertThat(thrown)
                 .as("the transaction could not commit, so the caller is told so")
                 .isNotNull();
 
-        assertNothingWasRecordedFor(login);
+        assertNothingWasRecordedFor(fixture);
     }
 
     @Test
@@ -129,12 +129,34 @@ class AuthenticationFailsClosedDatabaseTest {
         // Without this, `assertNothingWasRecordedFor` passes over queries that find nothing for any
         // reason at all - a wrong table, a wrong predicate, a fixture that never existed. The
         // positive control proves the three things it looks for are things this platform writes.
-        LoginIdentifier login = givenAnIdentityWithACredential();
+        Fixture fixture = givenAnIdentityWithACredential();
 
-        authenticateThrough(dataSource, login, PASSWORD);
+        authenticateThrough(dataSource, fixture.login(), PASSWORD);
 
-        assertThat(auditRows(login)).as("a healthy login IS audited").isEqualTo(1);
-        assertThat(outboxRows()).as("and announced").isGreaterThan(0);
+        assertThat(auditRows(fixture.login())).as("a healthy login IS audited").isEqualTo(1);
+        assertThat(outboxRowsFor(fixture.identityId()))
+                .as("and announced, scoped to THIS identity so the query is proven to select")
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the counter query can see a row: only a FAILED authentication can prove that")
+    void theCounterAssertionIsNotVacuous() throws SQLException {
+        // The gap the completion gate found. `theAssertionsCanSeeAWrite` drives a SUCCESS, and a
+        // success CLEARS the counter - so it can never demonstrate that this query selects
+        // anything. Proven by making the predicate unsatisfiable: every negative assertion still
+        // passed, because a query pointing at nothing finds nothing exactly as reliably as a
+        // correct one.
+        //
+        // Only a failure leaves a row, so only a failure is a control for it.
+        Fixture fixture = givenAnIdentityWithACredential();
+
+        authenticateThrough(dataSource, fixture.login(), "not the password");
+
+        assertThat(failureCounterRows(fixture.login()))
+                .as("a failed authentication leaves exactly the row the negative assertions look"
+                        + " for, so their finding none means something")
+                .isEqualTo(1);
     }
 
     // -----------------------------------------------------------------
@@ -142,24 +164,33 @@ class AuthenticationFailsClosedDatabaseTest {
     /**
      * Asserts the three durable traces of an authentication are all absent.
      *
-     * <p>Three, not one, because they are written by different components in the same transaction
-     * and a partial commit is precisely what "fails closed" forbids.
+     * <p>Three <strong>independent</strong> ones, written by three different components in the same
+     * transaction, because a partial commit is precisely what "fails closed" forbids. The first
+     * version had a third assertion derived from the other two - a restatement dressed as a check -
+     * and the completion gate replaced it with the outbox, which is a genuinely separate writer and
+     * was not covered at all.
+     *
+     * <p>Each has a positive control below. Without them these are three ways of finding nothing,
+     * and a query pointing at the wrong thing finds nothing just as reliably as a correct one - the
+     * gate proved that by making the counter predicate unsatisfiable and watching the suite stay
+     * green.
      */
-    private void assertNothingWasRecordedFor(LoginIdentifier login) throws SQLException {
-        assertThat(auditRows(login))
+    private void assertNothingWasRecordedFor(Fixture fixture) throws SQLException {
+        assertThat(auditRows(fixture.login()))
                 .as("no audit record: a trail saying somebody logged in when they did not is"
                         + " permanent, and worse than no trail at all (INV-HIST-03)")
                 .isZero();
-        assertThat(failureCounterRows(login))
+        assertThat(failureCounterRows(fixture.login()))
                 .as("and the failure counter did not move either - the attempt did not happen,"
                         + " so it must not count against the customer")
                 .isZero();
         // The session insert will join this same transaction (P1-TSK-027), so a transaction that
-        // commits nothing issues nothing. Asserted here as the mechanism rather than as an absence
-        // over a table that does not exist yet.
-        assertThat(committedAnythingFor(login))
-                .as("nothing at all committed for this identity")
-                .isFalse();
+        // commits nothing issues nothing. The outbox is the nearest thing that exists today: an
+        // announcement of a login that did not happen would reach consumers and could not be
+        // retracted.
+        assertThat(outboxRowsFor(fixture.identityId()))
+                .as("and nothing was announced: a published event cannot be taken back")
+                .isZero();
     }
 
     private void authenticateThrough(DataSource source, LoginIdentifier login, String password) {
@@ -292,10 +323,19 @@ class AuthenticationFailsClosedDatabaseTest {
                 "SELECT count(*) FROM platform.audit_record WHERE target_id = ?", login.value());
     }
 
-    private int outboxRows() throws SQLException {
+    /**
+     * Outbox rows announcing a successful login <strong>for this identity</strong>.
+     *
+     * <p>Scoped by the identity, not by event type. An unscoped count would be non-zero from other
+     * tests in the same database, so a negative assertion over it could never fail - and this is
+     * one of the three things "fails closed" forbids surviving.
+     */
+    private int outboxRowsFor(IdentityId identityId) throws SQLException {
         return count(
-                "SELECT count(*) FROM platform.outbox_event WHERE event_type = ?",
-                "identity.AuthenticationSucceeded");
+                "SELECT count(*) FROM platform.outbox_event"
+                        + " WHERE event_type = 'identity.AuthenticationSucceeded'"
+                        + " AND convert_from(payload, 'UTF8') LIKE ?",
+                "%" + identityId.value() + "%");
     }
 
     private int failureCounterRows(LoginIdentifier login) throws SQLException {
@@ -304,10 +344,6 @@ class AuthenticationFailsClosedDatabaseTest {
                         + " JOIN identity.identity i ON i.id = f.identity_id"
                         + " WHERE i.login_identifier = ?",
                 login.value());
-    }
-
-    private boolean committedAnythingFor(LoginIdentifier login) throws SQLException {
-        return auditRows(login) > 0 || failureCounterRows(login) > 0;
     }
 
     private int count(String sql, Object argument) throws SQLException {
@@ -321,7 +357,9 @@ class AuthenticationFailsClosedDatabaseTest {
         }
     }
 
-    private LoginIdentifier givenAnIdentityWithACredential() throws SQLException {
+    private record Fixture(IdentityId identityId, LoginIdentifier login) {}
+
+    private Fixture givenAnIdentityWithACredential() throws SQLException {
         UUID party = IDS.next();
         UUID identity = IDS.next();
         LoginIdentifier login =
@@ -351,7 +389,7 @@ class AuthenticationFailsClosedDatabaseTest {
                                     new Argon2PasswordDeriver(WEAK),
                                     RawPassword.of(PASSWORD)));
         }
-        return login;
+        return new Fixture(IdentityId.of(identity), login);
     }
 
     private static void execute(Connection connection, String sql, Object... arguments)

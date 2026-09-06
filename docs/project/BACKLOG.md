@@ -1622,8 +1622,15 @@ repository exists to prevent.
 - **The kill was racing a one-millisecond derivation.** A 60 ms sleep before terminating the backend
   meant the transaction had already committed. Now deterministic: the decorator kills the
   transaction's own backend from inside the flow.
-- Accept: **met** — each demonstrated to fail when the control is removed. **Three mutations, all
-  caught**, two of them only after the tests were corrected.
+- **The completion gate found a negative assertion checking nothing**, proven by making the
+  failure-counter predicate unsatisfiable and watching every assertion still pass. The positive
+  control could not have caught it: it drives a *success*, and a success **clears** the counter, so
+  only a **failed** authentication is a control for that query. And the third "trace" was derived
+  from the other two — a restatement dressed as a check — while the **outbox** was uncovered, which
+  matters because an announcement of a login that did not happen cannot be retracted.
+- Accept: **met** — each demonstrated to fail when the control is removed. **Three mutations and two
+  vacuity probes, all caught**; several only after the tests were corrected. Five consecutive runs
+  green.
 - **Not in scope, with the owner named**: concurrent login and revocation, and expired session, need
   sessions (M1.3); recovery abuse is M1.6; partial MFA enrolment is M1.4; the registration rows are
   `P1-TSK-006`'s; extending `MutationDemonstrationTest` to Phase 1 invariants is `P1-TSK-024`
