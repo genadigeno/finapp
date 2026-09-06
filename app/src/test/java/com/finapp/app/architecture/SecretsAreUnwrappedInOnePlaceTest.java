@@ -57,7 +57,7 @@ class SecretsAreUnwrappedInOnePlaceTest {
     /**
      * The production classes permitted to unwrap a secret.
      *
-     * <p>All four are in {@code identity}, and that is the property worth reading off this list:
+     * <p>All six are in {@code identity}, and that is the property worth reading off this list:
      * the plaintext exists inside one module's call chain and nowhere else. Adding an entry is a
      * decision; adding one in another module should be a conversation, because it means a
      * credential has left the module that owns credentials.
@@ -71,7 +71,12 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // Reads the encoded form to answer "is this below policy?".
                     "com.finapp.identity.Credential",
                     // Validates length at construction, and re-exposes for the deriver.
-                    "com.finapp.identity.RawPassword");
+                    "com.finapp.identity.RawPassword",
+                    // Hashes the token it holds, and hands the client its one copy (`P1-TSK-013`).
+                    "com.finapp.identity.SessionToken",
+                    // Writes the token HASH to its column, and compares one on lookup. Not the
+                    // token: that never reaches the database at all.
+                    "com.finapp.identity.JdbcSessionStore");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

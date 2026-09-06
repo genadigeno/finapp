@@ -1643,17 +1643,36 @@ repository exists to prevent.
 
 #### P1-FEAT-05 — Session lifecycle
 
-**P1-TSK-013 — Session aggregate and issuance**
+**P1-TSK-013 — Session aggregate and issuance** — `COMPLETE` (2026-09-07)
 - Context: identity
 - Description: Server-side sessions with an opaque identifier, assurance level, device and two
   expiry bounds.
 - Why: ADR-0030. An eventually-revoked session is an unrevoked session.
 - Deps: P1-TSK-003
-- Implementation: authoritative in PostgreSQL, **no Redis**; opaque random identifier; idle and
-  absolute expiry both recorded on the row so a policy change does not retroactively extend
-  existing sessions; assurance level as a level, never a boolean.
-- Tests: expiry bounds enforced; an expired session is indistinguishable from a revoked one.
-- Accept: no process-local session state anywhere, asserted.
+- Implementation: `identity.session` (V005), `Session`, `SessionToken`, `SessionId`,
+  `AssuranceLevel`, `SessionStatus`, `SessionPolicy`, `SessionStore` / `JdbcSessionStore`.
+- **The token is stored HASHED, and the plan never said so.** A session identifier is a bearer
+  credential: a database leak with plaintext tokens hands an attacker every live session with no
+  work at all, which is worse than the credential table where Argon2 buys time. `PHASE_1_PLAN.md` §5
+  already requires the recovery token to be hashed at rest; the same argument applies here.
+- **SHA-256, deliberately not Argon2**, and it is not an inconsistency with ADR-0032: a password
+  needs a work factor because it is *low-entropy*. A 256-bit random token has nothing to guess, so a
+  work factor would buy no security while costing ~46 ms on every authenticated request.
+- **Two identifiers, two jobs**: `SessionId` is a UUIDv7 for foreign keys and logs; the token is 32
+  random bytes, because a UUIDv7 encodes its creation time and ADR-0030 forbids structure in the
+  presented value.
+- **There is no `EXPIRED` status.** Expiry is derived from the row's bounds, because a stored one
+  needs a sweep to write it and until that sweep runs the database says `ACTIVE` about a session
+  that is not — a second answer free to disagree with the first.
+- **Both bounds live on the row**, so a policy change cannot retroactively extend sessions issued
+  under the old one (`INV-HIST-04`'s reasoning), and each is asserted **alone** because a suite
+  testing them together passes against an implementation checking only one.
+- Accept: **met** — `NoProcessLocalSessionStateTest` fails the build on a field holding sessions,
+  which is the shape ADR-0024's four patterns cannot see and transition risk **R7** named.
+- **`secretsAreWrapped` fired on `Session.tokenHash` and the rule had the better argument**: a token
+  hash in a log is a precise identifier of one customer's live session. Wrapped — the third time in
+  this phase the right answer was to change the code rather than the rule.
+- **Five mutations, all caught.**
 - Risk: **High**. Cx: M. DoD: `DOD-KERNEL`
 
 **P1-TSK-014 — Revocation, immediate and multi-instance**

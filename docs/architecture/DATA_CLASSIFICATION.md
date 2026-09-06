@@ -244,6 +244,26 @@ row is itself the disclosure, and why nothing here records the login identifier 
 That fact lives on the audit record, where the trail is the regulatory artefact and the application
 role cannot edit it.
 
+### `identity.session` — *added by `P1-TSK-013`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `session` | `id` | `INTERNAL` | The aggregate's identifier. Generated, and **not** the value a client presents |
+| `session` | `identity_id` | `INTERNAL` | As `credential.identity_id` — an identifier of a thing |
+| `session` | `token_hash` | `RESTRICTED-PII` | **The second most sensitive column on the platform**, after `credential.derivation`, and it is more sensitive than it looks. It is not crackable — the input is 256 random bits — so it is not what `credential.derivation` is. What it is, is a precise identifier of one person's *live* session: anybody who could read it knows exactly which session to attack and when it was in use. The token itself is never stored, so this is the closest the database gets |
+| `session` | `assurance` | `CONFIDENTIAL` | How strongly a particular person authenticated. Knowing the platform supports MFA is public; knowing that *this* session did not use it is a targeting aid, which is `credential.algorithm`'s reasoning exactly |
+| `session` | `status` | `CONFIDENTIAL` | Whether a session is usable. As `identity.status` and `credential.status` |
+| `session` | `issued_at` | `CONFIDENTIAL` | When a person logged in — a behavioural fact, and one that patterns a person's day |
+| `session` | `idle_expires_at` | `CONFIDENTIAL` | With `issued_at`, it dates the *last activity*, which is more disclosive than the login itself |
+| `session` | `absolute_expires_at` | `CONFIDENTIAL` | As `issued_at`, from which it is derived |
+| `session` | `device` | `RESTRICTED-PII` | **At its ceiling, not its content.** It holds nothing today, and what it will hold is whatever a client sends about the machine a person uses — a user agent, a platform, a fingerprint. That is personal data about equipment in somebody's home, and there is no later moment at which classifying it lower becomes safe (ADR-0022) |
+| `session` | `revoked_at` | `CONFIDENTIAL` | Dates a logout, or an intervention. As `credential.superseded_at`, which is `CONFIDENTIAL` because it dates a password change |
+
+**`device` is the judgement worth challenging**, and it is classified above everything else here on
+purpose. Every other column is a fact about the *session*; `device` is a fact about the *person* —
+what they own and where they are. It is also the column most likely to be widened later by somebody
+adding "just the user agent", which is why the ceiling is set before anything populates it.
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,
