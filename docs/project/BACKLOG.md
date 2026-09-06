@@ -1597,13 +1597,37 @@ repository exists to prevent.
 - **Seven mutations, all caught.**
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
-**P1-TSK-012 — `P1-TST-002`: authentication failure modes**
+**P1-TSK-012 — `P1-TST-002`: authentication failure modes** — `COMPLETE` (2026-09-06)
 - Context: identity / test
 - Description: The `PHASE_1_PLAN.md` §8 scenarios that concern authentication.
 - Deps: P1-TSK-011
-- Tests: invalid credential; lockout; concurrent login and credential change; database unavailable
-  fails closed with no session issued.
-- Accept: each demonstrated to fail when the control is removed.
+- **Two of the four were already met, and checking rather than assuming is what made the task worth
+  doing**: *invalid credential* is `everyFailureLooksTheSame` plus `everyFailingPathDoesTheWork`,
+  and *lockout* is `AuthenticationLockoutDatabaseTest`'s twelve tests. Restating either would be
+  duplication that drifts, not coverage.
+- **Concurrent login and credential change** — `LoginRacingACredentialChangeDatabaseTest`. The risk
+  is not "does the old password still work for a moment" (it may; every platform accepts that). It
+  is that upgrade-on-use **reinstates the replaced password**: supersede the new credential, insert a
+  re-derivation of the old one, and the customer's password change is silently undone.
+- **Database unavailable, fails closed** — `AuthenticationFailsClosedDatabaseTest`. Fails closed
+  means *no success reported* **and** *no durable trace claiming otherwise*.
+- **The first version of the race proved nothing, and two mutations said so.** It read the
+  credential, waited for the change, then called `verify` — but `verify` does its own read, so the
+  old password simply did not match and the upgrade path was never reached. The change now lands
+  **inside** the verifier's window, via a store decorator.
+- **Then a third mechanism had to be separated out.** The right end state is produced by the
+  conditional supersede, the append-only trigger *and* the partial unique index. An outcome-only
+  assertion cannot tell them apart, so the test asserts the coordination: no insert attempted, and
+  nothing discarded — the login was *told* it lost rather than finding out by failing.
+- **The kill was racing a one-millisecond derivation.** A 60 ms sleep before terminating the backend
+  meant the transaction had already committed. Now deterministic: the decorator kills the
+  transaction's own backend from inside the flow.
+- Accept: **met** — each demonstrated to fail when the control is removed. **Three mutations, all
+  caught**, two of them only after the tests were corrected.
+- **Not in scope, with the owner named**: concurrent login and revocation, and expired session, need
+  sessions (M1.3); recovery abuse is M1.6; partial MFA enrolment is M1.4; the registration rows are
+  `P1-TSK-006`'s; extending `MutationDemonstrationTest` to Phase 1 invariants is `P1-TSK-024`
+  (`PHASE_1_PLAN.md` §9).
 - Risk: Low. Cx: M. DoD: `DOD-TEST`
 
 ## P1-EPIC-03 — Sessions and Devices
