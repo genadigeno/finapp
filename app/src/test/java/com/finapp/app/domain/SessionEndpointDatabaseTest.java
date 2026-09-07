@@ -73,6 +73,11 @@ class SessionEndpointDatabaseTest {
     @org.springframework.beans.factory.annotation.Autowired
     private com.finapp.app.session.SessionController controller;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.transaction.support.TransactionTemplate sessionTransactions;
+
+    @org.springframework.beans.factory.annotation.Autowired private javax.sql.DataSource dataSource;
+
     // -----------------------------------------------------------------
     // Listing
 
@@ -201,6 +206,42 @@ class SessionEndpointDatabaseTest {
                 .isAfter(before);
     }
 
+    @Test
+    @DisplayName("a revocation is audited, and the record names the PERSON, not the platform")
+    void aRevocationIsAuditedAgainstTheProvenIdentity() throws Exception {
+        IdentityId mine = givenAnIdentity();
+        Issued current = givenALiveSession(mine, null);
+        Issued doomed = givenALiveSession(mine, null);
+
+        assertThat(delete("/v1/sessions/" + doomed.session().id().value(), current).statusCode())
+                .isEqualTo(204);
+
+        // The completion gate added this. The interceptor test asserts the CONTEXT holds the right
+        // actor; INV-AUD-01 is about the durable RECORD, and a mechanism that establishes an actor
+        // nothing then writes down is a mechanism with no effect. This is the end-to-end claim the
+        // task makes - the platform's first action attributed to a person rather than to itself.
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT actor_id, actor_type, target_type, target_id, outcome"
+                                        + " FROM platform.audit_record"
+                                        + " WHERE target_id = ? ORDER BY occurred_at DESC")) {
+            read.setString(1, doomed.session().id().value().toString());
+            try (var rows = read.executeQuery()) {
+                assertThat(rows.next())
+                        .as("a revocation that ended a session must be audited")
+                        .isTrue();
+                assertThat(rows.getString("actor_id"))
+                        .as("the actor must be the identity the session proved - a record naming"
+                                + " the platform would attribute a customer's action to us")
+                        .isEqualTo(mine.value().toString());
+                assertThat(rows.getString("actor_type")).isEqualTo("CUSTOMER");
+                assertThat(rows.getString("target_type")).isEqualTo("identity.Session");
+                assertThat(rows.getString("outcome")).isEqualTo("SUCCEEDED");
+            }
+        }
+    }
+
     // -----------------------------------------------------------------
     // The actor, and the scope that must not outlive the request
 
@@ -267,6 +308,127 @@ class SessionEndpointDatabaseTest {
         interceptor.afterCompletion(request, response, handler, new IllegalStateException("boom"));
 
         assertThat(com.finapp.platform.security.SecurityContext.current()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a handler reached without the interceptor refuses rather than leaking")
+    void anUndeclaredHandlerFailsClosed() {
+        // RequiresSession's javadoc claims this is "asserted rather than claimed" - and until the
+        // completion gate it was not asserted at all, which is the exact pattern this repository
+        // keeps meeting: a comment naming a test that does not exist.
+        //
+        // Deny-by-default belongs to P1-TSK-020, which states it. What must hold NOW is that an
+        // endpoint which forgets the annotation refuses rather than serving somebody else's data.
+        var request = new org.springframework.mock.web.MockHttpServletRequest("GET", "/v1/sessions");
+
+        assertThat(request.getAttribute(
+                        com.finapp.app.session.SessionAuthenticationInterceptor.CURRENT_SESSION))
+                .as("precondition: the interceptor has not run")
+                .isNull();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.listSessions(request))
+                .as("no proven owner must mean no answer - never an unscoped one")
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("an unreadable database refuses the request rather than authenticating it")
+    void storageFailureFailsClosed() throws Exception {
+        IdentityId mine = givenAnIdentity();
+        Issued current = givenALiveSession(mine, null);
+
+        // Authenticating against a database that cannot be read is the one outcome worse than an
+        // outage: it is a request served as somebody nobody verified. The P1-TSK-012 precedent -
+        // "fails closed" is a claim that must be proven, not described.
+        var failing =
+                new com.finapp.app.session.SessionAuthenticationInterceptor(
+                        new FailingSessionStore(), sessionTransactions, dataSource, CLOCK,
+                        SessionPolicy.current());
+
+        var request = new org.springframework.mock.web.MockHttpServletRequest("GET", "/v1/sessions");
+        request.addHeader("Authorization", "Bearer " + current.plaintext());
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        var handler =
+                new org.springframework.web.method.HandlerMethod(
+                        controller,
+                        com.finapp.app.session.SessionController.class.getMethod(
+                                "listSessions", jakarta.servlet.http.HttpServletRequest.class));
+
+        // NOT merely "something was thrown", and a surviving mutation is what sharpened this.
+        // Swallowing the failure and reporting 401 also throws - and is a real defect: it tells a
+        // client their good session is invalid, so a database blip logs every user out, while the
+        // operator sees a spike in 401s pointing away from the cause. It also asserts "this session
+        // is not live" when the truth is "we cannot tell", which is INV-LIFE-03's principle.
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> failing.preHandle(request, response, handler))
+                .as("the storage failure must propagate as itself, never as a refusal")
+                .isInstanceOf(RuntimeException.class)
+                .isNotInstanceOf(com.finapp.platform.api.ApiException.class)
+                .hasMessageContaining("unreachable");
+
+        assertThat(com.finapp.platform.security.SecurityContext.current())
+                .as("and nothing may be established on the way out - an actor left behind after a"
+                        + " failed lookup is an unverified caller on a pooled thread")
+                .isEmpty();
+    }
+
+    /** A store whose reads fail, standing in for a database that cannot be reached. */
+    private static final class FailingSessionStore implements SessionStore<Connection> {
+        @Override
+        public void insert(Connection unitOfWork, Session session) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public java.util.Optional<Session> findLive(
+                Connection unitOfWork, SessionToken token, Instant at) {
+            throw new IllegalStateException("the database is unreachable");
+        }
+
+        @Override
+        public java.util.List<Session> findLiveFor(
+                Connection unitOfWork, com.finapp.identity.IdentityId identityId, Instant at) {
+            throw new IllegalStateException("the database is unreachable");
+        }
+
+        @Override
+        public boolean revoke(
+                Connection unitOfWork, com.finapp.identity.SessionId sessionId, Instant at) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean revokeOwned(
+                Connection unitOfWork,
+                com.finapp.identity.SessionId sessionId,
+                com.finapp.identity.IdentityId owner,
+                Instant at) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int revokeAllFor(
+                Connection unitOfWork, com.finapp.identity.IdentityId identityId, Instant at) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int revokeAllForExcept(
+                Connection unitOfWork,
+                com.finapp.identity.IdentityId identityId,
+                com.finapp.identity.SessionId spare,
+                Instant at) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean touch(
+                Connection unitOfWork,
+                com.finapp.identity.SessionId sessionId,
+                Instant at,
+                SessionPolicy policy) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     // -----------------------------------------------------------------
