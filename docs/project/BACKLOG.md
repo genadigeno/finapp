@@ -1725,14 +1725,35 @@ repository exists to prevent.
   redundant code.
 - Risk: **High**. Cx: M. DoD: `DOD-KERNEL`
 
-**P1-TSK-015 — Rotation on privilege change**
+**P1-TSK-015 — Rotation on privilege change** — `COMPLETE` (2026-09-07)
 - Context: identity / security
 - Description: A new session identifier on login, step-up and credential change.
 - Why: Session fixation. Elevating in place lets a stolen pre-elevation identifier become elevated.
 - Deps: P1-TSK-013
-- Tests: the pre-rotation identifier is refused after rotation; the elevated session is a different
-  identifier.
-- Accept: no privilege change leaves the identifier unchanged.
+- Implementation: `SessionRotation` composing the revoke and issue that already existed, plus
+  `IdentityAuditAction.SESSION_ROTATED`. No schema change.
+- **Login needed no code, and that is asserted rather than implemented.** Classic fixation is the
+  attacker planting an identifier the victim then authenticates *with* — and a session's token comes
+  from `SecureRandom` inside the server, with no path by which a client supplies one. A test proves
+  the mechanism refuses; a redundant rotation step would have implemented a property already true.
+- **The decision nothing had written down: rotation PRESERVES the absolute bound.** Resetting it
+  would let anyone able to trigger a rotation hold a session indefinitely — step up, rotate, step up
+  again — making the absolute lifetime advisory. That is the failure `P1-TSK-013` closed on the idle
+  bound with `LEAST(…)`, returning through a different door. A step-up must not extend how long you
+  can stay logged in.
+- **Revoke first, issue only if the revoke won.** The ordering *is* the concurrency property:
+  inserting first would leave a loser's session live, handing out two usable identifiers where there
+  should be one. Ten instances produce exactly one replacement.
+- **Audited as a rotation, never as a revocation**, and naming both identifiers — an investigator
+  must be able to tell *"this session was ended"* from *"this session was replaced"*.
+- Accept: **met** — no privilege change leaves the identifier unchanged.
+- **One mutation survived correctly**: deriving the new token from the old derived it from the
+  *hash*, which an attacker never holds. The dangerous version — reuse the old plaintext — is
+  structurally unreachable, because `SessionRotation` never receives it. Now asserted reflectively,
+  and a mutation adding that parameter is caught.
+- **Nothing calls it yet**: step-up is `P1-TSK-017`, credential change `P1-TSK-026`, login
+  `P1-TSK-027`.
+- **Six mutations. Five caught, one survived correctly.**
 - Risk: Medium. Cx: S. DoD: `DOD-SEC`
 
 **P1-TSK-016 — Session and device endpoints**

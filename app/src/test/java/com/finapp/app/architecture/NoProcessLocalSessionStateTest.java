@@ -67,13 +67,36 @@ class NoProcessLocalSessionStateTest {
     private static final String SESSION_TYPE = "com.finapp.identity.Session";
 
     /**
-     * Fields that legitimately mention a session type without holding one.
+     * Fields that legitimately mention a session type without retaining one.
      *
-     * <p>Empty, and it must stay empty until somebody has a reason. An entry here is a claim that a
-     * field mentioning a session does not retain one, which is exactly the claim this rule exists to
-     * stop being made informally.
+     * <p>An entry here is a claim that a field mentioning a session does not retain one, which is
+     * exactly the claim this rule exists to stop being made informally. Making it formally, in one
+     * place, with the reason written down, is the point of the list rather than a way around it.
+     *
+     * <p><strong>One entry, and it is a return value.</strong> {@code SessionRotation.Rotated} is
+     * the result of a single call — the new session and the token to hand the client — constructed
+     * per rotation and discarded when the caller is done with it. It cannot make a revoked session
+     * usable, because nothing consults it on a later request; a cache can, because that is what a
+     * cache is for.
+     *
+     * <p>The rule cannot tell a return value from a cache by inspecting a field, and it should not
+     * try: the alternative considered was to flag only <em>collections</em> of sessions, which would
+     * have let a singleton hold one session indefinitely. Narrowing the detector to admit this would
+     * have cost more than naming it.
      */
-    private static final Set<String> PERMITTED = Set.of();
+    private static final Set<String> PERMITTED =
+            Set.of("com.finapp.identity.SessionRotation$Rotated.session");
+
+    @Test
+    @DisplayName("every exemption still names a field that exists")
+    void theExemptionsAreNotStale() {
+        // A permitted entry naming a field that has been renamed or deleted is an exemption nobody
+        // can evaluate, and it silently stops protecting anything. The same reasoning P0-TSK-041
+        // applied to its two exemptions: proven load-bearing, or removed.
+        assertThat(allSessionMentioningFields())
+                .as("an exemption that names nothing is an exemption that has stopped applying")
+                .containsAll(PERMITTED);
+    }
 
     @Test
     @DisplayName("no field anywhere in production code retains a session")
@@ -120,6 +143,22 @@ class NoProcessLocalSessionStateTest {
 
     private static List<String> fieldsHoldingSessions() {
         return sessionFieldsIn(productionClasses());
+    }
+
+    /** Every field mentioning a session, exemptions included — for the staleness check. */
+    private static List<String> allSessionMentioningFields() {
+        List<String> mentioning = new ArrayList<>();
+        for (JavaClass javaClass : productionClasses()) {
+            if (javaClass.getName().equals(SESSION_TYPE)) {
+                continue;
+            }
+            for (JavaField field : javaClass.getFields()) {
+                if (retainsASession(field)) {
+                    mentioning.add(field.getFullName());
+                }
+            }
+        }
+        return mentioning;
     }
 
     private static List<String> sessionFieldsIn(JavaClasses classes) {

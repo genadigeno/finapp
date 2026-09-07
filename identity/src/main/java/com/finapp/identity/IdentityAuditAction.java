@@ -128,6 +128,24 @@ public enum IdentityAuditAction implements AuditableAction {
             "One or more sessions were ended.",
             false),
 
+    /**
+     * A session was replaced by a new one on a privilege change (`P1-TSK-015`).
+     *
+     * <p><strong>Distinct from {@link #SESSION_REVOKED}, and that distinction is the reason it
+     * exists.</strong> A rotation revokes the old session, so it would be easy to record it as one —
+     * and an investigator would then read a logout that never happened. <em>"This session was
+     * ended"</em> and <em>"this session was replaced"</em> are different facts, and only the second
+     * leaves the person still logged in.
+     *
+     * <p>The record names both identifiers, so the chain from a session to its successor is
+     * followable. No reason required: nobody chose it in the sense a justification would answer, it
+     * is the automatic consequence of a privilege change.
+     */
+    SESSION_ROTATED(
+            "identity.SessionRotated",
+            "A session was replaced by a new one on a privilege change.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

@@ -91,6 +91,7 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.AuthenticationFailed` | No | An authentication attempt failed. |
 | `identity.AuthenticationLocked` | No | An identity was locked after repeated failed authentications. |
 | `identity.SessionRevoked` | No | One or more sessions were ended. |
+| `identity.SessionRotated` | No | A session was replaced by a new one on a privilege change. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
 
@@ -115,6 +116,12 @@ afterwards, because repeating it while an account stays locked buries the event 
 Revoking forty sessions writes one record with the count in its change summary. The division is
 deliberate: the session rows carry `revoked_at` and answer *when each one ended*; the audit record
 answers *who decided*. Forty records would bury the decision under its consequences.
+
+**`identity.SessionRotated` is deliberately distinct from `identity.SessionRevoked`**
+(`P1-TSK-015`). A rotation revokes the session it replaces, so recording it as a revocation would be
+the easy thing — and an investigator would then read a logout that never happened. *"This session was
+ended"* and *"this session was replaced"* are different facts, and only the second leaves the person
+still logged in. The rotation record names both identifiers so the chain is followable.
 
 **Neither authentication action records *why* a failure failed.** Unknown identity, wrong password,
 suspended identity and an identity with no credential are deliberately not distinguished anywhere -

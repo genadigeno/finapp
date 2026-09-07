@@ -19,7 +19,7 @@ Status: **`IN_PROGRESS`** — entry gate passed, all twelve criteria. Started 20
 ## Current Milestone
 
 **M1.3 — Sessions are real, and revocation is immediate.** `P1-TSK-013` … `P1-TSK-016`;
-**2 of 4 complete.** Started 2026-09-07.
+**3 of 4 complete.** Started 2026-09-07.
 
 **M1.2 — That person can authenticate.** `P1-TSK-007` … `P1-TSK-012`; **6 of 6 complete** — but the milestone does **not** close: its stated acceptance requires a session, which is `P1-TSK-027`. The session now exists; wiring it into authentication is what remains.
 Objective: password authentication that is enumeration-safe and cannot be brute-forced. Credentials
@@ -130,10 +130,57 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-014` completed 2026-09-07. **M1.3 is 2 of 4.**
-**Next: `P1-TSK-015`** — rotation on privilege change.
+**None in progress.** `P1-TSK-015` completed 2026-09-07. **M1.3 is 3 of 4.**
+**Next: `P1-TSK-016`** — session and device endpoints.
 
 ### Just completed
+
+**`P1-TSK-015` — Rotation on privilege change** — `COMPLETE` (2026-09-07).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The pre-rotation identifier is refused afterwards | `theOldIdentifierIsRefused` |
+| The elevated session is a different identifier | `elevationProducesANewIdentifier` |
+| No privilege change leaves the identifier unchanged | Both, plus the structural assertion below |
+
+**Login needed no code, and that is asserted rather than implemented.** Classic fixation is the
+attacker planting an identifier the victim then authenticates *with*. This platform cannot be
+attacked that way: a token comes from `SecureRandom` inside the server and there is no path by which
+a client supplies one. So the deliverable for that case is a **test that the mechanism refuses** —
+adding a rotation step would have implemented a property already true, and hidden that it was.
+
+### The decision nothing had written down
+
+**Rotation preserves the absolute bound.** If it reset it, anyone able to trigger a rotation could
+hold a session indefinitely — step up, rotate, step up again — and the absolute lifetime would be
+advisory. That is exactly the failure `P1-TSK-013` closed on the *idle* bound with
+`LEAST(…, absolute_expires_at)`, returning through a different door. **A step-up must not extend how
+long you can stay logged in**; a customer wanting a fresh bound authenticates again, which is an
+issue rather than a rotation.
+
+**Revoke first, issue only if the revoke won.** The ordering *is* the concurrency property. Inserting
+first and revoking after would leave a loser's session live — a rotation handing out two usable
+identifiers where there should be one. Ten instances produce exactly one replacement.
+
+**Audited as a rotation, never as a revocation**, naming both identifiers. An investigator must be
+able to tell *"this session was ended"* from *"this session was replaced"*; a rotation logged as a
+revocation reads as a logout that never happened.
+
+### One mutation survived, correctly, and sharpened the test
+
+Deriving the new token from the old **survived** — because it derived from the *hash*, which an
+attacker never holds. The dangerous version is reusing the old **plaintext**, and that is
+**structurally unreachable**: `SessionRotation` only ever receives a `Session`, which carries the
+hash. Now asserted reflectively rather than left as a claim, and a mutation adding that parameter is
+caught.
+
+**The `NoProcessLocalSessionStateTest` exemption list gained its first entry**, with the claim stated:
+`Rotated.session` is a per-call return value, not a retained cache. A staleness guard was added
+alongside it, because an exemption naming a field that no longer exists is one nobody can evaluate.
+
+**Six mutations. Five caught, one survived correctly.** 755 hermetic tests, 308 database tests.
+
+### Previously
 
 **`P1-TSK-014` — Revocation, immediate and multi-instance** — `COMPLETE` (2026-09-07).
 
@@ -1750,6 +1797,19 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Rotation (2026-09-07), `P1-TSK-015`:
+- A new identifier on every privilege change - elevating in place lets an identifier stolen *before*
+  the elevation become elevated behind the legitimate user's back
+- **Login needed no code**: a token comes from `SecureRandom` inside the server and no client can
+  supply one, so the deliverable is a test that the mechanism refuses
+- **Rotation preserves the absolute bound**, which nothing had written down: resetting it would let
+  anyone able to trigger a rotation stay logged in for ever
+- **Revoke first, issue only if the revoke won** - inserting first would hand out two usable
+  identifiers where there should be one
+- Audited as a **rotation**, never as a revocation, naming both identifiers
+- Reusing the predecessor's token is **structurally unreachable**, and now asserted: the component
+  never receives the plaintext
+
 Revocation (2026-09-07), `P1-TSK-014`:
 - Revoke one, revoke all, revoke all **except** one - the last being what a credential change does,
   so the attacker's session ends and yours does not
@@ -2648,18 +2708,19 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-015` — Rotation on privilege change.**
+**`P1-TSK-016` — Session and device endpoints.**
 
-A new session identifier on login, step-up and credential change. The defence against session
-fixation: elevating in place lets an identifier stolen *before* the elevation become elevated behind
-the legitimate user's back, which ADR-0030 names explicitly. The mechanism is cheap — issue a new
-session and revoke the old one, both of which now exist — and the test is that the pre-rotation
-identifier is refused afterwards.
+`GET /v1/sessions`, `DELETE /v1/sessions/{id}`, `DELETE /v1/sessions/current`, and the device
+recorded on the session. The task's own acceptance is a **negative ownership test** — one identity
+cannot list or revoke another's sessions — and ADR-0031's rule is that ownership is checked **in the
+domain, never at the boundary from a request parameter**, because trusting an identifier out of the
+request *is* the defect. It depends on `P1-TSK-020` for the permission half.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-07 | **`P1-TSK-015` complete - M1.3 is 3 of 4.** A new session identifier on every privilege change, because elevating in place lets an identifier stolen *before* the elevation become elevated behind the legitimate user's back: the attacker does nothing, waits for the customer to complete a second factor, and inherits it. **Login needed no code, and that is asserted rather than implemented.** Classic fixation is the attacker planting an identifier the victim then authenticates *with*, and this platform cannot be attacked that way - a token comes from `SecureRandom` inside the server and there is no path by which a client supplies one. So the deliverable for that case is a **test that the mechanism refuses**; adding a rotation step would have implemented a property already true and hidden that it was. **The decision nothing had written down: rotation PRESERVES the absolute bound.** If it reset it, anyone able to trigger a rotation could hold a session indefinitely - step up, rotate, step up again - and the absolute lifetime would be advisory, which is exactly the failure `P1-TSK-013` closed on the *idle* bound with `LEAST(…, absolute_expires_at)` returning through a different door. A step-up must not extend how long you can stay logged in; a customer wanting a fresh bound authenticates again, which is an issue rather than a rotation. **Revoke first, issue only if the revoke won**, and the ordering *is* the concurrency property: inserting first and revoking after would leave a loser's session live, handing out two usable identifiers where there should be one. Ten instances produce exactly one replacement. **Audited as a rotation, never as a revocation**, naming both identifiers - an investigator must be able to tell *"this session was ended"* from *"this session was replaced"*, and a rotation logged as a revocation reads as a logout that never happened. **One mutation survived, correctly, and sharpened the test**: deriving the new token from the old survived because it derived from the *hash*, which an attacker never holds. The dangerous version is reusing the old **plaintext**, and that is **structurally unreachable** - `SessionRotation` only ever receives a `Session`, which carries the hash. Now asserted reflectively rather than left as a claim, and a mutation adding that parameter is caught. **The `NoProcessLocalSessionStateTest` exemption list gained its first entry**, with the claim stated - `Rotated.session` is a per-call return value, not a retained cache - alongside a staleness guard, because an exemption naming a field that no longer exists is one nobody can evaluate. **Six mutations: five caught, one survived correctly.** 755 hermetic tests, 308 database tests. |
 | 2026-09-07 | **`P1-TSK-014` complete - M1.3 is 2 of 4.** Revoke one, revoke all, and revoke all **except** one - the last being what a credential change does, so the attacker's session ends and the one you are changing the password from does not. The acceptance criterion is met and **caught twice**: introducing a session cache fails the behavioural test *and* fails `NoProcessLocalSessionStateTest` independently, which is two controls meeting one defect rather than a duplication. **The hard reading of `PHASE_1_PLAN.md` §8 was broken, and it was verified broken before any machinery was written.** The plan states it as an absolute - *"Revocation wins. A session must never survive a concurrent revoke"* - and the easy reading, a lookup racing a revoke, was already true. The hard one was not: a session **issued** concurrently with a revoke-all was still live afterwards, because the insert lands after the revoke has selected its rows and the revoke never sees it. An attacker holding the old password keeps a live session across the password change, and **every revoke-then-look-up test passes**. **One explicit lock, not two, and a surviving mutation is what established that.** Bulk revocation takes `FOR UPDATE` on the identity row; an explicit lock was written on the issuing side too, on the reasoning that both sides of a race must take one. A mutation removing it **survived**, and the pair explains why - removing the `FOR UPDATE` from revocation is caught, removing this is not - because PostgreSQL takes **`FOR KEY SHARE` on the referenced row for every insert with a foreign key**, and the two conflict. The serialisation already existed, supplied by `identity_id REFERENCES identity.identity (id)`. Removed rather than left in: a redundant lock reads as *the mechanism* and hides the real one, so the next person to drop the foreign key would see a lock two lines away and conclude the serialisation was safe. **The race test asserts the coordination rather than the outcome**, and its first version did not - the lock-removal mutation survived it, because with the lock the insert serialises after the revoke and the new session is live, while without it the insert races and the new session is *also* live. Same rows, opposite mechanisms. It now waits for PostgreSQL to report the issuer **blocked**, which is the `P0-TST-004` idiom and is deterministic rather than timed. **One audit record per operation, never per session**: forty sessions ended by one decision is one record with the count in its change summary, because the rows carry `revoked_at` and answer *when each ended* while the trail answers *who decided* - the argument `AUTHENTICATION_LOCKED` already makes for recording a crossing once. **`V006` adds the partial by-identity index** `V005` deliberately omitted because no query needed one; bulk revocation is that query, added by the task that states it. **The completion gate then sharpened the headline assertion and covered two audit paths.** The lock-wait observation counted *any* backend waiting on a lock in the database, which is a different claim from *"the insert is blocked"* - satisfied by anything else contending, and passing while saying nothing about the property; it now matches the issuer's own statement text, and the `FOR UPDATE` mutation is still caught against the sharper assertion. And only the bulk path had its audit asserted, leaving three claims uncovered: that a single revocation writes a record at all, that its target is the **session** rather than the identity because that is what was acted on, and that a revocation which ended **nothing** writes nothing - since a record for a caller's guess at a session identifier would put identifiers that were never real into the trail. **Seven mutations: five caught, one caught twice, and one survived correctly** having removed redundant code. 754 hermetic tests, 299 database tests. |
 | 2026-09-07 | **`P1-TSK-013` complete - M1.3 opens, 1 of 4.** The platform's authenticated presence, server-side and authoritative in PostgreSQL, so `INV-IDN-03` holds **by construction** rather than by discipline: every request that presents a token reads the table, and there is no cache to expire. **The acceptance criterion is a build rule** - `NoProcessLocalSessionStateTest` fails on any production field holding sessions, which is the shape ADR-0024's four patterns structurally cannot see (a cache need not be static, need not be a lock, need not be mutable in any way they recognise) and which the Phase 0 transition recorded as risk **R7**. **The token is stored hashed, and the plan never said so.** A session identifier is a bearer credential - whoever holds it *is* the customer - so a database leak with plaintext tokens hands an attacker every live session with **no work at all**, which is worse than the credential table where Argon2 at least buys time. `PHASE_1_PLAN.md` §5 already requires the recovery token to be *"hashed at rest"*; the same argument applies here and simply had not been made. **SHA-256 and deliberately not Argon2**, which is not an inconsistency with ADR-0032: a password needs a work factor because it is **low-entropy**, and a 256-bit random token has nothing to guess - so a work factor would buy no security while costing ~46 ms on *every authenticated request*. **Two identifiers, two jobs**: `SessionId` is a UUIDv7 for foreign keys, logs and audit records, while the token is 32 random bytes - because a UUIDv7 **encodes its creation time**, which is exactly the structure ADR-0030 forbids in a presented value and exactly what `EntityId` exists to provide. **There is no `EXPIRED` status**, and that is the sharpest modelling decision here: a stored one needs a sweep to write it, and between the moment a session expires and the moment that sweep runs the database would say `ACTIVE` about a session that is not, so every consumer would check the bounds anyway and the status would be a second answer free to disagree with the first. **Both bounds live on the row**, so a policy change cannot retroactively extend sessions issued under the old one (`INV-HIST-04`'s reasoning), and each is asserted **alone** because a suite testing them together passes against an implementation that checks only one. **Touching is clamped by `LEAST(…, absolute_expires_at)`** - without it an attacker holding a stolen token and using it steadily keeps the session alive for ever and the absolute lifetime is advisory. **The build made two decisions I had made differently.** `secretsAreWrapped` fired on `Session.tokenHash` and the rule had the better argument: my javadoc said a hash is not the secret, which is true and beside the point, because `INV-AUD-02` is about what reaches a **log** and a token hash in a log is a precise identifier of one customer's live session - the single most useful thing to somebody reading log archives. Wrapped; the third time this phase the right answer was to change the code rather than the rule. And `SecretsAreUnwrappedInOnePlaceTest` refused the new unwrap sites until they were named, which is the guard doing its job - the set is now six production classes, still all in `identity`, which is the property that list exists to keep true. **One defect in my own guard, found by running it**: the cache detector matched by substring, so `SessionStatus` and `SessionId` were flagged, both *containing* the string `Session`; it now matches on a word boundary against the **generic** signature, because a `Map<String, Session>` has a raw type of `Map` and the cache lives in the parameters. **The completion gate then found three things, and the first is the pattern this phase keeps repeating.** `V005` claimed *"IdentityEnumMigrationTest fails the build if they drift"* about `AssuranceLevel` and `SessionStatus` - and that test covers `IdentityStatus` and nothing else, while **no test reconciled either new enum with its constraint**. `P1-TSK-007` had established the pattern (`CredentialMigrationTest` reconciles all three credential enums) and this task did not follow it. The drift is not cosmetic: a fourth `AssuranceLevel` without a matching constraint is a value the domain produces and the database refuses, failing at the last write *after* the derivation, for a reason no error message would explain. **Two aggregate methods were dead code carrying confident javadoc**: `isLiveAt` and `idleBoundAfterUseAt` were never called, because the store does both checks in SQL - which is worse than no code, since the javadoc describes a safety property and the next reader believes the aggregate enforces it. `idleBoundAfterUseAt` is deleted (it duplicated the SQL's `LEAST(…)` with no caller); `isLiveAt` is kept and made load-bearing, because it is the *definition* of liveness and the SQL is an implementation of it - without it the domain rule would live only in a `WHERE` clause where no reader and no architecture rule would find it. **And `AssuranceLevel` had no test at all**, which for the type `INV-IDN-05` names as its own enforcement mechanism is the wrong number; now swept over every pair, with the declaration order pinned, because `ordinal()` carries the meaning and swapping two constants changes every comparison in the platform while compiling cleanly. **Eight mutations, all caught.** 754 hermetic tests, 289 database tests. |
 | 2026-09-06 | **`P1-TSK-012` complete - M1.2 is 6 of 6 by task count and does not close**, because `PHASE_1_PLAN.md` §11 requires *"an identity authenticates and receives a session"* and that is `P1-TSK-027`. **Two of the four scenarios were already met, and checking rather than assuming is what made the task worth doing**: *invalid credential* is `everyFailureLooksTheSame` plus `everyFailingPathDoesTheWork`, and *lockout* is `AuthenticationLockoutDatabaseTest`'s twelve tests - restating either would be duplication that drifts rather than coverage. **Concurrent login and credential change**, and the risk is not the obvious one: *does the old password still work for a moment after a change* may well be yes, the window is milliseconds and every platform accepts it. The sharp risk is that the login **reinstates the replaced password** - upgrade-on-use supersedes the credential it read and inserts a re-derivation of the password just used, so run against a credential the customer has already replaced it undoes their change silently, with nothing failing anywhere. **The first version of the test proved nothing and two mutations said so**: it read the credential, waited for the change, then called `verify` - but `verify` does its **own** read, so it saw the new credential, the old password did not match, and the upgrade path was never reached; the change now lands **inside** the verifier's window through a store decorator. **Then a third mechanism had to be separated out**: the correct end state is produced by the conditional supersede, the append-only trigger AND the partial unique index, so an outcome-only assertion cannot tell them apart - which is why a mutation making `supersede` unconditional still survived. The test now asserts the **coordination** - no insert attempted, and nothing discarded - which together say the login was *told* it lost rather than finding out by failing. **Database unavailable, fails closed**, and that is two claims rather than one: no success reported, **and** no durable trace claiming otherwise. A platform returning a failure while having committed the audit record of a success would be worse than one that crashed, because the trail would say a person logged in, permanently, under `INV-HIST-03`. **The kill was racing a one-millisecond derivation** - a 60 ms sleep before terminating the backend meant the transaction had already committed and the test disrupted nothing; it is deterministic now, the decorator asking the connection for its own backend identifier and terminating it from inside the flow, which is `P1-TSK-002`'s lesson that you wait on the condition and never for a duration. **"No session issued" has no subject yet** and the test says so rather than asserting absence over an empty table - the vacuity `P1-TSK-009` refused - so it asserts what is committed, which is the mechanism that will withhold a session the moment there is one. **The completion gate then found a negative assertion that was checking nothing**, and proved it rather than suspecting it: making the failure-counter predicate unsatisfiable left every negative assertion passing, so the query could have been pointing at nothing and the suite would have stayed green. **The positive control could not have caught it, and that is the more useful half** - it drives a *successful* authentication, and a success **clears** the counter, so it can never demonstrate that the query selects anything; only a **failed** authentication leaves the row, so only a failure is a control for it. **And the third "trace" was a restatement**: it was derived from the other two assertions - a check dressed as an independent one - while the **outbox** was not covered at all, which is a real gap because an announcement of a login that did not happen reaches consumers and cannot be retracted. It is now the third assertion, scoped to the identity so it can actually fail, and proven non-vacuous by the same probe. **Three mutations and two vacuity probes, all caught. Five consecutive runs green.** 737 hermetic tests, 281 database tests. |
