@@ -1954,7 +1954,17 @@ repository exists to prevent.
   positives on its first run.
 - **`party` owns no resource-scoped operation**, asserted rather than assumed — the first one fails
   the build until it is classified.
-- Eight mutations, all caught.
+- **The gate found the rule aimed at the wrong half of the defect.** The shape this repository has
+  actually shipped is a method that takes an owner and **never uses it** (`P1-TSK-016`). A second
+  assertion now requires a statement handed an `IdentityId` to name the owner — twelve of thirteen
+  satisfy it, and the thirteenth locks `identity.identity` where `id = ?` *is* the owner. It also
+  covers the **bulk disclosure** the first half cannot see: `findLiveFor` takes no resource
+  identifier, so nothing would have noticed it losing its scope.
+- **The coverage guard had deviated from its four siblings** — a bare `isNotEmpty()` left `party`
+  protected by nothing, the `P0-TSK-008` finding.
+- **A latent defect in the helper**, exposed by widening its input: the string-literal regex
+  backtracked catastrophically and overflowed the stack on the first long method body.
+- **Ten mutations, all caught** — two added by the gate.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 **P1-TSK-022 — Actor-attributed audit**

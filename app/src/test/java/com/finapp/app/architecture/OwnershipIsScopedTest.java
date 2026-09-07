@@ -349,6 +349,62 @@ class OwnershipIsScopedTest {
     }
 
     @Test
+    @DisplayName("a statement given an owner must reference the owner")
+    void everyOwnerTakingStatementReferencesTheOwner() {
+        List<String> ignoringTheOwner = new ArrayList<>();
+        for (JavaClass javaClass : productionClasses()) {
+            for (JavaMethod method : javaClass.getMethods()) {
+                if (!issuesSql(method) || !takesTheOwner(method)) {
+                    continue;
+                }
+                String qualified = javaClass.getName() + "." + method.getName();
+                if (!referencesTheOwner(statementOf(qualified))) {
+                    ignoringTheOwner.add(qualified);
+                }
+            }
+        }
+
+        // This is the OTHER half of ownership, and the defect it catches is one this repository has
+        // actually shipped. P1-TSK-016 found SessionRevocation.revoke taking an `owner` and never
+        // using it: the statement was `WHERE id = ? AND status = 'ACTIVE'`, so ANY caller could end
+        // ANY session by identifier, while the audit record confidently asserted an owner nobody had
+        // verified. Worse than an absent parameter, because the signature read as though ownership
+        // were enforced.
+        //
+        // A method handed an IdentityId and not mentioning the owner column is that shape exactly.
+        // It also covers what the resource-identifier rule structurally cannot see: `findLiveFor`
+        // takes no resource identifier, so nothing above would notice it losing its scope - and that
+        // is a BULK disclosure, every session of every customer, rather than one row.
+        assertThat(ignoringTheOwner)
+                .as("a persistence method handed an IdentityId and not naming the owner in its"
+                        + " statement has been given ownership information and discarded it - the"
+                        + " P1-TSK-016 defect, where the signature reads as though the check is"
+                        + " enforced and the audit trail is then wrong rather than silent")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("every module with production code is within reach of this rule")
+    void everyModuleWithProductionCodeIsAnalysed() {
+        java.util.Set<String> analysed =
+                productionClasses().stream()
+                        .map(ProductionModules::of)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+        // The sibling idiom, and the completion gate added it because this suite had deviated from
+        // it with a bare isNotEmpty(). Set equality on the register protects `identity` and
+        // `platform` - narrowing the sweep would drop their entries and fail - but `party` is
+        // protected by nothing: partyHasNothingToScope would pass VACUOUSLY over a sweep that never
+        // reached it, which is the exact P0-TSK-008 finding and the reason every rule suite here
+        // carries this assertion.
+        assertThat(analysed)
+                .as("every module with production classes must be within reach of the ownership"
+                        + " rule, or an unclassified operation in it is simply invisible")
+                .containsAll(ProductionModules.onClasspathWithProductionClasses());
+    }
+
+    @Test
     @DisplayName("the guard is not vacuous: it sees production code and finds real methods")
     void theGuardHasTeeth() {
         assertThat(productionClasses())
@@ -417,6 +473,25 @@ class OwnershipIsScopedTest {
                         .anyMatch(OwnershipIsScopedTest::issuesSql);
     }
 
+    /** A method handed the owner. {@code IdentityId} is the owner type in every module here. */
+    private static boolean takesTheOwner(JavaMethod method) {
+        return method.getRawParameterTypes().stream()
+                .anyMatch(parameter -> parameter.getName().equals("com.finapp.identity.IdentityId"));
+    }
+
+    /**
+     * Whether a statement names who the row belongs to.
+     *
+     * <p>{@code identity.identity} is the one table where the owner column is called {@code id},
+     * because the row <em>is</em> the identity. That is a structural fact about the schema rather
+     * than an exemption for a particular method, so it is stated as part of the rule - the only
+     * caller today is the {@code FOR UPDATE} lock bulk revocation takes.
+     */
+    private static boolean referencesTheOwner(String statement) {
+        return statement.contains("identity_id")
+                || (statement.contains("identity.identity") && statement.contains("id = ?"));
+    }
+
     private static boolean issuesSql(JavaMethod method) {
         for (JavaMethodCall call : method.getMethodCallsFromSelf()) {
             if (call.getTargetOwner().isAssignableTo(java.sql.Connection.class)
@@ -458,11 +533,18 @@ class OwnershipIsScopedTest {
      *
      * <p>A comment cannot satisfy this, which is the whole point: SQL is only SQL if it is inside a
      * literal.
+     *
+     * <p><strong>The unrolled-loop pattern, deliberately.</strong> The obvious
+     * {@code (?:[^"\]|\.)*} form backtracks catastrophically, and it survived until the
+     * completion gate widened the sweep from two small methods to every persistence method - at
+     * which point it overflowed the stack on the first long body. A regex that is correct on the
+     * input its author happened to try is the same class of defect as a rule that is correct on the
+     * module its author was thinking of.
      */
     private static String statementOf(String qualified) {
         StringBuilder literals = new StringBuilder();
         java.util.regex.Matcher quoted =
-                java.util.regex.Pattern.compile("\"(?:[^\"\\\\]|\\\\.)*\"")
+                java.util.regex.Pattern.compile("\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"")
                         .matcher(methodSource(qualified));
         while (quoted.find()) {
             literals.append(quoted.group());
