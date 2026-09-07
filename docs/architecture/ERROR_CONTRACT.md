@@ -114,6 +114,7 @@ visible rather than quietly approximated.
 | Code | Status | Meaning |
 |---|---|---|
 | `identity.AuthenticationFailed` | 401 | Authentication failed. |
+| `identity.AssuranceRequired` | 403 | This operation requires a stronger authentication. |
 
 **One code for every reason an authentication can fail** (`P1-TSK-010`, `INV-IDN-07`): unknown
 identity, wrong password, suspended identity, and an identity that has no credential yet all

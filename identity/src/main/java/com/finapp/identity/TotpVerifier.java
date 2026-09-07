@@ -66,31 +66,49 @@ public final class TotpVerifier {
     /**
      * Whether {@code presented} is a valid code for {@code secret} at the current time.
      *
+     * <h3>It returns WHICH step matched, not merely that one did</h3>
+     *
+     * <p>{@code P1-TSK-018} needs the step, because a challenge has no state to consume the way
+     * enrolment consumes its {@code PENDING} row — so replay is refused by recording the last
+     * accepted step and refusing anything at or before it (RFC 6238 §5.2). A boolean cannot say
+     * which one to record.
+     *
      * @param presented the code a customer typed. Untrusted: any length, any characters
+     * @return the time step that matched, or empty. A present value is <strong>not</strong> on its
+     *     own permission to proceed: the caller must still refuse a step already used
      */
-    public boolean verify(Sensitive<String> secret, String presented, TotpParameters parameters) {
+    public java.util.OptionalLong verify(
+            Sensitive<String> secret, String presented, TotpParameters parameters) {
         Objects.requireNonNull(secret, "secret must not be null");
         Objects.requireNonNull(parameters, "parameters must not be null");
         if (presented == null) {
-            return false;
+            return java.util.OptionalLong.empty();
         }
 
         long step = Instant.now(clock).getEpochSecond() / parameters.periodSeconds();
         byte[] key = Base32.decode(secret.expose());
 
-        boolean matched = false;
+        long matchedStep = NO_MATCH;
         for (int offset = -WINDOW_STEPS; offset <= WINDOW_STEPS; offset++) {
-            String expected = generate(key, step + offset, parameters);
+            long candidate = step + offset;
+            String expected = generate(key, candidate, parameters);
             // Every step in the window is evaluated, and the result is accumulated rather than
             // returned early. Returning on the first match would make a code valid at step-1
             // measurably faster to verify than one valid at step+1, which is a (small) oracle over
             // the server's clock offset - and costs nothing to avoid.
-            matched |= MessageDigest.isEqual(
+            if (MessageDigest.isEqual(
                     expected.getBytes(StandardCharsets.US_ASCII),
-                    presented.getBytes(StandardCharsets.US_ASCII));
+                    presented.getBytes(StandardCharsets.US_ASCII))) {
+                matchedStep = candidate;
+            }
         }
-        return matched;
+        return matchedStep == NO_MATCH
+                ? java.util.OptionalLong.empty()
+                : java.util.OptionalLong.of(matchedStep);
     }
+
+    /** No real step is negative: the epoch divided by a positive period cannot be. */
+    private static final long NO_MATCH = -1;
 
     /** The code for a given counter value — RFC 4226 §5.3. Visible for the RFC test vectors. */
     static String generate(byte[] key, long counter, TotpParameters parameters) {

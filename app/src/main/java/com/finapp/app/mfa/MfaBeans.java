@@ -91,6 +91,45 @@ class MfaBeans {
         return template;
     }
 
+    /**
+     * The rotation an elevation performs.
+     *
+     * <p>`P1-TSK-015` built it and nothing called it; `P1-TSK-018` is its first caller, which is
+     * why the bean appears now rather than then — a bean nobody consumes is a false positive waiting
+     * to be argued about (`P1-TSK-007`).
+     */
+    @Bean
+    com.finapp.identity.SessionRotation sessionRotation(
+            com.finapp.identity.SessionStore<Connection> sessionStore,
+            SecureRandom mfaRandomness,
+            IdGenerator idGenerator,
+            Clock clock,
+            AuditWriter<Connection> auditWriter) {
+        return new com.finapp.identity.SessionRotation(
+                sessionStore, mfaRandomness, idGenerator, clock, auditWriter);
+    }
+
+    @Bean
+    com.finapp.identity.MfaChallenge mfaChallenge(
+            MfaEnrolmentStore<Connection> mfaEnrolmentStore,
+            SecretCipher mfaSecretCipher,
+            TotpVerifier totpVerifier,
+            com.finapp.identity.SessionRotation sessionRotation,
+            com.finapp.identity.AuthenticationThrottle authenticationThrottle,
+            IdGenerator idGenerator,
+            Clock clock,
+            AuditWriter<Connection> auditWriter) {
+        return new com.finapp.identity.MfaChallenge(
+                mfaEnrolmentStore,
+                mfaSecretCipher,
+                totpVerifier,
+                sessionRotation,
+                authenticationThrottle,
+                idGenerator,
+                clock,
+                auditWriter);
+    }
+
     @Bean
     MfaEnrolmentService mfaEnrolmentService(
             MfaEnrolmentStore<Connection> mfaEnrolmentStore,

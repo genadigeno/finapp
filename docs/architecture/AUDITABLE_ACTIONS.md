@@ -94,6 +94,8 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.SessionRotated` | No | A session was replaced by a new one on a privilege change. |
 | `identity.MfaEnrolmentStarted` | No | A second factor enrolment was begun. |
 | `identity.MfaEnrolmentConfirmed` | No | A second factor was confirmed and is now usable. |
+| `identity.MfaChallengeSucceeded` | No | A second factor was proven and the session was elevated. |
+| `identity.MfaChallengeFailed` | No | A second-factor challenge was refused. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
 

@@ -311,17 +311,46 @@ class CredentialReachesNoEmittedSinkTest {
     }
 
     /**
-     * Secret-named members anywhere except inside a schema a request body refers to.
+     * Secret-named members anywhere except inside a schema a request body refers to, or one this
+     * test names as a deliberate emission.
      *
-     * <p>A secret may be <strong>sent</strong>; it must never be <strong>returned</strong>, and it
-     * must never be somewhere a URL or a header goes. Everything outside the permitted schemas is
-     * scanned as text, so a header name, a parameter name and a response property are all covered
-     * by one rule rather than by three that could each be forgotten.
+     * <p>A secret may be <strong>sent</strong>, and it must never be somewhere a URL or a header
+     * goes — those reach access logs, proxies and browser history. Everything outside the permitted
+     * schemas is scanned as text, so a header name, a parameter name and a response property are
+     * covered by one rule rather than by three that could each be forgotten.
+     *
+     * <h3>"Never returned" was too broad, and `P1-TSK-018` is where that showed</h3>
+     *
+     * <p>The rule's own reason is about URLs and headers. A response <em>body</em> over TLS is where
+     * every session token in the world is delivered, and a step-up that withheld the session it just
+     * issued would log the customer out at the moment they proved a second factor.
+     *
+     * <p>So the emission is <strong>named</strong> rather than the rule relaxed: {@link
+     * #EMITTED_SECRET_SCHEMAS} is one entry, so widening it is a visible decision. This is the
+     * second narrowing of this guard — {@code P1-TSK-010} made the first, when it forbade a
+     * credential-named member anywhere and an authentication request had to declare a password.
+     * Each time the precise property turned out to be narrower than the blanket one.
      */
+    /**
+     * Response schemas that deliberately carry a secret to the client.
+     *
+     * <p>One entry. {@code ElevatedSession} carries the session a step-up produced, and there is no
+     * design in which it does not: elevation <strong>rotates</strong> the identifier
+     * ({@code P1-TSK-015}), so withholding the replacement logs the customer out.
+     *
+     * <p>The same decision reaches three guards — this one, and {@code secretsAreWrapped}'s field
+     * and accessor checks. That is one decision with three enforcement points rather than three
+     * concessions: each guard encodes <em>"secrets do not leave"</em>, and a session token is the one
+     * value whose purpose is to leave.
+     */
+    private static final java.util.Set<String> EMITTED_SECRET_SCHEMAS =
+            java.util.Set.of("ElevatedSession");
+
     private static List<String> secretNamedMembersOutsideRequestBodiesIn(String document) {
         tools.jackson.databind.JsonNode root =
                 tools.jackson.databind.json.JsonMapper.builder().build().readTree(document);
         java.util.SortedSet<String> permitted = schemasReachableFromRequestBodies(document);
+        permitted.addAll(EMITTED_SECRET_SCHEMAS);
 
         tools.jackson.databind.node.ObjectNode pruned =
                 (tools.jackson.databind.node.ObjectNode) root.deepCopy();

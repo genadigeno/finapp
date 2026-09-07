@@ -31,7 +31,24 @@ public enum IdentityErrorCode implements ErrorCode {
      * presupposes an established identity - and presupposing one here would leak that there is one.
      */
     AUTHENTICATION_FAILED(
-            "identity.AuthenticationFailed", 401, "Authentication failed.");
+            "identity.AuthenticationFailed", 401, "Authentication failed."),
+
+    /**
+     * The session is valid but not assured enough for this operation (`P1-TSK-018`).
+     *
+     * <p><strong>Distinct from a bare 403, and the distinction is what a client acts on.</strong>
+     * <em>"You may never do this"</em> and <em>"prove a second factor and try again"</em> call for
+     * different behaviour: the first is an error to show a person, the second is a step-up flow to
+     * start. A single {@code api.Forbidden} would make them indistinguishable and every client would
+     * guess.
+     *
+     * <p>403 rather than 401, because the caller <em>is</em> authenticated. A 401 would invite a
+     * client to discard a perfectly good session and send the customer back to a password prompt.
+     */
+    ASSURANCE_REQUIRED(
+            "identity.AssuranceRequired",
+            403,
+            "This operation requires a stronger authentication.");
 
     private final String code;
     private final int status;

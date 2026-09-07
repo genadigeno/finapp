@@ -174,6 +174,32 @@ public enum IdentityAuditAction implements AuditableAction {
             "A second factor was confirmed and is now usable.",
             false),
 
+    /**
+     * A second factor was proven, and the session was elevated (`P1-TSK-018`).
+     *
+     * <p>Recorded <strong>beside</strong> the {@link #SESSION_ROTATED} the elevation produces, not
+     * instead of it: <em>"the factor was proven"</em> and <em>"the session was replaced"</em> are
+     * different facts, which is the distinction `P1-TSK-015` established. One says the person is
+     * who they claim; the other says which identifier now speaks for them.
+     */
+    MFA_CHALLENGE_SUCCEEDED(
+            "identity.MfaChallengeSucceeded",
+            "A second factor was proven and the session was elevated.",
+            false),
+
+    /**
+     * A second-factor challenge was refused (`P1-TSK-018`).
+     *
+     * <p><strong>The only durable trace of somebody guessing codes.</strong> The response is one
+     * uniform refusal whatever the cause, so the *reason* lives here and nowhere else — an
+     * investigator needs to tell a wrong code from a challenge against an account with no factor
+     * at all, because the second is somebody probing rather than somebody mistyping.
+     */
+    MFA_CHALLENGE_FAILED(
+            "identity.MfaChallengeFailed",
+            "A second-factor challenge was refused.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

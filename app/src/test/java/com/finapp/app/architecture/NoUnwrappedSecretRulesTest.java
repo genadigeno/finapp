@@ -290,6 +290,40 @@ class NoUnwrappedSecretRulesTest {
      * off, and {@code secretBytes} / {@code tokenLength} / {@code otpDigits} are all names a
      * reasonable person writes for a number.
      */
+    /**
+     * Fields that must be serialised despite naming a secret.
+     *
+     * <p><strong>The rule's first exemption, and it is deliberately one entry.</strong> ADR-0019
+     * built this rule with no exemption set at all, on the principle that a rule with escape hatches
+     * is a rule that grows them. This is added because a case arrived that the rule cannot express
+     * rather than one it merely inconveniences.
+     *
+     * <p>{@code ElevatedSession.sessionToken} carries the session a step-up produced. Elevation
+     * <strong>rotates</strong> the identifier ({@code P1-TSK-015}), so a response that withheld the
+     * replacement would log the customer out at the moment they proved a second factor — and
+     * wrapping is not available either, because the platform's serialiser renders {@code Sensitive}
+     * as a mask ({@code P0-TSK-030}) and the client would receive «redacted».
+     *
+     * <p><strong>The exemption permits serialisation and nothing else.</strong> The other harm the
+     * rule guards — a record's generated {@code toString} printing a live token into a log — is
+     * closed by an override, and {@code ElevatedSessionTest} asserts it. An exemption that permitted
+     * both would be a hole rather than a decision.
+     *
+     * <p>Renaming the field to slip past the vocabulary was the alternative and was refused: it is
+     * the option {@code P1-TSK-017} declined for {@code sharedSecret}, and it is no more honest for
+     * being easier.
+     */
+    private static final Set<String> PERMITTED_FIELDS =
+            Set.of("com.finapp.app.mfa.ElevatedSession.sessionToken");
+
+    /** The accessors of {@link #PERMITTED_FIELDS}, for the same reason and no other. */
+    private static final Set<String> PERMITTED_ACCESSORS =
+            Set.of("com.finapp.app.mfa.ElevatedSession.sessionToken()");
+
+    private static boolean isPermitted(JavaField field) {
+        return PERMITTED_FIELDS.contains(field.getFullName());
+    }
+
     private static boolean isAPrimitive(JavaField field) {
         return field.getRawType().isPrimitive();
     }
@@ -306,7 +340,7 @@ class NoUnwrappedSecretRulesTest {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
                 for (JavaField field : javaClass.getFields()) {
-                    if (isAnEnumConstant(field) || isAPrimitive(field)
+                    if (isAnEnumConstant(field) || isAPrimitive(field) || isPermitted(field)
                             || !namesASecret(field.getName())
                             || isWrapped(field.getRawType())) {
                         continue;
@@ -329,7 +363,13 @@ class NoUnwrappedSecretRulesTest {
                     if (!method.getRawParameterTypes().isEmpty()) {
                         continue;
                     }
-                    if (!namesASecret(method.getName()) || isWrapped(method.getRawReturnType())) {
+                    // The accessor is exempt for the same reason the field is: it exists so a
+                    // serialiser can read it. Exempting the field alone would be incoherent - the
+                    // serialiser reads THIS, so a field-only exemption would permit the storage
+                    // while forbidding the purpose.
+                    if (PERMITTED_ACCESSORS.contains(method.getFullName())
+                            || !namesASecret(method.getName())
+                            || isWrapped(method.getRawReturnType())) {
                         continue;
                     }
                     events.add(

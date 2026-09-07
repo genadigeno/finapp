@@ -106,7 +106,11 @@ class TotpVerifierTest {
                 TotpVerifier.generate(
                         RFC_SHA1_KEY, now.getEpochSecond() / 30, TotpParameters.current());
 
-        assertThat(verifier.verify(secret, code, TotpParameters.current())).isTrue();
+        // Asserts WHICH step matched, not merely that one did. P1-TSK-018 records that step to
+        // refuse replays, so a verifier that reported the wrong one would refuse the next genuine
+        // code (too high) or admit a replay (too low) - neither of which a boolean could catch.
+        assertThat(verifier.verify(secret, code, TotpParameters.current()))
+                .hasValue(now.getEpochSecond() / 30);
     }
 
     @Test
@@ -119,13 +123,15 @@ class TotpVerifierTest {
 
         // Clocks disagree. A zero-width window makes a correct code fail for a reason the customer
         // cannot diagnose and support cannot reproduce.
-        assertThat(verifier.verify(secret, codeAt(step - 1), TotpParameters.current())).isTrue();
-        assertThat(verifier.verify(secret, codeAt(step + 1), TotpParameters.current())).isTrue();
+        assertThat(verifier.verify(secret, codeAt(step - 1), TotpParameters.current()))
+                .hasValue(step - 1);
+        assertThat(verifier.verify(secret, codeAt(step + 1), TotpParameters.current()))
+                .hasValue(step + 1);
 
         // And it is bounded. A window that kept widening would eventually make a code valid for
         // long enough to be worth intercepting.
-        assertThat(verifier.verify(secret, codeAt(step - 2), TotpParameters.current())).isFalse();
-        assertThat(verifier.verify(secret, codeAt(step + 2), TotpParameters.current())).isFalse();
+        assertThat(verifier.verify(secret, codeAt(step - 2), TotpParameters.current())).isEmpty();
+        assertThat(verifier.verify(secret, codeAt(step + 2), TotpParameters.current())).isEmpty();
     }
 
     @Test
@@ -143,7 +149,7 @@ class TotpVerifierTest {
                                 Sensitive.of(TotpVerifier.Base32.encode(RFC_SHA1_KEY)),
                                 theirCode,
                                 TotpParameters.current()))
-                .isFalse();
+                .isEmpty();
     }
 
     @Test
@@ -160,7 +166,7 @@ class TotpVerifierTest {
                 new String[] {null, "", "   ", "abcdef", "12345", "1234567", "-000001", "٠١٢٣٤٥"}) {
             assertThat(verifier.verify(secret, malformed, TotpParameters.current()))
                     .as("refused rather than thrown: %s", malformed)
-                    .isFalse();
+                    .isEmpty();
         }
     }
 
@@ -177,7 +183,7 @@ class TotpVerifierTest {
         TotpVerifier later =
                 new TotpVerifier(Clock.fixed(now.plus(Duration.ofSeconds(90)), ZoneOffset.UTC));
 
-        assertThat(later.verify(secret, current, TotpParameters.current())).isFalse();
+        assertThat(later.verify(secret, current, TotpParameters.current())).isEmpty();
     }
 
     @Test

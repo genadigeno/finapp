@@ -22,7 +22,8 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
 
     private static final String COLUMNS =
             "id, identity_id, type, secret_ciphertext, secret_nonce, key_version, algorithm,"
-                    + " digits, period_seconds, status, created_at, confirmed_at, discarded_at";
+                    + " digits, period_seconds, status, created_at, confirmed_at, discarded_at,"
+                    + " last_used_step";
 
     @Override
     public void insert(Connection unitOfWork, MfaEnrolment enrolment) {
@@ -31,7 +32,7 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
 
         String sql =
                 "INSERT INTO " + TABLE + " (" + COLUMNS + ")"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement insert = unitOfWork.prepareStatement(sql)) {
             insert.setObject(1, enrolment.id().value());
             insert.setObject(2, enrolment.identityId().value());
@@ -46,6 +47,11 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
             insert.setTimestamp(11, Timestamp.from(enrolment.createdAt()));
             insert.setTimestamp(12, enrolment.confirmedAt().map(Timestamp::from).orElse(null));
             insert.setTimestamp(13, enrolment.discardedAt().map(Timestamp::from).orElse(null));
+            if (enrolment.lastUsedStep().isPresent()) {
+                insert.setLong(14, enrolment.lastUsedStep().getAsLong());
+            } else {
+                insert.setNull(14, java.sql.Types.BIGINT);
+            }
             insert.executeUpdate();
         } catch (SQLException e) {
             // Never the SQLException: PostgreSQL puts the whole refused row in a constraint
@@ -116,6 +122,30 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
     }
 
     @Override
+    public boolean consumeStep(Connection unitOfWork, MfaEnrolmentId id, long step) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+
+        // `last_used_step < ?` is the whole replay defence, and it is in the STATEMENT so two
+        // instances presenting one code cannot both pass it. It refuses earlier steps as well as
+        // the same one - RFC 6238 5.2 - so a code captured a minute ago is dead once a later one
+        // has been used.
+        String sql =
+                "UPDATE " + TABLE + " SET last_used_step = ?"
+                        + " WHERE id = ? AND status = 'ACTIVE'"
+                        + " AND (last_used_step IS NULL OR last_used_step < ?)";
+        try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
+            update.setLong(1, step);
+            update.setObject(2, id.value());
+            update.setLong(3, step);
+            return update.executeUpdate() == 1;
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not consume a one-time password step", e));
+        }
+    }
+
+    @Override
     public int discardPending(
             Connection unitOfWork, IdentityId identityId, MfaFactorType type, Instant at) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
@@ -141,6 +171,11 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
         }
     }
 
+    private static java.util.OptionalLong lastUsedStep(ResultSet rows) throws SQLException {
+        long step = rows.getLong("last_used_step");
+        return rows.wasNull() ? java.util.OptionalLong.empty() : java.util.OptionalLong.of(step);
+    }
+
     private static MfaEnrolment read(ResultSet rows) throws SQLException {
         Timestamp confirmedAt = rows.getTimestamp("confirmed_at");
         Timestamp discardedAt = rows.getTimestamp("discarded_at");
@@ -159,6 +194,7 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
                 MfaFactorStatus.valueOf(rows.getString("status")),
                 rows.getTimestamp("created_at").toInstant(),
                 confirmedAt == null ? null : confirmedAt.toInstant(),
-                discardedAt == null ? null : discardedAt.toInstant());
+                discardedAt == null ? null : discardedAt.toInstant(),
+                lastUsedStep(rows));
     }
 }

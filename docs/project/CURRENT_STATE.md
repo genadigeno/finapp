@@ -18,10 +18,10 @@ Status: **`IN_PROGRESS`** — entry gate passed, all twelve criteria. Started 20
 
 ## Current Milestone
 
-**M1.4 — A second factor that cannot be bypassed.** `P1-TSK-017` … `P1-TSK-019`; **1 of 3
-complete.** Started 2026-09-07. Objective: TOTP enrolment and challenge, enforced as an assurance
-level. Enrolment exists and is confirmed before it counts; nothing elevates assurance yet, which is
-`P1-TSK-018`.
+**M1.4 — A second factor that cannot be bypassed.** `P1-TSK-017` … `P1-TSK-019`; **2 of 3
+complete.** Started 2026-09-07. Enrolment is confirmed before it counts, and a verified challenge
+elevates a session by rotating its identifier. What remains is `P1-TSK-019`: one test per enumerated
+alternative path, which is how `INV-IDN-05` is actually demonstrated.
 
 **M1.3 — Sessions are real, and revocation is immediate.** `P1-TSK-013` … `P1-TSK-016`;
 **4 of 4 complete** (2026-09-07). The milestone's stated acceptance — *"INV-IDN-03 demonstrated to
@@ -137,10 +137,114 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-017` completed 2026-09-07. **M1.4 is 1 of 3.**
-**Next: `P1-TSK-018`** — challenge, verification and assurance elevation.
+**None in progress.** `P1-TSK-018` completed 2026-09-07. **M1.4 is 2 of 3.**
+**Next: `P1-TSK-019`** — `P1-TST-003`: MFA cannot be bypassed.
 
 ### Just completed
+
+**`P1-TSK-018` — Challenge, verification and assurance elevation** — `COMPLETE` (2026-09-07).
+**M1.4 is 2 of 3.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| An operation requiring `MULTI_FACTOR` refuses a `PASSWORD` session | `assuranceIsRequiredAndSatisfied`, with the elevated session as its positive control |
+| A replayed code is refused | Four tests: same code, earlier code, across instances, and the code that confirmed the enrolment |
+| Elevation rotates the identifier | The old token is dead on the next request |
+
+### A challenge has nothing to consume, which is why this needed a new mechanism
+
+`P1-TSK-017` made confirmation replay-safe by consuming its `PENDING` row — a second attempt found
+nothing to confirm. **A challenge leaves the factor `ACTIVE` and has no state to spend**, and a TOTP
+code stays valid for roughly ninety seconds under the ±1 window. Without something new, a code
+captured in that window is replayable and *"one-time password"* is simply false.
+
+**The last accepted time step is recorded on the enrolment**, and anything at or before it is
+refused — a conditional `UPDATE` whose row count is the outcome, so two instances presenting one
+code produce one success. That is **stronger than refusing exact repeats**, which is what RFC 6238
+§5.2 actually asks for: a code from the *previous* step is still inside the window and still
+arithmetically valid, and it is spent too.
+
+Storing consumed *codes* was the alternative: unbounded, needs a sweep, and strictly weaker.
+
+**Confirmation now consumes its step as well**, which it did not before. Otherwise the code that
+confirms an enrolment at step N is still usable for a challenge at step N — a replay across two
+operations, and the RFC does not care which operation the first use was.
+
+### Throttling is not optional, and it had been a claim with no test
+
+A six-digit code with a ±1 window is **three valid values in a million** per attempt. RFC 4226 §7.3
+requires throttling; without it a challenge is exhausted by automation.
+
+**MFA failures share the account's existing lockout budget, deliberately.** An attacker guessing
+codes is by definition somebody who already has the password, so separate counters would hand them
+a second fresh budget for no benefit. The statement is the one `AuthenticationThrottle` already
+uses, differing only in how the row is sourced — **copying it was refused**, because its reset
+condition is two clauses a completion gate had to establish by probing, and a second copy is one
+that drifts.
+
+**A replay is refused but not counted.** The common cause is a client retrying after a network
+timeout with the same code; counting it would let a flaky connection lock somebody out of their own
+account.
+
+### The response carries a session token, and three guards said no
+
+Elevation **rotates** the identifier, so a response that withheld the replacement would log the
+customer out at the moment they proved a second factor. There is no second artefact to carry it —
+unlike `P1-TSK-017`'s `sharedSecret`, which was removed because the provisioning URI already held
+the secret — and wrapping is unavailable, because the platform's serialiser renders `Sensitive` as
+a mask and the client would receive «redacted».
+
+**One decision, three enforcement points**, not three concessions: `secretsAreWrapped`'s field
+check, its accessor check, and the published-contract guard each encode *"secrets do not leave"*,
+and a session token is the one value whose purpose is to leave.
+
+- `secretsAreWrapped` gained its **first exemption**, one entry, with the claim stated. ADR-0019
+  built it with none on the principle that a rule with escape hatches grows them, so this was added
+  because a case arrived the rule *cannot express* rather than one it merely inconveniences.
+- **The exemption permits serialisation and nothing else.** The other harm — a record's generated
+  `toString` printing a live token into a log — is closed by an override, and asserted. An exemption
+  permitting both would be a hole rather than a decision.
+- The contract guard was **narrowed precisely** for the second time: its own reason is about URLs
+  and headers, and a response body over TLS is where every session token in the world is delivered.
+
+**Renaming the field to slip past the vocabulary was refused** — the option `P1-TSK-017` declined
+for `sharedSecret`, and no more honest for being easier.
+
+### The acceptance criterion needs an operation, and Phase 1 deliberately has none
+
+`PHASE_1_PLAN.md` §66: *"Nothing in Phase 1 requires `MULTI_FACTOR` for a specific action, because
+Phase 1 has no high-value action. Consumed by Phase 4."* So `@RequiresAssurance` ships with a probe
+endpoint and no production caller. Inventing a requirement to give the annotation something to do
+would be a security control chosen to suit a test.
+
+**A distinct error code, not a bare 403**: a client must be able to tell *"you may never do this"*
+from *"step up and retry"*, which call for different behaviour. And `@RequiresAssurance` implies
+`@RequiresSession`, because a handler declaring only the level would otherwise be reachable
+**unauthenticated** — the exact inversion of what its author asked for, and silent.
+
+### Two mutations survived, and each found something
+
+**A detail added to every refusal walked straight through.** `everyRefusalLooksTheSame` compares the
+causes to *each other*, so a uniform disclosure kept them equal. Equality between causes proves they
+are indistinguishable and says nothing about what they **jointly** disclose. Now asserted against
+the contract: the body carries **no `detail` member at all**, which is stronger than a generic one
+because there is nothing for a future author to make specific.
+
+**Accepting a `PENDING` factor survived alone**, because `consumeStep` filters on `ACTIVE` as well —
+defence in depth, the `P1-TSK-014` shape. Verified rather than assumed: with **both** guards removed
+the new test catches it, so `aPendingFactorSatisfiesNothing` is load-bearing regardless of which
+one is present.
+
+### The fixture was unrealistic, and the mechanism said so
+
+Every challenge test failed at first because the fixture confirmed with the *current* code, and
+confirmation consumes that step. That is the mechanism working: a person confirms an enrolment and
+challenges later, not in the same thirty seconds. Time cannot be moved here, so the fixture moved
+instead — it confirms with the previous step's code.
+
+**Ten mutations: nine caught, one survived correctly.** 804 hermetic tests, 362 database tests.
+
+### Previously
 
 **`P1-TSK-017` — TOTP enrolment** — `COMPLETE` (2026-09-07). **M1.4 opens, 1 of 3.**
 
@@ -2084,6 +2188,28 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Second-factor challenge and step-up (2026-09-07), `P1-TSK-018`:
+- `POST /v1/authentications/mfa` — a verified code elevates the session to `MULTI_FACTOR` by
+  **rotating its identifier**, which gives `P1-TSK-015`'s rotation its first caller
+- **Replay needed a new mechanism**: enrolment consumed its `PENDING` row, and a challenge has
+  nothing to spend. The last accepted **time step** is recorded, and anything at or before it is
+  refused — stronger than refusing exact repeats, and what RFC 6238 §5.2 actually asks for
+- **Confirmation consumes its step too**, closing a replay across the two operations
+- **Throttling is not optional**: three valid values in a million per attempt (RFC 4226 §7.3). MFA
+  failures share the account's lockout budget, because an attacker guessing codes already has the
+  password — and a **replay does not count**, so a client retrying after a timeout cannot lock its
+  own account
+- **The response carries a session token**, and one decision met three guards: `secretsAreWrapped`
+  gained its **first exemption** (serialisation only — the `toString` harm is closed by an override
+  and asserted), and the contract guard was narrowed precisely for the second time
+- **`@RequiresAssurance` ships with no production caller**, which is the plan rather than an
+  omission: Phase 1 has no high-value action, so inventing one would be a control chosen to suit a
+  test. A distinct error code, because *"you may never"* and *"step up and retry"* are different
+  instructions
+- Two mutations survived: a detail added to **every** refusal walked through an equality-between-
+  causes, and a `PENDING` factor was refused by a second independent guard — both closed and
+  verified
+
 TOTP enrolment (2026-09-07), `P1-TSK-017`:
 - `POST /v1/me/mfa` and `POST /v1/me/mfa/confirmation` — a second factor, which does **nothing**
   until the customer proves they hold the secret
@@ -3039,18 +3165,23 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-018` — Challenge, verification and assurance elevation.**
+**`P1-TSK-019` — `P1-TST-003`: MFA cannot be bypassed.**
 
-`POST /v1/authentications/mfa`: a verified challenge produces a `MULTI_FACTOR` session. The
-acceptance is that **an operation requiring `MULTI_FACTOR` refuses a `PASSWORD` session**, and the
-sharp requirement is that **a replayed code is refused** — which needs a different mechanism from
-enrolment's, because a challenge has no `PENDING` state to consume. Both pieces it builds on exist:
-the enrolment (`P1-TSK-017`) and the session rotation a step-up must perform (`P1-TSK-015`).
+One test per **enumerated** alternative path to a session, which is how `INV-IDN-05` is demonstrated
+rather than asserted: *"every real MFA bypass is a path nobody enumerated"*, so the paths are
+enumerated rather than the property claimed once. The named ones are an older `PASSWORD` session, a
+refresh, re-enrolment of a second factor, recovery (once M1.6 exists), and a direct call to any
+endpoint that issues a session. **The suite must fail if the level check is replaced by a boolean** —
+which is ADR-0030's decision, tested rather than trusted.
+
+Three of those paths already have coverage from `P1-TSK-018` and can be cited rather than
+duplicated; **recovery does not exist yet**, so that row is a recorded remainder for M1.6.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-07 | **`P1-TSK-018` complete - M1.4 is 2 of 3.** `POST /v1/authentications/mfa`: a verified code elevates a session to `MULTI_FACTOR` by **rotating its identifier**, which gives `P1-TSK-015`'s rotation its first caller. **A challenge has nothing to consume, and that is why replay needed a new mechanism.** `P1-TSK-017` made confirmation replay-safe by consuming its `PENDING` row - a second attempt found nothing to confirm - whereas a challenge leaves the factor `ACTIVE` and has no state to spend, while a TOTP code stays valid for roughly ninety seconds under the ±1 window. So the **last accepted time step** is recorded on the enrolment and anything at or before it is refused, by a conditional `UPDATE` whose row count is the outcome. That is **stronger than refusing exact repeats**, which is what RFC 6238 §5.2 actually asks for: a code from the *previous* step is still inside the window and still arithmetically valid, and it is spent too. Storing consumed *codes* was the alternative - unbounded, needs a sweep, strictly weaker. **Confirmation now consumes its step as well**, closing a replay across the two operations, because the RFC does not care which operation the first use was. **Throttling is not optional and had been a claim with no test**: a six-digit code with a ±1 window is three valid values in a million per attempt, and RFC 4226 §7.3 requires throttling. MFA failures share the account's **existing** lockout budget, deliberately - an attacker guessing codes is by definition somebody who already has the password, so separate counters would hand them a second fresh budget for no benefit - and the statement is the one `AuthenticationThrottle` already uses, differing only in how the row is sourced, because **copying it was refused**: its reset condition is two clauses a completion gate had to establish by probing, and a second copy is one that drifts. **A replay is refused but not counted**, since the common cause is a client retrying after a network timeout and counting it would let a flaky connection lock somebody out of their own account. **The response carries a session token, and three guards said no.** Elevation rotates, so withholding the replacement would log the customer out at the moment they proved a second factor - and unlike `P1-TSK-017`'s `sharedSecret` there is no second artefact, while wrapping is unavailable because the serialiser renders `Sensitive` as a mask. That is **one decision with three enforcement points rather than three concessions**: `secretsAreWrapped` gained its **first exemption** (ADR-0019 built it with none, so this was added because a case arrived the rule *cannot express* rather than one it merely inconveniences), the exemption **permits serialisation and nothing else** - the `toString` harm is closed by an override and asserted, since an exemption permitting both would be a hole - and the contract guard was narrowed precisely for the second time, its own reason being about URLs and headers while a response body over TLS is where every session token in the world is delivered. **Renaming the field to slip past the vocabulary was refused**, the option `P1-TSK-017` declined and no more honest for being easier. **`@RequiresAssurance` ships with a probe endpoint and no production caller**, which is `PHASE_1_PLAN.md` §66 rather than an omission - inventing a high-value action to give the annotation something to do would be a security control chosen to suit a test - with a **distinct error code** because *"you may never do this"* and *"step up and retry"* call for different client behaviour, and with `@RequiresAssurance` implying `@RequiresSession`, since a handler declaring only the level would otherwise be reachable **unauthenticated**, which is the exact inversion of what its author asked for. **Two mutations survived and each found something.** A detail added to *every* refusal walked straight through `everyRefusalLooksTheSame`, because comparing the causes to each other proves they are indistinguishable and says nothing about what they **jointly** disclose; the body is now asserted to carry **no `detail` member at all**, which is stronger than a generic one because there is nothing for a future author to make specific. And accepting a `PENDING` factor survived *alone*, because `consumeStep` filters on `ACTIVE` as well - defence in depth, the `P1-TSK-014` shape - verified rather than assumed by removing **both** guards, after which the new test catches it. **The fixture was unrealistic and the mechanism said so**: every challenge test failed at first because the fixture confirmed with the *current* code and confirmation consumes that step, which is a person confirming and challenging in the same thirty seconds; time cannot be moved here, so the fixture moved instead. **Ten mutations: nine caught, one survived correctly.** 804 hermetic tests, 362 database tests. |
 | 2026-09-07 | **`P1-TSK-017` complete - M1.4 opens, 1 of 3.** TOTP enrolment: `POST /v1/me/mfa` and `POST /v1/me/mfa/confirmation`, a second factor that does **nothing** until the customer proves they hold the secret. **The task's central decision is that `INV-IDN-01` cannot apply here, and saying so plainly was better than the alternative.** That invariant requires a credential to be stored so the original cannot be recovered, and a password satisfies it because verification compares *derivations*; a TOTP secret cannot, because the server computes the expected code **from** the secret on every challenge - holding it is the mechanism rather than a shortcut, and there is nothing to compare a derivation against. Leaving that implicit would have meant a reader finding a recoverable secret in an identity table and having to guess whether it was a defect, so irreversibility is unavailable and **confidentiality replaces it**: the new **`INV-IDN-08`**, with `INV-IDN-01` gaining an explicit scope note, taking the platform to **72 invariants**. **The harm it defends against is different and in one way worse** - a leaked TOTP secret lets an attacker generate valid codes indefinitely while the customer's authenticator keeps working, so nothing looks wrong to anybody; a stolen password is at least changeable, whereas a silently cloned second factor defeats the control that exists to survive a stolen password. That is why the ciphertext is **authenticated** (AES-256-GCM) rather than merely encrypted: an attacker with *write* access to the column must not be able to substitute a secret they control. **The secret IS emitted, once, and the plan says it never is** - `PHASE_1_PLAN.md` §184 and `INV-AUD-02` cannot be met literally, because the customer must receive the secret or MFA cannot work and the QR code *is* the secret in base32; so the deliverable is the tightest honest bound - emitted once, in the response to the request that created it, to the **proven owner**, and never retrievable afterwards. **The build rule was right about a field and the code changed rather than the rule**: `secretsAreWrapped` flagged a `String sharedSecret` on the response record, and wrapping was not available either, because the platform's serialiser renders `Sensitive` as a mask and the customer would have received «redacted» - so the field is **gone**, since the `otpauth://` URI is the canonical artefact every authenticator consumes and the same secret in two fields is one more place for it to be logged. That is `P1-TSK-007`'s lesson applied: a second security-rule modification in one task is a signal to reconsider the design. The *first* was kept and is structural - **a primitive cannot hold a secret**, so an `int` named `SECRET_BYTES` is excluded, the same shape as the existing enum-constant exclusion. **"Vetted library" was deviated from with the reason stated rather than assumed**: no library implements the primitive, since HMAC-SHA1 comes from the JDK either way and what a TOTP library adds is counter arithmetic, truncation and base32 - all specified exactly, and **RFC 6238 Appendix B and RFC 4226 Appendix D publish test vectors**, so correctness is demonstrated against the specification's own numbers rather than against a library's reputation, with twenty-two vectors in the suite. No primitive is invented, which is what the instruction protects against. **Four mutations survived first and each found something real**: the store's conditional confirm was invisible sequentially because `findPending` already returns empty the second time, so it is load-bearing only under **concurrency** - ten instances all reading `PENDING`, all verifying the same valid code, and without it one enrolment producing ten audit records and ten events; **`MfaKey` had no test at all**, so removing the loopback confinement left everything green and `INV-IDN-08`'s *"a key not in the database"* would have become *"a key every reader of this repository has"*; **`SecretCipher` had no test at all**, and the defect its key-length check prevents is quiet, because **AES accepts a 16-byte key** and gives AES-128 - a cipher weaker than the class documents, with nothing failing; and **constant-time comparison cannot be caught behaviourally**, since `equals` and `isEqual` return the same answer and only timing differs, so it is asserted **structurally** - the class must reference the constant-time comparison and must not reference `String.equals`, the shape `P1-TSK-015` used for the unreachable plaintext. **Three build rules fired and all three were right**: `INV-MON-01` caught `Math.pow` in the RFC truncation, because it returns a `double` and a codebase that permits one floating-point expression *"because it is not money"* is one where the rule has an exception list; `ColumnClassificationTest` refused thirteen unclassified columns, which is ADR-0022's guarantee working exactly as designed; and `CredentialReachesNoEmittedSinkTest` refused the widened request-body set until it was declared. **`identity` gained test fixtures**, where `Authenticator` - what a customer's phone does - lives so that generating codes never becomes production API, and its appearance in the unwrap whitelist records that **that sweep covers test fixtures**, which is more coverage rather than less. And `DatabaseCredentialGuardStartupTest` began failing, which was the new guard being right: the test constructs a production-like configuration, and since this task such a configuration has **two** credentials - supplying an MFA key restores its premise and isolates each assertion to the database guard, the `P0-TSK-031` lesson that a probe must be isolated to its own subject. **Eleven mutations, all caught.** **The completion gate then found the boundary was never driven** - every test went through the service, leaving four boundary decisions unasserted: whether `@RequiresSession` is wired at all, whether a wrong code is a **422 rather than a 500**, whether the identity really comes from the session, and whether the request bounds reject before any domain work. `MfaEndpointDatabaseTest` closes it, with the ownership case in its **strongest** form - the attacker presents a *valid* code for the victim's enrolment, since a weaker version using a wrong code would pass against an implementation with no scoping at all. The gate also found *"never retrievable afterwards"* was a javadoc claim with nothing behind it, and drove eleven request shapes to prove none produces a 500. Three further mutations caught: removing `@RequiresSession`, reporting success for a wrong code, and exporting the login identifier into the QR label. **Fourteen mutations, all resolved.** 804 hermetic tests, 350 database tests. |
 | 2026-09-07 | **`P1-TSK-016` complete — M1.3 closes, 4 of 4.** `GET /v1/sessions`, `DELETE /v1/sessions/{id}` and `DELETE /v1/sessions/current`: a person can see where they are logged in and end a session, which is the visible half of `INV-IDN-03`. **Two defects were found before any code was written, and both blocked the task.** First, **`SessionRevocation.revoke` took an `owner` and never checked it** — the statement underneath was `WHERE id = ? AND status = 'ACTIVE'`, so **any caller could end any session by identifier**, while the audit record confidently asserted an owner nobody had verified. That is precisely the defect ADR-0031 names — *a legitimate capability used against somebody else's resource, where every check passes and nothing is logged as a denial* — and it is **worse than an absent parameter**, because the signature reads as though ownership is enforced and the trail is then wrong rather than silent. `P1-TSK-014` built it that way because it had no caller; this task is the first. Second, **nothing in the platform could authenticate a request, and no task owned that**: `PHASE_1_PLAN.md` §7 marks **eight** endpoints `Auth: session`, and the three tasks that look like they own the mechanism do not — `P1-TSK-020` (permission) and `P1-TSK-021` (ownership) both *presuppose* a caller, while `P1-TSK-027` hands a token **out** rather than consuming one. *Who is calling?* is a third thing sitting below both checks, and it is the **fifth backlog defect of this class in Phase 1 and the widest**, blocking eight endpoints rather than one. Built here as `SessionAuthenticationInterceptor`, because `GET /v1/sessions` means **my** sessions and without it the task has no deliverable at all — this task's precondition, not future-phase work. **The `P1-TSK-020` dependency was wrong, which is the inverse of `P1-TSK-010`'s finding**: all three endpoints are available to every session-holder against their own resources, there is no role gate, and the control is ownership — delivered in full without roles, where `P1-TSK-010` had a right `Deps` line and a wrong milestone boundary. **Ownership lives in the `WHERE` clause, never in a comparison.** `revokeOwned` and `findLiveFor` both carry `identity_id = ?` in the statement, for two reasons that both matter: the compare-then-act is a TOCTOU race, and ADR-0031 requires the check against **authoritative state** rather than against a row read a moment earlier. `SessionQueries` takes the **proven `Session`** and never an `IdentityId` — a deliberately awkward signature, because an identifier parameter would be satisfied just as well by one read out of the request, which is the defect itself; making the caller hold a proven session leaves the unsafe version nothing to pass. **Not yours, does not exist, and malformed are one answer** — `404`, byte-identical — because `403` for the first would confirm that a session identifier belongs to **somebody**, turning the endpoint into an oracle over other people's sessions (`INV-IDN-07`'s reasoning, which is about a response shape rather than about passwords). The same at the door: absent header, wrong scheme, unknown token, revoked, idle-expired and absolutely expired are **one** `401`, asserted as an **equality between the causes** rather than each against a remembered expectation. **The platform's first real inbound actor** — ADR-0021 called `enterSystem()` *"the greppable list of places Phase 1 must revisit"*, and every request through the interceptor now establishes a scope naming the **proven identity**, so an audit record written under it attributes the action to a person rather than to the platform. An **interceptor and not a filter**, for both of `P0-TSK-017`'s reasons: a filter runs before handler selection so it could not read `@RequiresSession` without a second copy of the routing table, and it runs outside the exception handler so its refusal would be the container's page rather than the error contract. **Two mutations survived first, and each found a real gap.** Accepting a bare `Authorization` header survived because the raw-header shape in the refusal list used a **revoked** session — refused either way, so it proved nothing about the scheme, and only a *live* session's plaintext makes that assertion load-bearing. Leaving the security scope open survived because nothing asserted it was closed: a scope left on a pooled worker means the next unrelated request runs as that customer and writes audit records naming the wrong person, permanently (`INV-HIST-03`) — the leak `P0-TSK-032` built `SecurityContext` to prevent — and it is now asserted in both directions including the path where the handler **throws**, which is why the close sits in `afterCompletion` and not `postHandle`. **Device sanitises rather than refuses, the opposite of `PartyName` and deliberately so**: `V005` gave the column no bound and no charset because nothing populated it, and this task is the one its comment names; the value is `RESTRICTED-PII`, caller-supplied and rendered back to a person, so a CR in it is a forged log line and a bidirectional override is a list that lies about which session is which. A display name is the person's own data and refusing it tells them to fix something they chose, whereas a `User-Agent` is a header they did not choose and cannot edit — so **a login must never fail because a browser sent something odd**, and letting an unscored convenience label refuse an authentication would invert its importance completely. `V007` adds the `CHECK` anyway, deliberately narrower than the domain rule and saying so, exactly as `V003` does for `party.display_name`. **Three findings in this task's own tests.** The source of `DeviceDescriptionTest` contained **invisible control characters** — literal NUL, BEL, RLO and BOM — so its tests read as though they exercised ordinary strings while in fact exercising control characters, which made them unreviewable and their outcomes coincidental; found by probing why a test passed when its visible content said it should not, and every one is now an explicit escape. The schema **refused a fixture, correctly**: back-dating only `idle_expires_at` violates `session_bounds_follow_issue`, because a session cannot be written already expired — the constraint was right and the fixture was wrong. And a `HandlerMethod` built on `new Object()` carried no annotation, so the interceptor skipped it — the guard being right about a fixture that named the wrong bean type. The published contract gained three paths and one schema, **79 lines added and none removed**; two defects were caught in what it published before the baseline was accepted — `operationId` was the raw Java method name (`list`, which would generate `api.list()` on a client) and the response content type was `*/*` rather than `application/json` like every other response. **Thirteen mutations, all caught**, three added by the completion gate — which found that `RequiresSession`'s javadoc claimed a fail-closed assertion that did not exist, that *"fails closed"* on an unreadable database was described and never proven, and that the headline claim was asserted at the mechanism rather than at the durable record. The gate's own first test was then **too loose to catch its defect**: a mutation swallowing the storage failure and reporting `401` survived, because it also throws - and that is a real defect, since reporting `401` tells a client their good session is invalid, logs every user out during a database blip, and asserts *"not live"* where the truth is *"cannot tell"* (`INV-LIFE-03`'s principle outside payments). 762 hermetic tests, 334 database tests. |
 | 2026-09-07 | **`P1-TSK-015` complete - M1.3 is 3 of 4.** A new session identifier on every privilege change, because elevating in place lets an identifier stolen *before* the elevation become elevated behind the legitimate user's back: the attacker does nothing, waits for the customer to complete a second factor, and inherits it. **Login needed no code, and that is asserted rather than implemented.** Classic fixation is the attacker planting an identifier the victim then authenticates *with*, and this platform cannot be attacked that way - a token comes from `SecureRandom` inside the server and there is no path by which a client supplies one. So the deliverable for that case is a **test that the mechanism refuses**; adding a rotation step would have implemented a property already true and hidden that it was. **The decision nothing had written down: rotation PRESERVES the absolute bound.** If it reset it, anyone able to trigger a rotation could hold a session indefinitely - step up, rotate, step up again - and the absolute lifetime would be advisory, which is exactly the failure `P1-TSK-013` closed on the *idle* bound with `LEAST(…, absolute_expires_at)` returning through a different door. A step-up must not extend how long you can stay logged in; a customer wanting a fresh bound authenticates again, which is an issue rather than a rotation. **Revoke first, issue only if the revoke won**, and the ordering *is* the concurrency property: inserting first and revoking after would leave a loser's session live, handing out two usable identifiers where there should be one. Ten instances produce exactly one replacement. **Audited as a rotation, never as a revocation**, naming both identifiers - an investigator must be able to tell *"this session was ended"* from *"this session was replaced"*, and a rotation logged as a revocation reads as a logout that never happened. **One mutation survived, correctly, and sharpened the test**: deriving the new token from the old survived because it derived from the *hash*, which an attacker never holds. The dangerous version is reusing the old **plaintext**, and that is **structurally unreachable** - `SessionRotation` only ever receives a `Session`, which carries the hash. Now asserted reflectively rather than left as a claim, and a mutation adding that parameter is caught. **The `NoProcessLocalSessionStateTest` exemption list gained its first entry**, with the claim stated - `Rotated.session` is a per-call return value, not a retained cache - alongside a staleness guard, because an exemption naming a field that no longer exists is one nobody can evaluate. **Seven mutations: six caught, one survived correctly.** **The completion gate found the untested half of the feature** — every rotation test elevated `PASSWORD` → `MULTI_FACTOR`, so the **credential change**, which rotates at the *same* level, had no test at all. An implementation returning early when the level is unchanged would have passed every other test in the class and failed in precisely the situation where fixation is most dangerous: **a password change is what somebody does after suspecting their session was stolen**, so leaving the identifier intact there hands the thief the account they were being locked out of. Closed, and proven by exactly that mutation, which now fails exactly one test. The gate also narrowed `rotate`'s policy parameter to a `Duration`: it consumed only the idle half, the absolute bound being inherited, and a parameter whose other half is silently ignored is a trap for the caller who passes `SessionPolicy.current()` expecting both to apply. 755 hermetic tests, 309 database tests. |

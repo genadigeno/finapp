@@ -136,7 +136,9 @@ public final class MfaEnrolmentService {
 
         MfaEnrolment enrolment = pending.get();
         Sensitive<String> secret = cipher.decrypt(enrolment.encryptedSecret());
-        if (!verifier.verify(secret, presentedCode, enrolment.parameters())) {
+        java.util.OptionalLong matchedStep =
+                verifier.verify(secret, presentedCode, enrolment.parameters());
+        if (matchedStep.isEmpty()) {
             // The enrolment stays PENDING and assurance is unchanged - this task's acceptance
             // criterion, on the path that produces it.
             return false;
@@ -148,6 +150,13 @@ public final class MfaEnrolmentService {
             // because this call did not do it and its audit record would claim otherwise.
             return false;
         }
+
+        // The confirming code is CONSUMED, added by `P1-TSK-018`. Without it, the code that
+        // confirms an enrolment at step N is still usable for a challenge at step N - a replay
+        // across two operations, and RFC 6238 5.2 does not care which operation the first use was.
+        // The result is deliberately ignored: this row has just become ACTIVE with no prior step,
+        // so the only way it fails is a concurrent challenge, which has already consumed the step.
+        enrolments.consumeStep(unitOfWork, enrolment.id(), matchedStep.getAsLong());
 
         audit(unitOfWork, at, IdentityAuditAction.MFA_ENROLMENT_CONFIRMED, enrolment,
                 "type=" + enrolment.type());

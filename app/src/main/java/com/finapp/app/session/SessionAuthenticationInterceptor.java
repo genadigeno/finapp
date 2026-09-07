@@ -111,6 +111,8 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                                                 PlatformErrorCode.UNAUTHENTICATED,
                                                 "No live session was presented"));
 
+        requireAssurance(handler, session);
+
         request.setAttribute(CURRENT_SESSION, session);
         request.setAttribute(
                 SCOPE_ATTRIBUTE,
@@ -191,11 +193,50 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         return presented.isEmpty() ? Optional.empty() : Optional.of(SessionToken.of(presented));
     }
 
+    /**
+     * Refuses a session that is not assured enough for the handler (`P1-TSK-018`).
+     *
+     * <p><strong>Checked here rather than in each handler</strong>, for the reason
+     * {@code P0-TSK-017} gave for the idempotency interceptor: a check every handler must remember
+     * is a check one of them eventually forgets, and the one that forgets is the one that matters.
+     *
+     * <p>{@code atLeast}, not equality: a {@code STRONG} session satisfies a {@code MULTI_FACTOR}
+     * requirement. Refusing a session that is <em>more</em> assured than asked for is the kind of
+     * rule people work around.
+     *
+     * <p>A distinct error code rather than a bare 403 — a client must be able to tell
+     * <em>"you may never do this"</em> from <em>"step up and retry"</em>, which are different
+     * actions.
+     */
+    private static void requireAssurance(Object handler, Session session) {
+        if (!(handler instanceof HandlerMethod handlerMethod)) {
+            return;
+        }
+        RequiresAssurance declared = handlerMethod.getMethodAnnotation(RequiresAssurance.class);
+        if (declared == null) {
+            declared = handlerMethod.getBeanType().getAnnotation(RequiresAssurance.class);
+        }
+        if (declared == null) {
+            return;
+        }
+        if (!session.assurance().atLeast(declared.value())) {
+            throw new ApiException(
+                    com.finapp.identity.IdentityErrorCode.ASSURANCE_REQUIRED,
+                    "A session at " + session.assurance() + " was presented where "
+                            + declared.value() + " is required");
+        }
+    }
+
     private static boolean requiresSession(Object handler) {
         if (!(handler instanceof HandlerMethod handlerMethod)) {
             return false;
         }
+        // @RequiresAssurance implies @RequiresSession: there is no assurance without a session to
+        // carry it, and a handler that declared only the level would otherwise be UNAUTHENTICATED -
+        // the exact inversion of what its author asked for, and silent.
         return handlerMethod.getMethodAnnotation(RequiresSession.class) != null
-                || handlerMethod.getBeanType().isAnnotationPresent(RequiresSession.class);
+                || handlerMethod.getBeanType().isAnnotationPresent(RequiresSession.class)
+                || handlerMethod.getMethodAnnotation(RequiresAssurance.class) != null
+                || handlerMethod.getBeanType().isAnnotationPresent(RequiresAssurance.class);
     }
 }

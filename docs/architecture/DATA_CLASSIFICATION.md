@@ -271,6 +271,7 @@ role cannot edit it.
 | `mfa_enrolment` | `created_at` | `CONFIDENTIAL` | When somebody began adding a factor. As `status`, and it dates the account's security posture |
 | `mfa_enrolment` | `confirmed_at` | `CONFIDENTIAL` | As `created_at` |
 | `mfa_enrolment` | `discarded_at` | `CONFIDENTIAL` | As `created_at` |
+| `mfa_enrolment` | `last_used_step` | `CONFIDENTIAL` | The TOTP time step of the last accepted code. Operational on its face, and it is **not** `INTERNAL`: it says when the factor was last used to a thirty-second resolution, which is a record of when a person was at their device. Classified with the other timestamps on this table for the same reason |
 
 **`device` is the judgement worth challenging**, and it is classified above everything else here on
 purpose. Every other column is a fact about the *session*; `device` is a fact about the *person* —

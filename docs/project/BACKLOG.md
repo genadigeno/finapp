@@ -1809,15 +1809,22 @@ repository exists to prevent.
 - Accept: **met** — `aStartedEnrolmentIsNotUsable`; a mutation making `findActive` ignore status is caught.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
-**P1-TSK-018 — Challenge, verification and assurance elevation**
+**P1-TSK-018 — Challenge, verification and assurance elevation** — `COMPLETE` (2026-09-07)
 - Context: identity / security
 - Description: `POST /v1/authentications/mfa`; a verified challenge produces a `MULTI_FACTOR`
   session.
 - Deps: P1-TSK-017, P1-TSK-015
 - Implementation: replay refused; elevation produces a **new** session identifier; the level is
   recorded on the session, and operations ask for a minimum level.
-- Tests: a replayed code is refused; elevation rotates the identifier.
-- Accept: an operation requiring `MULTI_FACTOR` refuses a `PASSWORD` session.
+- Tests: **met** — four replay tests (same code, earlier code, across instances, and the code that
+  confirmed the enrolment); `elevationRotatesTheIdentifier`.
+- Accept: **met** — `assuranceIsRequiredAndSatisfied`, with the elevated session as its positive
+  control; a mutation removing the check is caught.
+- **Replay needed a mechanism enrolment did not**: a challenge leaves the factor `ACTIVE` and has no
+  state to consume, so the last accepted **time step** is recorded and anything at or before it is
+  refused (RFC 6238 §5.2).
+- **`@RequiresAssurance` has no production caller**, per `PHASE_1_PLAN.md` §66. A probe proves it.
+- Ten mutations: nine caught, one survived correctly.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 **P1-TSK-019 — `P1-TST-003`: MFA cannot be bypassed**

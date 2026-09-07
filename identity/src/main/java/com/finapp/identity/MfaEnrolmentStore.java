@@ -49,6 +49,24 @@ public interface MfaEnrolmentStore<T> {
     boolean confirm(T unitOfWork, MfaEnrolmentId id, Instant at);
 
     /**
+     * Records that a code at {@code step} has been accepted, refusing anything at or before the
+     * last one.
+     *
+     * <p><strong>This is the challenge's replay defence, and it has to be its own mechanism.</strong>
+     * Enrolment consumes its {@code PENDING} row, so a second confirmation finds nothing; a
+     * challenge leaves the factor {@code ACTIVE} and has nothing to consume. Without this a code is
+     * replayable for as long as it is valid — about ninety seconds — and "one-time password" is
+     * false.
+     *
+     * <p>Conditional, and the row count is the outcome: two instances presenting the same code
+     * produce <strong>one</strong> success. It refuses <em>earlier</em> steps too, not merely the
+     * same one, which is what RFC 6238 §5.2 requires.
+     *
+     * @return whether the step was accepted and recorded
+     */
+    boolean consumeStep(T unitOfWork, MfaEnrolmentId id, long step);
+
+    /**
      * Marks an identity's pending enrolment of a type as discarded, if there is one.
      *
      * <p>Starting a second enrolment must replace the first rather than fail: a customer who closed

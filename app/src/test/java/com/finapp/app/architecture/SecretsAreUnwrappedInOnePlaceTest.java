@@ -96,7 +96,12 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // evaluate, which is why the assertion is an equality rather than a subset.
                     // And the one deliberate emission: the provisioning URI a customer scans.
                     // Bounded to one response, to the proven owner, never retrievable again.
-                    "com.finapp.app.mfa.MfaEnrolmentApplicationService");
+                    "com.finapp.app.mfa.MfaEnrolmentApplicationService",
+                    // P1-TSK-018. A step-up ROTATES the session, so the response must carry the
+                    // replacement token or the customer is logged out at the moment they proved a
+                    // second factor. The one unwrap outside `identity` besides the provisioning
+                    // URI, and for the same reason: a value whose purpose is to be transmitted.
+                    "com.finapp.app.mfa.MfaChallengeApplicationService");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

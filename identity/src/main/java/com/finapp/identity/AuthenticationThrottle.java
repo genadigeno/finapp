@@ -92,6 +92,29 @@ public final class AuthenticationThrottle {
      * <p>Writes the audit record when this failure is the one that crosses the threshold — in the
      * same transaction, so a lock that is recorded is a lock that happened.
      */
+    /**
+     * The source row when the account is identified by what somebody typed.
+     *
+     * <p>A subselect rather than a lookup first: it runs <strong>one</strong> query whether or not
+     * the account exists, and two queries when it does would be a timing difference that discloses
+     * existence ({@code INV-IDN-07}).
+     */
+    private static final String BY_LOGIN_IDENTIFIER =
+            """
+            SELECT id, 1, now(), NULL, now()
+              FROM identity.identity
+             WHERE login_identifier = ?
+            """;
+
+    /**
+     * The source row when the identity is already proven.
+     *
+     * <p>No subselect, and the {@code INV-IDN-07} argument above does not transfer: an MFA
+     * challenge arrives on a session this platform issued, so there is no existence question to
+     * disclose the answer to.
+     */
+    private static final String BY_IDENTITY = "SELECT ?::uuid, 1, now(), NULL, now()";
+
     public Lock recordFailure(Connection unitOfWork, LoginIdentifier loginIdentifier) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(loginIdentifier, "loginIdentifier must not be null");
@@ -100,9 +123,7 @@ public final class AuthenticationThrottle {
                 """
                 INSERT INTO identity.authentication_failure
                     (identity_id, failures, window_started_at, locked_until, updated_at)
-                SELECT id, 1, now(), NULL, now()
-                  FROM identity.identity
-                 WHERE login_identifier = ?
+                %s
                 ON CONFLICT (identity_id) DO UPDATE SET
                     -- WHEN A RUN OF FAILURES ENDS. Two ways, and they are deliberately not one
                     -- condition, which the completion gate established by probing rather than
@@ -168,7 +189,8 @@ public final class AuthenticationThrottle {
                     updated_at = now()
                 RETURNING identity_id, failures,
                           locked_until IS NOT NULL AND locked_until > now()
-                """;
+                """
+                        .formatted(BY_LOGIN_IDENTIFIER);
 
         try (PreparedStatement upsert = unitOfWork.prepareStatement(sql)) {
             upsert.setString(1, loginIdentifier.value());
@@ -187,6 +209,135 @@ public final class AuthenticationThrottle {
                 }
                 IdentityId identityId =
                         IdentityId.of((java.util.UUID) row.getObject("identity_id"));
+                int failures = row.getInt("failures");
+                boolean locked = row.getBoolean(3);
+                // Exactly the attempt that crosses the threshold writes the record. Writing one per
+                // failure while locked would bury the event that matters under repetitions of it.
+                boolean lockedByThisFailure = locked && failures == policy.threshold();
+                if (lockedByThisFailure) {
+                    audit(unitOfWork, identityId, failures);
+                }
+                return new Lock(locked, lockedByThisFailure, failures);
+            }
+        } catch (SQLException e) {
+            // Never the identifier: the message reaches a log line (INV-AUD-02), and this table's
+            // subject is by definition an account somebody is attacking.
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not record an authentication failure", e));
+        }
+    }
+
+    /**
+     * Records a failure against an identity that is already proven (`P1-TSK-018`).
+     *
+     * <h2>MFA failures share the account's lockout budget, deliberately</h2>
+     *
+     * <p>A six-digit code with a ±1 window is <strong>three valid values in a million</strong> per
+     * attempt, so an unthrottled challenge is brute-forceable by automation — RFC 4226 §7.3 requires
+     * throttling and TOTP is not safe without it.
+     *
+     * <p>It counts against the <em>same</em> row as a password failure, and that is the decision
+     * rather than an accident of reuse: an attacker guessing codes is by definition somebody who
+     * already has the password, so separate counters would hand them a second fresh budget for no
+     * benefit. The threshold protects the account, not one credential.
+     *
+     * <p>The statement is the same one {@link #recordFailure} uses, differing only in how the row is
+     * sourced. Copying it was the alternative and was refused: its reset condition is two clauses
+     * that a completion gate had to establish by probing, and a second copy is one that drifts.
+     */
+    public Lock recordFailureFor(Connection unitOfWork, IdentityId identityId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(identityId, "identityId must not be null");
+
+        String sql =
+                """
+                INSERT INTO identity.authentication_failure
+                    (identity_id, failures, window_started_at, locked_until, updated_at)
+                %s
+                ON CONFLICT (identity_id) DO UPDATE SET
+                    -- WHEN A RUN OF FAILURES ENDS. Two ways, and they are deliberately not one
+                    -- condition, which the completion gate established by probing rather than
+                    -- reading:
+                    --
+                    --   * A SERVED LOCK ends it, whatever the window says. The lock is the
+                    --     punishment; once it has been served the run is over. Making this depend
+                    --     on the window as well looks equivalent - in the SHIPPED policy the window
+                    --     and the lock are both 15 minutes, and window_started_at always precedes
+                    --     locked_until, so an expired lock implies an expired window - and it is
+                    --     coincidence, not equivalence: LockoutPolicy(3, 60min, 1min) is legal and
+                    --     expires the lock while the window is live.
+                    --   * AN ELAPSED WINDOW ends it, provided NO LOCK IS LIVE. Without the second
+                    --     half an attacker waits out the window instead of the lock.
+                    --
+                    -- The first version had one condition - "locked_until IS NULL AND the window
+                    -- elapsed" - and it never reset a row that had ever been locked. ONE failure
+                    -- after a lock expired incremented to threshold + 1 and re-locked, so an
+                    -- account locked once was locked FOR EVER at one failure per lock period. That
+                    -- is the permanent lockout this table's own comment says must not exist, and it
+                    -- is the attack the design claims to avoid.
+                    failures = CASE
+                        WHEN (
+                             -- A served lock ends the run, whatever the window says.
+                             (identity.authentication_failure.locked_until IS NOT NULL
+                              AND identity.authentication_failure.locked_until <= now())
+                             -- Otherwise an elapsed window ends it, provided no lock is live.
+                             OR (identity.authentication_failure.locked_until IS NULL
+                                 AND identity.authentication_failure.window_started_at
+                                     < now() - ?::interval)
+                         )
+                        THEN 1
+                        ELSE identity.authentication_failure.failures + 1
+                    END,
+                    window_started_at = CASE
+                        WHEN (
+                             -- A served lock ends the run, whatever the window says.
+                             (identity.authentication_failure.locked_until IS NOT NULL
+                              AND identity.authentication_failure.locked_until <= now())
+                             -- Otherwise an elapsed window ends it, provided no lock is live.
+                             OR (identity.authentication_failure.locked_until IS NULL
+                                 AND identity.authentication_failure.window_started_at
+                                     < now() - ?::interval)
+                         )
+                        THEN now()
+                        ELSE identity.authentication_failure.window_started_at
+                    END,
+                    locked_until = CASE
+                        WHEN (
+                             -- A served lock ends the run, whatever the window says.
+                             (identity.authentication_failure.locked_until IS NOT NULL
+                              AND identity.authentication_failure.locked_until <= now())
+                             -- Otherwise an elapsed window ends it, provided no lock is live.
+                             OR (identity.authentication_failure.locked_until IS NULL
+                                 AND identity.authentication_failure.window_started_at
+                                     < now() - ?::interval)
+                         )
+                        THEN NULL
+                        WHEN identity.authentication_failure.failures + 1 >= ?
+                        THEN now() + ?::interval
+                        ELSE identity.authentication_failure.locked_until
+                    END,
+                    updated_at = now()
+                RETURNING identity_id, failures,
+                          locked_until IS NOT NULL AND locked_until > now()
+                """
+                        .formatted(BY_IDENTITY);
+
+        try (PreparedStatement upsert = unitOfWork.prepareStatement(sql)) {
+            upsert.setObject(1, identityId.value());
+            upsert.setString(2, intervalOf(policy.window()));
+            upsert.setString(3, intervalOf(policy.window()));
+            upsert.setString(4, intervalOf(policy.window()));
+            upsert.setInt(5, policy.threshold());
+            upsert.setString(6, intervalOf(policy.lockFor()));
+
+            try (ResultSet row = upsert.executeQuery()) {
+                if (!row.next()) {
+                    // Unreachable: the source row is a literal, so it always produces one. Stated
+                    // rather than assumed - an unreachable branch that silently returns the wrong
+                    // thing is worse than one that says so.
+                    throw new IllegalStateException(
+                            "An identity-keyed failure recorded nothing, which cannot happen");
+                }
                 int failures = row.getInt("failures");
                 boolean locked = row.getBoolean(3);
                 // Exactly the attempt that crosses the threshold writes the record. Writing one per

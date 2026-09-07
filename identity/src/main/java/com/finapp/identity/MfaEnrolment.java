@@ -38,6 +38,7 @@ public final class MfaEnrolment {
     private final Instant createdAt;
     private final Instant confirmedAt;
     private final Instant discardedAt;
+    private final java.util.OptionalLong lastUsedStep;
 
     private MfaEnrolment(
             MfaEnrolmentId id,
@@ -48,7 +49,8 @@ public final class MfaEnrolment {
             MfaFactorStatus status,
             Instant createdAt,
             Instant confirmedAt,
-            Instant discardedAt) {
+            Instant discardedAt,
+            java.util.OptionalLong lastUsedStep) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.identityId = Objects.requireNonNull(identityId, "identityId must not be null");
         this.type = Objects.requireNonNull(type, "type must not be null");
@@ -58,6 +60,8 @@ public final class MfaEnrolment {
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.confirmedAt = confirmedAt;
         this.discardedAt = discardedAt;
+        this.lastUsedStep =
+                Objects.requireNonNull(lastUsedStep, "lastUsedStep must not be null");
 
         if ((status == MfaFactorStatus.ACTIVE) != (confirmedAt != null)) {
             // The same rule V005 applies to revoked_at: a status and its timestamp are one fact,
@@ -94,7 +98,8 @@ public final class MfaEnrolment {
                 MfaFactorStatus.PENDING,
                 Instant.now(clock),
                 null,
-                null);
+                null,
+                java.util.OptionalLong.empty());
     }
 
     /** Rebuilds an enrolment the database has already validated. */
@@ -107,7 +112,8 @@ public final class MfaEnrolment {
             MfaFactorStatus status,
             Instant createdAt,
             Instant confirmedAt,
-            Instant discardedAt) {
+            Instant discardedAt,
+            java.util.OptionalLong lastUsedStep) {
         return new MfaEnrolment(
                 id,
                 identityId,
@@ -117,7 +123,8 @@ public final class MfaEnrolment {
                 status,
                 createdAt,
                 confirmedAt,
-                discardedAt);
+                discardedAt,
+                lastUsedStep);
     }
 
     /**
@@ -166,6 +173,17 @@ public final class MfaEnrolment {
 
     public Optional<Instant> discardedAt() {
         return Optional.ofNullable(discardedAt);
+    }
+
+    /**
+     * The time step of the last accepted code, if any.
+     *
+     * <p>Read for diagnosis and for tests; the <strong>decision</strong> is never made from it in
+     * Java. {@code MfaEnrolmentStore.consumeStep} compares and advances in one statement, because a
+     * read-then-compare here would be a race two instances could both win.
+     */
+    public java.util.OptionalLong lastUsedStep() {
+        return lastUsedStep;
     }
 
     /**

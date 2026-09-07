@@ -472,6 +472,41 @@
           }
         }
       },
+      "identity.AssuranceRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "identity.AssuranceRequired"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/identity.AssuranceRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] This operation requires a stronger authentication.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "identity.AuthenticationFailed": {
         "content": {
           "application/problem+json": {
@@ -560,6 +595,21 @@
           "loginIdentifier",
           "password"
         ],
+        "type": "object"
+      },
+      "ElevatedSession": {
+        "properties": {
+          "assurance": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sessionToken": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "MfaConfirmationRequest": {
@@ -701,6 +751,33 @@
         "responses": {
           "204": {
             "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/authentications/mfa": {
+      "post": {
+        "operationId": "elevateAssurance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaConfirmationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ElevatedSession"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
