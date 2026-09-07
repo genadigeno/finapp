@@ -52,6 +52,37 @@ public interface SessionStore<T> {
     boolean revoke(T unitOfWork, SessionId sessionId, java.time.Instant at);
 
     /**
+     * Every live session of an identity, newest first.
+     *
+     * <p>Scoped by identity in the <strong>statement</strong>, which is the whole of the ownership
+     * control for listing: there is no "read them all and filter", because a filter is a decision
+     * somebody can forget to apply and a {@code WHERE} clause is not.
+     *
+     * <p>Live is derived from the bounds and the status, exactly as {@link #findLive} derives it —
+     * a listing that showed expired sessions would contradict the lookup about what a session is.
+     */
+    java.util.List<Session> findLiveFor(T unitOfWork, IdentityId identityId, Instant at);
+
+    /**
+     * Revokes one session <strong>only if it belongs to the given identity</strong>.
+     *
+     * <p><strong>This exists because {@link #revoke} does not check ownership</strong>, and
+     * {@code SessionRevocation.revoke} took an {@code owner} it used only in an audit string —
+     * a signature that reads as an ownership check and is not one, which ADR-0031 names as the most
+     * common authorization defect in financial software. Found by {@code P1-TSK-016}, the first
+     * caller.
+     *
+     * <p>Ownership is in the {@code WHERE} clause rather than a load-compare-act, for two reasons
+     * that both matter: the compare-then-act is a TOCTOU race, and ADR-0031 requires the check
+     * against authoritative state rather than against a row read a moment earlier.
+     *
+     * @return whether a live session belonging to {@code owner} was ended. <strong>False does not
+     *     say which of "no such session" and "not yours" was true</strong>, deliberately: a caller
+     *     that could tell them apart could enumerate other people's session identifiers
+     */
+    boolean revokeOwned(T unitOfWork, SessionId sessionId, IdentityId owner, Instant at);
+
+    /**
      * Ends every live session of an identity — <em>"log out everywhere"</em>.
      *
      * <p>Takes a lock on the identity first, and that is not tidiness: see

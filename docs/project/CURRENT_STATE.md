@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 
 ---
 
@@ -19,7 +19,9 @@ Status: **`IN_PROGRESS`** — entry gate passed, all twelve criteria. Started 20
 ## Current Milestone
 
 **M1.3 — Sessions are real, and revocation is immediate.** `P1-TSK-013` … `P1-TSK-016`;
-**3 of 4 complete.** Started 2026-09-07.
+**4 of 4 complete** (2026-09-07). The milestone's stated acceptance — *"INV-IDN-03 demonstrated to
+fail when the session lookup is cached"* — is met and caught twice, behaviourally and by
+`NoProcessLocalSessionStateTest`.
 
 **M1.2 — That person can authenticate.** `P1-TSK-007` … `P1-TSK-012`; **6 of 6 complete** — but the milestone does **not** close: its stated acceptance requires a session, which is `P1-TSK-027`. The session now exists; wiring it into authentication is what remains.
 Objective: password authentication that is enumeration-safe and cannot be brute-forced. Credentials
@@ -130,10 +132,121 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-015` completed 2026-09-07. **M1.3 is 3 of 4.**
-**Next: `P1-TSK-016`** — session and device endpoints.
+**None in progress.** `P1-TSK-016` completed 2026-09-07. **M1.3 is 4 of 4 and closes.**
+**Next: `P1-TSK-017`** — TOTP enrolment, opening M1.4.
 
 ### Just completed
+
+**`P1-TSK-016` — Session and device endpoints** — `COMPLETE` (2026-09-07). **M1.3 closes.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A negative ownership test — one identity cannot list or revoke another's | `SessionOwnershipDatabaseTest`, 9 tests |
+| It fails when the check is removed | Dropping `AND identity_id = ?` fails **three** tests |
+
+### Two defects found before any code was written, and both blocked the task
+
+**`SessionRevocation.revoke` took an `owner` and never checked it.** The statement underneath was
+`WHERE id = ? AND status = 'ACTIVE'`, so **any caller could end any session by identifier** — while
+the audit record confidently asserted an owner nobody had verified. That is exactly the defect
+ADR-0031 names: *a legitimate capability used against somebody else's resource, where every check
+passes and nothing is logged as a denial.* It is **worse than an absent parameter**, because the
+signature reads as though ownership is enforced and the trail is then wrong rather than silent.
+`P1-TSK-014` built it that way because it had no caller; this task is the first.
+
+**Nothing in the platform could authenticate a request, and no task owned that.**
+`PHASE_1_PLAN.md` §7 marks **eight** endpoints `Auth: session`, and the three tasks that look like
+they own the mechanism do not: `P1-TSK-020` (permission) and `P1-TSK-021` (ownership) both
+*presuppose* a caller, and `P1-TSK-027` hands a token **out** rather than consuming one. *Who is
+calling?* is a third thing sitting below both checks. **Fifth backlog defect of this class in
+Phase 1, and the widest** — it blocks eight endpoints rather than one.
+
+Built here, because `GET /v1/sessions` means **my** sessions and without it the task has no
+deliverable at all. It is this task's precondition, not future-phase work.
+
+### The `P1-TSK-020` dependency was wrong, and that is the inverse of `P1-TSK-010`'s finding
+
+All three endpoints are available to **every** session-holder against **their own** resources. There
+is no role gate; the control is ownership. Delivered in full without roles. Where `P1-TSK-010`'s
+`Deps` line was right and its milestone boundary wrong, here the milestone is right and the `Deps`
+line names a task this one does not need.
+
+### Ownership lives in the `WHERE` clause, never in a comparison
+
+`revokeOwned` and `findLiveFor` both carry `identity_id = ?` in the statement. Not a
+load-compare-act, for two reasons that both matter: the compare-then-act is a TOCTOU race, and
+ADR-0031 requires the check against **authoritative state** rather than against a row read a moment
+earlier.
+
+`SessionQueries` takes the **proven `Session`**, never an `IdentityId`. That signature is
+deliberately awkward: an identifier parameter would be satisfied just as well by one read out of the
+request, which is the defect itself. Making the caller hold a proven session leaves the unsafe
+version nothing to pass.
+
+### Not yours and does not exist are one answer
+
+Both are `404`, byte-identical — and so is a malformed identifier. Reporting `403` for the first
+would confirm that a session identifier belongs to **somebody**, turning the endpoint into an oracle
+over other people's sessions. `INV-IDN-07`'s reasoning, which is about a response shape rather than
+about passwords.
+
+The same at the door: absent header, wrong scheme, unknown token, revoked, idle-expired and
+absolutely expired are **one** `401`, asserted as an **equality between the causes** rather than each
+against a remembered expectation.
+
+### The platform's first real inbound actor
+
+ADR-0021 called `enterSystem()` *"the greppable list of places Phase 1 must revisit"*. Every request
+through the interceptor now establishes a scope naming the **proven identity**, so an audit record
+written under it attributes the action to a person rather than to the platform.
+
+An **interceptor, not a filter**, for both of `P0-TSK-017`'s reasons: a filter runs before handler
+selection, so it could not read `@RequiresSession` without a second copy of the routing table, and
+it runs outside the exception handler, so its refusal would be the container's page rather than the
+error contract.
+
+### Two mutations survived first, and each found a real gap
+
+**Accepting a bare `Authorization` header survived**, because the raw-header shape in the refusal
+list used a **revoked** session — refused either way, so it proved nothing about the scheme. Only a
+*live* session's plaintext makes that assertion load-bearing.
+
+**Leaving the security scope open survived**, because nothing asserted it was closed. A scope left on
+a pooled worker means the next unrelated request runs as that customer and writes audit records
+naming the wrong person, permanently (`INV-HIST-03`) — the leak `P0-TSK-032` built `SecurityContext`
+to prevent. Now asserted in both directions, including the path where the handler **throws**, which
+is why the close is in `afterCompletion` and not `postHandle`.
+
+### Device: sanitised, never refused — the opposite of `PartyName`, on purpose
+
+`V005` gave `device` no bound and no charset because nothing populated it; this task is the one its
+comment names. The value is `RESTRICTED-PII`, caller-supplied and rendered back to a person, so a CR
+in it is a forged log line and a bidirectional override is a list that lies about which session is
+which — the `P1-TSK-006` finding, in the last column on the table that takes a caller's string.
+
+**It sanitises rather than rejects, and the difference is principled.** A display name is the
+person's own data, so refusing it tells them to fix something they chose. A `User-Agent` is a header
+they did not choose and cannot edit, so **a login must never fail because a browser sent something
+odd**; letting an unscored convenience label refuse an authentication would invert its importance
+completely. `V007` adds the `CHECK` anyway, deliberately narrower than the domain rule and saying so.
+
+### Three findings in this task's own tests
+
+**The source contained invisible control characters.** `DeviceDescriptionTest` held literal NUL, BEL,
+RLO and BOM characters, so tests read as though they exercised ordinary strings while in fact
+exercising control characters — unreviewable, and their outcomes coincidental. Found by probing why a
+test passed when its visible content said it should not. Every one is now an explicit escape.
+
+**The schema refused a fixture, correctly.** Back-dating only `idle_expires_at` violates
+`session_bounds_follow_issue`: a session cannot be written already expired. The constraint was right
+and the fixture was wrong.
+
+**A `HandlerMethod` built on `new Object()` carried no annotation**, so the interceptor skipped it —
+the guard being right about a fixture that named the wrong bean type.
+
+**Nine mutations, all caught.** 762 hermetic tests, 331 database tests.
+
+### Previously
 
 **`P1-TSK-015` — Rotation on privilege change** — `COMPLETE` (2026-09-07).
 
@@ -1818,6 +1931,28 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Session and device endpoints (2026-09-07), `P1-TSK-016`:
+- `GET /v1/sessions`, `DELETE /v1/sessions/{id}`, `DELETE /v1/sessions/current` — a person can see
+  where they are logged in and end a session, which is the visible half of `INV-IDN-03`
+- **Found: `SessionRevocation.revoke` took an `owner` and did not check it.** Any caller could end
+  any session by identifier, while the audit record asserted an owner nobody verified — worse than
+  an absent parameter, because the signature reads as though ownership is enforced
+- **Found: nothing could authenticate a request, and no task owned it.** Eight endpoints are marked
+  `Auth: session`; permission and ownership both presuppose a caller, and `P1-TSK-027` hands a token
+  out rather than consuming one. Fifth backlog defect of this class in Phase 1, and the widest
+- **Ownership is in the `WHERE` clause**, never a load-compare-act: the compare-then-act is a TOCTOU
+  race, and ADR-0031 wants the check against authoritative state rather than a copy of it
+- `SessionQueries` takes the **proven `Session`**, never an `IdentityId` — an identifier parameter
+  would be satisfied just as well by one read out of the request, which is the defect itself
+- **Not yours, does not exist and malformed are one answer**: `404`, byte-identical, because `403`
+  would confirm the identifier belongs to somebody
+- **The platform's first real inbound actor** — every request establishes a scope naming the proven
+  identity, which is what ADR-0021 said `enterSystem()` was a placeholder for
+- **Device sanitises rather than refuses**, the opposite of `PartyName` and deliberately so: a
+  `User-Agent` is a header the person did not choose, so an unscored label must never refuse a login
+- Two mutations survived first and each found a real gap — a raw header tested against a *revoked*
+  session proved nothing, and nothing asserted the security scope was ever closed
+
 Rotation (2026-09-07), `P1-TSK-015`:
 - A new identifier on every privilege change - elevating in place lets an identifier stolen *before*
   the elevation become elevated behind the legitimate user's back
@@ -2729,18 +2864,19 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-016` — Session and device endpoints.**
+**`P1-TSK-017` — TOTP enrolment.** Opens **M1.4 — a second factor that cannot be bypassed**.
 
-`GET /v1/sessions`, `DELETE /v1/sessions/{id}`, `DELETE /v1/sessions/current`, and the device
-recorded on the session. The task's own acceptance is a **negative ownership test** — one identity
-cannot list or revoke another's sessions — and ADR-0031's rule is that ownership is checked **in the
-domain, never at the boundary from a request parameter**, because trusting an identifier out of the
-request *is* the defect. It depends on `P1-TSK-020` for the permission half.
+Enrol a TOTP factor, with the secret encrypted at rest and never emitted. The acceptance is that
+**partial enrolment leaves assurance unchanged** — an enrolment is not complete until confirmed by a
+valid code, because a factor that counts before it is proven is a factor an attacker can add to
+somebody else's account. The step-up that consumes it is `P1-TSK-018`, and the session rotation it
+needs already exists (`P1-TSK-015`).
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-07 | **`P1-TSK-016` complete — M1.3 closes, 4 of 4.** `GET /v1/sessions`, `DELETE /v1/sessions/{id}` and `DELETE /v1/sessions/current`: a person can see where they are logged in and end a session, which is the visible half of `INV-IDN-03`. **Two defects were found before any code was written, and both blocked the task.** First, **`SessionRevocation.revoke` took an `owner` and never checked it** — the statement underneath was `WHERE id = ? AND status = 'ACTIVE'`, so **any caller could end any session by identifier**, while the audit record confidently asserted an owner nobody had verified. That is precisely the defect ADR-0031 names — *a legitimate capability used against somebody else's resource, where every check passes and nothing is logged as a denial* — and it is **worse than an absent parameter**, because the signature reads as though ownership is enforced and the trail is then wrong rather than silent. `P1-TSK-014` built it that way because it had no caller; this task is the first. Second, **nothing in the platform could authenticate a request, and no task owned that**: `PHASE_1_PLAN.md` §7 marks **eight** endpoints `Auth: session`, and the three tasks that look like they own the mechanism do not — `P1-TSK-020` (permission) and `P1-TSK-021` (ownership) both *presuppose* a caller, while `P1-TSK-027` hands a token **out** rather than consuming one. *Who is calling?* is a third thing sitting below both checks, and it is the **fifth backlog defect of this class in Phase 1 and the widest**, blocking eight endpoints rather than one. Built here as `SessionAuthenticationInterceptor`, because `GET /v1/sessions` means **my** sessions and without it the task has no deliverable at all — this task's precondition, not future-phase work. **The `P1-TSK-020` dependency was wrong, which is the inverse of `P1-TSK-010`'s finding**: all three endpoints are available to every session-holder against their own resources, there is no role gate, and the control is ownership — delivered in full without roles, where `P1-TSK-010` had a right `Deps` line and a wrong milestone boundary. **Ownership lives in the `WHERE` clause, never in a comparison.** `revokeOwned` and `findLiveFor` both carry `identity_id = ?` in the statement, for two reasons that both matter: the compare-then-act is a TOCTOU race, and ADR-0031 requires the check against **authoritative state** rather than against a row read a moment earlier. `SessionQueries` takes the **proven `Session`** and never an `IdentityId` — a deliberately awkward signature, because an identifier parameter would be satisfied just as well by one read out of the request, which is the defect itself; making the caller hold a proven session leaves the unsafe version nothing to pass. **Not yours, does not exist, and malformed are one answer** — `404`, byte-identical — because `403` for the first would confirm that a session identifier belongs to **somebody**, turning the endpoint into an oracle over other people's sessions (`INV-IDN-07`'s reasoning, which is about a response shape rather than about passwords). The same at the door: absent header, wrong scheme, unknown token, revoked, idle-expired and absolutely expired are **one** `401`, asserted as an **equality between the causes** rather than each against a remembered expectation. **The platform's first real inbound actor** — ADR-0021 called `enterSystem()` *"the greppable list of places Phase 1 must revisit"*, and every request through the interceptor now establishes a scope naming the **proven identity**, so an audit record written under it attributes the action to a person rather than to the platform. An **interceptor and not a filter**, for both of `P0-TSK-017`'s reasons: a filter runs before handler selection so it could not read `@RequiresSession` without a second copy of the routing table, and it runs outside the exception handler so its refusal would be the container's page rather than the error contract. **Two mutations survived first, and each found a real gap.** Accepting a bare `Authorization` header survived because the raw-header shape in the refusal list used a **revoked** session — refused either way, so it proved nothing about the scheme, and only a *live* session's plaintext makes that assertion load-bearing. Leaving the security scope open survived because nothing asserted it was closed: a scope left on a pooled worker means the next unrelated request runs as that customer and writes audit records naming the wrong person, permanently (`INV-HIST-03`) — the leak `P0-TSK-032` built `SecurityContext` to prevent — and it is now asserted in both directions including the path where the handler **throws**, which is why the close sits in `afterCompletion` and not `postHandle`. **Device sanitises rather than refuses, the opposite of `PartyName` and deliberately so**: `V005` gave the column no bound and no charset because nothing populated it, and this task is the one its comment names; the value is `RESTRICTED-PII`, caller-supplied and rendered back to a person, so a CR in it is a forged log line and a bidirectional override is a list that lies about which session is which. A display name is the person's own data and refusing it tells them to fix something they chose, whereas a `User-Agent` is a header they did not choose and cannot edit — so **a login must never fail because a browser sent something odd**, and letting an unscored convenience label refuse an authentication would invert its importance completely. `V007` adds the `CHECK` anyway, deliberately narrower than the domain rule and saying so, exactly as `V003` does for `party.display_name`. **Three findings in this task's own tests.** The source of `DeviceDescriptionTest` contained **invisible control characters** — literal NUL, BEL, RLO and BOM — so its tests read as though they exercised ordinary strings while in fact exercising control characters, which made them unreviewable and their outcomes coincidental; found by probing why a test passed when its visible content said it should not, and every one is now an explicit escape. The schema **refused a fixture, correctly**: back-dating only `idle_expires_at` violates `session_bounds_follow_issue`, because a session cannot be written already expired — the constraint was right and the fixture was wrong. And a `HandlerMethod` built on `new Object()` carried no annotation, so the interceptor skipped it — the guard being right about a fixture that named the wrong bean type. The published contract gained three paths and one schema, **79 lines added and none removed**; two defects were caught in what it published before the baseline was accepted — `operationId` was the raw Java method name (`list`, which would generate `api.list()` on a client) and the response content type was `*/*` rather than `application/json` like every other response. **Nine mutations, all caught.** 762 hermetic tests, 331 database tests. |
 | 2026-09-07 | **`P1-TSK-015` complete - M1.3 is 3 of 4.** A new session identifier on every privilege change, because elevating in place lets an identifier stolen *before* the elevation become elevated behind the legitimate user's back: the attacker does nothing, waits for the customer to complete a second factor, and inherits it. **Login needed no code, and that is asserted rather than implemented.** Classic fixation is the attacker planting an identifier the victim then authenticates *with*, and this platform cannot be attacked that way - a token comes from `SecureRandom` inside the server and there is no path by which a client supplies one. So the deliverable for that case is a **test that the mechanism refuses**; adding a rotation step would have implemented a property already true and hidden that it was. **The decision nothing had written down: rotation PRESERVES the absolute bound.** If it reset it, anyone able to trigger a rotation could hold a session indefinitely - step up, rotate, step up again - and the absolute lifetime would be advisory, which is exactly the failure `P1-TSK-013` closed on the *idle* bound with `LEAST(…, absolute_expires_at)` returning through a different door. A step-up must not extend how long you can stay logged in; a customer wanting a fresh bound authenticates again, which is an issue rather than a rotation. **Revoke first, issue only if the revoke won**, and the ordering *is* the concurrency property: inserting first and revoking after would leave a loser's session live, handing out two usable identifiers where there should be one. Ten instances produce exactly one replacement. **Audited as a rotation, never as a revocation**, naming both identifiers - an investigator must be able to tell *"this session was ended"* from *"this session was replaced"*, and a rotation logged as a revocation reads as a logout that never happened. **One mutation survived, correctly, and sharpened the test**: deriving the new token from the old survived because it derived from the *hash*, which an attacker never holds. The dangerous version is reusing the old **plaintext**, and that is **structurally unreachable** - `SessionRotation` only ever receives a `Session`, which carries the hash. Now asserted reflectively rather than left as a claim, and a mutation adding that parameter is caught. **The `NoProcessLocalSessionStateTest` exemption list gained its first entry**, with the claim stated - `Rotated.session` is a per-call return value, not a retained cache - alongside a staleness guard, because an exemption naming a field that no longer exists is one nobody can evaluate. **Seven mutations: six caught, one survived correctly.** **The completion gate found the untested half of the feature** — every rotation test elevated `PASSWORD` → `MULTI_FACTOR`, so the **credential change**, which rotates at the *same* level, had no test at all. An implementation returning early when the level is unchanged would have passed every other test in the class and failed in precisely the situation where fixation is most dangerous: **a password change is what somebody does after suspecting their session was stolen**, so leaving the identifier intact there hands the thief the account they were being locked out of. Closed, and proven by exactly that mutation, which now fails exactly one test. The gate also narrowed `rotate`'s policy parameter to a `Duration`: it consumed only the idle half, the absolute bound being inherited, and a parameter whose other half is silently ignored is a trap for the caller who passes `SessionPolicy.current()` expecting both to apply. 755 hermetic tests, 309 database tests. |
 | 2026-09-07 | **`P1-TSK-014` complete - M1.3 is 2 of 4.** Revoke one, revoke all, and revoke all **except** one - the last being what a credential change does, so the attacker's session ends and the one you are changing the password from does not. The acceptance criterion is met and **caught twice**: introducing a session cache fails the behavioural test *and* fails `NoProcessLocalSessionStateTest` independently, which is two controls meeting one defect rather than a duplication. **The hard reading of `PHASE_1_PLAN.md` §8 was broken, and it was verified broken before any machinery was written.** The plan states it as an absolute - *"Revocation wins. A session must never survive a concurrent revoke"* - and the easy reading, a lookup racing a revoke, was already true. The hard one was not: a session **issued** concurrently with a revoke-all was still live afterwards, because the insert lands after the revoke has selected its rows and the revoke never sees it. An attacker holding the old password keeps a live session across the password change, and **every revoke-then-look-up test passes**. **One explicit lock, not two, and a surviving mutation is what established that.** Bulk revocation takes `FOR UPDATE` on the identity row; an explicit lock was written on the issuing side too, on the reasoning that both sides of a race must take one. A mutation removing it **survived**, and the pair explains why - removing the `FOR UPDATE` from revocation is caught, removing this is not - because PostgreSQL takes **`FOR KEY SHARE` on the referenced row for every insert with a foreign key**, and the two conflict. The serialisation already existed, supplied by `identity_id REFERENCES identity.identity (id)`. Removed rather than left in: a redundant lock reads as *the mechanism* and hides the real one, so the next person to drop the foreign key would see a lock two lines away and conclude the serialisation was safe. **The race test asserts the coordination rather than the outcome**, and its first version did not - the lock-removal mutation survived it, because with the lock the insert serialises after the revoke and the new session is live, while without it the insert races and the new session is *also* live. Same rows, opposite mechanisms. It now waits for PostgreSQL to report the issuer **blocked**, which is the `P0-TST-004` idiom and is deterministic rather than timed. **One audit record per operation, never per session**: forty sessions ended by one decision is one record with the count in its change summary, because the rows carry `revoked_at` and answer *when each ended* while the trail answers *who decided* - the argument `AUTHENTICATION_LOCKED` already makes for recording a crossing once. **`V006` adds the partial by-identity index** `V005` deliberately omitted because no query needed one; bulk revocation is that query, added by the task that states it. **The completion gate then sharpened the headline assertion and covered two audit paths.** The lock-wait observation counted *any* backend waiting on a lock in the database, which is a different claim from *"the insert is blocked"* - satisfied by anything else contending, and passing while saying nothing about the property; it now matches the issuer's own statement text, and the `FOR UPDATE` mutation is still caught against the sharper assertion. And only the bulk path had its audit asserted, leaving three claims uncovered: that a single revocation writes a record at all, that its target is the **session** rather than the identity because that is what was acted on, and that a revocation which ended **nothing** writes nothing - since a record for a caller's guess at a session identifier would put identifiers that were never real into the trail. **Seven mutations: five caught, one caught twice, and one survived correctly** having removed redundant code. 754 hermetic tests, 299 database tests. |
 | 2026-09-07 | **`P1-TSK-013` complete - M1.3 opens, 1 of 4.** The platform's authenticated presence, server-side and authoritative in PostgreSQL, so `INV-IDN-03` holds **by construction** rather than by discipline: every request that presents a token reads the table, and there is no cache to expire. **The acceptance criterion is a build rule** - `NoProcessLocalSessionStateTest` fails on any production field holding sessions, which is the shape ADR-0024's four patterns structurally cannot see (a cache need not be static, need not be a lock, need not be mutable in any way they recognise) and which the Phase 0 transition recorded as risk **R7**. **The token is stored hashed, and the plan never said so.** A session identifier is a bearer credential - whoever holds it *is* the customer - so a database leak with plaintext tokens hands an attacker every live session with **no work at all**, which is worse than the credential table where Argon2 at least buys time. `PHASE_1_PLAN.md` §5 already requires the recovery token to be *"hashed at rest"*; the same argument applies here and simply had not been made. **SHA-256 and deliberately not Argon2**, which is not an inconsistency with ADR-0032: a password needs a work factor because it is **low-entropy**, and a 256-bit random token has nothing to guess - so a work factor would buy no security while costing ~46 ms on *every authenticated request*. **Two identifiers, two jobs**: `SessionId` is a UUIDv7 for foreign keys, logs and audit records, while the token is 32 random bytes - because a UUIDv7 **encodes its creation time**, which is exactly the structure ADR-0030 forbids in a presented value and exactly what `EntityId` exists to provide. **There is no `EXPIRED` status**, and that is the sharpest modelling decision here: a stored one needs a sweep to write it, and between the moment a session expires and the moment that sweep runs the database would say `ACTIVE` about a session that is not, so every consumer would check the bounds anyway and the status would be a second answer free to disagree with the first. **Both bounds live on the row**, so a policy change cannot retroactively extend sessions issued under the old one (`INV-HIST-04`'s reasoning), and each is asserted **alone** because a suite testing them together passes against an implementation that checks only one. **Touching is clamped by `LEAST(…, absolute_expires_at)`** - without it an attacker holding a stolen token and using it steadily keeps the session alive for ever and the absolute lifetime is advisory. **The build made two decisions I had made differently.** `secretsAreWrapped` fired on `Session.tokenHash` and the rule had the better argument: my javadoc said a hash is not the secret, which is true and beside the point, because `INV-AUD-02` is about what reaches a **log** and a token hash in a log is a precise identifier of one customer's live session - the single most useful thing to somebody reading log archives. Wrapped; the third time this phase the right answer was to change the code rather than the rule. And `SecretsAreUnwrappedInOnePlaceTest` refused the new unwrap sites until they were named, which is the guard doing its job - the set is now six production classes, still all in `identity`, which is the property that list exists to keep true. **One defect in my own guard, found by running it**: the cache detector matched by substring, so `SessionStatus` and `SessionId` were flagged, both *containing* the string `Session`; it now matches on a word boundary against the **generic** signature, because a `Map<String, Session>` has a raw type of `Map` and the cache lives in the parameters. **The completion gate then found three things, and the first is the pattern this phase keeps repeating.** `V005` claimed *"IdentityEnumMigrationTest fails the build if they drift"* about `AssuranceLevel` and `SessionStatus` - and that test covers `IdentityStatus` and nothing else, while **no test reconciled either new enum with its constraint**. `P1-TSK-007` had established the pattern (`CredentialMigrationTest` reconciles all three credential enums) and this task did not follow it. The drift is not cosmetic: a fourth `AssuranceLevel` without a matching constraint is a value the domain produces and the database refuses, failing at the last write *after* the derivation, for a reason no error message would explain. **Two aggregate methods were dead code carrying confident javadoc**: `isLiveAt` and `idleBoundAfterUseAt` were never called, because the store does both checks in SQL - which is worse than no code, since the javadoc describes a safety property and the next reader believes the aggregate enforces it. `idleBoundAfterUseAt` is deleted (it duplicated the SQL's `LEAST(…)` with no caller); `isLiveAt` is kept and made load-bearing, because it is the *definition* of liveness and the SQL is an implementation of it - without it the domain rule would live only in a `WHERE` clause where no reader and no architecture rule would find it. **And `AssuranceLevel` had no test at all**, which for the type `INV-IDN-05` names as its own enforcement mechanism is the wrong number; now swept over every pair, with the declaration order pinned, because `ordinal()` carries the meaning and swapping two constants changes every comparison in the platform while compiling cleanly. **Eight mutations, all caught.** 754 hermetic tests, 289 database tests. |

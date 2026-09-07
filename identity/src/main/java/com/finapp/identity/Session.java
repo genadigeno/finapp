@@ -87,7 +87,7 @@ public final class Session {
         }
     }
 
-    /** Issues a new session at the given assurance, under the given policy. */
+    /** Issues a new session at the given assurance, under the given policy, with no device. */
     public static Session issue(
             IdGenerator ids,
             Clock clock,
@@ -95,6 +95,25 @@ public final class Session {
             SessionToken token,
             AssuranceLevel assurance,
             SessionPolicy policy) {
+        return issue(ids, clock, identityId, token, assurance, policy, null);
+    }
+
+    /**
+     * Issues a new session, recording what it was established from.
+     *
+     * <p>The device is <strong>optional and never scored</strong> ({@code V005}): it is a label its
+     * owner can recognise their own sessions by, and nothing else reads it. A null device is
+     * entirely ordinary — a client that sent no {@code User-Agent}, or one whose header held
+     * nothing displayable.
+     */
+    public static Session issue(
+            IdGenerator ids,
+            Clock clock,
+            IdentityId identityId,
+            SessionToken token,
+            AssuranceLevel assurance,
+            SessionPolicy policy,
+            DeviceDescription device) {
         Objects.requireNonNull(token, "token must not be null");
         Objects.requireNonNull(policy, "policy must not be null");
         Instant now = Instant.now(clock);
@@ -107,7 +126,7 @@ public final class Session {
                 now,
                 now.plus(policy.idleTimeout()),
                 now.plus(policy.absoluteLifetime()),
-                null,
+                device == null ? null : device.value(),
                 null);
     }
 

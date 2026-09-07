@@ -132,6 +132,65 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
     }
 
     @Override
+    public java.util.List<Session> findLiveFor(
+            Connection unitOfWork, IdentityId identityId, Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(identityId, "identityId must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+
+        // The ownership control for listing IS this WHERE clause. Reading every session and
+        // filtering in Java would put the control somewhere a future caller can skip; a predicate
+        // cannot be skipped by the code that runs the query.
+        String sql =
+                "SELECT " + COLUMNS + " FROM " + TABLE
+                        + " WHERE identity_id = ?"
+                        + " AND status = 'ACTIVE'"
+                        + " AND idle_expires_at > ?"
+                        + " AND absolute_expires_at > ?"
+                        + " ORDER BY issued_at DESC, id DESC";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setObject(1, identityId.value());
+            select.setTimestamp(2, Timestamp.from(at));
+            select.setTimestamp(3, Timestamp.from(at));
+            try (ResultSet rows = select.executeQuery()) {
+                java.util.List<Session> live = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    live.add(read(rows));
+                }
+                return java.util.List.copyOf(live);
+            }
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not list the sessions of " + identityId, e));
+        }
+    }
+
+    @Override
+    public boolean revokeOwned(
+            Connection unitOfWork, SessionId sessionId, IdentityId owner, Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(sessionId, "sessionId must not be null");
+        Objects.requireNonNull(owner, "owner must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+
+        // identity_id = ? IS the ownership check (ADR-0031). It is in the statement rather than in
+        // a load-then-compare because the compare-then-act is a TOCTOU race, and because a check
+        // performed against a row read a moment ago is a check against a copy of the truth.
+        String sql =
+                "UPDATE " + TABLE + " SET status = 'REVOKED', revoked_at = ?"
+                        + " WHERE id = ? AND identity_id = ? AND status = 'ACTIVE'";
+        try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
+            update.setTimestamp(1, Timestamp.from(at));
+            update.setObject(2, sessionId.value());
+            update.setObject(3, owner.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not revoke session " + sessionId, e));
+        }
+    }
+
+    @Override
     public int revokeAllFor(Connection unitOfWork, IdentityId identityId, Instant at) {
         return revokeAll(unitOfWork, identityId, null, at);
     }

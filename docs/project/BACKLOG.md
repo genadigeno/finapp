@@ -1756,16 +1756,31 @@ repository exists to prevent.
 - **Six mutations. Five caught, one survived correctly.**
 - Risk: Medium. Cx: S. DoD: `DOD-SEC`
 
-**P1-TSK-016 — Session and device endpoints**
+**P1-TSK-016 — Session and device endpoints** — `COMPLETE` (2026-09-07)
 - Context: identity / api
 - Description: `GET /v1/sessions`, `DELETE /v1/sessions/{id}`, `DELETE /v1/sessions/current`,
   device recorded on the session.
-- Deps: P1-TSK-014, P1-TSK-020
+- Deps: P1-TSK-014, ~~P1-TSK-020~~ — **the `P1-TSK-020` dependency was wrong for this task.** All
+  three endpoints are available to every session-holder against their own resources: there is no
+  role gate, and the control is **ownership**, which ADR-0031 puts in the domain and which is this
+  task's stated acceptance criterion. Delivered in full without roles. (`P1-TSK-010`'s finding
+  inverted — there the `Deps` line was right and the milestone boundary wrong.)
+- **Found: `SessionRevocation.revoke` took an `owner` and did not check it.** The statement was
+  `WHERE id = ? AND status = 'ACTIVE'`, so any caller could end any session by identifier, while the
+  audit record asserted an owner nobody verified. Worse than an absent parameter, because the
+  signature reads as though ownership is enforced. `P1-TSK-014` built it that way having no caller;
+  this task is the first. Closed by `revokeOwned`, with the check in the `WHERE` clause.
+- **Found: nothing in the platform could authenticate a request, and no task owned it.**
+  `PHASE_1_PLAN.md` §7 marks **eight** endpoints `Auth: session`; `P1-TSK-020` and `P1-TSK-021` both
+  presuppose a caller, and `P1-TSK-027` hands a token out rather than consuming one. Built here as
+  `SessionAuthenticationInterceptor`, because `GET /v1/sessions` means *my* sessions and without it
+  the task has no deliverable. **Fifth backlog defect of this class in Phase 1, and the widest.**
+- Nine mutations, all caught — two only after they found real gaps.
+- Risk: Medium. Cx: M. DoD: `DOD-API`
 - Implementation: ownership checked in the domain, never at the boundary from a request parameter;
   device recorded, **never scored** — trust is a Phase 13 risk decision.
 - Tests: a negative ownership test — one identity cannot list or revoke another's sessions.
-- Accept: the negative ownership test passes and fails when the check is removed.
-- Risk: Medium. Cx: M. DoD: `DOD-API`
+- Accept: **met** — `SessionOwnershipDatabaseTest`; dropping `AND identity_id = ?` fails three tests.
 
 ## P1-EPIC-04 — Multi-Factor Authentication
 

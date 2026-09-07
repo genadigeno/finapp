@@ -66,20 +66,34 @@ public final class SessionRevocation {
     }
 
     /**
-     * Ends one session.
+     * Ends one session <strong>belonging to {@code owner}</strong>.
      *
      * <p>Audited only when something was actually ended. A record for a revocation that revoked
      * nothing would put a caller's <em>guess</em> at a session identifier into the trail, and the
      * trail would then answer questions about identifiers that were never real.
      *
-     * @return whether a live session was ended
+     * <h2>The ownership check, and why this method previously did not have one</h2>
+     *
+     * <p>This took an {@code owner} and used it <strong>only in the audit change summary</strong>:
+     * the statement underneath was {@code WHERE id = ? AND status = 'ACTIVE'}, so any caller could
+     * end any session by identifier. {@code P1-TSK-014} built it that way because it had no caller;
+     * {@code P1-TSK-016} is the first, and found it.
+     *
+     * <p>That shape is <strong>worse than an absent parameter</strong>. A signature naming an owner
+     * reads as though ownership is enforced, and the audit record then asserts an owner nobody
+     * verified — so the trail is confidently wrong rather than silent. It is exactly the defect
+     * ADR-0031 names: <em>a legitimate permission used against someone else's resource, where every
+     * check passes and nothing is logged as a denial.</em>
+     *
+     * @return whether a live session belonging to {@code owner} was ended. A caller must not report
+     *     "not yours" and "no such session" differently — see {@code SessionStore#revokeOwned}
      */
     public boolean revoke(Connection unitOfWork, SessionId sessionId, IdentityId owner) {
         Objects.requireNonNull(sessionId, "sessionId must not be null");
         Objects.requireNonNull(owner, "owner must not be null");
 
         Instant at = Instant.now(clock);
-        boolean revoked = sessions.revoke(unitOfWork, sessionId, at);
+        boolean revoked = sessions.revokeOwned(unitOfWork, sessionId, owner, at);
         if (revoked) {
             audit(unitOfWork, at, SESSION_TARGET_TYPE, sessionId.value().toString(),
                     "identity=" + owner);

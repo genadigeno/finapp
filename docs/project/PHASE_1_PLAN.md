@@ -239,6 +239,15 @@ All under `/v1` (ADR-0015). Every error is an RFC 9457 problem detail (`ERROR_CO
 | `POST /v1/identities/{id}/suspension` | session, admin role | Privileged; audited |
 | `POST /v1/identities/{id}/roles` | session, admin role | Privileged; audited |
 
+**How a session is presented, and the task that had to build it** (`P1-TSK-016`). The `Auth`
+column above says *"session"* for eight endpoints, and this plan named no task that turns a
+presented session into a caller. `P1-TSK-020` (permission) and `P1-TSK-021` (ownership) both
+*presuppose* one, and `P1-TSK-027` hands a token out rather than consuming one. It is
+`Authorization: Bearer <token>` — never a query parameter, which reaches access logs, proxies and
+browser history — resolved by `SessionAuthenticationInterceptor` against the database on every
+request, with no cache (`INV-IDN-03`, ADR-0030). Built by the first endpoint that needed it, and
+recorded here so the next seven do not each rediscover it.
+
 **Idempotency:** Phase 1 moves no money, so `INV-IDEM-01`'s money-moving requirement is vacuous
 here — and that is stated rather than left implied. **Registration is made idempotent anyway**,
 because a retried registration that creates a second Party is a duplicate person, which is

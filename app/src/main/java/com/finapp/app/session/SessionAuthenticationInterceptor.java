@@ -1,0 +1,201 @@
+package com.finapp.app.session;
+
+import com.finapp.identity.Session;
+import com.finapp.identity.SessionPolicy;
+import com.finapp.identity.SessionStore;
+import com.finapp.identity.SessionToken;
+import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.PlatformErrorCode;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
+import com.finapp.platform.security.SecurityContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.sql.Connection;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.Optional;
+import javax.sql.DataSource;
+import org.springframework.jdbc.datasource.DataSourceUtils;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerInterceptor;
+
+/**
+ * Turns a presented session into the acting party (`P1-TSK-016`, ADR-0030, ADR-0021).
+ *
+ * <h2>Nothing owned this, and eight endpoints need it</h2>
+ *
+ * <p>{@code PHASE_1_PLAN.md} section 7 marks eight endpoints <em>"Auth: session"</em>, and no
+ * backlog item built the mechanism. The three that look like they should do not:
+ * {@code P1-TSK-020} answers <em>may an actor of this kind do this?</em> and {@code P1-TSK-021}
+ * <em>may this actor touch this resource?</em> — both presuppose a caller — while
+ * {@code P1-TSK-027} hands a token out rather than consuming one. <em>Who is calling?</em> is a
+ * third thing, sitting below both checks.
+ *
+ * <p>It is built here because without it this task has no deliverable at all: {@code GET
+ * /v1/sessions} means <strong>my</strong> sessions.
+ *
+ * <h2>An interceptor, not a filter, for both of {@code P0-TSK-017}'s reasons</h2>
+ *
+ * <p>A filter runs before the dispatcher has chosen a handler, so it could not read
+ * {@link RequiresSession} without a second, drifting copy of the routing table. And a filter runs
+ * outside the exception handler, so its refusal would be the container's default page rather than
+ * the error contract.
+ *
+ * <h2>This is the platform's first real inbound actor</h2>
+ *
+ * <p>ADR-0021 called {@code enterSystem()} <em>"the greppable list of places Phase 1 must
+ * revisit"</em>. Every request through here establishes a scope naming the proven identity, so an
+ * audit record written under it attributes the action to a person rather than to the platform.
+ *
+ * <h2>Every refusal is the same refusal</h2>
+ *
+ * <p>Absent header, wrong scheme, unknown token, revoked session, idle-expired, absolutely expired
+ * — one {@code 401 api.Unauthenticated}, with no detail distinguishing them. The store folds them
+ * into an empty result, so there is no branch anybody could later report on: {@code INV-IDN-07}'s
+ * reasoning applied to a session rather than to a password.
+ */
+public final class SessionAuthenticationInterceptor implements HandlerInterceptor {
+
+    /**
+     * Where the authenticated session is left for the handler.
+     *
+     * <p>A request attribute rather than a field, and that is not incidental: a field would be
+     * shared by every concurrent request on this singleton, and
+     * {@code NoProcessLocalSessionStateTest} would fail the build for it — correctly, because it
+     * would also be a session cache.
+     */
+    public static final String CURRENT_SESSION = SessionAuthenticationInterceptor.class.getName();
+
+    private static final String SCOPE_ATTRIBUTE = CURRENT_SESSION + ".scope";
+    private static final String SCHEME = "Bearer ";
+
+    private final SessionStore<Connection> sessions;
+    private final TransactionTemplate transactions;
+    private final DataSource dataSource;
+    private final Clock clock;
+    private final SessionPolicy policy;
+
+    public SessionAuthenticationInterceptor(
+            SessionStore<Connection> sessions,
+            TransactionTemplate transactions,
+            DataSource dataSource,
+            Clock clock,
+            SessionPolicy policy) {
+        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
+        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
+        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.policy = Objects.requireNonNull(policy, "policy must not be null");
+    }
+
+    @Override
+    public boolean preHandle(
+            HttpServletRequest request, HttpServletResponse response, Object handler) {
+        if (!requiresSession(handler)) {
+            return true;
+        }
+
+        // Thrown, not returned: this must reach the error contract, and there is nothing to commit
+        // on this path. The opposite choice from P1-TSK-010, where the refusal is RETURNED because
+        // a failed authentication writes an audit record that throwing would roll back. Presenting
+        // a dead session is not an authentication attempt against a credential.
+        Session session =
+                presentedToken(request)
+                        .flatMap(this::authenticate)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                PlatformErrorCode.UNAUTHENTICATED,
+                                                "No live session was presented"));
+
+        request.setAttribute(CURRENT_SESSION, session);
+        request.setAttribute(
+                SCOPE_ATTRIBUTE,
+                SecurityContext.enter(
+                        new Actor(session.identityId().value().toString(), ActorType.CUSTOMER)));
+        return true;
+    }
+
+    /**
+     * Closes the scope, whatever happened.
+     *
+     * <p>{@code afterCompletion} rather than {@code postHandle}, because the latter is skipped when
+     * the handler throws — and a scope left open on a pooled worker is the leak {@code P0-TSK-032}
+     * built {@code SecurityContext} to avoid: the next unrelated request on that thread would
+     * inherit this customer's identity.
+     */
+    @Override
+    public void afterCompletion(
+            HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
+        Object scope = request.getAttribute(SCOPE_ATTRIBUTE);
+        if (scope instanceof SecurityContext.Scope open) {
+            open.close();
+        }
+    }
+
+    // -----------------------------------------------------------------
+
+    /**
+     * Looks the session up and extends its idle bound.
+     *
+     * <p><strong>The lookup is authoritative; the touch is best-effort.</strong> A touch that loses
+     * to a concurrent revoke does not fail the request: it authenticated against a session that was
+     * live at the moment it looked, and the revoke wins on the <em>next</em> request — which is
+     * exactly what {@code INV-IDN-03} says.
+     *
+     * <p>Its own short transaction, so the extension is not lost when a handler rolls back. A
+     * session was presented and used whether or not the work it asked for succeeded.
+     *
+     * <p><strong>Fails closed.</strong> A storage failure propagates: no session, no actor, no
+     * request served. Authenticating against an unreadable database is the one outcome worse than
+     * an outage.
+     */
+    private Optional<Session> authenticate(SessionToken token) {
+        Instant at = Instant.now(clock);
+        return Optional.ofNullable(
+                transactions.execute(
+                        status -> {
+                            Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+                            try {
+                                Optional<Session> live = sessions.findLive(unitOfWork, token, at);
+                                live.ifPresent(
+                                        session ->
+                                                sessions.touch(
+                                                        unitOfWork, session.id(), at, policy));
+                                return live.orElse(null);
+                            } finally {
+                                DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                            }
+                        }));
+    }
+
+    /**
+     * The presented value, or nothing.
+     *
+     * <p>{@code Authorization: Bearer}, never a query parameter: a query string reaches access
+     * logs, proxies and browser history, and this value <em>is</em> the session. That is the
+     * property {@code CredentialReachesNoEmittedSinkTest} enforces on the published contract.
+     *
+     * <p>A malformed header yields empty rather than its own error, so a client learns nothing from
+     * the difference between "you sent nonsense" and "your session is gone".
+     */
+    private static Optional<SessionToken> presentedToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header == null || !header.startsWith(SCHEME)) {
+            return Optional.empty();
+        }
+        String presented = header.substring(SCHEME.length()).strip();
+        return presented.isEmpty() ? Optional.empty() : Optional.of(SessionToken.of(presented));
+    }
+
+    private static boolean requiresSession(Object handler) {
+        if (!(handler instanceof HandlerMethod handlerMethod)) {
+            return false;
+        }
+        return handlerMethod.getMethodAnnotation(RequiresSession.class) != null
+                || handlerMethod.getBeanType().isAnnotationPresent(RequiresSession.class);
+    }
+}

@@ -1,6 +1,8 @@
 package com.finapp.app.api;
 
 import com.finapp.platform.api.ApiVersion;
+import com.finapp.app.session.SessionAuthenticationInterceptor;
+import java.util.Objects;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.HandlerTypePredicate;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -29,6 +31,15 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @Configuration
 class ApiVersionConfiguration implements WebMvcConfigurer {
+
+    private final SessionAuthenticationInterceptor sessionAuthentication;
+
+    ApiVersionConfiguration(
+            SessionAuthenticationInterceptor sessionAuthentication) {
+        this.sessionAuthentication =
+                Objects.requireNonNull(
+                        sessionAuthentication, "sessionAuthentication must not be null");
+    }
 
     /**
      * Only handlers in this package tree are versioned.
@@ -64,5 +75,12 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new IdempotencyKeyInterceptor());
+
+        // Ordered AFTER the idempotency check, deliberately. A request malformed for its endpoint
+        // should be told so without a session lookup, which is a database round trip an
+        // unauthenticated caller would otherwise be able to demand. No endpoint declares both
+        // annotations today, so this is a decision recorded before it can matter rather than one
+        // anybody currently observes.
+        registry.addInterceptor(sessionAuthentication);
     }
 }

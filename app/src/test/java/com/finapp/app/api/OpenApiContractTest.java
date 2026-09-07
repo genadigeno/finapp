@@ -254,7 +254,10 @@ class OpenApiContractTest {
                 .as("a route in the published contract that nobody declared here")
                 .containsExactlyInAnyOrder(
                         ApiVersion.CURRENT_PREFIX + "/registrations",
-                        ApiVersion.CURRENT_PREFIX + "/authentications");
+                        ApiVersion.CURRENT_PREFIX + "/authentications",
+                        ApiVersion.CURRENT_PREFIX + "/sessions",
+                        ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/sessions/current");
     }
 
     @Test
