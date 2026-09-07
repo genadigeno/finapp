@@ -1715,7 +1715,13 @@ repository exists to prevent.
   record with the count in its change summary. The rows carry `revoked_at` and say *when*; the trail
   says *who decided*.
 - **Nothing calls it yet** — endpoints are `P1-TSK-016`, the credential change is `P1-TSK-026`.
-- **Five mutations. Three caught, one caught twice, and one survived correctly**, having removed
+- **The completion gate found the headline assertion unscoped**: it counted *any* backend waiting on
+  a lock, which is a different claim from "the insert is blocked". Now matched to the issuer's own
+  statement text, with the `FOR UPDATE` mutation still caught.
+- **Only the bulk path had its audit asserted.** A single revocation's record, its target being the
+  session rather than the identity, and a revocation that ended nothing writing nothing — none was
+  covered. All three now are.
+- **Seven mutations. Five caught, one caught twice, and one survived correctly**, having removed
   redundant code.
 - Risk: **High**. Cx: M. DoD: `DOD-KERNEL`
 

@@ -153,7 +153,7 @@ class SessionRevocationDatabaseTest {
             // The database's own answer to "is somebody blocked?". Without the identity lock the
             // issuer never waits, this never becomes true, and the test fails on the bound rather
             // than passing quietly.
-            assertThat(waitUntilSomebodyWaitsOnALock())
+            assertThat(waitUntilTheInsertIsBlocked())
                     .as("the issuer must BLOCK on the identity lock while the revoke is open."
                             + " If it does not, the two interleaved - and a session issued inside"
                             + " that window is one the revocation never saw")
@@ -178,13 +178,19 @@ class SessionRevocationDatabaseTest {
     }
 
     /**
-     * Waits until PostgreSQL reports a backend waiting on a lock.
+     * Waits until PostgreSQL reports <strong>the session insert</strong> blocked on a lock.
      *
-     * <p>Observing the database's own view rather than sleeping. A fixed sleep would pass on a slow
-     * machine for the wrong reason and fail on a fast one; this asks the question directly and the
-     * bound is generous because exceeding it is a failure and never a pass.
+     * <p>Observing the database's own view rather than sleeping: a fixed sleep would pass on a slow
+     * machine for the wrong reason and fail on a fast one. The bound is generous because exceeding
+     * it is a failure and never a pass.
+     *
+     * <p><strong>Scoped to the issuer's own statement</strong>, and the completion gate had to add
+     * that. The first version counted <em>any</em> backend waiting on a lock in this database, which
+     * is a different claim: it would be satisfied by anything else contending and would pass while
+     * saying nothing about whether the insert was blocked. Matching the statement text makes the
+     * assertion say what it means.
      */
-    private static boolean waitUntilSomebodyWaitsOnALock() throws Exception {
+    private static boolean waitUntilTheInsertIsBlocked() throws Exception {
         Instant deadline = Instant.now(CLOCK).plusSeconds(20);
         while (Instant.now(CLOCK).isBefore(deadline)) {
             try (Connection observer = DatabaseRoles.application();
@@ -193,7 +199,8 @@ class SessionRevocationDatabaseTest {
                                     "SELECT count(*) FROM pg_stat_activity"
                                         + " WHERE wait_event_type = 'Lock'"
                                         + " AND datname = current_database()"
-                                        + " AND pid <> pg_backend_pid()");
+                                        + " AND pid <> pg_backend_pid()"
+                                        + " AND query LIKE '%INSERT INTO identity.session%'");
                     ResultSet rows = select.executeQuery()) {
                 rows.next();
                 if (rows.getInt(1) > 0) {
@@ -376,6 +383,82 @@ class SessionRevocationDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("a single revocation is audited against the session, and only when one ended")
+    @SuppressWarnings("try") // The Scopes are used for their close side effect.
+    void aSingleRevocationIsAudited() throws SQLException {
+        // The completion gate found only the bulk path had its audit asserted. Three claims here
+        // that nothing else covered: the single path writes a record at all; its target is the
+        // SESSION rather than the identity, because that is what was acted on; and a revocation
+        // that ended nothing writes NOTHING - a record for a caller's guess at a session identifier
+        // would put identifiers that were never real into the trail.
+        IdentityId identity = givenAnIdentity();
+        Session session = issue(identity, SessionToken.issue(RANDOMNESS));
+
+        try (CorrelationContext.Scope ignored =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = transactional()) {
+
+            sessions.insert(app, session);
+            SessionRevocation revocation =
+                    new SessionRevocation(sessions, IDS, CLOCK, new JdbcAuditWriter());
+
+            assertThat(revocation.revoke(app, session.id(), identity)).isTrue();
+            assertThat(auditRowsForTarget(app, session.id().value().toString()))
+                    .as("audited against the session, which is what was acted on")
+                    .isEqualTo(1);
+
+            // A second revocation ends nothing, so it records nothing.
+            assertThat(revocation.revoke(app, session.id(), identity)).isFalse();
+            assertThat(auditRowsForTarget(app, session.id().value().toString()))
+                    .as("a revocation that ended nothing must not appear in the trail")
+                    .isEqualTo(1);
+
+            SessionId neverExisted = SessionId.next(IDS);
+            assertThat(revocation.revoke(app, neverExisted, identity)).isFalse();
+            assertThat(auditRowsForTarget(app, neverExisted.value().toString()))
+                    .as("nor may a caller's guess at an identifier put that identifier in the trail")
+                    .isZero();
+
+            app.commit();
+        }
+    }
+
+    @Test
+    @DisplayName("revoke-all-except records what it spared, not only what it ended")
+    @SuppressWarnings("try") // The Scopes are used for their close side effect.
+    void revokeAllExceptRecordsWhatItSpared() throws SQLException {
+        // The credential-change path, and the fact an investigator actually needs: "the password was
+        // changed and eleven other sessions were closed" is a different fact from "and none were",
+        // and only the first suggests somebody else was using the account.
+        IdentityId identity = givenAnIdentity();
+        Session keeper = issue(identity, SessionToken.issue(RANDOMNESS));
+
+        try (CorrelationContext.Scope ignored =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = transactional()) {
+
+            sessions.insert(app, keeper);
+            sessions.insert(app, issue(identity, SessionToken.issue(RANDOMNESS)));
+            sessions.insert(app, issue(identity, SessionToken.issue(RANDOMNESS)));
+
+            SessionRevocation revocation =
+                    new SessionRevocation(sessions, IDS, CLOCK, new JdbcAuditWriter());
+            assertThat(revocation.revokeAllExcept(app, identity, keeper.id())).isEqualTo(2);
+
+            assertThat(auditChangeSummary(app, identity))
+                    .as("the count and the spared session are both recorded")
+                    .contains("sessionsRevoked=2")
+                    .contains(keeper.id().value().toString());
+
+            app.commit();
+        }
+    }
+
     // -----------------------------------------------------------------
 
     private static Session issue(IdentityId identity, SessionToken token) {
@@ -406,11 +489,16 @@ class SessionRevocationDatabaseTest {
     }
 
     private static int auditRows(Connection connection, IdentityId identity) throws SQLException {
+        return auditRowsForTarget(connection, identity.value().toString());
+    }
+
+    private static int auditRowsForTarget(Connection connection, String targetId)
+            throws SQLException {
         return count(
                 connection,
                 "SELECT count(*) FROM platform.audit_record"
                         + " WHERE operation = 'identity.SessionRevoked' AND target_id = ?",
-                identity.value().toString());
+                targetId);
     }
 
     private static String auditChangeSummary(Connection connection, IdentityId identity)
