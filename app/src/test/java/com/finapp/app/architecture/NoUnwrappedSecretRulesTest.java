@@ -320,6 +320,38 @@ class NoUnwrappedSecretRulesTest {
     private static final Set<String> PERMITTED_ACCESSORS =
             Set.of("com.finapp.app.mfa.ElevatedSession.sessionToken()");
 
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("every exemption still names a field the rule would otherwise flag")
+    void theExemptionsAreNotStale() {
+        // An exemption naming a field that has been renamed or deleted is one nobody can evaluate,
+        // and it silently stops applying to anything - the P1-TSK-015 rule, and P0-TSK-041's
+        // requirement that an exemption be proven load-bearing rather than assumed.
+        //
+        // It asserts the field is one the rule WOULD flag, not merely that it exists: an entry for a
+        // field the vocabulary no longer matches is dead weight that reads as a live decision.
+        java.util.List<String> wouldBeFlagged = new java.util.ArrayList<>();
+        JavaClasses production =
+                new ClassFileImporter()
+                        .withImportOption(
+                                com.tngtech.archunit.core.importer.ImportOption.Predefined
+                                        .DO_NOT_INCLUDE_TESTS)
+                        .importPackages("com.finapp");
+        for (JavaClass javaClass : production) {
+            for (JavaField field : javaClass.getFields()) {
+                if (!isAnEnumConstant(field)
+                        && !isAPrimitive(field)
+                        && namesASecret(field.getName())
+                        && !isWrapped(field.getRawType())) {
+                    wouldBeFlagged.add(field.getFullName());
+                }
+            }
+        }
+
+        assertThat(wouldBeFlagged)
+                .as("an exemption that names nothing the rule objects to has stopped applying")
+                .containsAll(PERMITTED_FIELDS);
+    }
+
     private static boolean isPermitted(JavaField field) {
         return PERMITTED_FIELDS.contains(field.getFullName());
     }

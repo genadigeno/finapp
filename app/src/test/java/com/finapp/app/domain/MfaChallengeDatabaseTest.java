@@ -320,6 +320,63 @@ class MfaChallengeDatabaseTest {
                 .isFalse();
     }
 
+    @Test
+    @DisplayName("ten instances presenting one code produce exactly one elevation")
+    void oneElevationUnderContention() throws Exception {
+        Enrolled enrolled = givenAConfirmedFactor();
+        String code = codeFor(enrolled.secret());
+
+        // Added by the completion gate, and its stated reason was corrected TWICE by mutations.
+        //
+        // The claim was that this exercises `consumeStep`'s conditional. Removing that conditional
+        // SURVIVED. So the claim became "rotation's conditional revoke is what serialises" - and
+        // removing THAT survived too. The truth is that **two independent guards each suffice**, and
+        // this test catches the defect only when both are gone (verified: it does).
+        //
+        // That is the P1-TSK-014 shape, and it is worth stating rather than hiding: an outcome-only
+        // test cannot name which mechanism produced the outcome, and a comment that names one is a
+        // claim the suite does not support. What this test establishes is the PROPERTY - one code
+        // presented ten times at once yields one session, not ten - and `aReplayedCodeIsRefused` is
+        // where `consumeStep` specifically is proven, because a LATER replay has no rotation race to
+        // hide behind.
+        int instances = 10;
+        var ready = new java.util.concurrent.CountDownLatch(instances);
+        var go = new java.util.concurrent.CountDownLatch(1);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(instances);
+
+        try {
+            var outcomes = new java.util.ArrayList<java.util.concurrent.Future<Integer>>();
+            for (int i = 0; i < instances; i++) {
+                outcomes.add(
+                        pool.submit(
+                                () -> {
+                                    ready.countDown();
+                                    go.await();
+                                    return challenge(enrolled, code).statusCode();
+                                }));
+            }
+            assertThat(ready.await(30, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+
+            long elevated = 0;
+            for (var outcome : outcomes) {
+                if (outcome.get(60, java.util.concurrent.TimeUnit.SECONDS) == 200) {
+                    elevated++;
+                }
+            }
+
+            assertThat(elevated)
+                    .as("the conditional UPDATE's row count is the outcome: one code, one session")
+                    .isEqualTo(1);
+            assertThat(liveSessionCount(enrolled.identityId()))
+                    .as("and the identity holds exactly one live session - the elevated one, the"
+                            + " original having been revoked by the rotation")
+                    .isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     // -----------------------------------------------------------------
     // The acceptance criterion
 
@@ -419,6 +476,22 @@ class MfaChallengeDatabaseTest {
                         .body()
                         .replaceAll("\"correlationId\"\\s*:\\s*\"[^\"]*\"", "")
                         .replaceAll("\"instance\"\\s*:\\s*\"[^\"]*\"", "");
+    }
+
+    private static long liveSessionCount(IdentityId identity) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count =
+                        app.prepareStatement(
+                                "SELECT count(*) FROM identity.session"
+                                        + " WHERE identity_id = ? AND status = 'ACTIVE'"
+                                        + " AND idle_expires_at > now()"
+                                        + " AND absolute_expires_at > now()")) {
+            count.setObject(1, identity.value());
+            try (var rows = count.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        }
     }
 
     private static boolean isLocked(IdentityId identity) throws SQLException {
