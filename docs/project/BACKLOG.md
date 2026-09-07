@@ -2048,8 +2048,13 @@ repository exists to prevent.
 - **The token is delivered nowhere**, and that is `PHASE_1_PLAN.md` §8's recorded seam.
 - **Four existing guards refused the new code and all four were right** — the unwrap whitelist, the
   system-actor enumeration, the ownership register and the published-contract diff.
-- **Eleven mutations: ten caught, one survived correctly.** Two survivors along the way each found a
-  real gap — a test passing for the wrong reason, and no test that ever suspended an identity.
+- **The gate found two claims with no test**: neither statement's **concurrency** claim was
+  exercised (the `P1-TSK-020` finding about `assign`), and the **boundary was never driven** over
+  HTTP (the `P1-TSK-017` finding). Six properties were unasserted, the first being whether the
+  token appears in a response — the one the whole design rests on.
+- **Fourteen mutations: thirteen caught, one survived correctly.** Three survivors along the way
+  each found a real gap — a test passing for the wrong reason, no test that ever suspended an
+  identity, and no concurrency coverage at all.
 - **Out of scope, recorded:** channel change and multiple channels, phone, recovery when the
   authenticator is also lost, and the delivery adapter (Phase 15).
 - Risk: **High**. Cx: L. DoD: `DOD-SEC`
