@@ -123,8 +123,24 @@ Positive:
 
 Negative:
 - An operation missing its ownership check is not detectable by the boundary rule. The mitigation
-  is a review question plus a required negative test, and the honest statement is that **no build
-  rule closes this** — it is the same class of limit ADR-0024 records for the multi-instance rules.
+  is a review question plus a required negative test.
+
+  **Amended by `P1-TSK-021`, and narrowed rather than withdrawn.** The original wording was *"no
+  build rule closes this"*. That is right about the **boundary** rule and was too broad about
+  everything else: `OwnershipIsScopedTest` now fails the build when a persistence operation takes a
+  resource identifier and nobody has classified how ownership is established. What it does **not**
+  do is decide whether an operation is safe — it forces every operation that could be unsafe to be
+  classified, which is the `MfaBypassPathsAreEnumeratedTest` shape applied to ownership, and for the
+  same reason: *a list of tests is a snapshot*, and the operation added in Phase 4 will not be in it.
+
+  The remaining limits are stated in the test itself and are real:
+  - it cannot see that an owner-scoped statement binds the **right** owner — only the negative
+    behavioural test does, which is why the register is held against a named test per operation;
+  - it cannot verify an `AUTHORITATIVE_ID` claim, only that the provenance it names exists and is
+    itself owner-constrained where that is checkable;
+  - it is blind to an ownership decision taken somewhere that issues no SQL.
+
+  So the class of limit ADR-0024 records still applies — it is narrower than it was.
 - Role explosion is a real medium-term risk. Deliberately not pre-solved: Phase 1 has few roles,
   and inventing hierarchy now would be designing against no evidence.
 

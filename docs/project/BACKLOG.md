@@ -1924,7 +1924,7 @@ repository exists to prevent.
 - Accept: both endpoints refuse a session holding no role, and each refusal is audited.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
-**P1-TSK-021 — Ownership checks in the domain**
+**P1-TSK-021 — Ownership checks in the domain** — `COMPLETE` (2026-09-08)
 - Context: identity, party
 - Description: Resource-scoped operations check ownership against authoritative state.
 - Why: ADR-0031. The most common authorization defect is a legitimate permission used against
@@ -1933,8 +1933,28 @@ repository exists to prevent.
 - Implementation: the check lives in the module that owns the state, never at the boundary from a
   request parameter.
 - Tests: a negative ownership test per resource-scoped operation.
-- Accept: each fails when the ownership check is removed. **Recorded limit:** no build rule detects
-  a missing ownership check; this is a review question, on the same terms as ADR-0024's limit.
+- Accept: **met, and it was already met when the task opened** — `revokeOwned` and `findLiveFor`
+  carry `identity_id = ?` in the **statement** (`P1-TSK-016`), and MFA resolves the enrolment from
+  the session's identity (`P1-TSK-017`). Probed rather than assumed: dropping the predicate fails
+  **six** tests in `SessionOwnershipDatabaseTest`. Restating any of it would be duplication that
+  drifts, not coverage — the `P1-TSK-012` precedent.
+- **So the deliverable is the part genuinely missing, and the task's own text names it**:
+  `OwnershipIsScopedTest`, the register held **against the code**. Every persistence method taking
+  a resource identifier is classified `OWNER_SCOPED`, `AUTHORITATIVE_ID` or `NOT_OWNED`, and a new
+  one fails the build. The `MfaBypassPathsAreEnumeratedTest` shape, because a list of tests is a
+  snapshot and the operation added in Phase 4 will not be in it.
+- **The recorded limit is narrowed rather than removed** (ADR-0031 amended): the rule forces
+  classification and does not decide safety. It cannot see that an owner-scoped statement binds the
+  *right* owner — the named negative test does — cannot verify an `AUTHORITATIVE_ID` claim, and is
+  blind to an ownership decision that issues no SQL.
+- **Five correct statements look exactly like the defect**, which is why the rule classifies rather
+  than forbids: `revoke`, `touch`, `confirm`, `consumeStep` and `supersede` all target a row by
+  primary key with no owner predicate, and all five are safe because the identifier came from an
+  owner-constrained read. A rule that merely forbade the shape would have produced five false
+  positives on its first run.
+- **`party` owns no resource-scoped operation**, asserted rather than assumed — the first one fails
+  the build until it is classified.
+- Eight mutations, all caught.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 **P1-TSK-022 — Actor-attributed audit**

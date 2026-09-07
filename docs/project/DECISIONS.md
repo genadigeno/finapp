@@ -248,6 +248,16 @@ a revoked role stops granting on the very next request rather than at session ex
 audited **after** the security scope opens, because a refused privileged attempt is the only trace
 an attacker leaves and the record must name the person rather than the platform.
 
+**And by `P1-TSK-021`** (the ownership half), which **narrows the ADR's own recorded limit rather
+than removing it**. *"No build rule closes this"* was right about the boundary rule and too broad
+about everything else: `OwnershipIsScopedTest` fails the build when a persistence operation takes a
+resource identifier and nobody has classified how ownership is established. It forces classification
+and does not decide safety — the `MfaBypassPathsAreEnumeratedTest` shape, because *a list of tests
+is a snapshot*. **Five correct statements look exactly like the defect** — an identifier from an
+owner-constrained read is safe and one from a request is not, and in SQL they are indistinguishable
+— so the rule classifies rather than forbids, since a rule with five false positives is one somebody
+turns off.
+
 ### Credential storage
 A credential row stores the derivation **and the algorithm and parameters that produced it**. The
 decision usually missed is not which algorithm but where the parameters live: a global work factor
