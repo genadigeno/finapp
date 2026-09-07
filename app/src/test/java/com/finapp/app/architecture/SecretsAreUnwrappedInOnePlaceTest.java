@@ -76,7 +76,27 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     "com.finapp.identity.SessionToken",
                     // Writes the token HASH to its column, and compares one on lookup. Not the
                     // token: that never reaches the database at all.
-                    "com.finapp.identity.JdbcSessionStore");
+                    "com.finapp.identity.JdbcSessionStore",
+                    // P1-TSK-017. The MFA secret is the one secret this platform can RECOVER, so
+                    // it is unwrapped in more places than a password ever is - encrypting it,
+                    // decrypting it, and computing a code from it. Every one is still inside
+                    // `identity`, which is the property this list exists to keep true.
+                    "com.finapp.identity.SecretCipher",
+                    "com.finapp.identity.TotpVerifier",
+                    // A TEST FIXTURE, and its appearance here is worth recording: `identity` gained
+                    // testFixtures in P1-TSK-017, and this sweep covers them. That is more coverage
+                    // rather than less - a fixture that mishandled a secret would be just as able to
+                    // put one in a log - so the sweep is left alone and the entry is named.
+                    // `Authenticator` models the customer's phone: it exists so that generating
+                    // codes never becomes production API.
+                    "com.finapp.identity.Authenticator",
+                    // MfaEnrolmentService is deliberately NOT here, and the guard caught it when
+                    // this list over-declared: it hands the wrapped secret straight to the verifier
+                    // and never unwraps one. An entry with no subject is an exemption nobody can
+                    // evaluate, which is why the assertion is an equality rather than a subset.
+                    // And the one deliberate emission: the provisioning URI a customer scans.
+                    // Bounded to one response, to the proven owner, never retrievable again.
+                    "com.finapp.app.mfa.MfaEnrolmentApplicationService");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

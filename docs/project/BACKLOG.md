@@ -1786,15 +1786,27 @@ repository exists to prevent.
 
 ### P1-CAP-04 — A second factor that cannot be bypassed
 
-**P1-TSK-017 — TOTP enrolment**
+**P1-TSK-017 — TOTP enrolment** — `COMPLETE` (2026-09-07)
 - Context: identity / security
 - Description: Enrol a TOTP factor, with the secret encrypted at rest and never emitted.
-- Deps: P1-TSK-013
-- Implementation: vetted library; secret wrapped and encrypted; enrolment is not complete until
+- Deps: P1-TSK-013, and in practice **P1-TSK-016** — both endpoints are `Auth: session`, so this is
+  the first task to consume the session authentication that task had to build.
+- **`INV-IDN-01` cannot apply here, and that is catalogued rather than glossed.** A TOTP secret must
+  be recoverable — the server computes the expected code *from* it — so irreversibility is
+  impossible and **confidentiality replaces it**: the new **`INV-IDN-08`**, with `INV-IDN-01` gaining
+  an explicit scope note so a reader finding a recoverable secret in an identity table does not have
+  to guess whether it is a defect. The platform now has **72 invariants**.
+- **The secret IS emitted, once**, and the plan's *"never emitted"* cannot be met literally: the QR
+  code *is* the secret. Bounded to one response, to the proven owner, never retrievable again.
+- **Deviation from "vetted library", stated:** JDK primitives plus RFC 6238 arithmetic, because no
+  library implements HMAC itself and **the RFC publishes test vectors** — correctness is demonstrated
+  against the specification rather than against a library's reputation. No primitive is invented.
+- Eleven mutations, all caught — four only after they found real gaps.
+- Implementation: secret wrapped and encrypted; enrolment is not complete until
   confirmed by a valid code.
 - Tests: a partially enrolled factor never satisfies a challenge; the secret appears in no
   response, log or event.
-- Accept: partial enrolment leaves assurance unchanged.
+- Accept: **met** — `aStartedEnrolmentIsNotUsable`; a mutation making `findActive` ignore status is caught.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 **P1-TSK-018 — Challenge, verification and assurance elevation**

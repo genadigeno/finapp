@@ -257,7 +257,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/authentications",
                         ApiVersion.CURRENT_PREFIX + "/sessions",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
-                        ApiVersion.CURRENT_PREFIX + "/sessions/current");
+                        ApiVersion.CURRENT_PREFIX + "/sessions/current",
+                        ApiVersion.CURRENT_PREFIX + "/me/mfa",
+                        ApiVersion.CURRENT_PREFIX + "/me/mfa/confirmation");
     }
 
     @Test

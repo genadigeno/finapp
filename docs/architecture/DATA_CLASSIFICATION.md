@@ -258,6 +258,19 @@ role cannot edit it.
 | `session` | `absolute_expires_at` | `CONFIDENTIAL` | As `issued_at`, from which it is derived |
 | `session` | `device` | `RESTRICTED-PII` | **At its ceiling, not its content.** `P1-TSK-016` populates it, and what it holds is whatever a client sends about the machine a person uses — a user agent, a platform, a fingerprint. That is personal data about equipment in somebody's home, and there is no later moment at which classifying it lower becomes safe (ADR-0022) |
 | `session` | `revoked_at` | `CONFIDENTIAL` | Dates a logout, or an intervention. As `credential.superseded_at`, which is `CONFIDENTIAL` because it dates a password change |
+| `mfa_enrolment` | `id` | `INTERNAL` | An aggregate identifier. Not secret, never presented |
+| `mfa_enrolment` | `identity_id` | `RESTRICTED-PII` | Identifies a person, as `session.identity_id` does |
+| `mfa_enrolment` | `type` | `INTERNAL` | Which kind of factor. Says nothing about who |
+| `mfa_enrolment` | `secret_ciphertext` | `RESTRICTED-PII` | **The platform's only recoverable authentication secret.** `INV-IDN-01`'s irreversibility is unavailable — the server must hold the secret to compute a code — so confidentiality replaces it (`INV-IDN-08`): AES-256-GCM under a key held outside this database. Classified at its ceiling like every other column, but the classification is not what protects it; the encryption is |
+| `mfa_enrolment` | `secret_nonce` | `INTERNAL` | Public by construction. A GCM nonce is not secret and is stored beside its ciphertext; what must never happen is a **reuse**, which is why it is generated per encryption and nothing here could regenerate one |
+| `mfa_enrolment` | `key_version` | `INTERNAL` | Which key encrypted this row, so a rotation knows. Operational metadata |
+| `mfa_enrolment` | `algorithm` | `INTERNAL` | The HMAC an enrolment uses. Published in the provisioning URI anyway |
+| `mfa_enrolment` | `digits` | `INTERNAL` | As `algorithm` |
+| `mfa_enrolment` | `period_seconds` | `INTERNAL` | As `algorithm` |
+| `mfa_enrolment` | `status` | `CONFIDENTIAL` | Whether a person has a second factor, and whether one is half-enrolled. That is a fact about an account's defences, and it is exactly what an attacker choosing a target would like to know |
+| `mfa_enrolment` | `created_at` | `CONFIDENTIAL` | When somebody began adding a factor. As `status`, and it dates the account's security posture |
+| `mfa_enrolment` | `confirmed_at` | `CONFIDENTIAL` | As `created_at` |
+| `mfa_enrolment` | `discarded_at` | `CONFIDENTIAL` | As `created_at` |
 
 **`device` is the judgement worth challenging**, and it is classified above everything else here on
 purpose. Every other column is a fact about the *session*; `device` is a fact about the *person* —

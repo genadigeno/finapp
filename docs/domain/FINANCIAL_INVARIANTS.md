@@ -643,6 +643,11 @@ stored in the column** by any writer, including one that never passes through th
 **Verify:** `CredentialNeverLeaksDatabaseTest` asserts the input appears in **no column** of the
 stored row — the column list derived from `information_schema`, so a column added later is
 inspected without anyone remembering. Demonstrated to fail when the constraint is dropped.
+**Scope (added by `P1-TSK-017`):** this governs secrets the platform **verifies by comparing
+derivations**. A *shared* secret — one whose mechanism requires the platform to hold it, such as a
+TOTP seed — cannot satisfy it, and `INV-IDN-08` states what replaces it. That boundary is written
+down because the alternative is a reader finding a recoverable secret in an identity table and
+having to guess whether it is a defect.
 **Phase:** 1
 
 ### INV-IDN-02 — Credential derivation parameters are recorded per credential
@@ -711,6 +716,30 @@ usually leaked by an error message or a status code rather than by an intentiona
 every new endpoint.
 **Phase:** 1
 
+### INV-IDN-08 — A shared authentication secret is encrypted at rest under a key held outside the database
+**Statement:** Where a factor's mechanism requires the platform to hold the secret itself — so that
+`INV-IDN-01`'s irreversibility is unavailable — the secret is encrypted at rest with an
+authenticated cipher, under a key that is not stored in the database. A database leak alone never
+yields the secret, and a database *write* never substitutes one.
+**Why:** `INV-IDN-01` governs secrets verified by comparing derivations, and its rationale is
+credential reuse across platforms. A TOTP shared secret is neither: the server computes the expected
+code *from* it, and it is minted here and used nowhere else. So irreversibility is not merely
+inconvenient, it is **impossible**, and stating that plainly is better than a reader finding a
+recoverable secret in an identity table and having to guess whether it is a defect.
+**The harm this replaces it against is different and in one way worse.** A leaked TOTP secret lets an
+attacker generate valid codes indefinitely while the customer's authenticator keeps working — so
+nothing looks wrong to anybody. A stolen password is at least changeable; a silently cloned second
+factor defeats the control that exists to survive a stolen password.
+**Enforce:** `DOMAIN` (the plaintext is never a field on an aggregate or a row) + `DB-CONSTRAINT`
+(nonce and ciphertext sized for AES-GCM, so a plaintext cannot be passed off as a ciphertext) +
+`PROCESS` (the key is externalised configuration, and the published local default is refused
+anywhere the database is not on loopback).
+**Verify:** `MfaEnrolmentDatabaseTest` asserts the secret appears in **no column** of the stored row
+— the column list derived from `information_schema`, so a column added later is inspected without
+anyone remembering — that a tampered ciphertext is refused rather than decrypting to something else,
+and that a different key cannot read it.
+**Phase:** 1 (`P1-TSK-017`)
+
 ---
 
 # Invariant Index
@@ -732,7 +761,7 @@ every new endpoint.
 | `INV-ACC` | 01–05 | Accounting and reporting |
 | `INV-AUD` | 01–04 | Security and audit |
 | `INV-CRD` | 01–04 | Credit decisioning |
-| `INV-IDN` | 01–07 | Identity, credentials and sessions |
+| `INV-IDN` | 01–08 | Identity, credentials and sessions |
 
-**71 invariants.** Every one must be enforced and verified before the phase that owns it can
+**72 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate.

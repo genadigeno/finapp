@@ -92,6 +92,8 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.AuthenticationLocked` | No | An identity was locked after repeated failed authentications. |
 | `identity.SessionRevoked` | No | One or more sessions were ended. |
 | `identity.SessionRotated` | No | A session was replaced by a new one on a privilege change. |
+| `identity.MfaEnrolmentStarted` | No | A second factor enrolment was begun. |
+| `identity.MfaEnrolmentConfirmed` | No | A second factor was confirmed and is now usable. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
 
@@ -116,6 +118,13 @@ afterwards, because repeating it while an account stays locked buries the event 
 Revoking forty sessions writes one record with the count in its change summary. The division is
 deliberate: the session rows carry `revoked_at` and answer *when each one ended*; the audit record
 answers *who decided*. Forty records would bury the decision under its consequences.
+
+**Why MFA enrolment is two actions rather than one** (`P1-TSK-017`). *Started* and *confirmed* are
+different facts about the account: the first says somebody was offered a secret, the second says
+somebody **proved they hold it**, and only the second changes what can authenticate. Recording only
+the confirmation would make a started-and-abandoned enrolment invisible — and an enrolment begun on
+somebody else's session and never completed is exactly what an account-takeover attempt looks like
+from the inside.
 
 **`identity.SessionRotated` is deliberately distinct from `identity.SessionRevoked`**
 (`P1-TSK-015`). A rotation revokes the session it replaces, so recording it as a revocation would be

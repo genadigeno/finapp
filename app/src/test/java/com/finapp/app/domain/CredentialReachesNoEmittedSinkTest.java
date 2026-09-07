@@ -204,7 +204,16 @@ class CredentialReachesNoEmittedSinkTest {
 
         assertThat(schemasReachableFromRequestBodies(contract))
                 .as("the schemas a secret is permitted in, named so that widening is visible")
-                .containsExactly("AuthenticationRequest", "RegistrationRequest");
+                .containsExactlyInAnyOrder(
+                        "AuthenticationRequest",
+                        "RegistrationRequest",
+                        // P1-TSK-017. Reachable from a request body, so it joins the set the moment
+                        // it exists - which is the guard working rather than a hole opening. It
+                        // carries a TOTP `code`, deliberately not named `otp`: a name in the
+                        // vocabulary would demand a `Sensitive` wrapper, and a name chosen to avoid
+                        // one would be dodging. A code is valid for ninety seconds against a single
+                        // pending enrolment, which is why `code` is the honest name.
+                        "MfaConfirmationRequest");
     }
 
     @Test

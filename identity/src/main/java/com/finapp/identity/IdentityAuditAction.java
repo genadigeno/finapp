@@ -146,6 +146,34 @@ public enum IdentityAuditAction implements AuditableAction {
             "A session was replaced by a new one on a privilege change.",
             false),
 
+    /**
+     * An identity began adding a second factor (`P1-TSK-017`).
+     *
+     * <p><strong>Recorded even though nothing has changed yet</strong>, and that is the point: an
+     * enrolment that is started and never confirmed is exactly what an account-takeover attempt
+     * looks like from the inside. An attacker who reached a session and began attaching their own
+     * factor leaves this record whether or not they finished.
+     *
+     * <p>No reason required: it is the account holder acting on their own account.
+     */
+    MFA_ENROLMENT_STARTED(
+            "identity.MfaEnrolmentStarted",
+            "A second factor enrolment was begun.",
+            false),
+
+    /**
+     * A second factor was confirmed and is now usable (`P1-TSK-017`).
+     *
+     * <p>Separate from {@link #MFA_ENROLMENT_STARTED} because they are different facts about the
+     * account: one says somebody was offered a secret, the other says somebody <em>proved they hold
+     * it</em>. Only the second changes what can authenticate, and collapsing them would make a
+     * started-and-abandoned enrolment indistinguishable from a completed one in the trail.
+     */
+    MFA_ENROLMENT_CONFIRMED(
+            "identity.MfaEnrolmentConfirmed",
+            "A second factor was confirmed and is now usable.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

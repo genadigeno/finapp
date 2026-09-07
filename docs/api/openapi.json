@@ -562,6 +562,36 @@
         ],
         "type": "object"
       },
+      "MfaConfirmationRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 8,
+            "minLength": 6,
+            "pattern": "[0-9]+",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "MfaEnrolmentStarted": {
+        "properties": {
+          "digits": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "periodSeconds": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "provisioningUri": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ProblemDetail": {
         "description": "An RFC 9457 problem detail. Clients switch on `code`; `title` is prose and may be reworded, and several codes share a status. Absent members are absent, never null.",
         "properties": {
@@ -663,6 +693,43 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AuthenticationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/me/mfa": {
+      "post": {
+        "operationId": "beginMfaEnrolment",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaEnrolmentStarted"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/mfa/confirmation": {
+      "post": {
+        "operationId": "confirmMfaEnrolment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaConfirmationRequest"
               }
             }
           },

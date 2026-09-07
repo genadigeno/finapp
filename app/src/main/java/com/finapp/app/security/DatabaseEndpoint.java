@@ -21,12 +21,19 @@ import org.springframework.core.env.Environment;
  * a real bypass, proven by starting the application against a remote host with
  * {@code spring.datasource.url} left on loopback.
  */
-final class DatabaseEndpoint {
+/*
+ * Public since `P1-TSK-017`, and that is ADR-0020's recorded debt being paid rather than scope
+ * creep. Its row said the loopback guard "covers one credential" and named the trigger as "the
+ * second credential, which is Phase 1's authentication" - the MFA encryption key is that credential,
+ * and it needs the same question answered: is this database on this machine? A second definition of
+ * that would be two answers free to disagree.
+ */
+public final class DatabaseEndpoint {
 
     private DatabaseEndpoint() {}
 
     /** What the pool will connect with, preferring Hikari's own property where it is set. */
-    static String url(Environment environment) {
+    public static String url(Environment environment) {
         return hikari(environment, "jdbc-url")
                 .orElseGet(() -> environment.getProperty("spring.datasource.url"));
     }
@@ -43,7 +50,7 @@ final class DatabaseEndpoint {
      * been shown to be local, and both guards fail closed on that rather than assuming a shape
      * they did not recognise is harmless.
      */
-    static boolean isEntirelyLoopback(String jdbcUrl) {
+    public static boolean isEntirelyLoopback(String jdbcUrl) {
         List<String> hosts = hostsOf(jdbcUrl);
         return !hosts.isEmpty() && hosts.stream().allMatch(DatabaseEndpoint::isLoopback);
     }

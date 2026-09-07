@@ -274,6 +274,26 @@ class NoUnwrappedSecretRulesTest {
      * else</strong> - a field of any other kind, in an enum or anywhere else, is still checked, and
      * the fixture tests below still fail the rule as they did.
      */
+    /**
+     * A primitive cannot hold a secret, so a primitive field is not one.
+     *
+     * <p>Added by {@code P1-TSK-017}, where {@code SECRET_BYTES} - the <em>length</em> of a
+     * generated secret, an {@code int} - was flagged. A secret is a value with content; an
+     * {@code int} has 32 bits of it and no way to be a base32 string, a derivation or a token.
+     *
+     * <p>The same shape as {@link #isAnEnumConstant} and the {@code P0-TSK-041} precedent it cites:
+     * <strong>structurally incapable</strong> of being the thing the rule looks for, rather than a
+     * judgement about a particular name. It narrows nothing else - a {@code String}, an array or any
+     * reference type keeps being checked, and the fixtures below still fail the rule.
+     *
+     * <p>ADR-0019's principle applies directly: a rule with false positives is a rule somebody turns
+     * off, and {@code secretBytes} / {@code tokenLength} / {@code otpDigits} are all names a
+     * reasonable person writes for a number.
+     */
+    private static boolean isAPrimitive(JavaField field) {
+        return field.getRawType().isPrimitive();
+    }
+
     private static boolean isAnEnumConstant(JavaField field) {
         return field.getOwner().isEnum()
                 && field.getModifiers().contains(com.tngtech.archunit.core.domain.JavaModifier.STATIC)
@@ -286,7 +306,8 @@ class NoUnwrappedSecretRulesTest {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
                 for (JavaField field : javaClass.getFields()) {
-                    if (isAnEnumConstant(field) || !namesASecret(field.getName())
+                    if (isAnEnumConstant(field) || isAPrimitive(field)
+                            || !namesASecret(field.getName())
                             || isWrapped(field.getRawType())) {
                         continue;
                     }

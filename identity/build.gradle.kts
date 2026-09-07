@@ -19,6 +19,14 @@ buildscript {
 
 plugins {
     id("finapp.java-conventions")
+
+    // P1-TSK-017. `Authenticator` - what a customer's phone does - lives in testFixtures so that
+    // `app`'s tests can produce a valid TOTP code without `TotpVerifier.generate` and `Base32`
+    // becoming public production API. The server VERIFIES codes; generating them is the device's
+    // job, and modelling it as a fixture keeps that boundary honest. Same reason `platform`
+    // publishes its database harness (P0-TSK-035).
+    `java-test-fixtures`
+
     alias(libs.plugins.flyway)
 }
 
@@ -57,6 +65,11 @@ flyway {
 }
 
 dependencies {
+    // The `Authenticator` fixture speaks in this module's own types, which are generic over
+    // `Sensitive` from the shared kernel. `testFixturesApi`, not `implementation`: `app`'s tests
+    // compile against those signatures.
+    testFixturesApi(project(":sharedkernel"))
+
     // The documented direction: identity -> platform -> sharedkernel. `implementation`, not
     // `api`: nothing outside this module should compile against platform because it depended on
     // identity. When a published signature genuinely needs a platform type, that edge becomes a

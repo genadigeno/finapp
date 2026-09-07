@@ -124,6 +124,7 @@ dependencies {
     // (P0-TSK-035). Without it, app's database tests would need a developer's compose stack -
     // which is exactly what this task removes.
     testImplementation(testFixtures(project(":platform")))
+    testImplementation(testFixtures(project(":identity")))
 
     // Architecture rules live here because `app` is the only module that sees every other
     // one — enforcing a boundary requires being able to observe both sides of it. As

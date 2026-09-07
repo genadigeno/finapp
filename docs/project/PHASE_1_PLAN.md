@@ -181,7 +181,7 @@ platform acted, and Phase 1 is when a real actor exists to replace most of them.
 | `party.customer` | `party` | FK to party; unique active relationship per party |
 | `identity.identity` | `identity` | FK to party **by identifier only**, no cross-module FK |
 | `identity.credential` | `identity` | Derivation, algorithm, parameters; partial unique index on (identity, type) where active |
-| `identity.mfa_enrolment` | `identity` | Secret wrapped and encrypted; never emitted |
+| `identity.mfa_enrolment` | `identity` | Secret encrypted at rest under a key outside the database (`INV-IDN-08`). **"Never emitted" is corrected by `P1-TSK-017`**: the QR code *is* the secret, so it is emitted **once**, to the proven owner, and never retrievable afterwards. `INV-IDN-01` cannot apply — a shared secret must be recoverable — and the catalogue now says so |
 | `identity.session` | `identity` | Indexed on the opaque identifier; assurance level; device; expiry |
 | `identity.device` | `identity` | |
 | `identity.role_assignment` | `identity` | |
@@ -233,7 +233,8 @@ All under `/v1` (ADR-0015). Every error is an RFC 9457 problem detail (`ERROR_CO
 | `GET /v1/me` | session | Profile |
 | `PATCH /v1/me` | session | |
 | `POST /v1/me/credential` | session, `MULTI_FACTOR` | Revokes other sessions |
-| `POST /v1/me/mfa` | session | Enrolment |
+| `POST /v1/me/mfa` | session | Enrolment — returns the provisioning URI **once** |
+| `POST /v1/me/mfa/confirmation` | session | **Added by `P1-TSK-017`.** This table listed one row, and the same plan requires that *"enrolment is not complete until confirmed by a valid code"* — which is a second request, because the customer must go and read their authenticator in between. Under-specified rather than wrong |
 | `POST /v1/recoveries` | none | Enumeration-safe; always the same response |
 | `POST /v1/recoveries/{id}/completion` | recovery token | Single use |
 | `POST /v1/identities/{id}/suspension` | session, admin role | Privileged; audited |
