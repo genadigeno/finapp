@@ -42,6 +42,25 @@ import org.junit.jupiter.api.Test;
  * <p>That is an accident of sequencing rather than a design goal — {@code P1-TSK-027} will make
  * authentication issue one — and it is exactly why this guard is written now rather than then. The
  * task that adds the second path has to come here and say so.
+ *
+ * <h2>Recovery was this guard's recorded remainder, and the answer is that it adds no path</h2>
+ *
+ * <p>{@code P1-TSK-019} listed recovery as a remainder for M1.6, because asserting absence over an
+ * unmapped route would have passed vacuously. {@code P1-TSK-023} built it, and it appears in neither
+ * list below — <strong>because recovery issues no session at all.</strong>
+ *
+ * <p>That is a design decision rather than an omission. The conventional design logs you in on
+ * completion, and {@code INV-IDN-06}'s second clause forbids exactly that: <em>"recovery never lowers
+ * the assurance required to reach an account."</em> A session handed out on completion IS the
+ * lowering — an attacker holding the mailbox would skip the credential and everything behind it.
+ * Recovery replaces the credential and stops, so the customer authenticates normally afterwards and
+ * MFA applies in full.
+ *
+ * <p>Which means the abuse case <em>"recovery used to reach an operation requiring MULTI_FACTOR"</em>
+ * cannot be attempted rather than merely being refused, and
+ * {@code RecoveryAbuseDatabaseTest.recoveryIssuesNoSession} is where that is asserted. If recovery
+ * ever does issue one, this guard fails until somebody comes here and writes down why it is not a
+ * bypass — which is the whole point of holding the enumeration against the code.
  */
 @Tag("architecture")
 @DisplayName("every path to a session is enumerated (P1-TSK-019)")

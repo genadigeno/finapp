@@ -238,7 +238,61 @@ public enum IdentityAuditAction implements AuditableAction {
             "identity.RoleAssigned",
             "An administrator changed the roles held by an identity, altering what it is permitted "
                     + "to do.",
-            true);
+            true),
+
+    /**
+     * A contact channel was registered against an identity.
+     *
+     * <p>Recorded because <strong>this is the first move in a takeover</strong>. An attacker who has
+     * a stolen password registers a mailbox they control, waits for it to verify, and then recovers
+     * the account through the front door. The trail must show when the address the platform trusts
+     * became the address it trusts.
+     *
+     * <p>No reason: the customer chose it, and demanding a justification for adding your own email
+     * would be a control on the wrong person.
+     */
+    CONTACT_CHANNEL_ADDED(
+            "identity.ContactChannelAdded",
+            "A contact channel was registered against an identity, unverified.",
+            false),
+
+    /**
+     * Control of a contact channel was proven.
+     *
+     * <p>The moment {@code INV-IDN-06}'s precondition becomes true for an account, so it is the row
+     * an investigator reads to answer <em>"could this account have been recovered on that day, and
+     * to where?"</em>
+     */
+    CONTACT_CHANNEL_VERIFIED(
+            "identity.ContactChannelVerified",
+            "Control of a contact channel was proven, making it usable for account recovery.",
+            false),
+
+    /**
+     * Account recovery was begun.
+     *
+     * <p>Recovery is the account-takeover vector by construction, so its rate is a security signal
+     * and each initiation is evidence. The actor is the <strong>platform</strong>: the caller is
+     * unauthenticated by definition — somebody who cannot log in — so there is no proven identity to
+     * attribute it to. What carries the information is the target.
+     */
+    RECOVERY_INITIATED(
+            "identity.RecoveryInitiated",
+            "Account recovery was begun for an identity holding a verified channel.",
+            false),
+
+    /**
+     * A credential was replaced through recovery.
+     *
+     * <p>The most consequential thing that can happen to an account without anybody proving they
+     * knew the password. It ends every session, and the record says how many — because an
+     * investigator asking <em>"was somebody signed in when this happened?"</em> has no other source
+     * once the rows are revoked.
+     */
+    RECOVERY_COMPLETED(
+            "identity.RecoveryCompleted",
+            "A credential was replaced through account recovery, ending every session.",
+            false);
 
     private final String code;
     private final String description;

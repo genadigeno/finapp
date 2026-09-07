@@ -101,7 +101,26 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // replacement token or the customer is logged out at the moment they proved a
                     // second factor. The one unwrap outside `identity` besides the provisioning
                     // URI, and for the same reason: a value whose purpose is to be transmitted.
-                    "com.finapp.app.mfa.MfaChallengeApplicationService");
+                    "com.finapp.app.mfa.MfaChallengeApplicationService",
+                    // P1-TSK-023. All three inside `identity`, which is the property this list
+                    // exists to keep true - and the recovery boundary was DELIBERATELY built to
+                    // keep them there. The controllers pass Sensitive<String> straight through from
+                    // the request body: an earlier version unwrapped in RecoveryController and
+                    // ContactChannelController, this guard refused it, and the rule had the better
+                    // argument, because a plaintext in `app` is a plaintext outside the module that
+                    // owns secrets.
+                    //
+                    // Writes the token HASH to its column and compares one on lookup - never the
+                    // token, which does not reach the database at all.
+                    "com.finapp.identity.JdbcContactChannelStore",
+                    "com.finapp.identity.JdbcRecoveryRequestStore",
+                    // Reads a wrapped address to normalise and validate it. RESTRICTED-PII rather
+                    // than a secret, and it is here for the same reason: the wrapper is what keeps
+                    // it out of a log, and the one place it comes off is the type that owns it.
+                    "com.finapp.identity.EmailAddress",
+                    // Hashes the token it holds, and hands its one copy to a notifier that does not
+                    // exist yet (`SessionToken`'s shape, for a shorter-lived value).
+                    "com.finapp.identity.SingleUseToken");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

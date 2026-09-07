@@ -66,7 +66,17 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " in a permanent record. The SUCCESS BRANCH of this same method"
                         + " establishes Actor(identityId, CUSTOMER) from the identity it just"
                         + " proved, which is asserted separately below because this enumeration is"
-                        + " at METHOD granularity and cannot see which branch called.");
+                        + " at METHOD granularity and cannot see which branch called.",
+                    "com.finapp.app.recovery.RecoveryApplicationService.inAFlowAsThePlatform",
+                    "Recovery initiation, recovery completion and channel verification. All three"
+                        + " are reached by somebody who CANNOT LOG IN - that is what recovery is"
+                        + " for - so there is no proven identity to attribute the action to, and"
+                        + " naming a guessed one would put an unproven claim in a permanent record."
+                        + " ONE helper rather than three call sites, deliberately: a reviewer asking"
+                        + " 'where does recovery claim to be the platform?' reads one method."
+                        + " Adding a channel does NOT come through here - it requires a session, so"
+                        + " the interceptor has already established a real actor, and that asymmetry"
+                        + " is what makes the first move in a takeover cost a stolen password.");
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")
@@ -90,23 +100,46 @@ class SystemActorCallSitesAreEnumeratedTest {
     }
 
     @Test
-    @DisplayName("both survivors are on unauthenticated paths, which is why they survive")
-    void bothSurvivorsAreUnauthenticated() {
-        // The property that makes the count two rather than zero, asserted rather than left to the
-        // prose above. A site on an AUTHENTICATED path would mean a real actor existed and was not
-        // established, which is exactly what ADR-0021 built require() to prevent.
-        assertThat(ENUMERATED_SITES.keySet())
-                .as("every surviving system-actor site must sit on a path with no proven caller")
-                .allSatisfy(
-                        site ->
-                                assertThat(site)
-                                        .matches(
-                                                name ->
-                                                        name.contains(".registration.")
-                                                                || name.contains(
-                                                                        ".authentication."),
-                                                "the only unauthenticated surfaces in Phase 1 are"
-                                                    + " registration and authentication"));
+    @DisplayName("no site claiming the platform holds a proven session")
+    void noSiteClaimsThePlatformWhileHoldingAProvenIdentity() {
+        JavaClasses production = productionClasses();
+        TreeSet<String> holdingAProvenIdentity = new TreeSet<>();
+        for (String site : ENUMERATED_SITES.keySet()) {
+            String owner = site.substring(0, site.lastIndexOf('.'));
+            String method = site.substring(site.lastIndexOf('.') + 1);
+            production.get(owner).getMethods().stream()
+                    .filter(candidate -> candidate.getName().equals(method))
+                    .filter(
+                            candidate ->
+                                    candidate.getRawParameterTypes().stream()
+                                            .anyMatch(
+                                                    parameter ->
+                                                            parameter
+                                                                    .getName()
+                                                                    .equals(
+                                                                        "com.finapp.identity.Session")))
+                    .forEach(candidate -> holdingAProvenIdentity.add(site));
+        }
+
+        // THE ASSERTION THIS REPLACED WAS A STALE LIST, and it was mine.
+        //
+        // The first version matched package names - ".registration." or ".authentication." - as a
+        // proxy for "unauthenticated", and it broke the first time a third unauthenticated surface
+        // appeared, one task later, by my own hand. A proxy that needs editing whenever the codebase
+        // grows is the stale-list defect this repository closes by derivation everywhere else.
+        //
+        // This is the property the proxy was reaching for, derived rather than listed: a method that
+        // is HANDED a proven Session and still claims the platform is exactly the defect ADR-0021
+        // built require() to prevent - a real actor existed and was not established, and the record
+        // is then complete, plausible, about the wrong party, and permanent (INV-HIST-03).
+        //
+        // What it still cannot see is stated in the class javadoc: whether the path a site sits on
+        // is authenticated is a property of the CALL GRAPH, not of a signature. The justification
+        // remains a review artefact. This is the checkable part of it, and no more.
+        assertThat(holdingAProvenIdentity)
+                .as("a method handed a proven Session has an actor available, so claiming the"
+                        + " platform there records the wrong party permanently (ADR-0021)")
+                .isEmpty();
     }
 
     @Test

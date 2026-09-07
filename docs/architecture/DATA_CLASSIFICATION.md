@@ -279,6 +279,24 @@ role cannot edit it.
 | `role_assignment` | `assigned_at` | `CONFIDENTIAL` | When somebody became privileged. As `role_name` — it dates the account's standing |
 | `role_assignment` | `revoked_by` | `RESTRICTED-PII` | As `assigned_by` |
 | `role_assignment` | `revoked_at` | `CONFIDENTIAL` | As `assigned_at` |
+| `contact_channel` | `id` | `INTERNAL` | An entity identifier |
+| `contact_channel` | `identity_id` | `RESTRICTED-PII` | Identifies a person |
+| `contact_channel` | `kind` | `INTERNAL` | Which sort of channel. One value today |
+| `contact_channel` | `address` | `RESTRICTED-PII` | **A person's email address.** Directly identifying, and the platform's only such column outside `party.display_name` |
+| `contact_channel` | `verification_token_hash` | `CONFIDENTIAL` | The hash of a live challenge. Not the token - but a value that names a pending verification on a specific account, which is a takeover in progress |
+| `contact_channel` | `verification_expires_at` | `CONFIDENTIAL` | When that challenge dies. As the hash: it dates an in-flight verification |
+| `contact_channel` | `verified_at` | `CONFIDENTIAL` | **When control was proven.** `INV-IDN-06` names *recently changed channel* as an abuse case, so this column is the signal an investigator reads - and an attacker who could read it would know which accounts have just become recoverable |
+| `contact_channel` | `added_at` | `CONFIDENTIAL` | As `verified_at` |
+| `recovery_request` | `id` | `INTERNAL` | An aggregate identifier. It appears in a URL and is useless without the token |
+| `recovery_request` | `identity_id` | `RESTRICTED-PII` | Identifies a person |
+| `recovery_request` | `channel_id` | `INTERNAL` | Which channel it went to. The address itself is on `contact_channel` |
+| `recovery_request` | `token_hash` | `CONFIDENTIAL` | The hash of a bearer credential that can replace a credential. Not the token, and still the most sensitive non-PII column here |
+| `recovery_request` | `status` | `CONFIDENTIAL` | Whether a recovery is live on this account |
+| `recovery_request` | `credential_id` | `INTERNAL` | Which credential the request was bound to - the concurrent-recovery-and-login control |
+| `recovery_request` | `initiated_at` | `CONFIDENTIAL` | **When somebody tried to take the account over**, or when its owner forgot their password. Either way it dates an event on a named person |
+| `recovery_request` | `expires_at` | `CONFIDENTIAL` | As `initiated_at` |
+| `recovery_request` | `completed_at` | `CONFIDENTIAL` | As `initiated_at` |
+| `recovery_request` | `cancelled_at` | `CONFIDENTIAL` | As `initiated_at` |
 
 **`device` is the judgement worth challenging**, and it is classified above everything else here on
 purpose. Every other column is a fact about the *session*; `device` is a fact about the *person* —

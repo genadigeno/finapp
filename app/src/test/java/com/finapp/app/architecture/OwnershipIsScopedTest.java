@@ -97,7 +97,23 @@ class OwnershipIsScopedTest {
          * mechanical proof, and its value is that labelling a customer-owned table with it requires
          * somebody to type a sentence that is false.
          */
-        NOT_OWNED
+        NOT_OWNED,
+
+        /**
+         * Holding the token <em>is</em> the authorisation.
+         *
+         * <p>Added by {@code P1-TSK-023}. Recovery completion targets a request by an identifier
+         * that came straight from the URL, so it is not {@link #AUTHORITATIVE_ID} — and it is not
+         * scoped by owner either, because the caller is somebody who <strong>cannot log in</strong>
+         * and has no identity to scope against. What authorises it is a high-entropy single-use
+         * token sent to a previously verified channel.
+         *
+         * <p>Squeezing this into one of the others would have been the easy move and would have made
+         * the register say something false. Naming it is the point: the statement must carry the
+         * bearer predicate, which is checked, and the security argument then rests on where the token
+         * was sent — which is {@code INV-IDN-06} and is checked by the abuse-case tests.
+         */
+        BEARER_SCOPED
     }
 
     /**
@@ -126,6 +142,26 @@ class OwnershipIsScopedTest {
                                         + " PRIVATE helper rather than the two public methods that"
                                         + " delegate to it, which is more accurate than the register"
                                         + " I first wrote: the statement is here.")),
+                    Map.entry(
+                            "com.finapp.identity.JdbcRecoveryRequestStore.consume",
+                            new Entry(
+                                    Scope.BEARER_SCOPED,
+                                    "Recovery completion. The request identifier comes from the URL"
+                                        + " and the caller holds no session - that is what recovery"
+                                        + " is for - so the token is the whole authorisation, and"
+                                        + " the statement carries token_hash = ?. It also carries"
+                                        + " status, expiry AND the credential the request was bound"
+                                        + " to, so a token that survived a password change is"
+                                        + " already dead.")),
+                    Map.entry(
+                            "com.finapp.identity.JdbcContactChannelStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "A contact channel read by identifier. The owner is the proven"
+                                        + " session's identity, in the statement - a channel is the"
+                                        + " thing an attacker most wants to point at their own"
+                                        + " mailbox, so reading somebody else's must be impossible"
+                                        + " rather than merely unusual.")),
                     Map.entry(
                             "com.finapp.platform.outbox.OutboxRelay.markPublished",
                             new Entry(
@@ -192,7 +228,10 @@ class OwnershipIsScopedTest {
                             + ".revocationIsRefusedForSomebodyElsesSession",
                     "com.finapp.identity.JdbcSessionStore.revokeAll",
                     "com.finapp.app.domain.SessionRevocationDatabaseTest"
-                            + ".revokeAllIsScopedToItsIdentity");
+                            + ".revokeAllIsScopedToItsIdentity",
+                    "com.finapp.identity.JdbcContactChannelStore.findOwned",
+                    "com.finapp.app.domain.RecoveryAbuseDatabaseTest"
+                            + ".aChannelIsNotReadableByAnotherIdentity");
 
     /** The owner column. One name, because one module owns every table this rule covers. */
     private static final String OWNER_PREDICATE = "identity_id = ?";
@@ -207,6 +246,9 @@ class OwnershipIsScopedTest {
      *
      * <p>A third would need writing down, which is the point of the set being small and explicit.
      */
+    /** What a {@link Scope#BEARER_SCOPED} statement must carry. */
+    private static final String BEARER_PREDICATE = "token_hash = ?";
+
     private static final Set<String> OWNERSHIP_PREDICATES =
             Set.of(OWNER_PREDICATE, "token_hash = ?");
 
@@ -283,6 +325,30 @@ class OwnershipIsScopedTest {
         assertThat(stale)
                 .as("an AUTHORITATIVE_ID claim naming a read that does not exist is a claim about"
                         + " nothing, and the operation it excuses becomes unexamined")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("a BEARER_SCOPED statement actually carries the bearer predicate")
+    void bearerScopedStatementsCarryThePredicate() {
+        List<String> missing = new ArrayList<>();
+        REGISTER.forEach(
+                (method, entry) -> {
+                    if (entry.scope() != Scope.BEARER_SCOPED) {
+                        return;
+                    }
+                    if (!statementOf(method).contains(BEARER_PREDICATE)) {
+                        missing.add(method);
+                    }
+                });
+
+        // Symmetric with ownerScopedStatementsCarryThePredicate, and for the same reason: dropping
+        // the predicate leaves the signature untouched, so nothing else in this rule would notice.
+        // Here the consequence is sharper - a completion scoped by identifier alone would let anybody
+        // who can read a recovery request identifier replace a stranger's credential.
+        assertThat(missing)
+                .as("a BEARER_SCOPED method whose statement has lost `" + BEARER_PREDICATE + "` is"
+                        + " authorised by an identifier that is not a secret")
                 .isEmpty();
     }
 

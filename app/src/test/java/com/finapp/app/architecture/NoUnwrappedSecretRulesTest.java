@@ -340,6 +340,7 @@ class NoUnwrappedSecretRulesTest {
             for (JavaField field : javaClass.getFields()) {
                 if (!isAnEnumConstant(field)
                         && !isAPrimitive(field)
+                        && !isAnOptionalOfOurOwnType(field)
                         && namesASecret(field.getName())
                         && !isWrapped(field.getRawType())) {
                     wouldBeFlagged.add(field.getFullName());
@@ -357,7 +358,23 @@ class NoUnwrappedSecretRulesTest {
     }
 
     private static boolean isAPrimitive(JavaField field) {
-        return field.getRawType().isPrimitive();
+        return field.getRawType().isPrimitive() || isAnAmountOfTime(field.getRawType());
+    }
+
+    /**
+     * A duration or an instant cannot hold a secret, so a field of one is not one.
+     *
+     * <p>Added by {@code P1-TSK-023}, where {@code RecoveryService.TOKEN_LIFETIME} — a
+     * {@link java.time.Duration} naming how long a recovery token lives — was flagged. The same
+     * structural argument as {@link #isAPrimitive}'s own: a {@code Duration} is a count of seconds
+     * and nanoseconds, with no way to be a base64 string, a derivation or a token.
+     *
+     * <p>And the names that hit it are the ones anybody would write: {@code TOKEN_LIFETIME},
+     * {@code SESSION_IDLE_TIMEOUT}, {@code CREDENTIAL_MAX_AGE}. ADR-0019's principle applies
+     * directly — a rule with false positives is a rule somebody turns off.
+     */
+    private static boolean isAnAmountOfTime(JavaClass type) {
+        return type.getName().startsWith("java.time.");
     }
 
     private static boolean isAnEnumConstant(JavaField field) {
@@ -372,7 +389,10 @@ class NoUnwrappedSecretRulesTest {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
                 for (JavaField field : javaClass.getFields()) {
-                    if (isAnEnumConstant(field) || isAPrimitive(field) || isPermitted(field)
+                    if (isAnEnumConstant(field)
+                            || isAPrimitive(field)
+                            || isAnOptionalOfOurOwnType(field)
+                            || isPermitted(field)
                             || !namesASecret(field.getName())
                             || isWrapped(field.getRawType())) {
                         continue;
@@ -401,6 +421,8 @@ class NoUnwrappedSecretRulesTest {
                     // while forbidding the purpose.
                     if (PERMITTED_ACCESSORS.contains(method.getFullName())
                             || !namesASecret(method.getName())
+                            || isAnAmountOfTime(method.getRawReturnType())
+                            || returnsAnOptionalOfOurOwnType(method)
                             || isWrapped(method.getRawReturnType())) {
                         continue;
                     }
@@ -442,6 +464,53 @@ class NoUnwrappedSecretRulesTest {
      */
     private static boolean isOneOfOurOwnTypes(JavaClass type) {
         return type.getName().startsWith("com.finapp.");
+    }
+
+    /**
+     * Whether a field's declared type is an {@code Optional} of one of our own types.
+     *
+     * <p>A gap in {@link #isOneOfOurOwnTypes} that new code found: it reads the <strong>raw</strong>
+     * type, and the raw type of {@code Optional<CredentialId>} is {@code java.util.Optional}, which
+     * is not ours — so {@code RecoveryRequest.credentialId} was flagged although {@code CredentialId}
+     * is checked at its own declaration exactly as an unwrapped one would be.
+     *
+     * <p><strong>Deliberately only one level, and only for our types.</strong>
+     * {@code Optional<String> password} still fails, because {@code String} is where a secret
+     * actually lives — which is the same boundary {@link #isOneOfOurOwnTypes} draws and the reason
+     * that exclusion narrows nothing that matters.
+     */
+    /**
+     * The accessor half of {@link #isAnOptionalOfOurOwnType}.
+     *
+     * <p>Both halves are needed, and the rule's own javadoc says why: a record produces an accessor
+     * of the same name, so the field and the accessor are checked separately and an exclusion
+     * applied to one alone would be incoherent. {@code RecoveryRequest.credentialId} passed as a
+     * field and failed as an accessor until this existed — the guard being precise about which of
+     * the two it was objecting to.
+     */
+    private static boolean returnsAnOptionalOfOurOwnType(JavaMethod method) {
+        return method.getRawReturnType().getName().equals("java.util.Optional")
+                && method.getReturnType()
+                                instanceof
+                                com.tngtech.archunit.core.domain.JavaParameterizedType parameterized
+                && parameterized.getActualTypeArguments().size() == 1
+                && parameterized
+                        .getActualTypeArguments()
+                        .get(0)
+                        .toErasure()
+                        .getName()
+                        .startsWith("com.finapp.");
+    }
+
+    private static boolean isAnOptionalOfOurOwnType(JavaField field) {
+        if (!field.getRawType().getName().equals("java.util.Optional")) {
+            return false;
+        }
+        return field.getType().toErasure().getName().equals("java.util.Optional")
+                && field.getType() instanceof com.tngtech.archunit.core.domain.JavaParameterizedType parameterized
+                && parameterized.getActualTypeArguments().size() == 1
+                && parameterized.getActualTypeArguments().get(0).toErasure().getName()
+                        .startsWith("com.finapp.");
     }
 
     /** True when any camel-case word of {@code fieldName} is in the secret vocabulary. */

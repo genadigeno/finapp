@@ -213,7 +213,30 @@ class CredentialReachesNoEmittedSinkTest {
                         // vocabulary would demand a `Sensitive` wrapper, and a name chosen to avoid
                         // one would be dodging. A code is valid for ninety seconds against a single
                         // pending enrolment, which is why `code` is the honest name.
-                        "MfaConfirmationRequest");
+                        "MfaConfirmationRequest",
+                        // P1-TSK-023. Four at once, because recovery needed a channel that did not
+                        // exist - and each is a deliberate decision rather than a consequence.
+                        //
+                        // RecoveryCompletionRequest carries BOTH a token and a password, and the
+                        // token is the sharper of the two: whoever holds it can replace the
+                        // credential without knowing the old one, so it is a bearer credential with
+                        // MORE power than the password it replaces. It is `Sensitive` for exactly
+                        // that reason, and it is in a request body because there is nowhere else a
+                        // client could put it - a URL would place it in every access log and proxy
+                        // log between the mailbox and here.
+                        "RecoveryCompletionRequest",
+                        "ContactChannelVerificationRequest",
+                        // These two carry no secret at all and are here because the set is every
+                        // schema REACHABLE from a request body, not every schema containing one.
+                        // Naming them is the price of the guard being unable to widen quietly, and
+                        // the price is worth paying: an entry appearing without a reason is the
+                        // signal.
+                        //
+                        // ContactChannelRequest carries an email address, which is RESTRICTED-PII
+                        // rather than a secret - wrapped for the same reason, because a record's
+                        // generated toString prints every component.
+                        "ContactChannelRequest",
+                        "RecoveryInitiationRequest");
     }
 
     @Test

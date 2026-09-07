@@ -597,6 +597,28 @@
         ],
         "type": "object"
       },
+      "ContactChannelRequest": {
+        "properties": {
+          "address": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "address"
+        ],
+        "type": "object"
+      },
+      "ContactChannelVerificationRequest": {
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
       "ElevatedSession": {
         "properties": {
           "assurance": {
@@ -673,6 +695,35 @@
           "title",
           "status",
           "code"
+        ],
+        "type": "object"
+      },
+      "RecoveryCompletionRequest": {
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "token"
+        ],
+        "type": "object"
+      },
+      "RecoveryInitiationRequest": {
+        "properties": {
+          "loginIdentifier": {
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "[A-Za-z0-9._-]+",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loginIdentifier"
         ],
         "type": "object"
       },
@@ -782,6 +833,46 @@
         }
       }
     },
+    "/v1/me/channels": {
+      "post": {
+        "operationId": "addChannel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/me/channels/verification": {
+      "post": {
+        "operationId": "verifyChannel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactChannelVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/v1/me/mfa": {
       "post": {
         "operationId": "beginMfaEnrolment",
@@ -807,6 +898,56 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/MfaConfirmationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/recoveries": {
+      "post": {
+        "operationId": "initiateRecovery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryInitiationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/recoveries/{id}/completion": {
+      "post": {
+        "operationId": "completeRecovery",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryCompletionRequest"
               }
             }
           },

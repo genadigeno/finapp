@@ -99,6 +99,10 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.AuthorizationDenied` | No | A privileged action was refused because the actor lacked the permission. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
+| `identity.ContactChannelAdded` | No | A contact channel was registered against an identity, unverified. |
+| `identity.ContactChannelVerified` | No | Control of a contact channel was proven, making it usable for account recovery. |
+| `identity.RecoveryInitiated` | No | Account recovery was begun for an identity holding a verified channel. |
+| `identity.RecoveryCompleted` | No | A credential was replaced through account recovery, ending every session. |
 
 `identity.IdentityCreated` and the two authentication actions require no reason: using your own
 login is not an action taken against anybody. The two admin actions below them are, which is the

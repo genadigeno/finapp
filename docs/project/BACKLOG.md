@@ -2015,7 +2015,7 @@ repository exists to prevent.
 
 ### P1-CAP-06 — Recovery that is not the way in
 
-**P1-TSK-023 — Account recovery**
+**P1-TSK-023 — Account recovery** — `COMPLETE` (2026-09-08)
 - Context: identity / security
 - Description: Initiation, channel verification, single-use expiring token, completion, and
   notification as an outbox event.
@@ -2030,8 +2030,28 @@ repository exists to prevent.
 - Tests: the `INV-IDN-06` abuse cases, each its own test — replayed token, unverified channel,
   recently changed channel, concurrent recovery and login, recovery used to reach an operation
   requiring `MULTI_FACTOR`.
-- Accept: every abuse case refused; `INV-IDN-06` demonstrated to fail when the channel-verification
-  check is removed.
+- Accept: **met.** Nine abuse-case tests, each named for the route it closes; removing the
+  channel-verification join fails two of them.
+- **BLOCKING FINDING, resolved here: `INV-IDN-06` had no subject.** It requires *"a previously
+  registered and **verified** channel"*, and no channel existed anywhere — no type, no table, no
+  verification, and **no backlog task owning one**. Seventh backlog defect of this class in Phase 1
+  and the most consequential: the others were missing endpoints, this was a missing **precondition
+  of the invariant**. Built here on the `P1-TSK-016` precedent, minimally.
+- **Recovery issues NO session**, which is the sharpest decision. The conventional design logs you
+  in on completion, and `INV-IDN-06`'s second clause forbids exactly that. So *"recovery used to
+  reach a `MULTI_FACTOR` operation"* cannot be **attempted**, and
+  `MfaBypassPathsAreEnumeratedTest`'s statement — nothing new creates a session — stays true. That
+  guard's recorded remainder is now answered in it.
+- **Bound to the credential it was raised against**, so an attacker who initiates before the customer
+  changes their password loses. A predicate, not a procedure, because a predicate cannot be
+  forgotten by a future credential-change caller.
+- **The token is delivered nowhere**, and that is `PHASE_1_PLAN.md` §8's recorded seam.
+- **Four existing guards refused the new code and all four were right** — the unwrap whitelist, the
+  system-actor enumeration, the ownership register and the published-contract diff.
+- **Eleven mutations: ten caught, one survived correctly.** Two survivors along the way each found a
+  real gap — a test passing for the wrong reason, and no test that ever suspended an identity.
+- **Out of scope, recorded:** channel change and multiple channels, phone, recovery when the
+  authenticator is also lost, and the delivery adapter (Phase 15).
 - Risk: **High**. Cx: L. DoD: `DOD-SEC`
 
 ## P1-EPIC-07 — Phase Review

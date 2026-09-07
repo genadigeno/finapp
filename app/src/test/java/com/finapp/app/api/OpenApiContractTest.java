@@ -260,7 +260,14 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa/confirmation",
-                        ApiVersion.CURRENT_PREFIX + "/authentications/mfa");
+                        ApiVersion.CURRENT_PREFIX + "/authentications/mfa",
+                        // P1-TSK-023. Recovery is UNAUTHENTICATED by definition - it is for
+                        // somebody who cannot log in - so these two are the widest surface
+                        // the platform has, and declaring them here is the deliberate act.
+                        ApiVersion.CURRENT_PREFIX + "/recoveries",
+                        ApiVersion.CURRENT_PREFIX + "/recoveries/{id}/completion",
+                        ApiVersion.CURRENT_PREFIX + "/me/channels",
+                        ApiVersion.CURRENT_PREFIX + "/me/channels/verification");
     }
 
     @Test
