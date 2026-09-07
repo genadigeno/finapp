@@ -72,7 +72,7 @@ class SessionRotationDatabaseTest {
                                             app,
                                             fixture.session(),
                                             AssuranceLevel.MULTI_FACTOR,
-                                            SessionPolicy.current())
+                                            SessionPolicy.current().idleTimeout())
                                     .orElseThrow();
 
                     assertThat(sessions.findLive(app, fixture.token(), Instant.now(CLOCK)))
@@ -97,7 +97,7 @@ class SessionRotationDatabaseTest {
                                             app,
                                             fixture.session(),
                                             AssuranceLevel.MULTI_FACTOR,
-                                            SessionPolicy.current())
+                                            SessionPolicy.current().idleTimeout())
                                     .orElseThrow();
 
                     assertThat(rotated.session().id())
@@ -107,6 +107,49 @@ class SessionRotationDatabaseTest {
                             .as("and the token is independent, not derived from its predecessor")
                             .isNotEqualTo(fixture.session().tokenHash().expose());
                     assertThat(rotated.session().assurance()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
+                });
+    }
+
+    @Test
+    @DisplayName("a rotation at the SAME level still replaces the identifier (the credential change)")
+    void aSameLevelRotationStillReplacesTheIdentifier() throws SQLException {
+        // The completion gate found this untested. Every other rotation test elevates
+        // PASSWORD -> MULTI_FACTOR, and the task builds TWO cases: step-up, and the credential
+        // change, which rotates at the SAME level. An implementation that made replacement
+        // conditional on the level actually changing would pass every other test in this class and
+        // fail exactly the case where session fixation is most dangerous - a password change is what
+        // somebody does AFTER suspecting their session was stolen, so leaving the identifier intact
+        // there hands the thief the account they were being locked out of.
+        Fixture fixture = givenALiveSession(AssuranceLevel.PASSWORD);
+
+        inAFlow(
+                app -> {
+                    SessionRotation.Rotated rotated =
+                            rotation()
+                                    .rotate(
+                                            app,
+                                            fixture.session(),
+                                            AssuranceLevel.PASSWORD,
+                                            SessionPolicy.current().idleTimeout())
+                                    .orElseThrow();
+
+                    assertThat(rotated.session().id())
+                            .as("no level change, but the identifier must still be replaced")
+                            .isNotEqualTo(fixture.session().id());
+                    assertThat(rotated.session().tokenHash().expose())
+                            .as("and so must the token: an unchanged token is an unchanged session")
+                            .isNotEqualTo(fixture.session().tokenHash().expose());
+                    assertThat(rotated.session().assurance())
+                            .as("the level is what the caller stated - unchanged, not inferred")
+                            .isEqualTo(AssuranceLevel.PASSWORD);
+
+                    // And the predecessor is dead, which is the half that actually locks the thief
+                    // out. A replacement issued beside a still-live original is not a rotation.
+                    assertThat(
+                                    sessions.findLive(
+                                            app, fixture.token(), Instant.now(CLOCK)))
+                            .as("the old session must be gone, not merely superseded in name")
+                            .isEmpty();
                 });
     }
 
@@ -127,7 +170,7 @@ class SessionRotationDatabaseTest {
                                             app,
                                             fixture.session(),
                                             AssuranceLevel.MULTI_FACTOR,
-                                            SessionPolicy.current())
+                                            SessionPolicy.current().idleTimeout())
                                     .orElseThrow();
 
                     assertThat(rotated.session().absoluteExpiresAt())
@@ -159,8 +202,7 @@ class SessionRotationDatabaseTest {
                                             fixture.session(),
                                             AssuranceLevel.MULTI_FACTOR,
                                             // A far longer idle timeout than the life remaining.
-                                            new SessionPolicy(
-                                                    Duration.ofHours(1), Duration.ofHours(12)))
+                                            Duration.ofHours(1))
                                     .orElseThrow();
 
                     assertThat(rotated.session().idleExpiresAt())
@@ -187,7 +229,7 @@ class SessionRotationDatabaseTest {
                                                     app,
                                                     fixture.session(),
                                                     AssuranceLevel.MULTI_FACTOR,
-                                                    SessionPolicy.current()))
+                                                    SessionPolicy.current().idleTimeout()))
                             .as("the revoke found nothing live, so nothing was issued")
                             .isEmpty();
                     assertThat(liveSessionCount(app, fixture.identityId()))
@@ -258,7 +300,7 @@ class SessionRotationDatabaseTest {
                                             app,
                                             fixture.session(),
                                             AssuranceLevel.MULTI_FACTOR,
-                                            SessionPolicy.current())
+                                            SessionPolicy.current().idleTimeout())
                                     .orElseThrow();
 
                     String target = fixture.session().id().value().toString();
@@ -382,7 +424,7 @@ class SessionRotationDatabaseTest {
                                     own,
                                     fixture.session(),
                                     AssuranceLevel.MULTI_FACTOR,
-                                    SessionPolicy.current());
+                                    SessionPolicy.current().idleTimeout());
             own.commit();
             return rotated.isPresent();
         }

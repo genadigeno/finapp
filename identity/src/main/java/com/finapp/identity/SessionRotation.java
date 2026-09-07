@@ -11,6 +11,7 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -87,7 +88,11 @@ public final class SessionRotation {
      * Replaces {@code current} with a new session at {@code toAssurance}.
      *
      * @param current the session being replaced. Must be the aggregate as read, not a stale copy
-     * @param policy supplies the fresh idle bound; its absolute lifetime is deliberately ignored
+     * @param idleTimeout how long the replacement may sit unused. <strong>A {@code Duration}, not a
+     *     {@code SessionPolicy}</strong>, and the completion gate made that change: this uses only
+     *     the idle half, and a parameter whose other half is silently ignored is a trap for the
+     *     caller who passes {@code SessionPolicy.current()} and reasonably expects both to apply.
+     *     The absolute bound is inherited, so there is nothing here for a policy to say about it
      * @return the new session and its token, or empty if {@code current} was no longer live — in
      *     which case <strong>nothing was issued</strong>. A rotation of a dead session must not mint
      *     a live one, which is what makes a lost race safe rather than merely unlikely
@@ -96,11 +101,11 @@ public final class SessionRotation {
             Connection unitOfWork,
             Session current,
             AssuranceLevel toAssurance,
-            SessionPolicy policy) {
+            Duration idleTimeout) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(toAssurance, "toAssurance must not be null");
-        Objects.requireNonNull(policy, "policy must not be null");
+        Objects.requireNonNull(idleTimeout, "idleTimeout must not be null");
 
         Instant at = Instant.now(clock);
 
@@ -121,7 +126,7 @@ public final class SessionRotation {
                         toAssurance,
                         SessionStatus.ACTIVE,
                         at,
-                        idleBoundFrom(at, policy, current.absoluteExpiresAt()),
+                        idleBoundFrom(at, idleTimeout, current.absoluteExpiresAt()),
                         // PRESERVED. See the class javadoc: resetting it makes the absolute
                         // lifetime advisory for anybody who can trigger a rotation.
                         current.absoluteExpiresAt(),
@@ -143,8 +148,9 @@ public final class SessionRotation {
      * constructor refuses an idle bound beyond the absolute one, so without the clamp a rotation
      * near the end of a session's life would throw rather than produce a short-lived session.
      */
-    private static Instant idleBoundFrom(Instant at, SessionPolicy policy, Instant absolute) {
-        Instant extended = at.plus(policy.idleTimeout());
+    private static Instant idleBoundFrom(
+            Instant at, Duration idleTimeout, Instant absolute) {
+        Instant extended = at.plus(idleTimeout);
         return extended.isAfter(absolute) ? absolute : extended;
     }
 
