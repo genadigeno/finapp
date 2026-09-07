@@ -107,16 +107,27 @@ class MfaBypassPathsAreEnumeratedTest {
                 .as("the detector finds the origins that exist today")
                 .isNotEmpty();
 
-        // The vocabulary must name methods that exist, or a renamed store method would silently
-        // stop being an origin and every path through it would become invisible.
-        JavaClasses identity = productionClasses();
-        assertThat(
-                        SESSION_ORIGINS.stream()
-                                .map(origin -> origin.substring(0, origin.lastIndexOf('.')))
-                                .distinct()
-                                .filter(owner -> !identity.contain(owner))
-                                .toList())
-                .as("every type named in SESSION_ORIGINS must exist")
+        // The vocabulary must name METHODS that exist, not merely types.
+        //
+        // The first version checked types only, and the completion gate found the gap by probing: a
+        // renamed store method - or a bogus entry added later - would leave the type resolving
+        // perfectly while the origin silently stopped matching anything, and every path through it
+        // would become invisible. A guard that reports coverage it does not have is worse than none,
+        // because it is believed (the P0-TST-008 finding).
+        JavaClasses production = productionClasses();
+        java.util.List<String> missing = new java.util.ArrayList<>();
+        for (String origin : SESSION_ORIGINS) {
+            String owner = origin.substring(0, origin.lastIndexOf('.'));
+            String method = origin.substring(origin.lastIndexOf('.') + 1);
+            if (!production.contain(owner)
+                    || production.get(owner).getMethods().stream()
+                            .noneMatch(candidate -> candidate.getName().equals(method))) {
+                missing.add(origin);
+            }
+        }
+        assertThat(missing)
+                .as("every method named in SESSION_ORIGINS must exist, or the origin matches"
+                        + " nothing and the paths through it become invisible")
                 .isEmpty();
     }
 

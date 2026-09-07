@@ -180,6 +180,29 @@ class MfaCannotBeBypassedDatabaseTest {
     }
 
     @Test
+    @DisplayName("path 3: the refusal is audited, and the record survives the refusal")
+    void aRefusedReplacementIsAudited() throws Exception {
+        IdentityId identity = givenAnIdentity();
+        String session = givenASessionFor(identity);
+        givenAConfirmedFactorOn(session);
+
+        long before = refusedEnrolmentRecords(identity);
+        assertThat(postRaw("/v1/me/mfa", null, session).statusCode()).isEqualTo(403);
+
+        // Two claims, and the second is the one worth proving. `MfaEnrolmentService.auditRefusal`'s
+        // javadoc says this is "the trace of somebody with a stolen password trying to swap a second
+        // factor" - and a refusal is otherwise indistinguishable from a customer tapping the wrong
+        // button, so without the record an attack leaves nothing behind.
+        //
+        // And it must SURVIVE: the refusal is written inside the transaction and the 403 is thrown
+        // after it commits. Throwing inside would roll the record back, which is exactly the defect
+        // P1-TSK-010 had to avoid by RETURNING its refusal rather than throwing it.
+        assertThat(refusedEnrolmentRecords(identity) - before)
+                .as("a refused replacement must leave a durable trace naming the identity")
+                .isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("path 3 control: an elevated session CAN replace it, so the rule is conditional")
     void anElevatedSessionCanReplaceTheFactor() throws Exception {
         IdentityId identity = givenAnIdentity();
@@ -301,6 +324,22 @@ class MfaCannotBeBypassedDatabaseTest {
                 java.util.regex.Pattern.compile("\"sessionToken\":\"([^\"]+)\"").matcher(body);
         assertThat(matcher.find()).as("the elevated session must be returned").isTrue();
         return matcher.group(1);
+    }
+
+    private static long refusedEnrolmentRecords(IdentityId identity) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count =
+                        app.prepareStatement(
+                                "SELECT count(*) FROM platform.audit_record"
+                                        + " WHERE operation = 'identity.MfaEnrolmentStarted'"
+                                        + " AND outcome = 'FAILED'"
+                                        + " AND target_id = ?")) {
+            count.setString(1, identity.value().toString());
+            try (var rows = count.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        }
     }
 
     private static AssuranceLevel assuranceOf(String token) throws SQLException {
