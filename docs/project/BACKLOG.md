@@ -1967,7 +1967,7 @@ repository exists to prevent.
 - **Ten mutations, all caught** — two added by the gate.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
-**P1-TSK-022 — Actor-attributed audit**
+**P1-TSK-022 — Actor-attributed audit** — `COMPLETE` (2026-09-08)
 - Context: identity, party, platform
 - Description: Every privileged action writes an `AuditRecord` naming the real actor, in the same
   transaction as its effect.
@@ -1981,8 +1981,28 @@ repository exists to prevent.
 - Tests: an audit record per privileged action with all seven fields; the record is immutable at
   the privilege level (`INV-HIST-03`, already enforced); a request with no established actor is
   refused rather than attributed to the system.
-- Accept: `INV-AUD-01` holds for every Phase 1 privileged action; the number of `enterSystem()`
-  call sites is reduced to those that are genuinely the platform acting, and each is justified.
+- Accept: **met.** Probed rather than assumed — six of the seven implementation clauses were
+  **already true**: the interceptor establishes a scope per authenticated request (`P1-TSK-016`),
+  all **13** audit sites call `SecurityContext.require()` and none defaults, every writer takes the
+  caller's `Connection`, immutability is at `DB-PRIVILEGE` (`P0-TSK-022`), an unestablished actor is
+  refused, and 15 actions are catalogued. Restating any of it would be duplication that drifts.
+- **So the deliverable is the three things that were missing, and each is an acceptance clause
+  nothing checked:**
+  - `AuditCompletenessTest` — every action **emitted or declared not to be**, held against the code.
+    This closes the limit `P0-TSK-023` recorded against itself: *"it cannot detect a privileged
+    action that writes no record at all."* Two Phase 1 actions were silently unemitted.
+  - `SystemActorCallSitesAreEnumeratedTest` — *"each is justified"* made mechanical. **Two** sites,
+    both on unauthenticated paths; a third fails the build. ADR-0021 called this *"the greppable
+    list"*, and grep is a thing somebody has to remember to run.
+  - `AuditNamesTheActorDatabaseTest` — **no record written under an authenticated request names the
+    platform**, asserted over the *rows* rather than per action. Each earlier task asserted its own
+    record; nothing asserted the trail.
+- **`IDENTITY_SUSPENDED` cannot be audited by this task** — `P1-TSK-028` owns the endpoint, and
+  inventing one to give the action a caller would be a surface chosen to suit a test.
+- **The enumeration is at method granularity**, and the one place that matters is closed:
+  `AuthenticationService.attempt` holds both branches, so a separate assertion requires the success
+  branch to still establish a real actor.
+- Eight mutations, all caught.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 ## P1-EPIC-06 — Account Recovery

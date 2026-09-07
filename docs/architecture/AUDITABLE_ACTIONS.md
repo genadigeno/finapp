@@ -163,6 +163,20 @@ that reality is checked *against*, so an action that must be audited belongs her
 the code emitting it exists. The gap is recorded in
 [`CURRENT_STATE.md`](../project/CURRENT_STATE.md) §Known Architectural Debt.
 
+**`P1-TSK-022` makes that distinction mechanical.** `AuditableActionRegistryTest` reconciles this
+document with the code and states its own limit — *it cannot detect a privileged action that writes
+no record at all*, which is the failure that matters, because a registry agreeing with a catalogue
+while nothing emits half of it looks complete from both sides. `AuditCompletenessTest` now holds
+every action against production code: each is **emitted**, or **declared not to be** with the task
+that will emit it. So *"deliberately not built yet"* and *"somebody removed the audit call"* stop
+being indistinguishable, and an action that silently **stops** being emitted fails the build.
+
+Five actions are currently declared unemitted: `identity.IdentitySuspended` (`P1-TSK-028` owns the
+endpoint), `party.ProfileChanged` (no Phase 1 capability changes a profile), and the three `outbox.*`
+actions above. Its limit is stated too: it sees that a constant is *referenced* by production code,
+which is weaker than *the operation audits itself* — the behavioural tests establish that, and
+neither replaces the other.
+
 ## 4. When an action requires a reason
 
 `V009` made `reason` nullable and deferred the decision: *"for the actions that do, absence is not

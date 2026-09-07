@@ -154,6 +154,23 @@ must go are the ones where a real actor exists and was not established; a public
 endpoint is not one of them, and the distinction is worth writing down because "revisit every
 `enterSystem()`" reads as "remove every `enterSystem()`" and would be wrong here.
 
+**The second surviving site is authentication's failure branch** (`P1-TSK-022`). `AuthenticationService.attempt`
+holds both branches: on **success** it establishes `Actor(identityId, CUSTOMER)` from the identity it
+has just proven, and on **failure** it claims the platform — because the login identifier may name
+nobody at all, so there is nothing to attribute to, and naming a guessed identity would put an
+unproven claim in a permanent record. The throttle writes its own record when a failure crosses the
+lockout threshold, so it must run inside that scope; the first version had it outside and every
+lockout test failed with *"no actor has been established"*, which is `require()` doing exactly its
+job.
+
+**The review is now conducted by the build, not by memory.** `SystemActorCallSitesAreEnumeratedTest`
+holds this list against the code: a **new** place claiming the platform is the actor fails the build
+until somebody writes down why there is no honest alternative. ADR-0021 called `enterSystem()` *"the
+greppable list of places Phase 1 must revisit"*, and grep is a thing somebody has to remember to run.
+Its stated limit is that it cannot tell whether a justification is **true**, and that it enumerates
+at **method** granularity — which is why the authentication entry is paired with a separate assertion
+that the success branch still establishes a real actor.
+
 The actor is deliberately not part of the correlation context. A correlation identifier names one
 execution and attributes nothing to anybody; an actor names a party. Merging them would put a
 customer identifier into every log line and every span, which is a disclosure into systems with

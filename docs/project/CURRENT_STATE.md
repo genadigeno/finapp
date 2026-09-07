@@ -18,8 +18,10 @@ Status: **`IN_PROGRESS`** — entry gate passed, all twelve criteria. Started 20
 
 ## Current Milestone
 
-**M1.5 — Authorization, and audit that names the actor.** `P1-TSK-020` … `P1-TSK-022`; **2 of 3
-complete.** Started 2026-09-07. A rule's absence is never a grant: every endpoint declares one, and
+**M1.5 — Authorization, and audit that names the actor.** `P1-TSK-020` … `P1-TSK-022`; **3 of 3
+complete** (2026-09-08). The milestone's stated acceptance — *every privileged action is permitted,
+scoped to its owner, and recorded against the person who performed it* — is met, and each of the
+three is now held against the code rather than against anybody's memory of a review. A rule's absence is never a grant: every endpoint declares one, and
 an endpoint that declares nothing is refused — enforced at run time *and* at build time, because a
 deployment defect found by a customer receiving a 403 has been found too late.
 
@@ -142,10 +144,105 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-021` completed 2026-09-08. **M1.5 is 2 of 3.**
-**Next: `P1-TSK-022`** — actor-attributed audit.
+**None in progress.** `P1-TSK-022` completed 2026-09-08. **M1.5 closes, 3 of 3.**
+**Next: `P1-TSK-023`** — account recovery, opening M1.6.
 
 ### Just completed
+
+**`P1-TSK-022` — Actor-attributed audit** — `COMPLETE` (2026-09-08). **M1.5 closes, 3 of 3.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| `INV-AUD-01` holds for every Phase 1 privileged action | `AuditCompletenessTest` — emitted, or declared not to be with the owning task |
+| `enterSystem()` reduced to the platform acting, **each justified** | `SystemActorCallSitesAreEnumeratedTest` — two sites, a third fails the build |
+| An audit record per privileged action naming the real actor | `AuditNamesTheActorDatabaseTest` — asserted over the **rows**, not per action |
+
+### Six of the seven implementation clauses were already true
+
+Probed rather than assumed, which is what made the task worth doing: the interceptor establishes a
+scope per authenticated request (`P1-TSK-016`); **all thirteen** audit sites call
+`SecurityContext.require()` and **none** defaults; every writer takes the caller's `Connection`;
+immutability sits at `DB-PRIVILEGE` (`P0-TSK-022`); an unestablished actor is refused; fifteen
+actions are catalogued and reconciled three ways.
+
+Restating any of that would be duplication that drifts — the `P1-TSK-012` precedent. So the
+deliverable is the three clauses **nothing checked**, and each is an acceptance criterion in its own
+right.
+
+### The gap `P0-TSK-023` recorded against itself, closed
+
+`AuditableActionRegistryTest` reconciles the registry with the catalogue in three directions, and its
+own javadoc says what it cannot do: *"it cannot detect a privileged action that writes no audit
+record at all."*
+
+**That is the failure that matters**, because a registry agreeing with a catalogue while nothing
+emits half of it looks complete **from both sides** — and the Phase 15 completeness report would be
+checked against exactly that list. Two Phase 1 actions were silently unemitted.
+
+Now every action is held against production code: **emitted**, or **declared not to be** with the
+task that will emit it. *"Deliberately not built yet"* and *"somebody removed the audit call"* stop
+being indistinguishable, and an action that **stops** being emitted fails the build.
+
+**Five are declared unemitted**: `identity.IdentitySuspended` (`P1-TSK-028` owns the endpoint, and
+inventing one to give the action a caller would be a surface chosen to suit a test),
+`party.ProfileChanged` (no Phase 1 capability), and the three `outbox.*` actions already recorded as
+Phase 15 debt.
+
+### "Each is justified" was a claim about a set, and grep is not a control
+
+ADR-0021 called `enterSystem()` *"the greppable list of places Phase 1 must revisit"*. Grep is a
+thing somebody has to remember to run, and the site added in Phase 4 will not be in anybody's memory
+of this review.
+
+**Two sites survive, both on unauthenticated paths**, where naming a guessed identity would put an
+unproven claim in a permanent record:
+
+| Site | Why the platform is the honest answer |
+|---|---|
+| `RegistrationService.register` | The caller is unauthenticated; attributing to the Party it creates is circular and unavailable on the refusal path |
+| `AuthenticationService.attempt` | The **failure** branch — the login identifier may name nobody at all |
+
+The authentication justification existed **only as a code comment**; `SECURITY_ARCHITECTURE.md` now
+carries it.
+
+### The enumeration is at method granularity, and that gap is closed where it exists
+
+`AuthenticationService.attempt` holds **both** branches — success establishes
+`Actor(identityId, CUSTOMER)`, failure claims the platform — so it is enumerated once. Replacing the
+success branch with `enterSystem()` would change nothing the enumeration can see, while recording
+the platform as having logged somebody in.
+
+A separate assertion requires that method to still call the real-actor form. Proven: that mutation
+now fails.
+
+### The headline property was asserted per action and never over the trail
+
+Each earlier task asserted its own record. **Nothing asserted that no record written under an
+authenticated request names the platform** — a different claim, about the trail rather than one
+operation, and the one that fails when somebody adds an audit call in a hurry.
+
+Scoped by the requests' correlation identifiers so it can actually fail, and driven across **two
+aggregates**, because a sweep confined to sessions would prove the property for the code that
+happened to be written most carefully.
+
+**`GET /v1/sessions` is deliberately excluded, and that is stated rather than left as an omission**:
+listing your own sessions is not privileged and `SessionQueries` records the decision not to audit
+it. Asserting over an endpoint that writes nothing would make the sweep quietly smaller than it looks.
+
+### Which assertion is load-bearing was established by probing, not claimed
+
+The blank-target mutation is caught by **`AuditRecord.bounded` refusing construction**, not by the
+field assertions — verified, because the failure was `theSweepIsBroad` reporting a missing operation
+rather than a blank one. So those three assertions are recorded as **defence in depth**: they are
+what would catch a writer that stopped going through the domain type.
+
+**The correlation assertion is the one nothing else makes.** A record carrying an identifier that
+belongs to no flow satisfies every `NOT NULL` and every `CHECK`, and it is precisely the record an
+investigator cannot use — worse than an absent one, because a search returns a row and stops.
+
+**Eight mutations, all caught.** 842 hermetic tests, 384 database tests.
+
+### Previously
 
 **`P1-TSK-021` — Ownership checks in the domain** — `COMPLETE` (2026-09-08).
 **M1.5 is 2 of 3.**
@@ -2613,6 +2710,28 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Audit that names the actor (2026-09-08), `P1-TSK-022`:
+- **Six of seven implementation clauses were already true**, probed rather than assumed: a scope per
+  authenticated request, **thirteen** audit sites all calling `require()` with **none** defaulting,
+  every writer on the caller's connection, immutability at `DB-PRIVILEGE`, an unestablished actor
+  refused, fifteen actions catalogued
+- **`P0-TSK-023`'s recorded limit closed** — *"it cannot detect a privileged action that writes no
+  record at all"*, which is the failure that matters, because a registry agreeing with a catalogue
+  while nothing emits half of it looks complete **from both sides**. Every action is now emitted or
+  **declared not to be** with the owning task, so an action that *stops* being emitted fails the build
+- **`enterSystem()` is enumerated, not grepped** — two sites, both unauthenticated, a third fails the
+  build. The authentication justification existed only as a code comment and is now in
+  `SECURITY_ARCHITECTURE.md`
+- **Method granularity is a real gap and is closed where it exists**: `AuthenticationService.attempt`
+  holds both branches, so a separate assertion requires the success branch to still name the person
+- **The headline property is asserted over the rows, not per action** — nothing had asserted that
+  *no* record from an authenticated request names the platform, which is the claim that fails when
+  somebody adds an audit call in a hurry
+- **Which assertion is load-bearing was established by probing**: a blank target is refused by
+  `AuditRecord` at construction, so the field assertions are recorded as defence in depth; the
+  **correlation** assertion is the one nothing else makes, and a record joining to no flow satisfies
+  every constraint while being exactly the record an investigator cannot use
+
 Ownership, and the rule that holds it against the code (2026-09-08), `P1-TSK-021`:
 - **ADR-0031's second half**: permission asks *may an actor of this kind do this at all?* and cannot
   answer *may **this** actor do it to **this** resource?* — the boundary knows only an identifier
@@ -3679,29 +3798,29 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-022` — Actor-attributed audit.** **M1.5, 3 of 3 — the milestone's closing task.**
+**`P1-TSK-023` — Account recovery.** Opens **M1.6**, and it is the phase's highest-risk task.
 
-The phase's reason for existing. Phase 0 built the audit trail and recorded that **nothing writes to
-it**; `P1-TSK-006` gave it its first writer, and this is where every privileged Phase 1 action is
-checked against `INV-AUD-01` — actor, time, operation, target, reason, correlation and outcome.
+`DELIVERY_PLAN.md` §17 names recovery becoming the weakest link as a top Phase 1 risk, and
+`INV-IDN-06` states why: **recovery exists to bypass the credential**, so it is the classic
+account-takeover vector by construction. It is deliberately built last, against a working MFA,
+session and audit model — every one of which it must not be able to step around.
 
-**Its acceptance has two halves and the second is the harder one.** The first is coverage: an audit
-record per privileged action with all seven fields. The second is that *"the number of
-`enterSystem()` call sites is reduced to those that are genuinely the platform acting, and each is
-justified"* — and `SECURITY_ARCHITECTURE.md` already records that **registration's call site stays**,
-because the caller is unauthenticated and attributing the action to the Party it creates is circular
-and unavailable on the refusal path. So the deliverable is an audit of every call site with a stated
-answer, not a count reduced to zero.
+**Its acceptance is enumerated abuse cases, not a happy path.** A replayed token, an unverified
+channel, a recently changed channel, concurrent recovery and login, and recovery used to reach an
+operation requiring `MULTI_FACTOR`. `INV-IDN-05`'s guard already covers the last of those from the
+other direction: `MfaBypassPathsAreEnumeratedTest` lists recovery as a **recorded remainder**,
+because asserting absence over an unmapped route would pass vacuously. This is the task that has to
+come back and name it.
 
-**One dependency is unmet in fact rather than on paper.** `PHASE_1_PLAN.md` §7 lists
-`POST /v1/identities/{id}/suspension`, whose audit record this task is meant to write, and
-`P1-TSK-028` owns that endpoint. The task cannot audit an operation nothing performs — that is the
-sixth backlog defect `P1-TSK-020` recorded, arriving where it was predicted to.
+**The notification is an outbox event with no delivery adapter** — that is Phase 15's, and the
+broker adapter is already recorded debt whose trigger `P1-TSK-006` reached. So the recovery
+notification will be durable and unread, which is a bounded and stated position rather than a gap.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-08 | **`P1-TSK-022` complete - M1.5 closes, 3 of 3.** The phase's reason for existing: every privileged action recorded against the person who performed it. **Six of the seven implementation clauses were already true, and probing rather than assuming is what made the task worth doing** - the interceptor establishes a scope per authenticated request (`P1-TSK-016`), **all thirteen** audit sites call `SecurityContext.require()` and **none** defaults, every writer takes the caller's `Connection`, immutability sits at `DB-PRIVILEGE` (`P0-TSK-022`), an unestablished actor is refused, and fifteen actions are catalogued and reconciled three ways. Restating any of it would be duplication that drifts, which is the `P1-TSK-012` precedent, **so the deliverable is the three clauses nothing checked** - and each is an acceptance criterion in its own right. **First, the gap `P0-TSK-023` recorded against itself**: `AuditableActionRegistryTest`'s own javadoc says *“it cannot detect a privileged action that writes no audit record at all”*, and that is the failure that matters, because a registry agreeing with a catalogue while nothing emits half of it looks complete **from both sides** - and the Phase 15 completeness report would be checked against exactly that list. Two Phase 1 actions were silently unemitted. `AuditCompletenessTest` now holds every action against production code: **emitted**, or **declared not to be** with the task that will emit it, so *“deliberately not built yet”* and *“somebody removed the audit call”* stop being indistinguishable and an action that **stops** being emitted fails the build. Five are declared unemitted - `identity.IdentitySuspended` (`P1-TSK-028` owns the endpoint, and inventing one to give the action a caller would be a surface chosen to suit a test), `party.ProfileChanged`, and the three `outbox.*` actions already recorded as Phase 15 debt. **Second, *“each is justified”* was a claim about a set, and grep is not a control**: ADR-0021 called `enterSystem()` *“the greppable list of places Phase 1 must revisit”*, and grep is a thing somebody has to remember to run, while the site added in Phase 4 will not be in anybody's memory of this review. **Two sites survive, both on unauthenticated paths** - registration, where attributing to the Party it creates is circular and unavailable on the refusal path, and authentication's **failure branch**, where the login identifier may name nobody at all so there is nothing to attribute to. That second justification existed **only as a code comment**; `SECURITY_ARCHITECTURE.md` now carries it. **The enumeration is at method granularity, and the one place that matters is closed**: `AuthenticationService.attempt` holds both branches - success establishes `Actor(identityId, CUSTOMER)`, failure claims the platform - so it is enumerated once, and replacing the success branch with `enterSystem()` would change nothing the enumeration can see while recording the platform as having logged somebody in. A separate assertion requires the real-actor call to still be there, and that mutation now fails. **Third, the headline property was asserted per action and never over the trail**: each earlier task asserted its own record, and nothing asserted that **no** record written under an authenticated request names the platform - a different claim, about the trail rather than one operation, and the one that fails when somebody adds an audit call in a hurry. Scoped by the requests' correlation identifiers so it can actually fail, and driven across **two aggregates**, because a sweep confined to sessions would prove the property for the code that happened to be written most carefully. `GET /v1/sessions` is deliberately excluded and that is stated rather than left as an omission - listing your own sessions is not privileged and `SessionQueries` records the decision not to audit it, so asserting over an endpoint that writes nothing would make the sweep quietly smaller than it looks. **And which assertion is load-bearing was established by probing rather than claimed**: the blank-target mutation is caught by `AuditRecord.bounded` **refusing construction** - verified, because the failure reported a *missing* operation rather than a blank one - so the three field assertions are recorded as **defence in depth**, being what would catch a writer that stopped going through the domain type. **The correlation assertion is the one nothing else makes**: a record carrying an identifier that belongs to no flow satisfies every `NOT NULL` and every `CHECK`, and it is precisely the record an investigator cannot use - worse than an absent one, because a search returns a row and stops. **Eight mutations, all caught.** 842 hermetic tests, 384 database tests. |
 | 2026-09-08 | **`P1-TSK-021` complete - M1.5 is 2 of 3.** ADR-0031's ownership half: *may **this** actor do it to **this** resource?* - the question the boundary check cannot answer, because the boundary knows only an identifier out of the request and trusting it **is** the defect. **The stated acceptance was already met, and checking rather than assuming is the contribution**: `P1-TSK-016` put `identity_id = ?` in the **statement** for session listing and revocation, and `P1-TSK-017` resolved the MFA enrolment *from* the session's identity with its ownership test written in the strongest form - the attacker presents a **valid** code for the victim's enrolment. Probed rather than reasoned about: dropping the predicate fails **six** tests. Restating any of it would be duplication that drifts rather than coverage, which is the `P1-TSK-012` precedent. **So the deliverable is the part the task's own text names as missing**, and `INV-IDN-05` taught why one milestone earlier - *a list of tests is a snapshot*, and the operation added in Phase 4 will not be in it. `OwnershipIsScopedTest` holds the register **against the code**: every persistence method taking a resource identifier is classified `OWNER_SCOPED`, `AUTHORITATIVE_ID` or `NOT_OWNED`, and an unclassified one fails the build - the `MfaBypassPathsAreEnumeratedTest` shape applied to ownership. **Five correct statements look exactly like the defect, which is why the rule classifies rather than forbids**: `revoke`, `touch`, `confirm`, `consumeStep` and `supersede` all target a row by primary key with no owner predicate, and all five are safe because the identifier came from an owner-constrained read - the difference is **provenance**, and in SQL they are indistinguishable, so a rule that merely forbade the shape would have produced five false positives on its first run, which is ADR-0019's own reasoning for why a rule with an exemption list is a rule somebody turns off. **The rule found two things I had written down wrongly.** It located the `private` helper rather than the public method that delegates to it - the statement is in the helper, and a rule stopping at the public method is one that ordinary method extraction dodges - and it surfaced `OutboxRelay.markPublished`, a platform row with **no owner at all**, which produced the `NOT_OWNED` class written down as the escape hatch it is: a review artefact whose value is that labelling a customer-owned table with it requires somebody to type a sentence that is false. That also means the sweep covers **every** module rather than a list of the ones that matter today, so Phase 3's ledger identifiers surface on the day they are declared. **The first version of the rule survived its own mutation, and the reason is worth recording**: removing `AND identity_id = ?` from `revokeOwned` left the build green, because the rule searched the whole method body - which contains the comment *“identity_id = ? IS the ownership check”*. **A `contains` over source text matches prose**, so the rule was reporting a control it did not have, which is worse than none because it is believed (`P0-TST-008`). It reads **string literals only** now: SQL is only SQL if it is inside a literal. Third occurrence of this class in two tasks - *right about the property, wrong about where to look* - after `P1-TSK-020`'s permission-column assertion needed two corrections for exactly the same reason. **And one gap in my own rule was closed before it shipped**: an `AUTHORITATIVE_ID` entry rests entirely on the named read being owner-constrained, and the first version asserted only that the read **existed** - five of the seven entries rest on that class, so a read that quietly stopped being scoped would make every operation citing it unscoped at once while the register still read as a control. The named provenance must now itself carry an ownership predicate wherever it issues SQL, from a vocabulary of two that are each a real proof: `identity_id = ?` names the owner, and `token_hash = ?` is the session lookup, where presenting a bearer credential **is** the proof. **The one that cannot be checked is stated rather than papered over** - `SessionRotation` holds a proven `Session` object rather than reading one, so there is no statement to inspect, and checking it would be a taint question. **`party` owns no resource-scoped operation**, asserted rather than assumed, so the first one fails the build until it is classified. **ADR-0031's *“no build rule closes this”* is narrowed rather than withdrawn**: the rule forces classification and does not decide safety, and its three remaining limits are stated in the test - it cannot see that an owner-scoped statement binds the *right* owner, cannot verify an `AUTHORITATIVE_ID` claim, and is blind to an ownership decision that issues no SQL. **Eight mutations, all caught** - the predicate removal caught **twice**, by the build rule and by the behavioural suite, which is two controls blind in different directions rather than a duplication. **The completion gate then found the rule aimed at the wrong half of the defect**: the shape this repository has actually shipped is a method that takes an owner and **never uses it** - `P1-TSK-016`'s `SessionRevocation.revoke`, whose statement was `WHERE id = ? AND status = 'ACTIVE'`, so any caller could end any session while the audit record asserted an owner nobody had verified. The rule keyed on a *resource* identifier and could not see it, so a second assertion now requires a persistence method handed an `IdentityId` to **name the owner in its statement**. Probed before it was claimed: **twelve of thirteen** satisfy it, and the thirteenth is `lockIdentity`, whose statement is against `identity.identity` where `id = ?` *is* the owner - a structural fact about the schema, so it is stated as part of the rule rather than carried as an exemption. **It also covers what the first half structurally cannot**: `findLiveFor` takes no resource identifier, so nothing would have noticed it losing its scope, and that is a **bulk disclosure** - every session of every customer rather than one row - caught by the build rule and by the behavioural suite. **The coverage guard had deviated from its four siblings**, carrying a bare `isNotEmpty()` where every other rule suite asserts equality against `ProductionModules.onClasspathWithProductionClasses()`: set equality on the register happens to protect `identity` and `platform`, and **`party` was protected by nothing** - `partyHasNothingToScope` would pass vacuously over a sweep that never reached it, which is the `P0-TSK-008` finding with the corrected idiom sitting in four files alongside. **And a latent defect in my own helper was exposed by widening its input**: running `statementOf` over every persistence method instead of two small ones **overflowed the stack**, because the obvious string-literal pattern backtracks catastrophically - replaced with the unrolled-loop form. A regex correct on the input its author happened to try is the same class of defect as a rule correct on the module its author was thinking of, and it would have arrived as a mysterious CI failure the first time somebody wrote a long method. **Ten mutations, all caught** - two added by the gate. 834 hermetic tests, 381 database tests. |
 | 2026-09-07 | **`P1-TSK-020` complete - M1.5 opens, 1 of 3.** Roles, permissions and the boundary check: every handler in `com.finapp` declares an authorization rule, and **one that declares nothing is refused** - ADR-0031's *“a rule's absence is never a grant”* as a mechanism rather than a sentence (`INV-IDN-04`). **The acceptance criterion is asserted in its strongest form, and that choice is the first decision worth recording**: the obvious version presents *no* session to the undeclared endpoint, and it would pass against an implementation that merely required authentication and had no deny-by-default rule at all - the weak-test shape `P1-TSK-017`'s gate met with the MFA ownership case. Driven with a **valid** session instead, because the property is about the *declaration* and the answer must still be no. **Enforced twice, and neither replaces the other**: the interceptor refuses at run time because ADR-0031 says *refused*, and `EveryEndpointDeclaresARuleTest` fails the **build**, because a deployment defect discovered by a customer receiving a 403 has been discovered too late. They are blind in different directions - a static sweep cannot see a handler registered at run time, and a runtime check cannot fail a build - which is ADR-0020's argument for keeping the secret scanner beside the configuration rule, in both directions. The routes come from `RequestMappingHandlerMapping`, which is what actually dispatches, rather than from a list: the stale-list defect this repository has met in CI's task list, in a coverage guard and in a privilege check, closed the way it has been closed each time. **`P1-TSK-016` had recorded that an undeclared endpoint failed closed *by accident*, and that is what this replaces** - it threw at `SecurityContext.require()` deep inside the handler, which is a **500 standing in for a security decision**: our fault reported for their request, which `ERROR_CONTRACT.md` §3 forbids; retryable for ever by a client; and dependent on the handler happening to need an actor, so one that never touched `SecurityContext` was simply reachable. Now `403` with an **error**-level log naming the handler, because it is a deployment defect and only an operator can fix it. **Permissions are resolved per request and never stamped on the session** - a role carried on a session survives its own revocation until that session expires, and *“remove their access now”* becomes a promise the architecture cannot keep, which is `INV-IDN-03`'s reasoning applied to authorization; the revocation test presents the **same** session token across the revoke, since issuing a new one would prove only that a fresh session reads fresh roles. **A denial is audited, and the ordering is load-bearing**: a *permitted* privileged action is audited by the operation itself while a *refused* one has no operation to do it, so without the record a probe for privileged endpoints is indistinguishable from silence - `INV-AUD-03`'s “tested from the attacker's direction” as a durable artefact rather than as a test - and the check runs **after** `SecurityContext` is established, because an audit record needs an actor and checking first would attribute the refusal to the platform, which is the wrong party permanently (`P0-TSK-032`, `INV-HIST-03`). **Roles are marked revoked, never deleted** - the application role holds no `DELETE` here - and assignment is `ON CONFLICT DO NOTHING` against a partial unique index, so the row count is the outcome and ten instances granting the same role produce one assignment. **`api.Forbidden`, deliberately not a distinct code**, which is the opposite of what `P1-TSK-018` argued for `identity.AssuranceRequired`: the distinction is actionability, since *step up and retry* is something a client can do and *you hold no role* is not, so a special code would advertise a remedy that does not exist. **Sixth backlog defect of this class in Phase 1, and it is the one that leaves the annotation without a production caller**: `PHASE_1_PLAN.md` §7 lists `POST /v1/identities/{id}/suspension` and `POST /v1/identities/{id}/roles` - the only two endpoints in the phase that would carry `@RequiresPermission` - and **no task owns either**, while `P1-TSK-022` writes the audit record for a suspension nothing builds. Recorded and carried as **`P1-TSK-028`** rather than invented here, because an admin endpoint added to give the annotation something to do would be a **security surface chosen to suit a test**, which is `P1-TSK-018`'s recorded reasoning for shipping `@RequiresAssurance` with a probe endpoint. **The rule immediately refused eight of our own endpoints and that was the right answer** - six test probe controllers and the two unauthenticated production endpoints; **exempting test sources was refused**, because a probe controller *is* a mapped endpoint and a rule that stops at the test boundary is one whose coverage nobody can state. **One mutation was a no-op, and re-aiming it is the finding**: `RoleName.permissions()` returning *all* permissions **survived**, correctly, because there is exactly one role and it already holds both - not a gap in the test but a mutation that changes nothing. Re-aimed at the role granting **nothing**, it is caught, and the limit is stated rather than papered over: the role→permission mapping cannot be meaningfully mutated until a second role exists. **Seven mutations, all caught.** **The completion gate then found an endpoint that reads as protected and is public**, and it is the most serious finding of the task: a handler declaring **both** `@Unauthenticated` and `@RequiresPermission(ROLE_ASSIGN)` was answered **200, with no session at all**, and **both** guards passed it - the interceptor returns early on `@Unauthenticated` before either check, and the build guard is satisfied by *any one* declaration being present. **The harm is not that it is public, it is that it reads as protected**: a reviewer grepping for `@RequiresPermission` finds it and stops looking, which is `P1-TSK-016`'s `SessionRevocation.revoke` finding in a new place - a declaration asserting a control nobody applies is **worse than an absent one**, because the absent one invites the question. And it is one copy-paste away, since `P1-TSK-028` adds the only two endpoints carrying `@RequiresPermission` in a codebase where two production endpoints already carry `@Unauthenticated`. **Refused rather than resolved to the stricter reading** - silently honouring the protective annotation would be safe *and* would hide the mistake for ever, which is how the next contradiction survives review - and closed in **both** places, because neither guard caught it. **A migration comment named a test that does not exist, fifth occurrence this phase**: `V010` says *“RoleAssignmentMigrationTest fails the build if they drift”* and no such test existed, after `V005`'s enum claim, `AuthenticationRequest`'s bounds claim, `RequiresSession`'s fail-closed claim and `secretsAreWrapped`'s exemption - the drift being a second `RoleName` without a matching constraint, which is a value the domain produces and the database refuses, failing at the **last write** on the table that decides who may do anything privileged. **`RoleName` had no test at all**, which for the type holding the platform's entire authorization policy is the wrong number - `AssuranceLevel`'s finding repeated. **Two dead methods, disposed of differently, which is the `P1-TSK-013` shape**: both enums shipped a `sqlValueList()` with zero callers, and `RoleName`'s is **kept and made load-bearing** by the migration test that is its consumer while `PermissionName`'s is **deleted** - a permission is never a column under ADR-0031, so there is no constraint it could generate and a helper producing SQL for a column that does not exist implies permissions are persisted somewhere. **`assign`'s concurrency claim had no test**, and what would go wrong is not untidiness: two live rows for one identity and role make revocation **partial**, because `revoke` is a conditional `UPDATE` whose row count is the outcome - it would report success having revoked one of them and the identity would keep the role, so *“remove their access now”* would return success and be false. Ten instances, ten connections, with the crash half asserted too. **And one test was right about the property and wrong about where to look, twice**: *“there is no permission column”* first read the whole file, which fails on the migration's own comments, then the comment-stripped file, which still fails on the `COMMENT ON TABLE` body - a SQL statement rather than a comment. It reads the `CREATE TABLE` block now, with a vacuity guard, because a `doesNotContain` over an empty extraction is the one failure a negative assertion cannot report on its own. **Thirteen mutations, all caught** - six added by the gate. 825 hermetic tests, 381 database tests. |
 | 2026-09-07 | **`P1-TSK-019` complete - M1.4 closes, 3 of 3.** `P1-TST-003`: one named test per enumerated path to a session, so a failure says **which** route opened rather than *"MFA is bypassable"*. **The probe found a real bypass, and it is the milestone's most serious defect.** Driven against a running instance rather than reasoned about: a `PASSWORD` session could `POST /v1/me/mfa` and receive **201 with a new attacker-controlled secret**, and confirming it produced an unhandled `IdentityStorageException` - a **500**. Three things were wrong in increasing order of seriousness: a 500 for a caller's action, which `ERROR_CONTRACT.md` §3 forbids and which a client may retry for ever; the refusal came from a **partial unique index** rather than from a check, because `MfaEnrolmentService.begin` never looked for an existing factor; and **nothing had ever decided that replacing a confirmed factor should be protected** - remove that index for any reason and a stolen password becomes enough to **swap somebody's authenticator**, which is `INV-IDN-05`'s bypass in its purest form guarded by a constraint that exists for a different purpose. **The rule now: replacing a confirmed factor requires that factor**, while adding a *first* one does not, because it cannot - you cannot demand a second factor to enrol your first. Refused at `begin` rather than at `confirm`, so the attacker never receives a secret and a legitimate customer is told at the operation they initiated rather than after copying a QR code. **The check is in the domain rather than in `@RequiresAssurance`**, because the requirement is conditional on whether a factor exists and an annotation is static per handler - declaring it there would forbid first enrolment outright. **A list of tests is a snapshot; the guard is what survives Phase 4.** `INV-IDN-05` says *"every real bypass is a path nobody enumerated"*, so five tests satisfy its letter and not its point - the path added next phase will not be among them and nobody will remember. `MfaBypassPathsAreEnumeratedTest` holds the enumeration **against the code**: every production call site that creates a session or changes its assurance must be named with the reason it is not a bypass, and a new one fails the build. That is the `P0-TSK-037` shape applied to routes instead of provider failure modes. **What it says today is worth reading twice**: nothing in production calls `Session.issue`, so the only path that creates a session row is `SessionRotation`, reached only from `MfaChallenge.elevate`, which refuses without a verified code - **the only way a session currently comes into existence is a proven second factor**. That is an accident of sequencing rather than a design goal, and exactly why the guard is written now: `P1-TSK-027` will add the second path and must come here and say so. **The paths**: an older `PASSWORD` session (new test - assurance is a property of a *session*, never of an identity, so proving a factor once must not elevate a session an attacker took with a stolen password); a refresh (new test - five requests move the idle bound and never the level, because a refresh that quietly re-issued at a higher level would be a bypass requiring no factor and would look like ordinary traffic); re-enrolment (the defect above); recovery (**does not exist** - M1.6, and asserting absence over an unmapped route would pass vacuously, so it is a recorded remainder rather than a skipped test); and a direct call to a session-issuing endpoint. **Three properties from `P1-TSK-018` are cited rather than duplicated** - a `PENDING` factor satisfying nothing, replay refusal, and the `MULTI_FACTOR` requirement - because `P1-TSK-012` established that a second copy of a working assertion is duplication that drifts. **The level-not-a-boolean criterion needed a value with no producer**: `STRONG` has no route that reaches it, and that is not an obstacle, because what is under test is the **mechanism** being a level (ADR-0030) - so the test constructs one directly, and `assuranceIsALevelAndNotABoolean` is the assertion that cannot be written against `mfaCompleted`. A mutation turning `atLeast` into equality is caught by it. **One test's premise was superseded and the replacement is stricter**: `anActiveFactorSurvivesANewEnrolment` asserted that starting a new enrolment leaves a confirmed factor untouched, and that behaviour is now unreachable at `PASSWORD` because the operation is refused entirely - rewritten to assert both halves, with a positive control at `MULTI_FACTOR` proving the rule is conditional rather than a refusal of every replacement, and that the existing factor stays `ACTIVE` so a customer setting up a new phone keeps a working second factor until they confirm the new one. **Six mutations, all caught** - including a new un-enumerated session path, which is the guard's whole purpose. **The completion gate then found two claims and one gap in the guard itself**: the refused replacement writes an audit record that nothing asserted - the only durable trace of an attack, since a refusal is otherwise indistinguishable from a customer tapping the wrong button, and it must SURVIVE, which is the ordering `P1-TSK-010` had to get right by returning its refusal rather than throwing it; and the guard checked that origin **types** exist rather than that the **methods** do, so a renamed store method would leave the type resolving perfectly while the origin silently matched nothing and every path through it became invisible - a guard reporting coverage it does not have, which is worse than none because it is believed. **Nine mutations, all caught.** 812 hermetic tests, 370 database tests. |
