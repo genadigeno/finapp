@@ -105,6 +105,7 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
             return true;
         }
         HandlerMethod handlerMethod = (HandlerMethod) handler;
+        refuseIfDeclarationIsContradictory(handlerMethod);
         if (annotation(handlerMethod, Unauthenticated.class) != null) {
             return true;
         }
@@ -258,6 +259,51 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
     private static boolean governed(Object handler) {
         return handler instanceof HandlerMethod handlerMethod
                 && handlerMethod.getBeanType().getName().startsWith("com.finapp.");
+    }
+
+    /**
+     * Refuses a handler that declares {@link Unauthenticated} <em>and</em> a protective rule.
+     *
+     * <h2>The completion gate found this served, and the shape is the reason it matters</h2>
+     *
+     * <p>A handler carrying both {@code @Unauthenticated} and
+     * {@code @RequiresPermission(ROLE_ASSIGN)} was answered <strong>200 with no session at all</strong>
+     * — because the {@code @Unauthenticated} branch returns before either check, and the build guard
+     * is satisfied by <em>any one</em> declaration being present.
+     *
+     * <p><strong>It reads as protected.</strong> A reviewer grepping for {@code @RequiresPermission}
+     * finds it and concludes the endpoint is behind an admin role. That is
+     * {@code P1-TSK-016}'s {@code SessionRevocation.revoke} finding in a new place: worse than an
+     * absent check, because the declaration asserts a control nobody is applying. And it is not
+     * hypothetical — {@code P1-TSK-028} adds the only two endpoints carrying
+     * {@code @RequiresPermission}, in a codebase where two production endpoints already carry
+     * {@code @Unauthenticated}. One copy-paste is the whole distance.
+     *
+     * <h2>Refused rather than resolved to the stricter reading</h2>
+     *
+     * <p>Silently honouring the protective annotation would be safe <em>and</em> would hide the
+     * mistake for ever, which is how the next contradiction survives review. A contradiction is a
+     * deployment defect, so it is refused and logged the way an undeclared handler is: exactly one
+     * rule per handler, and being public is a decision somebody made rather than one they left
+     * standing beside its opposite.
+     */
+    private static void refuseIfDeclarationIsContradictory(HandlerMethod handlerMethod) {
+        if (annotation(handlerMethod, Unauthenticated.class) == null) {
+            return;
+        }
+        if (annotation(handlerMethod, RequiresSession.class) == null
+                && annotation(handlerMethod, RequiresAssurance.class) == null
+                && annotation(handlerMethod, RequiresPermission.class) == null) {
+            return;
+        }
+        LOGGER.error(
+                "Refusing {}: it declares @Unauthenticated AND a protective rule. A handler declares"
+                    + " exactly one rule; a contradiction is refused rather than resolved, because"
+                    + " resolving it silently would hide the defect while the endpoint reads as"
+                    + " protected.",
+                handlerMethod.getBeanType().getName() + "." + handlerMethod.getMethod().getName());
+        throw new ApiException(
+                PlatformErrorCode.FORBIDDEN, "A handler declared contradictory authorization rules");
     }
 
     /**

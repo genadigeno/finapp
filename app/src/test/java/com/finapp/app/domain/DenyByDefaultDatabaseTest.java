@@ -85,6 +85,17 @@ class DenyByDefaultDatabaseTest {
         String privileged() {
             return "reached";
         }
+
+        /**
+         * <strong>Declares two rules, and they contradict.</strong> Found served by the completion
+         * gate.
+         */
+        @com.finapp.app.session.Unauthenticated
+        @com.finapp.app.session.RequiresPermission(PermissionName.ROLE_ASSIGN)
+        @GetMapping("/probe/contradictory")
+        String contradictory() {
+            return "reached";
+        }
     }
 
     private static final Clock CLOCK = Clock.system(ZoneOffset.UTC);
@@ -116,6 +127,27 @@ class DenyByDefaultDatabaseTest {
 
         // And with no session at all, so neither route reaches it.
         assertThat(get("/probe/undeclared", null).statusCode()).isEqualTo(403);
+    }
+
+    @Test
+    @DisplayName("a handler declaring @Unauthenticated AND a protective rule is refused")
+    void aContradictoryDeclarationIsRefused() throws Exception {
+        // The completion gate found this SERVED - 200, with no session at all - because the
+        // @Unauthenticated branch returns before both checks and the build guard is satisfied by ANY
+        // ONE declaration being present.
+        //
+        // The harm is not that it is public. It is that it READS as protected: a reviewer grepping
+        // for @RequiresPermission finds it and stops looking. P1-TSK-016's unowned revoke, in a new
+        // place - a declaration asserting a control nobody applies is worse than an absent one.
+        assertThat(get("/probe/contradictory", null).statusCode())
+                .as("a handler declares exactly one rule; a contradiction is refused rather than"
+                        + " silently resolved to the stricter reading, which would hide the defect")
+                .isEqualTo(403);
+
+        // And with a valid session, so it is not the missing session doing the refusing.
+        IdentityId identity = givenAnIdentity();
+        assertThat(get("/probe/contradictory", givenASessionFor(identity)).statusCode())
+                .isEqualTo(403);
     }
 
     @Test

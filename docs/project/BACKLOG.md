@@ -1890,7 +1890,19 @@ repository exists to prevent.
   meaningfully mutated — the first mutation attempted (`permissions()` returns *all* permissions)
   was a **no-op** and was re-aimed at the role granting *nothing*. It becomes testable at the
   second role.
-- Seven mutations, all caught.
+- **The completion gate found an endpoint that reads as protected and is public**: a handler
+  declaring **both** `@Unauthenticated` and `@RequiresPermission` was answered `200` with no session,
+  and **both** guards passed it. Worse than an absent check, because the declaration asserts a
+  control nobody applies (`P1-TSK-016`'s unowned-revoke finding, in a new place). **Refused rather
+  than resolved to the stricter reading**, which would have hidden it, and closed in both places.
+- **`V010` named a migration test that did not exist** — fifth occurrence this phase. Written, and
+  `RoleName` gained the first test it has ever had.
+- **Two dead `sqlValueList()` methods, disposed of differently** — `RoleName`'s kept and made
+  load-bearing by the migration test, `PermissionName`'s deleted, because a permission is never a
+  column under ADR-0031. The `P1-TSK-013` shape.
+- **`assign`'s concurrency claim had no test.** Two live rows would make revocation **partial** —
+  reporting success while the identity keeps the role.
+- **Thirteen mutations, all caught** — six added by the gate.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 **P1-TSK-028 — The two administrative endpoints** — `TODO`

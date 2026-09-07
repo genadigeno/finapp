@@ -93,6 +93,26 @@ class EveryEndpointDeclaresARuleTest {
     }
 
     @Test
+    @DisplayName("no handler declares @Unauthenticated AND a protective rule")
+    void noHandlerContradictsItself() {
+        // The completion gate found this SERVED: a handler carrying both @Unauthenticated and
+        // @RequiresPermission answered 200 with no session, because the interceptor returns early on
+        // @Unauthenticated and `everyHandlerDeclaresSomething` is satisfied by ANY ONE declaration.
+        //
+        // The endpoint READS as protected, which is the worst shape available - a reviewer grepping
+        // for @RequiresPermission finds it and concludes it is behind an admin role. Same finding as
+        // P1-TSK-016's unowned revoke: the declaration asserts a control nobody applies.
+        //
+        // Enforced here as well as at run time for the same reason the rule itself is: a deployment
+        // defect found by a customer receiving a 403 has been found too late.
+        assertThat(contradictoryHandlers())
+                .as("a handler declares exactly ONE rule. @Unauthenticated beside a protective"
+                        + " annotation is a contradiction, and it is refused rather than resolved -"
+                        + " resolving it silently would hide the defect")
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("the vocabulary is closed: every declaration the interceptor honours is listed")
     void theVocabularyMatchesTheInterceptor() {
         // An annotation the interceptor accepts but this guard does not know would let an endpoint
@@ -128,6 +148,25 @@ class EveryEndpointDeclaresARuleTest {
             }
         }
         return undeclared;
+    }
+
+    private TreeSet<String> contradictoryHandlers() {
+        TreeSet<String> contradictory = new TreeSet<>();
+        for (HandlerMethod handler : mappings.getHandlerMethods().values()) {
+            if (!handler.getBeanType().getName().startsWith("com.finapp.")) {
+                continue;
+            }
+            boolean isPublic = declares(handler, Unauthenticated.class);
+            boolean isProtected =
+                    declares(handler, RequiresSession.class)
+                            || declares(handler, RequiresAssurance.class)
+                            || declares(handler, RequiresPermission.class);
+            if (isPublic && isProtected) {
+                contradictory.add(
+                        handler.getBeanType().getName() + "." + handler.getMethod().getName());
+            }
+        }
+        return contradictory;
     }
 
     private static boolean declares(HandlerMethod handler, Class<? extends Annotation> annotation) {

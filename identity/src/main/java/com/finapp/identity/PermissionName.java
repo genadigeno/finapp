@@ -1,8 +1,5 @@
 package com.finapp.identity;
 
-import java.util.Arrays;
-import java.util.stream.Collectors;
-
 /**
  * What an actor may do (`P1-TSK-020`, ADR-0031).
  *
@@ -14,8 +11,16 @@ import java.util.stream.Collectors;
  * exist.
  *
  * <p>`PHASE_1_PLAN.md` §7 marks both endpoints `session, admin role`. **Neither endpoint exists**,
- * and no backlog task owns them - recorded rather than absorbed. The permissions exist because the
- * ACTIONS do, and because a check with no vocabulary cannot be tested at all.
+ * and no backlog task owns them - recorded rather than absorbed as `P1-TSK-028`. The permissions
+ * exist because the ACTIONS do, and because a check with no vocabulary cannot be tested at all.
+ *
+ * <h2>There is deliberately no `sqlValueList()`</h2>
+ *
+ * <p>{@link RoleName} has one because a `CHECK` constraint persists a role. **A permission is never
+ * a column**: ADR-0031 puts the role-to-permission mapping in code, so there is no constraint this
+ * could generate and there will not be one. This enum shipped with the method, and the completion
+ * gate removed it as dead - a helper that produces a SQL fragment for a column that does not exist
+ * implies permissions are persisted somewhere, which is the opposite of the decision.
  */
 public enum PermissionName {
 
@@ -34,11 +39,5 @@ public enum PermissionName {
      * holding it can give themselves any other, so an audit record naming the actor is the only
      * thing that makes the escalation visible afterwards.
      */
-    ROLE_ASSIGN;
-
-    public static String sqlValueList() {
-        return Arrays.stream(values())
-                .map(value -> "'" + value.name() + "'")
-                .collect(Collectors.joining(", "));
-    }
+    ROLE_ASSIGN
 }
