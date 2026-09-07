@@ -101,8 +101,8 @@ class AuditNamesTheActorDatabaseTest {
     }
 
     @Test
-    @DisplayName("every record carries the INV-AUD-01 fields, and reason where the registry needs it")
-    void everyRecordCarriesTheSevenFields() throws Exception {
+    @DisplayName("every record carries the INV-AUD-01 fields, and joins to the request that caused it")
+    void everyRecordCarriesTheAuditFields() throws Exception {
         IdentityId identity = givenAnIdentity();
         List<String> correlations = whenTheyUseTheirAccount(identity);
 
@@ -122,6 +122,17 @@ class AuditNamesTheActorDatabaseTest {
         // record an investigator cannot use: INV-AUD-01 asks for correlation so the trail joins to
         // the request, and an identifier joining to nothing is worse than absent because a search
         // returns one row and stops.
+        //
+        // REASON IS DELIBERATELY NOT ASSERTED HERE, and the first version of this test claimed it
+        // was - the display name said "and reason where the registry needs it" while nothing looked
+        // at the column. The sixth occurrence of that pattern this phase, found by the completion
+        // gate. Two things make the claim unassertable over this sweep rather than merely missing:
+        // AuditRecord's constructor REFUSES a record whose action requires a reason and has none, so
+        // one cannot reach the table (AuditRecordTest covers that); and the only two actions that
+        // require one - IdentitySuspended and RoleAssigned - have no production caller in Phase 1,
+        // the first because P1-TSK-028 owns its endpoint and the second because nothing calls
+        // Authorization.assign outside tests. Saying so is better than an assertion that would pass
+        // over an empty set.
         assertThat(written)
                 .allSatisfy(
                         row -> {

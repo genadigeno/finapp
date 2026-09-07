@@ -2002,7 +2002,13 @@ repository exists to prevent.
 - **The enumeration is at method granularity**, and the one place that matters is closed:
   `AuthenticationService.attempt` holds both branches, so a separate assertion requires the success
   branch to still establish a real actor.
-- Eight mutations, all caught.
+- **The gate found a claim my own test did not support** — its display name promised *"reason where
+  the registry needs it"* and nothing looked at the column. Sixth occurrence this phase. The claim is
+  **unassertable** over this sweep: `AuditRecord` refuses such a record at construction, and the two
+  actions requiring a reason have no production caller in Phase 1.
+- **The coverage guard had deviated from its siblings again** — `P1-TSK-021`'s gate found the same
+  one task earlier. Closed in both suites; `ProductionModules.of` widened rather than duplicated.
+- **Ten mutations, all caught** — two added by the gate.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 ## P1-EPIC-06 — Account Recovery

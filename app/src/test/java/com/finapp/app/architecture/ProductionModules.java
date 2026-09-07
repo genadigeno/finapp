@@ -43,7 +43,12 @@ public final class ProductionModules {
      * The module a class belongs to — the segment after {@code com.finapp} — or {@code null} if
      * it is not one of ours.
      */
-    static String of(JavaClass javaClass) {
+    /**
+     * Public since `P1-TSK-022`: the audit rule suites live in {@code com.finapp.app.audit} and need
+     * the same derivation. Duplicating it there would be exactly the drift this helper exists to
+     * prevent, and its sibling {@link #onClasspathWithProductionClasses()} was already public.
+     */
+    public static String of(JavaClass javaClass) {
         String packageName = javaClass.getPackageName();
         if (!packageName.startsWith(ROOT)) {
             return null;

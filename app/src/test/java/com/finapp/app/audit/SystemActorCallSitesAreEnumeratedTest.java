@@ -130,6 +130,27 @@ class SystemActorCallSitesAreEnumeratedTest {
     }
 
     @Test
+    @DisplayName("every module with production code is within reach of this rule")
+    void everyModuleWithProductionCodeIsAnalysed() {
+        java.util.Set<String> analysed =
+                productionClasses().stream()
+                        .map(com.finapp.app.architecture.ProductionModules::of)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+        // The sibling idiom, and it is here because P1-TSK-021's completion gate found this suite's
+        // predecessor carrying a bare isNotEmpty() - the P0-TSK-008 finding, where a rule that stops
+        // reaching a module reports safety it never checked. Deviating from the idiom four other
+        // rule suites already use is what hid secretsAreWrapped's inversion in the first place.
+        assertThat(analysed)
+                .as("every module with production classes must be within reach, or an action"
+                        + " declared or emitted there is simply invisible to this rule")
+                .containsAll(
+                        com.finapp.app.architecture.ProductionModules
+                                .onClasspathWithProductionClasses());
+    }
+
+    @Test
     @DisplayName("the guard is not vacuous: it sees production code and finds the sites")
     void theGuardHasTeeth() {
         assertThat(productionClasses())
