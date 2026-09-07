@@ -40,20 +40,31 @@ public class MfaEnrolmentApplicationService {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
     }
 
-    /** Begins an enrolment and renders the one response that carries the secret. */
-    public MfaEnrolmentStarted begin(Session current) {
+    /**
+     * Begins an enrolment and renders the one response that carries the secret.
+     *
+     * @return empty when a confirmed factor already exists and this session is not assured enough
+     *     to replace it — `P1-TSK-019`'s finding
+     */
+    public java.util.Optional<MfaEnrolmentStarted> begin(Session current) {
         Objects.requireNonNull(current, "current must not be null");
 
-        MfaEnrolmentService.Started started =
+        java.util.Optional<MfaEnrolmentService.Started> started =
                 inATransaction(
-                        unitOfWork -> enrolments.begin(unitOfWork, current.identityId()));
+                        unitOfWork ->
+                                enrolments.begin(
+                                        unitOfWork, current.identityId(), current.assurance()));
 
         // The one moment the secret leaves the server, and it leaves inside the URI - which is
         // what a QR code is. There is no read path that returns it afterwards.
-        return new MfaEnrolmentStarted(
-                provisioningUri(started.secret().expose(), current, started.parameters()),
-                started.parameters().digits(),
-                started.parameters().periodSeconds());
+        return Objects.requireNonNull(started, "the transaction returned no outcome")
+                .map(
+                        result ->
+                                new MfaEnrolmentStarted(
+                                        provisioningUri(
+                                                result.secret().expose(), current, result.parameters()),
+                                        result.parameters().digits(),
+                                        result.parameters().periodSeconds()));
     }
 
     /** Confirms it. False for every reason, so none of them is distinguishable. */

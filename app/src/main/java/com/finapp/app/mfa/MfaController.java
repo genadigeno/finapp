@@ -63,7 +63,17 @@ public class MfaController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public MfaEnrolmentStarted beginMfaEnrolment(HttpServletRequest request) {
-        return enrolments.begin(current(request));
+        return enrolments
+                .begin(current(request))
+                .orElseThrow(
+                        () ->
+                                // Actionable, and that is why it is not the uniform refusal the
+                                // challenge uses: the customer CAN proceed, by proving the factor
+                                // they already have. Telling them so discloses nothing - they hold a
+                                // proven session for their own account and already know it exists.
+                                new ApiException(
+                                        com.finapp.identity.IdentityErrorCode.ASSURANCE_REQUIRED,
+                                        "Replacing a confirmed second factor requires it"));
     }
 
     /**

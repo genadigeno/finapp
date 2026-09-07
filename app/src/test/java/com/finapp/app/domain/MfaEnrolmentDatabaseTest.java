@@ -2,6 +2,7 @@ package com.finapp.app.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.JdbcMfaEnrolmentStore;
 import com.finapp.identity.MfaEnrolment;
@@ -70,7 +71,7 @@ class MfaEnrolmentDatabaseTest {
     void aStartedEnrolmentIsNotUsable() throws Exception {
         IdentityId identity = givenAnIdentity();
 
-        inAFlow(app -> service().begin(app, identity));
+        inAFlow(app -> service().begin(app, identity, AssuranceLevel.PASSWORD).orElseThrow());
 
         try (Connection app = DatabaseRoles.application()) {
             assertThat(enrolments.findPending(app, identity, MfaFactorType.TOTP))
@@ -321,13 +322,36 @@ class MfaEnrolmentDatabaseTest {
         Sensitive<String> secret = beginAndCaptureSecret(identity);
         inAFlow(app -> service().confirm(app, identity, codeFor(secret)));
 
-        inAFlow(app -> service().begin(app, identity));
+        // The rule changed under this test, and the new one is STRICTER. `P1-TSK-019` found that a
+        // PASSWORD session could begin a replacement enrolment with an attacker-controlled secret;
+        // it is now refused outright, so the factor is not merely undisturbed - the operation does
+        // not happen.
+        boolean[] refused = {true};
+        inAFlow(
+                app ->
+                        refused[0] =
+                                service()
+                                        .begin(app, identity, AssuranceLevel.PASSWORD)
+                                        .isEmpty());
+        assertThat(refused[0])
+                .as("replacing a confirmed factor requires that factor (INV-IDN-05)")
+                .isTrue();
+
+        // And at MULTI_FACTOR it proceeds, with the existing factor STILL ACTIVE - a customer
+        // setting up a new phone keeps a working second factor until they confirm the new one.
+        inAFlow(
+                app ->
+                        assertThat(service().begin(app, identity, AssuranceLevel.MULTI_FACTOR))
+                                .as("the positive control: the rule is conditional, not a refusal"
+                                        + " of every replacement")
+                                .isPresent());
 
         try (Connection app = DatabaseRoles.application()) {
-            // If starting an enrolment discarded the ACTIVE factor, anyone who reached this
-            // endpoint could disable somebody's second factor without proving anything at all.
             assertThat(enrolments.findActive(app, identity, MfaFactorType.TOTP))
                     .as("a confirmed factor is not removed by beginning a new enrolment")
+                    .isPresent();
+            assertThat(enrolments.findPending(app, identity, MfaFactorType.TOTP))
+                    .as("and the replacement is pending beside it, usable by neither until confirmed")
                     .isPresent();
         }
     }
@@ -353,7 +377,7 @@ class MfaEnrolmentDatabaseTest {
 
     private Sensitive<String> beginAndCaptureSecret(IdentityId identity) throws SQLException {
         Captured captured = new Captured();
-        inAFlow(app -> captured.secret = service().begin(app, identity).secret());
+        inAFlow(app -> captured.secret = service().begin(app, identity, AssuranceLevel.PASSWORD).orElseThrow().secret());
         return captured.secret;
     }
 

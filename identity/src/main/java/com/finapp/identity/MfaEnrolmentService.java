@@ -86,12 +86,40 @@ public final class MfaEnrolmentService {
      * would otherwise hold a secret they can neither confirm nor remove. <strong>An ACTIVE factor is
      * untouched</strong> — discarding one here would let anyone with a session disable somebody's
      * second factor without proving anything.
+     *
+     * @param currentAssurance the level of the session asking. <strong>Replacing a confirmed factor
+     *     requires {@code MULTI_FACTOR}</strong>; adding a first one does not, because it cannot
+     * @return the started enrolment, or empty when a factor already exists and the caller is not
+     *     assured enough to replace it
      */
-    public Started begin(Connection unitOfWork, IdentityId identityId) {
+    public Optional<Started> begin(
+            Connection unitOfWork, IdentityId identityId, AssuranceLevel currentAssurance) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(identityId, "identityId must not be null");
+        Objects.requireNonNull(currentAssurance, "currentAssurance must not be null");
 
         Instant at = Instant.now(clock);
+
+        // REPLACING a confirmed factor requires the confirmed factor. Adding a FIRST one does not,
+        // because it cannot: you cannot demand a second factor to add your first.
+        //
+        // Found by `P1-TSK-019`'s probe, and it was a real defect. Before this check, an attacker
+        // holding a stolen password could begin a second enrolment with a secret THEY control - and
+        // the only thing that stopped them was the partial unique index refusing a second ACTIVE
+        // row, which surfaced as an unhandled storage exception and a 500. The security property
+        // held by accident of a uniqueness constraint rather than by a decision, and removing that
+        // index for any reason would have made a stolen password enough to swap somebody's
+        // authenticator - INV-IDN-05's bypass in its purest form.
+        //
+        // Refused HERE rather than at confirmation, deliberately: the attacker never receives a
+        // secret at all, and a legitimate customer with a new phone is told at the operation they
+        // initiated rather than after copying a QR code.
+        if (enrolments.findActive(unitOfWork, identityId, MfaFactorType.TOTP).isPresent()
+                && !currentAssurance.atLeast(AssuranceLevel.MULTI_FACTOR)) {
+            auditRefusal(unitOfWork, at, identityId, currentAssurance);
+            return Optional.empty();
+        }
+
         enrolments.discardPending(unitOfWork, identityId, MfaFactorType.TOTP, at);
 
         byte[] secretBytes = new byte[SECRET_BYTES];
@@ -114,7 +142,31 @@ public final class MfaEnrolmentService {
 
         // No event. An enrolment nobody confirmed is not a fact about the account, and announcing
         // one would tell every consumer that a factor exists when none is usable.
-        return new Started(enrolment, secret, parameters);
+        return Optional.of(new Started(enrolment, secret, parameters));
+    }
+
+    /**
+     * Records a refused enrolment.
+     *
+     * <p>This is the trace of somebody with a stolen password trying to swap a second factor, which
+     * is exactly what an investigator wants and what no other record would show — the request is
+     * otherwise indistinguishable from a customer tapping the wrong button.
+     */
+    private void auditRefusal(
+            Connection unitOfWork, Instant at, IdentityId identityId, AssuranceLevel presented) {
+        auditWriter.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        SecurityContext.require(),
+                        at,
+                        IdentityAuditAction.MFA_ENROLMENT_STARTED,
+                        AUDIT_TARGET_TYPE,
+                        identityId.value().toString(),
+                        Optional.empty(),
+                        AuditOutcome.FAILED,
+                        correlation().correlationId(),
+                        Optional.of("refused=replacingAFactorRequiresIt presented=" + presented)));
     }
 
     /**

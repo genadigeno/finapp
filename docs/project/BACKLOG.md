@@ -1827,7 +1827,7 @@ repository exists to prevent.
 - Ten mutations: nine caught, one survived correctly.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
-**P1-TSK-019 — `P1-TST-003`: MFA cannot be bypassed**
+**P1-TSK-019 — `P1-TST-003`: MFA cannot be bypassed** — `COMPLETE` (2026-09-07)
 - Context: identity / test
 - Description: One test per enumerated alternative path to a session.
 - Why: `INV-IDN-05`. Every real MFA bypass is a path nobody enumerated, which is why the paths are
@@ -1835,8 +1835,18 @@ repository exists to prevent.
 - Deps: P1-TSK-018
 - Tests: an older `PASSWORD` session; a refresh; re-enrolment of a second factor; recovery
   (once M1.6 exists); a direct call to any endpoint that issues a session.
-- Accept: each path either requires the factor or cannot produce a `MULTI_FACTOR` session; the
-  suite fails if the level check is replaced by a boolean.
+- Accept: **met** — one named test per path; `assuranceIsALevelAndNotABoolean` fails when `atLeast`
+  becomes equality.
+- **Found a real bypass by probing**: a `PASSWORD` session could begin a replacement enrolment with
+  an attacker-controlled secret. Refused only by a partial unique index, surfacing as a **500** —
+  the property held by accident of a constraint rather than by a decision. **Replacing a confirmed
+  factor now requires that factor**; a first enrolment does not, because it cannot.
+- **The enumeration is held against the code** (`MfaBypassPathsAreEnumeratedTest`): a new
+  session-issuing path fails the build until it is named with the reason it is not a bypass. A list
+  of tests is a snapshot; this is what survives Phase 4.
+- **Recovery is a recorded remainder** for M1.6 — asserting absence over an unmapped route would
+  pass vacuously.
+- Six mutations, all caught.
 - Risk: **High**. Cx: M. DoD: `DOD-TEST`
 
 ## P1-EPIC-05 — Authorization and Actor-Attributed Audit
