@@ -59,6 +59,9 @@ import org.springframework.web.servlet.HandlerInterceptor;
  */
 public final class SessionAuthenticationInterceptor implements HandlerInterceptor {
 
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger(SessionAuthenticationInterceptor.class);
+
     /**
      * Where the authenticated session is left for the handler.
      *
@@ -77,26 +80,35 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
     private final DataSource dataSource;
     private final Clock clock;
     private final SessionPolicy policy;
+    private final com.finapp.identity.Authorization authorization;
 
     public SessionAuthenticationInterceptor(
             SessionStore<Connection> sessions,
             TransactionTemplate transactions,
             DataSource dataSource,
             Clock clock,
-            SessionPolicy policy) {
+            SessionPolicy policy,
+            com.finapp.identity.Authorization authorization) {
         this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.policy = Objects.requireNonNull(policy, "policy must not be null");
+        this.authorization =
+                Objects.requireNonNull(authorization, "authorization must not be null");
     }
 
     @Override
     public boolean preHandle(
             HttpServletRequest request, HttpServletResponse response, Object handler) {
-        if (!requiresSession(handler)) {
+        if (!governed(handler)) {
             return true;
         }
+        HandlerMethod handlerMethod = (HandlerMethod) handler;
+        if (annotation(handlerMethod, Unauthenticated.class) != null) {
+            return true;
+        }
+        refuseIfUndeclared(handlerMethod);
 
         // Thrown, not returned: this must reach the error contract, and there is nothing to commit
         // on this path. The opposite choice from P1-TSK-010, where the refusal is RETURNED because
@@ -118,6 +130,11 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                 SCOPE_ATTRIBUTE,
                 SecurityContext.enter(
                         new Actor(session.identityId().value().toString(), ActorType.CUSTOMER)));
+
+        // AFTER the scope is established, deliberately: a denial is audited, and an audit
+        // record needs an actor. Checking first would record the refusal as the platform's own
+        // action, which is precisely the wrong party (P0-TSK-032).
+        requirePermission(handlerMethod, session);
         return true;
     }
 
@@ -225,6 +242,107 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                     "A session at " + session.assurance() + " was presented where "
                             + declared.value() + " is required");
         }
+    }
+
+    /**
+     * Whether this rule governs the handler at all.
+     *
+     * <p><strong>Only handlers in {@code com.finapp}.</strong> Actuator's handler methods carry no
+     * declaration and never will, because they are not our code, so refusing them would break health
+     * and readiness. Excluding by bean-type <em>package</em> states that boundary rather than listing
+     * paths, which is the list-of-one defect this repository has met four times.
+     *
+     * <p>That the actuator surface is unauthenticated is already recorded debt, not a hole this
+     * opens.
+     */
+    private static boolean governed(Object handler) {
+        return handler instanceof HandlerMethod handlerMethod
+                && handlerMethod.getBeanType().getName().startsWith("com.finapp.");
+    }
+
+    /**
+     * Refuses a handler that declares nothing. <strong>This is deny-by-default.</strong>
+     *
+     * <p>ADR-0031: <em>"an operation with no declared permission is refused, not permitted. A rule's
+     * absence is never a grant"</em> ({@code INV-IDN-04}). Before this, a handler that forgot
+     * {@code @RequiresSession} was simply reachable, and {@code P1-TSK-016} recorded that it failed
+     * closed only <em>by accident</em> - throwing at {@code SecurityContext.require()} deep inside
+     * the handler, which is a 500 standing in for a security decision.
+     *
+     * <p>{@code 403} rather than {@code 500}: the caller genuinely may not do it, because nobody
+     * may. A 500 would be equally true and would invite a retry storm against an endpoint that can
+     * never succeed. Logged at <strong>error</strong> naming the handler, because it is a deployment
+     * defect and only the operator can fix it.
+     */
+    private static void refuseIfUndeclared(HandlerMethod handlerMethod) {
+        if (annotation(handlerMethod, RequiresSession.class) != null
+                || annotation(handlerMethod, RequiresAssurance.class) != null
+                || annotation(handlerMethod, RequiresPermission.class) != null) {
+            return;
+        }
+        LOGGER.error(
+                "Refusing {}: it declares no authorization rule, and a rule's absence is never a"
+                    + " grant (ADR-0031, INV-IDN-04). Annotate it with @Unauthenticated,"
+                    + " @RequiresSession, @RequiresAssurance or @RequiresPermission.",
+                handlerMethod.getBeanType().getName() + "." + handlerMethod.getMethod().getName());
+        throw new ApiException(
+                PlatformErrorCode.FORBIDDEN, "A handler declared no authorization rule");
+    }
+
+    /**
+     * Refuses a session whose identity does not hold the declared permission.
+     *
+     * <p>Resolved from authoritative state on this request, never from the session: a role stamped
+     * at login survives its own revocation until the session expires, and <em>"remove their access
+     * now"</em> would become a promise the architecture cannot keep - {@code INV-IDN-03}'s reasoning
+     * applied to authorization.
+     *
+     * <p><strong>{@code api.Forbidden}, deliberately not a distinct code.</strong> Unlike
+     * {@code identity.AssuranceRequired} this is not actionable: a client cannot grant itself a
+     * role, so a special code would imply a remedy that does not exist.
+     */
+    private void requirePermission(HandlerMethod handlerMethod, Session session) {
+        RequiresPermission declared = annotation(handlerMethod, RequiresPermission.class);
+        if (declared == null) {
+            return;
+        }
+        boolean permitted =
+                Boolean.TRUE.equals(
+                        transactions.execute(
+                                status -> {
+                                    Connection unitOfWork =
+                                            DataSourceUtils.getConnection(dataSource);
+                                    try {
+                                        if (authorization.permits(
+                                                unitOfWork,
+                                                session.identityId(),
+                                                declared.value())) {
+                                            return true;
+                                        }
+                                        // Audited inside the transaction that read the roles: a
+                                        // refused privileged attempt is the only trace an attacker
+                                        // leaves, because an accepted one is audited by the
+                                        // operation and a refused one has no operation to do it
+                                        // (INV-AUD-03).
+                                        authorization.recordDenial(
+                                                unitOfWork, session.identityId(), declared.value());
+                                        return false;
+                                    } finally {
+                                        DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                                    }
+                                }));
+        if (!permitted) {
+            throw new ApiException(
+                    PlatformErrorCode.FORBIDDEN,
+                    "A session without " + declared.value() + " was presented");
+        }
+    }
+
+    /** Method first, then the declaring class - the {@code RequiresIdempotencyKey} idiom. */
+    private static <A extends java.lang.annotation.Annotation> A annotation(
+            HandlerMethod handlerMethod, Class<A> type) {
+        A onMethod = handlerMethod.getMethodAnnotation(type);
+        return onMethod != null ? onMethod : handlerMethod.getBeanType().getAnnotation(type);
     }
 
     private static boolean requiresSession(Object handler) {

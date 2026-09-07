@@ -59,6 +59,7 @@ class ApiErrorHandlerTest {
     @LocalServerPort private int port;
 
     /** Exists to fail. Not production code. */
+    @com.finapp.app.session.Unauthenticated
     @RestController
     static class FailingController {
 

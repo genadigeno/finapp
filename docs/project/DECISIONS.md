@@ -239,6 +239,15 @@ recorded merge with a named split trigger, and `BOUNDED_CONTEXTS.md` context 2 i
 list stops omitting a concept `CLAUDE.md` forbids collapsing. &rarr;
 [ADR-0031](../adr/ADR-0031-authorization-model.md)
 
+**Implemented by `P1-TSK-020`** (the boundary half), and one part landed stronger than the ADR asked
+for: *"a rule's absence is never a grant"* is enforced **twice** - refused at run time, and a
+**build failure** if any handler in `com.finapp` declares nothing. Neither replaces the other, since
+a static sweep cannot see a handler registered at run time and a runtime check cannot fail a build.
+Permissions are resolved from authoritative state **per request**, never stamped on the session, so
+a revoked role stops granting on the very next request rather than at session expiry. A denial is
+audited **after** the security scope opens, because a refused privileged attempt is the only trace
+an attacker leaves and the record must name the person rather than the platform.
+
 ### Credential storage
 A credential row stores the derivation **and the algorithm and parameters that produced it**. The
 decision usually missed is not which algorithm but where the parameters live: a global work factor

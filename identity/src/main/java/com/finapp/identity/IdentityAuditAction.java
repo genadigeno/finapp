@@ -200,6 +200,23 @@ public enum IdentityAuditAction implements AuditableAction {
             "A second-factor challenge was refused.",
             false),
 
+    /**
+     * A privileged action was refused for want of a permission (`P1-TSK-020`, `INV-AUD-03`).
+     *
+     * <p><strong>The only trace an attacker leaves.</strong> An action that succeeds is audited by
+     * the operation itself; one that is refused has no operation to do it, so without this record a
+     * probe for privileged endpoints is indistinguishable from silence.
+     *
+     * <p>`INV-AUD-03` asks for authorization to be tested *from the attacker's direction*, and this
+     * is what that looks like in the trail rather than in the suite.
+     *
+     * <p>No reason required: nobody chose it. It is the automatic consequence of a rule.
+     */
+    AUTHORIZATION_DENIED(
+            "identity.AuthorizationDenied",
+            "A privileged action was refused because the actor lacked the permission.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

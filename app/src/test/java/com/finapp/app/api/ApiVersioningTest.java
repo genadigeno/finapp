@@ -37,6 +37,7 @@ import tools.jackson.databind.JsonNode;
 class ApiVersioningTest {
 
     /** Mapped without a version. The application supplies it. */
+    @com.finapp.app.session.Unauthenticated
     @RestController
     static class VersionedController {
 

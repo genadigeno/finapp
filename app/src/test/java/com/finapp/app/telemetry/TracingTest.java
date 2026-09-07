@@ -59,6 +59,7 @@ class TracingTest {
     @Autowired private Tracer tracer;
 
     /** Reports the logging context as seen from inside a request. Not production code. */
+    @com.finapp.app.session.Unauthenticated
     @RestController
     static class MdcProbe {
         static final String PATH = "/probe/log-context";

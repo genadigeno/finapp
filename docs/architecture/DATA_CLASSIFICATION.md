@@ -272,6 +272,13 @@ role cannot edit it.
 | `mfa_enrolment` | `confirmed_at` | `CONFIDENTIAL` | As `created_at` |
 | `mfa_enrolment` | `discarded_at` | `CONFIDENTIAL` | As `created_at` |
 | `mfa_enrolment` | `last_used_step` | `CONFIDENTIAL` | The TOTP time step of the last accepted code. Operational on its face, and it is **not** `INTERNAL`: it says when the factor was last used to a thirty-second resolution, which is a record of when a person was at their device. Classified with the other timestamps on this table for the same reason |
+| `role_assignment` | `id` | `INTERNAL` | An aggregate identifier |
+| `role_assignment` | `identity_id` | `RESTRICTED-PII` | Identifies a person, as every other `identity_id` does |
+| `role_assignment` | `role_name` | `CONFIDENTIAL` | **Which people are administrators.** Not `INTERNAL`: it is a target list. An attacker choosing whom to phish would like this more than almost anything else in the schema |
+| `role_assignment` | `assigned_by` | `RESTRICTED-PII` | Identifies the person who granted it |
+| `role_assignment` | `assigned_at` | `CONFIDENTIAL` | When somebody became privileged. As `role_name` — it dates the account's standing |
+| `role_assignment` | `revoked_by` | `RESTRICTED-PII` | As `assigned_by` |
+| `role_assignment` | `revoked_at` | `CONFIDENTIAL` | As `assigned_at` |
 
 **`device` is the judgement worth challenging**, and it is classified above everything else here on
 purpose. Every other column is a fact about the *session*; `device` is a fact about the *person* —

@@ -44,6 +44,7 @@ import org.springframework.web.bind.annotation.RestController;
  * somebody eventually omits - and an unversioned route can never be changed, since there is no
  * second version to move its clients to.
  */
+@com.finapp.app.session.Unauthenticated
 @RestController
 @RequestMapping("/registrations")
 class RegistrationController {

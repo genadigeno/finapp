@@ -46,6 +46,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>{@code /authentications}, not {@code /v1/authentications}: {@code ApiVersionConfiguration}
  * applies the prefix once in the composition root.
  */
+@com.finapp.app.session.Unauthenticated
 @RestController
 @RequestMapping("/authentications")
 class AuthenticationController {

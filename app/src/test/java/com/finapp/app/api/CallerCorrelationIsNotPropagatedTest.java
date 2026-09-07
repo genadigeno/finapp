@@ -266,6 +266,7 @@ class CallerCorrelationIsNotPropagatedTest {
     }
 
     /** Reports what the flow's context and MDC actually held while the request was being served. */
+    @com.finapp.app.session.Unauthenticated
     @RestController
     static class ContextProbe {
 

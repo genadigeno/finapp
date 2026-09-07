@@ -225,6 +225,7 @@ class IdempotencyKeyHeaderTest {
      * {@code OpenApiContractTest} asserts, after the {@code P0-TSK-026} review found nothing was
      * checking it.
      */
+    @com.finapp.app.session.Unauthenticated
     @Controller
     @RequiresIdempotencyKey
     static class Probes {
@@ -271,6 +272,7 @@ class IdempotencyKeyHeaderTest {
      * <p>It has to be a separate class: the annotation on {@link Probes} covers every handler in
      * it, which is the point of allowing it at type level.
      */
+    @com.finapp.app.session.Unauthenticated
     @Controller
     static class Open {
 

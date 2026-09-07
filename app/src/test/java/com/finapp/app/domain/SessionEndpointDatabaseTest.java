@@ -78,6 +78,9 @@ class SessionEndpointDatabaseTest {
 
     @org.springframework.beans.factory.annotation.Autowired private javax.sql.DataSource dataSource;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.finapp.identity.Authorization authorization;
+
     // -----------------------------------------------------------------
     // Listing
 
@@ -342,8 +345,12 @@ class SessionEndpointDatabaseTest {
         // "fails closed" is a claim that must be proven, not described.
         var failing =
                 new com.finapp.app.session.SessionAuthenticationInterceptor(
-                        new FailingSessionStore(), sessionTransactions, dataSource, CLOCK,
-                        SessionPolicy.current());
+                        new FailingSessionStore(),
+                        sessionTransactions,
+                        dataSource,
+                        CLOCK,
+                        SessionPolicy.current(),
+                        authorization);
 
         var request = new org.springframework.mock.web.MockHttpServletRequest("GET", "/v1/sessions");
         request.addHeader("Authorization", "Bearer " + current.plaintext());

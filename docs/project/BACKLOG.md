@@ -1853,7 +1853,7 @@ repository exists to prevent.
 
 ### P1-CAP-05 — Every action is permitted and attributable
 
-**P1-TSK-020 — Roles, permissions and the boundary check**
+**P1-TSK-020 — Roles, permissions and the boundary check** — `COMPLETE` (2026-09-07)
 - Context: identity / security
 - Description: Role and permission model; a declarative, deny-by-default permission check before
   the handler.
@@ -1863,8 +1863,53 @@ repository exists to prevent.
   dispatch — the `P0-TSK-017` interceptor pattern; an endpoint with no declaration is refused.
 - Tests: a **negative authorization test for every protected endpoint** — the Phase 1 exit
   criterion; an undeclared endpoint is refused rather than permitted.
-- Accept: deny-by-default demonstrated by adding an endpoint with no declaration and watching it be
-  refused.
+- Accept: **met** — `/probe/undeclared` is refused `403` **with a valid session**, which is the
+  stronger form: a version presenting no session would pass against an implementation that merely
+  required authentication.
+- **Deny-by-default is enforced twice, and neither replaces the other.** The interceptor refuses at
+  run time, because ADR-0031 says *refused*; `EveryEndpointDeclaresARuleTest` fails the **build**,
+  because a deployment defect a customer finds by receiving a 403 has been found too late. A static
+  sweep cannot see a handler registered at run time and a runtime check cannot fail a build.
+- **Permissions are resolved per request, never stamped on the session** — a role carried on a
+  session survives its own revocation until that session expires, and *"remove their access now"*
+  becomes a promise the architecture cannot keep (`INV-IDN-03`'s reasoning, applied to
+  authorization). Asserted with the **same** session token across the revoke.
+- **A denial is audited**, because it is the only trace an attacker leaves: a permitted privileged
+  action is audited by the operation itself, and a refused one has no operation to do it. Written
+  **after** the security scope opens, so the record names the person rather than the platform.
+- **`api.Forbidden`, deliberately not a distinct code** — unlike `identity.AssuranceRequired` this
+  is not actionable, and a special code would imply a remedy the client does not have.
+- **Backlog defect, sixth of this class in Phase 1**: `PHASE_1_PLAN.md` §7 lists
+  `POST /v1/identities/{id}/suspension` and `POST /v1/identities/{id}/roles` — the only two
+  endpoints in the phase that would carry a `@RequiresPermission` — and **no task owns either**.
+  `P1-TSK-022` writes the audit record for a suspension it does not build. Recorded rather than
+  invented here: an admin endpoint added to give the annotation a production caller would be a
+  security surface chosen to suit a test, which is `P1-TSK-018`'s recorded reasoning for
+  `@RequiresAssurance`. Carried as the new **`P1-TSK-028`**.
+- **Recorded limit:** with one role holding both permissions, the role→permission mapping cannot be
+  meaningfully mutated — the first mutation attempted (`permissions()` returns *all* permissions)
+  was a **no-op** and was re-aimed at the role granting *nothing*. It becomes testable at the
+  second role.
+- Seven mutations, all caught.
+- Risk: **High**. Cx: M. DoD: `DOD-SEC`
+
+**P1-TSK-028 — The two administrative endpoints** — `TODO`
+- Context: identity / api
+- Description: `POST /v1/identities/{id}/suspension` and `POST /v1/identities/{id}/roles`.
+- Why: `PHASE_1_PLAN.md` §7 lists both and **no task owns either** — sixth backlog defect of this
+  class in Phase 1, found by `P1-TSK-020`. They are the only endpoints in the phase that would
+  carry `@RequiresPermission`, so without them `IDENTITY_SUSPEND` and `ROLE_ASSIGN` have no
+  production caller and `P1-TSK-022` audits a suspension nothing performs.
+- Deps: P1-TSK-020, P1-TSK-021
+- Implementation: `@RequiresPermission` at the boundary **and** the ownership rule in the domain —
+  ADR-0031 requires both, and here the second is the one that stops an administrator suspending
+  themselves out of the platform or assigning themselves a role they were not given.
+- **Not built inside `P1-TSK-020`, deliberately**: an admin endpoint invented to give the
+  annotation something to do would be a security surface chosen to suit a test, which is
+  `P1-TSK-018`'s recorded reasoning for shipping `@RequiresAssurance` with a probe endpoint.
+- Tests: a negative authorization test per endpoint; a negative **ownership** test — self-suspension
+  and self-elevation both refused; the audit record names the administrator and targets the subject.
+- Accept: both endpoints refuse a session holding no role, and each refusal is audited.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 **P1-TSK-021 — Ownership checks in the domain**

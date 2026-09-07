@@ -74,9 +74,25 @@ class SessionBeans {
             org.springframework.transaction.support.TransactionTemplate sessionTransactions,
             javax.sql.DataSource dataSource,
             Clock clock,
-            SessionPolicy sessionPolicy) {
+            SessionPolicy sessionPolicy,
+            com.finapp.identity.Authorization authorization) {
         return new SessionAuthenticationInterceptor(
-                sessionStore, sessionTransactions, dataSource, clock, sessionPolicy);
+                sessionStore, sessionTransactions, dataSource, clock, sessionPolicy, authorization);
+    }
+
+    @Bean
+    com.finapp.identity.RoleAssignmentStore<Connection> roleAssignmentStore(IdGenerator idGenerator) {
+        return new com.finapp.identity.JdbcRoleAssignmentStore(idGenerator);
+    }
+
+    @Bean
+    com.finapp.identity.Authorization authorization(
+            com.finapp.identity.RoleAssignmentStore<Connection> roleAssignmentStore,
+            IdGenerator idGenerator,
+            Clock clock,
+            AuditWriter<Connection> auditWriter) {
+        return new com.finapp.identity.Authorization(
+                roleAssignmentStore, idGenerator, clock, auditWriter);
     }
 
     @Bean

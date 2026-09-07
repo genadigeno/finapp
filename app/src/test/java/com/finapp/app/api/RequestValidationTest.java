@@ -60,6 +60,7 @@ class RequestValidationTest {
         ENTERED.set(0);
     }
 
+    @com.finapp.app.session.Unauthenticated
     @RestController
     static class GuardedController {
 
@@ -83,6 +84,7 @@ class RequestValidationTest {
     }
 
     /** The other way Spring validates a method parameter: a {@code @Validated} proxy. */
+    @com.finapp.app.session.Unauthenticated
     @RestController
     @Validated
     static class ProxyValidatedController {
