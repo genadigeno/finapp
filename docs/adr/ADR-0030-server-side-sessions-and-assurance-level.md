@@ -1,6 +1,6 @@
 # ADR-0030 — Server-side sessions, and assurance is a level rather than a flag
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-03
 

@@ -1,6 +1,6 @@
 # ADR-0034 — The platform owns the correlation identifier
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-04
 

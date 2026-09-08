@@ -2124,13 +2124,72 @@ repository exists to prevent.
 - Seven mutations, all caught.
 - Risk: Low. Cx: S. DoD: `DOD-TEST`
 
-**P1-DOC-001 — Phase 1 review record**
+**P1-DOC-001 — Phase 1 review record** — `COMPLETE` (2026-09-08)
 - Context: project
-- Description: The written phase review per `PHASE_GATES.md` §4, and ADR-0029…0033 to `Accepted`.
+- Description: The written phase review per `PHASE_GATES.md` §4, and ADR-0029…**0034** to `Accepted`.
 - Deps: all Phase 1 items
-- Accept: all eight review areas covered; the twelve universal and six Phase 1-specific exit
-  criteria assessed with evidence.
+- Accept: **met** — [`reviews/PHASE_1_REVIEW.md`](reviews/PHASE_1_REVIEW.md). All eight areas, the
+  twelve universal criteria and the six Phase 1-specific ones, each with evidence.
+- **The review finds the exit gate does not pass, and that is what conducting one is for.**
+  **Phase 1 remains `IN_PROGRESS`** (`PHASE_GATES.md` §4). Two criteria fail:
+  - **Criterion 1** — **no production path issues a first session.** `Session.issue` ← `SessionRotation`
+    ← `MfaChallenge.elevate`, which requires a session, behind a `@RequiresSession` controller; and
+    `POST /v1/authentications` returns `204` with no body. So the **eight** endpoints the plan marks
+    `Auth: session` are unreachable by any client, and the phase objective — *"prove it, hold a
+    session"* — is not met end to end. Owner: `P1-TSK-027`.
+  - **Criterion 6** — the plan names six `finapp.identity.*` meters and **two** exist. The missing
+    four are the phase's critical flows, including the recovery rate the plan itself annotates
+    *"recovery is the ATO vector; its rate is a security signal"*. Owner: the new `P1-TSK-029`.
+- **Neither failure is architectural**: the design work is done, and what is missing is a connection
+  between two things the phase built, plus four meters.
+- **ADR-0029…0034 accepted despite the failures**, on Phase 0's recorded reasoning: criterion 10 is a
+  **precondition** of the gate rather than a reward for passing it.
+- **Three documentation drifts found by hand-diffing what no guard covers**, and all three corrected:
+  the plan declares 15 endpoints and 12 exist (two of the absentees owned by **nobody**, now
+  `P1-TSK-030`); an exemption in `AuditCompletenessTest` rested on a statement that was **false**; and
+  `CURRENT_STATE.md` carried an imprecision about the phase-specific criteria.
+- **Area 2 has no subject and says so** — Phase 1 creates no posting — rather than reporting a pass,
+  as Phase 0's review did for the same reason.
 - Risk: Low. Cx: S. DoD: `DOD-DOC`
+
+**P1-TSK-029 — The four missing Phase 1 meters** — `TODO`
+- Context: identity / platform
+- Description: `finapp.identity.mfa_challenge`, `session_lifetime`, `recovery` and `active_sessions`.
+- Why: **Criterion 6's remediation.** `PHASE_1_PLAN.md` §Observability names six meters and two
+  exist. The criterion asks for metrics for the phase's *critical flows*, and the missing four are
+  exactly those.
+- Deps: none — every flow they measure is built.
+- Implementation: counters and a timer at the existing call sites; `active_sessions` as a **gauge over
+  the database**, for the reason `P0-TSK-029` gives for the outbox gauges — a count held in the
+  application reports nothing when the application is the thing that is wrong, and is per instance
+  besides. `MetricConventionTest` enforces the naming and forbids a request-derived tag.
+- **`finapp.identity.recovery` is the one that matters most.** A takeover campaign is a rise in
+  recovery initiations, and today that is visible only by querying the audit trail — which is
+  evidence, not monitoring. `INV-AUD-01` is satisfied and criterion 6 is not, and the distinction is
+  why the platform has both.
+- Tests: each meter asserted against the live registry, as `P0-TSK-029` does; `DashboardQueriesResolveTest`
+  extended if the dashboard gains panels.
+- Accept: all six meters exist and are named correctly; criterion 6 passes.
+- Risk: Medium — a security signal nobody can see. Cx: S. DoD: `DOD-OBS`
+
+**P1-TSK-030 — `GET /v1/me` and `PATCH /v1/me`** — `TODO`
+- Context: party / api
+- Description: Read and change your own profile.
+- Why: **`PHASE_1_PLAN.md` §7 declares both and no backlog task owned either** — the eighth backlog
+  defect of this class in Phase 1, and the first found by a **review** rather than by the task that
+  tripped over it.
+- Deps: P1-TSK-021 (ownership), P1-TSK-022 (audit)
+- Implementation: `@RequiresSession`; the profile is read and written **scoped to the proven
+  identity's party**, never to an identifier from the request (ADR-0031); `PATCH` emits
+  `party.ProfileChanged`, which is catalogued and currently declared unemitted for exactly this
+  reason.
+- **It gives `party.ProfileChanged` its producer**, and `AuditCompletenessTest`'s entry for it must be
+  removed when this lands — the guard will say so.
+- Tests: a negative ownership test per operation; the audit record names the person; a display name
+  carrying control characters is refused at the boundary (`P1-TSK-006`'s finding).
+- Accept: both endpoints exist with ownership enforced in the domain and an audit record for the
+  change.
+- Risk: Medium. Cx: S. DoD: `DOD-SEC`
 
 ---
 

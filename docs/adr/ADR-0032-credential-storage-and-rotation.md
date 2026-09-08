@@ -1,6 +1,6 @@
 # ADR-0032 — Credentials store a derivation and the parameters that produced it
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-03
 

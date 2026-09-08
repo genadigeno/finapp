@@ -1,6 +1,6 @@
 # ADR-0033 — Explicit SQL, and no object-relational mapper
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-04
 

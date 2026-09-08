@@ -14,11 +14,27 @@ Last updated: 2026-09-07
 Status: ✅ **`COMPLETE`** (2026-09-04) — **all twelve exit criteria hold.**
 
 **Phase 1 — Identity and Customer Foundation**
-Status: **`IN_PROGRESS`** — entry gate passed, all twelve criteria. Started 2026-09-04.
+Status: **`IN_PROGRESS`** — entry gate passed 2026-08-31; started 2026-09-04.
+**Exit gate reviewed 2026-09-08 and NOT passed** —
+[`reviews/PHASE_1_REVIEW.md`](reviews/PHASE_1_REVIEW.md). Ten of twelve universal criteria hold; two
+fail, and `PHASE_GATES.md` §4 returns the phase to `IN_PROGRESS` rather than letting it ship through.
+
+- **Criterion 1** — **no production path issues a first session.** `Session.issue` is reached only
+  through `SessionRotation` ← `MfaChallenge.elevate`, which requires a session already, behind a
+  `@RequiresSession` controller; and `POST /v1/authentications` answers `204` with no body. So the
+  **eight** endpoints the plan marks `Auth: session` are unreachable by any real client, and the
+  phase objective — *"prove it, **hold a session**"* — is not met end to end. Owner: `P1-TSK-027`.
+- **Criterion 6** — the plan names six `finapp.identity.*` meters and **two** exist. Owner: the new
+  `P1-TSK-029`.
+
+**Neither failure is architectural.** The design work is done; what is missing is a connection
+between two things the phase built, and four meters.
 
 ## Current Milestone
 
-**M1.7 — Phase review.** `P1-TSK-024`, `P1-DOC-001`; **1 of 2 complete.** Started 2026-09-08. The
+**M1.7 — Phase review.** `P1-TSK-024`, `P1-DOC-001`; **2 of 2 complete** (2026-09-08). The review is
+conducted and its verdict is that the gate does not pass — which is the milestone succeeding, not
+failing: a review that could only return `COMPLETE` would not be one. The
 mutation register now covers every phase the project has reached, and the current phase is derived
 rather than written down — so Phase 2 needs no change to the guard.
 
@@ -152,13 +168,86 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-024` completed 2026-09-08. **M1.7 is 1 of 2.**
-**Next: `P1-DOC-001`** — the written Phase 1 review, and the phase's exit gate.
+**None in progress.** `P1-DOC-001` completed 2026-09-08. **M1.7 closes, 2 of 2 — and the phase does
+not.**
+**Next: `P1-TSK-027`** — authentication issues a session, which is criterion 1's remediation.
 
 ### Just completed
 
+**`P1-DOC-001` — Phase 1 review record** — `COMPLETE` (2026-09-08). **M1.7 closes.**
+
+**The review finds the exit gate does not pass, and that is what conducting one is for.**
+
+| | Outcome |
+|---|---|
+| Review areas (8) | 7 `PASS`, 1 **`NOT APPLICABLE`** — area 2 has no subject and says so |
+| Universal criteria (12) | 10 `PASS`, **2 `FAIL`** |
+| Phase 1-specific (6) | 5 `PASS`, 1 `PARTIAL` |
+| **Verdict** | **Phase 1 remains `IN_PROGRESS`** |
+
+### Criterion 1: no production path issues a first session
+
+Traced through the code rather than inferred. `Session.issue` is called only by `SessionRotation`;
+`SessionRotation.rotate` only by `MfaChallenge.elevate`; `elevate` requires a `current` session; and
+`MfaChallengeController` is `@RequiresSession`. `POST /v1/authentications` answers **`204` with no
+body**.
+
+**So a real client cannot obtain a session by any route**, and the eight endpoints
+`PHASE_1_PLAN.md` §7 marks `Auth: session` are unreachable. Every test that exercises them inserts a
+session row directly.
+
+`MfaBypassPathsAreEnumeratedTest` has said so since `P1-TSK-019` — *"an accident of sequencing rather
+than a design goal"* — and the criterion demands deliverables **exercisable end to end**. Proving an
+identity and holding a session are both built; nothing joins them.
+
+### Criterion 6: four of six meters do not exist
+
+`authentication` and `lockout` exist. `mfa_challenge`, `session_lifetime`, `recovery` and
+`active_sessions` do not — and they are exactly the phase's critical flows.
+
+**`finapp.identity.recovery` is the one that matters most**, and the plan says why in its own
+annotation: *"recovery is the ATO vector; its rate is a security signal."* A takeover campaign is a
+rise in recovery initiations, visible today only by querying the audit trail — **which is evidence,
+not monitoring**. `INV-AUD-01` is satisfied and criterion 6 is not; the distinction is why the
+platform has both.
+
+### Three documentation drifts, found by hand-diffing what no guard covers
+
+- **The plan declares fifteen endpoints; twelve exist.** Three absentees are owned by open tasks, and
+  **`GET /v1/me` and `PATCH /v1/me` are owned by nobody** — the eighth backlog defect of this class in
+  Phase 1, and the first found by a **review** rather than by the task that tripped over it. Now
+  `P1-TSK-030`.
+- **An exemption resting on a false statement.** `AuditCompletenessTest`'s entry for
+  `party.ProfileChanged` read *"`PHASE_1_PLAN.md` does not list one."* **It lists `PATCH /v1/me`.** I
+  wrote that entry in `P1-TSK-022` and it was untrue — the `P1-TSK-018` shape, in my own register: an
+  exemption is a claim that something is safe by other means, so a false claim is a hole with a
+  paragraph in front of it. Corrected.
+- **An imprecision of mine in this very document.** §Next Task said the phase-specific criteria *"name
+  seven identity properties and there are eight"*; `PHASE_GATES.md` §5 lists **six bullets**, and the
+  claim conflated them with the transition's seven `INV-IDN` properties. Corrected — which is why a
+  review checks claims rather than inheriting them.
+
+### ADR-0029…0034 accepted despite the open failures
+
+Phase 0's recorded reasoning, unchanged: **criterion 10 is a precondition of the gate rather than a
+reward for passing it.** Holding ADR-0030 at `Proposed` because four meters are missing would be
+theatre — the decisions were taken, implemented and tested, and neither failure is contingent on any
+of them.
+
+### Area 2 has no subject, and says so
+
+*"Walk one real posting end to end"* — Phase 1 creates none. Reporting a pass would be reporting on
+something that does not exist, so it states the absence, exactly as Phase 0's review did. A reader
+comparing records must be able to tell *assessed and clean* from *had no subject*.
+
+### What the phase produced
+
+2 modules, 14 tables, 12 endpoints, 6 aggregates, 19 auditable actions, 8 new invariants (**72**
+total), 6 ADRs, **847 hermetic and 404 database tests**, 24 of 29 backlog items.
+
+### Previously
+
 **`P1-TSK-024` — Extend the mutation register to Phase 1** — `COMPLETE` (2026-09-08).
-**M1.7 opens, 1 of 2.**
 
 | Acceptance criterion | Evidence |
 |---|---|
@@ -2938,6 +3027,21 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Phase 1 reviewed, and the gate does not pass (2026-09-08), `P1-DOC-001`:
+- [`reviews/PHASE_1_REVIEW.md`](reviews/PHASE_1_REVIEW.md): eight areas, twelve universal criteria,
+  six Phase 1-specific ones, each with evidence
+- **Criterion 1 fails**: no production path issues a first session, so eight endpoints are
+  unreachable by any real client and the phase objective is not met end to end
+- **Criterion 6 fails**: four of six meters do not exist, including the recovery rate the plan calls
+  *a security signal*
+- **Phase 1 returns to `IN_PROGRESS`** (`PHASE_GATES.md` §4) - which is the review succeeding
+- **Three documentation drifts found by hand-diffing what no guard covers**, all corrected: two
+  planned endpoints owned by nobody, an exemption resting on a **false** statement, and an
+  imprecision of mine in `CURRENT_STATE.md`
+- **Area 2 has no subject and says so** rather than reporting a pass
+- ADR-0029…0034 to `Accepted`, on Phase 0's reasoning that criterion 10 is a **precondition** of the
+  gate rather than a reward for passing it
+
 The mutation register covers every phase reached (2026-09-08), `P1-TSK-024`:
 - **`PHASE_GATES.md` criterion 3 is now enforced for Phase 1**, not only Phase 0 - which left the
   `INV-IDN` group in exactly the weaker regime the Phase 0 → 1 transition created it to escape
@@ -4065,34 +4169,41 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-DOC-001` — Phase 1 review record.** **M1.7, 2 of 2 — the phase's exit gate.**
+**`P1-TSK-027` — Authentication issues a session.** **Criterion 1's remediation, and the phase's
+blocking item.**
 
-The written review per `PHASE_GATES.md` §4: all eight review areas, the twelve universal exit
-criteria and the six Phase 1-specific ones, each assessed **with evidence**; and ADR-0029…0034 moved
-to `Accepted`.
+The review found that **no production path issues a first session**, so the eight endpoints the plan
+marks `Auth: session` are unreachable by any real client. This is the change that makes Phase 1 work
+rather than merely have the parts.
 
-**Phase 0's review is the reason this is not a formality.** It found the exit gate did **not** pass —
-three Tomcat CVEs and a suite that had never run in CI — and the phase stayed `IN_PROGRESS`.
-`PHASE_GATES.md` §1 is explicit that moving backwards from review is normal while *"shipping through
-a failed gate"* is the failure.
+**It is small and its shape is already decided.** `P1-TSK-010` delivered
+`POST /v1/authentications` without a session because its declared dependency `P1-TSK-013` sat in the
+next milestone; the session now exists. Issue it **inside the authentication transaction**, so a
+session that exists always has the audit record of the login that produced it, and `204` becomes
+`201` with a body — an **additive** contract change.
 
-**Three things are already known to be waiting for it**, recorded rather than discovered at the gate:
+**Three things it must do, each already recorded rather than newly discovered.**
 
-- **M1.2 cannot close.** Its stated acceptance is *"an identity authenticates and **receives a
-  session**"*, and `P1-TSK-027` is `TODO`. Four remainders are open in total — `P1-TSK-025`, `-026`,
-  `-027`, `-028` — each recorded by the task that found it.
-- **The phase-specific exit criteria name seven identity properties and there are eight.**
-  `INV-IDN-08` was added mid-phase by `P1-TSK-017`, so the gate must reconcile `PHASE_GATES.md`
-  with the catalogue rather than assume they still agree — the same staleness `P1-TSK-024` just found
-  in its own task text.
-- **Two invariants Phase 1 owns are enforced by nothing yet.** `INV-AUD-04` (four-eyes) has no
-  subject, and the broker adapter debt reached its trigger at `P1-TSK-006`: three domain events are
-  written to the outbox and nothing publishes them.
+- **`MfaBypassPathsAreEnumeratedTest` will fail until it comes and says why the new path is not a
+  bypass.** That guard's own javadoc predicted this task by name: *"`P1-TSK-027` will add the second
+  path and must come here and say so."* The session must be issued at `PASSWORD`, never higher.
+- **`INV-IDN-07` still holds.** A body on the success path and none on the failure path is not a
+  disclosure — a caller who authenticated successfully already knows they did — but the **failure**
+  shape must stay byte-identical across all four causes, which `everyFailureLooksTheSame` asserts.
+- **M1.2 closes with it.** Its stated acceptance is *"an identity authenticates and receives a
+  session"*, and it has been open since `P1-TSK-010` recorded the contradiction.
+
+Then **`P1-TSK-029`** for criterion 6, and the review is re-run against those two criteria.
+
+`P1-TSK-025`, `-026`, `-028` and `-030` are open and **do not block the gate**: none is named by a
+universal or phase-specific criterion. That distinction is the gate doing its job — it blocks on the
+criteria, not on the backlog being empty.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-08 | **`P1-DOC-001` complete - M1.7 closes, and Phase 1 does not.** The phase review, conducted per `PHASE_GATES.md` §4: eight areas, the twelve universal exit criteria and the six Phase 1-specific ones, each assessed with evidence. **It finds the exit gate does not pass, and that is what conducting one is for** - §4 returns the phase to `IN_PROGRESS`, and §1 is explicit that moving backwards from review is normal while *“shipping through a failed gate”* is the failure. Phase 0's review reached the same conclusion and was vindicated within days, when the first CI run it had refused to waive failed twice for defects no local run could reach. **Criterion 1 fails: no production path issues a first session.** Traced through the code rather than inferred - `Session.issue` is called only by `SessionRotation`, `rotate` only by `MfaChallenge.elevate`, `elevate` requires a `current` session, and `MfaChallengeController` is `@RequiresSession`, while `POST /v1/authentications` answers **204 with no body**. So a real client cannot obtain a session by any route and the **eight** endpoints the plan marks `Auth: session` are unreachable; every test that exercises them inserts a session row directly. `MfaBypassPathsAreEnumeratedTest` has recorded this since `P1-TSK-019` as *“an accident of sequencing rather than a design goal”*, and the criterion demands deliverables **exercisable end to end** - proving an identity and holding a session are both built and nothing joins them. **Criterion 6 fails: four of six meters do not exist** - `mfa_challenge`, `session_lifetime`, `recovery` and `active_sessions`, which are exactly the phase's critical flows. **`finapp.identity.recovery` is the one that matters most**, and the plan says why in its own annotation: *“recovery is the ATO vector; its rate is a security signal”* - a takeover campaign is a rise in recovery initiations, visible today only by querying the audit trail, **which is evidence rather than monitoring**. `INV-AUD-01` is satisfied and criterion 6 is not, and that distinction is why the platform has both. **Neither failure is architectural**: the design work is done, and what is missing is a connection between two things the phase built plus four meters. **Three documentation drifts, found by hand-diffing what no guard covers** - the method that found two drifts in Phase 0's review. The plan declares **fifteen** endpoints and **twelve** exist, and two of the absentees - `GET /v1/me` and `PATCH /v1/me` - are owned by **nobody**, the eighth backlog defect of this class in Phase 1 and the first found by a review rather than by the task that tripped over it. An exemption in `AuditCompletenessTest` read *“PHASE_1_PLAN.md does not list one”* about `party.ProfileChanged` and **the plan lists `PATCH /v1/me`** - I wrote that entry in `P1-TSK-022` and it was untrue, which is the `P1-TSK-018` shape in my own register: an exemption is a claim that something is safe by other means, so a false claim is a hole with a paragraph in front of it. And §Next Task in this document said the phase-specific criteria *“name seven identity properties”* where `PHASE_GATES.md` §5 lists **six bullets**, conflating them with the transition's seven `INV-IDN` properties - which is why a review checks claims rather than inheriting them. All three corrected. **Area 2 has no subject and says so**: Phase 1 creates no posting, so reporting a pass would be reporting on something that does not exist, and a reader comparing review records must be able to tell *assessed and clean* from *had no subject*. **ADR-0029…0034 moved to `Accepted` despite the open failures**, on Phase 0's recorded reasoning that criterion 10 is a **precondition** of the gate rather than a reward for passing it. Two backlog items created: `P1-TSK-029` (the four meters) and `P1-TSK-030` (the two unowned endpoints). **What the phase produced**: 2 modules, 14 tables, 12 endpoints, 6 aggregates, 19 auditable actions, 8 new invariants taking the platform to **72**, 6 ADRs, 847 hermetic and 404 database tests, 24 of 29 backlog items. |
 | 2026-09-08 | **`P1-TSK-024` complete - M1.7 opens, 1 of 2.** The mutation register now covers every phase the project has reached rather than Phase 0 only, which had left the `INV-IDN` group in exactly the weaker regime the Phase 0 → 1 transition created it to escape - no row in `MUTATION_TESTING.md` being one of the four things that transition named. **The acceptance as written was too narrow in two ways, and probing found both.** There are **eight** `INV-IDN-*` rather than seven, because `P1-TSK-017` added `INV-IDN-08` mid-phase - the task's own text was already stale. And there are **nine** Phase 1 invariants, because `INV-AUD-03` is `Phase: 1 onward` and is **not in the `INV-IDN` group at all**, so a guard extended to `INV-IDN-*` - which is what the item asked for - would have missed it. Extending to *every invariant of every phase reached* is what finds it, which is the difference between implementing the sentence and implementing the property. **Two had no row**: `INV-IDN-02`, the one the task is named for, and `INV-AUD-03`; both were already demonstrated, so the rows record work done rather than work invented. **The finding is that nine rows did not parse.** The grammar admitted exactly one backticked reference and nothing after it, while the register is written with lists and trailing prose - and eight of the nine unreadable rows were written during Phase 1 by me. They were not reported as broken, they were simply absent, so `everyNamedTestExists` and `everyNamedMethodExists` never looked at them and a row naming a renamed test would have sat there reading as a live proof. **A register whose rows the guard cannot read reports coverage it does not have** - `P0-TST-008`'s finding, in the artefact built to prevent that exact class of defect. **Proven precisely rather than argued**: a reference in *second* position naming a test that does not exist **survives** the old parser and is **caught** by the widened one - and the first attempt at that demonstration was wrong, which checking is what showed, because the plant happened to be reachable as a first reference and so proved nothing about the widening. **The current phase is derived from `CURRENT_STATE.md`**, whose stated role is to be the canonical description of where the project is, so Phase 2 needs no change to the guard - a constant would be the stale list this repository closes by derivation everywhere else. The **highest** phase the section names rather than the one marked `IN_PROGRESS`, because a status word is prose that changes shape between phases and a phase that has been reached does not stop having been reached. **§4 generalised, and the two phases declare their test items differently**: Phase 0 gives `P0-TST-*` their own headings while Phase 1 names `P1-TST-*` inside task headings, so anchoring to either shape finds nothing for the other and passes vacuously. **One mutation survived and found a defect in this task's own new assertion**: `everyRowNamesATest` exists so an unreadable row is a failure rather than a silent omission, and its first version read the references merged **per invariant** - `INV-IDN-06` has two rows, so emptying one left the merge non-empty and the mutation walked through. A check defeated by the very merging that makes the rest of the guard convenient is a check reporting coverage it does not have; it is per row now. **The completion gate then found the same defect ONE LEVEL OUT, in that very fix**: `everyRowNamesATest` catches a row that parses and names nothing, and cannot catch a row that fails the row pattern entirely - a typo in the form column, an extra pipe, a reflowed line - because such a row is not in the map at all. Probed rather than reasoned about: changing one row's form from `In-suite` to `Insuite` left the build **green**, and that invariant stayed covered only because it happens to have sibling rows. The outer check is structural now - every §2 line that looks like a row must parse as one - because leaving it open would have reproduced this task's own finding inside the fix for it. **Seven mutations, all caught.** 847 hermetic tests, 404 database tests. |
 | 2026-09-08 | **`P1-TSK-023` complete - M1.6 closes.** Account recovery, the phase's highest-risk task, built last against a working MFA, session and audit model. **The blocking finding came before any design: `INV-IDN-06` had no subject.** It forbids recovery *“without proving control of a previously registered and VERIFIED channel”*, and no channel existed anywhere - no `EmailAddress` type, no table, no verification flow, and grep confirmed **no backlog task owning one**, while `PHASE_1_PLAN.md` asserts that an Identity carries *“a separate, changeable, separately-verified email”*. Seventh backlog defect of this class in Phase 1 and the most consequential: the others were missing endpoints, and this was a missing **precondition of the invariant** - without a channel, recovery cannot satisfy `INV-IDN-06` at all, only appear to. Built here on the `P1-TSK-016` precedent, minimally, and recorded rather than absorbed. **Recovery issues NO session, and that is the sharpest decision.** The conventional design logs you in on completion, and `INV-IDN-06`'s second clause forbids exactly that - a session handed out on completion IS the lowering, because an attacker holding the mailbox would skip the credential **and** whatever stood behind it. Recovery replaces the credential and stops, so the customer authenticates normally afterwards and MFA applies in full. **The fifth abuse case therefore cannot be attempted rather than merely refused**, and `MfaBypassPathsAreEnumeratedTest`'s statement - nothing new creates a session - stays true; that guard listed recovery as a **recorded remainder** for precisely this question and now carries the answer. **Bound to the credential it was raised against**, which closes the dangerous form of *concurrent recovery and login*: an attacker initiates, the customer changes their password, and the attacker completes and wins having watched the customer do the one thing they thought would save them. A **predicate in the statement** rather than a procedure, because a predicate cannot be forgotten by a future credential-change caller. **Every refusal is the same refusal and costs the same work** - unknown identifier, no verified channel and cooling-off are all `202`, decided by a single `INSERT … SELECT`, because a version that looked the identity up first would run a different number of queries for an account that exists, which is the timing channel `P1-TSK-008` found in authentication. **The token is delivered nowhere**, `PHASE_1_PLAN.md` §8's recorded seam: the response is `202` with no body, since returning it would hand it to whoever asked and channel control would prove nothing - and the outbox event carries identifiers only, which `EventPayload`'s `[A-Za-z0-9_-]` charset would **not** have enforced, since base64url satisfies it perfectly (`P1-TSK-009`'s stated limit, *“a charset, not a secret detector”*). **Four existing guards refused the new code and all four were right**: the unwrap whitelist caught the controllers unwrapping a token and an address - the rule had the better argument, so the boundary passes `Sensitive<String>` straight through; the system-actor enumeration caught the third `enterSystem()` site; the ownership register caught two unclassified persistence methods; and the contract diff caught four undeclared routes, **141 added lines and zero removed**. Two of those guards were written in the previous two tasks. **`secretsAreWrapped` fired four times and each answer was different**: a `Duration` cannot hold a secret, so a structural narrowing; `Optional<CredentialId>` exposed a **real gap** in the existing compositional exclusion, which reads the raw type and could not see through `Optional`, and needed the accessor half as well because a record produces both; and a SQL fragment named `ACTIVE_CREDENTIAL_OF` was answered by **changing the code**, since renaming to dodge the vocabulary is the option `P1-TSK-017` refused. **One assertion of mine was a stale list one task after I wrote it**: `bothSurvivorsAreUnauthenticated` matched package names as a proxy for *unauthenticated*, and broke the first time a third unauthenticated surface appeared - by my own hand - so it is replaced by the property it was reaching for, that a method handed a proven `Session` must not claim the platform, with the uncheckable remainder stated. **Two mutations survived first and each found a real gap**: `aCancelledTokenIsRefused` was passing for the WRONG REASON, looking up *the latest* request - which after the customer's own initiation is theirs - so the attacker's token was refused on the token match rather than on the status; and nothing had ever suspended an identity, which matters because recovery ignoring suspension would let the suspended party undo an administrator's decision through the front door. **Eleven mutations: ten caught, one survived correctly** - re-verification, unreachable because the token is cleared on success, which the mutation removing that clearing proves is load-bearing. 845 hermetic tests, 396 database tests. |
 | 2026-09-08 | **`P1-TSK-022` complete - M1.5 closes, 3 of 3.** The phase's reason for existing: every privileged action recorded against the person who performed it. **Six of the seven implementation clauses were already true, and probing rather than assuming is what made the task worth doing** - the interceptor establishes a scope per authenticated request (`P1-TSK-016`), **all thirteen** audit sites call `SecurityContext.require()` and **none** defaults, every writer takes the caller's `Connection`, immutability sits at `DB-PRIVILEGE` (`P0-TSK-022`), an unestablished actor is refused, and fifteen actions are catalogued and reconciled three ways. Restating any of it would be duplication that drifts, which is the `P1-TSK-012` precedent, **so the deliverable is the three clauses nothing checked** - and each is an acceptance criterion in its own right. **First, the gap `P0-TSK-023` recorded against itself**: `AuditableActionRegistryTest`'s own javadoc says *“it cannot detect a privileged action that writes no audit record at all”*, and that is the failure that matters, because a registry agreeing with a catalogue while nothing emits half of it looks complete **from both sides** - and the Phase 15 completeness report would be checked against exactly that list. Two Phase 1 actions were silently unemitted. `AuditCompletenessTest` now holds every action against production code: **emitted**, or **declared not to be** with the task that will emit it, so *“deliberately not built yet”* and *“somebody removed the audit call”* stop being indistinguishable and an action that **stops** being emitted fails the build. Five are declared unemitted - `identity.IdentitySuspended` (`P1-TSK-028` owns the endpoint, and inventing one to give the action a caller would be a surface chosen to suit a test), `party.ProfileChanged`, and the three `outbox.*` actions already recorded as Phase 15 debt. **Second, *“each is justified”* was a claim about a set, and grep is not a control**: ADR-0021 called `enterSystem()` *“the greppable list of places Phase 1 must revisit”*, and grep is a thing somebody has to remember to run, while the site added in Phase 4 will not be in anybody's memory of this review. **Two sites survive, both on unauthenticated paths** - registration, where attributing to the Party it creates is circular and unavailable on the refusal path, and authentication's **failure branch**, where the login identifier may name nobody at all so there is nothing to attribute to. That second justification existed **only as a code comment**; `SECURITY_ARCHITECTURE.md` now carries it. **The enumeration is at method granularity, and the one place that matters is closed**: `AuthenticationService.attempt` holds both branches - success establishes `Actor(identityId, CUSTOMER)`, failure claims the platform - so it is enumerated once, and replacing the success branch with `enterSystem()` would change nothing the enumeration can see while recording the platform as having logged somebody in. A separate assertion requires the real-actor call to still be there, and that mutation now fails. **Third, the headline property was asserted per action and never over the trail**: each earlier task asserted its own record, and nothing asserted that **no** record written under an authenticated request names the platform - a different claim, about the trail rather than one operation, and the one that fails when somebody adds an audit call in a hurry. Scoped by the requests' correlation identifiers so it can actually fail, and driven across **two aggregates**, because a sweep confined to sessions would prove the property for the code that happened to be written most carefully. `GET /v1/sessions` is deliberately excluded and that is stated rather than left as an omission - listing your own sessions is not privileged and `SessionQueries` records the decision not to audit it, so asserting over an endpoint that writes nothing would make the sweep quietly smaller than it looks. **And which assertion is load-bearing was established by probing rather than claimed**: the blank-target mutation is caught by `AuditRecord.bounded` **refusing construction** - verified, because the failure reported a *missing* operation rather than a blank one - so the three field assertions are recorded as **defence in depth**, being what would catch a writer that stopped going through the domain type. **The correlation assertion is the one nothing else makes**: a record carrying an identifier that belongs to no flow satisfies every `NOT NULL` and every `CHECK`, and it is precisely the record an investigator cannot use - worse than an absent one, because a search returns a row and stops. **Eight mutations, all caught.** **The completion gate then found a claim my own test did not support**: its display name said *“and reason where the registry needs it”* and nothing looked at the column - sixth occurrence of that pattern this phase. **The claim is unassertable over this sweep rather than merely missing**, which is the more useful half: `AuditRecord`'s constructor **refuses** a record whose action requires a reason and has none, so one cannot reach the table, and the only two actions requiring one have **no production caller** in Phase 1. Renamed to what it does, with the reason written down. **And the coverage guard had deviated from its siblings again** - `P1-TSK-021`'s gate found exactly this one task ago, and both new rule suites repeated it, sweeping `com.finapp` with nothing asserting every module is reached. Closed in both using `ProductionModules`, which had to become public because these suites live in `com.finapp.app.audit` and duplicating the derivation is the drift that helper exists to prevent. **Ten mutations, all caught** - two added by the gate. 844 hermetic tests, 384 database tests. |

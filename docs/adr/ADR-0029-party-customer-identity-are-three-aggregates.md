@@ -1,6 +1,6 @@
 # ADR-0029 — Party, Customer and Identity are three aggregates
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-03
 

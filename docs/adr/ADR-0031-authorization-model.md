@@ -1,6 +1,6 @@
 # ADR-0031 — Roles grant permissions; ownership is checked separately
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-03
 

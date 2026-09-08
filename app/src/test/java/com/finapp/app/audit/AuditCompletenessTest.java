@@ -66,9 +66,14 @@ class AuditCompletenessTest {
                         + " nothing performs, and inventing the endpoint to give the action a caller"
                         + " would be a security surface chosen to suit a test.",
                     "party.ProfileChanged",
-                    "No Phase 1 endpoint changes a party profile. PHASE_1_PLAN.md does not list one,"
-                        + " so this is a catalogued action awaiting a capability rather than a"
-                        + " remainder of this phase.",
+                    "PHASE_1_PLAN.md section 7 DOES list PATCH /v1/me, and no backlog task owned"
+                        + " it until the phase review created P1-TSK-030 - the eighth backlog"
+                        + " defect of that class in Phase 1, and the first found by a review"
+                        + " rather than by the task that tripped over it. This entry previously"
+                        + " read that the plan listed no such endpoint, which was FALSE: an"
+                        + " exemption is a claim that something is safe by other means, so a false"
+                        + " claim is a hole with a paragraph in front of it (the P1-TSK-018"
+                        + " finding, in this task's own register).",
                     "outbox.EventAbandoned",
                     "Recorded debt: the relay logs the decision and writes no record. Phase 15"
                         + " (dead-letter handling), per CURRENT_STATE.md.",
