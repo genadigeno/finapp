@@ -2176,7 +2176,7 @@ repository exists to prevent.
   as Phase 0's review did for the same reason.
 - Risk: Low. Cx: S. DoD: `DOD-DOC`
 
-**P1-TSK-029 — The four missing Phase 1 meters** — `TODO`
+**P1-TSK-029 — The four missing Phase 1 meters** — `COMPLETE` (2026-09-08)
 - Context: identity / platform
 - Description: `finapp.identity.mfa_challenge`, `session_lifetime`, `recovery` and `active_sessions`.
 - Why: **Criterion 6's remediation.** `PHASE_1_PLAN.md` §Observability names six meters and two
@@ -2193,8 +2193,53 @@ repository exists to prevent.
   why the platform has both.
 - Tests: each meter asserted against the live registry, as `P0-TSK-029` does; `DashboardQueriesResolveTest`
   extended if the dashboard gains panels.
-- Accept: all six meters exist and are named correctly; criterion 6 passes.
+- Accept: **met.** All six exist and are named correctly, and criterion 6 is now a **build
+  failure** rather than a review opinion: `PlannedMetersExistTest` reads the plan's own §10 table and
+  asserts every meter it names is in the live registry — bidirectionally, so a meter renamed or a
+  plan naming one nobody built both fail.
+- **Three of the four planned names could not be registered.** `mfa_challenge`, `session_lifetime`
+  and `active_sessions` carry **underscores**, which `MetricNames.NAME` forbids. The plan was
+  corrected rather than the convention widened, because the correction is free: Micrometer
+  translates dots to the backend's idiom, so both forms produce the identical Prometheus series.
+- **The worse finding: the meters that "existed" did not exist until the flow ran.**
+  `MeterRegistry.counter(...)` creates the meter on the first call, so a freshly started instance
+  published no series at all for authentication, lockout or registration — and an alert on a rate
+  had nothing to evaluate at exactly the moment it was needed. All counters are registered at
+  construction now, and `PlannedMetersExistTest` runs no flow, so it can only pass against that.
+- **Recovery is two meters rather than one tagged by `stage`**, because `stage` is not in
+  `ALLOWED_TAG_KEYS` and widening that list was refused: it exists to make such an addition an
+  explicit decision, and a naming exists that needs none. It also makes *"recovery initiation rate"*
+  one series rather than a filtered sum.
+- **The initiation counter distinguishes what the `202` deliberately hides**, which is correct
+  rather than a leak: a metric is never visible to the caller, and a rise in `refused` is somebody
+  walking a list of identifiers.
+- **`session.active` counts LIVE sessions, not `ACTIVE` ones.** With no `EXPIRED` status and no
+  sweep, the obvious query counts sessions nobody can use — wrong in the *reassuring* direction.
+- **`session.lifetime` measures one population and says so**: expiry is never observed, bulk
+  revocation is one decision rather than forty samples, and supersession is a replacement.
+  `SessionStore.revokeOwned` returns the lifetime its own `UPDATE` computes, so no query was added
+  to a security-critical operation to feed a metric.
+- **Two guards refused the new code and both were right**: `INV-MON-01` on Micrometer's
+  `ToDoubleFunction` (exemption extended, same case as `OutboxMetrics`), and `TestTaxonomyTest`,
+  which produced a design improvement rather than a tag — `IdentityMetrics` takes a connection
+  source now, `OutboxBacklog`'s shape.
 - Risk: Medium — a security signal nobody can see. Cx: S. DoD: `DOD-OBS`
+
+**P1-DOC-002 — Re-run the Phase 1 exit review** — `TODO`
+- Context: process
+- Description: Re-assess criteria 1 and 6 and record the verdict.
+- Why: `PHASE_GATES.md` §4. `P1-DOC-001` returned the phase to `IN_PROGRESS` on two failures; both
+  are now closed (`P1-TSK-027`, `P1-TSK-029`). **A phase does not become `COMPLETE` because the
+  remediation landed** — it becomes `COMPLETE` when the review says so, and an implementation task
+  declaring its own phase complete is the shape the gate model exists to prevent.
+- Deps: P1-TSK-027, P1-TSK-029
+- Implementation: an addendum to `reviews/PHASE_1_REVIEW.md` re-assessing the two criteria against
+  the code, not against this backlog; the phase status updated in `CURRENT_STATE.md` if it passes.
+- **The four open items do not block it**: `P1-TSK-025`, `-026`, `-028` and `-030` are named by no
+  universal or phase-specific criterion. The gate blocks on the criteria, not on the backlog being
+  empty — the distinction `P1-DOC-001` recorded.
+- Accept: every universal criterion assessed with evidence, and a verdict.
+- Risk: Low. Cx: S. DoD: `DOD-DOC`
 
 **P1-TSK-030 — `GET /v1/me` and `PATCH /v1/me`** — `TODO`
 - Context: party / api

@@ -53,6 +53,23 @@ class TelemetryConfiguration {
     }
 
     /**
+     * How many sessions are live, as a gauge (`P1-TSK-029`, criterion 6).
+     *
+     * <p>Reads through the application's own {@code DataSource} for {@code outboxMetrics}' reason:
+     * it measures what the application can actually see, through the pool the rest of the platform
+     * uses, rather than opening a private connection that would report health the application does
+     * not have.
+     */
+    @Bean
+    IdentityMetrics identityMetrics(
+            com.finapp.identity.SessionStore<java.sql.Connection> sessionStore,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry) {
+        return new IdentityMetrics(sessionStore, dataSource::getConnection, clock, registry);
+    }
+
+    /**
      * Wraps the auto-configured connection pool so acquiring a connection is visible in a trace.
      *
      * <p><strong>A {@code BeanPostProcessor} because a {@code @Bean} cannot do this.</strong>

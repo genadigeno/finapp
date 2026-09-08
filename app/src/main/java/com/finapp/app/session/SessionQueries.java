@@ -5,6 +5,8 @@ import com.finapp.identity.SessionId;
 import com.finapp.identity.SessionRevocation;
 import com.finapp.identity.SessionStore;
 import com.finapp.platform.correlation.CorrelationContext;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
@@ -34,24 +36,64 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class SessionQueries {
 
+    /**
+     * {@code finapp.identity.session.lifetime} — how long a session a person ENDED had lived.
+     *
+     * <h2>It measures one population, and that is stated rather than left to be discovered</h2>
+     *
+     * <p><strong>Expired sessions cannot appear in this sample, by construction.</strong> ADR-0030
+     * and {@code P1-TSK-013} decided there is no {@code EXPIRED} status and no sweep — liveness is
+     * derived in the {@code WHERE} clause — so nothing in this platform is ever notified that a
+     * session expired. Expiry is the commonest way a session ends and it is unobservable.
+     *
+     * <p>Two further exclusions, both principled rather than concessions:
+     *
+     * <ul>
+     *   <li><strong>Bulk revocation</strong> ({@code revokeAll}, {@code revokeAllExcept}). Forty
+     *       sessions ended by one credential change is <em>one decision</em>, and forty correlated
+     *       samples would swamp the distribution while describing a single event. {@code
+     *       P1-TSK-014} made the same call for the audit record: one record per operation.
+     *   <li><strong>Supersession</strong> (rotation on step-up). A rotated session was
+     *       <em>replaced</em>, not ended — its duration is an artefact of when somebody proved a
+     *       second factor, not of how long they stayed logged in. Mixing it in would blend two
+     *       populations under one name.
+     * </ul>
+     *
+     * <p>A metric that silently measures a biased subset is the "reports coverage it does not have"
+     * failure this repository keeps meeting. So the bound is in the description, in this javadoc,
+     * and in a test.
+     */
+    static final String SESSION_LIFETIME_TIMER = "finapp.identity.session.lifetime";
+
     private final SessionStore<Connection> sessions;
     private final SessionRevocation revocation;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
     private final Clock clock;
+    private final Timer lifetime;
 
     public SessionQueries(
             SessionStore<Connection> sessions,
             SessionRevocation revocation,
             TransactionTemplate sessionTransactions,
             DataSource dataSource,
-            Clock clock) {
+            Clock clock,
+            MeterRegistry meters) {
         this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
         this.revocation = Objects.requireNonNull(revocation, "revocation must not be null");
         this.transactions =
                 Objects.requireNonNull(sessionTransactions, "sessionTransactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.lifetime =
+                Timer.builder(SESSION_LIFETIME_TIMER)
+                        .description(
+                                "How long a session lived before its owner ended it. Expired"
+                                        + " sessions are absent: expiry is derived and never"
+                                        + " observed. Bulk revocation and step-up rotation are"
+                                        + " excluded")
+                        .register(
+                                Objects.requireNonNull(meters, "meters must not be null"));
     }
 
     /** Every live session belonging to the authenticated identity. */
@@ -88,10 +130,17 @@ public class SessionQueries {
                                 new IllegalStateException(
                                         "A revocation must run inside a correlation scope"));
 
-        return Boolean.TRUE.equals(
+        java.util.OptionalLong seconds =
                 inATransaction(
-                        unitOfWork ->
-                                revocation.revoke(unitOfWork, target, current.identityId())));
+                        unitOfWork -> revocation.revoke(unitOfWork, target, current.identityId()));
+
+        // AFTER the transaction, deliberately. A sample recorded inside one that later rolls back
+        // is a metric describing something that did not happen - and unlike the audit record,
+        // which MUST commit with the operation, a measurement has nothing to lose by waiting.
+        if (seconds != null && seconds.isPresent()) {
+            lifetime.record(java.time.Duration.ofSeconds(seconds.getAsLong()));
+        }
+        return seconds != null && seconds.isPresent();
     }
 
     private <T> T inATransaction(java.util.function.Function<Connection, T> work) {

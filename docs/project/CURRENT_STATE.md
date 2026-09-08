@@ -25,8 +25,17 @@ fail, and `PHASE_GATES.md` §4 returns the phase to `IN_PROGRESS` rather than le
   row is written"* — it was that a real client could not obtain one while the suite could, so an
   assertion that a token came back would have repeated the same blindness one layer up. See the
   review's addendum.
-- **Criterion 6** — the plan names six `finapp.identity.*` meters and **two** exist. Owner: the new
-  `P1-TSK-029`. **This is the only criterion still failing**, so the phase stays `IN_PROGRESS`.
+- ~~**Criterion 6**~~ — **CLOSED 2026-09-08** by `P1-TSK-029`. All six `finapp.identity.*` meters
+  exist, and the criterion is now a **build failure** rather than a review opinion:
+  `PlannedMetersExistTest` reads the plan's own §10 table and asserts every meter it names is in the
+  live registry. It found the problem was worse than the review recorded — the two meters counted as
+  *existing* were created **lazily**, so a freshly started instance published no series for them at
+  all.
+
+**Both gate failures are now closed.** The phase stays `IN_PROGRESS` until the review is **re-run**
+against them, which is `PHASE_GATES.md` §4's own procedure and a governance act rather than an
+implementation one: an implementation task declaring its own phase complete is the shape the gate
+model exists to prevent.
 
 **Neither failure was architectural.** The design work was done; what was missing was a connection
 between two things the phase built — now made — and four meters.
@@ -175,12 +184,147 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-027` completed 2026-09-08. **M1.2 closes** — two days after its last
-numbered task — and **exit criterion 1 closes with it**.
-**Next: `P1-TSK-029`** — the four missing meters, which is criterion 6 and the last thing between
-Phase 1 and its gate.
+**None in progress.** `P1-TSK-029` completed 2026-09-08. **Exit criterion 6 closes**, and with it
+the second of the two failures `P1-DOC-001` found.
+**Next: re-run the Phase 1 exit review** against criteria 1 and 6 — `PHASE_GATES.md` §4's own
+procedure, and the only thing left between Phase 1 and `COMPLETE`.
 
 ### Just completed
+
+**`P1-TSK-029` — The four missing Phase 1 meters** — `COMPLETE` (2026-09-08). **Criterion 6
+closes.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| All six meters exist and are named correctly | `PlannedMetersExistTest`, which reads the plan's own table |
+| Criterion 6 passes | The same test, on every build, rather than at a gate |
+
+### The blocking finding: three of the four planned names could not be registered
+
+`MetricNames.NAME` is `finapp\.[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+` — **no underscores**. The plan
+named `mfa_challenge`, `session_lifetime` and `active_sessions`, so publishing them as written would
+have failed the build. **A plan asserting something the platform's own convention forbids** — the
+same class of drift this phase has found eight times, here between a plan written at the transition
+and a mechanism built in Phase 0.
+
+**The convention wins and the correction is free**, which is what makes it the right way round:
+Micrometer translates a name to the backend's idiom, so `finapp.identity.mfa.challenge` and
+`finapp.identity.mfa_challenge` produce the **identical** Prometheus series. The dotted form loses
+nothing and keeps siblings sorting together.
+
+### The worse finding: the meters that "existed" did not exist until the flow ran
+
+`MeterRegistry.counter(name, tags)` creates the meter on the **first call**. Every counter in the
+platform was written that way, so a freshly started instance published **no series at all** for
+authentication, lockout or registration — they appeared only after somebody had logged in, been
+locked out, or registered.
+
+**An alert written on `rate(finapp_identity_lockout_total[5m])` therefore had nothing to evaluate at
+exactly the moment it was needed.** A counter that starts existing when the thing it counts happens
+is a delayed notification, not monitoring. So criterion 6 was worse than the review found: not *"two
+of six exist"* but *"two of six exist once the flow has run"*.
+
+All counters are now registered at construction, one per outcome value. `PlannedMetersExistTest`
+boots a context and runs **nothing**, so it can only pass against eager registration — which makes
+it the guard for this as well as for the names.
+
+### Recovery is two meters, because widening the tag allow-list was refused
+
+The plan says *"counter by stage"*, and `stage` is not in `MetricNames.ALLOWED_TAG_KEYS`. It would
+satisfy ADR-0018's actual rule — a bounded set fixed at compile time — but **the allow-list exists
+to make that an explicit decision rather than an autocomplete**, and a naming exists that needs no
+widening. Using `type` for a stage would be the dishonest rename declined for `sharedSecret`
+(`P1-TSK-017`) and `ACTIVE_CREDENTIAL_OF` (`P1-TSK-023`).
+
+Two meters also serve the signal better: §Security signals names *"recovery initiation rate"*, which
+is now one series rather than a filtered sum.
+
+**And the initiation counter sees what the response deliberately hides.** `POST /v1/recoveries`
+answers `202` for an unknown identifier, an unverified channel and cooling-off alike — that is
+`INV-IDN-07` working. A metric is never visible to the caller, so it can and must tell them apart: a
+rise in `refused` is somebody walking a list of identifiers.
+
+### `session.active` counts LIVE sessions, and the obvious query is wrong
+
+There is no `EXPIRED` status and no sweep (ADR-0030, `P1-TSK-013`), so `status = 'ACTIVE'` counts
+sessions **nobody can use** — and it is wrong in the **reassuring** direction, reporting live
+customers indefinitely while every one of them had been logged out for hours. `countLive` uses
+`findLive`'s own predicate, so the gauge and the lookup cannot disagree about what a session is.
+
+Read from the database rather than from a counter this application keeps, for `P0-TSK-029`'s
+reasons; **`NaN` when unreadable, never zero**, because a zero says "nobody is logged in" at the
+moment nothing can be known and an alert on a drop to zero would stay silent through the outage. And
+every instance reports the same fleet-wide figure, so the dashboard uses `max()` — summing ten
+replicas would report ten times the truth.
+
+### `session.lifetime` measures one population and says so
+
+**Expired sessions cannot appear in the sample, by construction**: expiry is derived and never
+observed. Bulk revocation is excluded because forty sessions ended by one credential change is *one
+decision*, and supersession because a rotated session was **replaced**, not ended. All three are
+stated in the meter's description, its javadoc and a test — a metric that silently measures a biased
+subset is the *"reports coverage it does not have"* failure this repository keeps meeting.
+
+**Feeding it changed one method rather than adding a query.** `SessionStore.revokeOwned` returns the
+lifetime the same `UPDATE` computes, and the boolean it used to return is `isPresent()` — so no
+information is lost and no second source of truth appears. Reading the session first was refused:
+that adds a query to a security-critical operation purely to feed a metric, and **monitoring must
+not change the shape of the thing it monitors**.
+
+### Two guards refused the new code and both were right
+
+`INV-MON-01` caught the gauge's `double` — Micrometer's `Gauge` is a `ToDoubleFunction`. The
+exemption set grew from two entries to four, and the argument recorded is that they are the **same
+case** rather than a new one: a count of rows, published through the only instrument Micrometer
+offers. The count itself is a `long` all the way to the registry boundary, because *that* half was
+avoidable and *"it is only a metric"* is the reasoning that spreads the habit.
+
+**`TestTaxonomyTest` produced a design improvement rather than a tag.** It placed the gauge's unit
+test in the database tier, correctly — it saw a `DataSource` being asked for a connection and cannot
+tell a reflective proxy from a pool, nor should it try. Rather than declare a heavier tier for a test
+that needs no database, `IdentityMetrics` now takes a **connection source**, which is
+`OutboxBacklog`'s shape and keeps `javax.sql` out of a class that reads one query.
+
+### Verified against a running instance, and it proved the failure path by accident
+
+`DOD-OBS` requires verification on a running instance rather than only in code. Scraping
+`/actuator/prometheus` on a freshly started application shows **every one of the six meters present
+at zero**, on an instance where nobody has logged in, been locked out, registered, challenged a
+factor or begun a recovery:
+
+```
+finapp_identity_authentication_total{outcome="authenticated"} 0.0
+finapp_identity_authentication_total{outcome="refused"}       0.0
+finapp_identity_lockout_total                                 0.0
+finapp_identity_mfa_challenge_total{outcome="elevated"}       0.0
+finapp_identity_mfa_challenge_total{outcome="refused"}        0.0
+finapp_identity_recovery_initiation_total{outcome="accepted"} 0.0
+finapp_identity_recovery_initiation_total{outcome="refused"}  0.0
+finapp_identity_recovery_completion_total{...}                0.0
+finapp_identity_session_lifetime_seconds_count                0
+finapp_identity_session_active                                NaN
+finapp_party_registration_total{...}                          0.0
+```
+
+**That is the eager-registration finding, demonstrated rather than argued.** Before this task the
+same scrape published none of them.
+
+**And `session_active` reported `NaN`, which was not staged.** The local compose database is behind
+the repository — `identity.session` does not exist there, and `flywayMigrate` refuses with a
+checksum mismatch on `identity` V003, so an earlier session edited a migration after applying it
+locally (`P0-TSK-015`'s recorded trap). The tests never saw it because `P0-TSK-035` gives each test
+JVM its own container with the real migrations applied from scratch.
+
+So the accident is a **positive result**: with its table unreadable the gauge published **absent
+rather than zero**, and logged a warning naming neither a session identifier nor the statement. That
+is the designed failure behaviour, observed live and unplanned — the case a written test can only
+simulate. The positive control, that the gauge reports a real count, is
+`DashboardQueriesResolveTest`, which scrapes a running application against a real database.
+
+**The local database is not reset here.** Wiping a developer's data to make a scrape look tidier is
+not this task's to do, and nothing in the build depends on it.
+
+### Previously
 
 **`P1-TSK-027` — Authentication issues a session** — `COMPLETE` (2026-09-08). **M1.2 closes;
 criterion 1 closes.**
@@ -3157,6 +3301,30 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Every planned meter exists, and criterion 6 is a build failure (2026-09-08), `P1-TSK-029`:
+- Four meters added — `finapp.identity.mfa.challenge`, `session.lifetime`, `recovery.initiation`,
+  `recovery.completion`, `session.active` — five instruments, because recovery splits
+- **`PlannedMetersExistTest` reads the plan's own §10 table** and asserts every meter it names is in
+  the live registry, bidirectionally: a meter renamed and a plan naming one nobody built both fail
+  the build. The phase is derived from `CURRENT_STATE.md`, so Phase 2 needs no edit
+- **Three of the four planned names could not be registered**: they carried underscores, which
+  `MetricNames.NAME` forbids. The plan was corrected rather than the convention widened, because
+  Micrometer translates dots to the backend's idiom and both forms produce the same Prometheus series
+- **The meters that "existed" did not exist until the flow ran.** `MeterRegistry.counter(...)`
+  creates on first call, so a fresh instance published nothing for authentication or lockout — and an
+  alert on a rate had no series at exactly the moment it was needed. All counters are eager now, and
+  the guard runs no flow, so it can only pass against that
+- **Recovery is two meters, not one tagged by `stage`** — widening `ALLOWED_TAG_KEYS` was available
+  and refused, and *"recovery initiation rate"* is now one series
+- **The initiation counter distinguishes what the `202` hides**, which is correct rather than a leak:
+  a metric is never visible to the caller, and a rise in `refused` is a probe
+- **`session.active` counts LIVE sessions, not `ACTIVE` ones** — with no `EXPIRED` status and no
+  sweep the obvious query is wrong in the *reassuring* direction. `NaN` when unreadable, never zero
+- **`session.lifetime` measures one population and says so**: expiry is never observed, bulk
+  revocation is one decision, supersession is a replacement
+- Dashboard gains an *Identity — security signals* row; `DashboardQueriesResolveTest` caught its
+  first version querying `_seconds_bucket`, which a `Timer` does not publish
+
 Authentication issues a session (2026-09-08), `P1-TSK-027`:
 - `POST /v1/authentications` answers **201 with the session**, issued inside the authentication
   transaction and the same security scope as the success audit record
@@ -4321,34 +4489,29 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-029` — the four missing meters.** **Criterion 6's remediation, and the last criterion
-failing.**
+**`P1-DOC-002` — re-run the Phase 1 exit review.** **The only thing left between Phase 1 and
+`COMPLETE`.**
 
-`PHASE_1_PLAN.md` §Observability names six `finapp.identity.*` meters and **two** exist. The four
-absent ones are the phase's critical flows: `mfa_challenge`, `session_lifetime`, `recovery` and
-`active_sessions`.
+`P1-DOC-001` returned the phase to `IN_PROGRESS` on two failures, and both are closed:
+criterion 1 by `P1-TSK-027`, criterion 6 by `P1-TSK-029`. `PHASE_GATES.md` §4 is what decides the
+verdict, and **a phase does not become `COMPLETE` because its remediation landed** — an
+implementation task declaring its own phase complete is precisely the shape the gate model exists to
+prevent, and Phase 0's review was vindicated for holding that line when the CI run it refused to
+waive then failed twice.
 
-**`finapp.identity.recovery` is the one that matters most**, and the plan says why in its own
-annotation: *"recovery is the ATO vector; its rate is a security signal."* A takeover campaign is a
-rise in recovery initiations, and today that is visible only by querying the audit trail — **which is
-evidence rather than monitoring**. `INV-AUD-01` is satisfied and criterion 6 is not, and that
-distinction is why the platform has both.
+**Re-assess against the code, not against the backlog.** Criterion 1's evidence is that a token a
+login returned opens a protected endpoint over HTTP with nothing inserted; criterion 6's is that a
+context which runs no flow still publishes all six meters. Both are now assertions in the suite,
+which is what a re-run should verify rather than restate.
 
-**ADR-0018 constrains what they may carry**: `finapp.<module>.<noun>`, enforced against the live
-registry by the build, and **no tag value a request could influence** — an identifier in a tag is
-both a cardinality explosion and a disclosure with months of retention. A metric answers *how many*;
-*which one* is the audit trail's question.
-
-Then the review is re-run against criterion 6 and Phase 1 can close.
-
-`P1-TSK-025`, `-026`, `-028` and `-030` are open and **do not block the gate**: none is named by a
-universal or phase-specific criterion. That distinction is the gate doing its job — it blocks on the
-criteria, not on the backlog being empty.
+`P1-TSK-025`, `-026`, `-028` and `-030` remain open and are named by **no** universal or
+phase-specific criterion. The gate blocks on the criteria, not on the backlog being empty.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-08 | **`P1-TSK-029` complete - exit criterion 6 closes, and with it the second of `P1-DOC-001`'s two failures.** Four meters added and five instruments registered - `finapp.identity.mfa.challenge`, `session.lifetime`, `recovery.initiation`, `recovery.completion` and `session.active` - so all six the plan names now exist. **The deliverable is the guard rather than the meters**: `PlannedMetersExistTest` reads the plan's own §10 table and asserts every meter it names is in the live registry, bidirectionally, so a meter renamed and a plan naming one nobody built both fail the build - which turns criterion 6 from a check somebody performs once at a gate into one the build performs. The phase is **derived** from this document, so Phase 2 needs no edit. **The blocking finding: three of the four planned names could not be registered at all.** `mfa_challenge`, `session_lifetime` and `active_sessions` carry **underscores**, which `MetricNames.NAME` forbids - so the plan asserted something the platform's own convention rejects, the eighth drift of this class in the phase. The convention wins and the correction is **free**: Micrometer translates a name to the backend's idiom, so `finapp.identity.mfa.challenge` and `finapp.identity.mfa_challenge` produce the identical Prometheus series, and the dotted form additionally keeps siblings sorting together. **The worse finding is that the meters counted as EXISTING did not exist until the flow had run.** `MeterRegistry.counter(name, tags)` creates the meter on the first call, and every counter in the platform was written that way - so a freshly started instance published **no series at all** for authentication, lockout or registration, and an alert on `rate(finapp_identity_lockout_total[5m])` had nothing to evaluate at precisely the moment it was needed. A counter that starts existing when the thing it counts happens is a delayed notification, not monitoring. So criterion 6 was worse than the review found: not *“two of six exist”* but *“two of six exist once the flow has run”*. Every counter is registered at construction now, one per outcome value, and the guard boots a context and runs **nothing** - so it can only pass against that. **Recovery is two meters rather than one tagged by `stage`**, because `stage` is not in `ALLOWED_TAG_KEYS`: widening it was available and **refused**, since the list exists to make such an addition an explicit decision rather than an autocomplete and a naming exists that needs none - using `type` for a stage would be the dishonest rename declined for `sharedSecret` and `ACTIVE_CREDENTIAL_OF`. It also makes *“recovery initiation rate”* one series rather than a filtered sum. **And the initiation counter distinguishes what the `202` deliberately hides**, which is correct rather than a leak: a metric is never visible to the caller, so a rise in `refused` is somebody walking a list of identifiers - the ATO signal in its sharpest form. **`session.active` counts LIVE sessions rather than `ACTIVE` ones**, and that is the sharpest modelling point: with no `EXPIRED` status and no sweep (ADR-0030, `P1-TSK-013`), `status = 'ACTIVE'` counts sessions nobody can use - wrong in the **reassuring** direction, reporting live customers indefinitely. It uses `findLive`'s own predicate so the gauge and the lookup cannot disagree, reads the database rather than a per-instance counter, and reports **`NaN` when unreadable, never zero** - a zero says *nobody is logged in* at the moment nothing can be known. Every replica reports the same fleet-wide figure, so the panel uses `max()`. **`session.lifetime` measures one population and says so**: expired sessions cannot appear by construction, bulk revocation is one decision rather than forty correlated samples, and supersession is a replacement rather than an ending. Feeding it changed one method instead of adding a query - `SessionStore.revokeOwned` returns the lifetime its own conditional `UPDATE` computes, and the boolean it used to return is `isPresent()` - because reading the session first would add a query to a security-critical operation purely to feed a metric, and **monitoring must not change the shape of the thing it monitors**. **Three guards refused the new code and all three were right.** `INV-MON-01` caught Micrometer's `ToDoubleFunction`; the exemption set grew from two to four with the argument recorded that they are the **same case** rather than a new one, and the count stays a `long` to the registry boundary because *that* half was avoidable. `TestTaxonomyTest` placed the gauge's unit test in the database tier - correctly, since it cannot tell a reflective proxy from a pool - and the answer was a **design improvement rather than a tag**: `IdentityMetrics` takes a connection source now, `OutboxBacklog`'s shape. And `DashboardQueriesResolveTest` caught the new panel querying `finapp_identity_session_lifetime_seconds_bucket`, which a `Timer` does not publish without `publishPercentileHistogram()` - exactly the *renders “No data” and looks like a quiet system* defect it was written for after `baseUnit("events")`. **Both gate failures are now closed**, and the phase stays `IN_PROGRESS` until the review is re-run, which is `P1-DOC-002`: a phase becomes `COMPLETE` when a review says so, never because its remediation landed. **Seven mutations, all caught.** 858 hermetic tests, 426 database tests. |
 | 2026-09-08 | **`P1-TSK-027` complete - M1.2 closes, and exit criterion 1 closes with it.** A login now issues a session: `POST /v1/authentications` answers **201 with the session** rather than 204 with nothing, issued inside the authentication transaction and inside the **same security scope** as the success audit record - so a session that exists always has the record of the login that produced it, and a rolled-back login leaves neither. **The property was verified the way the failure demanded, and the obvious check would not have done.** `P1-DOC-001`'s finding was never *“no session row is written”* - it was that **a real client could not obtain one while the test suite could**, because every suite exercising the eight endpoints marked `Auth: session` inserted a session row directly, which is exactly why the gap survived twenty-four tasks. So a test asserting that a token came back would have repeated the same blindness one layer up: `aLoginProducesAUsableSession` **uses** the token on `GET /v1/sessions` over real HTTP with nothing inserted, and `aFabricatedTokenOpensNothing` is its negative control, without which an interceptor that admitted everything would satisfy the headline assertion perfectly. **A session IS issued when a second factor is enrolled, and the strict-looking answer is the wrong one**: withholding one until MFA completes reads as safer and makes **step-up unreachable**, because `MfaChallenge.elevate` takes a *current* session - the same shape of defect as the one this task closes, two mechanisms that each work and are not joined. Assurance being a **level** rather than a boolean (ADR-0030) is what makes the composition safe, and it is asserted rather than argued: the login's session opens `GET /v1/sessions` and is **refused** by a handler requiring `MULTI_FACTOR`. The response is also byte-comparable whether or not MFA is enrolled, because a body gaining an `mfaRequired` flag would tell an attacker holding a stolen password what to attack next (`INV-IDN-07`). **The level is not a parameter**, which is stronger than every caller passing the right one: `SessionIssue` hard-codes `PASSWORD`, and a caller able to ask for `MULTI_FACTOR` would have found the bypass `INV-IDN-05` exists to prevent. **One audit record, not two** - the session identifier goes into `AUTHENTICATION_SUCCEEDED`'s change summary rather than becoming a second `SESSION_ISSUED` row: one economic event, one entry, and an investigator reads *“this login produced session X”* instead of joining two rows by timestamp. **`MfaBypassPathsAreEnumeratedTest` predicted this task by name and failed until it arrived** - its javadoc has said since `P1-TSK-019` that *“`P1-TSK-027` will add the second path and must come here and say so”*, and its standing claim that *“the only way a session comes into existence is a proven second factor”* is rewritten, because that read as strength and was in fact the defect. **The contract change is BREAKING and the backlog had called it additive**: removing `204` breaks a client written against it, the classifier said so, the diff was reviewed line by line, and it was accepted because nothing consumes this API and the alternative is a `/v2` for an endpoint whose first version was never usable (ADR-0015) - corrected in the backlog rather than quietly, since a plan mislabelling its own change is what the byte-for-byte comparison exists to catch. `produces = application/json` is declared explicitly, because springdoc publishes `*/*` without it - the defect `P1-TSK-016`'s gate found on the session endpoints. **The second `secretsAreWrapped` exemption arrived WITH its test**: `P1-TSK-018` added the first and its gate found the javadoc claiming a test that did not exist, and an exemption is a claim that a guard's subject is safe by other means - so imaginary means make it a hole with a paragraph in front of it. `AuthenticatedSessionTest` was written alongside the entry. **Two of my own tests were wrong, and the second bounds what can be tested at all.** The audit assertion **pinned a rendering** - it required `session=<bare uuid>` and the platform renders `SessionId(uuid)`, the convention across all five existing change summaries; the test was wrong, because an investigator searches a free-text summary by substring and never by equality, and the wrapped form additionally says which kind of identifier it is. And a **hostile `User-Agent` could not be driven at all**: the JDK's `HttpClient` refuses any header value outside printable ASCII, so the bidirectional override never left the client - recorded rather than worked around, because the character-level rule is `DeviceDescriptionTest`'s subject, reaching it needs raw bytes on a socket, and that is *why* the rule lives on the domain type rather than at the boundary. **And the most instructive failure of the task was in the machinery that checks the work, not in the work**: the mutation harness's plant-verification assertion fired correctly on a mutation that WRAPS its target rather than replacing it, the script exited on that assertion, and the restore was on the happy path only - so it left `sessions.insert` disabled in production code. Everything measured afterwards measured that: **seven failures across the full suite**, confirmed by three reproductions and a probe, and the reported symptom - *the audit record commits and the session row does not, in one transaction on one connection* - was impossible, which is what finally pointed at the harness. All three suites pass together against restored code, and **all ten mutation results were void and were re-run**: they had executed against a codebase that was red whatever the mutation did, so every CAUGHT was a coincidence. A harness that cannot leave the tree clean does not merely fail to prove things, it **manufactures proofs**. The restore is in a `finally` now, writing back the string read at the top so no backup file can be orphaned either - the seventh occurrence in this project of a mutation reporting something it did not measure, and the first where the harness broke the tree. `DeviceDescription.fromUserAgent` gets its first production caller, so `GET /v1/sessions` shows a person something they recognise rather than a column of nulls. **M1.2 closes two days after its last numbered task**: its acceptance names a session, and a milestone means its acceptance rather than its task count - the scope line named session issuance while the session tasks were numbered into M1.3. **Criterion 6 is now the only criterion failing**, so Phase 1 stays `IN_PROGRESS`; `P1-TSK-029` is the last thing between it and the gate. **Ten mutations, all caught** - and all ten re-run after the harness finding above. 851 hermetic tests, 418 database tests. |
 | 2026-09-08 | **`P1-DOC-001` complete - M1.7 closes, and Phase 1 does not.** The phase review, conducted per `PHASE_GATES.md` §4: eight areas, the twelve universal exit criteria and the six Phase 1-specific ones, each assessed with evidence. **It finds the exit gate does not pass, and that is what conducting one is for** - §4 returns the phase to `IN_PROGRESS`, and §1 is explicit that moving backwards from review is normal while *“shipping through a failed gate”* is the failure. Phase 0's review reached the same conclusion and was vindicated within days, when the first CI run it had refused to waive failed twice for defects no local run could reach. **Criterion 1 fails: no production path issues a first session.** Traced through the code rather than inferred - `Session.issue` is called only by `SessionRotation`, `rotate` only by `MfaChallenge.elevate`, `elevate` requires a `current` session, and `MfaChallengeController` is `@RequiresSession`, while `POST /v1/authentications` answers **204 with no body**. So a real client cannot obtain a session by any route and the **eight** endpoints the plan marks `Auth: session` are unreachable; every test that exercises them inserts a session row directly. `MfaBypassPathsAreEnumeratedTest` has recorded this since `P1-TSK-019` as *“an accident of sequencing rather than a design goal”*, and the criterion demands deliverables **exercisable end to end** - proving an identity and holding a session are both built and nothing joins them. **Criterion 6 fails: four of six meters do not exist** - `mfa_challenge`, `session_lifetime`, `recovery` and `active_sessions`, which are exactly the phase's critical flows. **`finapp.identity.recovery` is the one that matters most**, and the plan says why in its own annotation: *“recovery is the ATO vector; its rate is a security signal”* - a takeover campaign is a rise in recovery initiations, visible today only by querying the audit trail, **which is evidence rather than monitoring**. `INV-AUD-01` is satisfied and criterion 6 is not, and that distinction is why the platform has both. **Neither failure is architectural**: the design work is done, and what is missing is a connection between two things the phase built plus four meters. **Three documentation drifts, found by hand-diffing what no guard covers** - the method that found two drifts in Phase 0's review. The plan declares **fifteen** endpoints and **twelve** exist, and two of the absentees - `GET /v1/me` and `PATCH /v1/me` - are owned by **nobody**, the eighth backlog defect of this class in Phase 1 and the first found by a review rather than by the task that tripped over it. An exemption in `AuditCompletenessTest` read *“PHASE_1_PLAN.md does not list one”* about `party.ProfileChanged` and **the plan lists `PATCH /v1/me`** - I wrote that entry in `P1-TSK-022` and it was untrue, which is the `P1-TSK-018` shape in my own register: an exemption is a claim that something is safe by other means, so a false claim is a hole with a paragraph in front of it. And §Next Task in this document said the phase-specific criteria *“name seven identity properties”* where `PHASE_GATES.md` §5 lists **six bullets**, conflating them with the transition's seven `INV-IDN` properties - which is why a review checks claims rather than inheriting them. All three corrected. **Area 2 has no subject and says so**: Phase 1 creates no posting, so reporting a pass would be reporting on something that does not exist, and a reader comparing review records must be able to tell *assessed and clean* from *had no subject*. **ADR-0029…0034 moved to `Accepted` despite the open failures**, on Phase 0's recorded reasoning that criterion 10 is a **precondition** of the gate rather than a reward for passing it. Two backlog items created: `P1-TSK-029` (the four meters) and `P1-TSK-030` (the two unowned endpoints). **What the phase produced**: 2 modules, 14 tables, 12 endpoints, 6 aggregates, 19 auditable actions, 8 new invariants taking the platform to **72**, 6 ADRs, 847 hermetic and 404 database tests, 24 of 29 backlog items. |
 | 2026-09-08 | **`P1-TSK-024` complete - M1.7 opens, 1 of 2.** The mutation register now covers every phase the project has reached rather than Phase 0 only, which had left the `INV-IDN` group in exactly the weaker regime the Phase 0 → 1 transition created it to escape - no row in `MUTATION_TESTING.md` being one of the four things that transition named. **The acceptance as written was too narrow in two ways, and probing found both.** There are **eight** `INV-IDN-*` rather than seven, because `P1-TSK-017` added `INV-IDN-08` mid-phase - the task's own text was already stale. And there are **nine** Phase 1 invariants, because `INV-AUD-03` is `Phase: 1 onward` and is **not in the `INV-IDN` group at all**, so a guard extended to `INV-IDN-*` - which is what the item asked for - would have missed it. Extending to *every invariant of every phase reached* is what finds it, which is the difference between implementing the sentence and implementing the property. **Two had no row**: `INV-IDN-02`, the one the task is named for, and `INV-AUD-03`; both were already demonstrated, so the rows record work done rather than work invented. **The finding is that nine rows did not parse.** The grammar admitted exactly one backticked reference and nothing after it, while the register is written with lists and trailing prose - and eight of the nine unreadable rows were written during Phase 1 by me. They were not reported as broken, they were simply absent, so `everyNamedTestExists` and `everyNamedMethodExists` never looked at them and a row naming a renamed test would have sat there reading as a live proof. **A register whose rows the guard cannot read reports coverage it does not have** - `P0-TST-008`'s finding, in the artefact built to prevent that exact class of defect. **Proven precisely rather than argued**: a reference in *second* position naming a test that does not exist **survives** the old parser and is **caught** by the widened one - and the first attempt at that demonstration was wrong, which checking is what showed, because the plant happened to be reachable as a first reference and so proved nothing about the widening. **The current phase is derived from `CURRENT_STATE.md`**, whose stated role is to be the canonical description of where the project is, so Phase 2 needs no change to the guard - a constant would be the stale list this repository closes by derivation everywhere else. The **highest** phase the section names rather than the one marked `IN_PROGRESS`, because a status word is prose that changes shape between phases and a phase that has been reached does not stop having been reached. **§4 generalised, and the two phases declare their test items differently**: Phase 0 gives `P0-TST-*` their own headings while Phase 1 names `P1-TST-*` inside task headings, so anchoring to either shape finds nothing for the other and passes vacuously. **One mutation survived and found a defect in this task's own new assertion**: `everyRowNamesATest` exists so an unreadable row is a failure rather than a silent omission, and its first version read the references merged **per invariant** - `INV-IDN-06` has two rows, so emptying one left the merge non-empty and the mutation walked through. A check defeated by the very merging that makes the rest of the guard convenient is a check reporting coverage it does not have; it is per row now. **The completion gate then found the same defect ONE LEVEL OUT, in that very fix**: `everyRowNamesATest` catches a row that parses and names nothing, and cannot catch a row that fails the row pattern entirely - a typo in the form column, an extra pipe, a reflowed line - because such a row is not in the map at all. Probed rather than reasoned about: changing one row's form from `In-suite` to `Insuite` left the build **green**, and that invariant stayed covered only because it happens to have sibling rows. The outer check is structural now - every §2 line that looks like a row must parse as one - because leaving it open would have reproduced this task's own finding inside the fix for it. **Seven mutations, all caught.** 847 hermetic tests, 404 database tests. |

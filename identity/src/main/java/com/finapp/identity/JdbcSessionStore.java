@@ -166,7 +166,7 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
     }
 
     @Override
-    public boolean revokeOwned(
+    public java.util.OptionalLong revokeOwned(
             Connection unitOfWork, SessionId sessionId, IdentityId owner, Instant at) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(sessionId, "sessionId must not be null");
@@ -176,17 +176,56 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
         // identity_id = ? IS the ownership check (ADR-0031). It is in the statement rather than in
         // a load-then-compare because the compare-then-act is a TOCTOU race, and because a check
         // performed against a row read a moment ago is a check against a copy of the truth.
+        //
+        // RETURNING carries the session's lifetime out (P1-TSK-029). Whole seconds, cast in SQL:
+        // INV-MON-01 forbids floating point on any production path, and a duration measured in
+        // seconds gains nothing from a double (OutboxBacklog's precedent).
         String sql =
                 "UPDATE " + TABLE + " SET status = 'REVOKED', revoked_at = ?"
-                        + " WHERE id = ? AND identity_id = ? AND status = 'ACTIVE'";
+                        + " WHERE id = ? AND identity_id = ? AND status = 'ACTIVE'"
+                        + " RETURNING extract(epoch FROM revoked_at - issued_at)::bigint";
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setTimestamp(1, Timestamp.from(at));
             update.setObject(2, sessionId.value());
             update.setObject(3, owner.value());
-            return update.executeUpdate() == 1;
+            try (ResultSet revoked = update.executeQuery()) {
+                // Empty is "nothing was ended", which is what the boolean used to say. One row is
+                // guaranteed by the primary key, so there is no "which of several" to resolve.
+                return revoked.next()
+                        ? java.util.OptionalLong.of(revoked.getLong(1))
+                        : java.util.OptionalLong.empty();
+            }
         } catch (SQLException e) {
             throw new IdentityStorageException(
                     DatabaseFailure.describe("Could not revoke session " + sessionId, e));
+        }
+    }
+
+    @Override
+    public long countLive(Connection unitOfWork, Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+
+        // THE SAME PREDICATE AS findLive, and that is the point rather than tidiness. There is no
+        // EXPIRED status and no sweep (ADR-0030, P1-TSK-013), so counting `status = 'ACTIVE'` alone
+        // would count sessions nobody can use - and it would be wrong in the REASSURING direction,
+        // reporting live customers indefinitely. A gauge that disagreed with the lookup about what
+        // a session is would be a number an operator could not act on.
+        String sql =
+                "SELECT count(*) FROM " + TABLE
+                        + " WHERE status = 'ACTIVE'"
+                        + " AND idle_expires_at > ?"
+                        + " AND absolute_expires_at > ?";
+        try (PreparedStatement count = unitOfWork.prepareStatement(sql)) {
+            count.setTimestamp(1, Timestamp.from(at));
+            count.setTimestamp(2, Timestamp.from(at));
+            try (ResultSet rows = count.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not count live sessions", e));
         }
     }
 

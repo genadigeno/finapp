@@ -119,7 +119,7 @@ class SessionOwnershipDatabaseTest {
         Session ofTheirs = givenALiveSession(theirs);
 
         try (Connection app = DatabaseRoles.application()) {
-            boolean revoked = sessions.revokeOwned(app, ofTheirs.id(), mine, Instant.now(CLOCK));
+            boolean revoked = sessions.revokeOwned(app, ofTheirs.id(), mine, Instant.now(CLOCK)).isPresent();
 
             assertThat(revoked)
                     .as("this is the defect ADR-0031 names: a legitimate capability used against"
@@ -144,7 +144,7 @@ class SessionOwnershipDatabaseTest {
         Session ofMine = givenALiveSession(mine);
 
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(sessions.revokeOwned(app, ofMine.id(), mine, Instant.now(CLOCK)))
+            assertThat(sessions.revokeOwned(app, ofMine.id(), mine, Instant.now(CLOCK)).isPresent())
                     .as("the positive control: without it the ownership check could refuse"
                             + " everything and every negative test above would still pass")
                     .isTrue();
@@ -161,8 +161,10 @@ class SessionOwnershipDatabaseTest {
 
         try (Connection app = DatabaseRoles.application()) {
             boolean absent =
-                    sessions.revokeOwned(app, SessionId.next(IDS), mine, Instant.now(CLOCK));
-            boolean notMine = sessions.revokeOwned(app, ofTheirs.id(), mine, Instant.now(CLOCK));
+                    sessions.revokeOwned(app, SessionId.next(IDS), mine, Instant.now(CLOCK))
+                            .isPresent();
+            boolean notMine =
+                    sessions.revokeOwned(app, ofTheirs.id(), mine, Instant.now(CLOCK)).isPresent();
 
             // Asserted as an EQUALITY between the two causes rather than as two assertions against
             // a remembered expectation - the P1-TSK-010 form. A caller able to tell them apart
@@ -187,7 +189,7 @@ class SessionOwnershipDatabaseTest {
         long before = auditRecordCount();
         inAFlow(
                 app -> {
-                    boolean revoked = revocation().revoke(app, ofTheirs.id(), mine);
+                    boolean revoked = revocation().revoke(app, ofTheirs.id(), mine).isPresent();
                     assertThat(revoked).isFalse();
                 });
 
@@ -228,7 +230,12 @@ class SessionOwnershipDatabaseTest {
                                     // would let each racer see the others' uncommitted state, and
                                     // the test would prove the opposite of what it claims.
                                     boolean[] revoked = {false};
-                                    inAFlow(app -> revoked[0] = revocation().revoke(app, ofMine.id(), mine));
+                                    inAFlow(
+                                            app ->
+                                                    revoked[0] =
+                                                            revocation()
+                                                                    .revoke(app, ofMine.id(), mine)
+                                                                    .isPresent());
                                     return revoked[0];
                                 }));
             }

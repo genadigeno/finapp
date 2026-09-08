@@ -57,6 +57,9 @@ class SessionEndpointDatabaseTest {
 
     @LocalServerPort private int port;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.micrometer.core.instrument.MeterRegistry meters;
+
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
 
@@ -405,7 +408,12 @@ class SessionEndpointDatabaseTest {
         }
 
         @Override
-        public boolean revokeOwned(
+        public long countLive(Connection unitOfWork, Instant at) {
+            throw new IllegalStateException("the database is unreachable");
+        }
+
+        @Override
+        public java.util.OptionalLong revokeOwned(
                 Connection unitOfWork,
                 com.finapp.identity.SessionId sessionId,
                 com.finapp.identity.IdentityId owner,
@@ -513,6 +521,58 @@ class SessionEndpointDatabaseTest {
 
         assertThat(delete("/v1/sessions/current", current).statusCode()).isEqualTo(204);
         assertThat(get("/v1/sessions", current).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    @DisplayName("a revocation records ONE lifetime sample, and a revocation of nothing records none")
+    void revocationFeedsTheLifetimeTimer() throws Exception {
+        // `P1-TSK-029`. The measurement comes from the database, inside the same conditional
+        // UPDATE - so "was anything revoked" and "how long did it live" are one answer and cannot
+        // disagree. A sample recorded when nothing was ended would put a duration into the
+        // distribution for a session that is still running.
+        IdentityId mine = givenAnIdentity();
+        Issued current = givenALiveSession(mine, null);
+        Issued doomed = givenALiveSession(mine, null);
+
+        long before = lifetimeSamples();
+
+        assertThat(delete("/v1/sessions/" + doomed.session().id().value(), current).statusCode())
+                .isEqualTo(204);
+        assertThat(lifetimeSamples())
+                .as("one session ended, one sample")
+                .isEqualTo(before + 1);
+
+        // The same identifier again: the session is already REVOKED, so the conditional UPDATE
+        // matches nothing. A 404 and no sample.
+        assertThat(delete("/v1/sessions/" + doomed.session().id().value(), current).statusCode())
+                .isEqualTo(404);
+        assertThat(lifetimeSamples())
+                .as("nothing was ended the second time, so nothing was measured")
+                .isEqualTo(before + 1);
+    }
+
+    @Test
+    @DisplayName("revoking somebody else's session records no lifetime either")
+    void aRefusedRevocationRecordsNothing() throws Exception {
+        // The ownership case, and the reason it belongs here rather than only in
+        // SessionOwnershipDatabaseTest: a timer fed by a REFUSED revocation would leak the fact
+        // that the session exists into a series an operator can see, which is the disclosure the
+        // 404 exists to prevent (INV-IDN-07's reasoning, applied to a metric).
+        IdentityId mine = givenAnIdentity();
+        IdentityId theirs = givenAnIdentity();
+        Issued current = givenALiveSession(mine, null);
+        Issued notMine = givenALiveSession(theirs, null);
+
+        long before = lifetimeSamples();
+
+        assertThat(delete("/v1/sessions/" + notMine.session().id().value(), current).statusCode())
+                .isEqualTo(404);
+        assertThat(lifetimeSamples()).isEqualTo(before);
+    }
+
+    /** How many lifetimes the timer has recorded. */
+    private long lifetimeSamples() {
+        return meters.timer("finapp.identity.session.lifetime").count();
     }
 
     @Test

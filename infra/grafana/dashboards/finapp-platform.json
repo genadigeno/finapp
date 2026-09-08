@@ -179,6 +179,131 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "Identity — security signals",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Recovery initiations",
+      "description": "THE account-takeover signal (PHASE_1_PLAN.md §10). A campaign is a rise here — and a rise in `refused` is a probe against identifiers that do not exist, which the 202 response deliberately hides from the caller and cannot hide from this.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_identity_recovery_initiation_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Authentication outcomes and lockouts",
+      "description": "Failure rate is noisy and mostly benign; a spike in LOCKOUTS is credential stuffing. Two meters rather than a third tag value, so the second signal is not buried in the first's noise.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 16 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_identity_authentication_total[5m]))", "legendFormat": "{{outcome}}" },
+        { "refId": "B", "expr": "sum(rate(finapp_identity_lockout_total[5m]))", "legendFormat": "lockouts" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "lockouts" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Second-factor challenges",
+      "description": "Refusals rising is somebody holding a stolen password and failing at the second factor. The REASON — wrong code, replayed, no factor — lives in the audit trail and never in a tag.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 16 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_identity_mfa_challenge_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Live sessions",
+      "description": "max(), NEVER sum(): the gauge is read from the database, so every instance reports the same fleet-wide figure and summing ten replicas would report ten times the truth. Absent rather than zero when the database is unreadable — a comforting zero is not alertable.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 23 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_identity_session_active)", "legendFormat": "live" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Session lifetime, when its owner ended it",
+      "description": "ONE POPULATION, and it is not all sessions: expiry is derived and never observed (ADR-0030), so expired sessions cannot appear here. Bulk revocation and step-up rotation are excluded too. The MEAN rather than a quantile: a Timer publishes no histogram buckets without publishPercentileHistogram(), whose cardinality this low-volume signal does not earn, and client-side percentiles do not aggregate across replicas. DashboardQueriesResolveTest caught the first version querying _bucket.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 23 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(finapp_identity_session_lifetime_seconds_sum[30m])) / sum(rate(finapp_identity_session_lifetime_seconds_count[30m]))", "legendFormat": "mean" },
+        { "refId": "B", "expr": "sum(rate(finapp_identity_session_lifetime_seconds_count[30m]))", "legendFormat": "samples/s" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

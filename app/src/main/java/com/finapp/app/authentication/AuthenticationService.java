@@ -92,13 +92,27 @@ public final class AuthenticationService {
      */
     static final String LOCKOUT_COUNTER = "finapp.identity.lockout";
 
+    /**
+     * Registered at CONSTRUCTION, one per outcome, never on first increment.
+     *
+     * <p>{@code MeterRegistry.counter(name, tags)} creates the meter on the first call, so a
+     * freshly started instance would publish <strong>no series at all</strong> until the flow ran
+     * once. An alert written on a rate then has nothing to evaluate at precisely the moment it
+     * needed a series sitting at zero - a counter that starts existing when the thing it counts
+     * happens is a delayed notification, not monitoring. Found by {@code P1-TSK-029}.
+     */
+    private final io.micrometer.core.instrument.Counter authenticated;
+
+    private final io.micrometer.core.instrument.Counter refused;
+
+    private final io.micrometer.core.instrument.Counter locked;
+
     private final CredentialVerifier verifier;
     private final AuthenticationThrottle throttle;
     private final IdentityAuthentication authentications;
     private final SessionIssue sessionIssue;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
-    private final MeterRegistry meters;
 
     public AuthenticationService(
             CredentialVerifier verifier,
@@ -115,7 +129,11 @@ public final class AuthenticationService {
         this.sessionIssue = Objects.requireNonNull(sessionIssue, "sessionIssue must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-        this.meters = Objects.requireNonNull(meters, "meters must not be null");
+        Objects.requireNonNull(meters, "meters must not be null");
+        this.authenticated =
+                meters.counter(AUTHENTICATION_COUNTER, "outcome", Outcome.AUTHENTICATED.tag());
+        this.refused = meters.counter(AUTHENTICATION_COUNTER, "outcome", Outcome.REFUSED.tag());
+        this.locked = meters.counter(LOCKOUT_COUNTER);
     }
 
     /**
@@ -155,11 +173,7 @@ public final class AuthenticationService {
         // The tag is derived from PRESENCE rather than computed alongside it, so the meter cannot
         // disagree with what the caller receives. Two sources of truth about one fact is how a
         // dashboard comes to show successes nobody got.
-        meters.counter(
-                        AUTHENTICATION_COUNTER,
-                        "outcome",
-                        (issued.isPresent() ? Outcome.AUTHENTICATED : Outcome.REFUSED).tag())
-                .increment();
+        (issued.isPresent() ? authenticated : refused).increment();
         return issued;
     }
 
@@ -235,7 +249,7 @@ public final class AuthenticationService {
             // identity on failure: a caller handed one is a caller that can leak one.
             AuthenticationThrottle.Lock lock = throttle.recordFailure(unitOfWork, login);
             if (lock.lockedByThisFailure()) {
-                meters.counter(LOCKOUT_COUNTER).increment();
+                locked.increment();
             }
             authentications.failed(unitOfWork, login);
         }

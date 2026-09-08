@@ -304,13 +304,35 @@ invariants; `P1-TSK-024` extends it to Phase 1.
 
 | Signal | Why |
 |---|---|
-| `finapp.identity.authentication` — counter, tagged by outcome and assurance | Success/failure rate is the primary compromise indicator |
+| `finapp.identity.authentication` — counter, tagged by outcome | Success/failure rate is the primary compromise indicator |
 | `finapp.identity.lockout` — counter | A spike is credential stuffing |
-| `finapp.identity.mfa_challenge` — counter by outcome | |
-| `finapp.identity.session_lifetime` — timer | |
-| `finapp.identity.recovery` — counter by stage | Recovery is the ATO vector; its rate is a security signal |
-| `finapp.identity.active_sessions` — gauge | |
+| `finapp.identity.mfa.challenge` — counter by outcome | Elevation refusals rising is somebody with a stolen password |
+| `finapp.identity.session.lifetime` — timer | How long a session a person **ended** had lived |
+| `finapp.identity.recovery.initiation` — counter by outcome | Recovery is the ATO vector; its rate is a security signal |
+| `finapp.identity.recovery.completion` — counter by outcome | A credential actually changed |
+| `finapp.identity.session.active` — gauge | |
 | `finapp.party.registration` — counter | |
+
+**Three names in this table were corrected by `P1-TSK-029`, and one row split.** As written they
+carried **underscores** — `mfa_challenge`, `session_lifetime`, `active_sessions` — which
+`MetricNames.NAME` forbids: the convention is `finapp.<module>.<noun>[.<noun>]`, dots only. They
+could not have been registered at all, so this table asserted something the platform's own
+convention rejects.
+
+**Correcting the plan rather than widening the convention costs nothing**, and that is why it is the
+right way round: Micrometer translates a name to the backend's idiom, so `finapp.identity.mfa.challenge`
+and `finapp.identity.mfa_challenge` produce the **identical** Prometheus series
+`finapp_identity_mfa_challenge`. The dotted form additionally keeps siblings sorting together, which
+is Micrometer's own hierarchical convention.
+
+**`recovery` became two meters** rather than one tagged by `stage`, because `stage` is not in
+`MetricNames.ALLOWED_TAG_KEYS`. Widening that list was available and refused: it exists to make such
+an addition an explicit decision rather than an autocomplete, and a naming exists that needs no
+widening. It also serves §Security signals better — *"recovery initiation rate"* is now one series.
+
+**The `assurance` tag was dropped from `finapp.identity.authentication`.** Since `P1-TSK-027` a login
+always issues `PASSWORD`, so the tag would carry one value — a series multiplier that answers
+nothing. It becomes meaningful when a second producer of sessions exists at another level.
 
 **No tag value derives from a request** (ADR-0018): no identity identifier, no email, no IP. A
 failure-rate metric answers *how many*, and *which one* is the audit trail's question.

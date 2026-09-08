@@ -62,6 +62,9 @@ class RecoveryEndpointDatabaseTest {
 
     @LocalServerPort private int port;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.micrometer.core.instrument.MeterRegistry meters;
+
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
 
@@ -95,6 +98,33 @@ class RecoveryEndpointDatabaseTest {
         // different bodies that each happen to match what its author wrote down.
         assertThat(real.statusCode()).isEqualTo(nobody.statusCode());
         assertThat(real.body()).isEqualTo(nobody.body());
+    }
+
+    @Test
+    @DisplayName("the counter distinguishes what the 202 deliberately hides")
+    void theCounterSeesWhatTheResponseHides() throws Exception {
+        // `P1-TSK-029`. The response is 202 for an identifier naming nobody AND for a real identity
+        // with no verified channel - which is INV-IDN-07 working, and it is why a flood of probes
+        // is invisible from outside. The counter is not visible to the caller, so it can and must
+        // tell them apart: a rise in `refused` is somebody walking a list of identifiers.
+        double refusedBefore = count("refused");
+        double acceptedBefore = count("accepted");
+
+        HttpResponse<String> nobody =
+                post("/v1/recoveries", "{\"loginIdentifier\":\"nobody-at-all\"}", null);
+
+        assertThat(nobody.statusCode()).as("the response says nothing, as it must").isEqualTo(202);
+        assertThat(count("refused"))
+                .as("and the counter says what happened, which is the ATO signal the plan names")
+                .isEqualTo(refusedBefore + 1);
+        assertThat(count("accepted"))
+                .as("nothing was accepted, so nothing counted it")
+                .isEqualTo(acceptedBefore);
+    }
+
+    /** One outcome of {@code finapp.identity.recovery.initiation}. */
+    private double count(String outcome) {
+        return meters.counter("finapp.identity.recovery.initiation", "outcome", outcome).count();
     }
 
     @Test

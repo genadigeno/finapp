@@ -479,3 +479,43 @@ the byte-for-byte comparison exists to catch.
 
 **Criterion 6** — four of six meters. `P1-TSK-029`. The phase stays `IN_PROGRESS` until it lands and
 this review is re-run against that criterion.
+
+---
+
+## Addendum — criterion 6 closed (2026-09-08)
+
+`P1-TSK-029` landed. **Both gate failures are now closed.** This addendum records what changed; it is
+**not** the re-assessment — that is `P1-DOC-002`, because a phase becomes `COMPLETE` when a review
+says so and not because its remediation landed.
+
+### What changed
+
+Four meters added (five instruments — recovery splits), and criterion 6 turned from a check somebody
+performs at a gate into one the build performs: `PlannedMetersExistTest` reads this plan's own §10
+table and asserts every meter it names is in the live registry, in both directions.
+
+### This review understated the failure, and the correction is worth recording
+
+It found *"four of six meters do not exist"*. The truth was worse: **the two counted as existing did
+not exist either, until the flow had run once.** `MeterRegistry.counter(name, tags)` creates the
+meter on the first call, so a freshly started instance published no series at all for authentication
+or lockout — and an alert on `rate(finapp_identity_lockout_total[5m])` had nothing to evaluate at
+precisely the moment it was needed.
+
+A review that reads the plan and greps the code finds *names*. It cannot find *when the name starts
+existing*, and that is the difference between this review's method and a test that boots a context
+and runs nothing. It is also why the remediation shipped a guard rather than five meters.
+
+### Three of the four planned names were unregisterable as written
+
+`mfa_challenge`, `session_lifetime` and `active_sessions` carry underscores, which
+`MetricNames.NAME` forbids. **This review did not notice**, because it compared the plan's table
+against the code and both were consistent about names that neither could use. The plan is corrected
+— for free, since Micrometer translates dots to the backend's idiom and both forms produce the same
+Prometheus series.
+
+### What remains
+
+Nothing, on the criteria. `P1-DOC-002` re-assesses criteria 1 and 6 against the code and records the
+verdict; `P1-TSK-025`, `-026`, `-028` and `-030` remain open and are named by no criterion, which is
+the distinction this review recorded in §What happens next.

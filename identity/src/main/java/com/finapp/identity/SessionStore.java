@@ -2,6 +2,7 @@ package com.finapp.identity;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 /**
  * Where sessions live (`P1-TSK-013`, ADR-0030).
@@ -76,11 +77,41 @@ public interface SessionStore<T> {
      * that both matter: the compare-then-act is a TOCTOU race, and ADR-0031 requires the check
      * against authoritative state rather than against a row read a moment earlier.
      *
-     * @return whether a live session belonging to {@code owner} was ended. <strong>False does not
-     *     say which of "no such session" and "not yours" was true</strong>, deliberately: a caller
-     *     that could tell them apart could enumerate other people's session identifiers
+     * <h2>It returns the session's lifetime, and the boolean is derived from presence</h2>
+     *
+     * <p>Widened by {@code P1-TSK-029} to feed {@code finapp.identity.session.lifetime}. The row is
+     * being updated anyway, so {@code RETURNING} adds no query and no race — and the boolean this
+     * used to return is exactly {@link OptionalLong#isPresent()}, so no information is lost and no
+     * second source of truth about "was anything revoked" appears.
+     *
+     * <p><strong>The alternative was refused.</strong> Reading the session first to learn when it
+     * was issued would add a query to a security-critical operation purely to feed a metric, and
+     * monitoring must not change the shape of the thing it monitors. The database computes the
+     * duration inside the same statement, by the <strong>server's</strong> clock — {@code V004}'s
+     * reasoning, because a duration computed by subtracting a server timestamp from a client's
+     * clock measures the difference between two machines as much as it measures the session.
+     *
+     * @return the ended session's lifetime in whole seconds, or empty if nothing was ended.
+     *     <strong>Empty does not say which of "no such session" and "not yours" was true</strong>,
+     *     deliberately: a caller that could tell them apart could enumerate other people's session
+     *     identifiers
      */
-    boolean revokeOwned(T unitOfWork, SessionId sessionId, IdentityId owner, Instant at);
+    OptionalLong revokeOwned(T unitOfWork, SessionId sessionId, IdentityId owner, Instant at);
+
+    /**
+     * How many sessions are <strong>live</strong> right now, across the whole fleet.
+     *
+     * <p>Feeds {@code finapp.identity.session.active} ({@code P1-TSK-029}). A count held in the
+     * application would be per-instance and would report nothing when the application is the thing
+     * that is wrong — {@code P0-TSK-029}'s reasoning for the outbox gauges, unchanged.
+     *
+     * <p><strong>Live, not {@code ACTIVE}.</strong> ADR-0030 and {@code P1-TSK-013} decided there
+     * is no {@code EXPIRED} status and no sweep, so {@code status = 'ACTIVE'} counts sessions
+     * <em>nobody can use</em> — and it would be wrong in the reassuring direction, reporting live
+     * customers indefinitely. The predicate is {@link #findLive}'s, so the gauge and the lookup
+     * cannot disagree about what a session is.
+     */
+    long countLive(T unitOfWork, Instant at);
 
     /**
      * Ends every live session of an identity — <em>"log out everywhere"</em>.

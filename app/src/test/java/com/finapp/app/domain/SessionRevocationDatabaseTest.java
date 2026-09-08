@@ -405,19 +405,19 @@ class SessionRevocationDatabaseTest {
             SessionRevocation revocation =
                     new SessionRevocation(sessions, IDS, CLOCK, new JdbcAuditWriter());
 
-            assertThat(revocation.revoke(app, session.id(), identity)).isTrue();
+            assertThat(revocation.revoke(app, session.id(), identity)).isPresent();
             assertThat(auditRowsForTarget(app, session.id().value().toString()))
                     .as("audited against the session, which is what was acted on")
                     .isEqualTo(1);
 
             // A second revocation ends nothing, so it records nothing.
-            assertThat(revocation.revoke(app, session.id(), identity)).isFalse();
+            assertThat(revocation.revoke(app, session.id(), identity)).isEmpty();
             assertThat(auditRowsForTarget(app, session.id().value().toString()))
                     .as("a revocation that ended nothing must not appear in the trail")
                     .isEqualTo(1);
 
             SessionId neverExisted = SessionId.next(IDS);
-            assertThat(revocation.revoke(app, neverExisted, identity)).isFalse();
+            assertThat(revocation.revoke(app, neverExisted, identity)).isEmpty();
             assertThat(auditRowsForTarget(app, neverExisted.value().toString()))
                     .as("nor may a caller's guess at an identifier put that identifier in the trail")
                     .isZero();

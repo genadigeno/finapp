@@ -85,20 +85,26 @@ public final class SessionRevocation {
      * ADR-0031 names: <em>a legitimate permission used against someone else's resource, where every
      * check passes and nothing is logged as a denial.</em>
      *
-     * @return whether a live session belonging to {@code owner} was ended. A caller must not report
-     *     "not yours" and "no such session" differently — see {@code SessionStore#revokeOwned}
+     * @return the ended session's lifetime in whole seconds, or empty if nothing was ended.
+     *     Presence is the old boolean; a caller must not report "not yours" and "no such session"
+     *     differently — see {@code SessionStore#revokeOwned}.
+     *     <p><strong>The lifetime is passed upward rather than measured here</strong>, because
+     *     meters are incremented in {@code app} and never in {@code identity} — the convention
+     *     {@code AuthenticationThrottle} established, which keeps the domain free of the telemetry
+     *     framework. {@code SessionQueries} records it.
      */
-    public boolean revoke(Connection unitOfWork, SessionId sessionId, IdentityId owner) {
+    public java.util.OptionalLong revoke(
+            Connection unitOfWork, SessionId sessionId, IdentityId owner) {
         Objects.requireNonNull(sessionId, "sessionId must not be null");
         Objects.requireNonNull(owner, "owner must not be null");
 
         Instant at = Instant.now(clock);
-        boolean revoked = sessions.revokeOwned(unitOfWork, sessionId, owner, at);
-        if (revoked) {
+        java.util.OptionalLong lifetime = sessions.revokeOwned(unitOfWork, sessionId, owner, at);
+        if (lifetime.isPresent()) {
             audit(unitOfWork, at, SESSION_TARGET_TYPE, sessionId.value().toString(),
                     "identity=" + owner);
         }
-        return revoked;
+        return lifetime;
     }
 
     /** Ends every live session of an identity. */

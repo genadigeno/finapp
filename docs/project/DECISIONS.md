@@ -90,6 +90,21 @@ deliberately kept off metrics because a metric answers how many, not which one. 
 metric reports absent, never zero, because a zero silences the alert that should fire. &rarr;
 [ADR-0018](../adr/ADR-0018-metric-naming-and-cardinality.md)
 
+**Both halves were tested by a real case in `P1-TSK-029` and both held.** The tag allow-list met a
+key that would have satisfied the rule — `stage`, a bounded compile-time set — and was **not**
+widened, because a naming existed that needed no widening and the list exists to make such an
+addition an explicit decision rather than an autocomplete. And the naming pattern refused three
+meter names the Phase 1 plan had written with **underscores**: the plan was corrected rather than
+the convention relaxed, since Micrometer translates dots to the backend's idiom and both forms
+produce the identical Prometheus series. **A convention that costs nothing to obey is one there is
+never a reason to bend.**
+
+That task also found the property none of this covered: `MeterRegistry.counter(...)` creates a meter
+on first use, so every counter here published **no series at all** until its flow had run — and an
+alert on a rate has nothing to evaluate at the moment it is needed. Counters are registered at
+construction now, and `PlannedMetersExistTest` boots a context and runs nothing, so it can only pass
+against that.
+
 ### Sensitive data
 `INV-AUD-02` is the one invariant that specifies its own enforcement - default-deny redaction - and
 that is a property of a build rule, not of a wrapper people must remember. A secret is held in

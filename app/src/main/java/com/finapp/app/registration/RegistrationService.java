@@ -93,6 +93,18 @@ public final class RegistrationService {
     private final DataSource dataSource;
     private final MeterRegistry meters;
 
+    /**
+     * Registered at CONSTRUCTION, one per outcome, never on first increment.
+     *
+     * <p>{@code MeterRegistry.counter(name, tags)} creates the meter on the first call, so a
+     * freshly started instance would publish <strong>no series at all</strong> until the flow ran
+     * once. An alert written on a rate then has nothing to evaluate at precisely the moment it
+     * needed a series sitting at zero - a counter that starts existing when the thing it counts
+     * happens is a delayed notification, not monitoring. Found by {@code P1-TSK-029}.
+     */
+    private final java.util.Map<Outcome, io.micrometer.core.instrument.Counter> registrations =
+            new java.util.EnumMap<>(Outcome.class);
+
     public RegistrationService(
             IdempotentExecutor executor,
             PartyRegistration partyRegistration,
@@ -108,6 +120,10 @@ public final class RegistrationService {
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
+        for (Outcome outcome : Outcome.values()) {
+            registrations.put(
+                    outcome, meters.counter(REGISTRATION_COUNTER, "outcome", outcome.tag()));
+        }
     }
 
     /**
@@ -155,7 +171,7 @@ public final class RegistrationService {
                                 }
                             });
         }
-        meters.counter(REGISTRATION_COUNTER, "outcome", Objects.requireNonNull(outcome).tag())
+        registrations.get(Objects.requireNonNull(outcome))
                 .increment();
         return outcome;
     }

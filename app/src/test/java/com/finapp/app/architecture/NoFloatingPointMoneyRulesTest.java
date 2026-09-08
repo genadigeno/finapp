@@ -100,13 +100,19 @@ class NoFloatingPointMoneyRulesTest {
      * as changing an invariant, which is the point: the alternative is that someone weakens or
      * deletes the rule the first time it is inconvenient.
      *
-     * <h2>The two entries below, and why they are not the thin end of a wedge</h2>
+     * <h2>The four entries below, and why they are not the thin end of a wedge</h2>
      *
-     * <p>{@code P0-TSK-029} added them, and they are the first since this rule was written. The
-     * values are a <strong>count of unpublished outbox rows</strong> and an <strong>age in whole
-     * seconds</strong>. Neither is money, neither is derived from money, and neither can reach a
-     * monetary path: both come from {@code count(*)} and a timestamp difference, and both go to a
-     * metrics registry and nowhere else.
+     * <p>{@code P0-TSK-029} added the first two and they were the first since this rule was
+     * written; {@code P1-TSK-029} added the second two, and they are the <strong>same case</strong>
+     * rather than a new one. The values are a <strong>count of unpublished outbox rows</strong>, an
+     * <strong>age in whole seconds</strong>, and a <strong>count of live sessions</strong>. None is
+     * money, none is derived from money, and none can reach a monetary path: every one comes from
+     * a {@code count(*)} or a timestamp difference, and every one goes to a metrics registry and
+     * nowhere else.
+     *
+     * <p>That the second pair is the same case as the first is what makes this list healthy rather
+     * than growing: a fifth entry for something that is <em>not</em> a Micrometer gauge over a row
+     * count would be a new decision and should be argued as one.
      *
      * <p>The {@code double} is <strong>imposed by Micrometer</strong>, whose {@code Gauge} takes a
      * {@code ToDoubleFunction} — there is no integer gauge to use instead. The alternative to an
@@ -123,7 +129,14 @@ class NoFloatingPointMoneyRulesTest {
     private static final Set<String> EXEMPT_CLASSES =
             Set.of(
                     "com.finapp.app.telemetry.OutboxMetrics",
-                    "com.finapp.app.telemetry.OutboxMetrics$Cached");
+                    "com.finapp.app.telemetry.OutboxMetrics$Cached",
+                    // P1-TSK-029. A count of LIVE SESSIONS, published through the same
+                    // ToDoubleFunction Micrometer's Gauge imposes. The count itself is a `long` all
+                    // the way from `count(*)` to the registry boundary - SessionStore.countLive
+                    // returns `long`, not `double`, because that half WAS avoidable and "it is only
+                    // a metric" is the reasoning that spreads the habit to something that is not.
+                    "com.finapp.app.telemetry.IdentityMetrics",
+                    "com.finapp.app.telemetry.IdentityMetrics$Cached");
 
     // ---------------------------------------------------------------------
     // Guard: the rules must actually see the code they claim to protect.
