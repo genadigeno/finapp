@@ -34,14 +34,29 @@ import org.junit.jupiter.api.Test;
  *
  * <h2>What the enumeration says today, and it is worth reading twice</h2>
  *
- * <p><strong>Nothing in production calls {@code Session.issue}.</strong> The only path that creates
- * a session row is {@code SessionRotation}, reached only from {@code MfaChallenge.elevate}, which
- * refuses without a verified code. So right now the honest statement is that <em>the only way a
- * session comes into existence in this platform is a proven second factor</em>.
+ * <p>There are <strong>two</strong> ways a session comes into existence, and they establish
+ * different assurance levels:
  *
- * <p>That is an accident of sequencing rather than a design goal — {@code P1-TSK-027} will make
- * authentication issue one — and it is exactly why this guard is written now rather than then. The
- * task that adds the second path has to come here and say so.
+ * <ul>
+ *   <li>{@code SessionIssue.issue}, reached only from authentication, always at
+ *       <strong>{@code PASSWORD}</strong> — the level is not a parameter, so no caller can ask for
+ *       more.
+ *   <li>{@code SessionRotation.rotate}, reached only from {@code MfaChallenge.elevate}, which
+ *       refuses without a code verified against an {@code ACTIVE} factor whose step is unspent.
+ * </ul>
+ *
+ * <p><strong>This is the entry {@code P1-TSK-027} was told to come and write.</strong> Until it
+ * landed, the honest statement was that the only way a session existed at all was a proven second
+ * factor — which read as strength and was in fact the defect the Phase 1 review found: no
+ * production path issued a first session, so the eight endpoints marked <em>"Auth: session"</em>
+ * were unreachable by any real client. The guard's own text predicted this task by name, and that
+ * is what holding an enumeration against the code buys.
+ *
+ * <p><strong>The composition is what makes both safe.</strong> A {@code PASSWORD} session is the
+ * <em>input</em> to step-up: {@code MfaChallenge.elevate} takes a current session, so withholding
+ * one until MFA is done would make MFA unreachable. Assurance being a <em>level</em> rather than a
+ * boolean (ADR-0030) is what lets a session exist without satisfying anything that requires
+ * {@code MULTI_FACTOR}.
  *
  * <h2>Recovery was this guard's recorded remainder, and the answer is that it adds no path</h2>
  *
@@ -74,6 +89,17 @@ class MfaBypassPathsAreEnumeratedTest {
      */
     private static final Map<String, String> ENUMERATED_PATHS =
             Map.of(
+                    "com.finapp.identity.SessionIssue.issue",
+                    "The first session of a login (`P1-TSK-027`). Not a bypass because the assurance"
+                            + " level is NOT A PARAMETER - it is always PASSWORD, so no caller can"
+                            + " obtain a session that satisfies a MULTI_FACTOR requirement without"
+                            + " going through elevation below.",
+                    "com.finapp.app.authentication.AuthenticationService.attempt",
+                    "The only caller of the above. Not a bypass because it is reached only after a"
+                            + " full Argon2id verification has SUCCEEDED against an ACTIVE"
+                            + " credential and the account is not locked - and what it issues is a"
+                            + " PASSWORD session, which is exactly what proving a password should"
+                            + " buy.",
                     "com.finapp.identity.SessionRotation.rotate",
                     "The only writer of session rows. It does not decide the level - the caller"
                             + " states it - so it is not itself a bypass; every caller is enumerated"
@@ -86,6 +112,12 @@ class MfaBypassPathsAreEnumeratedTest {
     private static final Set<String> SESSION_ORIGINS =
             Set.of(
                     "com.finapp.identity.Session.issue",
+                    // Added by `P1-TSK-027`. Including the ISSUER as an origin - rather than
+                    // relying on it calling Session.issue - is what forces its CALLER to be
+                    // enumerated too. Without it the guard would name the component that creates
+                    // sessions and say nothing about who can reach it, which is the question
+                    // INV-IDN-05 actually asks.
+                    "com.finapp.identity.SessionIssue.issue",
                     "com.finapp.identity.SessionStore.insert",
                     "com.finapp.identity.JdbcSessionStore.insert",
                     "com.finapp.identity.SessionRotation.rotate");

@@ -1525,24 +1525,48 @@ repository exists to prevent.
   ~19 MiB per attempt by design (ADR-0032). Owned by `P1-TSK-011`.
 - Risk: **High**. Cx: M. DoD: `DOD-API`
 
-**P1-TSK-027 — Authentication issues a session**
+**P1-TSK-027 — Authentication issues a session** — `COMPLETE` (2026-09-08)
 - Context: identity / api
 - Description: `POST /v1/authentications` returns a session on success.
 - Why: `PHASE_1_PLAN.md` §11's M1.2 acceptance is *"an identity authenticates and **receives a
   session**"*, and `P1-TSK-010` delivered the endpoint without one because its declared dependency
   `P1-TSK-013` sits in M1.3. **M1.2 cannot close until this lands.** This is `P1-TSK-010`'s recorded
-  remainder, not new scope — the `P1-TSK-026` precedent.
+  remainder, not new scope — the `P1-TSK-026` precedent. `P1-DOC-001` then failed **exit criterion
+  1** on it: no production path issued a first session at all, so the eight endpoints marked
+  *"Auth: session"* were unreachable by any real client.
 - Deps: P1-TSK-010, P1-TSK-013
-- Implementation: issue the session inside the authentication transaction, so a session that exists
-  always has the audit record of the login that produced it. The response gains a body, which is an
-  **additive** contract change; `204` becomes `201`.
+- Implementation: `SessionIssue` in `identity` (the level is **not a parameter** — always
+  `PASSWORD`), called from `AuthenticationService.attempt` inside the authentication transaction and
+  the same security scope as the success audit record; `AuthenticatedSession` response record;
+  `IdentityAuthentication.succeeded` gains a mandatory `SessionId`.
+- Accept: **met, end to end.** `aLoginProducesAUsableSession` takes the token a login returned and
+  opens `GET /v1/sessions` over real HTTP, with nothing inserted by the test — which is the step
+  that was missing, since every earlier suite reached those endpoints by writing a session row.
+- **The contract change is BREAKING, and the description above said "additive".** It is additive in
+  everything except the one line that matters: removing `204` breaks a client written against it.
+  The classifier said so, the diff was reviewed, and the change was accepted because nothing consumes
+  this API and the alternative is a `/v2` for an endpoint whose first version was never usable.
+  Recorded rather than corrected quietly — a plan that mislabels its own change is exactly what the
+  byte-for-byte contract comparison exists to catch.
+- **A session IS issued when a second factor is enrolled**, at `PASSWORD`. Withholding one until MFA
+  is done looks stricter and makes step-up **unreachable**, because `MfaChallenge.elevate` takes a
+  *current* session — the same shape of gap as the one this task closes. Assurance being a level
+  rather than a boolean (ADR-0030) is what makes the composition safe.
+- **`MfaBypassPathsAreEnumeratedTest` predicted this task by name** and failed until it came and
+  wrote the entry: *"`P1-TSK-027` will add the second path and must come here and say so."*
+- **The mutation harness broke production code and manufactured a defect that did not exist.** Its
+  plant-verification assertion fired correctly on a mutation that *wraps* its target rather than
+  replacing it; the script exited on that assertion and the restore was on the happy path only, so it
+  left `sessions.insert` disabled. Seven suite failures, three reproductions and a probe later, the
+  reported symptom — *the audit record commits and the session row does not, in one transaction on
+  one connection* — was impossible, which is what pointed at the harness. **All ten mutation results
+  were void and were re-run**: they had run against a codebase that was red whatever the mutation
+  did. The restore is in a `finally` now. Seventh occurrence in this project of a mutation reporting
+  something it did not measure, and the first where the harness broke the tree.
 - **The plan's milestone boundary should be corrected rather than worked around**: §11 names session
   issuance in M1.2's scope while numbering the session tasks into M1.3. Either `P1-TSK-013` moves
   into M1.2, or M1.2's acceptance drops the session clause — a planning decision, recorded here
-  rather than taken by an implementation task.
-- Tests: a success returns a usable session; the failure shape is unchanged, so `INV-IDN-07` still
-  holds with a body present on one path only.
-- Accept: M1.2's stated acceptance is met end to end.
+  rather than taken by an implementation task. **M1.2 now closes on the acceptance as written.**
 - Risk: Medium. Cx: S. DoD: `DOD-API`
 
 **P1-TSK-011 — Brute-force and credential-stuffing controls** — `COMPLETE` (2026-09-06)

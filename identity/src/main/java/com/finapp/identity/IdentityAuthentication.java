@@ -89,10 +89,18 @@ public final class IdentityAuthentication {
      * the system would record the platform as having logged somebody in.
      */
     public void succeeded(
-            Connection unitOfWork, IdentityId identityId, LoginIdentifier loginIdentifier) {
+            Connection unitOfWork,
+            IdentityId identityId,
+            LoginIdentifier loginIdentifier,
+            SessionId sessionId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(identityId, "identityId must not be null");
         Objects.requireNonNull(loginIdentifier, "loginIdentifier must not be null");
+        // MANDATORY since `P1-TSK-027`, deliberately not an Optional. A successful authentication
+        // that produced no session is not a state this platform has - and an optional parameter
+        // would let one arrive silently, leaving a record that says somebody logged in without
+        // saying what they got. INV-HIST-03 makes that permanent.
+        Objects.requireNonNull(sessionId, "sessionId must not be null");
 
         Correlation correlation = currentCorrelation();
         Instant at = Instant.now(clock);
@@ -109,18 +117,26 @@ public final class IdentityAuthentication {
                         Optional.empty(),
                         AuditOutcome.SUCCEEDED,
                         correlation.correlationId(),
-                        Optional.of("identity=" + identityId)));
+                        // The session this login produced. One record rather than two, so an
+                        // investigator reads "this login produced session X" instead of joining two
+                        // rows by timestamp - and a session appearing in the trail with no login
+                        // beside it becomes a question worth asking.
+                        Optional.of("identity=" + identityId + " session=" + sessionId)));
 
         outboxWriter.write(
                 unitOfWork,
                 envelope("identity.AuthenticationSucceeded", identityId, at, correlation),
                 EventPayload.of()
                         .with("identityId", identityId.value().toString())
-                        // The factor used, not the assurance level: AssuranceLevel is ADR-0030's
-                        // and arrives with the session in P1-TSK-013. Publishing a level this
-                        // endpoint cannot establish would be a claim about a session that does not
-                        // exist.
+                        // The factor used AND, since P1-TSK-027, the assurance level it
+                        // established - the two are different facts and a consumer needs both:
+                        // "a password was proven" and "the session is at PASSWORD".
                         .with("factor", CredentialType.PASSWORD.name())
+                        // The assurance the session was established at, now that there IS one.
+                        // The comment above used to say publishing a level would be "a claim about
+                        // a session that does not exist"; it exists, and the claim is true.
+                        .with("assurance", AssuranceLevel.PASSWORD.name())
+                        .with("sessionId", sessionId.value().toString())
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);
     }

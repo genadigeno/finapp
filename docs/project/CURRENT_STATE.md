@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 
 ---
 
@@ -19,18 +19,25 @@ Status: **`IN_PROGRESS`** — entry gate passed 2026-08-31; started 2026-09-04.
 [`reviews/PHASE_1_REVIEW.md`](reviews/PHASE_1_REVIEW.md). Ten of twelve universal criteria hold; two
 fail, and `PHASE_GATES.md` §4 returns the phase to `IN_PROGRESS` rather than letting it ship through.
 
-- **Criterion 1** — **no production path issues a first session.** `Session.issue` is reached only
-  through `SessionRotation` ← `MfaChallenge.elevate`, which requires a session already, behind a
-  `@RequiresSession` controller; and `POST /v1/authentications` answers `204` with no body. So the
-  **eight** endpoints the plan marks `Auth: session` are unreachable by any real client, and the
-  phase objective — *"prove it, **hold a session**"* — is not met end to end. Owner: `P1-TSK-027`.
+- ~~**Criterion 1**~~ — **CLOSED 2026-09-08** by `P1-TSK-027`. A login now issues a session, and the
+  closure is verified the way the failure demanded: the token a login returns is used to open
+  `GET /v1/sessions` over real HTTP with nothing inserted by the test. The finding was never *"no
+  row is written"* — it was that a real client could not obtain one while the suite could, so an
+  assertion that a token came back would have repeated the same blindness one layer up. See the
+  review's addendum.
 - **Criterion 6** — the plan names six `finapp.identity.*` meters and **two** exist. Owner: the new
-  `P1-TSK-029`.
+  `P1-TSK-029`. **This is the only criterion still failing**, so the phase stays `IN_PROGRESS`.
 
-**Neither failure is architectural.** The design work is done; what is missing is a connection
-between two things the phase built, and four meters.
+**Neither failure was architectural.** The design work was done; what was missing was a connection
+between two things the phase built — now made — and four meters.
 
 ## Current Milestone
+
+**M1.2 — That person can authenticate.** **CLOSED 2026-09-08**, two days after its last numbered
+task, by `P1-TSK-027`. Its stated acceptance is *"an identity authenticates and **receives a
+session**"*, and until now it did not — the scope line named session issuance while the session tasks
+were numbered into M1.3. **The acceptance is what a milestone means**, so it stayed open rather than
+being declared met by task count.
 
 **M1.7 — Phase review.** `P1-TSK-024`, `P1-DOC-001`; **2 of 2 complete** (2026-09-08). The review is
 conducted and its verdict is that the gate does not pass — which is the milestone succeeding, not
@@ -168,11 +175,127 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-DOC-001` completed 2026-09-08. **M1.7 closes, 2 of 2 — and the phase does
-not.**
-**Next: `P1-TSK-027`** — authentication issues a session, which is criterion 1's remediation.
+**None in progress.** `P1-TSK-027` completed 2026-09-08. **M1.2 closes** — two days after its last
+numbered task — and **exit criterion 1 closes with it**.
+**Next: `P1-TSK-029`** — the four missing meters, which is criterion 6 and the last thing between
+Phase 1 and its gate.
 
 ### Just completed
+
+**`P1-TSK-027` — Authentication issues a session** — `COMPLETE` (2026-09-08). **M1.2 closes;
+criterion 1 closes.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| M1.2's acceptance met end to end | The token a login returns opens `GET /v1/sessions` over HTTP, with nothing inserted by the test |
+| The failure shape is unchanged | `everyFailureLooksTheSame` and `AuthenticationCostsTheSame` pass untouched — only the success path moved |
+
+### The property was verified the way the failure demanded, and the obvious check would not have done
+
+The review's finding was never *"no session row is written"*. It was that **a real client could not
+obtain one while the test suite could** — every suite exercising the eight protected endpoints
+inserted a session row directly, which is exactly why the gap survived twenty-four tasks.
+
+So a test asserting that a token came back in the response would have repeated the same blindness one
+layer up. `aLoginProducesAUsableSession` **uses** the token on a protected endpoint, and
+`aFabricatedTokenOpensNothing` is its negative control — without which an interceptor that admitted
+everything would satisfy the headline assertion perfectly.
+
+### A session IS issued when a second factor is enrolled, and the strict-looking answer is wrong
+
+Withholding one until MFA completes reads as safer and makes **step-up unreachable**:
+`MfaChallenge.elevate` takes a *current* session, so there would be nothing to elevate. That is the
+same shape of defect as the one this task closes — two mechanisms that each work and are not joined.
+
+**Assurance being a level rather than a boolean (ADR-0030) is what makes the composition safe**, and
+it is asserted rather than argued: the login's session opens `GET /v1/sessions` and is refused by a
+handler requiring `MULTI_FACTOR`. The response is also byte-comparable whether or not MFA is
+enrolled, because a body that gained an `mfaRequired` flag would tell an attacker holding a stolen
+password what to attack next (`INV-IDN-07`).
+
+### The level is not a parameter, which is stronger than every caller passing the right one
+
+`SessionIssue` hard-codes `AssuranceLevel.PASSWORD`. A caller able to ask for `MULTI_FACTOR` here
+would have found the bypass `INV-IDN-05` exists to prevent, and no amount of reviewing call sites is
+as good as the level not being askable.
+
+### One audit record, not two — and one transaction
+
+The session identifier goes into `AUTHENTICATION_SUCCEEDED`'s change summary rather than becoming a
+second `SESSION_ISSUED` record: one economic event, one entry. Issued inside the authentication
+transaction and inside the **same** security scope, so a session that exists always has the record of
+the login that produced it, and a rolled-back login leaves neither.
+
+### `MfaBypassPathsAreEnumeratedTest` predicted this task by name and failed until it arrived
+
+Its javadoc since `P1-TSK-019`: *"`P1-TSK-027` will add the second path and must come here and say
+so."* It did, and the guard's standing claim — *"the only way a session comes into existence is a
+proven second factor"* — is rewritten, because that read as strength and was in fact the defect.
+
+### The contract change is BREAKING, and the backlog had called it additive
+
+`204` → `201` breaks a client written against `204`. The classifier said so, the diff was reviewed
+line by line, and the change was accepted: nothing consumes this API, and the alternative is a `/v2`
+for an endpoint whose first version was never usable (ADR-0015). **The backlog entry's own
+description was wrong**, and is corrected there rather than quietly — a plan mislabelling its own
+change is what the byte-for-byte comparison exists to catch.
+
+`produces = application/json` was declared explicitly, because springdoc publishes `*/*` without it —
+the defect `P1-TSK-016`'s gate found on the session endpoints.
+
+### The second `secretsAreWrapped` exemption arrived WITH its test
+
+`P1-TSK-018` added the first and its gate found the javadoc claiming a test that did not exist. **An
+exemption is a claim that a guard's subject is safe by other means, so imaginary means make it a hole
+with a paragraph in front of it.** `AuthenticatedSessionTest` was written alongside the entry, and a
+mutation removing the masking `toString` is caught.
+
+### Two of my own tests were wrong, and the second bounds what this can be tested at all
+
+**The audit assertion pinned a rendering.** It required `session=<bare uuid>` and the platform renders
+`SessionId(uuid)` — the convention across all five existing change summaries. The **test** was wrong:
+an investigator searches a free-text summary by substring, never by equality, and the wrapped form
+says which kind of identifier it is. Now asserted as the property — the record labels a session, and
+the identifier is findable — pinning no rendering.
+
+**A hostile `User-Agent` could not be driven at all.** The JDK's `HttpClient` refuses any header value
+outside printable ASCII, so the bidirectional override never left the client. Recorded rather than
+worked around: the character-level rule is `DeviceDescriptionTest`'s subject, reaching it needs raw
+bytes on a socket, and that is *why* the rule lives on the domain type rather than at the boundary.
+What HTTP can drive — an over-long header — is asserted here.
+
+### The mutation harness broke production code and manufactured a defect that did not exist
+
+**The most instructive failure of this task, and it was entirely in the machinery that checks the
+work** — the seventh time in this project a mutation has reported something it did not measure, and
+the first where the harness left the tree broken.
+
+The plant-verification assertion — *the mutation must be visible in the file before the build runs*
+— **fired correctly** on a mutation that legitimately wraps the original line rather than replacing
+it. The script exited on that assertion, and the restore was on the happy path only. So it left
+`SessionIssue.issue` with `sessions.insert` disabled.
+
+**Everything measured afterwards was measuring that.** The full suite reported **seven failures**;
+three separate reproductions confirmed them; a probe was written; and the reported symptom —
+*"the audit record commits and the session row does not, in one transaction on one connection"* —
+was impossible, which is what finally pointed at the harness rather than at the code.
+
+**Three consequences, and the second is the one that matters.**
+
+- The seven failures were not real. All three suites pass together against restored code.
+- **All ten mutation results were void and were re-run.** They had executed against a codebase whose
+  session insert was already disabled, so the suite was red whatever the mutation did — every
+  `CAUGHT` was a coincidence. A harness that cannot leave the tree clean does not merely fail to
+  prove things; it **manufactures proofs**, which is worse.
+- The restore is now in a `finally` and writes back the string read at the top, so there is no
+  backup file to be orphaned either.
+
+**Why it took so long to see.** The suite passed alone at 14 of 14 *before* the mutations, and every
+run after them was broken — so the evidence looked exactly like a test that passes in isolation and
+fails beside its neighbours, which is a real and familiar class of defect. Two hypotheses about
+Spring context caching were pursued before the impossible symptom ruled the code out.
+
+### Previously
 
 **`P1-DOC-001` — Phase 1 review record** — `COMPLETE` (2026-09-08). **M1.7 closes.**
 
@@ -3034,6 +3157,28 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Authentication issues a session (2026-09-08), `P1-TSK-027`:
+- `POST /v1/authentications` answers **201 with the session**, issued inside the authentication
+  transaction and the same security scope as the success audit record
+- **Closes exit criterion 1.** Before it, `Session.issue` had no production caller, so the eight
+  endpoints marked `Auth: session` were unreachable by any real client - the suite could reach what a
+  customer could not
+- Verified **end to end**: the token a login returns opens `GET /v1/sessions` over HTTP with nothing
+  inserted by the test, with a fabricated token as the negative control
+- **Always `PASSWORD`, and the level is not a parameter** - a caller able to ask for more would have
+  found the bypass `INV-IDN-05` exists to prevent
+- **Issued even when a second factor is enrolled**, because `MfaChallenge.elevate` takes a *current*
+  session and withholding one would make step-up unreachable. Refused by a `MULTI_FACTOR` handler,
+  which is what makes that safe rather than merely conservative (ADR-0030)
+- **One audit record**, naming the session it produced; **one transaction**, so neither can exist
+  without the other
+- `DeviceDescription.fromUserAgent` gets its first production caller, so `GET /v1/sessions` shows a
+  person something they recognise
+- **The contract change is BREAKING** (`204` removed) and accepted with the reasoning recorded; the
+  backlog had described it as additive and is corrected
+- **M1.2 closes**, two days after its last numbered task: its acceptance names a session, and a
+  milestone means its acceptance rather than its task count
+
 Phase 1 reviewed, and the gate does not pass (2026-09-08), `P1-DOC-001`:
 - [`reviews/PHASE_1_REVIEW.md`](reviews/PHASE_1_REVIEW.md): eight areas, twelve universal criteria,
   six Phase 1-specific ones, each with evidence
@@ -4176,31 +4321,25 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-027` — Authentication issues a session.** **Criterion 1's remediation, and the phase's
-blocking item.**
+**`P1-TSK-029` — the four missing meters.** **Criterion 6's remediation, and the last criterion
+failing.**
 
-The review found that **no production path issues a first session**, so the eight endpoints the plan
-marks `Auth: session` are unreachable by any real client. This is the change that makes Phase 1 work
-rather than merely have the parts.
+`PHASE_1_PLAN.md` §Observability names six `finapp.identity.*` meters and **two** exist. The four
+absent ones are the phase's critical flows: `mfa_challenge`, `session_lifetime`, `recovery` and
+`active_sessions`.
 
-**It is small and its shape is already decided.** `P1-TSK-010` delivered
-`POST /v1/authentications` without a session because its declared dependency `P1-TSK-013` sat in the
-next milestone; the session now exists. Issue it **inside the authentication transaction**, so a
-session that exists always has the audit record of the login that produced it, and `204` becomes
-`201` with a body — an **additive** contract change.
+**`finapp.identity.recovery` is the one that matters most**, and the plan says why in its own
+annotation: *"recovery is the ATO vector; its rate is a security signal."* A takeover campaign is a
+rise in recovery initiations, and today that is visible only by querying the audit trail — **which is
+evidence rather than monitoring**. `INV-AUD-01` is satisfied and criterion 6 is not, and that
+distinction is why the platform has both.
 
-**Three things it must do, each already recorded rather than newly discovered.**
+**ADR-0018 constrains what they may carry**: `finapp.<module>.<noun>`, enforced against the live
+registry by the build, and **no tag value a request could influence** — an identifier in a tag is
+both a cardinality explosion and a disclosure with months of retention. A metric answers *how many*;
+*which one* is the audit trail's question.
 
-- **`MfaBypassPathsAreEnumeratedTest` will fail until it comes and says why the new path is not a
-  bypass.** That guard's own javadoc predicted this task by name: *"`P1-TSK-027` will add the second
-  path and must come here and say so."* The session must be issued at `PASSWORD`, never higher.
-- **`INV-IDN-07` still holds.** A body on the success path and none on the failure path is not a
-  disclosure — a caller who authenticated successfully already knows they did — but the **failure**
-  shape must stay byte-identical across all four causes, which `everyFailureLooksTheSame` asserts.
-- **M1.2 closes with it.** Its stated acceptance is *"an identity authenticates and receives a
-  session"*, and it has been open since `P1-TSK-010` recorded the contradiction.
-
-Then **`P1-TSK-029`** for criterion 6, and the review is re-run against those two criteria.
+Then the review is re-run against criterion 6 and Phase 1 can close.
 
 `P1-TSK-025`, `-026`, `-028` and `-030` are open and **do not block the gate**: none is named by a
 universal or phase-specific criterion. That distinction is the gate doing its job — it blocks on the
@@ -4210,6 +4349,7 @@ criteria, not on the backlog being empty.
 
 | Date | Change |
 |------|--------|
+| 2026-09-08 | **`P1-TSK-027` complete - M1.2 closes, and exit criterion 1 closes with it.** A login now issues a session: `POST /v1/authentications` answers **201 with the session** rather than 204 with nothing, issued inside the authentication transaction and inside the **same security scope** as the success audit record - so a session that exists always has the record of the login that produced it, and a rolled-back login leaves neither. **The property was verified the way the failure demanded, and the obvious check would not have done.** `P1-DOC-001`'s finding was never *“no session row is written”* - it was that **a real client could not obtain one while the test suite could**, because every suite exercising the eight endpoints marked `Auth: session` inserted a session row directly, which is exactly why the gap survived twenty-four tasks. So a test asserting that a token came back would have repeated the same blindness one layer up: `aLoginProducesAUsableSession` **uses** the token on `GET /v1/sessions` over real HTTP with nothing inserted, and `aFabricatedTokenOpensNothing` is its negative control, without which an interceptor that admitted everything would satisfy the headline assertion perfectly. **A session IS issued when a second factor is enrolled, and the strict-looking answer is the wrong one**: withholding one until MFA completes reads as safer and makes **step-up unreachable**, because `MfaChallenge.elevate` takes a *current* session - the same shape of defect as the one this task closes, two mechanisms that each work and are not joined. Assurance being a **level** rather than a boolean (ADR-0030) is what makes the composition safe, and it is asserted rather than argued: the login's session opens `GET /v1/sessions` and is **refused** by a handler requiring `MULTI_FACTOR`. The response is also byte-comparable whether or not MFA is enrolled, because a body gaining an `mfaRequired` flag would tell an attacker holding a stolen password what to attack next (`INV-IDN-07`). **The level is not a parameter**, which is stronger than every caller passing the right one: `SessionIssue` hard-codes `PASSWORD`, and a caller able to ask for `MULTI_FACTOR` would have found the bypass `INV-IDN-05` exists to prevent. **One audit record, not two** - the session identifier goes into `AUTHENTICATION_SUCCEEDED`'s change summary rather than becoming a second `SESSION_ISSUED` row: one economic event, one entry, and an investigator reads *“this login produced session X”* instead of joining two rows by timestamp. **`MfaBypassPathsAreEnumeratedTest` predicted this task by name and failed until it arrived** - its javadoc has said since `P1-TSK-019` that *“`P1-TSK-027` will add the second path and must come here and say so”*, and its standing claim that *“the only way a session comes into existence is a proven second factor”* is rewritten, because that read as strength and was in fact the defect. **The contract change is BREAKING and the backlog had called it additive**: removing `204` breaks a client written against it, the classifier said so, the diff was reviewed line by line, and it was accepted because nothing consumes this API and the alternative is a `/v2` for an endpoint whose first version was never usable (ADR-0015) - corrected in the backlog rather than quietly, since a plan mislabelling its own change is what the byte-for-byte comparison exists to catch. `produces = application/json` is declared explicitly, because springdoc publishes `*/*` without it - the defect `P1-TSK-016`'s gate found on the session endpoints. **The second `secretsAreWrapped` exemption arrived WITH its test**: `P1-TSK-018` added the first and its gate found the javadoc claiming a test that did not exist, and an exemption is a claim that a guard's subject is safe by other means - so imaginary means make it a hole with a paragraph in front of it. `AuthenticatedSessionTest` was written alongside the entry. **Two of my own tests were wrong, and the second bounds what can be tested at all.** The audit assertion **pinned a rendering** - it required `session=<bare uuid>` and the platform renders `SessionId(uuid)`, the convention across all five existing change summaries; the test was wrong, because an investigator searches a free-text summary by substring and never by equality, and the wrapped form additionally says which kind of identifier it is. And a **hostile `User-Agent` could not be driven at all**: the JDK's `HttpClient` refuses any header value outside printable ASCII, so the bidirectional override never left the client - recorded rather than worked around, because the character-level rule is `DeviceDescriptionTest`'s subject, reaching it needs raw bytes on a socket, and that is *why* the rule lives on the domain type rather than at the boundary. **And the most instructive failure of the task was in the machinery that checks the work, not in the work**: the mutation harness's plant-verification assertion fired correctly on a mutation that WRAPS its target rather than replacing it, the script exited on that assertion, and the restore was on the happy path only - so it left `sessions.insert` disabled in production code. Everything measured afterwards measured that: **seven failures across the full suite**, confirmed by three reproductions and a probe, and the reported symptom - *the audit record commits and the session row does not, in one transaction on one connection* - was impossible, which is what finally pointed at the harness. All three suites pass together against restored code, and **all ten mutation results were void and were re-run**: they had executed against a codebase that was red whatever the mutation did, so every CAUGHT was a coincidence. A harness that cannot leave the tree clean does not merely fail to prove things, it **manufactures proofs**. The restore is in a `finally` now, writing back the string read at the top so no backup file can be orphaned either - the seventh occurrence in this project of a mutation reporting something it did not measure, and the first where the harness broke the tree. `DeviceDescription.fromUserAgent` gets its first production caller, so `GET /v1/sessions` shows a person something they recognise rather than a column of nulls. **M1.2 closes two days after its last numbered task**: its acceptance names a session, and a milestone means its acceptance rather than its task count - the scope line named session issuance while the session tasks were numbered into M1.3. **Criterion 6 is now the only criterion failing**, so Phase 1 stays `IN_PROGRESS`; `P1-TSK-029` is the last thing between it and the gate. **Ten mutations, all caught** - and all ten re-run after the harness finding above. 851 hermetic tests, 418 database tests. |
 | 2026-09-08 | **`P1-DOC-001` complete - M1.7 closes, and Phase 1 does not.** The phase review, conducted per `PHASE_GATES.md` §4: eight areas, the twelve universal exit criteria and the six Phase 1-specific ones, each assessed with evidence. **It finds the exit gate does not pass, and that is what conducting one is for** - §4 returns the phase to `IN_PROGRESS`, and §1 is explicit that moving backwards from review is normal while *“shipping through a failed gate”* is the failure. Phase 0's review reached the same conclusion and was vindicated within days, when the first CI run it had refused to waive failed twice for defects no local run could reach. **Criterion 1 fails: no production path issues a first session.** Traced through the code rather than inferred - `Session.issue` is called only by `SessionRotation`, `rotate` only by `MfaChallenge.elevate`, `elevate` requires a `current` session, and `MfaChallengeController` is `@RequiresSession`, while `POST /v1/authentications` answers **204 with no body**. So a real client cannot obtain a session by any route and the **eight** endpoints the plan marks `Auth: session` are unreachable; every test that exercises them inserts a session row directly. `MfaBypassPathsAreEnumeratedTest` has recorded this since `P1-TSK-019` as *“an accident of sequencing rather than a design goal”*, and the criterion demands deliverables **exercisable end to end** - proving an identity and holding a session are both built and nothing joins them. **Criterion 6 fails: four of six meters do not exist** - `mfa_challenge`, `session_lifetime`, `recovery` and `active_sessions`, which are exactly the phase's critical flows. **`finapp.identity.recovery` is the one that matters most**, and the plan says why in its own annotation: *“recovery is the ATO vector; its rate is a security signal”* - a takeover campaign is a rise in recovery initiations, visible today only by querying the audit trail, **which is evidence rather than monitoring**. `INV-AUD-01` is satisfied and criterion 6 is not, and that distinction is why the platform has both. **Neither failure is architectural**: the design work is done, and what is missing is a connection between two things the phase built plus four meters. **Three documentation drifts, found by hand-diffing what no guard covers** - the method that found two drifts in Phase 0's review. The plan declares **fifteen** endpoints and **twelve** exist, and two of the absentees - `GET /v1/me` and `PATCH /v1/me` - are owned by **nobody**, the eighth backlog defect of this class in Phase 1 and the first found by a review rather than by the task that tripped over it. An exemption in `AuditCompletenessTest` read *“PHASE_1_PLAN.md does not list one”* about `party.ProfileChanged` and **the plan lists `PATCH /v1/me`** - I wrote that entry in `P1-TSK-022` and it was untrue, which is the `P1-TSK-018` shape in my own register: an exemption is a claim that something is safe by other means, so a false claim is a hole with a paragraph in front of it. And §Next Task in this document said the phase-specific criteria *“name seven identity properties”* where `PHASE_GATES.md` §5 lists **six bullets**, conflating them with the transition's seven `INV-IDN` properties - which is why a review checks claims rather than inheriting them. All three corrected. **Area 2 has no subject and says so**: Phase 1 creates no posting, so reporting a pass would be reporting on something that does not exist, and a reader comparing review records must be able to tell *assessed and clean* from *had no subject*. **ADR-0029…0034 moved to `Accepted` despite the open failures**, on Phase 0's recorded reasoning that criterion 10 is a **precondition** of the gate rather than a reward for passing it. Two backlog items created: `P1-TSK-029` (the four meters) and `P1-TSK-030` (the two unowned endpoints). **What the phase produced**: 2 modules, 14 tables, 12 endpoints, 6 aggregates, 19 auditable actions, 8 new invariants taking the platform to **72**, 6 ADRs, 847 hermetic and 404 database tests, 24 of 29 backlog items. |
 | 2026-09-08 | **`P1-TSK-024` complete - M1.7 opens, 1 of 2.** The mutation register now covers every phase the project has reached rather than Phase 0 only, which had left the `INV-IDN` group in exactly the weaker regime the Phase 0 → 1 transition created it to escape - no row in `MUTATION_TESTING.md` being one of the four things that transition named. **The acceptance as written was too narrow in two ways, and probing found both.** There are **eight** `INV-IDN-*` rather than seven, because `P1-TSK-017` added `INV-IDN-08` mid-phase - the task's own text was already stale. And there are **nine** Phase 1 invariants, because `INV-AUD-03` is `Phase: 1 onward` and is **not in the `INV-IDN` group at all**, so a guard extended to `INV-IDN-*` - which is what the item asked for - would have missed it. Extending to *every invariant of every phase reached* is what finds it, which is the difference between implementing the sentence and implementing the property. **Two had no row**: `INV-IDN-02`, the one the task is named for, and `INV-AUD-03`; both were already demonstrated, so the rows record work done rather than work invented. **The finding is that nine rows did not parse.** The grammar admitted exactly one backticked reference and nothing after it, while the register is written with lists and trailing prose - and eight of the nine unreadable rows were written during Phase 1 by me. They were not reported as broken, they were simply absent, so `everyNamedTestExists` and `everyNamedMethodExists` never looked at them and a row naming a renamed test would have sat there reading as a live proof. **A register whose rows the guard cannot read reports coverage it does not have** - `P0-TST-008`'s finding, in the artefact built to prevent that exact class of defect. **Proven precisely rather than argued**: a reference in *second* position naming a test that does not exist **survives** the old parser and is **caught** by the widened one - and the first attempt at that demonstration was wrong, which checking is what showed, because the plant happened to be reachable as a first reference and so proved nothing about the widening. **The current phase is derived from `CURRENT_STATE.md`**, whose stated role is to be the canonical description of where the project is, so Phase 2 needs no change to the guard - a constant would be the stale list this repository closes by derivation everywhere else. The **highest** phase the section names rather than the one marked `IN_PROGRESS`, because a status word is prose that changes shape between phases and a phase that has been reached does not stop having been reached. **§4 generalised, and the two phases declare their test items differently**: Phase 0 gives `P0-TST-*` their own headings while Phase 1 names `P1-TST-*` inside task headings, so anchoring to either shape finds nothing for the other and passes vacuously. **One mutation survived and found a defect in this task's own new assertion**: `everyRowNamesATest` exists so an unreadable row is a failure rather than a silent omission, and its first version read the references merged **per invariant** - `INV-IDN-06` has two rows, so emptying one left the merge non-empty and the mutation walked through. A check defeated by the very merging that makes the rest of the guard convenient is a check reporting coverage it does not have; it is per row now. **The completion gate then found the same defect ONE LEVEL OUT, in that very fix**: `everyRowNamesATest` catches a row that parses and names nothing, and cannot catch a row that fails the row pattern entirely - a typo in the form column, an extra pipe, a reflowed line - because such a row is not in the map at all. Probed rather than reasoned about: changing one row's form from `In-suite` to `Insuite` left the build **green**, and that invariant stayed covered only because it happens to have sibling rows. The outer check is structural now - every §2 line that looks like a row must parse as one - because leaving it open would have reproduced this task's own finding inside the fix for it. **Seven mutations, all caught.** 847 hermetic tests, 404 database tests. |
 | 2026-09-08 | **`P1-TSK-023` complete - M1.6 closes.** Account recovery, the phase's highest-risk task, built last against a working MFA, session and audit model. **The blocking finding came before any design: `INV-IDN-06` had no subject.** It forbids recovery *“without proving control of a previously registered and VERIFIED channel”*, and no channel existed anywhere - no `EmailAddress` type, no table, no verification flow, and grep confirmed **no backlog task owning one**, while `PHASE_1_PLAN.md` asserts that an Identity carries *“a separate, changeable, separately-verified email”*. Seventh backlog defect of this class in Phase 1 and the most consequential: the others were missing endpoints, and this was a missing **precondition of the invariant** - without a channel, recovery cannot satisfy `INV-IDN-06` at all, only appear to. Built here on the `P1-TSK-016` precedent, minimally, and recorded rather than absorbed. **Recovery issues NO session, and that is the sharpest decision.** The conventional design logs you in on completion, and `INV-IDN-06`'s second clause forbids exactly that - a session handed out on completion IS the lowering, because an attacker holding the mailbox would skip the credential **and** whatever stood behind it. Recovery replaces the credential and stops, so the customer authenticates normally afterwards and MFA applies in full. **The fifth abuse case therefore cannot be attempted rather than merely refused**, and `MfaBypassPathsAreEnumeratedTest`'s statement - nothing new creates a session - stays true; that guard listed recovery as a **recorded remainder** for precisely this question and now carries the answer. **Bound to the credential it was raised against**, which closes the dangerous form of *concurrent recovery and login*: an attacker initiates, the customer changes their password, and the attacker completes and wins having watched the customer do the one thing they thought would save them. A **predicate in the statement** rather than a procedure, because a predicate cannot be forgotten by a future credential-change caller. **Every refusal is the same refusal and costs the same work** - unknown identifier, no verified channel and cooling-off are all `202`, decided by a single `INSERT … SELECT`, because a version that looked the identity up first would run a different number of queries for an account that exists, which is the timing channel `P1-TSK-008` found in authentication. **The token is delivered nowhere**, `PHASE_1_PLAN.md` §8's recorded seam: the response is `202` with no body, since returning it would hand it to whoever asked and channel control would prove nothing - and the outbox event carries identifiers only, which `EventPayload`'s `[A-Za-z0-9_-]` charset would **not** have enforced, since base64url satisfies it perfectly (`P1-TSK-009`'s stated limit, *“a charset, not a secret detector”*). **Four existing guards refused the new code and all four were right**: the unwrap whitelist caught the controllers unwrapping a token and an address - the rule had the better argument, so the boundary passes `Sensitive<String>` straight through; the system-actor enumeration caught the third `enterSystem()` site; the ownership register caught two unclassified persistence methods; and the contract diff caught four undeclared routes, **141 added lines and zero removed**. Two of those guards were written in the previous two tasks. **`secretsAreWrapped` fired four times and each answer was different**: a `Duration` cannot hold a secret, so a structural narrowing; `Optional<CredentialId>` exposed a **real gap** in the existing compositional exclusion, which reads the raw type and could not see through `Optional`, and needed the accessor half as well because a record produces both; and a SQL fragment named `ACTIVE_CREDENTIAL_OF` was answered by **changing the code**, since renaming to dodge the vocabulary is the option `P1-TSK-017` refused. **One assertion of mine was a stale list one task after I wrote it**: `bothSurvivorsAreUnauthenticated` matched package names as a proxy for *unauthenticated*, and broke the first time a third unauthenticated surface appeared - by my own hand - so it is replaced by the property it was reaching for, that a method handed a proven `Session` must not claim the platform, with the uncheckable remainder stated. **Two mutations survived first and each found a real gap**: `aCancelledTokenIsRefused` was passing for the WRONG REASON, looking up *the latest* request - which after the customer's own initiation is theirs - so the attacker's token was refused on the token match rather than on the status; and nothing had ever suspended an identity, which matters because recovery ignoring suspension would let the suspended party undo an administrator's decision through the front door. **Eleven mutations: ten caught, one survived correctly** - re-verification, unreachable because the token is cleared on success, which the mutation removing that clearing proves is load-bearing. 845 hermetic tests, 396 database tests. |

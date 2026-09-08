@@ -73,11 +73,15 @@ class NoProcessLocalSessionStateTest {
      * exactly the claim this rule exists to stop being made informally. Making it formally, in one
      * place, with the reason written down, is the point of the list rather than a way around it.
      *
-     * <p><strong>One entry, and it is a return value.</strong> {@code SessionRotation.Rotated} is
-     * the result of a single call — the new session and the token to hand the client — constructed
-     * per rotation and discarded when the caller is done with it. It cannot make a revoked session
-     * usable, because nothing consults it on a later request; a cache can, because that is what a
-     * cache is for.
+     * <p><strong>Two entries, and both are return values.</strong> {@code SessionRotation.Rotated}
+     * and {@code SessionIssue.Issued} are each the result of a single call — the session and the
+     * token to hand the client — constructed per call and discarded when the caller is done with
+     * it. Neither can make a revoked session usable, because nothing consults them on a later
+     * request; a cache can, because that is what a cache is for.
+     *
+     * <p>They are the <em>same</em> claim arriving twice, which is what a growing exemption list
+     * should look like when it is healthy: a second entry of a kind already argued, rather than a
+     * second kind.
      *
      * <p>The rule cannot tell a return value from a cache by inspecting a field, and it should not
      * try: the alternative considered was to flag only <em>collections</em> of sessions, which would
@@ -85,7 +89,13 @@ class NoProcessLocalSessionStateTest {
      * have cost more than naming it.
      */
     private static final Set<String> PERMITTED =
-            Set.of("com.finapp.identity.SessionRotation$Rotated.session");
+            Set.of("com.finapp.identity.SessionRotation$Rotated.session",
+                    // P1-TSK-027, and the identical claim: a per-call RETURN VALUE handed
+                    // straight to the caller, never a retained cache. The guard cannot tell
+                    // a record component from a field, which is why this is an entry rather
+                    // than a structural exclusion - and an entry is the better outcome,
+                    // because it makes somebody state the claim.
+                    "com.finapp.identity.SessionIssue$Issued.session");
 
     @Test
     @DisplayName("every exemption still names a field that exists")

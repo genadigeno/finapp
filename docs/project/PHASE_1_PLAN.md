@@ -350,12 +350,18 @@ identifiers and lifecycles, proven by a test that fails if any two are merged.
 **Scope:** credential storage and verification; upgrade-on-use; authentication endpoint; failure
 counting and lockout; session issuance.
 **Dependencies:** M1.1.
-**Tasks:** `P1-TSK-007` … `P1-TSK-012`.
+**Tasks:** `P1-TSK-007` … `P1-TSK-012`, and `P1-TSK-027`.
 **Tests:** credential never recoverable; parameters recorded and upgraded; equivalent timing and
 response for absent accounts; lockout under concurrent attempts, with database-backed counters.
 **Acceptance:** an identity authenticates and receives a session; a wrong credential, an unknown
 identity and a locked account are indistinguishable; a credential written under weak parameters is
 upgraded on next successful use.
+
+**The task numbering and the scope line disagreed, and the scope line was right.** Session issuance
+is named in this milestone's scope and in its acceptance, while the session tasks were numbered into
+M1.3 — so M1.2 stood open from `P1-TSK-012` (2026-09-06) until `P1-TSK-027` (2026-09-08). Recorded
+here rather than resolved by renumbering: the acceptance is what a milestone means, and it was never
+met by the tasks originally listed.
 
 ### M1.3 — Sessions are real, and revocation is immediate
 

@@ -430,3 +430,52 @@ mirror of the criteria table rather than an independent signal.
 
 The distinction is worth stating because it is the one that would let a future review quietly launder
 a criterion failure into "a known issue we accepted".
+
+---
+
+## Addendum — criterion 1 closed (2026-09-08)
+
+`P1-TSK-027` landed. **Criterion 1 now passes**; criterion 6 still fails, so the phase remains
+`IN_PROGRESS` and this addendum is not a re-run of the gate.
+
+### What changed
+
+`SessionIssue` issues the first session of a login, inside the authentication transaction and inside
+the same security scope as the success audit record. `POST /v1/authentications` answers `201` with
+the session rather than `204` with nothing.
+
+### How the closure was verified, and why the obvious check would not have been enough
+
+The finding was never *"no session row is written"* — it was that **a real client could not obtain
+one**, while the test suite reached the eight protected endpoints by inserting rows directly. A test
+asserting that a token came back in the response would have been vulnerable to exactly the same
+blindness one layer up.
+
+So `AuthenticationIssuesASessionDatabaseTest.aLoginProducesAUsableSession` takes the token the login
+returned and **opens `GET /v1/sessions` with it, over HTTP, having inserted nothing** — with
+`aFabricatedTokenOpensNothing` as the negative control, because an interceptor that admitted
+everything would satisfy the headline assertion perfectly.
+
+### One decision worth recording, because the strict-looking answer is the wrong one
+
+**A session is issued even when a second factor is enrolled**, at `PASSWORD`. Withholding one until
+MFA completes reads as stricter and makes step-up **unreachable**: `MfaChallenge.elevate` takes a
+*current* session, so there would be nothing to elevate. That is the same shape of gap as the one
+this task closes — two mechanisms that each work and are not joined.
+
+Assurance being a **level** rather than a boolean (ADR-0030) is what makes the composition safe, and
+it is asserted rather than argued: the login's session opens `GET /v1/sessions` and is refused by a
+handler requiring `MULTI_FACTOR`.
+
+### The contract change is breaking, and the backlog said it was additive
+
+`204` → `201` breaks a client written against `204`. The classifier said so, the diff was reviewed
+line by line, and the change was accepted: nothing consumes this API, and the alternative is a `/v2`
+for an endpoint whose first version was never usable (ADR-0015). **The backlog entry had called it
+additive** — corrected there rather than quietly, because a plan mislabelling its own change is what
+the byte-for-byte comparison exists to catch.
+
+### What remains
+
+**Criterion 6** — four of six meters. `P1-TSK-029`. The phase stays `IN_PROGRESS` until it lands and
+this review is re-run against that criterion.

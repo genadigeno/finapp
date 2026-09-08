@@ -1,7 +1,7 @@
 package com.finapp.app.domain;
 
-import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.authentication.AuthenticatedSession;
 import com.finapp.app.authentication.AuthenticationRequest;
 import com.finapp.app.authentication.AuthenticationService;
 import com.finapp.identity.Argon2PasswordDeriver;
@@ -15,10 +15,13 @@ import com.finapp.identity.IdentityAuthentication;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.JdbcCredentialStore;
 import com.finapp.identity.JdbcIdentityStore;
+import com.finapp.identity.JdbcSessionStore;
 import com.finapp.identity.LockoutPolicy;
 import com.finapp.identity.LoginIdentifier;
 import com.finapp.identity.PasswordDeriver;
 import com.finapp.identity.RawPassword;
+import com.finapp.identity.SessionIssue;
+import com.finapp.identity.SessionPolicy;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
@@ -38,6 +41,7 @@ import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -54,6 +58,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Lockout: it stops guessing, and it never becomes an oracle (`P1-TSK-011`).
@@ -97,11 +102,11 @@ class AuthenticationLockoutDatabaseTest {
         LoginIdentifier login = givenAnIdentityWithACredential();
 
         for (int attempt = 1; attempt < POLICY.threshold(); attempt++) {
-            assertThat(authenticate(login, "wrong")).isEqualTo(AuthenticationService.Outcome.REFUSED);
+            assertThat(authenticate(login, "wrong")).isEmpty();
             assertThat(lockedUntil(login)).as("not locked before the threshold").isNull();
         }
 
-        assertThat(authenticate(login, "wrong")).isEqualTo(AuthenticationService.Outcome.REFUSED);
+        assertThat(authenticate(login, "wrong")).isEmpty();
         assertThat(lockedUntil(login)).as("the threshold attempt locks").isNotNull();
         assertThat(failures(login)).isEqualTo(POLICY.threshold());
     }
@@ -116,7 +121,7 @@ class AuthenticationLockoutDatabaseTest {
 
         assertThat(authenticate(login, PASSWORD))
                 .as("the password is right and the account is locked; locked wins")
-                .isEqualTo(AuthenticationService.Outcome.REFUSED);
+                .isEmpty();
         assertThat(lockedUntil(login))
                 .as("and the lock survives it: a correct password must not be a way out")
                 .isNotNull();
@@ -133,9 +138,9 @@ class AuthenticationLockoutDatabaseTest {
         CountingDeriver againstUnknown = new CountingDeriver(new Argon2PasswordDeriver(WEAK));
 
         assertThat(authenticateWith(againstLocked, locked, PASSWORD))
-                .isEqualTo(AuthenticationService.Outcome.REFUSED);
+                .isEmpty();
         assertThat(authenticateWith(againstUnknown, unknown, PASSWORD))
-                .isEqualTo(AuthenticationService.Outcome.REFUSED);
+                .isEmpty();
 
         assertThat(againstLocked.verifications())
                 .as("a locked account that skipped the derivation would answer in a millisecond"
@@ -149,11 +154,11 @@ class AuthenticationLockoutDatabaseTest {
     void aSuccessClearsTheCounter() throws SQLException {
         LoginIdentifier login = givenAnIdentityWithACredential();
 
-        assertThat(authenticate(login, "wrong")).isEqualTo(AuthenticationService.Outcome.REFUSED);
+        assertThat(authenticate(login, "wrong")).isEmpty();
         assertThat(failures(login)).isEqualTo(1);
 
         assertThat(authenticate(login, PASSWORD))
-                .isEqualTo(AuthenticationService.Outcome.AUTHENTICATED);
+                .isPresent();
         assertThat(failures(login))
                 .as("the row is gone: absence already means 'nothing counted', and two"
                         + " representations of one fact is how they come to disagree")
@@ -173,7 +178,7 @@ class AuthenticationLockoutDatabaseTest {
         assertThat(authenticate(login, PASSWORD))
                 .as("self-healing: an operator unlock would turn a cheap attack into a"
                         + " support-desk denial of service")
-                .isEqualTo(AuthenticationService.Outcome.AUTHENTICATED);
+                .isPresent();
     }
 
     @Test
@@ -194,7 +199,7 @@ class AuthenticationLockoutDatabaseTest {
 
         assertThat(authenticate(login, "wrong"))
                 .as("still the wrong password, so still refused")
-                .isEqualTo(AuthenticationService.Outcome.REFUSED);
+                .isEmpty();
 
         assertThat(failures(login))
                 .as("the count starts again rather than continuing from the locked run")
@@ -243,7 +248,7 @@ class AuthenticationLockoutDatabaseTest {
         lockIt(login);
         expireTheWindowButNotTheLock(login);
 
-        assertThat(authenticate(login, "wrong")).isEqualTo(AuthenticationService.Outcome.REFUSED);
+        assertThat(authenticate(login, "wrong")).isEmpty();
 
         assertThat(failures(login))
                 .as("still counting up, because the lock is live")
@@ -256,7 +261,7 @@ class AuthenticationLockoutDatabaseTest {
     void anUnknownIdentifierIsNotCounted() throws SQLException {
         LoginIdentifier unknown = new LoginIdentifier(someLogin());
 
-        assertThat(authenticate(unknown, PASSWORD)).isEqualTo(AuthenticationService.Outcome.REFUSED);
+        assertThat(authenticate(unknown, PASSWORD)).isEmpty();
 
         assertThat(rowCountFor(unknown))
                 .as("keying on the attempted string would build a caller-controlled,"
@@ -265,7 +270,7 @@ class AuthenticationLockoutDatabaseTest {
         // And the guard against this test passing because the query itself finds nothing: a
         // KNOWN identifier that has failed does produce a row, through the same query.
         LoginIdentifier known = givenAnIdentityWithACredential();
-        assertThat(authenticate(known, "wrong")).isEqualTo(AuthenticationService.Outcome.REFUSED);
+        assertThat(authenticate(known, "wrong")).isEmpty();
         assertThat(rowCountFor(known)).as("the query can see a row when there is one").isEqualTo(1);
     }
 
@@ -313,7 +318,7 @@ class AuthenticationLockoutDatabaseTest {
         // Durable, not process-local (ADR-0024, transition risk R7). A component built fresh - a new
         // instance, in effect - sees what the previous one counted.
         LoginIdentifier login = givenAnIdentityWithACredential();
-        assertThat(authenticate(login, "wrong")).isEqualTo(AuthenticationService.Outcome.REFUSED);
+        assertThat(authenticate(login, "wrong")).isEmpty();
 
         AuthenticationThrottle restarted =
                 new AuthenticationThrottle(POLICY, IDS, CLOCK, new JdbcAuditWriter());
@@ -342,17 +347,22 @@ class AuthenticationLockoutDatabaseTest {
 
     // -----------------------------------------------------------------
 
-    private AuthenticationService.Outcome authenticate(LoginIdentifier login, String password) {
+    private Optional<AuthenticatedSession> authenticate(LoginIdentifier login, String password) {
         return authenticateWith(new Argon2PasswordDeriver(WEAK), login, password);
     }
 
     @SuppressWarnings("try") // The Scope is used for its close side effect.
-    private AuthenticationService.Outcome authenticateWith(
+    private Optional<AuthenticatedSession> authenticateWith(
             PasswordDeriver deriver, LoginIdentifier login, String password) {
         try (CorrelationContext.Scope ignored =
                 CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
             return serviceWith(deriver)
-                    .authenticate(new AuthenticationRequest(login.value(), Sensitive.of(password)));
+                    .authenticate(
+                            new AuthenticationRequest(login.value(), Sensitive.of(password)),
+                            // No device: these suites drive the SERVICE, and the User-Agent is a
+                            // boundary concern the controller resolves. Passing a label here would
+                            // test the fixture rather than anything the endpoint does.
+                            null);
         }
     }
 
@@ -364,6 +374,12 @@ class AuthenticationLockoutDatabaseTest {
                         new JdbcIdentityStore(), new JdbcCredentialStore(), deriver, IDS, CLOCK),
                 new AuthenticationThrottle(POLICY, IDS, CLOCK, new JdbcAuditWriter()),
                 new IdentityAuthentication(IDS, CLOCK, new JdbcAuditWriter(), new JdbcOutboxWriter()),
+                new SessionIssue(
+                        new JdbcSessionStore(),
+                        SessionPolicy.current(),
+                        IDS,
+                        CLOCK,
+                        new java.security.SecureRandom()),
                 template,
                 dataSource,
                 new SimpleMeterRegistry());

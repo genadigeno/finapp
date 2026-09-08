@@ -81,9 +81,10 @@ public record DeviceDescription(String value) {
      * <p>Sanitising means the stored value can differ from what was sent, and that is stated rather
      * than hidden: what is dropped could not have been displayed honestly anyway.
      *
-     * <p><strong>Its production call site arrives with session issuance.</strong> Nothing in this
-     * platform issues a session from an HTTP request yet — that is {@code P1-TSK-027} — so this is
-     * the rule, tested, waiting for the one caller that will have a {@code User-Agent} to hand.
+     * <p><strong>Its production call site is {@code AuthenticationController}</strong>
+     * ({@code P1-TSK-027}), which is what makes {@code GET /v1/sessions} show a person something
+     * they recognise rather than a column of nulls. It was written with no caller by
+     * {@code P1-TSK-016}, and named the task that would supply one.
      */
     public static Optional<DeviceDescription> fromUserAgent(String userAgent) {
         if (userAgent == null) {

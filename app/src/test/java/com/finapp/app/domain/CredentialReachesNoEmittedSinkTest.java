@@ -367,7 +367,7 @@ class CredentialReachesNoEmittedSinkTest {
      * value whose purpose is to leave.
      */
     private static final java.util.Set<String> EMITTED_SECRET_SCHEMAS =
-            java.util.Set.of("ElevatedSession");
+            java.util.Set.of("ElevatedSession", "AuthenticatedSession");
 
     private static List<String> secretNamedMembersOutsideRequestBodiesIn(String document) {
         tools.jackson.databind.JsonNode root =

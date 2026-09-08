@@ -314,11 +314,28 @@ class NoUnwrappedSecretRulesTest {
      * being easier.
      */
     private static final Set<String> PERMITTED_FIELDS =
-            Set.of("com.finapp.app.mfa.ElevatedSession.sessionToken");
+            Set.of(
+                    "com.finapp.app.mfa.ElevatedSession.sessionToken",
+                    // `P1-TSK-027`, and the same claim rather than a new one: a session token
+                    // exists to be transmitted, and this platform's serialiser renders a wrapped
+                    // value as a mask - so wrapping would hand the client «redacted» for the one
+                    // field the response is for.
+                    //
+                    // The second exemption on this rule, and the reason it is not a slope: it is
+                    // the SAME case as the first, arriving at a second endpoint because
+                    // authentication now issues a session as well. A third entry for anything that
+                    // is not a session token would be a new decision and should be argued as one.
+                    //
+                    // The toString harm is closed by an override, and AuthenticatedSessionTest
+                    // asserts it - written WITH this exemption rather than after somebody noticed
+                    // it was unbacked, which is what happened to the first one (P1-TSK-018's gate).
+                    "com.finapp.app.authentication.AuthenticatedSession.sessionToken");
 
     /** The accessors of {@link #PERMITTED_FIELDS}, for the same reason and no other. */
     private static final Set<String> PERMITTED_ACCESSORS =
-            Set.of("com.finapp.app.mfa.ElevatedSession.sessionToken()");
+            Set.of(
+                    "com.finapp.app.mfa.ElevatedSession.sessionToken()",
+                    "com.finapp.app.authentication.AuthenticatedSession.sessionToken()");
 
     @org.junit.jupiter.api.Test
     @org.junit.jupiter.api.DisplayName("every exemption still names a field the rule would otherwise flag")

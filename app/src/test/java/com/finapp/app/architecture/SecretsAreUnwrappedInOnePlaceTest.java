@@ -102,6 +102,15 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // second factor. The one unwrap outside `identity` besides the provisioning
                     // URI, and for the same reason: a value whose purpose is to be transmitted.
                     "com.finapp.app.mfa.MfaChallengeApplicationService",
+                    // P1-TSK-027. The SAME case one endpoint over: a login now issues a session,
+                    // and the token exists exactly once - here, on its way into the response. It
+                    // cannot be handed back later, because Session holds only the hash.
+                    //
+                    // The third unwrap outside `identity`, and the reason that is not a slope: all
+                    // three are a session or enrolment token being handed to the one caller
+                    // entitled to it, at the boundary, in the response to the request that created
+                    // it. An entry for anything read out of storage would be a different claim.
+                    "com.finapp.app.authentication.AuthenticationService",
                     // P1-TSK-023. All three inside `identity`, which is the property this list
                     // exists to keep true - and the recovery boundary was DELIBERATELY built to
                     // keep them there. The controllers pass Sensitive<String> straight through from

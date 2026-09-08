@@ -82,8 +82,13 @@ class AuthenticationEndpointDatabaseTest {
 
         Response response = authenticate(fixture.login(), PASSWORD);
 
-        assertThat(response.status()).isEqualTo(204);
-        assertThat(response.body()).as("204 carries no body, and there is no session to return").isEmpty();
+        assertThat(response.status())
+                .as("201: a session is CREATED (`P1-TSK-027`). It was 204 while nothing issued one")
+                .isEqualTo(201);
+        assertThat(response.body())
+                .as("and the body carries it, at PASSWORD assurance")
+                .contains("\"sessionToken\"")
+                .contains("\"assurance\":\"PASSWORD\"");
 
         assertThat(auditRows(fixture.login(), "identity.AuthenticationSucceeded"))
                 .as("the success is audited")
@@ -194,6 +199,13 @@ class AuthenticationEndpointDatabaseTest {
         Response success = authenticate(fixture.login(), PASSWORD);
         Response failure = authenticate(fixture.login(), "not the password");
 
+        // Both bodies must be non-empty first. Since `P1-TSK-027` the success carries a session,
+        // so a doesNotContain over it is a real assertion - but if that body ever became empty
+        // again this check would pass while examining nothing, which is the vacuity this repository
+        // keeps meeting.
+        assertThat(success.body()).as("precondition: there is a success body to examine").isNotEmpty();
+        assertThat(failure.body()).as("precondition: there is a failure body to examine").isNotEmpty();
+
         for (Response response : List.of(success, failure)) {
             assertThat(response.body()).doesNotContain(PASSWORD).doesNotContain("not the password");
             assertThat(response.headers().toString()).doesNotContain(PASSWORD);
@@ -229,7 +241,7 @@ class AuthenticationEndpointDatabaseTest {
             for (Future<Integer> result : results) {
                 assertThat(result.get(60, TimeUnit.SECONDS))
                         .as("every concurrent login succeeds; this is not a command to deduplicate")
-                        .isEqualTo(204);
+                        .isEqualTo(201);
             }
         } finally {
             pool.shutdownNow();

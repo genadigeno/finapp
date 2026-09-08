@@ -1,8 +1,7 @@
 package com.finapp.app.domain;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.catchThrowable;
 
+import com.finapp.app.authentication.AuthenticatedSession;
 import com.finapp.app.authentication.AuthenticationRequest;
 import com.finapp.app.authentication.AuthenticationService;
 import com.finapp.identity.Argon2PasswordDeriver;
@@ -16,9 +15,12 @@ import com.finapp.identity.IdentityAuthentication;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.JdbcCredentialStore;
 import com.finapp.identity.JdbcIdentityStore;
+import com.finapp.identity.JdbcSessionStore;
 import com.finapp.identity.LockoutPolicy;
 import com.finapp.identity.LoginIdentifier;
 import com.finapp.identity.RawPassword;
+import com.finapp.identity.SessionIssue;
+import com.finapp.identity.SessionPolicy;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
@@ -47,6 +49,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * Authentication fails closed when the database is unavailable
@@ -220,10 +224,21 @@ class AuthenticationFailsClosedDatabaseTest {
                                     LockoutPolicy.current(), IDS, CLOCK, new JdbcAuditWriter()),
                             new IdentityAuthentication(
                                     IDS, CLOCK, new JdbcAuditWriter(), new JdbcOutboxWriter()),
+                            new SessionIssue(
+                                    new JdbcSessionStore(),
+                                    SessionPolicy.current(),
+                                    IDS,
+                                    CLOCK,
+                                    new java.security.SecureRandom()),
                             template,
                             source,
                             new SimpleMeterRegistry())
-                    .authenticate(new AuthenticationRequest(login.value(), Sensitive.of(password)));
+                    .authenticate(
+                            new AuthenticationRequest(login.value(), Sensitive.of(password)),
+                            // No device: these suites drive the SERVICE, and the User-Agent is a
+                            // boundary concern the controller resolves. Passing a label here would
+                            // test the fixture rather than anything the endpoint does.
+                            null);
         }
     }
 

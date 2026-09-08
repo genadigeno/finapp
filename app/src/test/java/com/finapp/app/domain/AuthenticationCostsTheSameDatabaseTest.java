@@ -1,7 +1,7 @@
 package com.finapp.app.domain;
 
-import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.authentication.AuthenticatedSession;
 import com.finapp.app.authentication.AuthenticationRequest;
 import com.finapp.app.authentication.AuthenticationService;
 import com.finapp.identity.Argon2PasswordDeriver;
@@ -14,9 +14,12 @@ import com.finapp.identity.IdentityAuthentication;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.JdbcCredentialStore;
 import com.finapp.identity.JdbcIdentityStore;
+import com.finapp.identity.JdbcSessionStore;
 import com.finapp.identity.LoginIdentifier;
 import com.finapp.identity.PasswordDeriver;
 import com.finapp.identity.RawPassword;
+import com.finapp.identity.SessionIssue;
+import com.finapp.identity.SessionPolicy;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
@@ -32,6 +35,7 @@ import java.time.Clock;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
@@ -43,6 +47,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Every failing authentication costs the same work (`P1-TSK-010`, {@code INV-IDN-07}).
@@ -104,7 +109,7 @@ class AuthenticationCostsTheSameDatabaseTest {
 
                     assertThat(authenticateInAFlow(counting, attempt))
                             .as("%s must fail", cause)
-                            .isEqualTo(AuthenticationService.Outcome.REFUSED);
+                            .isEmpty();
                     assertThat(counting.verifications())
                             .as("%s must cost exactly one verification, like every other failure",
                                     cause)
@@ -121,7 +126,7 @@ class AuthenticationCostsTheSameDatabaseTest {
         CountingDeriver counting = new CountingDeriver(new Argon2PasswordDeriver(WEAK));
 
         assertThat(authenticateInAFlow(counting, request(present, PASSWORD)))
-                .isEqualTo(AuthenticationService.Outcome.AUTHENTICATED);
+                .isPresent();
         assertThat(counting.verifications()).isEqualTo(1);
     }
 
@@ -136,12 +141,12 @@ class AuthenticationCostsTheSameDatabaseTest {
      * a flow, rather than fabricating an identifier that would point at nothing (`P0-TSK-014`).
      */
     @SuppressWarnings("try") // The Scope is used for its close side effect.
-    private AuthenticationService.Outcome authenticateInAFlow(
+    private Optional<AuthenticatedSession> authenticateInAFlow(
             PasswordDeriver deriver, AuthenticationRequest attempt) {
         try (CorrelationContext.Scope ignored =
                 CorrelationContext.enter(
                         Correlation.startingWith(CorrelationId.generate(IDS)))) {
-            return serviceWith(deriver).authenticate(attempt);
+            return serviceWith(deriver).authenticate(attempt, null);
         }
     }
 
@@ -161,6 +166,12 @@ class AuthenticationCostsTheSameDatabaseTest {
                         CLOCK,
                         new com.finapp.platform.audit.JdbcAuditWriter(),
                         new com.finapp.platform.outbox.JdbcOutboxWriter()),
+                new SessionIssue(
+                        new JdbcSessionStore(),
+                        SessionPolicy.current(),
+                        IDS,
+                        CLOCK,
+                        new java.security.SecureRandom()),
                 template,
                 dataSource,
                 new SimpleMeterRegistry());

@@ -95,6 +95,39 @@ class SessionBeans {
                 roleAssignmentStore, idGenerator, clock, auditWriter);
     }
 
+    /**
+     * Randomness for session tokens.
+     *
+     * <p>Declared here rather than shared with {@code mfaRandomness}: {@code PlatformBeans} and
+     * {@code MfaBeans} each construct their own, and rewiring proven code to share one would be a
+     * refactor with no correctness benefit ({@code EXECUTION_PROTOCOL.md} rule 4). Two
+     * {@code SecureRandom} instances are independent and each seeds from the operating system -
+     * there is no shared state to get wrong.
+     */
+    @Bean
+    java.security.SecureRandom sessionRandomness() {
+        return new java.security.SecureRandom();
+    }
+
+    /**
+     * Where a first session comes from ({@code P1-TSK-027}).
+     *
+     * <p>Wired here rather than in {@code AuthenticationBeans} because it is session
+     * infrastructure: it takes the {@code sessionStore} and the shared {@code sessionPolicy}
+     * declared above, and putting it beside them is what keeps the bound sessions are issued and
+     * extended under one value. Authentication consumes it.
+     */
+    @Bean
+    com.finapp.identity.SessionIssue sessionIssue(
+            SessionStore<Connection> sessionStore,
+            SessionPolicy sessionPolicy,
+            IdGenerator idGenerator,
+            Clock clock,
+            java.security.SecureRandom sessionRandomness) {
+        return new com.finapp.identity.SessionIssue(
+                sessionStore, sessionPolicy, idGenerator, clock, sessionRandomness);
+    }
+
     @Bean
     SessionRevocation sessionRevocation(
             SessionStore<Connection> sessionStore,

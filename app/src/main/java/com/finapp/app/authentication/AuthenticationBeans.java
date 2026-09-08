@@ -10,6 +10,7 @@ import com.finapp.identity.IdentityStore;
 import com.finapp.identity.JdbcCredentialStore;
 import com.finapp.identity.JdbcIdentityStore;
 import com.finapp.identity.LockoutPolicy;
+import com.finapp.identity.SessionIssue;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -119,11 +120,16 @@ class AuthenticationBeans {
         return template;
     }
 
+    /**
+     * @param sessionIssue declared by {@code SessionBeans}, not here. A login produces a session and
+     *     the two are wired together at this one point ({@code P1-TSK-027})
+     */
     @Bean
     AuthenticationService authenticationService(
             CredentialVerifier credentialVerifier,
             AuthenticationThrottle authenticationThrottle,
             IdentityAuthentication identityAuthentication,
+            SessionIssue sessionIssue,
             TransactionTemplate authenticationTransactions,
             DataSource dataSource,
             MeterRegistry meters) {
@@ -131,6 +137,7 @@ class AuthenticationBeans {
                 credentialVerifier,
                 authenticationThrottle,
                 identityAuthentication,
+                sessionIssue,
                 authenticationTransactions,
                 dataSource,
                 meters);

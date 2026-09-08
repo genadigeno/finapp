@@ -2,10 +2,12 @@ package com.finapp.app.authentication;
 
 import com.finapp.identity.AuthenticationThrottle;
 import com.finapp.identity.CredentialVerifier;
+import com.finapp.identity.DeviceDescription;
 import com.finapp.identity.IdentityAuthentication;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.LoginIdentifier;
 import com.finapp.identity.RawPassword;
+import com.finapp.identity.SessionIssue;
 import com.finapp.identity.VerificationOutcome;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
@@ -14,6 +16,7 @@ import com.finapp.sharedkernel.security.Sensitive;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.util.Objects;
+import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -26,9 +29,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>A failed authentication writes an audit record - the most security-relevant record this phase
  * produces, and the only way a credential-stuffing campaign is visible at all. That record is
  * written on the caller's connection inside this transaction, so <strong>throwing to produce the
- * 401 would roll it back and destroy it</strong>. The service therefore returns an {@link Outcome}
- * and the controller converts it, which is the shape {@code RegistrationService} already uses and
- * for the same reason.
+ * 401 would roll it back and destroy it</strong>. The service therefore <em>returns</em> its
+ * refusal - an empty {@link java.util.Optional} - and the controller converts it, which is the
+ * shape {@code RegistrationService} already uses and for the same reason.
  *
  * <h2>One transaction</h2>
  *
@@ -53,14 +56,23 @@ import org.springframework.transaction.support.TransactionTemplate;
  * endpoint an authentication bypass. A retried login is meant to re-authenticate - the credential
  * may have changed since.
  *
- * <h2>Not delivered here: the session</h2>
+ * <h2>The session, added by {@code P1-TSK-027}</h2>
  *
- * <p>{@code P1-TSK-010} declares {@code Deps: P1-TSK-013}, which is {@code TODO}. So a successful
- * authentication returns nothing a client can hold, and {@code PHASE_1_PLAN.md} §11's M1.2
- * acceptance - <em>"an identity authenticates and receives a session"</em> - is not met by this task
- * and cannot be until the session aggregate exists. Recorded in {@code CURRENT_STATE.md} rather
- * than worked around, because the workaround would be to invent a session shape that ADR-0030 has
- * already decided and {@code P1-TSK-013} must own.
+ * <p>{@code P1-TSK-010} shipped without one because its declared dependency sat in the next
+ * milestone, and the Phase 1 review found the consequence: <strong>no production path issued a
+ * first session at all</strong>, so the eight endpoints the plan marks <em>"Auth: session"</em>
+ * were unreachable by any real client. It is issued here, in <strong>this</strong> transaction and
+ * inside the <strong>same</strong> security scope as the success audit record - so a session that
+ * exists always has a record saying who logged in, and a rolled-back login leaves neither.
+ *
+ * <p><strong>At {@code PASSWORD}, always</strong>, and issued even when a second factor is enrolled
+ * - see {@link SessionIssue}, which owns that rule so a caller cannot ask for more.
+ *
+ * <p><strong>One audit record, not two.</strong> The session identifier goes into
+ * {@code AUTHENTICATION_SUCCEEDED}'s change summary rather than becoming a second
+ * {@code SESSION_ISSUED} record: one economic event, one entry. An investigator reading the trail
+ * sees a login that produced session X, which is a stronger statement than two rows that have to be
+ * joined by timestamp.
  */
 public final class AuthenticationService {
 
@@ -83,6 +95,7 @@ public final class AuthenticationService {
     private final CredentialVerifier verifier;
     private final AuthenticationThrottle throttle;
     private final IdentityAuthentication authentications;
+    private final SessionIssue sessionIssue;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
     private final MeterRegistry meters;
@@ -91,6 +104,7 @@ public final class AuthenticationService {
             CredentialVerifier verifier,
             AuthenticationThrottle throttle,
             IdentityAuthentication authentications,
+            SessionIssue sessionIssue,
             TransactionTemplate transactions,
             DataSource dataSource,
             MeterRegistry meters) {
@@ -98,25 +112,38 @@ public final class AuthenticationService {
         this.throttle = Objects.requireNonNull(throttle, "throttle must not be null");
         this.authentications =
                 Objects.requireNonNull(authentications, "authentications must not be null");
+        this.sessionIssue = Objects.requireNonNull(sessionIssue, "sessionIssue must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
     }
 
-    /** Authenticates, or refuses without saying why. */
-    public Outcome authenticate(AuthenticationRequest request) {
+    /**
+     * Authenticates, or refuses without saying why.
+     *
+     * <p><strong>Empty is the whole refusal.</strong> There is no reason, no status and no second
+     * empty-but-different shape - the reasoning that gives {@code VerificationOutcome} no reason
+     * code, one level up. A caller branches on whatever it is handed, so anything to branch on is
+     * an enumeration oracle with a delay fuse.
+     *
+     * @param device what the session should be labelled with, from the {@code User-Agent}. May be
+     *     {@code null}. Never scored and never a reason to refuse: a header the person did not
+     *     choose must not be able to fail their login ({@code P1-TSK-016})
+     */
+    public Optional<AuthenticatedSession> authenticate(
+            AuthenticationRequest request, DeviceDescription device) {
         Objects.requireNonNull(request, "request must not be null");
 
         // Normalisation happens here, once, so a capital letter finds the same row the unique
         // index claimed. A malformed identifier cannot reach this method: the boundary rejects it.
         LoginIdentifier login = new LoginIdentifier(request.loginIdentifier());
 
-        Outcome outcome =
+        Optional<AuthenticatedSession> issued =
                 transactions.execute(
                         status -> {
                             Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
                             try {
-                                return attempt(unitOfWork, login, request.password());
+                                return attempt(unitOfWork, login, request.password(), device);
                             } finally {
                                 // A no-op for a transaction-bound connection, and the correct call
                                 // regardless: closing it here would end the transaction this
@@ -124,16 +151,26 @@ public final class AuthenticationService {
                                 DataSourceUtils.releaseConnection(unitOfWork, dataSource);
                             }
                         });
-        meters.counter(AUTHENTICATION_COUNTER, "outcome", Objects.requireNonNull(outcome).tag())
+        Objects.requireNonNull(issued, "the transaction returned no outcome");
+        // The tag is derived from PRESENCE rather than computed alongside it, so the meter cannot
+        // disagree with what the caller receives. Two sources of truth about one fact is how a
+        // dashboard comes to show successes nobody got.
+        meters.counter(
+                        AUTHENTICATION_COUNTER,
+                        "outcome",
+                        (issued.isPresent() ? Outcome.AUTHENTICATED : Outcome.REFUSED).tag())
                 .increment();
-        return outcome;
+        return issued;
     }
 
     // -----------------------------------------------------------------
 
     @SuppressWarnings("try") // The Scope is used for its close side effect.
-    private Outcome attempt(
-            Connection unitOfWork, LoginIdentifier login, Sensitive<String> secret) {
+    private Optional<AuthenticatedSession> attempt(
+            Connection unitOfWork,
+            LoginIdentifier login,
+            Sensitive<String> secret,
+            DeviceDescription device) {
         // VERIFICATION FIRST, UNCONDITIONALLY - the throttle is never consulted before it.
         //
         // The instinct is the opposite: check the lock, and refuse a locked account without paying
@@ -161,12 +198,26 @@ public final class AuthenticationService {
                 // right, which is the one thing an attacker is trying to learn.
                 if (throttle.isLocked(unitOfWork, identityId)) {
                     authentications.failed(unitOfWork, login);
-                    return Outcome.REFUSED;
+                    return Optional.empty();
                 }
                 throttle.clear(unitOfWork, identityId);
-                authentications.succeeded(unitOfWork, identityId, login);
+
+                // The session is issued BEFORE the audit record, so the record can name it. The
+                // ordering is not load-bearing for correctness - both writes are in this
+                // transaction, so neither can exist without the other - but it is what lets one
+                // record answer "which session did this login produce?".
+                SessionIssue.Issued issued = sessionIssue.issue(unitOfWork, identityId, device);
+                authentications.succeeded(unitOfWork, identityId, login, issued.session().id());
+
+                return Optional.of(
+                        new AuthenticatedSession(
+                                // The one unwrap on this path. The plaintext exists here and
+                                // nowhere else: Session holds only the hash, so nothing can hand it
+                                // back later and a customer who loses it authenticates again.
+                                issued.token().presentedValue().expose(),
+                                issued.session().assurance().name(),
+                                issued.session().idleExpiresAt()));
             }
-            return Outcome.AUTHENTICATED;
         }
 
         // No established actor, and possibly no identity: the platform is the only honest answer.
@@ -188,7 +239,7 @@ public final class AuthenticationService {
             }
             authentications.failed(unitOfWork, login);
         }
-        return Outcome.REFUSED;
+        return Optional.empty();
     }
 
     /**
@@ -218,14 +269,19 @@ public final class AuthenticationService {
     }
 
     /**
-     * What happened, as far as anybody outside is told.
+     * The metric vocabulary, and nothing else since {@code P1-TSK-027}.
      *
-     * <p>Two values. There is no {@code UNKNOWN_IDENTITY}, no {@code LOCKED}, no {@code SUSPENDED} -
-     * the same reasoning that gives {@code VerificationOutcome} no reason code, one level up. An
-     * enumeration added here is an enumeration oracle with a delay fuse: harmless the day it is
-     * added, a second response shape the day somebody maps it to a message.
+     * <p>It used to be what the caller received; the caller now receives an {@link Optional}, so
+     * this is reduced to naming the two tag values - and that is the safer place for it to live. A
+     * <em>returned</em> enumeration invites a third value, and a third value here would be a second
+     * response shape: the enumeration oracle with a delay fuse, harmless the day it is added and a
+     * disclosure the day somebody maps it to a message.
+     *
+     * <p>A third <em>tag</em> value would be harmless by comparison, because a metric carries no
+     * identity (ADR-0018) - but there is nothing to count that these two do not cover, and lockouts
+     * have their own meter for the reason recorded on {@link #LOCKOUT_COUNTER}.
      */
-    public enum Outcome {
+    enum Outcome {
         AUTHENTICATED("authenticated"),
         REFUSED("refused");
 

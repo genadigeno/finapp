@@ -579,6 +579,21 @@
       }
     },
     "schemas": {
+      "AuthenticatedSession": {
+        "properties": {
+          "assurance": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sessionToken": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AuthenticationRequest": {
         "properties": {
           "loginIdentifier": {
@@ -800,8 +815,15 @@
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "No Content"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticatedSession"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }
