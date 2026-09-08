@@ -267,7 +267,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/recoveries",
                         ApiVersion.CURRENT_PREFIX + "/recoveries/{id}/completion",
                         ApiVersion.CURRENT_PREFIX + "/me/channels",
-                        ApiVersion.CURRENT_PREFIX + "/me/channels/verification");
+                        ApiVersion.CURRENT_PREFIX + "/me/channels/verification",
+                        // P1-TSK-028. The only two routes in the phase behind
+                        // @RequiresPermission, and the only two the plan listed that nobody owned.
+                        ApiVersion.CURRENT_PREFIX + "/identities/{id}/suspension",
+                        ApiVersion.CURRENT_PREFIX + "/identities/{id}/roles");
     }
 
     @Test

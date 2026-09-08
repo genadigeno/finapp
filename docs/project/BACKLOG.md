@@ -1996,7 +1996,7 @@ repository exists to prevent.
 - **Thirteen mutations, all caught** — six added by the gate.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
-**P1-TSK-028 — The two administrative endpoints** — `TODO`
+**P1-TSK-028 — The two administrative endpoints** — `COMPLETE` (2026-09-08)
 - Context: identity / api
 - Description: `POST /v1/identities/{id}/suspension` and `POST /v1/identities/{id}/roles`.
 - Why: `PHASE_1_PLAN.md` §7 lists both and **no task owns either** — sixth backlog defect of this
@@ -2012,8 +2012,82 @@ repository exists to prevent.
   `P1-TSK-018`'s recorded reasoning for shipping `@RequiresAssurance` with a probe endpoint.
 - Tests: a negative authorization test per endpoint; a negative **ownership** test — self-suspension
   and self-elevation both refused; the audit record names the administrator and targets the subject.
-- Accept: both endpoints refuse a session holding no role, and each refusal is audited.
+- Accept: **met** — both refuse a session holding no role, and both refusals are audited against the
+  person who attempted them, with positive controls so refusal is not blanket.
+- **The blocking finding: suspension did not suspend anybody.** `JdbcSessionStore.findByToken`
+  filters on the **session's** status and never joins `identity.identity`, and `CredentialVerifier`
+  refuses a suspended identity only at *authentication* — so a suspension stopped the next login and
+  left the session an attacker is holding **working until its absolute bound expired**, while the
+  administrator got a success response. `suspend` now revokes every session in the same transaction
+  (`INV-IDN-03`: an eventually-revoked session is an unrevoked session), asserted with the **same
+  token** across the suspension. Joining identity status into the session lookup was the alternative
+  and was rejected: a second table in the hottest query on the platform, per request, to enforce
+  once what a revoke enforces once per decision.
+- **Ownership is inverted here, and that is the whole shape of the task.** Everywhere else the rule
+  is *the resource must belong to the caller*; here it is **the subject must not be the actor**. It
+  cannot live in `@RequiresPermission`, which is static per handler and knows nothing about which
+  identity the path names.
+- **What refusing self-elevation buys is stated honestly rather than overclaimed**: it is **not** a
+  containment control, because an administrator holding `ROLE_ASSIGN` can escalate through a second
+  account. What it buys is that the trail **never contains a self-loop** — every escalation names
+  two parties, and a self-grant reads like a system action rather than a decision somebody took.
+  Refusing self-*suspension* is a different argument: there is no reinstatement endpoint, so it is a
+  one-way door out of the platform.
+- **`OwnershipIsScopedTest` gained a fifth class, `ADMINISTERED`, because this task broke an
+  assumption the rule rested on.** It excluded `IdentityId` on the reasoning that it *is* the owner —
+  true of every operation written before, and false of an administrative one, where the identifier
+  comes from a URL and names a different person. The exclusion is now conditional on the statement
+  reaching `identity.identity` by primary key, and three methods are classified.
+- **A pre-existing blind spot in that rule was closed**: `statementOf` read only the method's own
+  string literals, so a statement built from a table-name **constant** was invisible to
+  `referencesTheOwner`. It had never been reached because every earlier statement happened to
+  mention `identity_id` literally. Inlining the constant to satisfy the detector was the alternative
+  and would have been a change made to please a rule rather than to state a property.
+- **The first administrator cannot be created through the API**, and that is a decision: a bootstrap
+  endpoint is a privileged surface with nothing in front of it, and a seeded migration row puts an
+  administrator into production for ever. Documented in `README.md` §5e, with the consequence
+  recorded — that first grant has **no actor in the audit trail**.
+- **A mutation survived and found a test passing for the wrong reason.** `anUnknownSubjectIs404`
+  used `UUID.randomUUID()`, and `IdentityId.of` validates **UUIDv7** (`P0-TSK-012`) — so a v4 was
+  refused as *malformed* and never reached the service. The test proved only that a v4 is rejected;
+  it is now driven with a well-formed identifier that names nobody, and the mutation is caught.
+- **Not built, and recorded rather than silently absent**: no reinstatement endpoint (`P1-TSK-032`),
+  no second role — `P1-TSK-020`'s note that the role→permission mapping becomes mutation-testable at
+  the second role stands, because inventing one to give a mutation somewhere to land is a surface
+  chosen to suit a test — and no four-eyes, which `INV-AUD-04` schedules and whose approver column
+  is recorded debt.
+- **The completion gate found an outcome name that can be false**: `ALREADY_SUSPENDED` is reached
+  by a `CLOSED` identity too, which is not suspended but gone permanently — a caller would read the
+  operation as having effectively succeeded. Renamed `NOT_ACTIVE`, for what is *checked*, with the
+  `CLOSED` path now tested.
+- **And a javadoc claiming a bounds-parity test that did not exist** — seventh occurrence this
+  phase. The drift would fail at the **last write** as a 500, after the transition and the session
+  revocations had run inside a transaction that then rolls back. The test's own first version failed
+  on correct code, which is the more useful outcome: `@Size` has no `RECORD_COMPONENT` target, so it
+  lands on the field and a component lookup returns null for a working constraint.
+- **Nine mutations, all caught** — two added by the gate. 863 hermetic, 453 database.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
+
+**P1-TSK-032 — Reinstatement: the other half of suspension** — `TODO`
+- Context: identity / api
+- Description: `DELETE /v1/identities/{id}/suspension`, moving a `SUSPENDED` identity back to
+  `ACTIVE`.
+- Why: **`P1-TSK-028` shipped a one-way door.** `IdentityStatus` models `SUSPENDED` as explicitly
+  reversible and `Identity.reinstate` exists with no caller, but no endpoint reaches it — so an
+  administrator who suspends the wrong person cannot undo it through the platform, and the remedy is
+  an operator with database access. That is the shape of manual intervention this project treats as
+  debt everywhere else.
+- **It is also what makes refusing self-suspension correct rather than merely tidy**: with
+  reinstatement, an administrator locking themselves out is recoverable, and the argument for the
+  refusal changes. Both decisions should be revisited together.
+- Deps: P1-TSK-028
+- Implementation: the mirror of `suspend` — conditional `UPDATE … WHERE status = 'SUSPENDED'`, a
+  required reason, an audit record and an event. **Sessions are not restored**, because they were
+  ended and `INV-HIST-01` does not un-happen things; the person logs in again.
+- Tests: a negative authorization test; reinstatement of an identity that is not `SUSPENDED` is a
+  conflict; the audit record names the administrator; ten instances produce one transition.
+- Accept: all four, and a suspended identity can authenticate again afterwards.
+- Risk: Medium. Cx: S. DoD: `DOD-SEC`
 
 **P1-TSK-021 — Ownership checks in the domain** — `COMPLETE` (2026-09-08)
 - Context: identity, party

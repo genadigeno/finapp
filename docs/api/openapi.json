@@ -767,6 +767,27 @@
         ],
         "type": "object"
       },
+      "RoleAssignmentRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "pattern": "[^\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Cn}]+",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "ADMINISTRATOR"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "role"
+        ],
+        "type": "object"
+      },
       "SessionSummary": {
         "properties": {
           "absoluteExpiresAt": {
@@ -794,6 +815,20 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "SuspensionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "pattern": "[^\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Cn}]+",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
         "type": "object"
       }
     }
@@ -855,6 +890,66 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/identities/{id}/roles": {
+      "post": {
+        "operationId": "assignRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/identities/{id}/suspension": {
+      "post": {
+        "operationId": "suspendIdentity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuspensionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
           }
         }
       }

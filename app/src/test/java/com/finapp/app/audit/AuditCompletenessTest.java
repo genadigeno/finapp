@@ -57,14 +57,13 @@ class AuditCompletenessTest {
      * value of the list is that adding to it is a decision somebody takes deliberately, and that an
      * action dropping out of production code without an entry fails the build.
      */
+    /*
+     * `identity.IdentitySuspended` left this map at P1-TSK-028, which built the endpoint that
+     * emits it. That is the list working in the direction it is usually not exercised in: an entry
+     * is a claim about the future, and the future arriving is what removes it.
+     */
     private static final Map<String, String> NOT_YET_EMITTED =
             Map.of(
-                    "identity.IdentitySuspended",
-                    "P1-TSK-028 owns POST /v1/identities/{id}/suspension. PHASE_1_PLAN.md section 7"
-                        + " lists the endpoint and no task owned it until P1-TSK-020's completion"
-                        + " gate recorded the omission - this task cannot audit an operation that"
-                        + " nothing performs, and inventing the endpoint to give the action a caller"
-                        + " would be a security surface chosen to suit a test.",
                     "party.ProfileChanged",
                     "PHASE_1_PLAN.md section 7 DOES list PATCH /v1/me, and no backlog task owned"
                         + " it until the phase review created P1-TSK-030 - the eighth backlog"
@@ -162,9 +161,14 @@ class AuditCompletenessTest {
                         "identity.SessionRevoked",
                         "identity.AuthorizationDenied",
                         "party.CustomerRegistered");
+        // Derived from the map rather than listed. The first version named two constants, and one
+        // of them - identity.IdentitySuspended - stopped being true the moment P1-TSK-028 built the
+        // endpoint that emits it. A negative control that has to be edited whenever the codebase
+        // grows is the stale-list defect this repository closes by derivation everywhere else, and
+        // it fails in the direction that looks like a real defect.
         assertThat(emitted)
                 .as("and must not claim the ones nothing references")
-                .doesNotContain("identity.IdentitySuspended", "party.ProfileChanged");
+                .doesNotContainAnyElementsOf(NOT_YET_EMITTED.keySet());
     }
 
     // -----------------------------------------------------------------

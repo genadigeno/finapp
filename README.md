@@ -314,6 +314,32 @@ becomes `NaN` rather than `0`, so an alert written on the value still fires.
 
 ---
 
+## 5e. The first administrator
+
+`POST /v1/identities/{id}/roles` requires the `ROLE_ASSIGN` permission, which only the
+`ADMINISTRATOR` role grants — so **the first administrator cannot be created through the API**. That
+circularity is deliberate rather than an oversight, and the two alternatives were both rejected:
+
+- **A bootstrap endpoint** would be a privileged surface with no authorisation in front of it, which
+  is the thing the rest of this module exists to prevent.
+- **Seeding a row in a migration** would put an administrator into *every* environment, including
+  production, permanently, with credentials nobody chose.
+
+So the first grant is made out of band by an operator with database access, against an identity that
+has already registered normally:
+
+```bash
+docker compose exec postgres psql -U finapp_migrator -d finapp -c "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at) SELECT gen_random_uuid(), i.id, 'ADMINISTRATOR', i.id, now() FROM identity.identity i WHERE i.login_identifier = 'REPLACE_ME'"
+```
+
+**The consequence is recorded rather than hidden: that first assignment has no actor in the audit
+trail**, because no authenticated actor performed it — `assigned_by` names the subject itself, which
+is the one self-grant the platform contains and the reason `IdentityAdministration` refuses every
+later one. Every subsequent assignment names two parties.
+
+An operator doing this is a privileged-access event in its own right, and Phase 15 owns the controls
+for that (`CURRENT_STATE.md` §Known Architectural Debt).
+
 ## 6. What CI checks
 
 Four independent jobs, so a failure names its own gate

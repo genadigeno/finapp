@@ -242,7 +242,20 @@ class CredentialReachesNoEmittedSinkTest {
                         // rather than a secret - wrapped for the same reason, because a record's
                         // generated toString prints every component.
                         "ContactChannelRequest",
-                        "RecoveryInitiationRequest");
+                        "RecoveryInitiationRequest",
+                        // P1-TSK-028. Neither carries a secret. They are here for the same reason
+                        // the two above are: the set is every schema REACHABLE from a request body,
+                        // not every schema containing one, and naming them is the price of the
+                        // guard being unable to widen quietly.
+                        //
+                        // Both carry a free-text `reason`, which is the one thing worth a second
+                        // look - an administrator can type anything into it, including something
+                        // they should not. That is a handling question about audit content rather
+                        // than a leak of a platform secret, and what bounds it is that the field
+                        // never reaches an event payload: IdentityAdministration.announce carries
+                        // identifiers and an enumerated status, deliberately (INV-AUD-02).
+                        "SuspensionRequest",
+                        "RoleAssignmentRequest");
     }
 
     @Test

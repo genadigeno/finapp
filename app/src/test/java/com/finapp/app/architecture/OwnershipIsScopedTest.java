@@ -113,7 +113,26 @@ class OwnershipIsScopedTest {
          * bearer predicate, which is checked, and the security argument then rests on where the token
          * was sent — which is {@code INV-IDN-06} and is checked by the abuse-case tests.
          */
-        BEARER_SCOPED
+        BEARER_SCOPED,
+
+        /**
+         * An administrator names the subject, and the subject is deliberately somebody else.
+         *
+         * <p>Added by {@code P1-TSK-028}, and it exists because that task <strong>broke an
+         * assumption this class had been resting on</strong>: {@link #takesAResourceIdentifier}
+         * excluded {@code IdentityId} on the reasoning that it <em>is</em> the owner, so an
+         * operation scoped by one is scoped by definition. That is true of every operation written
+         * before — a customer acting on their own identity — and false of an administrative one,
+         * where the identifier comes straight from a URL and names a different person entirely.
+         *
+         * <p>So the exclusion is now conditional, and an operation that reaches a row of
+         * {@code identity.identity} <em>by primary key</em> must be classified. There is no
+         * ownership predicate to check and there should not be one: what replaces it is a
+         * permission at the boundary and the <strong>not-self</strong> rule in the domain, which is
+         * ownership inverted. The entry must name the check that stands in for the missing
+         * predicate, so an operation added later cannot inherit this label without one.
+         */
+        ADMINISTERED
     }
 
     /**
@@ -142,6 +161,42 @@ class OwnershipIsScopedTest {
                                         + " PRIVATE helper rather than the two public methods that"
                                         + " delegate to it, which is more accurate than the register"
                                         + " I first wrote: the statement is here.")),
+                    Map.entry(
+                            "com.finapp.identity.JdbcIdentityStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P1-TSK-028. The identifier comes from the URL of"
+                                        + " POST /v1/identities/{id}/suspension and names SOMEBODY"
+                                        + " ELSE - that is the operation, not a defect. What stands"
+                                        + " in for the missing ownership predicate:"
+                                        + " @RequiresPermission(IDENTITY_SUSPEND) at the boundary,"
+                                        + " and IdentityAdministration refusing subject.equals(actor)"
+                                        + " in the domain. Both are asserted by"
+                                        + " IdentityAdministrationDatabaseTest.")),
+                    Map.entry(
+                            "com.finapp.identity.JdbcIdentityStore.moveStatus",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P1-TSK-028, and the same argument as findById. The statement"
+                                        + " additionally carries AND status = ?, which is not an"
+                                        + " ownership predicate at all - it is the concurrency"
+                                        + " protocol that makes two administrators acting at once"
+                                        + " produce one transition and one audit record.")),
+                    Map.entry(
+                            "com.finapp.identity.JdbcSessionStore.lockIdentity",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "The FOR UPDATE lock revokeAll takes on the identity row, found"
+                                        + " by the detector rather than by me - the P1-TSK-021"
+                                        + " finding that a rule stopping at the public method is one"
+                                        + " ordinary extraction dodges. It became visible to this"
+                                        + " rule at P1-TSK-028, which narrowed the IdentityId"
+                                        + " exclusion. Classified ADMINISTERED as the WEAKER of its"
+                                        + " two provenances: reached from a proven session for a"
+                                        + " customer's own revocation, and from a URL for a"
+                                        + " suspension. A label must be one thing, and naming the"
+                                        + " safer path would describe the caller that needs no"
+                                        + " protection.")),
                     Map.entry(
                             "com.finapp.identity.JdbcRecoveryRequestStore.consume",
                             new Entry(
@@ -520,7 +575,9 @@ class OwnershipIsScopedTest {
         TreeSet<String> found = new TreeSet<>();
         for (JavaClass javaClass : productionClasses()) {
             for (JavaMethod method : javaClass.getMethods()) {
-                if (!issuesSql(method) || !takesAResourceIdentifier(method)) {
+                if (!issuesSql(method)
+                        || !takesAResourceIdentifier(
+                                method, javaClass.getName() + "." + method.getName())) {
                     continue;
                 }
                 found.add(javaClass.getName() + "." + method.getName());
@@ -571,19 +628,43 @@ class OwnershipIsScopedTest {
     /**
      * A parameter naming a resource rather than its owner.
      *
-     * <p>{@code IdentityId} is excluded because it <em>is</em> the owner: an operation scoped by it
-     * is scoped by definition. Everything else derived from {@code EntityId} names something an
-     * identity might own.
+     * <p>{@code IdentityId} is <em>usually</em> the owner, so an operation scoped by one is scoped
+     * by definition and needs no entry. {@code P1-TSK-028} made that conditional rather than
+     * absolute: an administrative operation takes an {@code IdentityId} that came from a URL and
+     * names <strong>somebody else</strong>, so there the identity is the resource.
+     *
+     * <p>The discriminator is the statement: reaching a row of {@code identity.identity} by its
+     * primary key is an operation <em>on</em> an identity, which is exactly the administrative
+     * shape. Scoping <em>by</em> an identity — {@code WHERE identity_id = ?} on somebody's sessions
+     * or credentials — is the ordinary one and stays excluded.
      */
-    private static boolean takesAResourceIdentifier(JavaMethod method) {
-        return method.getRawParameterTypes().stream()
-                .anyMatch(
-                        parameter ->
-                                parameter.isAssignableTo(
-                                                com.finapp.sharedkernel.id.EntityId.class)
-                                        && !parameter
+    private static boolean takesAResourceIdentifier(JavaMethod method, String qualified) {
+        boolean nonIdentityResource =
+                method.getRawParameterTypes().stream()
+                        .anyMatch(
+                                parameter ->
+                                        parameter.isAssignableTo(
+                                                        com.finapp.sharedkernel.id.EntityId.class)
+                                                && !parameter
+                                                        .getName()
+                                                        .equals("com.finapp.identity.IdentityId"));
+        return nonIdentityResource || actsOnAnIdentityRow(method, qualified);
+    }
+
+    /** Takes an {@code IdentityId} and reaches {@code identity.identity} by primary key. */
+    private static boolean actsOnAnIdentityRow(JavaMethod method, String qualified) {
+        boolean takesAnIdentity =
+                method.getRawParameterTypes().stream()
+                        .anyMatch(
+                                parameter ->
+                                        parameter
                                                 .getName()
                                                 .equals("com.finapp.identity.IdentityId"));
+        if (!takesAnIdentity) {
+            return false;
+        }
+        String statement = statementOf(qualified);
+        return statement.contains("identity.identity") && statement.contains("id = ?");
     }
 
     private static boolean methodExists(JavaClasses classes, String qualified) {
@@ -608,14 +689,59 @@ class OwnershipIsScopedTest {
      * module its author was thinking of.
      */
     private static String statementOf(String qualified) {
+        String body = methodSource(qualified);
+        StringBuilder literals = new StringBuilder(literalsIn(body));
+
+        // ...and the values of the class's own String constants that this body names.
+        //
+        // Added by P1-TSK-028, which is the first statement built from a table-name constant:
+        // `"SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ?"` puts `identity.identity`
+        // nowhere in this method's literals, so `referencesTheOwner` could not see an owner that is
+        // plainly there. The blind spot is older than that task and had simply never been reached,
+        // because every earlier statement happened to mention `identity_id` in a literal of its own.
+        //
+        // A rule that silently stops recognising a correct statement is the failure this class was
+        // written to prevent, one level up: it would have forced the constant to be inlined - a
+        // change made to satisfy a detector rather than to state a property.
+        String owner = qualified.substring(0, qualified.lastIndexOf('.'));
+        for (java.util.Map.Entry<String, String> constant : stringConstantsOf(owner).entrySet()) {
+            if (namesIdentifier(body, constant.getKey())) {
+                literals.append(constant.getValue());
+            }
+        }
+        return literals.toString();
+    }
+
+    private static String literalsIn(String source) {
         StringBuilder literals = new StringBuilder();
         java.util.regex.Matcher quoted =
                 java.util.regex.Pattern.compile("\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"")
-                        .matcher(methodSource(qualified));
+                        .matcher(source);
         while (quoted.find()) {
             literals.append(quoted.group());
         }
         return literals.toString();
+    }
+
+    /** Every {@code static final String NAME = "..."} the class declares. */
+    private static java.util.Map<String, String> stringConstantsOf(String owner) {
+        java.util.Map<String, String> constants = new java.util.LinkedHashMap<>();
+        java.util.regex.Matcher declared =
+                java.util.regex.Pattern.compile(
+                                "static final String\\s+([A-Z0-9_]+)\\s*=\\s*"
+                                        + "((?:\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"\\s*\\+?\\s*)+);")
+                        .matcher(readSourceOf(owner));
+        while (declared.find()) {
+            constants.put(declared.group(1), literalsIn(declared.group(2)));
+        }
+        return constants;
+    }
+
+    /** Word-boundary match, so {@code TABLE} is not found inside {@code TABLE_NAME}. */
+    private static boolean namesIdentifier(String body, String name) {
+        return java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(name) + "\\b")
+                .matcher(body)
+                .find();
     }
 
     /** The body of one method, read from source - the only place a SQL literal exists. */
