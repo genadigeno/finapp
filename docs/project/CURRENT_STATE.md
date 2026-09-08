@@ -242,8 +242,15 @@ comparing records must be able to tell *assessed and clean* from *had no subject
 
 ### What the phase produced
 
-2 modules, 14 tables, 12 endpoints, 6 aggregates, 19 auditable actions, 8 new invariants (**72**
-total), 6 ADRs, **847 hermetic and 404 database tests**, 24 of 29 backlog items.
+2 modules, **10** tables, 12 endpoints, **8** aggregates and entities, 19 auditable actions, 8 new
+invariants (**72** total), 6 ADRs, **847 hermetic and 404 database tests**, **25 of 31** backlog
+items.
+
+**Three of those numbers were wrong in the first draft of the review**, and the completion gate found
+them: the table count was the *migration* count, the aggregate count was the *plan's*, and the
+backlog count went stale the moment the review completed one item and created two. All three had been
+**quoted rather than counted** — which is exactly the drift the review found in area 7. A review
+record is not exempt from the rule it enforces.
 
 ### Previously
 

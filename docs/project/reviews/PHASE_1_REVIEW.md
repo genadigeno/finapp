@@ -374,17 +374,31 @@ contingent on any of them.
 
 ## What the phase actually produced
 
+**Counted, not quoted** — see the note below this table.
+
 | | |
 |---|---|
 | Modules | 2 new (`party`, `identity`), both schema-owning |
-| Tables | 12 in `identity`, 2 in `party` |
+| Tables | **10** — 8 in `identity`, 2 in `party` |
 | Endpoints | 12 published, contract compared byte for byte on every build |
-| Aggregates | 6 across 3 bounded contexts |
-| Auditable actions | 19, catalogued and reconciled in three directions |
+| Aggregates and entities | **8** across 3 bounded contexts |
+| Auditable actions | 19 (17 `identity`, 2 `party`), reconciled in three directions |
 | Invariants | 8 new (`INV-IDN-01`…`08`), taking the platform to **72** |
 | ADRs | 6 (0029–0034) |
 | Tests | 847 hermetic, 404 database |
-| Backlog | 24 of 29 items complete |
+| Backlog | **25 of 31** complete; 5 `TODO` and `P1-TSK-027` open |
+
+### The completion gate found three of these numbers wrong, and the reason matters
+
+The first version read *"12 tables in `identity`"* (that is the **migration** count — four of the
+twelve alter rather than create), *"6 aggregates"* (the **plan's** number, before `P1-TSK-023` added
+`ContactChannel` and `RecoveryRequest`) and *"24 of 29 backlog items"* (stale the moment this review
+completed one item and created two).
+
+**All three were quoted from a plan rather than counted from the repository** — which is precisely the
+drift this review found in area 7 and criticised. A review record asserting numbers it did not check
+has the same defect as the document it is auditing, and `DEFINITION_OF_DONE.md` §1.13 forbids
+aspirational statements presented as current fact without exempting the review that enforces it.
 
 **What it deliberately did not build**: money, accounts, a ledger, WebAuthn, a notification adapter, a
 broker adapter, or per-source rate limiting — each recorded with its owning phase rather than left
@@ -403,3 +417,16 @@ Phase 1 is `IN_PROGRESS`. To reach `COMPLETE`:
 `P1-TSK-025`, `-026`, `-028` and `-030` are open and **do not block the gate**: none is named by a
 universal or phase-specific criterion, and each is recorded with its owner. That distinction is the
 gate doing its job — it blocks on the criteria, not on the backlog being empty.
+
+### One criterion deserves a sharper answer than it got
+
+**Criterion 11** — *"Known-issues list contains no `critical` or `high` severity item"* — is recorded
+`PASS` on the grounds that §Blockers is empty and no debt row is financial-correctness debt. The
+completion gate asked whether criterion 1's failure is itself a high-severity known issue, and the
+answer is that it is **not a known issue at all**: it is a *criterion failure*, which the gate model
+handles directly by returning the phase to `IN_PROGRESS`. Recording it twice — once as a failed
+criterion and again as a blocker — would double-count one fact and make the known-issues list a
+mirror of the criteria table rather than an independent signal.
+
+The distinction is worth stating because it is the one that would let a future review quietly launder
+a criterion failure into "a known issue we accepted".
