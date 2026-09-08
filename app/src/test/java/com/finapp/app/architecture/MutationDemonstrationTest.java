@@ -140,6 +140,39 @@ class MutationDemonstrationTest {
     }
 
     @Test
+    @DisplayName("every line that looks like a register row parses as one")
+    void everyRowLikeLineParses() {
+        // THE SAME DEFECT ONE LEVEL OUT, found by the completion gate probing its own fix.
+        //
+        // everyRowNamesATest catches a row that PARSES and names nothing. It cannot catch a row that
+        // fails INVARIANT_ROW entirely - a typo in the form column, an extra pipe, a reflowed line -
+        // because such a row is not in the map at all. Probed rather than reasoned about: changing
+        // one row's form from "In-suite" to "Insuite" left the build green, and that row's invariant
+        // stayed covered only because it happens to have siblings.
+        //
+        // So the outer check is the one that has to be structural: every line in §2 that LOOKS like
+        // an invariant row must parse as one. A parser that silently drops what it cannot read is
+        // the whole finding of this task, and leaving the outer case open would have reproduced it.
+        List<String> unparsed = new ArrayList<>();
+        for (String line : registerSection("## 2.")) {
+            if (line.startsWith("| `INV-") && !INVARIANT_ROW.matcher(line).find()) {
+                unparsed.add(line.length() > 90 ? line.substring(0, 90) + "…" : line);
+            }
+        }
+
+        assertThat(unparsed)
+                .as("a §2 line that looks like a row and does not parse is invisible to every other"
+                        + " assertion here. The form column must read exactly `In-suite` or"
+                        + " `Recorded`, and the reference column must contain no pipe")
+                .isEmpty();
+
+        // And the sweep must have seen rows at all, or the assertion above passes over nothing.
+        assertThat(registerSection("## 2.").stream().filter(l -> l.startsWith("| `INV-")).count())
+                .as("no row-like line was seen, so this proved nothing")
+                .isGreaterThan(10);
+    }
+
+    @Test
     @DisplayName("every row names at least one test, so a row the parser cannot read is a failure")
     void everyRowNamesATest() {
         // THE ASSERTION THAT MAKES WIDENING THE GRAMMAR SAFE.

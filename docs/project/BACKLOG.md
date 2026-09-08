@@ -2118,7 +2118,10 @@ repository exists to prevent.
 - **One mutation survived and found a defect in this task's own new assertion**: `everyRowNamesATest`
   read the merged references *per invariant*, so emptying one of `INV-IDN-06`'s two rows left the
   merge non-empty. Now per row.
-- Six mutations, all caught.
+- **The gate found the same defect one level out, in this task's own fix**: a row failing the row
+  pattern *entirely* is not in the map at all, so `everyRowNamesATest` cannot see it. Proven by a
+  form-column typo that left the build green. Every §2 line that looks like a row must now parse.
+- Seven mutations, all caught.
 - Risk: Low. Cx: S. DoD: `DOD-TEST`
 
 **P1-DOC-001 — Phase 1 review record**

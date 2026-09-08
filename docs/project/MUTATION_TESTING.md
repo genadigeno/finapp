@@ -201,6 +201,10 @@ the assertion under test had let it through.
    per invariant, because an invariant may have two rows and merging their references lets an
    unreadable one hide behind a readable sibling — established by a mutation that survived the first
    version of this very check.
+7. **Every §2 line that looks like a row parses as one** (`P1-TSK-024`, completion gate). Check 6
+   sees a row that parses and names nothing; it cannot see a row that fails the pattern **entirely**,
+   because such a row is not in the map at all. A form column reading `Insuite` rather than
+   `In-suite` left the build green, and the invariant stayed covered only by its sibling rows.
 6. Both forms are present and labelled, so the form column cannot quietly stop carrying
    information.
 7. The registers are actually parsed, so a reformatted table fails loudly rather than silently
