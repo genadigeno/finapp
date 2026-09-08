@@ -20,6 +20,7 @@ import com.tngtech.archunit.core.domain.JavaWildcardType;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
+import com.tngtech.archunit.junit.ArchTag;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
@@ -84,6 +85,12 @@ import org.junit.jupiter.api.Test;
  * prove that something rejects it, and the nested fixtures below do exactly that.
  */
 @Tag("architecture")
+// NOT a duplicate of the line above. ArchUnit runs @ArchTest fields under its OWN
+// JUnit Platform engine, and that engine's descriptors read `ArchTag` - they cannot
+// see JUnit's `Tag` at all. Without this every rule below carried no tag, so
+// `unitTest` (which selects by EXCLUSION) took them and `architectureTest` (which
+// selects by INCLUSION) got none. P1-TSK-025; TestTaxonomyTest now requires the pair.
+@ArchTag("architecture")
 @AnalyzeClasses(packages = "com.finapp", importOptions = ImportOption.DoNotIncludeTests.class)
 class NoFloatingPointMoneyRulesTest {
 

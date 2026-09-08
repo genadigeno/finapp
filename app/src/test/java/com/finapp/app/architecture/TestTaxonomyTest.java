@@ -72,6 +72,15 @@ class TestTaxonomyTest {
     private static final Set<String> FIELD_LEVEL_TEST_ANNOTATIONS =
             Set.of("com.tngtech.archunit.junit.ArchTest");
 
+    /** The class-level annotation that makes a class an ArchUnit suite. */
+    private static final String ANALYZE_CLASSES = "com.tngtech.archunit.junit.AnalyzeClasses";
+
+    /** JUnit's tag, which Jupiter reads and ArchUnit's engine does not. */
+    private static final String JUNIT_TAG = "org.junit.jupiter.api.Tag";
+
+    /** ArchUnit's tag, which its engine reads and Jupiter does not. */
+    private static final String ARCH_TAG = "com.tngtech.archunit.junit.ArchTag";
+
     /**
      * Tags that carry no scheduling meaning but are deliberate selectors.
      *
@@ -117,6 +126,75 @@ class TestTaxonomyTest {
         // TestTier.declaredBy throws on a second tier tag, because a class in two tiers runs
         // twice and its tier becomes a function of which task selected it first.
         assertThat(testClasses()).allSatisfy(SelectedTest::declaredTier);
+    }
+
+    @Test
+    @DisplayName("an ArchUnit suite carries the tier tag BOTH engines read")
+    void everyArchUnitSuiteIsTaggedForBothEngines() {
+        // THE PROPERTY: both engines must agree which tier a class belongs to.
+        //
+        // A class annotated @AnalyzeClasses is executed by TWO JUnit Platform engines. Jupiter runs
+        // its @Test methods and reads JUnit's @Tag; ArchUnit runs its @ArchTest FIELDS under its own
+        // engine, whose descriptors read `com.tngtech.archunit.junit.ArchTag` and cannot see @Tag at
+        // all - established by disassembling AbstractArchUnitTestDescriptor.findTagsOn, not by
+        // reading documentation.
+        //
+        // So a suite tagged only with @Tag leaves every rule field UNTAGGED, and the two tier tasks
+        // then disagree in opposite directions: `architectureTest` selects by INCLUSION and gets
+        // none of them, while `unitTest` selects by EXCLUSION and takes all of them. That is what
+        // P1-TSK-025 found - 28 rule fields in the wrong tier, and `ModuleBoundaryRulesTest`, which
+        // has no @Test method at all, producing NO RESULT FILE in the architecture tier: not a suite
+        // that ran zero cases, a suite that did not appear.
+        //
+        // WHY NO EXISTING GUARD SAW IT. `theTiersPartitionTheHermeticSuite` asserts a SUM, and the
+        // sum was right - every rule was in exactly one tier. A check on a total cannot see a
+        // misallocation that preserves the total.
+        Map<String, String> disagreeing = new TreeMap<>();
+        int suites = 0;
+        for (SelectedTest testClass : testClasses()) {
+            if (!testClass.outer().isAnnotatedWith(ANALYZE_CLASSES)) {
+                continue;
+            }
+            suites++;
+            Set<String> junitTags = tagValues(testClass.outer(), JUNIT_TAG);
+            Set<String> archTags = tagValues(testClass.outer(), ARCH_TAG);
+            if (!junitTags.equals(archTags)) {
+                disagreeing.put(
+                        testClass.name(), "@Tag" + junitTags + " but @ArchTag" + archTags);
+            }
+        }
+
+        assertThat(suites)
+                .as("the sweep must find the ArchUnit suites, or this guard checks nothing - the"
+                        + " vacuity every document- and reflection-backed check here has to answer")
+                .isPositive();
+
+        assertThat(disagreeing)
+                .as("an @AnalyzeClasses suite must carry @ArchTag as well as @Tag, with the same"
+                        + " value. Without it every @ArchTest rule below is untagged, and the tier"
+                        + " that selects by inclusion silently runs none of them")
+                .isEmpty();
+    }
+
+    /**
+     * The stated limit, recorded rather than left for somebody to discover.
+     *
+     * <p>This asserts that the two annotations <strong>agree</strong>, not that ArchUnit reads
+     * {@code ArchTag} — that is a fact about the engine, and asserting it would mean disassembling
+     * a dependency on every build. If ArchUnit ever started reading {@code @Tag}, this guard would
+     * go on requiring an {@code @ArchTag} that had become unnecessary.
+     *
+     * <p><strong>That errs in the safe direction and is why the shape was chosen.</strong> A false
+     * requirement is a build failure somebody investigates; a false pass is silence. The same
+     * reasoning the contract classifier uses ({@code P0-TSK-026}: a false BREAKING is visible and
+     * fixable, a false COMPATIBLE fails at the customer).
+     */
+    private static Set<String> tagValues(JavaClass javaClass, String annotation) {
+        if (!javaClass.isAnnotatedWith(annotation)) {
+            return Set.of();
+        }
+        Object value = javaClass.getAnnotationOfType(annotation).get("value").orElseThrow();
+        return Set.of(String.valueOf(value));
     }
 
     @Test

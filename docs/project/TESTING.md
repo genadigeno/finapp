@@ -31,6 +31,25 @@ The tiers are declared once, in `finapp.java-conventions.gradle.kts`, and mirror
 The build passes its declaration to the tests as a system property so the two can be compared —
 a build script and a Java enum have no other way to share one definition.
 
+### An ArchUnit suite declares its tier twice, and that is not a duplication
+
+A class annotated `@AnalyzeClasses` is executed by **two** JUnit Platform engines: Jupiter runs its
+`@Test` methods, and ArchUnit runs its `@ArchTest` **fields** under an engine of its own. Those two
+read **different annotations** — Jupiter reads `@Tag`, ArchUnit's descriptors read
+`com.tngtech.archunit.junit.@ArchTag` and cannot see `@Tag` at all.
+
+So an ArchUnit suite carries both, with the same value, and `TestTaxonomyTest` requires it.
+
+**`P1-TSK-025` is what the absence looked like.** Every `@ArchTest` field carried no tag, so the two
+tier tasks disagreed in opposite directions: `architectureTest` selects by *inclusion* and got none
+of them, while `unitTest` selects by *exclusion* and took all 28. `ModuleBoundaryRulesTest` — which
+has no `@Test` method at all — produced **no result file** in the architecture tier: not a suite
+that ran zero cases, a suite that did not appear.
+
+**No existing guard could see it**, and the reason is worth keeping: the partition check asserts a
+**sum**, and the sum was right. Every rule was in exactly one tier. A check on a total cannot see a
+misallocation that preserves the total.
+
 ### The default tier takes everything no other tier claims
 
 `unitTest` selects by **excluding** the other tiers' tags, not by including a `unit` tag of its

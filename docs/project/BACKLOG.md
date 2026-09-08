@@ -2085,7 +2085,7 @@ repository exists to prevent.
 
 ## P1-EPIC-07 — Phase Review
 
-**P1-TSK-025 — `@ArchTest` rules do not run in the `architectureTest` tier** — `TODO`
+**P1-TSK-025 — `@ArchTest` rules do not run in the `architectureTest` tier** — `COMPLETE` (2026-09-08)
 - Context: platform / testing
 - Description: `./gradlew architectureTest` executes the `@Test` methods of an ArchUnit suite and
   **not its `@ArchTest` rule fields**, so the tier named for architecture rules runs none of them.
@@ -2108,6 +2108,39 @@ repository exists to prevent.
   other — proven by mutation, not asserted.
 - Accept: a `double` planted in production code fails `./gradlew architectureTest`, not only
   `./gradlew build`.
+- Accept: **met, and proven by performing it.** With a `double` planted in production code,
+  `./gradlew :app:architectureTest` exited **0** before the fix and **1** after — the same planted
+  code, the same command.
+- **The finding is worse than this item recorded: the rules were not missing, they were in the
+  WRONG TIER.** `unitTest` selects by *exclusion*, so it took all **28** untagged rule fields;
+  `architectureTest` selects by *inclusion* and got none. And `ModuleBoundaryRulesTest` — the oldest
+  suite here, enforcing `app → platform → sharedkernel`, with no `@Test` method at all — produced
+  **no result file** in the architecture tier: not a suite that ran zero cases, a suite that did not
+  appear.
+- **Root cause established by disassembling the engine, not by reading documentation.**
+  `javap` on `AbstractArchUnitTestDescriptor.findTagsOn` shows it loads exactly one annotation:
+  `com.tngtech.archunit.junit.ArchTag`. JUnit's `@Tag` is invisible to it, so every `@ArchTest`
+  field carried no tag at all.
+- Implementation: `@ArchTag("architecture")` beside `@Tag("architecture")` on all **seven**
+  `@AnalyzeClasses` suites — the mechanism ArchUnit provides for exactly this, never used here
+  because nobody had asked what its engine does with a tag.
+- **Why no guard saw it, and this is the part worth keeping.** `theTiersPartitionTheHermeticSuite`
+  asserts a **sum**, and the sum was right: every rule was in exactly one tier. **A check on a total
+  cannot see a misallocation that preserves the total.** Same class as `P1-TSK-024`'s unreadable
+  register rows and `P0-TST-008`'s rule that could not fail.
+- Tests: `TestTaxonomyTest.everyArchUnitSuiteIsTaggedForBothEngines` — for every `@AnalyzeClasses`
+  class the `@Tag` and `@ArchTag` value sets must be **equal**, stated as *both engines must agree
+  which tier this class is in* rather than as the fix's shape.
+- **A Launcher-based behavioural guard was investigated and rejected**: discovering with
+  `includeTags("architecture")` in-process is the property itself, but `junit-platform-launcher` is
+  **not on `testRuntimeClasspath`** (verified) — Gradle injects it into the worker — so it would
+  need a new dependency plus verification-metadata and lockfile regeneration. Disproportionate for a
+  Low-risk `Cx: S` item (`EXECUTION_PROTOCOL` rule 4).
+- **The chosen guard's limit is recorded rather than left to be discovered**: it asserts the two
+  annotations *agree*, not that ArchUnit reads `ArchTag`. If ArchUnit ever read `@Tag`, the guard
+  would demand a now-unnecessary annotation — **erring in the safe direction**, which is why the
+  shape was chosen: a false requirement is a build failure somebody investigates, a false pass is
+  silence (`P0-TSK-026`'s reasoning).
 - Risk: Low — no enforcement gap to close, only a misleading task. Cx: S. DoD: `DOD-TEST`
 
 **P1-TSK-024 — Extend the mutation register to Phase 1** — `COMPLETE` (2026-09-08)
@@ -2224,6 +2257,32 @@ repository exists to prevent.
   which produced a design improvement rather than a tag — `IdentityMetrics` takes a connection
   source now, `OutboxBacklog`'s shape.
 - Risk: Medium — a security signal nobody can see. Cx: S. DoD: `DOD-OBS`
+
+**P1-TSK-031 — Two fixtures read `now()` twice and assume it moves forwards** — `TODO`
+- Context: identity / test
+- Description: `AuthenticationCostsTheSameDatabaseTest.suspend` (and the same shape wherever a
+  fixture inserts with `created_at = now()` and then updates `status_changed_at = now()`) can write
+  a row whose status change precedes its creation.
+- Why: **Observed, not theorised.** During `P1-TSK-025`'s gate the suite failed with
+  `identity_status_change_is_not_before_creation` on a row whose `status_changed_at` was **225 ms
+  before** its `created_at`. Probing the container clock showed three successive `SELECT now()`
+  calls **429 ms apart** while three host `date` calls were 33 ms apart — the container's clock runs
+  fast and is corrected backwards, which `CURRENT_STATE.md` §Local Environment Prerequisites
+  documents and which that section says to check before treating such a failure as a defect.
+  **The constraint is right and the fixture is fragile**: two statements, two `now()` reads, and
+  nothing requires the second to be later than the first.
+- Deps: none
+- Implementation: the established remedy — back-date the row explicitly rather than relying on the
+  clock (`OutboxRelayTest.backDate`'s precedent), or set both columns in one statement so they come
+  from one `now()`.
+- **Recorded rather than fixed by `P1-TSK-025`**, which is that task's own precedent: `P1-TSK-003`
+  found `P1-TSK-025` by an acceptance probe and recorded it rather than fixing it in passing
+  (`EXECUTION_PROTOCOL` rule 4).
+- Tests: the fixture must produce a valid row under a clock that moves backwards between the two
+  statements — provable by setting the second timestamp behind the first deliberately.
+- Accept: the suite is not sensitive to a backwards clock correction.
+- Risk: Low — a fixture, not production code, and the constraint it trips is the platform being
+  correct. Cx: S. DoD: `DOD-TEST`
 
 **P1-DOC-002 — Re-run the Phase 1 exit review** — `TODO`
 - Context: process
