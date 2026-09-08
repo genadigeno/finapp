@@ -2086,7 +2086,7 @@ repository exists to prevent.
   `./gradlew build`.
 - Risk: Low — no enforcement gap to close, only a misleading task. Cx: S. DoD: `DOD-TEST`
 
-**P1-TSK-024 — Extend the mutation register to Phase 1**
+**P1-TSK-024 — Extend the mutation register to Phase 1** — `COMPLETE` (2026-09-08)
 - Context: platform / test
 - Description: A row in `MUTATION_TESTING.md` for every `INV-IDN-*`, and the guard extended to
   require them.
@@ -2096,7 +2096,29 @@ repository exists to prevent.
 - Implementation: extend the guard from "Phase 0" to "every phase up to and including the current
   one", so the extension is not needed again in Phase 2.
 - Tests: proven by mutation — a Phase 1 invariant with no register row fails the build.
-- Accept: all seven `INV-IDN-*` have a recorded demonstration; the guard covers them.
+- Accept: **met, and the acceptance as written would have been too narrow.** There are **eight**
+  `INV-IDN-*` — `P1-TSK-017` added `INV-IDN-08` mid-phase — and **nine** Phase 1 invariants, because
+  `INV-AUD-03` is `Phase: 1 onward` and is not in that group at all. A guard extended only to
+  `INV-IDN-*`, which is what this item said, would have missed it.
+- **Two had no row: `INV-IDN-02` — the one the task is named for — and `INV-AUD-03`.** Both were
+  already demonstrated; the rows record work done rather than work invented.
+- **The finding is that nine rows did not parse.** The grammar admitted exactly one backticked
+  reference and nothing after it, and the register is written with lists and trailing prose. Eight of
+  the nine were written during Phase 1, so the guard was **not** checking that the tests they name
+  exist — a register whose rows the guard cannot read reports coverage it does not have, which is
+  `P0-TST-008`'s finding in the artefact built to prevent exactly that.
+- **Proven precisely rather than argued**: a reference in *second* position naming a test that does
+  not exist **survives** the old parser and is **caught** by the widened one.
+- **The current phase is derived from `CURRENT_STATE.md`**, so Phase 2 needs no change — which is the
+  "extension not needed again" this item asked for. A constant would be the stale list this
+  repository closes by derivation everywhere else.
+- **§4 generalised to `P{n}-TST-*`, and the two phases declare them differently**: Phase 0 gives them
+  their own headings, Phase 1 names them inside task headings. Anchoring to either shape finds
+  nothing for the other and passes vacuously.
+- **One mutation survived and found a defect in this task's own new assertion**: `everyRowNamesATest`
+  read the merged references *per invariant*, so emptying one of `INV-IDN-06`'s two rows left the
+  merge non-empty. Now per row.
+- Six mutations, all caught.
 - Risk: Low. Cx: S. DoD: `DOD-TEST`
 
 **P1-DOC-001 — Phase 1 review record**

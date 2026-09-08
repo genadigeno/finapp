@@ -51,10 +51,19 @@ without work.
 
 ---
 
-## 2. The register — Phase 0 invariants
+## 2. The register — invariants of every phase reached
 
-Every invariant `FINANCIAL_INVARIANTS.md` marks as Phase 0. `MutationDemonstrationTest` fails the
-build if one is missing, or if a row names a test class or method that does not exist.
+Every invariant `FINANCIAL_INVARIANTS.md` marks as belonging to a phase this project has reached.
+`MutationDemonstrationTest` fails the build if one is missing, or if a row names a test class or
+method that does not exist.
+
+**The current phase is derived from `CURRENT_STATE.md` rather than written here** (`P1-TSK-024`), so
+Phase 2 needs no change to the guard. It enforced *Phase 0 only* until that task, which left the
+`INV-IDN` group in exactly the weaker regime the Phase 0 → 1 transition created it to escape.
+
+**A row may name several tests**, and every one of them is checked. The parser required exactly one
+until `P1-TSK-024`, and **nine rows therefore did not parse at all** — eight written during Phase 1 —
+so the guard was silently not checking that the tests they name exist.
 
 | Invariant | Demonstrated by | Form | The mutation | Observed |
 |---|---|---|---|---|
@@ -103,6 +112,8 @@ build if one is missing, or if a row names a test class or method that does not 
 | `INV-IDN-04` | `OwnershipIsScopedTest`, `SessionOwnershipDatabaseTest#revocationIsRefusedForSomebodyElsesSession` | In-suite | ADR-0031's ownership half: *may **this** actor act on **this** resource?* Mutations: an owner-scoped statement loses `identity_id = ?`; a new unclassified resource-scoped operation; an `AUTHORITATIVE_ID` entry naming a read that does not exist; a named negative test that does not exist; an owner-scoped operation with no negative test; `party` gains a resource-scoped operation; the named provenance read stops being owner-constrained | **Ten, all caught** - two added by the completion gate, which found the rule aimed at the wrong half: the shape this repository has actually shipped is a method that takes an owner and **never uses it**, and a `findLiveFor` losing its scope is a **bulk** disclosure the resource-identifier rule structurally cannot see. The predicate removal and the listing scope are each caught **twice**, by the build rule and by the behavioural suite. **The first version of the build rule SURVIVED its own mutation**: it searched the whole method body, which contains the comment *“identity_id = ? IS the ownership check”* - a `contains` over source text matches prose. It reads string literals only now |
 | `INV-AUD-01` | `AuditCompletenessTest`, `SystemActorCallSitesAreEnumeratedTest`, `AuditNamesTheActorDatabaseTest` | In-suite | Every privileged action produces a record naming the **real actor**. Mutations: an action silently stops being emitted; a new action nobody emits or declares; a stale `NOT_YET_EMITTED` entry; a new un-enumerated `enterSystem()`; the login success attributed to the platform; a privileged action naming the platform rather than the person; a blank target; a correlation identifier that joins to nothing | **Ten, all caught** - two added by the completion gate, which found a claim the test's own display name made and nothing asserted, and a coverage guard deviating from its siblings for the second task running. This closes the limit `P0-TSK-023` recorded against itself - *the registry cannot detect a privileged action that writes no record at all* - which is the failure that matters, because a registry agreeing with a catalogue while nothing emits half of it looks complete from both sides. **Which assertion is load-bearing was established by probing**: the blank-target mutation is caught by `AuditRecord.bounded` refusing construction, not by the field assertions, so those are recorded as defence in depth rather than as the control |
 | `INV-IDN-06` | `RecoveryAbuseDatabaseTest` (nine tests, one per route) | In-suite | *Recovery cannot elevate an attacker.* Mutations: an unverified channel can recover; a token is replayable; a token survives a credential change; recovery leaves sessions alive; cooling-off removed; an earlier token survives a later initiation; a channel is readable by another identity; a channel can be re-verified; the initiation record is unfindable by account; a suspended identity can recover; the verification token is not cleared | **Eleven: ten caught, one survived correctly.** Two survivors each found a real gap first - `aCancelledTokenIsRefused` was passing for the WRONG REASON (it looked up the latest request, which after the customer's initiation is theirs), and nothing had ever suspended an identity. The survivor is re-verification, unreachable because the token is cleared on success - proven by the mutation that removes the clearing |
+| `INV-IDN-02` | `CredentialSchemaDatabaseTest#theParametersAreMandatory`, `CredentialSchemaDatabaseTest#costFactorsMustBePositive`, `CredentialMigrationTest#algorithmsAgree` | In-suite | Make one of the four derivation columns nullable; separately, drop the `> 0` check on a cost factor | Both fail (`P1-TSK-007`). **Added by `P1-TSK-024`, which found this invariant had no row at all** - the one the task was named for, and the register had been extended six times during the phase without it |
+| `INV-AUD-03` | `DenyByDefaultDatabaseTest#negativeAuthorizationForPrivilegedEndpoints`, `DenyByDefaultDatabaseTest#anUndeclaredEndpointIsRefused` | In-suite | Remove the permission check from the interceptor; separately, remove deny-by-default | Both caught (`P1-TSK-020`). **Also added by `P1-TSK-024`, and it is the row a narrower extension would have missed**: it is `Phase: 1 onward` and is not in the `INV-IDN` group, so extending the guard to `INV-IDN-*` - which is what this task's own text asked for - would have left it out |
 
 ## 3. What the register does not claim
 
@@ -127,7 +138,7 @@ class is therefore part of the convention wherever one method carries the proper
 
 ---
 
-## 4. The register — `P0-TST-*` items
+## 4. The register — `P{n}-TST-*` items
 
 The task's own acceptance criterion: the convention is applied to every `P0-TST-*` item.
 
@@ -144,6 +155,9 @@ The task's own acceptance criterion: the convention is applied to every `P0-TST-
 | `P0-TST-009` | Revert the `V004` fix so the lease is judged by the client's clock | The corrected skew test fails. Before the correction it stayed green, which is the defect that task found |
 
 ---
+| `P1-TST-001` | Plant an unwrapped `String lastPassword` in real production code; separately, narrow the unwrap whitelist | The build fails twice for the field - once for the component, once for the accessor - and the whitelist rejects a new `expose()` anywhere. `P1-TSK-009` also found the rule's vocabulary was **one third structurally unreachable**, and a `cardNumber` field passed cleanly before the fix |
+| `P1-TST-002` | Make `supersede` unconditional; separately, make the failure-counter predicate unsatisfiable | Caught only after the test was rewritten to assert the **coordination** rather than the outcome - three mechanisms produce the same end state, and an outcome-only assertion cannot name which one did (`P1-TSK-012`) |
+| `P1-TST-003` | Add an un-enumerated session-issuing path; separately, turn `atLeast` into equality | The enumeration guard fails on the first, and `assuranceIsALevelAndNotABoolean` on the second. The suite was written after a probe found a **real bypass**: a `PASSWORD` session could begin a replacement enrolment with an attacker-controlled secret (`P1-TSK-019`) |
 
 ## 5. Applying this to a new test
 
@@ -167,8 +181,12 @@ the assertion under test had let it through.
 
 `MutationDemonstrationTest`, on every build:
 
-1. Every invariant `FINANCIAL_INVARIANTS.md` marks as Phase 0 has a register row in §2.
-2. Every `P0-TST-*` item in `BACKLOG.md` has a register row in §4.
+1. Every invariant `FINANCIAL_INVARIANTS.md` marks as belonging to **a phase this project has
+   reached** has a register row in §2. The current phase is read from `CURRENT_STATE.md`
+   (`P1-TSK-024`), so Phase 2 needs no change here.
+2. Every `P{n}-TST-*` item in `BACKLOG.md` has a register row in §4 — found wherever a **bold
+   heading** declares it, because Phase 0 gives those items their own headings and Phase 1 names them
+   inside task headings, and anchoring to either shape passes vacuously for the other.
 3. Every invariant §2 names **exists in the catalogue** — the other direction, so a row that has
    quietly stopped applying to anything is not indistinguishable from one that still does. Added
    during review, which found a planted `INV-ZZZ-99` row passing cleanly.
@@ -176,6 +194,13 @@ the assertion under test had let it through.
 5. Every method named in **any** row **exists on that class** — so a claim of continuous
    proof cannot point at a method that was renamed or deleted. This caught the `INV-IDEM-03` row
    written during review, which named a method that does not exist.
+6. **Every row names at least one test the parser can read** (`P1-TSK-024`). Checks 4 and 5 are
+   satisfied vacuously by a row that parses to nothing, and that is not hypothetical: the grammar
+   admitted exactly one backticked reference and **nine rows did not parse**, eight of them written
+   during Phase 1, so the tests they named were never checked. The check is **per row** rather than
+   per invariant, because an invariant may have two rows and merging their references lets an
+   unreadable one hide behind a readable sibling — established by a mutation that survived the first
+   version of this very check.
 6. Both forms are present and labelled, so the form column cannot quietly stop carrying
    information.
 7. The registers are actually parsed, so a reformatted table fails loudly rather than silently

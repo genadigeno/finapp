@@ -18,6 +18,10 @@ Status: **`IN_PROGRESS`** — entry gate passed, all twelve criteria. Started 20
 
 ## Current Milestone
 
+**M1.7 — Phase review.** `P1-TSK-024`, `P1-DOC-001`; **1 of 2 complete.** Started 2026-09-08. The
+mutation register now covers every phase the project has reached, and the current phase is derived
+rather than written down — so Phase 2 needs no change to the guard.
+
 **M1.6 — Recovery that is not the way in.** `P1-TSK-023`; **1 of 1 complete** (2026-09-08). The
 milestone's stated acceptance — *every abuse case refused, each with its own test* — is met with
 nine, and the invariant's own precondition had to be built before any of them could be true.
@@ -148,10 +152,80 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-023` completed 2026-09-08. **M1.6 closes, 1 of 1.**
-**Next: `P1-TSK-024`** — the Phase 1 review, opening M1.7.
+**None in progress.** `P1-TSK-024` completed 2026-09-08. **M1.7 is 1 of 2.**
+**Next: `P1-DOC-001`** — the written Phase 1 review, and the phase's exit gate.
 
 ### Just completed
+
+**`P1-TSK-024` — Extend the mutation register to Phase 1** — `COMPLETE` (2026-09-08).
+**M1.7 opens, 1 of 2.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every Phase 1 invariant has a recorded demonstration | Nine of them, and the guard requires them |
+| The guard covers them | Extended to *every phase reached*, with the phase derived |
+| A Phase 1 invariant with no row fails the build | Proven by mutation |
+
+### The acceptance as written was too narrow, in two ways
+
+**There are eight `INV-IDN-*`, not seven** — `P1-TSK-017` added `INV-IDN-08` mid-phase, because a
+TOTP secret cannot satisfy `INV-IDN-01`. The task's own text was already stale.
+
+**And there are nine Phase 1 invariants**, because `INV-AUD-03` is `Phase: 1 onward` and is **not in
+the `INV-IDN` group at all**. A guard extended to `INV-IDN-*` — which is what the item asked for —
+would have missed it. Extending to *"every invariant of every phase reached"* is what finds it, and
+that is the difference between implementing the sentence and implementing the property.
+
+**Two had no row**: `INV-IDN-02`, the one the task is named for, and `INV-AUD-03`. Both were already
+demonstrated by `P1-TSK-007` and `P1-TSK-020`; the rows record work done rather than work invented.
+
+### The finding: nine rows did not parse, so the guard had been skipping them
+
+The row grammar admitted **exactly one** backticked reference and nothing after it. The register is
+written with lists and trailing prose — `` `A`, `B#c` `` and `` `A` (nine tests, one per route) ``.
+
+**Nine rows matched nothing, eight of them written during Phase 1 by me.** They were not reported as
+broken; they were simply absent, so `everyNamedTestExists` and `everyNamedMethodExists` never looked
+at them. A row naming a renamed test would have sat there reading as a live proof.
+
+**A register whose rows the guard cannot read reports coverage it does not have** — `P0-TST-008`'s
+finding, in the artefact built to prevent that exact class of defect.
+
+**Proven precisely rather than argued.** A reference in *second* position naming a test that does not
+exist **survives** the old parser and is **caught** by the widened one. The first attempt at that
+demonstration was wrong and checking it is what showed so: the plant happened to be reachable as a
+*first* reference, so it was caught either way and proved nothing about the widening.
+
+### The current phase is derived, not written down
+
+From `CURRENT_STATE.md` §Current Phase, whose stated role is to be *the canonical description of
+where the project is*. A constant would be the stale list this repository closes by derivation
+everywhere else, and it would need editing again at Phase 2 — which is precisely the *"extension not
+needed again"* the task asked for.
+
+The **highest** phase the section names rather than the one marked `IN_PROGRESS`: a status word is
+prose that changes shape between phases, and a phase that has been reached does not stop having been
+reached when it completes.
+
+### §4 generalised, and the two phases declare their test items differently
+
+Phase 0 gives `P0-TST-*` their own headings; Phase 1 names `P1-TST-*` **inside task headings**
+(`**P1-TSK-009 — `P1-TST-001`: credentials never leak**`). Anchoring to either shape finds nothing
+for the other and passes vacuously, so the pattern finds the identifier wherever a bold heading
+declares it — and the next phase's shape as well.
+
+### One mutation survived and found a defect in this task's own new assertion
+
+`everyRowNamesATest` exists so that a row the parser cannot read is a **failure** rather than a
+silent omission. Its first version read the references merged **per invariant** — and `INV-IDN-06`
+has two rows, so emptying one left the merge non-empty and the mutation walked through.
+
+A check defeated by the very merging that makes the rest of the guard convenient is a check
+reporting coverage it does not have. It is per **row** now, and the mutation is caught.
+
+**Six mutations, all caught.** 846 hermetic tests, 404 database tests.
+
+### Previously
 
 **`P1-TSK-023` — Account recovery** — `COMPLETE` (2026-09-08). **M1.6 closes.**
 
@@ -2851,6 +2925,22 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+The mutation register covers every phase reached (2026-09-08), `P1-TSK-024`:
+- **`PHASE_GATES.md` criterion 3 is now enforced for Phase 1**, not only Phase 0 - which left the
+  `INV-IDN` group in exactly the weaker regime the Phase 0 → 1 transition created it to escape
+- **The acceptance as written was too narrow twice**: there are **eight** `INV-IDN-*` rather than
+  seven, and **nine** Phase 1 invariants, because `INV-AUD-03` is `Phase: 1 onward` and is not in
+  that group. A guard extended only to `INV-IDN-*` would have missed it
+- **Nine register rows did not parse**, eight written during Phase 1, so the guard was not checking
+  that the tests they name exist. Proven precisely: a second-position reference naming a missing test
+  **survives** the old parser and is **caught** by the widened one
+- **The current phase is derived from `CURRENT_STATE.md`**, so Phase 2 needs no change - the
+  "extension not needed again" the task asked for
+- **§4 finds a test item wherever a bold heading declares it**, because Phase 0 and Phase 1 declare
+  them differently and anchoring to either shape passes vacuously for the other
+- **A mutation survived and found a defect in this task's own new assertion** - it merged references
+  per invariant, so an unreadable row hid behind a readable sibling. Per row now
+
 Recovery that is not the way in (2026-09-08), `P1-TSK-023`:
 - **`INV-IDN-06` had no subject.** It requires a *previously registered and verified channel*, and
   none existed - no type, no table, no verification, **and no backlog task owning one**. Seventh
@@ -3960,33 +4050,35 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-024` — Extend the mutation register to Phase 1.** Opens **M1.7**, the exit gate.
+**`P1-DOC-001` — Phase 1 review record.** **M1.7, 2 of 2 — the phase's exit gate.**
 
-Every capability task in the phase is complete. What remains is the gate itself, and this is the part
-of it that is mechanical rather than written.
+The written review per `PHASE_GATES.md` §4: all eight review areas, the twelve universal exit
+criteria and the six Phase 1-specific ones, each assessed **with evidence**; and ADR-0029…0034 moved
+to `Accepted`.
 
-**Its reason is the transition's own finding, turned on the transition.** The Phase 0 → Phase 1
-transition catalogued the seven identity properties as `INV-IDN-*` precisely because existing only as
-exit-criteria prose was *"a materially weaker regime than every other property on this platform
-gets"* — no stable ID, no ranked enforcement, no named verification, **and no row in
-`MUTATION_TESTING.md`**. `MutationDemonstrationTest` still enforces demonstrations for **Phase 0
-invariants only**, so the `INV-IDN` group is in exactly the regime it was created to escape.
+**Phase 0's review is the reason this is not a formality.** It found the exit gate did **not** pass —
+three Tomcat CVEs and a suite that had never run in CI — and the phase stayed `IN_PROGRESS`.
+`PHASE_GATES.md` §1 is explicit that moving backwards from review is normal while *"shipping through
+a failed gate"* is the failure.
 
-**Two things it must reconcile rather than assume.** The catalogue now holds **eight**
-`INV-IDN` properties, not seven — `P1-TSK-017` added `INV-IDN-08` mid-phase because a TOTP secret
-cannot satisfy `INV-IDN-01` — so the task's own text is already stale, which is worth noticing before
-trusting it. And the guard should be widened to *"every phase up to and including the current one"*,
-so Phase 2 does not repeat the exercise.
+**Three things are already known to be waiting for it**, recorded rather than discovered at the gate:
 
-Every `INV-IDN` row it needs already exists in the register, written by the task that proved it;
-what is missing is the guard requiring them.
-
-**Then `P1-DOC-001`**, the written review, with ADR-0029…0034 moved to `Accepted`.
+- **M1.2 cannot close.** Its stated acceptance is *"an identity authenticates and **receives a
+  session**"*, and `P1-TSK-027` is `TODO`. Four remainders are open in total — `P1-TSK-025`, `-026`,
+  `-027`, `-028` — each recorded by the task that found it.
+- **The phase-specific exit criteria name seven identity properties and there are eight.**
+  `INV-IDN-08` was added mid-phase by `P1-TSK-017`, so the gate must reconcile `PHASE_GATES.md`
+  with the catalogue rather than assume they still agree — the same staleness `P1-TSK-024` just found
+  in its own task text.
+- **Two invariants Phase 1 owns are enforced by nothing yet.** `INV-AUD-04` (four-eyes) has no
+  subject, and the broker adapter debt reached its trigger at `P1-TSK-006`: three domain events are
+  written to the outbox and nothing publishes them.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-08 | **`P1-TSK-024` complete - M1.7 opens, 1 of 2.** The mutation register now covers every phase the project has reached rather than Phase 0 only, which had left the `INV-IDN` group in exactly the weaker regime the Phase 0 → 1 transition created it to escape - no row in `MUTATION_TESTING.md` being one of the four things that transition named. **The acceptance as written was too narrow in two ways, and probing found both.** There are **eight** `INV-IDN-*` rather than seven, because `P1-TSK-017` added `INV-IDN-08` mid-phase - the task's own text was already stale. And there are **nine** Phase 1 invariants, because `INV-AUD-03` is `Phase: 1 onward` and is **not in the `INV-IDN` group at all**, so a guard extended to `INV-IDN-*` - which is what the item asked for - would have missed it. Extending to *every invariant of every phase reached* is what finds it, which is the difference between implementing the sentence and implementing the property. **Two had no row**: `INV-IDN-02`, the one the task is named for, and `INV-AUD-03`; both were already demonstrated, so the rows record work done rather than work invented. **The finding is that nine rows did not parse.** The grammar admitted exactly one backticked reference and nothing after it, while the register is written with lists and trailing prose - and eight of the nine unreadable rows were written during Phase 1 by me. They were not reported as broken, they were simply absent, so `everyNamedTestExists` and `everyNamedMethodExists` never looked at them and a row naming a renamed test would have sat there reading as a live proof. **A register whose rows the guard cannot read reports coverage it does not have** - `P0-TST-008`'s finding, in the artefact built to prevent that exact class of defect. **Proven precisely rather than argued**: a reference in *second* position naming a test that does not exist **survives** the old parser and is **caught** by the widened one - and the first attempt at that demonstration was wrong, which checking is what showed, because the plant happened to be reachable as a first reference and so proved nothing about the widening. **The current phase is derived from `CURRENT_STATE.md`**, whose stated role is to be the canonical description of where the project is, so Phase 2 needs no change to the guard - a constant would be the stale list this repository closes by derivation everywhere else. The **highest** phase the section names rather than the one marked `IN_PROGRESS`, because a status word is prose that changes shape between phases and a phase that has been reached does not stop having been reached. **§4 generalised, and the two phases declare their test items differently**: Phase 0 gives `P0-TST-*` their own headings while Phase 1 names `P1-TST-*` inside task headings, so anchoring to either shape finds nothing for the other and passes vacuously. **One mutation survived and found a defect in this task's own new assertion**: `everyRowNamesATest` exists so an unreadable row is a failure rather than a silent omission, and its first version read the references merged **per invariant** - `INV-IDN-06` has two rows, so emptying one left the merge non-empty and the mutation walked through. A check defeated by the very merging that makes the rest of the guard convenient is a check reporting coverage it does not have; it is per row now. **Six mutations, all caught.** 846 hermetic tests, 404 database tests. |
 | 2026-09-08 | **`P1-TSK-023` complete - M1.6 closes.** Account recovery, the phase's highest-risk task, built last against a working MFA, session and audit model. **The blocking finding came before any design: `INV-IDN-06` had no subject.** It forbids recovery *“without proving control of a previously registered and VERIFIED channel”*, and no channel existed anywhere - no `EmailAddress` type, no table, no verification flow, and grep confirmed **no backlog task owning one**, while `PHASE_1_PLAN.md` asserts that an Identity carries *“a separate, changeable, separately-verified email”*. Seventh backlog defect of this class in Phase 1 and the most consequential: the others were missing endpoints, and this was a missing **precondition of the invariant** - without a channel, recovery cannot satisfy `INV-IDN-06` at all, only appear to. Built here on the `P1-TSK-016` precedent, minimally, and recorded rather than absorbed. **Recovery issues NO session, and that is the sharpest decision.** The conventional design logs you in on completion, and `INV-IDN-06`'s second clause forbids exactly that - a session handed out on completion IS the lowering, because an attacker holding the mailbox would skip the credential **and** whatever stood behind it. Recovery replaces the credential and stops, so the customer authenticates normally afterwards and MFA applies in full. **The fifth abuse case therefore cannot be attempted rather than merely refused**, and `MfaBypassPathsAreEnumeratedTest`'s statement - nothing new creates a session - stays true; that guard listed recovery as a **recorded remainder** for precisely this question and now carries the answer. **Bound to the credential it was raised against**, which closes the dangerous form of *concurrent recovery and login*: an attacker initiates, the customer changes their password, and the attacker completes and wins having watched the customer do the one thing they thought would save them. A **predicate in the statement** rather than a procedure, because a predicate cannot be forgotten by a future credential-change caller. **Every refusal is the same refusal and costs the same work** - unknown identifier, no verified channel and cooling-off are all `202`, decided by a single `INSERT … SELECT`, because a version that looked the identity up first would run a different number of queries for an account that exists, which is the timing channel `P1-TSK-008` found in authentication. **The token is delivered nowhere**, `PHASE_1_PLAN.md` §8's recorded seam: the response is `202` with no body, since returning it would hand it to whoever asked and channel control would prove nothing - and the outbox event carries identifiers only, which `EventPayload`'s `[A-Za-z0-9_-]` charset would **not** have enforced, since base64url satisfies it perfectly (`P1-TSK-009`'s stated limit, *“a charset, not a secret detector”*). **Four existing guards refused the new code and all four were right**: the unwrap whitelist caught the controllers unwrapping a token and an address - the rule had the better argument, so the boundary passes `Sensitive<String>` straight through; the system-actor enumeration caught the third `enterSystem()` site; the ownership register caught two unclassified persistence methods; and the contract diff caught four undeclared routes, **141 added lines and zero removed**. Two of those guards were written in the previous two tasks. **`secretsAreWrapped` fired four times and each answer was different**: a `Duration` cannot hold a secret, so a structural narrowing; `Optional<CredentialId>` exposed a **real gap** in the existing compositional exclusion, which reads the raw type and could not see through `Optional`, and needed the accessor half as well because a record produces both; and a SQL fragment named `ACTIVE_CREDENTIAL_OF` was answered by **changing the code**, since renaming to dodge the vocabulary is the option `P1-TSK-017` refused. **One assertion of mine was a stale list one task after I wrote it**: `bothSurvivorsAreUnauthenticated` matched package names as a proxy for *unauthenticated*, and broke the first time a third unauthenticated surface appeared - by my own hand - so it is replaced by the property it was reaching for, that a method handed a proven `Session` must not claim the platform, with the uncheckable remainder stated. **Two mutations survived first and each found a real gap**: `aCancelledTokenIsRefused` was passing for the WRONG REASON, looking up *the latest* request - which after the customer's own initiation is theirs - so the attacker's token was refused on the token match rather than on the status; and nothing had ever suspended an identity, which matters because recovery ignoring suspension would let the suspended party undo an administrator's decision through the front door. **Eleven mutations: ten caught, one survived correctly** - re-verification, unreachable because the token is cleared on success, which the mutation removing that clearing proves is load-bearing. 845 hermetic tests, 396 database tests. |
 | 2026-09-08 | **`P1-TSK-022` complete - M1.5 closes, 3 of 3.** The phase's reason for existing: every privileged action recorded against the person who performed it. **Six of the seven implementation clauses were already true, and probing rather than assuming is what made the task worth doing** - the interceptor establishes a scope per authenticated request (`P1-TSK-016`), **all thirteen** audit sites call `SecurityContext.require()` and **none** defaults, every writer takes the caller's `Connection`, immutability sits at `DB-PRIVILEGE` (`P0-TSK-022`), an unestablished actor is refused, and fifteen actions are catalogued and reconciled three ways. Restating any of it would be duplication that drifts, which is the `P1-TSK-012` precedent, **so the deliverable is the three clauses nothing checked** - and each is an acceptance criterion in its own right. **First, the gap `P0-TSK-023` recorded against itself**: `AuditableActionRegistryTest`'s own javadoc says *“it cannot detect a privileged action that writes no audit record at all”*, and that is the failure that matters, because a registry agreeing with a catalogue while nothing emits half of it looks complete **from both sides** - and the Phase 15 completeness report would be checked against exactly that list. Two Phase 1 actions were silently unemitted. `AuditCompletenessTest` now holds every action against production code: **emitted**, or **declared not to be** with the task that will emit it, so *“deliberately not built yet”* and *“somebody removed the audit call”* stop being indistinguishable and an action that **stops** being emitted fails the build. Five are declared unemitted - `identity.IdentitySuspended` (`P1-TSK-028` owns the endpoint, and inventing one to give the action a caller would be a surface chosen to suit a test), `party.ProfileChanged`, and the three `outbox.*` actions already recorded as Phase 15 debt. **Second, *“each is justified”* was a claim about a set, and grep is not a control**: ADR-0021 called `enterSystem()` *“the greppable list of places Phase 1 must revisit”*, and grep is a thing somebody has to remember to run, while the site added in Phase 4 will not be in anybody's memory of this review. **Two sites survive, both on unauthenticated paths** - registration, where attributing to the Party it creates is circular and unavailable on the refusal path, and authentication's **failure branch**, where the login identifier may name nobody at all so there is nothing to attribute to. That second justification existed **only as a code comment**; `SECURITY_ARCHITECTURE.md` now carries it. **The enumeration is at method granularity, and the one place that matters is closed**: `AuthenticationService.attempt` holds both branches - success establishes `Actor(identityId, CUSTOMER)`, failure claims the platform - so it is enumerated once, and replacing the success branch with `enterSystem()` would change nothing the enumeration can see while recording the platform as having logged somebody in. A separate assertion requires the real-actor call to still be there, and that mutation now fails. **Third, the headline property was asserted per action and never over the trail**: each earlier task asserted its own record, and nothing asserted that **no** record written under an authenticated request names the platform - a different claim, about the trail rather than one operation, and the one that fails when somebody adds an audit call in a hurry. Scoped by the requests' correlation identifiers so it can actually fail, and driven across **two aggregates**, because a sweep confined to sessions would prove the property for the code that happened to be written most carefully. `GET /v1/sessions` is deliberately excluded and that is stated rather than left as an omission - listing your own sessions is not privileged and `SessionQueries` records the decision not to audit it, so asserting over an endpoint that writes nothing would make the sweep quietly smaller than it looks. **And which assertion is load-bearing was established by probing rather than claimed**: the blank-target mutation is caught by `AuditRecord.bounded` **refusing construction** - verified, because the failure reported a *missing* operation rather than a blank one - so the three field assertions are recorded as **defence in depth**, being what would catch a writer that stopped going through the domain type. **The correlation assertion is the one nothing else makes**: a record carrying an identifier that belongs to no flow satisfies every `NOT NULL` and every `CHECK`, and it is precisely the record an investigator cannot use - worse than an absent one, because a search returns a row and stops. **Eight mutations, all caught.** **The completion gate then found a claim my own test did not support**: its display name said *“and reason where the registry needs it”* and nothing looked at the column - sixth occurrence of that pattern this phase. **The claim is unassertable over this sweep rather than merely missing**, which is the more useful half: `AuditRecord`'s constructor **refuses** a record whose action requires a reason and has none, so one cannot reach the table, and the only two actions requiring one have **no production caller** in Phase 1. Renamed to what it does, with the reason written down. **And the coverage guard had deviated from its siblings again** - `P1-TSK-021`'s gate found exactly this one task ago, and both new rule suites repeated it, sweeping `com.finapp` with nothing asserting every module is reached. Closed in both using `ProductionModules`, which had to become public because these suites live in `com.finapp.app.audit` and duplicating the derivation is the drift that helper exists to prevent. **Ten mutations, all caught** - two added by the gate. 844 hermetic tests, 384 database tests. |
 | 2026-09-08 | **`P1-TSK-021` complete - M1.5 is 2 of 3.** ADR-0031's ownership half: *may **this** actor do it to **this** resource?* - the question the boundary check cannot answer, because the boundary knows only an identifier out of the request and trusting it **is** the defect. **The stated acceptance was already met, and checking rather than assuming is the contribution**: `P1-TSK-016` put `identity_id = ?` in the **statement** for session listing and revocation, and `P1-TSK-017` resolved the MFA enrolment *from* the session's identity with its ownership test written in the strongest form - the attacker presents a **valid** code for the victim's enrolment. Probed rather than reasoned about: dropping the predicate fails **six** tests. Restating any of it would be duplication that drifts rather than coverage, which is the `P1-TSK-012` precedent. **So the deliverable is the part the task's own text names as missing**, and `INV-IDN-05` taught why one milestone earlier - *a list of tests is a snapshot*, and the operation added in Phase 4 will not be in it. `OwnershipIsScopedTest` holds the register **against the code**: every persistence method taking a resource identifier is classified `OWNER_SCOPED`, `AUTHORITATIVE_ID` or `NOT_OWNED`, and an unclassified one fails the build - the `MfaBypassPathsAreEnumeratedTest` shape applied to ownership. **Five correct statements look exactly like the defect, which is why the rule classifies rather than forbids**: `revoke`, `touch`, `confirm`, `consumeStep` and `supersede` all target a row by primary key with no owner predicate, and all five are safe because the identifier came from an owner-constrained read - the difference is **provenance**, and in SQL they are indistinguishable, so a rule that merely forbade the shape would have produced five false positives on its first run, which is ADR-0019's own reasoning for why a rule with an exemption list is a rule somebody turns off. **The rule found two things I had written down wrongly.** It located the `private` helper rather than the public method that delegates to it - the statement is in the helper, and a rule stopping at the public method is one that ordinary method extraction dodges - and it surfaced `OutboxRelay.markPublished`, a platform row with **no owner at all**, which produced the `NOT_OWNED` class written down as the escape hatch it is: a review artefact whose value is that labelling a customer-owned table with it requires somebody to type a sentence that is false. That also means the sweep covers **every** module rather than a list of the ones that matter today, so Phase 3's ledger identifiers surface on the day they are declared. **The first version of the rule survived its own mutation, and the reason is worth recording**: removing `AND identity_id = ?` from `revokeOwned` left the build green, because the rule searched the whole method body - which contains the comment *“identity_id = ? IS the ownership check”*. **A `contains` over source text matches prose**, so the rule was reporting a control it did not have, which is worse than none because it is believed (`P0-TST-008`). It reads **string literals only** now: SQL is only SQL if it is inside a literal. Third occurrence of this class in two tasks - *right about the property, wrong about where to look* - after `P1-TSK-020`'s permission-column assertion needed two corrections for exactly the same reason. **And one gap in my own rule was closed before it shipped**: an `AUTHORITATIVE_ID` entry rests entirely on the named read being owner-constrained, and the first version asserted only that the read **existed** - five of the seven entries rest on that class, so a read that quietly stopped being scoped would make every operation citing it unscoped at once while the register still read as a control. The named provenance must now itself carry an ownership predicate wherever it issues SQL, from a vocabulary of two that are each a real proof: `identity_id = ?` names the owner, and `token_hash = ?` is the session lookup, where presenting a bearer credential **is** the proof. **The one that cannot be checked is stated rather than papered over** - `SessionRotation` holds a proven `Session` object rather than reading one, so there is no statement to inspect, and checking it would be a taint question. **`party` owns no resource-scoped operation**, asserted rather than assumed, so the first one fails the build until it is classified. **ADR-0031's *“no build rule closes this”* is narrowed rather than withdrawn**: the rule forces classification and does not decide safety, and its three remaining limits are stated in the test - it cannot see that an owner-scoped statement binds the *right* owner, cannot verify an `AUTHORITATIVE_ID` claim, and is blind to an ownership decision that issues no SQL. **Eight mutations, all caught** - the predicate removal caught **twice**, by the build rule and by the behavioural suite, which is two controls blind in different directions rather than a duplication. **The completion gate then found the rule aimed at the wrong half of the defect**: the shape this repository has actually shipped is a method that takes an owner and **never uses it** - `P1-TSK-016`'s `SessionRevocation.revoke`, whose statement was `WHERE id = ? AND status = 'ACTIVE'`, so any caller could end any session while the audit record asserted an owner nobody had verified. The rule keyed on a *resource* identifier and could not see it, so a second assertion now requires a persistence method handed an `IdentityId` to **name the owner in its statement**. Probed before it was claimed: **twelve of thirteen** satisfy it, and the thirteenth is `lockIdentity`, whose statement is against `identity.identity` where `id = ?` *is* the owner - a structural fact about the schema, so it is stated as part of the rule rather than carried as an exemption. **It also covers what the first half structurally cannot**: `findLiveFor` takes no resource identifier, so nothing would have noticed it losing its scope, and that is a **bulk disclosure** - every session of every customer rather than one row - caught by the build rule and by the behavioural suite. **The coverage guard had deviated from its four siblings**, carrying a bare `isNotEmpty()` where every other rule suite asserts equality against `ProductionModules.onClasspathWithProductionClasses()`: set equality on the register happens to protect `identity` and `platform`, and **`party` was protected by nothing** - `partyHasNothingToScope` would pass vacuously over a sweep that never reached it, which is the `P0-TSK-008` finding with the corrected idiom sitting in four files alongside. **And a latent defect in my own helper was exposed by widening its input**: running `statementOf` over every persistence method instead of two small ones **overflowed the stack**, because the obvious string-literal pattern backtracks catastrophically - replaced with the unrolled-loop form. A regex correct on the input its author happened to try is the same class of defect as a rule correct on the module its author was thinking of, and it would have arrived as a mysterious CI failure the first time somebody wrote a long method. **Ten mutations, all caught** - two added by the gate. 834 hermetic tests, 381 database tests. |
