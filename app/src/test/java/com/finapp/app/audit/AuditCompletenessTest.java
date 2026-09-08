@@ -58,21 +58,17 @@ class AuditCompletenessTest {
      * action dropping out of production code without an entry fails the build.
      */
     /*
-     * `identity.IdentitySuspended` left this map at P1-TSK-028, which built the endpoint that
-     * emits it. That is the list working in the direction it is usually not exercised in: an entry
-     * is a claim about the future, and the future arriving is what removes it.
+     * `identity.IdentitySuspended` left this map at P1-TSK-028 and `party.ProfileChanged` at
+     * P1-TSK-030, each when the endpoint that emits it was built. That is the list working in the
+     * direction it is usually not exercised in: an entry is a claim about the future, and the
+     * future arriving is what removes it.
+     *
+     * What remains is the three outbox actions, which are recorded Phase 15 debt rather than
+     * unbuilt endpoints - so the list no longer contains a single entry that a Phase 1 task will
+     * close.
      */
     private static final Map<String, String> NOT_YET_EMITTED =
             Map.of(
-                    "party.ProfileChanged",
-                    "PHASE_1_PLAN.md section 7 DOES list PATCH /v1/me, and no backlog task owned"
-                        + " it until the phase review created P1-TSK-030 - the eighth backlog"
-                        + " defect of that class in Phase 1, and the first found by a review"
-                        + " rather than by the task that tripped over it. This entry previously"
-                        + " read that the plan listed no such endpoint, which was FALSE: an"
-                        + " exemption is a claim that something is safe by other means, so a false"
-                        + " claim is a hole with a paragraph in front of it (the P1-TSK-018"
-                        + " finding, in this task's own register).",
                     "outbox.EventAbandoned",
                     "Recorded debt: the relay logs the decision and writes no record. Phase 15"
                         + " (dead-letter handling), per CURRENT_STATE.md.",

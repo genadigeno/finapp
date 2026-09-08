@@ -56,9 +56,36 @@ public enum PartyAuditAction implements AuditableAction {
             "A party was registered and a customer relationship was opened for it.",
             false),
 
+    /**
+     * A party changed its own profile.
+     *
+     * <h2>The description used to promise the before and after values, and the classification
+     * forbids them</h2>
+     *
+     * <p>It read <em>"recording what was held before and after"</em> until {@code P1-TSK-030} built
+     * the endpoint that emits it. Those values are display names — {@code RESTRICTED-PII}, and
+     * {@code DATA_CLASSIFICATION.md} calls {@code party.display_name} <em>"the clearest
+     * RESTRICTED-PII column on the platform"</em>. {@code audit_record.change_summary} is
+     * {@code RESTRICTED-FINANCIAL}.
+     *
+     * <p>Those are <strong>peers, not a hierarchy</strong>: writing PII into a column whose handling
+     * assumes financial data means the PII rules — retention, subject access, erasure — do not reach
+     * it, and ADR-0022 is explicit that a column cannot be reclassified once it holds data. So the
+     * record says <em>that</em> the display name changed, on which party, by whom and when; it does
+     * not say what the name was. {@code PartyRegistration}'s change summary already made the same
+     * choice for the same reason.
+     *
+     * <p><strong>The consequence is stated rather than glossed:</strong> there is no name history in
+     * Phase 1, and this record does not create one. <em>Who changed it and when</em> is an audit
+     * question and is answered; <em>what it used to be</em> is a history question, and the plan asks
+     * for no such capability.
+     *
+     * <p>No reason required: a reason explains an action taken <em>against</em> somebody, and this
+     * is a person editing their own name.
+     */
     PARTY_PROFILE_CHANGED(
             "party.ProfileChanged",
-            "A party's profile data was changed, recording what was held before and after.",
+            "A party's own profile data was changed, recording which field and by whom.",
             false);
 
     private final String code;

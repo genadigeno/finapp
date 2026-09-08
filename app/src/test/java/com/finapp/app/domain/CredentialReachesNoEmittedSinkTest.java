@@ -255,7 +255,15 @@ class CredentialReachesNoEmittedSinkTest {
                         // never reaches an event payload: IdentityAdministration.announce carries
                         // identifiers and an enumerated status, deliberately (INV-AUD-02).
                         "SuspensionRequest",
-                        "RoleAssignmentRequest");
+                        "RoleAssignmentRequest",
+                        // P1-TSK-030. Carries a display name - RESTRICTED-PII, and the clearest
+                        // such column on the platform - which is why it is here and worth a second
+                        // look. It is a request body rather than a response field, so the secret
+                        // vocabulary is not the control: what keeps the name out of anywhere it
+                        // should not be is that ProfileService's audit record records the FIELD
+                        // that changed and not its value (INV-AUD-02, and audit_record.change_
+                        // summary is RESTRICTED-FINANCIAL rather than RESTRICTED-PII).
+                        "ProfileUpdateRequest");
     }
 
     @Test

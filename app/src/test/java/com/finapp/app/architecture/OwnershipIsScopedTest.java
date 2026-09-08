@@ -132,7 +132,32 @@ class OwnershipIsScopedTest {
          * ownership inverted. The entry must name the check that stands in for the missing
          * predicate, so an operation added later cannot inherit this label without one.
          */
-        ADMINISTERED
+        ADMINISTERED,
+
+        /**
+         * The identifier is derived from a proven {@code Session} held in memory, and no statement
+         * in the chain carries an owner predicate because none needs to.
+         *
+         * <p>Added by {@code P1-TSK-030}, and it exists because that task tried
+         * {@link #AUTHORITATIVE_ID} first and <strong>this rule refused it</strong>. The chain for
+         * {@code /v1/me} is {@code Session.identityId() → Identity.partyId() → PartyId}, and the
+         * read in the middle is {@code JdbcIdentityStore.findById} — which {@code P1-TSK-028}
+         * classified {@link #ADMINISTERED} precisely because an administrator names its subject from
+         * a URL. Citing it as owner-constrained would have been a claim that is false, and the guard
+         * said so in those words: <em>every operation citing it inherits the gap</em>.
+         *
+         * <p>This is {@code P1-TSK-021}'s recorded uncheckable case, arriving: <em>"SessionRotation
+         * holds a proven Session object rather than reading one, so there is no statement to
+         * inspect."</em> The proof happened at the door, in
+         * {@code SessionAuthenticationInterceptor}, before any of this ran.
+         *
+         * <p><strong>So the entry names the endpoint rather than a read</strong>, and
+         * {@link #sessionDerivedEndpointsTakeNoIdentifier} checks the one thing that is mechanically
+         * checkable and is also the actual control: that endpoint's handlers accept
+         * <strong>no request-supplied identifier at all</strong>. An endpoint with nothing to name a
+         * resource with cannot be pointed at somebody else's.
+         */
+        SESSION_DERIVED
     }
 
     /**
@@ -161,6 +186,30 @@ class OwnershipIsScopedTest {
                                         + " PRIVATE helper rather than the two public methods that"
                                         + " delegate to it, which is more accurate than the register"
                                         + " I first wrote: the statement is here.")),
+                    Map.entry(
+                            "com.finapp.party.JdbcPartyStore.findById",
+                            new Entry(
+                                    Scope.SESSION_DERIVED,
+                                    "com.finapp.app.profile.MeController",
+                                    "P1-TSK-030, and party's FIRST ownership surface - the"
+                                        + " assertion that it had none was written to fail exactly"
+                                        + " here. AUTHORITATIVE_ID was tried first and this rule"
+                                        + " REFUSED it: the read in the chain is"
+                                        + " JdbcIdentityStore.findById, which P1-TSK-028 classified"
+                                        + " ADMINISTERED because an administrator names its subject"
+                                        + " from a URL - so citing it as owner-constrained would"
+                                        + " have been false. The ownership is the proven Session"
+                                        + " itself: Session.identityId() -> Identity.partyId().")),
+                    Map.entry(
+                            "com.finapp.party.JdbcPartyStore.rename",
+                            new Entry(
+                                    Scope.SESSION_DERIVED,
+                                    "com.finapp.app.profile.MeController",
+                                    "P1-TSK-030, and the same provenance as findById - the write"
+                                        + " reaches the row the read resolved, in the same"
+                                        + " transaction. The statement's other predicate,"
+                                        + " display_name <> ?, is not an ownership check at all: it"
+                                        + " makes a no-op rename write no audit record.")),
                     Map.entry(
                             "com.finapp.identity.JdbcIdentityStore.findById",
                             new Entry(
@@ -547,17 +596,69 @@ class OwnershipIsScopedTest {
                 .contains(OWNER_PREDICATE);
     }
 
+    /**
+     * A {@code SESSION_DERIVED} endpoint accepts nothing that could name a resource.
+     *
+     * <p>That is the whole control, and it is stronger than a predicate rather than weaker: ADR-0031
+     * names <em>trusting an identifier out of the request</em> as the defect, and an endpoint with
+     * no path variable and no request parameter has none to trust. It is also the one part of this
+     * classification a build rule can check, so it is the part that is checked.
+     */
     @Test
-    @DisplayName("party owns no resource-scoped operation, and that is a fact rather than a gap")
-    void partyHasNothingToScope() {
-        // Recorded rather than left implicit. `party` has no store: registration creates a Party and
-        // a Customer, and nothing reads either by an identifier a caller supplied. So there is no
-        // ownership surface to protect - and this assertion is what turns that from an assumption
-        // into something that fails the build when it stops being true.
+    @DisplayName("a SESSION_DERIVED endpoint takes no request-supplied identifier")
+    void sessionDerivedEndpointsTakeNoIdentifier() {
+        java.util.Set<String> endpoints =
+                REGISTER.values().stream()
+                        .filter(entry -> entry.scope() == Scope.SESSION_DERIVED)
+                        .map(Entry::authoritativeRead)
+                        .collect(java.util.stream.Collectors.toCollection(TreeSet::new));
+
+        assertThat(endpoints)
+                .as("a SESSION_DERIVED entry must name the endpoint whose absence of parameters is"
+                        + " the control")
+                .isNotEmpty();
+
+        JavaClasses classes = testClasses();
+        for (String endpoint : endpoints) {
+            assertThat(productionClasses().contain(endpoint) || classes.contain(endpoint))
+                    .as("%s does not exist", endpoint)
+                    .isTrue();
+
+            for (JavaMethod handler : productionClasses().get(endpoint).getMethods()) {
+                for (com.tngtech.archunit.core.domain.JavaParameter parameter :
+                        handler.getParameters()) {
+                    boolean namesAResource =
+                            parameter.isAnnotatedWith(
+                                            org.springframework.web.bind.annotation.PathVariable
+                                                    .class)
+                                    || parameter.isAnnotatedWith(
+                                            org.springframework.web.bind.annotation.RequestParam
+                                                    .class);
+                    assertThat(namesAResource)
+                            .as(
+                                    "%s.%s accepts a request-supplied identifier, so the resource is"
+                                        + " no longer derived from the session alone",
+                                    endpoint, handler.getName())
+                            .isFalse();
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("party's ownership surface is classified, and it exists as of P1-TSK-030")
+    void partysOwnershipSurfaceIsClassified() {
+        // This assertion used to read "party owns no resource-scoped operation", and it was written
+        // to FAIL the day that stopped being true. P1-TSK-030 is that day: /v1/me reads and renames
+        // a Party by identifier, which is the module's first ownership surface.
+        //
+        // The guard behaved exactly as intended - it did not quietly widen, it broke - so what
+        // replaces it is the same claim from the other side: whatever party operations exist must
+        // be in REGISTER, which the sweep above already enforces, and there must be some, or this
+        // assertion has silently become the vacuous thing it replaced.
         assertThat(resourceScopedPersistenceMethods())
-                .as("a party persistence operation taking a resource identifier is the first"
-                        + " ownership surface in that module, and needs classifying here")
-                .noneMatch(method -> method.startsWith("com.finapp.party."));
+                .as("party's ownership surface must be visible to this rule, not merely absent")
+                .anyMatch(method -> method.startsWith("com.finapp.party."));
     }
 
     // -----------------------------------------------------------------

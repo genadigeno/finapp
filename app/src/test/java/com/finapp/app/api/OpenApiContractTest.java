@@ -271,7 +271,10 @@ class OpenApiContractTest {
                         // P1-TSK-028. The only two routes in the phase behind
                         // @RequiresPermission, and the only two the plan listed that nobody owned.
                         ApiVersion.CURRENT_PREFIX + "/identities/{id}/suspension",
-                        ApiVersion.CURRENT_PREFIX + "/identities/{id}/roles");
+                        ApiVersion.CURRENT_PREFIX + "/identities/{id}/roles",
+                        // P1-TSK-030. Declared by the plan for the whole phase and owned by no
+                        // task until the review found it.
+                        ApiVersion.CURRENT_PREFIX + "/me");
     }
 
     @Test

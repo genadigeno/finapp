@@ -2441,7 +2441,7 @@ repository exists to prevent.
 - Accept: every universal criterion assessed with evidence, and a verdict.
 - Risk: Low. Cx: S. DoD: `DOD-DOC`
 
-**P1-TSK-030 — `GET /v1/me` and `PATCH /v1/me`** — `TODO`
+**P1-TSK-030 — `GET /v1/me` and `PATCH /v1/me`** — `COMPLETE` (2026-09-08)
 - Context: party / api
 - Description: Read and change your own profile.
 - Why: **`PHASE_1_PLAN.md` §7 declares both and no backlog task owned either** — the eighth backlog
@@ -2456,8 +2456,50 @@ repository exists to prevent.
   removed when this lands — the guard will say so.
 - Tests: a negative ownership test per operation; the audit record names the person; a display name
   carrying control characters is refused at the boundary (`P1-TSK-006`'s finding).
-- Accept: both endpoints exist with ownership enforced in the domain and an audit record for the
-  change.
+- Accept: **met.** Both exist, `party.ProfileChanged` has its producer, and the change is audited.
+- **Ownership is enforced by there being no parameter, which is the strongest form and changes what
+  the test can be.** Neither endpoint takes a path variable, a query parameter or a body field
+  naming a party — ADR-0031's defect is *trusting an identifier out of the request*, and there is
+  none to trust. So an attacker cannot name a victim, the usual negative test is impossible to
+  write, and the test proves the **resolution chain** instead. That is a weaker shape of test for a
+  stronger shape of control, and saying so beats implying they are the same.
+- **The catalogue description promised what the classification forbids.**
+  `PARTY_PROFILE_CHANGED` read *"recording what was held before and after"* — those values are
+  display names, `RESTRICTED-PII`, and `audit_record.change_summary` is `RESTRICTED-FINANCIAL`.
+  Those are **peers, not a hierarchy**: a name written there would sit outside the PII rules
+  (retention, subject access, erasure), and ADR-0022 forbids reclassifying a column that holds data.
+  The record now names the **field**, never the value — the choice `PartyRegistration` had already
+  made — and the description was corrected in the enum and in `AUDITABLE_ACTIONS.md`.
+- **`AUTHORITATIVE_ID` was tried and `OwnershipIsScopedTest` refused it**, correctly: the read in the
+  chain is `JdbcIdentityStore.findById`, which `P1-TSK-028` classified `ADMINISTERED` because an
+  administrator names its subject from a URL — so citing it as owner-constrained is false, and the
+  guard said so in those words (*"every operation citing it inherits the gap"*). A sixth class,
+  **`SESSION_DERIVED`**, records what is actually true: the identifier comes from a proven `Session`
+  held in memory, which is `P1-TSK-021`'s recorded uncheckable case arriving. Its entry names the
+  **endpoint**, and a new assertion checks the one mechanically checkable thing that is also the real
+  control — that endpoint's handlers accept no request-supplied identifier.
+- **Two guards were written to break on this day and both did.** `partyHasNothingToScope` asserted
+  that `party` owned no resource-scoped operation; and `PartyAndIdentitySchemaDatabaseTest`'s grant
+  assertion said *"nothing about a party changes yet; the grant arrives with the capability"*.
+- **`PATCH` failed with SQLState 42501 before a line of it was reviewed** — the application role had
+  no `UPDATE` on `party.party`, because `V002` was written when nothing changed one.
+  `V004` grants **`UPDATE (display_name)` only**, so `kind` and `registered_at` stay unwritable:
+  those are facts rather than fields. Column-level is the mechanism `P0-TST-007` found can widen a
+  privilege *invisibly*, used here deliberately to narrow — and the assertion that checks its
+  narrowness is what makes that visible.
+- **Absence and explicit null are the same thing here, and the limit is recorded**: a record cannot
+  distinguish them, which costs nothing while `display_name` is `NOT NULL` and can never be cleared.
+  The first genuinely nullable field needs a wrapper type or JSON Merge Patch — a decision for the
+  task that has one.
+- **A no-op rename succeeds and writes no audit record**: an entry reading *"changed from Ada to
+  Ada"* is noise, and it would let anybody pad the trail at will.
+- **The completion gate found a javadoc of mine asserting the opposite of what the code does**:
+  `updateProfile` said the value *"is normalised by `PartyName` on the way in"*, and `PartyName`
+  normalises nothing - its own documentation refuses to. Eighth occurrence this phase, mine again.
+  The decision stands on a truer argument and the reason was corrected rather than the behaviour.
+- **One test replaced several**: eight `PATCH` body shapes, none produces a 500, and it is where the
+  absent-versus-null decision is checked rather than only documented.
+- **Seven mutations, all caught.** 864 hermetic, 459 database.
 - Risk: Medium. Cx: S. DoD: `DOD-SEC`
 
 ---

@@ -236,13 +236,47 @@ class PartyAndIdentitySchemaDatabaseTest {
                     .extracting(e -> ((SQLException) e).getSQLState())
                     .isEqualTo(INSUFFICIENT_PRIVILEGE);
 
-            assertThatThrownBy(
+            // This assertion used to read "nothing about a party changes yet; the grant arrives
+            // with the capability", and it was written to FAIL the day that stopped being true.
+            // P1-TSK-030 is that day: PATCH /v1/me renames a Party, and it failed with SQLState
+            // 42501 before a line of it had been reviewed - the privilege model working exactly as
+            // P0-TSK-022 designed it.
+            //
+            // What replaces it is NARROWER than a plain UPDATE grant, and that is the point. V004
+            // grants UPDATE (display_name) and nothing else, so a name is writable while `kind` and
+            // `registered_at` are not: those are facts rather than fields - what a Party IS, and
+            // when it came into existence - and neither has a legitimate writer.
+            assertThatCode(
                             () ->
                                     execute(
                                             app,
                                             "UPDATE party.party SET display_name = 'x' WHERE id = ?",
                                             party))
-                    .as("nothing about a party changes yet; the grant arrives with the capability")
+                    .as("a person's own name is mutable data; the audit record carries the history")
+                    .doesNotThrowAnyException();
+
+            assertThatThrownBy(
+                            () ->
+                                    execute(
+                                            app,
+                                            "UPDATE party.party SET kind = 'ORGANISATION'"
+                                                    + " WHERE id = ?",
+                                            party))
+                    .as("a party's kind is what it IS, and the column grant is what refuses this")
+                    .isInstanceOf(SQLException.class)
+                    .extracting(e -> ((SQLException) e).getSQLState())
+                    .isEqualTo(INSUFFICIENT_PRIVILEGE);
+
+            assertThatThrownBy(
+                            () ->
+                                    execute(
+                                            app,
+                                            "UPDATE party.party SET registered_at = now()"
+                                                    + " WHERE id = ?",
+                                            party))
+                    .as("when a party came into existence is not something the application may"
+                            + " revise. A column-level grant is invisible in table_privileges"
+                            + " (P0-TST-007), so this is where its narrowness is actually checked")
                     .isInstanceOf(SQLException.class)
                     .extracting(e -> ((SQLException) e).getSQLState())
                     .isEqualTo(INSUFFICIENT_PRIVILEGE);

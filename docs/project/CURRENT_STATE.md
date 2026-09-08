@@ -184,9 +184,114 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-028` completed 2026-09-08.
+**None in progress.** `P1-TSK-030` completed 2026-09-08.
 
 ### Just completed
+
+**`P1-TSK-030` — `GET /v1/me` and `PATCH /v1/me`** — `COMPLETE` (2026-09-08). The last endpoint the
+plan declared and nobody owned.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Both exist, ownership enforced | `ProfileEndpointDatabaseTest`; and the endpoints take no identifier at all |
+| An audit record for the change | Named against the person, with the **field** and not the value |
+| A control character refused at the boundary | `422` naming the field, and nothing stored |
+
+### Ownership is enforced by there being no parameter, and that changes what the test can be
+
+Neither endpoint takes a path variable, a query parameter or a body field naming a party. ADR-0031's
+defect is *trusting an identifier out of the request*, and here **there is none to trust** — the
+chain is `Session.identityId() → Identity.partyId() → PartyId`, entirely derived.
+
+So an attacker cannot name a victim, the usual negative ownership test is **impossible to write**,
+and the test proves the *resolution chain* instead: two identities, each reading and writing exactly
+their own party. That is a weaker shape of test for a stronger shape of control, and saying so is
+better than implying the two are the same.
+
+### The catalogue description promised what the classification forbids
+
+`PartyAuditAction.PARTY_PROFILE_CHANGED` read *"recording what was held before and after"*. Those
+values are display names — **`RESTRICTED-PII`**, and `DATA_CLASSIFICATION.md` calls
+`party.display_name` *"the clearest RESTRICTED-PII column on the platform"*. `change_summary` is
+**`RESTRICTED-FINANCIAL`**.
+
+**Those are peers, not a hierarchy.** A name written there sits outside the PII rules — retention,
+subject access, erasure — and ADR-0022 is explicit that a column cannot be reclassified once it
+holds data. The record says *which field* changed, by whom and when; `PartyRegistration` had already
+made exactly that choice, and this task's description contradicted it. Corrected in the enum and in
+`AUDITABLE_ACTIONS.md`.
+
+**The consequence is stated rather than glossed**: there is no name history in Phase 1 and this does
+not create one. *Who changed it and when* is an audit question and is answered; *what it used to be*
+is a history question the plan asks for no capability to answer.
+
+### `AUTHORITATIVE_ID` was tried, and the guard refused it — correctly
+
+The read in the chain is `JdbcIdentityStore.findById`, which **`P1-TSK-028` classified
+`ADMINISTERED`** because an administrator names its subject from a URL. Citing it as an
+owner-constrained read would have been false, and `OwnershipIsScopedTest` said so in those words:
+*"every operation citing it inherits the gap."*
+
+A sixth class, **`SESSION_DERIVED`**, records what is actually true — the identifier comes from a
+proven `Session` **held in memory**, which is `P1-TSK-021`'s recorded uncheckable case arriving:
+*"SessionRotation holds a proven Session object rather than reading one, so there is no statement to
+inspect."* Its entry names the **endpoint** rather than a read, and a new assertion checks the one
+mechanically checkable thing that is also the real control: that endpoint's handlers accept **no
+request-supplied identifier**. An endpoint with nothing to name a resource with cannot be pointed at
+somebody else's.
+
+### Two guards were written to break on this day, and both did
+
+`partyHasNothingToScope` asserted that `party` owned no resource-scoped operation. And
+`PartyAndIdentitySchemaDatabaseTest`'s grant assertion said, in as many words, *"nothing about a
+party changes yet; **the grant arrives with the capability**"*. Neither quietly widened; both broke.
+
+### `PATCH` failed with SQLState 42501 before a line of it had been reviewed
+
+The application role had no `UPDATE` on `party.party` — `V002` was written when nothing ever changed
+one. That is `P0-TSK-022`'s privilege model working: the grant *is* the enforcement, so widening one
+is a migration with a stated argument rather than a line in a service class.
+
+**`V004` grants `UPDATE (display_name)` and nothing else.** `kind` and `registered_at` stay
+unwritable, because they are facts rather than fields — what a Party *is*, and when it came into
+existence. Column-level is the mechanism `P0-TST-007` found can widen a privilege **invisibly**;
+used here deliberately to *narrow*, and the assertion that checks its narrowness is what makes that
+visible to a reader auditing table privileges.
+
+### Absence and explicit null are the same thing, and the limit is recorded rather than found later
+
+A record cannot distinguish *field absent* from `"displayName": null`. That costs nothing while
+`display_name` is `NOT NULL` and can never be cleared — both are refused, one `422`. **The first
+genuinely nullable field cannot be expressed by this shape** and needs a wrapper type or JSON Merge
+Patch, which is a decision for the task that has one rather than machinery built now.
+
+### The completion gate found a javadoc of mine asserting the opposite of what the code does
+
+`updateProfile` said it returns the profile because <em>"the value is normalised by `PartyName` on
+the way in, so it is not necessarily what was sent"</em>. **`PartyName` normalises nothing**, and its
+own documentation refuses to in as many words: *"Sanitising input at construction to defend an output
+is how a value gets silently corrupted for every consumer to protect one."*
+
+**The eighth javadoc in this phase to assert something the code does not do**, and mine again. The
+decision stands on a different and true argument — a `PATCH` that returned nothing makes a client
+guess, and it cannot assume the stored value equals what it sent — so the reason was corrected rather
+than the behaviour.
+
+### And one test replaced several
+
+Eight `PATCH` body shapes were driven and **none produces a 500** — the probe `P1-TSK-010`'s gate
+established. It earns its place twice, because it is also where the **absent versus explicit null**
+decision is actually checked rather than only documented: a record cannot distinguish them, and both
+must be the same `422`. One test rather than eight, deliberately — the property is *no shape is our
+fault*, and splitting it per shape multiplies assertions without adding a claim.
+
+It also showed `{"displayName": 12345}` is **coerced and stored as `"12345"`**, which is Jackson
+doing what `SensitiveSerialization` documents for the same reason and is a valid display name by
+every rule that applies to one.
+
+**Seven mutations, all caught.** 864 hermetic tests, 459 database tests.
+
+### Previously
 
 **`P1-TSK-028` — The two administrative endpoints** — `COMPLETE` (2026-09-08). The only two
 endpoints in the phase behind `@RequiresPermission`, and the two `PHASE_1_PLAN.md` §7 listed that
@@ -3653,6 +3758,26 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+A person's own profile (2026-09-08), `P1-TSK-030`:
+- `GET /v1/me` and `PATCH /v1/me` - declared by the plan for the whole phase and owned by no task
+  until the review found them, which was the eighth backlog defect of that class in Phase 1
+- **Ownership is enforced by there being no parameter**: no path variable, no query parameter, no
+  body field naming a party. An attacker cannot name a victim, so the usual negative test is
+  impossible to write and the test proves the **resolution chain** instead
+- **The catalogue description promised what the classification forbids** - before/after are display
+  names (`RESTRICTED-PII`) and `change_summary` is `RESTRICTED-FINANCIAL`, which are **peers, not a
+  hierarchy**. The record names the field, never the value; the description was corrected
+- **`AUTHORITATIVE_ID` was tried and the guard refused it**, because the read in the chain is
+  classified `ADMINISTERED`. A sixth class, `SESSION_DERIVED`, records what is true - the identifier
+  comes from a proven `Session` held in memory, `P1-TSK-021`'s recorded uncheckable case
+- **Two guards were written to break on this day and both did** - `party` owning no ownership
+  surface, and *"the grant arrives with the capability"*
+- **`V004` grants `UPDATE (display_name)` and nothing else**, so `kind` and `registered_at` stay
+  unwritable. Column-level grants are what `P0-TST-007` found can widen a privilege invisibly, used
+  here to narrow
+- **A no-op rename succeeds and writes no audit record** - an entry reading *"changed from Ada to
+  Ada"* is noise, and would let anybody pad the trail
+
 The two administrative endpoints (2026-09-08), `P1-TSK-028`:
 - `POST /v1/identities/{id}/suspension` and `POST /v1/identities/{id}/roles` - the only two
   endpoints in the phase behind `@RequiresPermission`, and the two the plan listed that nobody owned
@@ -4910,24 +5035,27 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-030` — `GET /v1/me` and `PATCH /v1/me`.** Medium risk.
+**`P1-DOC-002` — re-run the Phase 1 exit review.** The only thing left between Phase 1 and
+`COMPLETE`.
 
-**The eighth backlog defect of its class in Phase 1, and the first found by a review** rather than
-by the task that tripped over it: `PHASE_1_PLAN.md` §7 lists both and no task owned either until
-`P1-DOC-001` created this one. `party.ProfileChanged` is still declared unemitted in
-`AuditCompletenessTest` for exactly that reason, and this is the task that removes the entry.
+`P1-DOC-001` found two failing criteria and both are closed — criterion 1 by `P1-TSK-027` (a login
+issues a session) and criterion 6 by `P1-TSK-029` (every planned meter exists). The phase has stayed
+`IN_PROGRESS` since, deliberately: `PHASE_GATES.md` §4 makes a phase `COMPLETE` when a **review**
+says so, never because its remediation landed. **An implementation task declaring its own phase
+complete is the shape the gate model exists to prevent.**
 
-**`PATCH /v1/me` is the one with the decisions in it**: what a person may change about themselves,
-whether a display-name change is audited (it is — `party.ProfileChanged` requires no reason, because
-it is the person's own data), and how a partial update is expressed without a field's absence
-meaning *clear it*.
+Since that review the phase also gained the three endpoints it had declared and nobody owned —
+`P1-TSK-028`'s two administrative ones and `P1-TSK-030`'s `/v1/me` — so area 7's endpoint count is
+one of the things the re-run has to recount rather than inherit.
 
-Then `P1-DOC-002` re-runs the gate, which is the only thing left between Phase 1 and `COMPLETE`.
+**Two items remain open and neither blocks the gate**: `P1-TSK-031` (a fixture that assumes `now()`
+moves forwards) and `P1-TSK-032` (reinstatement — suspension is currently a one-way door).
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-08 | **`P1-TSK-030` complete - a person's own profile, and the last endpoint the plan declared that nobody owned.** `GET /v1/me` and `PATCH /v1/me`, which `PHASE_1_PLAN.md` §7 listed for the whole phase while no backlog task owned either - the eighth backlog defect of that class in Phase 1 and the first found by a **review** rather than by the task that tripped over it. **Ownership is enforced by there being no parameter, and that changes what the test can be**: neither endpoint takes a path variable, a query parameter or a body field naming a party, so ADR-0031's defect - *trusting an identifier out of the request* - has nothing to act on, and the chain is entirely derived from the proven session. An attacker therefore **cannot name a victim**, the usual negative ownership test is impossible to write, and the test proves the *resolution chain* instead - a weaker shape of test for a stronger shape of control, which is worth saying rather than implying the two are the same. **The catalogue description promised what the classification forbids**: `PARTY_PROFILE_CHANGED` read *“recording what was held before and after”*, and those values are display names - `RESTRICTED-PII`, *“the clearest RESTRICTED-PII column on the platform”* - while `audit_record.change_summary` is `RESTRICTED-FINANCIAL`. **Those are peers, not a hierarchy**: a name written there sits outside the PII rules (retention, subject access, erasure), and ADR-0022 forbids reclassifying a column that holds data. The record names the **field** and never the value, which is the choice `PartyRegistration` had already made and this description contradicted; corrected in the enum and in `AUDITABLE_ACTIONS.md`, with the consequence stated - there is no name history in Phase 1 and this does not create one. **`AUTHORITATIVE_ID` was tried and `OwnershipIsScopedTest` refused it, correctly**: the read in the chain is `JdbcIdentityStore.findById`, which `P1-TSK-028` classified `ADMINISTERED` because an administrator names its subject from a URL, so citing it as owner-constrained would have been false - and the guard said so in those words, *“every operation citing it inherits the gap”*. A sixth class, **`SESSION_DERIVED`**, records what is true: the identifier comes from a proven `Session` **held in memory**, which is `P1-TSK-021`'s recorded uncheckable case arriving. Its entry names the **endpoint** rather than a read, and a new assertion checks the one mechanically checkable thing that is also the real control - that endpoint's handlers accept no request-supplied identifier. **Two guards were written to break on this day and both did**: `partyHasNothingToScope`, and `PartyAndIdentitySchemaDatabaseTest`'s grant assertion, whose own comment read *“nothing about a party changes yet; the grant arrives with the capability”*. **And `PATCH` failed with SQLState 42501 before a line of it had been reviewed** - the application role had no `UPDATE` on `party.party`, because `V002` was written when nothing ever changed one. That is `P0-TSK-022`'s privilege model working: the grant IS the enforcement, so widening one is a migration with a stated argument. **`V004` grants `UPDATE (display_name)` and nothing else**, leaving `kind` and `registered_at` unwritable because they are facts rather than fields - and column-level is precisely the mechanism `P0-TST-007` found can widen a privilege **invisibly**, used here deliberately to narrow, with an assertion that checks its narrowness so a reader auditing `table_privileges` knows to look in `column_privileges` too. **Absence and explicit null are the same thing here**, which costs nothing while the column is `NOT NULL` and can never be cleared; the first genuinely nullable field cannot be expressed by a record and needs a wrapper type or JSON Merge Patch, recorded rather than built now. **A no-op rename succeeds and writes no audit record**, because an entry reading *“changed from Ada to Ada”* is noise and would let anybody pad the trail. **The completion gate found a javadoc of mine asserting the opposite of what the code does**: `updateProfile` said the value <em>“is normalised by `PartyName` on the way in”</em>, and `PartyName` normalises nothing - its own documentation refuses to, since *“sanitising input at construction to defend an output is how a value gets silently corrupted for every consumer to protect one”*. The eighth javadoc this phase to assert something the code does not do, mine again; the decision stands on a truer argument - a PATCH returning nothing makes a client guess - so the reason was corrected rather than the behaviour. The gate also replaced several tests with one: eight PATCH body shapes driven, **none produces a 500**, and it is where the absent-versus-null decision is actually checked rather than only documented. **Seven mutations, all caught.** 864 hermetic tests, 459 database tests. |
 | 2026-09-08 | **`P1-TSK-028` complete - the two administrative endpoints, and the blocking finding was that suspension did not suspend anybody.** `JdbcSessionStore.findByToken` filters on the **session's** status and never joins `identity.identity`, and `CredentialVerifier` refuses a suspended identity only at *authentication* - so a suspension stopped the next login and left the session an attacker is holding **working until its absolute bound expired**, while the administrator received a success response. `suspend` now revokes every session in the same transaction (`INV-IDN-03`: an eventually-revoked session is an unrevoked session), asserted with the **same token** across the suspension, because a fresh one would prove only that a suspended identity cannot log in - already true, and not what suspension is for. **Joining identity status into the session lookup was the alternative and was rejected**: a second table in the hottest query on the platform, per request, to enforce once what a revoke enforces once per decision. **Ownership is inverted here and that is the shape of the whole task**: everywhere else the rule is *the resource must belong to the caller*, and here it is **the subject must not be the actor** - which cannot live in `@RequiresPermission`, static per handler and blind to which identity the path names. **What refusing self-elevation buys is stated honestly rather than overclaimed**: it is **not** a containment control, since an administrator holding `ROLE_ASSIGN` can escalate through a second account they control; what it buys is that the trail **never contains a self-loop**, so every escalation names two parties and a self-grant - which reads like a system action rather than a decision somebody took - can never appear. Refusing self-**suspension** is a different argument: there is no reinstatement endpoint, so it is a one-way door out of the platform, now recorded as `P1-TSK-032` rather than left silent. **`OwnershipIsScopedTest` gained a fifth class because this task broke an assumption it rested on**: it excluded `IdentityId` from being a *resource* identifier on the reasoning that it IS the owner - true of every operation written before, and false of an administrative one where the identifier comes from a URL and names a different person. The exclusion is conditional now on the statement reaching `identity.identity` **by primary key**, three methods are classified `ADMINISTERED` with the check that stands in for the missing predicate named, and `lockIdentity` is labelled by the **weaker** of its two provenances, because a label must be one thing and naming the safer path would describe the caller that needs no protection. **A pre-existing blind spot in that rule was closed on the way**: `statementOf` read only a method's own string literals, so a statement built from a table-name **constant** put `identity.identity` nowhere and the owner check could not see an owner that was plainly there - never reached before only because every earlier statement happened to mention `identity_id` literally. Inlining the constant was the alternative and would have been a change made to please a detector rather than to state a property. **The first administrator cannot be created through the API, and that is a decision**: `ROLE_ASSIGN` is held only by `ADMINISTRATOR`, a bootstrap endpoint would be a privileged surface with nothing in front of it, and a seeded migration row would put an administrator into every environment including production for ever - so it is an out-of-band operator action (`README.md` §5e) whose consequence is recorded rather than hidden: **that first grant has no actor in the audit trail**. **And a mutation survived and found a test passing for the wrong reason**: `anUnknownSubjectIs404` used `UUID.randomUUID()`, and `IdentityId.of` validates **UUIDv7** (`P0-TSK-012`), so a v4 was refused as *malformed* and never reached the service - the test proved only that a v4 is rejected, and the endpoints' behaviour for an unknown-but-well-formed identity was untested. Established by **tracing** rather than by reasoning: four hypotheses were wrong before the server's own log line settled it. The fixture also met the documented container clock drift, and the constraint was right while the fixture was fragile - `P1-TSK-031`'s finding, met for the first time by production code rather than by another fixture, and closed by back-dating. **The completion gate found two more.** `Suspension.ALREADY_SUSPENDED` was a **claim that can be false** - a `CLOSED` identity reaches that branch and is not suspended but gone permanently, so a caller would read it as having effectively succeeded; renamed to `NOT_ACTIVE`, for what is *checked* rather than for the commonest cause, with the `CLOSED` path now tested. And `SuspensionRequest`'s javadoc claimed a bounds-parity test that **did not exist** - the seventh occurrence of that pattern this phase - where the drift would fail at the **last write** as a 500, after the transition and the session revocations had already run inside a transaction that then rolls back. That test's own first version failed on correct code, which is the more useful outcome: `@Size` has no `RECORD_COMPONENT` target, so it lands on the field and a component-level lookup returns null for a constraint that is working. The closed tag vocabulary then caught `@Tag("unit")`, which is not a tier - the default tier selects by **exclusion** - exactly what `P0-TSK-036` closed it for. **Nine mutations, all caught.** 863 hermetic tests, 453 database tests. |
 | 2026-09-08 | **`P1-TSK-026` complete - a person who registers can now log in.** `POST /v1/registrations` takes a required `password`, derives it **before** the transaction opens, and writes the credential in the same commit as the Party, the Customer and the Identity - closing the bootstrap gap `P1-TSK-006` recorded against itself, where `POST /v1/me/credential` needed a session, a session needed authentication, and authentication needed a credential. **The headline is asserted end to end, because the defect being closed was a gap between two halves that each worked**: `P1-TSK-006` created an Identity that could never authenticate and **every suite passed**, since each half was tested against its own fixture - the same shape `P1-TSK-027` met one layer up. So *“a credential row exists”* is deliberately **not** the assertion; the test registers over HTTP, logs in over HTTP with the password it registered, and opens `GET /v1/sessions` with the token that comes back, with nothing inserted by the test and a fabricated password as the negative control. That a row assertion would not have been enough is **proven** rather than argued: the mutation storing the credential `SUPERSEDED` leaves the row present and every row-counting assertion satisfied. **The derivation is structurally unconditional rather than balanced**: `IdentityRegistration.prepare` mints the `IdentityId` and derives, `create` takes the result, and the second cannot be called without the first - so no database outcome can decide whether the expensive work happens, where a balanced pair of code paths is one a later author optimises away. Minting the identifier early is what that costs and is unremarkable under ADR-0013; **splitting `Credential.forPassword` back apart was refused**, because `P1-TSK-007`'s gate removed that split precisely so a caller could not pass parameters that did not produce the derivation. **The item's stated reason for the ordering is weaker than it reads, and the correction is recorded rather than repeated**: a success answers `201` and a collision `422` in one round trip, so the two are *already* distinguishable and necessarily so - an endpoint that claims a name must say when the name is taken - which makes equal work defence in depth here rather than the control. **The load-bearing reason is operational**: ~46 ms of CPU and ~19 MiB per derivation (ADR-0032) must not be paid while holding one of eight pooled connections (`P1-TSK-004`), or a registration flood becomes connection-timeout errors pointing at a database that is perfectly healthy - and `theDerivationIsOutsideTheTransaction` is the **only** test that catches `prepare` being moved beside the insert it feeds, since every other assertion still sees exactly one derivation. **The debt row was updated rather than left**: this endpoint is now the same CPU-and-memory amplifier `POST /v1/authentications` is, and unlike that one it needs no existing account. **An Identity is no longer constructible without a credential** - the path is removed rather than deprecated, because leaving it would leave the defect reachable. **The fingerprint decision was kept and its consequence stated**: `canonicalForm` takes no password, asserted **structurally** because there is nothing to vary - the only way to break it is to change the signature, and a second *overload* is caught too - and the consequence is now written down and asserted behaviourally, that **a retry with the same key and a different password replays** rather than being refused as an `INV-IDEM-03` conflict. That reads as a weakening and is the right trade, since the alternative stores an offline-crackable derivation of every registration password for the life of the record (`INV-IDN-01`), with the residual bounded by the empty response body. **A short password is a `422`, which is the opposite of authentication's answer and deliberately so**: there a short password is an ordinary failure because a second response shape is an enumeration risk, while here it is a value the caller **chose** and must be able to correct, decided before any lookup. `@Size` could not express it - Bean Validation cannot see inside `Sensitive`, and a constraint that unwrapped it would put a plaintext in `app` and fail `SecretsAreUnwrappedInOnePlaceTest`, correctly - so the service maps `RawPassword`'s refusal and writes the client detail itself rather than passing the exception's message on. **The leak sweep covers every table in every schema**, derived from `information_schema`: `P1-TSK-007` proved the credential row is clean, and what this task adds is a password crossing an HTTP boundary into an idempotency record, an audit record and an outbox row - three sinks credential storage never touched, two of which reach systems with different access control. **And the mutation harness reported seven proofs it had never measured**, which is the most instructive failure here and again sits in the machinery rather than the work: it invoked `./gradlew.bat`, which cmd answers *“'.' is not recognized”* with exit 1, so every mutation read as `CAUGHT` against a build that had never run - `P1-TSK-027`'s finding in a new disguise, found the same way, by asking **why** a mutation was caught rather than trusting the verdict. The harness now asserts the build actually started and names the failing test; all seven were re-run and **two were rewritten**, because the corrected harness showed they were caught by **compilation** rather than by an assertion and so proved nothing about the test they were aimed at. **Eleven mutations, all caught** - four added by the completion gate, which found two claims nothing asserted (the credential identifier in the audit change summary and in the event payload) and drove eleven request shapes to prove none produces a 500, pinning the two decided by *different* mechanisms: a number is coerced and succeeds, an object never reaches the deserialiser and is a `400`. The gate also asserted that coercion is **symmetric across both endpoints**, which nothing had checked because until now there was no registration secret to be asymmetric with - it forecloses a customer who registers successfully and can never log in, this task's own failure arriving through another door. **And the gate's own first probe was wrong, which is what running one is for**: it reported a `400` for control characters in a password, when the **Java source held real control characters** so the body was invalid JSON and every answer was about the document rather than about the password - `P1-TSK-016`'s finding reproduced by me, since Java processes a unicode escape *before* string escapes. Recorded rather than worked around, and the claim is unnecessary anyway: the plaintext is never persisted, only an ASCII Argon2 encoding of it, and both endpoints share one DTO, one deserialiser and one `RawPassword`, so anything registrable is authenticatable by construction. One mutation is recorded as caught by **compilation** rather than by `secretsAreWrapped`, so a second compiling one was written to prove the rule covers this type. 860 hermetic tests, 438 database tests. |
 | 2026-09-08 | **`P1-TSK-025` complete - the architecture tier now runs the architecture rules.** **The finding is worse than the backlog recorded, and it was measured rather than inferred**: the `@ArchTest` rules were not *missing* from `architectureTest`, they were **running in the wrong tier**. `unitTest` selects by *exclusion* and therefore took all **28** untagged rule fields, while `architectureTest` selects by *inclusion* and got none - and `ModuleBoundaryRulesTest`, which has no `@Test` method at all, produced **no result file** in the architecture tier: not a suite reporting zero cases, a suite that did not appear. That is the oldest rule suite in this repository, the one enforcing `app → platform → sharedkernel`, so `./gradlew architectureTest` told a developer the architecture was fine having checked none of its eight boundary rules. **Root cause established by disassembling the engine rather than reading documentation**: `javap` on `AbstractArchUnitTestDescriptor.findTagsOn` shows it loads exactly one annotation - `com.tngtech.archunit.junit.ArchTag` - so JUnit's `@Tag` is invisible to ArchUnit's engine and every rule field carried no tag at all. Fixed with `@ArchTag` beside `@Tag` on all seven `@AnalyzeClasses` suites, which is ArchUnit's own mechanism for this and was never used here because nobody had asked what its engine does with a tag. **Why no guard saw it, and this is the part worth keeping**: `theTiersPartitionTheHermeticSuite` asserts a **sum**, and the sum was right - every rule was in exactly one tier. **A check on a total cannot see a misallocation that preserves the total**, which is `P1-TSK-024`'s unreadable register rows and `P0-TST-008`'s rule that could not fail, arriving once more. **The new guard states the property rather than the fix**: for every `@AnalyzeClasses` class the `@Tag` and `@ArchTag` value sets must be **equal** - *both engines must agree which tier this class is in*. Its limit is recorded rather than left to be discovered: it does not assert that ArchUnit reads `ArchTag`, because that is a fact about a dependency and checking it would mean disassembling one on every build - so if ArchUnit ever read `@Tag` the guard would demand an annotation that had become unnecessary, **which is the direction to err in**, a false requirement being a build failure somebody investigates and a false pass being silence (`P0-TSK-026`'s reasoning). **A strictly better guard was investigated and rejected on a measured fact**: discovering with `includeTags("architecture")` through the JUnit Platform Launcher is the property itself, but `junit-platform-launcher` is **not on `testRuntimeClasspath`** - Gradle injects it into the worker - so it would need a new dependency plus verification-metadata and lockfile regeneration, which is disproportionate for a Low-risk `Cx: S` item (`EXECUTION_PROTOCOL` rule 4). **The acceptance criterion was proven by performing it**: with a `double` planted in production code, `./gradlew :app:architectureTest` exited **0** before the fix and **1** after - the same planted code, the same command - and `:app:test` failed it in both, which is why enforcement was never actually lost. `architectureTest` goes 97 → 126 cases and `unitTest` 184 → 156; **`test` moves only by the one new guard**, which is itself the check that nothing but tier attribution changed. **Two mutations, both caught.** 859 hermetic tests, 426 database tests. |

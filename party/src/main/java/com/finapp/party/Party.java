@@ -70,6 +70,23 @@ public final class Party {
         return new Party(id, kind, name, registeredAt);
     }
 
+    /**
+     * A new Party with a different display name (`P1-TSK-030`).
+     *
+     * <p><strong>Not a state transition, and Party deliberately has no lifecycle</strong>
+     * ({@code P1-TSK-005}): existence has no states, and every state people reach for is a statement
+     * about a <em>relationship</em> or a <em>login</em>, each of which has its own table. So there
+     * is no status to move and no {@code status_changed_at} to stamp.
+     *
+     * <p>There is no {@code updated_at} column either, and that is deliberate rather than an
+     * omission: <em>when</em> and <em>by whom</em> belong on the audit record, and a second answer
+     * in the row would be free to disagree with it.
+     */
+    public Party rename(PartyName newName) {
+        Objects.requireNonNull(newName, "newName must not be null");
+        return new Party(id, kind, newName, registeredAt);
+    }
+
     public PartyId id() {
         return id;
     }

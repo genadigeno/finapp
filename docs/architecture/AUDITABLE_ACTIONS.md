@@ -61,7 +61,7 @@ question, not a refactor.
 | Code | Reason required | What it is |
 |---|---|---|
 | `party.CustomerRegistered` | No | A party was registered and a customer relationship was opened for it. |
-| `party.ProfileChanged` | No | A party's profile data was changed, recording what was held before and after. |
+| `party.ProfileChanged` | No | A party's own profile data was changed, recording which field and by whom. |
 
 `party.CustomerRegistered` is **one action for two writes**, deliberately. `PHASE_1_PLAN.md` §4
 lists `RegisterParty` and `OpenCustomerRelationship` as separate commands, and they are — but
@@ -175,9 +175,11 @@ every action against production code: each is **emitted**, or **declared not to 
 that will emit it. So *"deliberately not built yet"* and *"somebody removed the audit call"* stop
 being indistinguishable, and an action that silently **stops** being emitted fails the build.
 
-Five actions are currently declared unemitted: `identity.IdentitySuspended` (`P1-TSK-028` owns the
-endpoint), `party.ProfileChanged` (no Phase 1 capability changes a profile), and the three `outbox.*`
-actions above. Its limit is stated too: it sees that a constant is *referenced* by production code,
+Three actions are currently declared unemitted: the three `outbox.*` actions above.
+`identity.IdentitySuspended` left the list at `P1-TSK-028` and `party.ProfileChanged` at
+`P1-TSK-030`, each when the endpoint that emits it was built - which is the list working in the
+direction it is rarely exercised in, since an entry is a claim about the future and the future
+arriving is what removes it. Its limit is stated too: it sees that a constant is *referenced* by production code,
 which is weaker than *the operation audits itself* — the behavioural tests establish that, and
 neither replaces the other.
 
