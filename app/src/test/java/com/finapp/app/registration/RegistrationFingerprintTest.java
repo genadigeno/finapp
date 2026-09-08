@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.identity.LoginIdentifier;
 import com.finapp.party.PartyName;
 import com.finapp.platform.idempotency.RequestFingerprint;
+import java.util.Arrays;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -56,6 +57,42 @@ class RegistrationFingerprintTest {
         // even if a future command hashed the same two fields.
         assertThat(new String(RegistrationService.canonicalForm(login("ada.l"), name("Ada"))))
                 .startsWith(RegistrationService.SCOPE);
+    }
+
+    /**
+     * No credential reaches the fingerprint, asserted structurally because there is nothing to vary.
+     *
+     * <p>{@code canonicalForm} takes no password, so a value-level test cannot express this at all -
+     * the only way to break the property is to change the signature, so the signature is what is
+     * asserted. A mutation adding the password is caught here.
+     *
+     * <p><strong>Why it matters more than an ordinary field choice.</strong>
+     * {@code RequestFingerprint} is a single-round SHA-256 and
+     * {@code idempotency_record.request_fingerprint} is durable, so hashing a body containing a
+     * password would store an offline-crackable derivation of every registration password for as
+     * long as the record is retained - {@code INV-IDN-01} defeated by the idempotency mechanism
+     * rather than by the credential store.
+     *
+     * <p>{@code P1-TSK-026} added the password to the request and deliberately did <em>not</em>
+     * add it here. The consequence is recorded on {@code RegistrationService.canonicalForm}: a
+     * retry with the same key and a different password replays rather than being refused as an
+     * {@code INV-IDEM-03} conflict, and {@code RegistrationCredentialDatabaseTest} asserts that
+     * behaviour end to end.
+     */
+    @Test
+    @DisplayName("the canonical form cannot see a password, so it cannot store a derivation of one")
+    void noCredentialReachesTheFingerprint() throws Exception {
+        Class<?>[] parameters =
+                RegistrationService.class
+                        .getDeclaredMethod("canonicalForm", LoginIdentifier.class, PartyName.class)
+                        .getParameterTypes();
+
+        assertThat(parameters).containsExactly(LoginIdentifier.class, PartyName.class);
+        assertThat(Arrays.stream(RegistrationService.class.getDeclaredMethods())
+                        .filter(method -> "canonicalForm".equals(method.getName()))
+                        .count())
+                .as("a second overload taking a secret would slip past the assertion above")
+                .isEqualTo(1);
     }
 
     private static byte[] fingerprintOf(String loginIdentifier, String displayName) {

@@ -123,7 +123,7 @@ class HostileInputProbeDatabaseTest {
                                                 + login
                                                 + "\",\"displayName\":\""
                                                 + displayNameLiteral
-                                                + "\"}"))
+                                                + "\",\"password\":\"not-a-real-password\"}"))
                         .build();
         try (HttpClient client =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {

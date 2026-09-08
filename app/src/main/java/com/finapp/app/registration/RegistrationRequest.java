@@ -1,6 +1,8 @@
 package com.finapp.app.registration;
 
+import com.finapp.sharedkernel.security.Sensitive;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -27,13 +29,35 @@ import jakarta.validation.constraints.Size;
  * ({@code PHASE_1_PLAN.md} §4). {@code LoginIdentifier}'s charset excludes {@code @} precisely so
  * the confusion cannot arrive silently through the first person who types an address.
  *
- * <p><strong>No password.</strong> {@code P1-TSK-007} owns credential storage and has not landed.
- * The consequence - a registration produces a login that cannot yet authenticate, and adding a
- * required field later is a breaking change to a published contract - is recorded in
- * {@code CURRENT_STATE.md} rather than pre-empted here.
+ * <h2>The password, added by {@code P1-TSK-026}</h2>
+ *
+ * <p>It is <strong>required</strong>, and that removes a shape rather than adding one: an optional
+ * password would let a caller create an Identity that can never authenticate, which is exactly the
+ * state this task exists to close. Making it required is a {@code BREAKING} change to a published
+ * {@code /v1} contract on the platform's first endpoint, accepted with the reasoning recorded on
+ * {@code RegistrationController}.
+ *
+ * <p>It is <strong>wrapped</strong>, for the reason {@code AuthenticationRequest} sets out at
+ * length: a record's generated {@code toString} prints every component, so an unwrapped one turns
+ * {@code log.info("{}", request)} into a password disclosure with no getter call and nothing a
+ * reviewer stops at. {@code secretsAreWrapped} enforces it either way.
+ *
+ * <p><strong>Its bounds are not declared here, and that is the one asymmetry worth explaining.</strong>
+ * Bean Validation cannot see inside {@link Sensitive}, and a constraint that unwrapped it would put
+ * a plaintext in {@code app} - which {@code SecretsAreUnwrappedInOnePlaceTest} pins to {@code
+ * identity} and would fail the build over, correctly. So {@code RawPassword} is the only thing that
+ * bounds it, and {@code RegistrationService} maps its refusal to the {@code 422} this annotation
+ * would have produced.
+ *
+ * <p>Registration answers a short password <em>differently</em> from authentication, deliberately.
+ * {@code AuthenticationRequest} treats one as an ordinary authentication failure, because a second
+ * response shape there is an enumeration risk. Here the password is a value the caller
+ * <strong>chose</strong> and must be able to correct, the refusal is decided before any lookup, and
+ * it discloses nothing about any account - so telling them is both safe and necessary.
  *
  * @param loginIdentifier what the person will type to log in
  * @param displayName their name, as a human would recognise it. {@code RESTRICTED-PII}
+ * @param password their secret. Never logged, never stored, never echoed
  */
 public record RegistrationRequest(
         @NotBlank
@@ -43,7 +67,8 @@ public record RegistrationRequest(
         @NotBlank
                 @Size(min = NAME_MIN, max = NAME_MAX)
                 @Pattern(regexp = NAME_CHARSET)
-                String displayName) {
+                String displayName,
+        @NotNull Sensitive<String> password) {
 
     /**
      * Mirrors {@code LoginIdentifier}. Literals because an annotation needs a compile-time

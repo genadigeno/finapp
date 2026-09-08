@@ -184,9 +184,154 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-025` completed 2026-09-08.
+**None in progress.** `P1-TSK-026` completed 2026-09-08.
 
 ### Just completed
+
+**`P1-TSK-026` — Registration takes a credential** — `COMPLETE` (2026-09-08). The bootstrap gap
+`P1-TSK-006` recorded against itself is closed: a person who registers can log in.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Exactly one active credential | Asserted over HTTP, and by **using** it to authenticate |
+| The plaintext is in no persisted or emitted representation | Every column of every table in all three schemas, derived from `information_schema` |
+| The fingerprint is unchanged by the password | Structurally — `canonicalForm` cannot see one — and behaviourally |
+| Equivalent work for a taken and a free identifier | One derivation each, counted |
+| The `openapi.json` diff labelled `BREAKING`, decision recorded | Two lines, reviewed; the reasoning is on the controller |
+
+### The headline is asserted end to end, because the defect closed was a gap between two working halves
+
+`P1-TSK-006` created a Party, a Customer and an Identity and no credential, and **every suite
+passed**, because each half was tested against its own fixture. `P1-TSK-027` met the same shape one
+layer up. So *"a credential row exists"* is deliberately **not** the headline assertion here — it
+passes against a credential stored under the wrong identity, the wrong algorithm, or a status
+nothing can verify, and the `SUPERSEDED` mutation proves that is not hypothetical.
+
+`aRegisteredPersonCanAuthenticate` registers over HTTP, logs in over HTTP with the password it
+registered, and opens `GET /v1/sessions` with the token that comes back. Nothing in that chain is
+inserted by the test, and `aFabricatedPasswordOpensNothing` is its negative control.
+
+### The derivation is structurally unconditional rather than balanced
+
+`IdentityRegistration.prepare` mints the `IdentityId` and derives; `create` takes the result. **You
+cannot call the second without having called the first**, so no database outcome can decide whether
+the expensive work happens. A balanced pair of code paths is one a later author optimises away —
+the same preference as `P1-TSK-027`'s *the level is not a parameter*.
+
+Minting the identifier early is what that costs, and it is unremarkable rather than a concession:
+ADR-0013 makes identifiers application-minted, so one that is minted and discarded costs nothing.
+**Splitting `Credential.forPassword` back apart was refused** — `P1-TSK-007`'s gate removed that
+split precisely because a caller could pass parameters that did not produce the derivation.
+
+### The item's stated reason for that ordering is weaker than it reads, and the correction is recorded
+
+The backlog calls it an enumeration control. **A success answers `201` and a collision `422`, in one
+round trip** — already distinguishable, and necessarily so, because an endpoint that claims a name
+must say when the name is taken. Equal work is defence in depth here; `P1-TSK-006`'s real property
+is the narrower one it asserts, that a collision is indistinguishable from *any other refusal*.
+
+**The load-bearing reason is operational.** ~46 ms of CPU and ~19 MiB per derivation (ADR-0032) must
+not be paid while holding one of eight pooled connections (`P1-TSK-004`), or a registration flood
+becomes connection-timeout errors pointing at a database that is perfectly healthy.
+`theDerivationIsOutsideTheTransaction` is the only test that catches `prepare` being moved beside
+the insert it feeds — every other assertion still sees exactly one derivation.
+
+**And the debt row was updated rather than left**: this endpoint is now the same CPU-and-memory
+amplifier `POST /v1/authentications` is, and unlike that one it needs no existing account.
+
+### An Identity is no longer constructible without a credential
+
+The credential-less path is **removed**, not deprecated: leaving it would leave the defect reachable,
+and Phase 1 has no legitimate caller for it.
+
+### The fingerprint decision was kept, and its consequence is stated rather than inherited
+
+`canonicalForm` takes no password, asserted **structurally** — there is nothing to vary, so the only
+way to break the property is to change the signature, and a second *overload* is caught too.
+
+The consequence, now written down and asserted behaviourally: **a retry with the same key and a
+different password replays** rather than being refused as an `INV-IDEM-03` conflict. That reads as a
+weakening and is the right trade — the alternative stores an offline-crackable derivation of every
+registration password for the life of the record (`INV-IDN-01`) — and the residual is bounded by the
+empty response body, so a caller who changed the password learns only that the request succeeded.
+
+### A short password is a 422, which is the opposite of authentication's answer
+
+There a short password is an ordinary authentication failure, because a second response shape is an
+enumeration risk. Here it is a value the caller **chose** and must be able to correct, and the
+refusal is decided before any lookup, so it discloses nothing about any account.
+
+**`@Size` could not express it.** Bean Validation cannot see inside `Sensitive`, and a constraint
+that unwrapped it would put a plaintext in `app` — which `SecretsAreUnwrappedInOnePlaceTest` would
+fail the build over, correctly. So `RegistrationService` maps `RawPassword`'s refusal, writing the
+client detail rather than passing the exception's message on, so a future change to that message
+cannot become a change to what a stranger is told.
+
+### The leak sweep covers every table in every schema
+
+`P1-TSK-007` proved the credential row does not hold the plaintext. What this task adds is a password
+crossing an **HTTP boundary** into an idempotency record, an audit record and an outbox row — three
+sinks credential storage never touched, two of which reach systems with different access control
+(`INV-AUD-02`). The table and column lists are derived from `information_schema`, so a table added
+in Phase 2 is swept without anyone remembering.
+
+### The mutation harness reported seven proofs it had never measured
+
+**The most instructive failure of this task, and again it was in the machinery rather than the
+work.** The harness invoked `./gradlew.bat`, which cmd answers *"'.' is not recognized"* with exit
+1 — so every mutation read as `CAUGHT` against a build that had never run. `P1-TSK-027`'s finding in
+a new disguise, and found the same way: by asking **why** a mutation was caught rather than trusting
+the verdict.
+
+The harness now asserts the build actually started, and prints the test that failed. All seven were
+re-run, and **two were rewritten** because the corrected harness showed they were caught by
+**compilation** rather than by an assertion — removing the `prepare` call does not compile, and
+changing `canonicalForm`'s signature breaks its callers. Neither proved anything about the assertion
+it was aimed at. Restated as a `prepare` wrapped in a transaction and a second `canonicalForm`
+overload, both compile and both are caught by the intended test.
+
+### The completion gate found two claims nothing asserted, and one probe of mine that was wrong
+
+**The credential identifier was put into the audit change summary and the event payload, and
+nothing looked at either.** An investigator asking *which credential did this registration produce?*
+should read one row rather than join by timestamp — and a summary that silently stopped naming it
+would read exactly like one that never did. Asserted as the **property** rather than as a rendering,
+because a free-text summary is searched by substring and never by equality; that is `P1-TSK-027`'s
+finding, where a test pinned a rendering and the test was the thing that was wrong. Both mutations
+are caught.
+
+**No password shape produces a 500**, driven over real HTTP across eleven shapes — the probe
+`P1-TSK-010`'s gate established for authentication, applied to the endpoint that just gained a
+secret. Two are decided by **different mechanisms** and both are now pinned: a number is *coerced*
+and succeeds, while an object never reaches the deserialiser at all, so it is a `400` rather than a
+`422`.
+
+**And the coercion is now asserted to be symmetric across the two endpoints**, which nothing had
+checked because until this task there was no registration secret to be asymmetric with. The failure
+it forecloses is a customer who registers successfully and can never log in — the exact state this
+task exists to close, arriving through a different door.
+
+### The gate's own first probe was wrong, and finding that out is the point of running one
+
+It reported that a password containing a NUL, a newline or a tab is refused with `400`. It is not:
+**the Java source held real control characters**, so the request body was invalid JSON and every
+answer was about the document rather than about the password. That is `P1-TSK-016`'s finding
+reproduced by me, and Java's lexer makes it awkward to avoid — `\uXXXX` is processed *before* string
+escapes, so the obvious spelling does not mean what it reads as.
+
+**Recorded rather than worked around**, on that task's own reasoning: what HTTP can drive is
+asserted, and the character-level question belongs to the domain type rather than to the boundary.
+The claim it would have supported is unnecessary anyway — the plaintext is never persisted, only an
+ASCII Argon2 encoding of it, and both endpoints share one DTO, one deserialiser and one
+`RawPassword`, so anything registrable is authenticatable by construction.
+
+**Eleven mutations, all caught.** One of them, an unwrapped `Sensitive<String>` on the DTO, is
+recorded as caught by **compilation** rather than by `secretsAreWrapped` — so a second, compiling
+mutation was written to prove the rule actually covers this type, and it fires.
+
+860 hermetic tests, 438 database tests.
+
+### Previously
 
 **`P1-TSK-025` — the `architectureTest` tier runs none of the `@ArchTest` rules** — `COMPLETE`
 (2026-09-08).
@@ -3386,6 +3531,32 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Registration takes a credential (2026-09-08), `P1-TSK-026`:
+- **A person who registers can now log in.** `P1-TSK-006` left an Identity that could never
+  authenticate, recorded as its own remainder because `P1-TSK-007` had not landed
+- **Asserted end to end**: register over HTTP, authenticate over HTTP with that password, use the
+  token on `GET /v1/sessions` - nothing inserted by the test, with a fabricated password as the
+  negative control. *"A credential row exists"* would have passed against one stored under the wrong
+  identity or a status nothing can verify, which the `SUPERSEDED` mutation proves
+- **The derivation is structurally unconditional**: `prepare` mints the identifier and derives,
+  `create` takes the result, and the second cannot be called without the first - so no database
+  outcome decides whether the expensive work happens
+- **The item's stated reason for that was corrected rather than repeated.** A `201` and a `422` are
+  already distinguishable, necessarily; equal work is defence in depth. **The load-bearing reason is
+  operational** - ~46 ms and ~19 MiB must not be paid holding one of eight pooled connections
+- **An Identity is no longer constructible without a credential** - the path is removed, not
+  deprecated
+- **The password stays out of the request fingerprint**, asserted structurally because there is
+  nothing to vary, with the consequence written down: a retry with a different password **replays**
+  rather than conflicting, because the alternative stores a crackable derivation for ever
+- **A short password is a `422`** - the opposite of authentication's answer, and for a stated reason:
+  the caller chose this value and must be able to correct it. `@Size` cannot express it, because
+  Bean Validation cannot see inside `Sensitive` and unwrapping would put a plaintext in `app`
+- **The leak sweep covers every table in every schema**, derived from `information_schema`: the new
+  sinks are the idempotency record, the audit record and the outbox row
+- **The contract diff is two lines and BREAKING**, accepted on ADR-0015 - nothing consumes this API,
+  and the alternative is a `/v2` for a version that was never usable
+
 The architecture tier runs the architecture rules (2026-09-08), `P1-TSK-025`:
 - **The rules were not missing from the tier - they were in the wrong one.** `unitTest` selects by
   *exclusion* and took all **28** untagged `@ArchTest` fields; `architectureTest` selects by
@@ -4545,7 +4716,7 @@ carries, what triggers paying it down, and the owning phase.
 | ~~**Connection-pool sizing is not reasoned about across instances.**~~ - **closed 2026-09-04** by `P1-TSK-004`. The relationship `instances x pool <= max_connections - reserved` is declared as configuration and enforced by `ConnectionPoolSizingGuard` at startup, with the shipped numbers additionally checked in the build. **The obvious repair - divide `max_connections` by the instance count - is the wrong one**: that treats the limit as a budget to spend when it is a ceiling not to hit, and PostgreSQL throughput stops improving once the cores are busy, after which extra connections queue *inside* the database where the queueing is invisible. The pool is sized small for throughput and the fleet check is a separate question asked afterwards. `DISTRIBUTED_EXECUTION.md` §4a. | - | - | - | - |
 | ~~**`@ArchTest` rules do not run in the `architectureTest` tier.**~~ - **closed 2026-09-08** by `P1-TSK-025`, and the defect was worse than this row described: the rules were not missing from the tier, they were **in the wrong one**. `unitTest` selects by *exclusion*, so it took all **28** untagged rule fields; `architectureTest` selects by *inclusion* and got none - and `ModuleBoundaryRulesTest`, which has no `@Test` method at all, produced **no result file** there: not a suite that ran zero cases, a suite that did not appear. **Root cause established by disassembling the engine**: `AbstractArchUnitTestDescriptor.findTagsOn` loads exactly one annotation, `com.tngtech.archunit.junit.ArchTag`, and cannot see JUnit's `@Tag`. Fixed with `@ArchTag` beside `@Tag` on all seven suites. **No existing guard could see it because the partition check asserts a SUM, and the sum was right** - every rule was in exactly one tier. | - | - | - | - |
 | **No per-source rate limiting.** Lockout bounds *guessing* per identity; nothing bounds the *volume* one source can generate | **Building it now would be harmful, not merely premature.** `SYSTEM_ARCHITECTURE.md` §Multi-Instance Execution commits to N replicas behind a load balancer, so `getRemoteAddr()` is the balancer: every user shares one bucket, the threshold is reached in seconds, and authentication goes down for everyone. `X-Forwarded-For` is caller-supplied and ADR-0034 settled that such values are not trusted; no trusted-proxy configuration exists. The missing input is a deployment topology, not effort (`P1-TSK-011`) | **Resource exhaustion, and it is the platform's most expensive unauthenticated operation**: ADR-0032 makes each attempt cost ~46 ms and ~19 MiB *by design*, so the work factor protecting a stolen credential store is the one an attacker spends for free. Ten concurrent attempts is ~190 MiB on one instance. `INV-IDN-07` still holds - every response is identical, so flooding discloses nothing - and lockout now bounds what an attacker learns, though not what they cost. Bounded today only by the fact that nothing is deployed | A deployment topology and a trusted-proxy declaration | Phase 15 |
-| **`POST /v1/registrations` is unauthenticated and unthrottled.** Anyone who can reach the port can create Parties, Customers and Identities without limit | There is no rate-limiting mechanism anywhere on the platform. `P1-TSK-011` builds one for **authentication** - failure counting and lockout keyed on an identity - and none of that applies to an endpoint whose whole point is that no identity exists yet. Building a second, differently-shaped mechanism here before that one exists would be designing the general case from one example | **Resource exhaustion, not disclosure.** Every response is identical whatever is sent, so flooding discloses nothing (`INV-IDN-07` holds); what it does is fill three tables and the outbox. The idempotency key does not help - a flooder simply generates a fresh one. Bounded today only by the fact that nothing is deployed | `P1-TSK-011` landing, which is when a throttling mechanism exists to extend rather than invent | Phase 1 |
+| **`POST /v1/registrations` is unauthenticated and unthrottled.** Anyone who can reach the port can create Parties, Customers and Identities without limit | There is no rate-limiting mechanism anywhere on the platform. `P1-TSK-011` builds one for **authentication** - failure counting and lockout keyed on an identity - and none of that applies to an endpoint whose whole point is that no identity exists yet. Building a second, differently-shaped mechanism here before that one exists would be designing the general case from one example | **Resource exhaustion, not disclosure - and `P1-TSK-026` made it materially worse, which is recorded rather than left for somebody to notice.** Every response is still identical whatever is sent, so flooding discloses nothing (`INV-IDN-07` holds). What changed is the cost: a required password means **every** request now performs an Argon2id derivation, ~46 ms of CPU and ~19 MiB, *before* anything can refuse it (ADR-0032) - so this endpoint has become the same CPU-and-memory amplifier `POST /v1/authentications` already is, and unlike that one it needs no existing account. It also still fills three tables and the outbox, and the idempotency key does not help since a flooder generates a fresh one. Bounded today only by the fact that nothing is deployed | `P1-TSK-011` landing, which is when a throttling mechanism exists to extend rather than invent | Phase 1 |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
 
 None of these is financial-correctness debt.
@@ -4593,27 +4764,31 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-026` — Registration takes a credential.** **High risk**, and the sharpest open item.
+**`P1-TSK-028` — The two administrative endpoints.** **High risk**.
 
-`POST /v1/registrations` creates a Party, a Customer and an Identity and **no credential**, so a
-registered Identity can never authenticate. `P1-TSK-006` recorded this as its own remainder rather
-than an oversight: its declared dependency `P1-TSK-007` was `TODO` at the time.
+`POST /v1/identities/{id}/suspension` and `POST /v1/identities/{id}/roles` are the **only two
+endpoints in the phase that carry `@RequiresPermission`**, and `P1-TSK-020` found that no task owned
+either — the sixth backlog defect of that class in Phase 1. Until they exist, the annotation has no
+production caller, `identity.IdentitySuspended` and `identity.IdentityRoleAssigned` are declared
+unemitted in `AuditCompletenessTest`, and the role→permission mapping cannot be meaningfully
+mutated because there is exactly one role.
 
-**It is a `BREAKING` change to a published `/v1` contract** — a required `password` on the platform's
-first endpoint — and that is why it was recorded rather than deferred quietly. Nothing consumes the
-API, so the classifier's label is reviewed and accepted rather than versioned around (ADR-0015).
+**They were recorded rather than invented alongside the annotation**, and that reasoning stands: an
+admin endpoint added to give a guard something to point at is a **security surface chosen to suit a
+test** (`P1-TSK-018`'s precedent for shipping `@RequiresAssurance` with a probe endpoint).
 
-**The credential stays out of the request fingerprint**, and that is not incidental:
-`request_fingerprint` is a durable single-round SHA-256, so hashing a body containing a password
-would store an offline-crackable derivation of it — `INV-IDN-01` violated by the idempotency
-mechanism itself (`P1-TSK-006`).
+**Both are actions taken against somebody else's account**, which is why they are the two actions in
+the catalogue that `requiresReason()` — and why this is the module where an insider with a
+legitimate permission does the most damage.
 
-Then `P1-TSK-028`, `P1-TSK-030`, and `P1-DOC-002` re-runs the gate.
+Then `P1-TSK-030` (`GET /v1/me`, `PATCH /v1/me` — owned by nobody until `P1-DOC-001` found them),
+and `P1-DOC-002` re-runs the gate.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-08 | **`P1-TSK-026` complete - a person who registers can now log in.** `POST /v1/registrations` takes a required `password`, derives it **before** the transaction opens, and writes the credential in the same commit as the Party, the Customer and the Identity - closing the bootstrap gap `P1-TSK-006` recorded against itself, where `POST /v1/me/credential` needed a session, a session needed authentication, and authentication needed a credential. **The headline is asserted end to end, because the defect being closed was a gap between two halves that each worked**: `P1-TSK-006` created an Identity that could never authenticate and **every suite passed**, since each half was tested against its own fixture - the same shape `P1-TSK-027` met one layer up. So *“a credential row exists”* is deliberately **not** the assertion; the test registers over HTTP, logs in over HTTP with the password it registered, and opens `GET /v1/sessions` with the token that comes back, with nothing inserted by the test and a fabricated password as the negative control. That a row assertion would not have been enough is **proven** rather than argued: the mutation storing the credential `SUPERSEDED` leaves the row present and every row-counting assertion satisfied. **The derivation is structurally unconditional rather than balanced**: `IdentityRegistration.prepare` mints the `IdentityId` and derives, `create` takes the result, and the second cannot be called without the first - so no database outcome can decide whether the expensive work happens, where a balanced pair of code paths is one a later author optimises away. Minting the identifier early is what that costs and is unremarkable under ADR-0013; **splitting `Credential.forPassword` back apart was refused**, because `P1-TSK-007`'s gate removed that split precisely so a caller could not pass parameters that did not produce the derivation. **The item's stated reason for the ordering is weaker than it reads, and the correction is recorded rather than repeated**: a success answers `201` and a collision `422` in one round trip, so the two are *already* distinguishable and necessarily so - an endpoint that claims a name must say when the name is taken - which makes equal work defence in depth here rather than the control. **The load-bearing reason is operational**: ~46 ms of CPU and ~19 MiB per derivation (ADR-0032) must not be paid while holding one of eight pooled connections (`P1-TSK-004`), or a registration flood becomes connection-timeout errors pointing at a database that is perfectly healthy - and `theDerivationIsOutsideTheTransaction` is the **only** test that catches `prepare` being moved beside the insert it feeds, since every other assertion still sees exactly one derivation. **The debt row was updated rather than left**: this endpoint is now the same CPU-and-memory amplifier `POST /v1/authentications` is, and unlike that one it needs no existing account. **An Identity is no longer constructible without a credential** - the path is removed rather than deprecated, because leaving it would leave the defect reachable. **The fingerprint decision was kept and its consequence stated**: `canonicalForm` takes no password, asserted **structurally** because there is nothing to vary - the only way to break it is to change the signature, and a second *overload* is caught too - and the consequence is now written down and asserted behaviourally, that **a retry with the same key and a different password replays** rather than being refused as an `INV-IDEM-03` conflict. That reads as a weakening and is the right trade, since the alternative stores an offline-crackable derivation of every registration password for the life of the record (`INV-IDN-01`), with the residual bounded by the empty response body. **A short password is a `422`, which is the opposite of authentication's answer and deliberately so**: there a short password is an ordinary failure because a second response shape is an enumeration risk, while here it is a value the caller **chose** and must be able to correct, decided before any lookup. `@Size` could not express it - Bean Validation cannot see inside `Sensitive`, and a constraint that unwrapped it would put a plaintext in `app` and fail `SecretsAreUnwrappedInOnePlaceTest`, correctly - so the service maps `RawPassword`'s refusal and writes the client detail itself rather than passing the exception's message on. **The leak sweep covers every table in every schema**, derived from `information_schema`: `P1-TSK-007` proved the credential row is clean, and what this task adds is a password crossing an HTTP boundary into an idempotency record, an audit record and an outbox row - three sinks credential storage never touched, two of which reach systems with different access control. **And the mutation harness reported seven proofs it had never measured**, which is the most instructive failure here and again sits in the machinery rather than the work: it invoked `./gradlew.bat`, which cmd answers *“'.' is not recognized”* with exit 1, so every mutation read as `CAUGHT` against a build that had never run - `P1-TSK-027`'s finding in a new disguise, found the same way, by asking **why** a mutation was caught rather than trusting the verdict. The harness now asserts the build actually started and names the failing test; all seven were re-run and **two were rewritten**, because the corrected harness showed they were caught by **compilation** rather than by an assertion and so proved nothing about the test they were aimed at. **Eleven mutations, all caught** - four added by the completion gate, which found two claims nothing asserted (the credential identifier in the audit change summary and in the event payload) and drove eleven request shapes to prove none produces a 500, pinning the two decided by *different* mechanisms: a number is coerced and succeeds, an object never reaches the deserialiser and is a `400`. The gate also asserted that coercion is **symmetric across both endpoints**, which nothing had checked because until now there was no registration secret to be asymmetric with - it forecloses a customer who registers successfully and can never log in, this task's own failure arriving through another door. **And the gate's own first probe was wrong, which is what running one is for**: it reported a `400` for control characters in a password, when the **Java source held real control characters** so the body was invalid JSON and every answer was about the document rather than about the password - `P1-TSK-016`'s finding reproduced by me, since Java processes a unicode escape *before* string escapes. Recorded rather than worked around, and the claim is unnecessary anyway: the plaintext is never persisted, only an ASCII Argon2 encoding of it, and both endpoints share one DTO, one deserialiser and one `RawPassword`, so anything registrable is authenticatable by construction. One mutation is recorded as caught by **compilation** rather than by `secretsAreWrapped`, so a second compiling one was written to prove the rule covers this type. 860 hermetic tests, 438 database tests. |
 | 2026-09-08 | **`P1-TSK-025` complete - the architecture tier now runs the architecture rules.** **The finding is worse than the backlog recorded, and it was measured rather than inferred**: the `@ArchTest` rules were not *missing* from `architectureTest`, they were **running in the wrong tier**. `unitTest` selects by *exclusion* and therefore took all **28** untagged rule fields, while `architectureTest` selects by *inclusion* and got none - and `ModuleBoundaryRulesTest`, which has no `@Test` method at all, produced **no result file** in the architecture tier: not a suite reporting zero cases, a suite that did not appear. That is the oldest rule suite in this repository, the one enforcing `app → platform → sharedkernel`, so `./gradlew architectureTest` told a developer the architecture was fine having checked none of its eight boundary rules. **Root cause established by disassembling the engine rather than reading documentation**: `javap` on `AbstractArchUnitTestDescriptor.findTagsOn` shows it loads exactly one annotation - `com.tngtech.archunit.junit.ArchTag` - so JUnit's `@Tag` is invisible to ArchUnit's engine and every rule field carried no tag at all. Fixed with `@ArchTag` beside `@Tag` on all seven `@AnalyzeClasses` suites, which is ArchUnit's own mechanism for this and was never used here because nobody had asked what its engine does with a tag. **Why no guard saw it, and this is the part worth keeping**: `theTiersPartitionTheHermeticSuite` asserts a **sum**, and the sum was right - every rule was in exactly one tier. **A check on a total cannot see a misallocation that preserves the total**, which is `P1-TSK-024`'s unreadable register rows and `P0-TST-008`'s rule that could not fail, arriving once more. **The new guard states the property rather than the fix**: for every `@AnalyzeClasses` class the `@Tag` and `@ArchTag` value sets must be **equal** - *both engines must agree which tier this class is in*. Its limit is recorded rather than left to be discovered: it does not assert that ArchUnit reads `ArchTag`, because that is a fact about a dependency and checking it would mean disassembling one on every build - so if ArchUnit ever read `@Tag` the guard would demand an annotation that had become unnecessary, **which is the direction to err in**, a false requirement being a build failure somebody investigates and a false pass being silence (`P0-TSK-026`'s reasoning). **A strictly better guard was investigated and rejected on a measured fact**: discovering with `includeTags("architecture")` through the JUnit Platform Launcher is the property itself, but `junit-platform-launcher` is **not on `testRuntimeClasspath`** - Gradle injects it into the worker - so it would need a new dependency plus verification-metadata and lockfile regeneration, which is disproportionate for a Low-risk `Cx: S` item (`EXECUTION_PROTOCOL` rule 4). **The acceptance criterion was proven by performing it**: with a `double` planted in production code, `./gradlew :app:architectureTest` exited **0** before the fix and **1** after - the same planted code, the same command - and `:app:test` failed it in both, which is why enforcement was never actually lost. `architectureTest` goes 97 → 126 cases and `unitTest` 184 → 156; **`test` moves only by the one new guard**, which is itself the check that nothing but tier attribution changed. **Two mutations, both caught.** 859 hermetic tests, 426 database tests. |
 | 2026-09-08 | **`P1-TSK-029` complete - exit criterion 6 closes, and with it the second of `P1-DOC-001`'s two failures.** Four meters added and five instruments registered - `finapp.identity.mfa.challenge`, `session.lifetime`, `recovery.initiation`, `recovery.completion` and `session.active` - so all six the plan names now exist. **The deliverable is the guard rather than the meters**: `PlannedMetersExistTest` reads the plan's own §10 table and asserts every meter it names is in the live registry, bidirectionally, so a meter renamed and a plan naming one nobody built both fail the build - which turns criterion 6 from a check somebody performs once at a gate into one the build performs. The phase is **derived** from this document, so Phase 2 needs no edit. **The blocking finding: three of the four planned names could not be registered at all.** `mfa_challenge`, `session_lifetime` and `active_sessions` carry **underscores**, which `MetricNames.NAME` forbids - so the plan asserted something the platform's own convention rejects, the eighth drift of this class in the phase. The convention wins and the correction is **free**: Micrometer translates a name to the backend's idiom, so `finapp.identity.mfa.challenge` and `finapp.identity.mfa_challenge` produce the identical Prometheus series, and the dotted form additionally keeps siblings sorting together. **The worse finding is that the meters counted as EXISTING did not exist until the flow had run.** `MeterRegistry.counter(name, tags)` creates the meter on the first call, and every counter in the platform was written that way - so a freshly started instance published **no series at all** for authentication, lockout or registration, and an alert on `rate(finapp_identity_lockout_total[5m])` had nothing to evaluate at precisely the moment it was needed. A counter that starts existing when the thing it counts happens is a delayed notification, not monitoring. So criterion 6 was worse than the review found: not *“two of six exist”* but *“two of six exist once the flow has run”*. Every counter is registered at construction now, one per outcome value, and the guard boots a context and runs **nothing** - so it can only pass against that. **Recovery is two meters rather than one tagged by `stage`**, because `stage` is not in `ALLOWED_TAG_KEYS`: widening it was available and **refused**, since the list exists to make such an addition an explicit decision rather than an autocomplete and a naming exists that needs none - using `type` for a stage would be the dishonest rename declined for `sharedSecret` and `ACTIVE_CREDENTIAL_OF`. It also makes *“recovery initiation rate”* one series rather than a filtered sum. **And the initiation counter distinguishes what the `202` deliberately hides**, which is correct rather than a leak: a metric is never visible to the caller, so a rise in `refused` is somebody walking a list of identifiers - the ATO signal in its sharpest form. **`session.active` counts LIVE sessions rather than `ACTIVE` ones**, and that is the sharpest modelling point: with no `EXPIRED` status and no sweep (ADR-0030, `P1-TSK-013`), `status = 'ACTIVE'` counts sessions nobody can use - wrong in the **reassuring** direction, reporting live customers indefinitely. It uses `findLive`'s own predicate so the gauge and the lookup cannot disagree, reads the database rather than a per-instance counter, and reports **`NaN` when unreadable, never zero** - a zero says *nobody is logged in* at the moment nothing can be known. Every replica reports the same fleet-wide figure, so the panel uses `max()`. **`session.lifetime` measures one population and says so**: expired sessions cannot appear by construction, bulk revocation is one decision rather than forty correlated samples, and supersession is a replacement rather than an ending. Feeding it changed one method instead of adding a query - `SessionStore.revokeOwned` returns the lifetime its own conditional `UPDATE` computes, and the boolean it used to return is `isPresent()` - because reading the session first would add a query to a security-critical operation purely to feed a metric, and **monitoring must not change the shape of the thing it monitors**. **Three guards refused the new code and all three were right.** `INV-MON-01` caught Micrometer's `ToDoubleFunction`; the exemption set grew from two to four with the argument recorded that they are the **same case** rather than a new one, and the count stays a `long` to the registry boundary because *that* half was avoidable. `TestTaxonomyTest` placed the gauge's unit test in the database tier - correctly, since it cannot tell a reflective proxy from a pool - and the answer was a **design improvement rather than a tag**: `IdentityMetrics` takes a connection source now, `OutboxBacklog`'s shape. And `DashboardQueriesResolveTest` caught the new panel querying `finapp_identity_session_lifetime_seconds_bucket`, which a `Timer` does not publish without `publishPercentileHistogram()` - exactly the *renders “No data” and looks like a quiet system* defect it was written for after `baseUnit("events")`. **Both gate failures are now closed**, and the phase stays `IN_PROGRESS` until the review is re-run, which is `P1-DOC-002`: a phase becomes `COMPLETE` when a review says so, never because its remediation landed. **Seven mutations, all caught.** 858 hermetic tests, 426 database tests. |
 | 2026-09-08 | **`P1-TSK-027` complete - M1.2 closes, and exit criterion 1 closes with it.** A login now issues a session: `POST /v1/authentications` answers **201 with the session** rather than 204 with nothing, issued inside the authentication transaction and inside the **same security scope** as the success audit record - so a session that exists always has the record of the login that produced it, and a rolled-back login leaves neither. **The property was verified the way the failure demanded, and the obvious check would not have done.** `P1-DOC-001`'s finding was never *“no session row is written”* - it was that **a real client could not obtain one while the test suite could**, because every suite exercising the eight endpoints marked `Auth: session` inserted a session row directly, which is exactly why the gap survived twenty-four tasks. So a test asserting that a token came back would have repeated the same blindness one layer up: `aLoginProducesAUsableSession` **uses** the token on `GET /v1/sessions` over real HTTP with nothing inserted, and `aFabricatedTokenOpensNothing` is its negative control, without which an interceptor that admitted everything would satisfy the headline assertion perfectly. **A session IS issued when a second factor is enrolled, and the strict-looking answer is the wrong one**: withholding one until MFA completes reads as safer and makes **step-up unreachable**, because `MfaChallenge.elevate` takes a *current* session - the same shape of defect as the one this task closes, two mechanisms that each work and are not joined. Assurance being a **level** rather than a boolean (ADR-0030) is what makes the composition safe, and it is asserted rather than argued: the login's session opens `GET /v1/sessions` and is **refused** by a handler requiring `MULTI_FACTOR`. The response is also byte-comparable whether or not MFA is enrolled, because a body gaining an `mfaRequired` flag would tell an attacker holding a stolen password what to attack next (`INV-IDN-07`). **The level is not a parameter**, which is stronger than every caller passing the right one: `SessionIssue` hard-codes `PASSWORD`, and a caller able to ask for `MULTI_FACTOR` would have found the bypass `INV-IDN-05` exists to prevent. **One audit record, not two** - the session identifier goes into `AUTHENTICATION_SUCCEEDED`'s change summary rather than becoming a second `SESSION_ISSUED` row: one economic event, one entry, and an investigator reads *“this login produced session X”* instead of joining two rows by timestamp. **`MfaBypassPathsAreEnumeratedTest` predicted this task by name and failed until it arrived** - its javadoc has said since `P1-TSK-019` that *“`P1-TSK-027` will add the second path and must come here and say so”*, and its standing claim that *“the only way a session comes into existence is a proven second factor”* is rewritten, because that read as strength and was in fact the defect. **The contract change is BREAKING and the backlog had called it additive**: removing `204` breaks a client written against it, the classifier said so, the diff was reviewed line by line, and it was accepted because nothing consumes this API and the alternative is a `/v2` for an endpoint whose first version was never usable (ADR-0015) - corrected in the backlog rather than quietly, since a plan mislabelling its own change is what the byte-for-byte comparison exists to catch. `produces = application/json` is declared explicitly, because springdoc publishes `*/*` without it - the defect `P1-TSK-016`'s gate found on the session endpoints. **The second `secretsAreWrapped` exemption arrived WITH its test**: `P1-TSK-018` added the first and its gate found the javadoc claiming a test that did not exist, and an exemption is a claim that a guard's subject is safe by other means - so imaginary means make it a hole with a paragraph in front of it. `AuthenticatedSessionTest` was written alongside the entry. **Two of my own tests were wrong, and the second bounds what can be tested at all.** The audit assertion **pinned a rendering** - it required `session=<bare uuid>` and the platform renders `SessionId(uuid)`, the convention across all five existing change summaries; the test was wrong, because an investigator searches a free-text summary by substring and never by equality, and the wrapped form additionally says which kind of identifier it is. And a **hostile `User-Agent` could not be driven at all**: the JDK's `HttpClient` refuses any header value outside printable ASCII, so the bidirectional override never left the client - recorded rather than worked around, because the character-level rule is `DeviceDescriptionTest`'s subject, reaching it needs raw bytes on a socket, and that is *why* the rule lives on the domain type rather than at the boundary. **And the most instructive failure of the task was in the machinery that checks the work, not in the work**: the mutation harness's plant-verification assertion fired correctly on a mutation that WRAPS its target rather than replacing it, the script exited on that assertion, and the restore was on the happy path only - so it left `sessions.insert` disabled in production code. Everything measured afterwards measured that: **seven failures across the full suite**, confirmed by three reproductions and a probe, and the reported symptom - *the audit record commits and the session row does not, in one transaction on one connection* - was impossible, which is what finally pointed at the harness. All three suites pass together against restored code, and **all ten mutation results were void and were re-run**: they had executed against a codebase that was red whatever the mutation did, so every CAUGHT was a coincidence. A harness that cannot leave the tree clean does not merely fail to prove things, it **manufactures proofs**. The restore is in a `finally` now, writing back the string read at the top so no backup file can be orphaned either - the seventh occurrence in this project of a mutation reporting something it did not measure, and the first where the harness broke the tree. `DeviceDescription.fromUserAgent` gets its first production caller, so `GET /v1/sessions` shows a person something they recognise rather than a column of nulls. **M1.2 closes two days after its last numbered task**: its acceptance names a session, and a milestone means its acceptance rather than its task count - the scope line named session issuance while the session tasks were numbered into M1.3. **Criterion 6 is now the only criterion failing**, so Phase 1 stays `IN_PROGRESS`; `P1-TSK-029` is the last thing between it and the gate. **Ten mutations, all caught** - and all ten re-run after the harness finding above. 851 hermetic tests, 418 database tests. |

@@ -1,6 +1,8 @@
 package com.finapp.app.registration;
 
+import com.finapp.identity.CredentialStore;
 import com.finapp.identity.IdentityRegistration;
+import com.finapp.identity.PasswordDeriver;
 import com.finapp.party.PartyRegistration;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.audit.JdbcAuditWriter;
@@ -83,13 +85,23 @@ class RegistrationBeans {
         return new PartyRegistration(ids, clock, auditWriter, outboxWriter);
     }
 
+    /**
+     * {@code credentialStore} and {@code passwordDeriver} are {@code AuthenticationBeans}' beans,
+     * injected rather than re-declared: a second {@code Argon2PasswordDeriver} would be a second
+     * set of cost factors, and {@code INV-IDN-02}'s whole point is that a credential records the
+     * parameters that produced it - two derivers means two answers to "what is current policy?"
+     * and an upgrade campaign that converges on neither.
+     */
     @Bean
     IdentityRegistration identityRegistration(
             IdGenerator ids,
             Clock clock,
             AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter) {
-        return new IdentityRegistration(ids, clock, auditWriter, outboxWriter);
+            OutboxWriter<Connection> outboxWriter,
+            CredentialStore<Connection> credentialStore,
+            PasswordDeriver passwordDeriver) {
+        return new IdentityRegistration(
+                ids, clock, auditWriter, outboxWriter, credentialStore, passwordDeriver);
     }
 
     /**

@@ -206,6 +206,12 @@ class CredentialReachesNoEmittedSinkTest {
                 .as("the schemas a secret is permitted in, named so that widening is visible")
                 .containsExactlyInAnyOrder(
                         "AuthenticationRequest",
+                        // P1-TSK-026 changed what this entry MEANS without changing the entry, and
+                        // that is worth recording rather than leaving as a silent reclassification.
+                        // It was here because the set is every schema REACHABLE from a request
+                        // body; it now carries a `password` as well. The set did not have to
+                        // change, so nothing would have prompted a reader to notice - which is the
+                        // "reads as reviewed and is not" shape this repository keeps meeting.
                         "RegistrationRequest",
                         // P1-TSK-017. Reachable from a request body, so it joins the set the moment
                         // it exists - which is the guard working rather than a hole opening. It

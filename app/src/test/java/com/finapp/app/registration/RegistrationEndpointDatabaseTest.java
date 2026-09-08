@@ -315,8 +315,23 @@ class RegistrationEndpointDatabaseTest {
         return post(body(login, displayName), key);
     }
 
+    /**
+     * Long enough for {@code RawPassword}, and deliberately unmistakable for a real one.
+     *
+     * <p>It is not varied per test: this suite is about the endpoint's behaviour, and the password
+     * is an input the endpoint treats identically in every case except the one that asserts it is
+     * bounded.
+     */
+    private static final String PASSWORD = "not-a-real-password";
+
     private static String body(String login, String displayName) {
-        return "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"" + displayName + "\"}";
+        return "{\"loginIdentifier\":\""
+                + login
+                + "\",\"displayName\":\""
+                + displayName
+                + "\",\"password\":\""
+                + PASSWORD
+                + "\"}";
     }
 
     private HttpResponse<String> post(String body, String key)

@@ -64,6 +64,15 @@ class RegistrationController {
      * version of this method published {@code "200": "OK"} for an endpoint that has never returned
      * 200. A generated client would have treated the real response as unexpected.
      *
+     * <h3>The required password is a {@code BREAKING} change, accepted</h3>
+     *
+     * <p>{@code P1-TSK-026} added a required {@code password}, which breaks any client written
+     * against the body this endpoint published first. The classifier says so, the diff was reviewed
+     * line by line, and it was accepted rather than versioned around: nothing consumes this API,
+     * and the alternative is a {@code /v2} for an endpoint whose first version was never usable -
+     * you could register and then never log in (ADR-0015, and {@code P1-TSK-027}'s precedent for
+     * the same judgement on {@code 204} to {@code 201}).
+     *
      * <p>{@link RequiresIdempotencyKey} makes the header mandatory, enforced by an interceptor
      * <strong>before this method is entered</strong>. Registration moves no money, so
      * {@code INV-IDEM-01}'s money-moving clause is vacuous here - and it is made idempotent anyway,

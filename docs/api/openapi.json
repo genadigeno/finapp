@@ -755,11 +755,15 @@
             "minLength": 3,
             "pattern": "[A-Za-z0-9._-]+",
             "type": "string"
+          },
+          "password": {
+            "type": "string"
           }
         },
         "required": [
           "displayName",
-          "loginIdentifier"
+          "loginIdentifier",
+          "password"
         ],
         "type": "object"
       },

@@ -1347,7 +1347,7 @@ repository exists to prevent.
   consistent; the dependency should be on the milestone that owns the credential. Same class of
   defect as `P0-TSK-004`'s unsatisfiable dependency and `P0-TST-009`'s spurious one — the third.
 
-**P1-TSK-026 — Registration takes a credential** — `TODO`
+**P1-TSK-026 — Registration takes a credential** — `COMPLETE` (2026-09-08)
 - Context: party / identity / api
 - Description: Extend `POST /v1/registrations` to accept and store a credential, closing the
   bootstrap gap `P1-TSK-006` left.
@@ -1363,7 +1363,74 @@ repository exists to prevent.
 - Tests: a registration produces exactly one active credential; the plaintext appears in no
   persisted or emitted representation; the fingerprint is unchanged by the password; timing is
   equivalent for an existing and an absent identifier.
-- Accept: all four; and the `openapi.json` diff labelled `BREAKING` with the decision recorded.
+- Accept: **all four met**, each demonstrated to fail by mutation.
+- **The headline is asserted end to end, because the defect being closed was a gap between two
+  halves that each worked.** `RegistrationCredentialDatabaseTest.aRegisteredPersonCanAuthenticate`
+  registers over HTTP, logs in over HTTP with the password it registered, and uses the returned
+  token on `GET /v1/sessions` — nothing inserted by the test. *"A credential row exists"* was
+  deliberately not the headline: it passes against a credential stored under the wrong identity, the
+  wrong algorithm, or a status nothing can verify (proven — the `SUPERSEDED` mutation).
+  `aFabricatedPasswordOpensNothing` is its negative control.
+- **The derivation is structurally unconditional, not balanced.** `IdentityRegistration.prepare`
+  mints the `IdentityId` and derives; `create` takes the result. **You cannot call the second
+  without having called the first**, so no database outcome can decide whether the work happens — a
+  balanced pair of code paths is one somebody later optimises away.
+- **The item's stated reason for that ordering is weaker than it reads, and the correction is
+  recorded rather than repeated.** A success answers `201` and a collision `422`, in one round trip,
+  so they are *already* distinguishable — necessarily, because an endpoint that claims a name must
+  say when the name is taken. Equal work is defence in depth here. **The load-bearing reason is
+  operational**: ~46 ms of CPU and ~19 MiB per derivation (ADR-0032) must not be paid while holding
+  one of eight pooled connections (`P1-TSK-004`), or a registration flood becomes connection
+  timeouts pointing at a healthy database. `theDerivationIsOutsideTheTransaction` asserts it, and it
+  is the only test that catches `prepare` being moved beside the insert it feeds.
+- **An Identity is no longer constructible without a credential.** The credential-less path is
+  removed rather than deprecated: leaving it would leave the defect reachable.
+- **The fingerprint decision was kept and its consequence stated.** `canonicalForm` takes no
+  password, asserted **structurally** — there is nothing to vary, so the only way to break the
+  property is to change the signature, and a second overload is caught too. The consequence, now
+  written down and asserted behaviourally: **a retry with the same key and a different password
+  replays** rather than being refused as an `INV-IDEM-03` conflict. That is the right trade — the
+  alternative stores an offline-crackable derivation of every registration password for the life of
+  the record — and the residual is bounded by the empty response body.
+- **A short password is a 422, which is the opposite of authentication's answer, deliberately.**
+  There a short password is an ordinary failure, because a second response shape is an enumeration
+  risk; here it is a value the caller **chose** and must be able to correct, and the refusal is
+  decided before any lookup. `@Size` could not express it — Bean Validation cannot see inside
+  `Sensitive`, and a constraint that unwrapped it would put a plaintext in `app` and fail
+  `SecretsAreUnwrappedInOnePlaceTest`, correctly — so `RegistrationService` maps `RawPassword`'s
+  refusal, writing the client detail rather than passing the exception's message on.
+- **The leak sweep covers every table in every schema, derived from `information_schema`.**
+  `P1-TSK-007` proved the credential row does not hold the plaintext; what this task adds is a
+  password crossing an HTTP boundary into an idempotency record, an audit record and an outbox row
+  — three sinks credential storage never touched, two of which reach systems with different access
+  control (`INV-AUD-02`).
+- **The contract diff is two lines and was reviewed**: `password` added to properties (COMPATIBLE)
+  and to `required` (BREAKING). Accepted on ADR-0015 and `P1-TSK-027`'s precedent — nothing consumes
+  this API, and the alternative is a `/v2` for an endpoint whose first version was never usable.
+- **The mutation harness reported seven proofs it had never measured**, and checking *why* each was
+  caught is what found it: it invoked `./gradlew.bat`, which cmd answers *"'.' is not recognized"*
+  with exit 1, so every mutation read as CAUGHT against a build that never ran. `P1-TSK-027`'s
+  finding in a new disguise. The harness now asserts the build actually started and names the test
+  that failed; all seven were re-run, and two were rewritten because they were caught by
+  **compilation** rather than by an assertion.
+- **The completion gate found two claims nothing asserted.** The credential identifier goes into the
+  audit change summary and the event payload, and nothing looked at either — asserted now as the
+  *property* (the identifier is findable) rather than as a rendering, which is `P1-TSK-027`'s
+  finding. And **no password shape produces a 500**, driven across eleven shapes, with the two
+  decided by *different* mechanisms pinned: a number is coerced and succeeds, an object never
+  reaches the deserialiser and is a `400`.
+- **The coercion is asserted symmetric across both endpoints**, which nothing had checked because
+  until now there was no registration secret to be asymmetric with. It forecloses a customer who
+  registers successfully and can never log in — this task's own failure, through another door.
+- **The gate's first probe was wrong, and finding that out is what running one is for.** It reported
+  a `400` for control characters in a password; the **Java source held real control characters**, so
+  the body was invalid JSON and every answer was about the document. `P1-TSK-016`'s finding,
+  reproduced by me — Java processes `\uXXXX` *before* string escapes. Recorded rather than worked
+  around, and the claim is unnecessary anyway: the plaintext is never persisted, and both endpoints
+  share one DTO, one deserialiser and one `RawPassword`.
+- **Eleven mutations, all caught** — four added by the gate. One is recorded as caught by
+  **compilation** rather than by `secretsAreWrapped`, so a second compiling mutation was written to
+  prove the rule covers this type. 860 hermetic, 438 database.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
 ## P1-EPIC-02 — Identity and Credentials

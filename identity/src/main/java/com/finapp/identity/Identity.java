@@ -80,10 +80,30 @@ public final class Identity {
     public static Identity create(
             IdGenerator ids, Clock clock, UUID partyId, LoginIdentifier loginIdentifier) {
         Objects.requireNonNull(ids, "ids must not be null");
+        return create(IdentityId.next(ids), clock, partyId, loginIdentifier);
+    }
+
+    /**
+     * Creates an Identity whose identifier the caller already holds.
+     *
+     * <p>Added by {@code P1-TSK-026}, and the reason is worth stating because "pass the id in" is
+     * otherwise an odd thing to want. Registration must derive the credential <strong>before the
+     * transaction opens</strong> - Argon2id costs ~46 ms of CPU and ~19 MiB by design (ADR-0032),
+     * and doing it while holding one of eight pooled connections turns a registration flood into
+     * connection-timeout errors that point at the database ({@code PasswordDeriver}, {@code
+     * P1-TSK-004}). A {@link Credential} records the identity it belongs to, so deriving early
+     * means minting the identifier early.
+     *
+     * <p>That is unremarkable here rather than a concession: ADR-0013 makes identifiers
+     * <em>application-minted</em> UUIDv7 values, so nothing is being borrowed from the database and
+     * an identifier that is minted and then discarded costs nothing.
+     */
+    public static Identity create(
+            IdentityId id, Clock clock, UUID partyId, LoginIdentifier loginIdentifier) {
+        Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
         Instant now = Instant.now(clock);
-        return new Identity(
-                IdentityId.next(ids), partyId, loginIdentifier, IdentityStatus.ACTIVE, now, now);
+        return new Identity(id, partyId, loginIdentifier, IdentityStatus.ACTIVE, now, now);
     }
 
     /** Reconstitutes from storage. Applies no transition rules: the row was already valid. */

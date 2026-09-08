@@ -3,8 +3,11 @@ package com.finapp.app.registration;
 import com.finapp.identity.IdentityRegistration;
 import com.finapp.identity.LoginIdentifier;
 import com.finapp.identity.LoginIdentifierAlreadyTakenException;
+import com.finapp.identity.RawPassword;
 import com.finapp.party.PartyName;
 import com.finapp.party.PartyRegistration;
+import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.idempotency.CommandResult;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotencyState;
@@ -12,6 +15,7 @@ import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.RequestFingerprint;
 import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.sharedkernel.security.Sensitive;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.Serial;
 import java.nio.charset.StandardCharsets;
@@ -142,9 +146,20 @@ public final class RegistrationService {
         // typed a capital letter differently still hashes to the same request.
         LoginIdentifier login = new LoginIdentifier(request.loginIdentifier());
         PartyName name = new PartyName(request.displayName());
+        RawPassword password = usablePassword(request.password());
 
         IdempotencyKey key = new IdempotencyKey(SCOPE, idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(canonicalForm(login, name));
+
+        // Before the transaction, and this is the ordering the whole design rests on. Argon2id
+        // costs ~46 ms of CPU and ~19 MiB by design (ADR-0032); doing it while holding one of
+        // eight pooled connections (P1-TSK-004) would turn a registration flood into
+        // connection-timeout errors pointing at a database that is perfectly healthy.
+        //
+        // It also makes the work equivalent for a successful and a refused registration, which is
+        // defence in depth rather than the control: a 201 and a 422 are already distinguishable,
+        // and necessarily so, because a registration endpoint must tell you the name is taken.
+        IdentityRegistration.Enrolment enrolment = identityRegistration.prepare(password);
 
         Outcome outcome;
         // The platform is acting, because the caller is unauthenticated and there is nobody else
@@ -161,7 +176,9 @@ public final class RegistrationService {
                                                     unitOfWork,
                                                     key,
                                                     fingerprint,
-                                                    uow -> registerOnce(uow, login, name));
+                                                    uow ->
+                                                            registerOnce(
+                                                                    uow, enrolment, login, name));
                                     return outcomeOf(executed);
                                 } finally {
                                     // A no-op for a transaction-bound connection, and the correct
@@ -185,7 +202,10 @@ public final class RegistrationService {
      * three outbox rows, all committing with the idempotency record that says it happened.
      */
     private CommandResult registerOnce(
-            Connection unitOfWork, LoginIdentifier login, PartyName name) {
+            Connection unitOfWork,
+            IdentityRegistration.Enrolment enrolment,
+            LoginIdentifier login,
+            PartyName name) {
 
         PartyRegistration.AuditSubject subject =
                 new PartyRegistration.AuditSubject(
@@ -196,7 +216,7 @@ public final class RegistrationService {
                 PartyRegistration.RegisteredParty registered =
                         partyRegistration.register(unitOfWork, name, subject);
                 identityRegistration.create(
-                        unitOfWork, registered.party().id().value(), login);
+                        unitOfWork, enrolment, registered.party().id().value(), login);
                 unitOfWork.releaseSavepoint(beforeEffect);
                 return CommandResult.succeeded(StoredResponse.empty());
             } catch (LoginIdentifierAlreadyTakenException taken) {
@@ -217,18 +237,60 @@ public final class RegistrationService {
     }
 
     /**
+     * Turns the request's secret into the domain type, or refuses the request.
+     *
+     * <p>{@code RawPassword} bounds length as a denial-of-service control, and its refusal must
+     * reach the caller as {@code api.ValidationFailed} rather than as an {@code
+     * IllegalArgumentException} rendered {@code api.InternalError} - our fault reported for their
+     * input, which {@code ERROR_CONTRACT.md} §3 forbids and which a client may retry for ever. The
+     * annotation that would normally do this cannot: Bean Validation cannot see inside {@code
+     * Sensitive}, and a constraint that unwrapped it would put a plaintext in {@code app}.
+     *
+     * <p><strong>The exception's message is not passed on, and nothing here is logged.</strong> It
+     * names the bounds and never the value (asserted by {@code P1-TSK-009}), but the client detail
+     * is written here rather than inherited, so a future change to that message cannot become a
+     * change to what a stranger is told.
+     *
+     * <p>This is the one unwrap-adjacent line in {@code app} on this path, and it is immediately
+     * re-wrapped by {@code RawPassword} - the same shape, and the same reasoning, as {@code
+     * AuthenticationService.verify}.
+     */
+    private static RawPassword usablePassword(Sensitive<String> secret) {
+        try {
+            return new RawPassword(secret);
+        } catch (IllegalArgumentException notAUsablePassword) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "Registration rejected: the password is outside the accepted length",
+                    "password must be between "
+                            + RawPassword.MIN_LENGTH
+                            + " and "
+                            + RawPassword.MAX_LENGTH
+                            + " characters");
+        }
+    }
+
+    /**
      * What the idempotency mechanism compares two requests by.
      *
      * <p>The semantically significant fields and nothing else: a length prefix on each so that
      * {@code ("ab", "c")} and {@code ("a", "bc")} cannot hash alike, which is the whole point of a
      * canonical form.
      *
-     * <p>There is deliberately no credential here, and there will not be one when
-     * {@code P1-TSK-007} lands. {@code RequestFingerprint} is a single-round SHA-256 and
+     * <p><strong>There is deliberately no credential here, and {@code P1-TSK-026} kept it that way
+     * rather than inheriting the decision.</strong> {@code RequestFingerprint} is a single-round
+     * SHA-256 and
      * {@code idempotency_record.request_fingerprint} is durable, so hashing a body containing a
      * password would store an offline-crackable derivation of it - {@code INV-IDN-01} violated by
      * the idempotency mechanism. {@code RequestFingerprint} leaves the choice of significant fields
      * to the command precisely so a command can make this decision; this is it being made.
+     *
+     * <p>The consequence is stated rather than left to be discovered: <strong>a retry carrying the
+     * same key and a <em>different</em> password replays the original outcome</strong> instead of
+     * being refused as a fingerprint conflict ({@code INV-IDEM-03}). That is the right trade -
+     * the alternative stores an offline-crackable derivation of a password for ever - and the
+     * residual is bounded by the empty response body ({@code P1-TSK-006}), so a caller who changed
+     * the password learns only that the request succeeded.
      */
     static byte[] canonicalForm(LoginIdentifier login, PartyName name) {
         String canonical =

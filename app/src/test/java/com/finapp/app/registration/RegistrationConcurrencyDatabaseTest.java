@@ -239,7 +239,7 @@ class RegistrationConcurrencyDatabaseTest {
                                                 + login
                                                 + "\",\"displayName\":\""
                                                 + displayName
-                                                + "\"}"))
+                                                + "\",\"password\":\"not-a-real-password\"}"))
                         .build();
         try (HttpClient client =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
