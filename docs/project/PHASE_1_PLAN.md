@@ -238,6 +238,7 @@ All under `/v1` (ADR-0015). Every error is an RFC 9457 problem detail (`ERROR_CO
 | `POST /v1/recoveries` | none | Enumeration-safe; always the same response |
 | `POST /v1/recoveries/{id}/completion` | recovery token | Single use |
 | `POST /v1/identities/{id}/suspension` | session, admin role | Privileged; audited |
+| `DELETE /v1/identities/{id}/suspension` | session, admin role | Privileged; audited. Declared by `P1-TSK-032`, not the original plan: suspension shipped as a one-way door |
 | `POST /v1/identities/{id}/roles` | session, admin role | Privileged; audited |
 
 **How a session is presented, and the task that had to build it** (`P1-TSK-016`). The `Auth`

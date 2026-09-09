@@ -255,6 +255,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // never reaches an event payload: IdentityAdministration.announce carries
                         // identifiers and an enumerated status, deliberately (INV-AUD-02).
                         "SuspensionRequest",
+                        // P1-TSK-032: the mirror of SuspensionRequest - a reason, never a secret,
+                        // and the same bounds cited from the same constants.
+                        "ReinstatementRequest",
                         "RoleAssignmentRequest",
                         // P1-TSK-030. Carries a display name - RESTRICTED-PII, and the clearest
                         // such column on the platform - which is why it is here and worth a second

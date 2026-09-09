@@ -25,10 +25,16 @@ package com.finapp.identity;
 public enum PermissionName {
 
     /**
-     * Suspend an identity so it can no longer authenticate.
+     * Suspend an identity so it can no longer authenticate — and lift a suspension.
      *
      * <p>The most consequential thing one person can do to another's account here: it does not
      * merely deny a request, it ends the person's ability to log in at all.
+     *
+     * <p><strong>One permission for both directions, not two</strong> (`P1-TSK-032`), which is
+     * {@link #ROLE_ASSIGN}'s own shape — "grant or revoke a role". The administrator trusted to
+     * impose a suspension is the administrator trusted to lift one, and a separate
+     * {@code IDENTITY_REINSTATE} held by the only role that exists would be vocabulary with no
+     * decision behind it. The audit trail distinguishes the two actions; the permission need not.
      */
     IDENTITY_SUSPEND,
 

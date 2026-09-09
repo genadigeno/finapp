@@ -223,6 +223,19 @@ public enum IdentityAuditAction implements AuditableAction {
             true),
 
     /**
+     * A suspension was lifted (`P1-TSK-032`).
+     *
+     * <p>A reason is required for the same argument as the suspension it undoes: it is an action
+     * taken against somebody else's account, and the trail's answer to <em>why was this person let
+     * back in?</em> matters exactly as much as why they were locked out — a quiet reinstatement is
+     * how an accomplice undoes an incident response.
+     */
+    IDENTITY_REINSTATED(
+            "identity.IdentityReinstated",
+            "A suspension was lifted by an administrator and the identity can authenticate again.",
+            true),
+
+    /**
      * A role was assigned to or removed from an identity.
      *
      * <p>A reason is required, and this is the most consequential action the module has: a role

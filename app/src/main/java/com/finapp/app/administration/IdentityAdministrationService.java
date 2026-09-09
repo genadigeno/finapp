@@ -55,6 +55,12 @@ public class IdentityAdministrationService {
                 unitOfWork -> administration.suspend(unitOfWork, subject, actor, reason));
     }
 
+    public IdentityAdministration.Reinstatement reinstate(
+            IdentityId subject, IdentityId actor, String reason) {
+        return inOneTransaction(
+                unitOfWork -> administration.reinstate(unitOfWork, subject, actor, reason));
+    }
+
     public IdentityAdministration.RoleGrant assignRole(
             IdentityId subject, RoleName role, IdentityId actor, String reason) {
         return inOneTransaction(

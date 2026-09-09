@@ -44,13 +44,16 @@ class AdministrativeRequestBoundsTest {
     }
 
     @Test
-    @DisplayName("both request bodies use the same bound, so neither can drift alone")
-    void bothRequestsShareOneBound() throws Exception {
-        // RoleAssignmentRequest references SuspensionRequest's constants rather than repeating
-        // them, which is what makes this assertion about a fact rather than a coincidence. The
-        // annotation is read reflectively because that is what actually reaches the validator - a
-        // constant they happen to share proves nothing if one of them stopped using it.
+    @DisplayName("every administrative body uses the same bound, so none can drift alone")
+    void everyAdministrativeRequestSharesOneBound() throws Exception {
+        // RoleAssignmentRequest and ReinstatementRequest reference SuspensionRequest's constants
+        // rather than repeating them, which is what makes this assertion about a fact rather than
+        // a coincidence. The annotation is read reflectively because that is what actually reaches
+        // the validator - a constant they happen to share proves nothing if one of them stopped
+        // using it.
         assertThat(sizeBoundOf(RoleAssignmentRequest.class, "reason"))
+                .isEqualTo(sizeBoundOf(SuspensionRequest.class, "reason"));
+        assertThat(sizeBoundOf(ReinstatementRequest.class, "reason"))
                 .isEqualTo(sizeBoundOf(SuspensionRequest.class, "reason"));
     }
 

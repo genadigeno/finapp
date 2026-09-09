@@ -98,6 +98,7 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.MfaChallengeFailed` | No | A second-factor challenge was refused. |
 | `identity.AuthorizationDenied` | No | A privileged action was refused because the actor lacked the permission. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
+| `identity.IdentityReinstated` | **Yes** | A suspension was lifted by an administrator and the identity can authenticate again. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
 | `identity.ContactChannelAdded` | No | A contact channel was registered against an identity, unverified. |
 | `identity.ContactChannelVerified` | No | Control of a contact channel was proven, making it usable for account recovery. |

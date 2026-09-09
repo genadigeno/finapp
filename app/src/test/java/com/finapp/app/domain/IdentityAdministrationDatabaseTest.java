@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.Authorization;
+import com.finapp.identity.IdentityAdministration;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.JdbcSessionStore;
 import com.finapp.identity.RoleName;
@@ -11,6 +12,7 @@ import com.finapp.identity.Session;
 import com.finapp.identity.SessionPolicy;
 import com.finapp.identity.SessionStore;
 import com.finapp.identity.SessionToken;
+import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
@@ -69,9 +71,17 @@ class IdentityAdministrationDatabaseTest {
 
     private static final String REASON = "{\"reason\":\"offboarding, ticket OPS-4417\"}";
 
+    /** A distinct ticket, so an audit assertion cannot be satisfied by the suspension's record. */
+    private static final String REINSTATEMENT_REASON =
+            "{\"reason\":\"incident closed, ticket OPS-9921\"}";
+
+    private static final String PASSWORD = "a-long-enough-password-for-administration";
+
     @LocalServerPort private int port;
 
     @Autowired private Authorization authorization;
+
+    @Autowired private IdentityAdministration administration;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
@@ -156,7 +166,9 @@ class IdentityAdministrationDatabaseTest {
         String session = givenASessionFor(admin);
 
         assertThat(post(suspensionOf(admin), session, REASON).statusCode())
-                .as("there is no reinstatement endpoint, so this is a one-way door")
+                .as("reinstatement needs a SECOND administrator, which the platform does not"
+                        + " guarantee exists - and the trail must never hold a self-loop"
+                        + " (P1-TSK-032 revisited this and kept the refusal)")
                 .isEqualTo(422);
         assertThat(statusOf(admin)).isEqualTo("ACTIVE");
     }
@@ -258,6 +270,128 @@ class IdentityAdministrationDatabaseTest {
         // and no test held it.
         assertThat(post("/identities/" + IDS.next() + "/roles", session, adminRole()).statusCode())
                 .isEqualTo(404);
+
+        // And reinstatement answers the same way (P1-TSK-032).
+        assertThat(
+                        delete(
+                                        "/identities/" + IDS.next() + "/suspension",
+                                        session,
+                                        REINSTATEMENT_REASON)
+                                .statusCode())
+                .isEqualTo(404);
+        assertThat(
+                        delete("/identities/not-a-uuid/suspension", session, REINSTATEMENT_REASON)
+                                .statusCode())
+                .isEqualTo(404);
+    }
+
+    // -----------------------------------------------------------------
+    // Reinstatement (P1-TSK-032)
+
+    /**
+     * The acceptance criterion end to end: <em>a suspended identity can authenticate again
+     * afterwards</em> — so the subject is registered over HTTP rather than inserted, because a
+     * fixture row without a credential cannot authenticate at all and the assertion would be
+     * unreachable.
+     */
+    @Test
+    @DisplayName("a reinstated person can authenticate again, and the old sessions stay dead")
+    void aReinstatedIdentityCanAuthenticateAgain() throws Exception {
+        String login = "ada." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        assertThat(registerPerson(login).statusCode()).isEqualTo(201);
+        String preSuspension = tokenIn(authenticate(login).body());
+        assertThat(get("/sessions", preSuspension).statusCode())
+                .as("precondition: the person is logged in before the suspension")
+                .isEqualTo(200);
+
+        IdentityId subject = identityIdOf(login);
+        IdentityId admin = givenAnAdministrator();
+        String adminSession = givenASessionFor(admin);
+
+        assertThat(post(suspensionOf(subject), adminSession, REASON).statusCode()).isEqualTo(204);
+        assertThat(authenticate(login).statusCode())
+                .as("precondition: a suspended identity cannot log in")
+                .isEqualTo(401);
+
+        assertThat(
+                        delete(suspensionOf(subject), adminSession, REINSTATEMENT_REASON)
+                                .statusCode())
+                .isEqualTo(204);
+        assertThat(statusOf(subject)).isEqualTo("ACTIVE");
+
+        // The acceptance: the person can authenticate again.
+        assertThat(authenticate(login).statusCode()).isEqualTo(201);
+
+        // And the sessions the suspension revoked STAY revoked. The revocations happened and
+        // INV-HIST-01 does not un-happen things - a resurrected bearer token would come back to
+        // life in whoever's hands last held it, possibly the attacker whose activity is why the
+        // account was suspended in the first place.
+        assertThat(get("/sessions", preSuspension).statusCode())
+                .as("reinstatement restores the ability to log in, never the old sessions")
+                .isEqualTo(401);
+
+        // Audited against the administrator, naming the subject and carrying the reason.
+        assertThat(auditOf("identity.IdentityReinstated", subject, admin))
+                .as("the trail's answer to WHY this person was let back in")
+                .contains("OPS-9921");
+    }
+
+    @Test
+    @DisplayName(
+            "reinstating an identity that is not SUSPENDED is a conflict, and CLOSED stays closed")
+    void reinstatingANonSuspendedIdentityIsAConflict() throws Exception {
+        String session = givenASessionFor(givenAnAdministrator());
+
+        IdentityId active = givenAnIdentity();
+        assertThat(delete(suspensionOf(active), session, REINSTATEMENT_REASON).statusCode())
+                .as("ACTIVE has no suspension to lift, and reporting success would claim a"
+                        + " transition that did not happen")
+                .isEqualTo(409);
+
+        // The half that matters: CLOSED is terminal (INV-LIFE-04) and must not come back through
+        // this door. The conditional moveStatus(from = SUSPENDED) refuses it at the write; the
+        // aggregate's own transition check refuses it independently (INV-LIFE-02).
+        IdentityId closed = givenAnIdentity();
+        closeIdentity(closed);
+        assertThat(delete(suspensionOf(closed), session, REINSTATEMENT_REASON).statusCode())
+                .isEqualTo(409);
+        assertThat(statusOf(closed)).isEqualTo("CLOSED");
+        assertThat(auditCountOf("identity.IdentityReinstated", closed))
+                .as("a refused transition writes no record of a transition")
+                .isZero();
+    }
+
+    @Test
+    @DisplayName(
+            "the reinstatement endpoint refuses a session with no role, and the refusal is audited")
+    void reinstatementRefusesWithoutTheRole() throws Exception {
+        IdentityId caller = givenAnIdentity();
+        String session = givenASessionFor(caller);
+        IdentityId subject = givenAnIdentity();
+
+        long before = denialsFor(caller);
+        assertThat(delete(suspensionOf(subject), session, REINSTATEMENT_REASON).statusCode())
+                .as("a valid session is not a role")
+                .isEqualTo(403);
+        // INV-AUD-03: a refused privileged attempt is the only durable trace a prober leaves.
+        assertThat(denialsFor(caller) - before).isEqualTo(1);
+    }
+
+    /**
+     * Driven at the domain rather than over HTTP, because HTTP cannot reach it: a suspended
+     * identity holds no live session — the suspension revoked them — so a person cannot present a
+     * session while being {@code SUSPENDED}, except in the race where they are suspended
+     * mid-request. The branch exists for that race and for the property the whole class protects:
+     * no administrative record ever names one party twice.
+     */
+    @Test
+    @DisplayName("an administrator cannot reinstate themselves, checked at the domain")
+    void anAdministratorCannotReinstateThemselves() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(administration.reinstate(app, admin, admin, "self"))
+                    .isEqualTo(IdentityAdministration.Reinstatement.SELF);
+        }
     }
 
     @Test
@@ -333,6 +467,66 @@ class IdentityAdministrationDatabaseTest {
                         .GET()
                         .build();
         return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> delete(String path, String token, String body) throws Exception {
+        // A DELETE with a body: the reason is free prose and must not travel in a URL, which
+        // reaches access logs (INV-AUD-02). See ReinstatementRequest.
+        HttpRequest.Builder request =
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1" + path))
+                        .header("Content-Type", "application/json")
+                        .method("DELETE", HttpRequest.BodyPublishers.ofString(body));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> registerPerson(String login) throws Exception {
+        HttpRequest request =
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1/registrations"))
+                        .header("Content-Type", "application/json")
+                        .header(IdempotencyKeyHeader.NAME, UUID.randomUUID().toString())
+                        .POST(
+                                HttpRequest.BodyPublishers.ofString(
+                                        "{\"loginIdentifier\":\""
+                                                + login
+                                                + "\",\"displayName\":\"Ada Lovelace\","
+                                                + "\"password\":\""
+                                                + PASSWORD
+                                                + "\"}"))
+                        .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> authenticate(String login) throws Exception {
+        return post(
+                "/authentications",
+                null,
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}");
+    }
+
+    private static String tokenIn(String body) {
+        String marker = "\"sessionToken\":\"";
+        int start = body.indexOf(marker);
+        if (start < 0) {
+            return "";
+        }
+        start += marker.length();
+        return body.substring(start, body.indexOf('\"', start));
+    }
+
+    private static IdentityId identityIdOf(String login) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select =
+                        app.prepareStatement(
+                                "SELECT id FROM identity.identity WHERE login_identifier = ?")) {
+            select.setString(1, login);
+            try (ResultSet rows = select.executeQuery()) {
+                rows.next();
+                return IdentityId.of((UUID) rows.getObject(1));
+            }
+        }
     }
 
     private static void closeIdentity(IdentityId identity) throws SQLException {

@@ -45,13 +45,19 @@ import java.util.Optional;
  * <p>That is {@code INV-AUD-04}'s four-eyes principle pointing the same way. Four-eyes itself is
  * not modelled: {@code audit_record} holds one actor, which is recorded debt (ADR-0010).
  *
- * <h2>Why refusing self-suspension is a different argument</h2>
+ * <h2>Why refusing self-suspension survives reinstatement existing</h2>
  *
- * <p>There is no reinstatement endpoint — {@code PHASE_1_PLAN.md} §7 lists one operation, not two —
- * so a suspended administrator <strong>cannot un-suspend themselves</strong>, and nor can anybody
- * else through the API. It is a one-way door out of the platform, and an administrator who suspects
- * their own account is compromised has session revocation and a credential change, which are the
- * tools for that and are reversible.
+ * <p>The original argument was the one-way door: no reinstatement endpoint existed, so a suspended
+ * administrator could not be un-suspended by anybody through the API. {@code P1-TSK-032} built
+ * reinstatement and the backlog required both decisions to be revisited together. <strong>The
+ * refusal stays, on a corrected argument</strong>: reinstatement makes the door two-way only when a
+ * <em>second</em> administrator exists, and the platform does not guarantee one — the last
+ * administrator self-suspending is still locked out of the platform with the remedy being the
+ * out-of-band operator action of {@code README.md} §5e. And the trail argument is untouched: an
+ * administrative record naming one party twice reads like a system action rather than a decision
+ * somebody took. An administrator who suspects their own account is compromised has session
+ * revocation and a credential change, which are the tools for that and are reversible by them
+ * alone.
  */
 public final class IdentityAdministration {
 
@@ -155,6 +161,72 @@ public final class IdentityAdministration {
     }
 
     /**
+     * Lifts a suspension ({@code P1-TSK-032}).
+     *
+     * <h2>Sessions are not restored, and that is a decision rather than an omission</h2>
+     *
+     * <p>The suspension revoked them, the revocations happened, and {@code INV-HIST-01} does not
+     * un-happen things — a session resurrected here would be a bearer credential coming back to
+     * life in whatever hands last held it, including the attacker's whose activity may be why the
+     * account was suspended. The person logs in again, which re-proves the credential.
+     *
+     * <h2>A {@code CLOSED} identity does not come back through this door</h2>
+     *
+     * <p>{@code CLOSED} is terminal ({@code INV-LIFE-04}). The conditional
+     * {@code moveStatus(from = SUSPENDED)} enforces that at the write, the aggregate's own
+     * transition check enforces it independently ({@code INV-LIFE-02}), and the outcome says
+     * {@link Reinstatement#NOT_SUSPENDED} — named for what was <em>checked</em>, the
+     * {@code NOT_ACTIVE} lesson, because "already active" would be a claim that is false for a
+     * closed identity.
+     *
+     * <h2>The {@code SELF} branch is nearly unreachable, and kept anyway</h2>
+     *
+     * <p>A suspended identity holds no live session — {@code suspend} revoked them in the same
+     * transaction — so a suspended person cannot call this endpoint to free themselves; an actor
+     * who names themselves is almost certainly {@code ACTIVE} and lands on
+     * {@code NOT_SUSPENDED}. What remains is the race where the actor is suspended mid-request,
+     * and the branch is kept for the property the whole class protects: <strong>the trail never
+     * contains a self-loop</strong> — every administrative record names two parties.
+     */
+    public Reinstatement reinstate(
+            Connection unitOfWork, IdentityId subject, IdentityId actor, String reason) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(subject, "subject must not be null");
+        Objects.requireNonNull(actor, "actor must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+
+        if (subject.equals(actor)) {
+            return Reinstatement.SELF;
+        }
+
+        Optional<Identity> found = identities.findById(unitOfWork, subject);
+        if (found.isEmpty()) {
+            return Reinstatement.NOT_FOUND;
+        }
+        Identity identity = found.get();
+        if (identity.status() != IdentityStatus.SUSPENDED) {
+            return Reinstatement.NOT_SUSPENDED;
+        }
+
+        Identity reinstated = identity.reinstate(clock);
+        if (!identities.moveStatus(unitOfWork, subject, IdentityStatus.SUSPENDED, reinstated)) {
+            return Reinstatement.NOT_SUSPENDED;
+        }
+
+        Instant at = Instant.now(clock);
+        audit(
+                unitOfWork,
+                at,
+                IdentityAuditAction.IDENTITY_REINSTATED,
+                subject,
+                "status=" + reinstated.status().name(),
+                reason);
+        announce(
+                unitOfWork, at, "identity.IdentityReinstated", subject, reinstated.status().name());
+        return Reinstatement.REINSTATED;
+    }
+
+    /**
      * Grants a role to an identity.
      *
      * <p>The assignment itself is {@link Authorization#assign}, which already audits and is already
@@ -209,6 +281,22 @@ public final class IdentityAdministration {
 
         NOT_FOUND,
         /** The administrator named themselves. */
+        SELF
+    }
+
+    /** What a reinstatement attempt did (`P1-TSK-032`). */
+    public enum Reinstatement {
+        REINSTATED,
+
+        /**
+         * The identity was not {@code SUSPENDED} — {@code ACTIVE} and {@code CLOSED} both land
+         * here, and only the first could honestly be called "already done". Named for what is
+         * checked, the {@link Suspension#NOT_ACTIVE} lesson.
+         */
+        NOT_SUSPENDED,
+
+        NOT_FOUND,
+        /** The administrator named themselves. See {@code reinstate} — nearly unreachable. */
         SELF
     }
 

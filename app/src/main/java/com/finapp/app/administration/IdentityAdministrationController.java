@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -75,8 +76,8 @@ public class IdentityAdministrationController {
      *
      * <p>{@code POST} rather than {@code DELETE}, and a subresource rather than a status field: the
      * request carries a reason, and a suspension is a thing that happened rather than a value that
-     * changed. It is also where a reinstatement would attach if one existed — see the class-level
-     * note on the one-way door.
+     * changed. It is also where reinstatement attaches — {@link #reinstateIdentity} deletes this
+     * subresource (`P1-TSK-032`).
      */
     @PostMapping("/{id}/suspension")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -109,6 +110,58 @@ public class IdentityAdministrationController {
                             PlatformErrorCode.CONFLICT,
                             "The identity was not ACTIVE when the suspension was attempted",
                             "this identity is not active");
+        }
+    }
+
+    /**
+     * Lifts a suspension (`P1-TSK-032`).
+     *
+     * <p>{@code DELETE} on the suspension subresource {@link #suspendIdentity} creates — the
+     * suspension is what is removed, never the identity. The reason travels in the request body
+     * rather than a query parameter, because it is free prose that may name a person or an
+     * incident and a URL reaches access logs ({@code INV-AUD-02}); see {@link ReinstatementRequest}.
+     *
+     * <p>The permission is {@code IDENTITY_SUSPEND}, deliberately not a new one — the
+     * administrator trusted to impose a suspension is the administrator trusted to lift one, which
+     * is {@code ROLE_ASSIGN}'s own "grant or revoke" shape. See {@code PermissionName}.
+     *
+     * <p><strong>Sessions are not restored.</strong> The suspension revoked them and revocations
+     * do not un-happen ({@code INV-HIST-01}); the person logs in again, which re-proves the
+     * credential rather than resurrecting a bearer token in whoever's hands last held it.
+     */
+    @DeleteMapping("/{id}/suspension")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RequiresPermission(PermissionName.IDENTITY_SUSPEND)
+    public void reinstateIdentity(
+            @PathVariable String id,
+            @Valid @RequestBody ReinstatementRequest body,
+            HttpServletRequest request) {
+
+        IdentityAdministration.Reinstatement outcome =
+                administration.reinstate(subject(id), actor(request), body.reason());
+
+        switch (outcome) {
+            case REINSTATED -> {
+                // The only path that returns.
+            }
+            case SELF ->
+                    // Nearly unreachable - a suspended identity holds no live session - and kept
+                    // for the trail property: no administrative record ever names one party twice.
+                    throw new ApiException(
+                            PlatformErrorCode.VALIDATION_FAILED,
+                            "An administrator named themselves as the subject of a reinstatement",
+                            "an administrator cannot reinstate their own identity");
+            case NOT_FOUND ->
+                    throw new ApiException(
+                            PlatformErrorCode.NOT_FOUND, "No identity matched the given identifier");
+            case NOT_SUSPENDED ->
+                    // 409, not 204: ACTIVE and CLOSED both land here, and only the first could
+                    // honestly be called "already done" - a CLOSED identity is gone permanently
+                    // and reporting success would claim it can log in again.
+                    throw new ApiException(
+                            PlatformErrorCode.CONFLICT,
+                            "The identity was not SUSPENDED when the reinstatement was attempted",
+                            "this identity is not suspended");
         }
     }
 

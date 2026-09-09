@@ -184,9 +184,82 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-031` completed 2026-09-09.
+**None in progress.** `P1-TSK-032` completed 2026-09-09. **The Phase 1 backlog is 34 of 34**;
+only `P1-DOC-002`, the exit-review re-run, stands between the phase and `COMPLETE`.
 
 ### Just completed
+
+**`P1-TSK-032` — Reinstatement: the other half of suspension** — `COMPLETE` (2026-09-09).
+`DELETE /v1/identities/{id}/suspension`, and suspension stops being a one-way door.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A negative authorization test | `reinstatementRefusesWithoutTheRole` — 403, and the refusal audited |
+| Non-`SUSPENDED` reinstatement is a conflict | `ACTIVE` and `CLOSED` both 409, and `CLOSED` stays closed |
+| The audit record names the administrator | `identity.IdentityReinstated`, actor ≠ subject, reason carried |
+| Ten instances produce one transition | `concurrentReinstatementsProduceOneTransition` |
+| A reinstated identity can authenticate again | Driven end to end, over HTTP, with a registered person |
+
+### The acceptance had to be driven with a registered person, not a fixture row
+
+*"Can authenticate again afterwards"* is unreachable from the suite's usual fixture — a directly
+inserted identity has no credential and could never authenticate in the first place, so the test
+would have asserted an absence it could not distinguish from the defect. The subject is registered
+over HTTP, logs in, is suspended (login refused), is reinstated, and logs in again.
+
+**And the pre-suspension session stays dead.** The suspension revoked it, revocations do not
+un-happen (`INV-HIST-01`), and a resurrected bearer token would come back to life in whoever's
+hands last held it — possibly the attacker whose activity is why the account was suspended.
+Reinstatement restores the ability to log in, never the sessions.
+
+### Both self-refusal decisions were revisited together, as the backlog required
+
+**Self-suspension stays refused, on a corrected argument.** The recorded reason was the one-way
+door, and reinstatement removed it — but only conditionally: the door is two-way when a *second*
+administrator exists, and the platform does not guarantee one. The last administrator
+self-suspending is still locked out, with the remedy being `README.md` §5e's out-of-band action.
+The trail argument is untouched.
+
+**Self-reinstatement gets its own `SELF` branch, and it is nearly dead code — deliberately.** A
+suspended identity holds no live session, so a person cannot present a session while `SUSPENDED`
+except in the race where they are suspended mid-request. The branch is kept for that race and for
+the property the class protects: no administrative record ever names one party twice. Tested at
+the domain, because HTTP cannot reach it.
+
+### One permission for both directions, and a DELETE that carries a body
+
+**The permission is `IDENTITY_SUSPEND`** — `ROLE_ASSIGN`'s own *"grant or revoke"* shape. The
+administrator trusted to impose a suspension is the administrator trusted to lift one, and a third
+permission held by the only role that exists would be vocabulary with no decision behind it.
+
+**The reason travels in the request body of a `DELETE`**, which is unusual and correct: it is
+required — a quiet reinstatement is how an accomplice undoes an incident response — and it is free
+prose that may name a person or an incident, so a query parameter would put it into access logs,
+proxies and browser history (`INV-AUD-02`).
+
+### `NOT_SUSPENDED` is named for what is checked
+
+`ACTIVE` and `CLOSED` both land on the 409, and only the first could honestly be called *"already
+done"* — the `NOT_ACTIVE` lesson from `P1-TSK-028`'s gate, applied at design time rather than
+found by it. `CLOSED` is terminal (`INV-LIFE-04`): the conditional `moveStatus(from = SUSPENDED)`
+refuses it at the write, the aggregate independently (`INV-LIFE-02`), and the test proves the
+status afterwards rather than only the response code.
+
+### The guards this endpoint met, and what each demanded
+
+`OpenApiContractTest` presented a 14-line diff — all additions, zero removals — whose three
+`BREAKING` labels are the classifier erring safe on `required` fields of a brand-new schema, the
+`P1-TSK-006` precedent. `CredentialReachesNoEmittedSinkTest` refused the new request body until it
+was declared in the bounded exemption list. `AuditableActionRegistryTest` and
+`AuditCompletenessTest` required `identity.IdentityReinstated` to be catalogued and emitted before
+the build would pass. `PHASE_1_PLAN.md` §7 gains the endpoint row with its provenance stated, so
+`P1-DOC-002`'s recount counts it rather than trips over it.
+
+**Four mutations, all caught by the intended assertion** — the wrong from-status, the `SELF` check
+removed, the audit call removed, the permission annotation removed. 864 hermetic tests, 465
+database tests.
+
+### Previously
 
 **`P1-TSK-031` — Two fixtures read `now()` twice and assume it moves forwards** — `COMPLETE`
 (2026-09-09).
@@ -3792,6 +3865,23 @@ Domain glossary (2026-09-03), `P0-DOC-011`:
 - Nine mutations caught; review found `Risk Score` contradicting the module register, and added
   guards for that and for every `INV-*` citation
 
+Reinstatement — the other half of suspension (2026-09-09), `P1-TSK-032`:
+- `DELETE /v1/identities/{id}/suspension` moves `SUSPENDED` back to `ACTIVE`; suspension stops
+  being a one-way door whose remedy was an operator with database access
+- **The acceptance is driven end to end with a registered person** — a fixture row without a
+  credential could never authenticate, so the claim would have been unreachable. Suspend → login
+  refused → reinstate → login succeeds, **and the pre-suspension session stays dead**
+  (`INV-HIST-01`: revocations do not un-happen)
+- **Both self-refusal decisions revisited together**: self-suspension stays refused because the
+  door is two-way only when a second administrator exists, which nothing guarantees; the `SELF`
+  branch on reinstatement is nearly unreachable and kept for the no-self-loop trail property
+- **One permission for both directions** (`IDENTITY_SUSPEND`), the `ROLE_ASSIGN` "grant or revoke"
+  shape; the reason travels in a `DELETE` body because free prose must not reach access logs
+- **`NOT_SUSPENDED` named for what is checked** — `CLOSED` lands there too, stays closed
+  (`INV-LIFE-04`), and the conditional plus the aggregate each refuse it independently
+- Audited as `identity.IdentityReinstated` (reason required), announced on the outbox, and one
+  transition under ten concurrent instances
+
 A person's own profile (2026-09-08), `P1-TSK-030`:
 - `GET /v1/me` and `PATCH /v1/me` - declared by the plan for the whole phase and owned by no task
   until the review found them, which was the eighth backlog defect of that class in Phase 1
@@ -5082,13 +5172,15 @@ Since that review the phase also gained the three endpoints it had declared and 
 `P1-TSK-028`'s two administrative ones and `P1-TSK-030`'s `/v1/me` — so area 7's endpoint count is
 one of the things the re-run has to recount rather than inherit.
 
-**One item remains open and it does not block the gate**: `P1-TSK-032` (reinstatement —
-suspension is currently a one-way door).
+**No implementation items remain open.** The backlog is 34 of 34; the review is the last act
+of the phase. Note for the recount: `P1-TSK-032` added a sixteenth endpoint
+(`DELETE /v1/identities/{id}/suspension`), declared in `PHASE_1_PLAN.md` §7 with its provenance.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P1-TSK-032` complete - reinstatement, and suspension stops being a one-way door.** `DELETE /v1/identities/{id}/suspension` moves a `SUSPENDED` identity back to `ACTIVE` - the mirror of `suspend`: a conditional `UPDATE ... WHERE status = 'SUSPENDED'` whose row count is the outcome, a required reason, an audit record (`identity.IdentityReinstated`, actor never the subject) and an outbox event. **The acceptance was driven end to end with a REGISTERED person rather than a fixture row**, because *"can authenticate again afterwards"* is unreachable from an identity that has no credential - suspend, login refused, reinstate, login succeeds - **and the pre-suspension session stays dead**: the suspension revoked it, `INV-HIST-01` does not un-happen things, and a resurrected bearer token would come back to life in whoever's hands last held it, possibly the attacker whose activity caused the suspension. Reinstatement restores the ability to log in, never the sessions. **Both self-refusal decisions were revisited together, as the backlog required.** Self-suspension stays refused on a corrected argument - the recorded reason was the one-way door, and reinstatement removes it only when a *second* administrator exists, which the platform does not guarantee; the last administrator self-suspending is still locked out with the out-of-band remedy of `README.md` §5e, and the no-self-loop trail argument is untouched. Self-reinstatement gets its own `SELF` branch that is **nearly dead code, deliberately**: a suspended identity holds no live session, so the branch is reachable only in the race where the actor is suspended mid-request - kept for that race and for the property that no administrative record ever names one party twice, and tested at the domain because HTTP cannot reach it. **The permission is `IDENTITY_SUSPEND`, not a new one** - `ROLE_ASSIGN`'s own *"grant or revoke"* shape: one capability, two directions, and a third permission held by the only role that exists would be vocabulary with no decision behind it. **The reason travels in a DELETE body**, which is unusual and correct: it is free prose that may name a person or an incident, and a query parameter would put it into access logs, proxies and browser history (`INV-AUD-02`). **`NOT_SUSPENDED` is named for what is checked** - `ACTIVE` and `CLOSED` both land on the 409 and only the first could honestly be called *already done*; `CLOSED` is terminal (`INV-LIFE-04`), refused by the conditional at the write and by the aggregate independently (`INV-LIFE-02`), and proven to stay closed. **Three guards demanded declarations before the build would pass**: the contract test presented a 14-line all-additions diff whose `BREAKING` labels are the classifier erring safe on a brand-new schema's `required` fields (`P1-TSK-006`'s precedent); `CredentialReachesNoEmittedSinkTest` refused the new request body until it joined the bounded exemption list; and the registry pair required `identity.IdentityReinstated` catalogued and emitted. `PHASE_1_PLAN.md` §7 gains the endpoint row with its provenance stated, so `P1-DOC-002`'s recount counts it rather than trips over it. **Four mutations, all caught by the intended assertion** - the wrong from-status in the conditional, the `SELF` check removed, the audit call removed, and the permission annotation removed. **The Phase 1 backlog is 34 of 34.** 864 hermetic tests, 465 database tests. |
 | 2026-09-09 | **`P1-TSK-031` complete - the suite no longer assumes `now()` moves forwards.** The container's clock runs fast and is corrected backwards, so an insert-then-update fixture that reads `now()` twice can write a status change that precedes its creation - observed at 225 ms during `P1-TSK-025`'s gate, with the constraint that fired being **right**. **The shape was in five files, not the two the item recorded** - surveyed rather than trusted: four identity fixtures and `PartyAndIdentitySchemaDatabaseTest`'s customer fixture, whose twin constraint nothing had named. Every other timestamp-ordering constraint is reached by a single statement, an already back-dated write, or one a privilege refuses. **The INSERT is back-dated by one hour and the UPDATE stays at `now()`** - the update models what production writes, and the backlog's one-statement alternative cannot fix a pair whose two reads are in different statements by construction. **Proven in-suite with its own vacuity control**: a simulated thirty-minute correction succeeds against a back-dated row, and the same update against a row written at plain `now()` is still refused - so a pass proves the back-dating is load-bearing rather than the constraint dead. No build rule scans test sources for the pattern, recorded deliberately: a Low-risk `Cx: S` fixture item does not buy machinery (`EXECUTION_PROTOCOL` rule 4). 864 hermetic tests, 460 database tests. |
 | 2026-09-08 | **`P1-TSK-030` complete - a person's own profile, and the last endpoint the plan declared that nobody owned.** `GET /v1/me` and `PATCH /v1/me`, which `PHASE_1_PLAN.md` §7 listed for the whole phase while no backlog task owned either - the eighth backlog defect of that class in Phase 1 and the first found by a **review** rather than by the task that tripped over it. **Ownership is enforced by there being no parameter, and that changes what the test can be**: neither endpoint takes a path variable, a query parameter or a body field naming a party, so ADR-0031's defect - *trusting an identifier out of the request* - has nothing to act on, and the chain is entirely derived from the proven session. An attacker therefore **cannot name a victim**, the usual negative ownership test is impossible to write, and the test proves the *resolution chain* instead - a weaker shape of test for a stronger shape of control, which is worth saying rather than implying the two are the same. **The catalogue description promised what the classification forbids**: `PARTY_PROFILE_CHANGED` read *“recording what was held before and after”*, and those values are display names - `RESTRICTED-PII`, *“the clearest RESTRICTED-PII column on the platform”* - while `audit_record.change_summary` is `RESTRICTED-FINANCIAL`. **Those are peers, not a hierarchy**: a name written there sits outside the PII rules (retention, subject access, erasure), and ADR-0022 forbids reclassifying a column that holds data. The record names the **field** and never the value, which is the choice `PartyRegistration` had already made and this description contradicted; corrected in the enum and in `AUDITABLE_ACTIONS.md`, with the consequence stated - there is no name history in Phase 1 and this does not create one. **`AUTHORITATIVE_ID` was tried and `OwnershipIsScopedTest` refused it, correctly**: the read in the chain is `JdbcIdentityStore.findById`, which `P1-TSK-028` classified `ADMINISTERED` because an administrator names its subject from a URL, so citing it as owner-constrained would have been false - and the guard said so in those words, *“every operation citing it inherits the gap”*. A sixth class, **`SESSION_DERIVED`**, records what is true: the identifier comes from a proven `Session` **held in memory**, which is `P1-TSK-021`'s recorded uncheckable case arriving. Its entry names the **endpoint** rather than a read, and a new assertion checks the one mechanically checkable thing that is also the real control - that endpoint's handlers accept no request-supplied identifier. **Two guards were written to break on this day and both did**: `partyHasNothingToScope`, and `PartyAndIdentitySchemaDatabaseTest`'s grant assertion, whose own comment read *“nothing about a party changes yet; the grant arrives with the capability”*. **And `PATCH` failed with SQLState 42501 before a line of it had been reviewed** - the application role had no `UPDATE` on `party.party`, because `V002` was written when nothing ever changed one. That is `P0-TSK-022`'s privilege model working: the grant IS the enforcement, so widening one is a migration with a stated argument. **`V004` grants `UPDATE (display_name)` and nothing else**, leaving `kind` and `registered_at` unwritable because they are facts rather than fields - and column-level is precisely the mechanism `P0-TST-007` found can widen a privilege **invisibly**, used here deliberately to narrow, with an assertion that checks its narrowness so a reader auditing `table_privileges` knows to look in `column_privileges` too. **Absence and explicit null are the same thing here**, which costs nothing while the column is `NOT NULL` and can never be cleared; the first genuinely nullable field cannot be expressed by a record and needs a wrapper type or JSON Merge Patch, recorded rather than built now. **A no-op rename succeeds and writes no audit record**, because an entry reading *“changed from Ada to Ada”* is noise and would let anybody pad the trail. **The completion gate found a javadoc of mine asserting the opposite of what the code does**: `updateProfile` said the value <em>“is normalised by `PartyName` on the way in”</em>, and `PartyName` normalises nothing - its own documentation refuses to, since *“sanitising input at construction to defend an output is how a value gets silently corrupted for every consumer to protect one”*. The eighth javadoc this phase to assert something the code does not do, mine again; the decision stands on a truer argument - a PATCH returning nothing makes a client guess - so the reason was corrected rather than the behaviour. The gate also replaced several tests with one: eight PATCH body shapes driven, **none produces a 500**, and it is where the absent-versus-null decision is actually checked rather than only documented. **Seven mutations, all caught.** 864 hermetic tests, 459 database tests. |
 | 2026-09-08 | **`P1-TSK-028` complete - the two administrative endpoints, and the blocking finding was that suspension did not suspend anybody.** `JdbcSessionStore.findByToken` filters on the **session's** status and never joins `identity.identity`, and `CredentialVerifier` refuses a suspended identity only at *authentication* - so a suspension stopped the next login and left the session an attacker is holding **working until its absolute bound expired**, while the administrator received a success response. `suspend` now revokes every session in the same transaction (`INV-IDN-03`: an eventually-revoked session is an unrevoked session), asserted with the **same token** across the suspension, because a fresh one would prove only that a suspended identity cannot log in - already true, and not what suspension is for. **Joining identity status into the session lookup was the alternative and was rejected**: a second table in the hottest query on the platform, per request, to enforce once what a revoke enforces once per decision. **Ownership is inverted here and that is the shape of the whole task**: everywhere else the rule is *the resource must belong to the caller*, and here it is **the subject must not be the actor** - which cannot live in `@RequiresPermission`, static per handler and blind to which identity the path names. **What refusing self-elevation buys is stated honestly rather than overclaimed**: it is **not** a containment control, since an administrator holding `ROLE_ASSIGN` can escalate through a second account they control; what it buys is that the trail **never contains a self-loop**, so every escalation names two parties and a self-grant - which reads like a system action rather than a decision somebody took - can never appear. Refusing self-**suspension** is a different argument: there is no reinstatement endpoint, so it is a one-way door out of the platform, now recorded as `P1-TSK-032` rather than left silent. **`OwnershipIsScopedTest` gained a fifth class because this task broke an assumption it rested on**: it excluded `IdentityId` from being a *resource* identifier on the reasoning that it IS the owner - true of every operation written before, and false of an administrative one where the identifier comes from a URL and names a different person. The exclusion is conditional now on the statement reaching `identity.identity` **by primary key**, three methods are classified `ADMINISTERED` with the check that stands in for the missing predicate named, and `lockIdentity` is labelled by the **weaker** of its two provenances, because a label must be one thing and naming the safer path would describe the caller that needs no protection. **A pre-existing blind spot in that rule was closed on the way**: `statementOf` read only a method's own string literals, so a statement built from a table-name **constant** put `identity.identity` nowhere and the owner check could not see an owner that was plainly there - never reached before only because every earlier statement happened to mention `identity_id` literally. Inlining the constant was the alternative and would have been a change made to please a detector rather than to state a property. **The first administrator cannot be created through the API, and that is a decision**: `ROLE_ASSIGN` is held only by `ADMINISTRATOR`, a bootstrap endpoint would be a privileged surface with nothing in front of it, and a seeded migration row would put an administrator into every environment including production for ever - so it is an out-of-band operator action (`README.md` §5e) whose consequence is recorded rather than hidden: **that first grant has no actor in the audit trail**. **And a mutation survived and found a test passing for the wrong reason**: `anUnknownSubjectIs404` used `UUID.randomUUID()`, and `IdentityId.of` validates **UUIDv7** (`P0-TSK-012`), so a v4 was refused as *malformed* and never reached the service - the test proved only that a v4 is rejected, and the endpoints' behaviour for an unknown-but-well-formed identity was untested. Established by **tracing** rather than by reasoning: four hypotheses were wrong before the server's own log line settled it. The fixture also met the documented container clock drift, and the constraint was right while the fixture was fragile - `P1-TSK-031`'s finding, met for the first time by production code rather than by another fixture, and closed by back-dating. **The completion gate found two more.** `Suspension.ALREADY_SUSPENDED` was a **claim that can be false** - a `CLOSED` identity reaches that branch and is not suspended but gone permanently, so a caller would read it as having effectively succeeded; renamed to `NOT_ACTIVE`, for what is *checked* rather than for the commonest cause, with the `CLOSED` path now tested. And `SuspensionRequest`'s javadoc claimed a bounds-parity test that **did not exist** - the seventh occurrence of that pattern this phase - where the drift would fail at the **last write** as a 500, after the transition and the session revocations had already run inside a transaction that then rolls back. That test's own first version failed on correct code, which is the more useful outcome: `@Size` has no `RECORD_COMPONENT` target, so it lands on the field and a component-level lookup returns null for a constraint that is working. The closed tag vocabulary then caught `@Tag("unit")`, which is not a tier - the default tier selects by **exclusion** - exactly what `P0-TSK-036` closed it for. **Nine mutations, all caught.** 863 hermetic tests, 453 database tests. |

@@ -802,6 +802,20 @@
         ],
         "type": "object"
       },
+      "ReinstatementRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "pattern": "[^\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Cn}]+",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "RoleAssignmentRequest": {
         "properties": {
           "reason": {
@@ -960,6 +974,34 @@
       }
     },
     "/v1/identities/{id}/suspension": {
+      "delete": {
+        "operationId": "reinstateIdentity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReinstatementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      },
       "post": {
         "operationId": "suspendIdentity",
         "parameters": [

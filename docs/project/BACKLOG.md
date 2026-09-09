@@ -2068,7 +2068,7 @@ repository exists to prevent.
 - **Nine mutations, all caught** — two added by the gate. 863 hermetic, 453 database.
 - Risk: **High**. Cx: M. DoD: `DOD-SEC`
 
-**P1-TSK-032 — Reinstatement: the other half of suspension** — `TODO`
+**P1-TSK-032 — Reinstatement: the other half of suspension** — `COMPLETE` (2026-09-09)
 - Context: identity / api
 - Description: `DELETE /v1/identities/{id}/suspension`, moving a `SUSPENDED` identity back to
   `ACTIVE`.
@@ -2086,7 +2086,27 @@ repository exists to prevent.
   ended and `INV-HIST-01` does not un-happen things; the person logs in again.
 - Tests: a negative authorization test; reinstatement of an identity that is not `SUSPENDED` is a
   conflict; the audit record names the administrator; ten instances produce one transition.
-- Accept: all four, and a suspended identity can authenticate again afterwards.
+- Accept: all four, and a suspended identity can authenticate again afterwards — **met**, with the
+  acceptance driven end to end: the subject is *registered over HTTP* rather than inserted, because
+  a fixture row without a credential cannot authenticate at all and the assertion would have been
+  unreachable. Suspend → login refused → reinstate → login succeeds, **and the pre-suspension
+  session stays dead**.
+- **Both self-refusal decisions were revisited together, and both stand on corrected arguments**:
+  self-suspension stays refused because reinstatement makes the door two-way only when a *second*
+  administrator exists, which the platform does not guarantee; self-reinstatement gets its own
+  `SELF` branch, nearly unreachable (a suspended identity holds no live session) and kept for the
+  trail property — no administrative record ever names one party twice.
+- **The permission is `IDENTITY_SUSPEND`, not a new one** — `ROLE_ASSIGN`'s own "grant or revoke"
+  shape: one capability, two directions, and a third permission held by the only role that exists
+  would be vocabulary with no decision behind it.
+- **The reason travels in a DELETE body**, because it is free prose that may name a person or an
+  incident and a query parameter reaches access logs (`INV-AUD-02`).
+- **`NOT_SUSPENDED` is named for what is checked**: `ACTIVE` and `CLOSED` both land on the 409, and
+  only the first could honestly be called "already done" — `CLOSED` is terminal (`INV-LIFE-04`) and
+  proven to stay closed.
+- **Four mutations, all caught by the intended assertion**: the wrong from-status in the
+  conditional, the `SELF` check removed, the audit call removed, and the permission annotation
+  removed.
 - Risk: Medium. Cx: S. DoD: `DOD-SEC`
 
 **P1-TSK-021 — Ownership checks in the domain** — `COMPLETE` (2026-09-08)

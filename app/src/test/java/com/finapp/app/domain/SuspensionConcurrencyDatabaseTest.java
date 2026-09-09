@@ -50,7 +50,7 @@ import org.junit.jupiter.api.Test;
  * connection serialise themselves and the test proves nothing.
  */
 @Tag("database")
-@DisplayName("suspension under concurrent instances (P1-TSK-028)")
+@DisplayName("suspension and reinstatement under concurrent instances (P1-TSK-028, P1-TSK-032)")
 class SuspensionConcurrencyDatabaseTest {
 
     private static final int INSTANCES = 10;
@@ -86,6 +86,53 @@ class SuspensionConcurrencyDatabaseTest {
                 .as("exactly one instance may believe it performed the suspension")
                 .isEqualTo(1);
         assertThat(statusOf(identity)).isEqualTo("SUSPENDED");
+    }
+
+    /**
+     * The mirror race (`P1-TSK-032`). Same argument as the suspension one: an unconditional
+     * update produces the correct end state from every instance and <em>ten</em> audit records for
+     * one transition — a trail saying ten administrators independently lifted one suspension, when
+     * one did and nine arrived after the fact.
+     */
+    @Test
+    @DisplayName("ten instances reinstating the same identity produce exactly one transition")
+    void concurrentReinstatementsProduceOneTransition() throws Exception {
+        IdentityId identity = givenAnIdentity();
+        try (SimulatedInstance suspender = SimulatedInstance.inAgreementWithTheServer()) {
+            Identity loaded =
+                    identities.findById(suspender.connection(), identity).orElseThrow();
+            assertThat(
+                            identities.moveStatus(
+                                    suspender.connection(),
+                                    identity,
+                                    IdentityStatus.ACTIVE,
+                                    loaded.suspend(suspender.clock())))
+                    .as("precondition: the identity is SUSPENDED before the race")
+                    .isTrue();
+            suspender.commit();
+        }
+
+        AtomicInteger won = new AtomicInteger();
+        raceOn(
+                instance -> {
+                    Identity loaded =
+                            identities.findById(instance.connection(), identity).orElseThrow();
+                    if (loaded.status() == IdentityStatus.SUSPENDED
+                            && identities.moveStatus(
+                                    instance.connection(),
+                                    identity,
+                                    IdentityStatus.SUSPENDED,
+                                    loaded.reinstate(instance.clock()))) {
+                        won.incrementAndGet();
+                    }
+                    instance.commit();
+                    return null;
+                });
+
+        assertThat(won.get())
+                .as("exactly one instance may believe it performed the reinstatement")
+                .isEqualTo(1);
+        assertThat(statusOf(identity)).isEqualTo("ACTIVE");
     }
 
     @Test
