@@ -38,12 +38,29 @@ class RoleAssignmentMigrationTest {
             "db/migration/identity/V010__create_role_assignment.sql";
 
     @Test
-    @DisplayName("the role constraint lists exactly the roles the enum declares")
+    @DisplayName("the LATEST definition of the role constraint lists exactly the enum's roles")
     void roleConstraintMatchesTheEnum() {
-        assertThat(migration())
-                .as("V010's CHECK must match RoleName exactly - this is the claim its own comment"
-                        + " makes, and until the completion gate nothing checked it")
+        // The latest, DERIVED - not V010, and the change is P2-TSK-004's. An applied migration
+        // is history that cannot be edited, so a new role is a new migration replacing the
+        // constraint, and pinning this check to any one version number is a list that goes
+        // stale at the next role. The derivation walks every identity migration on the
+        // classpath and takes the highest-numbered one that defines the constraint - so a
+        // migration that widens the role set without the enum, or an enum value without its
+        // migration, fails here whichever came first.
+        assertThat(latestConstraintDefinition())
+                .as("the newest migration defining role_assignment_role_is_known must match"
+                        + " RoleName exactly")
                 .contains("CHECK (role_name IN (" + RoleName.sqlValueList() + "))");
+    }
+
+    @Test
+    @DisplayName("V010's original constraint is untouched history")
+    void theOriginalConstraintIsHistory() {
+        // The other half of forward-only migrations (ADR-0011): the derivation above frees the
+        // enum to grow, and THIS pins what V010 said on the day it was applied - an edited
+        // applied migration means the database and the repository disagree, which
+        // flywayValidate refuses with a checksum mismatch nobody can repair.
+        assertThat(migration()).contains("CHECK (role_name IN ('ADMINISTRATOR'))");
     }
 
     @Test
@@ -117,6 +134,105 @@ class RoleAssignmentMigrationTest {
                 .map(line -> line.replaceFirst("--.*$", ""))
                 .collect(java.util.stream.Collectors.joining("\n"))
                 .toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * The content of the highest-numbered identity migration that defines the role constraint.
+     *
+     * <p>Derived from the migration directory rather than from a version literal, so the next
+     * role's migration is found without anyone re-pointing this test — the stale-list defect,
+     * closed the way this repository closes it everywhere. Fails loudly when the directory
+     * cannot be listed or no migration defines the constraint, because a derivation returning
+     * nothing would make the reconciliation above pass over an empty string.
+     */
+    private static String latestConstraintDefinition() {
+        String latest = null;
+        int latestVersion = -1;
+        for (java.util.Map.Entry<String, String> migration : allMigrations().entrySet()) {
+            java.util.regex.Matcher name =
+                    java.util.regex.Pattern.compile("V(\\d+)__.*\\.sql").matcher(migration.getKey());
+            if (!name.matches()) {
+                continue;
+            }
+            String sql = migration.getValue();
+            if (!sql.contains("role_assignment_role_is_known") || !sql.contains("CHECK")) {
+                continue;
+            }
+            int version = Integer.parseInt(name.group(1));
+            if (version > latestVersion) {
+                latestVersion = version;
+                latest = sql;
+            }
+        }
+        if (latest == null) {
+            throw new IllegalStateException("no migration defines role_assignment_role_is_known");
+        }
+        return latest;
+    }
+
+    /**
+     * Every identity migration on the classpath, file name to content.
+     *
+     * <p>Handles both classpath shapes, because this module's own tests see its migrations
+     * <strong>inside its jar</strong> ({@code java-library} packs before testing) while an IDE
+     * run sees a resources directory — the {@code P0-TSK-036} finding that a sweep reading only
+     * directories silently misses everything that arrives as a jar, met here on its first
+     * outing as a file: the directory-only version of this helper threw on the jar URL, which
+     * is the loud direction, and this is the fix rather than a narrower assertion.
+     */
+    private static java.util.Map<String, String> allMigrations() {
+        String directory = "db/migration/identity";
+        java.util.Map<String, String> migrations = new java.util.TreeMap<>();
+        try {
+            java.util.Enumeration<java.net.URL> roots =
+                    RoleAssignmentMigrationTest.class.getClassLoader().getResources(directory);
+            while (roots.hasMoreElements()) {
+                java.net.URL root = roots.nextElement();
+                if ("jar".equals(root.getProtocol())) {
+                    java.net.JarURLConnection connection =
+                            (java.net.JarURLConnection) root.openConnection();
+                    // toURI, not getFile: on Windows the latter yields "/C:/..." with URL
+                    // escaping intact, which is a path only sometimes.
+                    try (java.util.jar.JarFile jar =
+                            new java.util.jar.JarFile(
+                                    java.nio.file.Path.of(connection.getJarFileURL().toURI())
+                                            .toFile())) {
+                        java.util.Enumeration<java.util.jar.JarEntry> entries = jar.entries();
+                        while (entries.hasMoreElements()) {
+                            java.util.jar.JarEntry entry = entries.nextElement();
+                            if (entry.getName().startsWith(directory + "/")
+                                    && entry.getName().endsWith(".sql")) {
+                                try (InputStream sql = jar.getInputStream(entry)) {
+                                    migrations.put(
+                                            entry.getName().substring(directory.length() + 1),
+                                            new String(sql.readAllBytes(), StandardCharsets.UTF_8));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    java.io.File[] files = new java.io.File(root.getFile()).listFiles();
+                    if (files != null) {
+                        for (java.io.File file : files) {
+                            if (file.getName().endsWith(".sql")) {
+                                migrations.put(
+                                        file.getName(),
+                                        java.nio.file.Files.readString(
+                                                file.toPath(), StandardCharsets.UTF_8));
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        } catch (java.net.URISyntaxException e) {
+            throw new IllegalStateException("unreadable jar URL for identity migrations", e);
+        }
+        if (migrations.isEmpty()) {
+            throw new IllegalStateException("no identity migrations found on the test classpath");
+        }
+        return migrations;
     }
 
     /** From the classpath, as the two sibling migration tests do - one idiom, not three. */

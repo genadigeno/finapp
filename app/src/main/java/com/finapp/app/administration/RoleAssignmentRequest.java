@@ -16,9 +16,10 @@ import jakarta.validation.constraints.Size;
  * {@code RoleName.valueOf} rendered {@code api.InternalError}. It also puts the permitted values
  * into the published contract, so a client generator produces an enum rather than a free string.
  *
- * <p>There is exactly one role today. That is honest rather than awkward: {@code P1-TSK-020}
- * recorded that the role→permission mapping only becomes mutation-testable at the second role, and
- * inventing one so a mutation has somewhere to land would be a surface chosen to suit a test.
+ * <p><em>(This javadoc said there was exactly one role, and that inventing a second so a mutation
+ * had somewhere to land would be a surface chosen to suit a test. {@code P2-TSK-004} added the
+ * second — {@code KYC_REVIEWER} — because a real population arrived, which is the difference; the
+ * mutation it made possible is that task's acceptance criterion.)</em>
  *
  * @param role the role to grant
  * @param reason why. This is the most consequential action the module has — see

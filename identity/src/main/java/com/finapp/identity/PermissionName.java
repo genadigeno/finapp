@@ -3,16 +3,16 @@ package com.finapp.identity;
 /**
  * What an actor may do (`P1-TSK-020`, ADR-0031).
  *
- * <h2>Two values, and neither invents a capability</h2>
+ * <h2>Three values, and none invents a capability</h2>
  *
- * <p>Each names a privileged action `AUDITABLE_ACTIONS.md` already declares - identity suspension
- * and role assignment - so the vocabulary follows the registry rather than anticipating it. A
- * permission for an action nobody has catalogued would be a claim about a capability that does not
- * exist.
+ * <p>Each names privileged actions `AUDITABLE_ACTIONS.md` already declares - identity suspension,
+ * role assignment, and the KYC review actions `P2-TSK-003` catalogued - so the vocabulary follows
+ * the registry rather than anticipating it. A permission for an action nobody has catalogued would
+ * be a claim about a capability that does not exist.
  *
- * <p>`PHASE_1_PLAN.md` §7 marks both endpoints `session, admin role`. **Neither endpoint exists**,
- * and no backlog task owns them - recorded rather than absorbed as `P1-TSK-028`. The permissions
- * exist because the ACTIONS do, and because a check with no vocabulary cannot be tested at all.
+ * <p><em>(This javadoc said "two values" and that neither admin endpoint existed - true when
+ * written, closed by `P1-TSK-028` and widened by `P2-TSK-004`.)</em> The permissions exist because
+ * the ACTIONS do, and because a check with no vocabulary cannot be tested at all.
  *
  * <h2>There is deliberately no `sqlValueList()`</h2>
  *
@@ -45,5 +45,27 @@ public enum PermissionName {
      * holding it can give themselves any other, so an audit record naming the actor is the only
      * thing that makes the escalation visible afterwards.
      */
-    ROLE_ASSIGN
+    ROLE_ASSIGN,
+
+    /**
+     * Review KYC/KYB cases: read a case with its evidence, resolve screening hits, record
+     * decisions (`P2-TSK-004`).
+     *
+     * <p>The first permission whose actions live outside {@code identity} — the vocabulary is
+     * still this module's, because ADR-0031 keeps authorization here as a recorded merge, and one
+     * foreign-domain permission does not reach its split trigger. It names actions the registry
+     * already declares ({@code kyc.DecisionRecorded}, {@code kyc.ScreeningHitResolved},
+     * {@code kyc.DocumentContentRead}); the endpoints that check it are {@code P2-TSK-012}'s,
+     * which is why it ships before them — a check with no vocabulary cannot be built, let alone
+     * tested.
+     *
+     * <p><strong>Deliberately not folded into what an administrator holds.</strong> Reviewing a
+     * person's identity documents and managing identities are different trust decisions taken
+     * about different people — the first real least-privilege split between administrative
+     * populations. An administrator holding {@code ROLE_ASSIGN} can still grant themselves
+     * {@code KYC_REVIEWER}; what the split buys is that the escalation is a recorded grant in
+     * the trail rather than a capability that was silently always there ({@code P1-TSK-028}'s
+     * honesty about what refusing self-elevation buys).
+     */
+    KYC_REVIEW
 }

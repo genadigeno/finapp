@@ -2721,7 +2721,7 @@ capability map, and the task list below is the schedule.
   and reverted on the `P2-TSK-001` precedent.
 - Risk: Low. Cx: S. DoD: `DOD-BUILD`
 
-**P2-TSK-004 — `KYC_REVIEW` permission and the `KYC_REVIEWER` role** — `READY` (2026-09-09, last task of M2.1)
+**P2-TSK-004 — `KYC_REVIEW` permission and the `KYC_REVIEWER` role** — `COMPLETE` (2026-09-09)
 - Context: identity
 - Description: A second role and third permission; `V0xx` migration for the role constraint
   (`RoleName.sqlValueList` regenerates it, `V010`'s reconciling test catches drift).
@@ -2737,11 +2737,24 @@ capability map, and the task list below is the schedule.
   reconciliation; a `KYC_REVIEWER` refused by an administrative endpoint and vice versa.
 - Accept: the recorded `P1-TSK-020` limit closes, demonstrated by the previously-impossible
   mutation failing the build.
+- **Gate evidence (2026-09-09)**: the acceptance mutation — `KYC_REVIEWER` granting everything —
+  is caught **twice**, by `RoleNameTest`'s exact-grant assertions and independently by the
+  cross-population HTTP refusal test; five further mutations (administrator gaining
+  `KYC_REVIEW`, the grants swapped, the reviewer granting nothing, `V013` losing the value) all
+  caught by the intended assertion. The reconciliation test was redesigned: it pinned the
+  constraint to `V010`, which is applied history, so it now **derives** the latest migration
+  defining the constraint and separately pins `V010`'s original literal as untouched history —
+  and its first directory-only version threw on this module's own **jar** (the `P0-TSK-036`
+  finding as a file), fixed to read both classpath shapes. The grant is driven through the real
+  `POST /v1/identities/{id}/roles`, so the boundary enum, the regenerated constraint and the
+  per-request resolution are all on the tested path. The contract diff is one added request-enum
+  value, reviewed and accepted (the classifier's BREAKING label errs safe by design; a client
+  that never sends the value cannot be broken by it).
 - Risk: Low. Cx: S. DoD: `DOD-SEC`
 
 ## P2-EPIC-01 — KYC case management (M2.2)
 
-**P2-TSK-005 — The KycCase aggregate and its lifecycle** — `TODO`
+**P2-TSK-005 — The KycCase aggregate and its lifecycle** — `READY` (2026-09-09, M2.2 opens)
 - Context: kyc
 - Description: `KycCase` with the §5 machine, `V002` case table — status `CHECK`s generated from
   the enum, `NOT NULL` policy version, and the **one-open-case partial unique index** on

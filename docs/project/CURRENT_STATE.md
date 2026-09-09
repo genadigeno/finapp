@@ -60,12 +60,14 @@ class, again).
 ## Current Milestone
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
-**4 of 5** (2026-09-09) — the broker adapter, the credential change, the first consumer path
-and the module skeletons done; next is `P2-TSK-004`, the reviewer role, the milestone's last. **The milestone's stated acceptance now holds
-in full** — an outbox event reaches a real consumer through Kafka with exactly one effect per
-fact, and a person can change their password — and the milestone stays open anyway, because two
-of its scheduled tasks remain: acceptance is what a milestone *means* (the M1.2 lesson), never a
-licence to strand the members still inside it. Acceptance: an outbox event reaches a real consumer through Kafka with
+**CLOSED 2026-09-09, 5 of 5.** The stated acceptance — an outbox event reaches a real consumer
+through Kafka with exactly one effect per fact, and a person can change their password — held
+from `P2-TSK-002` on, and the milestone stayed open until its remaining scheduled members
+landed: acceptance is what a milestone *means* (the M1.2 lesson), never a licence to strand the
+tasks still inside it. What settled: the broker adapter and wire format, the consumer shell and
+its offset-after-effect discipline, the credential change, two guarded module skeletons, and
+the reviewer population with the first real least-privilege split. **Next: M2.2, the KYC case
+lifecycle.** Acceptance: an outbox event reaches a real consumer through Kafka with
 exactly one effect per fact, and a person can change their password. (The milestone's own
 wording inherited the backlog's exactly-once promise; corrected the same way — the *effect* is
 exactly-once, the delivery is at-least-once.)
@@ -214,11 +216,59 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-003` completed 2026-09-09 — `kyc` and `consent` exist as guarded
-modules with owned schemas, so every later Phase 2 task lands inside an enforced boundary.
-**Next: `P2-TSK-004` (`READY`), the last task of M2.1.**
+**None in progress.** `P2-TSK-004` completed 2026-09-09 — the reviewer population exists, the
+role→permission mapping is finally mutation-testable, and **M2.1 closes, 5 of 5**. **Next:
+`P2-TSK-005` (`READY`), opening M2.2.**
 
 ### Just completed
+
+**`P2-TSK-004` — `KYC_REVIEW` permission and the `KYC_REVIEWER` role** — `COMPLETE`
+(2026-09-09). A second role and third permission, and the closing of a limit `P1-TSK-020`
+recorded in as many words: *"the role→permission mapping cannot be meaningfully mutated until a
+second role exists."* This is the second role, and the previously-impossible mutation failing
+the build is the acceptance criterion, met twice over.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The `P1-TSK-020` limit closes | `KYC_REVIEWER` granting everything is caught by `RoleNameTest` **and** independently by the HTTP cross-population test — two controls blind in different directions |
+| Least privilege, both directions | A reviewer (granted through the **real** roles endpoint) is refused by both administrative endpoints; an administrator is refused by the `KYC_REVIEW` probe |
+| Migration/enum reconciliation | `V013` regenerated from `RoleName.sqlValueList()`; the reconciliation now derives the **latest** constraint definition and pins `V010` as history |
+
+### The first real least-privilege split, stated honestly
+
+`KYC_REVIEWER` holds exactly `KYC_REVIEW`; `ADMINISTRATOR` gains nothing. The two grants are
+**disjoint**, asserted as its own property — neither exact-set assertion alone says the sets do
+not overlap. What the split does *not* buy is stated as `P1-TSK-028` stated self-elevation: an
+administrator holding `ROLE_ASSIGN` can grant themselves `KYC_REVIEWER`, and what the split buys
+is that the escalation is a **recorded grant in the trail** rather than a capability that was
+silently always there. The permission is the first whose actions live outside `identity`;
+authorization stays there per ADR-0031's recorded merge, one foreign-domain permission not
+reaching its split trigger.
+
+### The reconciliation test had to learn that applied migrations are history
+
+`RoleAssignmentMigrationTest` pinned the constraint to `V010` — right at one role, wrong the
+moment a second exists, because `V010` cannot be edited (ADR-0011) and the constraint moves by
+**replacement** in a new migration. It now derives the highest-numbered migration defining
+`role_assignment_role_is_known` and reconciles that against the enum — so a widened constraint
+without the enum, or an enum value without its migration, fails whichever came first — and
+separately pins `V010`'s original literal, because history keeping its shape is its own claim.
+**The derivation's first version threw on this module's own jar**: a module's tests see its
+resources inside the jar `java-library` packs, not a directory — the `P0-TSK-036` finding
+arriving as a file, and it failed in the loud direction, which is the direction to err in.
+
+### The contract gained one request-enum value, reviewed rather than waved through
+
+`RoleAssignmentRequest.role` publishes `RoleName`, so the diff is one added enum value labelled
+`BREAKING` — the classifier's blanket rule for enum additions, erring safe by design. Reviewed:
+this is a **request** enum, and an existing client that never sends the new value cannot be
+broken by its existence; accepted on the `P1-TSK-032` precedent of reviewing the label rather
+than obeying it.
+
+**Six mutations (the acceptance one counted twice), all caught by the intended assertion.**
+**891 hermetic tests, 473 database tests, 10 kafka tests. M2.1 closes: 5 of 5.**
+
+### Previously
 
 **`P2-TSK-003` — `kyc` and `consent` module skeletons** — `COMPLETE` (2026-09-09). The
 `P1-TSK-003` shape applied twice: two modules on the documented direction, two schemas each
@@ -5548,21 +5598,21 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-004` — `KYC_REVIEW` permission and the `KYC_REVIEWER` role.** Status `READY`; the
-last task of M2.1, no dependencies.
+**`P2-TSK-005` — The KycCase aggregate and its lifecycle.** Status `READY`; M2.2 opens — the
+phase's spine.
 
-A second role and third permission, with the migration `RoleName.sqlValueList` regenerates and
-`V010`'s reconciling test guards. **The role→permission mapping finally becomes
-mutation-testable** — `P1-TSK-020` recorded that limit in as many words (*"it becomes testable
-at the second role"*), and that previously-impossible mutation failing the build is this task's
-acceptance. `KYC_REVIEWER` deliberately holds neither `IDENTITY_SUSPEND` nor `ROLE_ASSIGN`: the
-first real least-privilege split between administrative populations.
+`KycCase` with the plan's §5 machine, the `V002` case table with status `CHECK`s generated from
+the enum, `NOT NULL` policy version, and the **one-open-case partial unique index** — a
+cross-aggregate uniqueness rule only the database can arbitrate (`P1-TSK-005`'s reasoning,
+verbatim). Exhaustive invalid-transition sweep derived from the machine; ten instances opening
+one customer's case produce one case. Invariants: `INV-LIFE-02`, `INV-LIFE-04`, `INV-KYC-05`.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P2-TSK-004` complete - the KYC_REVIEWER role, and the limit P1-TSK-020 recorded closes. M2.1 closes with it, 5 of 5.** A second role (`KYC_REVIEWER`, granting exactly `KYC_REVIEW`) and third permission - the first whose actions live outside `identity`, with authorization staying there per ADR-0031's recorded merge. **The acceptance criterion was the previously-impossible mutation failing the build**, and it fails twice: `KYC_REVIEWER` granting everything is caught by RoleNameTest's exact-grant assertions AND independently by the cross-population HTTP test - an administrator refused by the KYC_REVIEW probe, a reviewer (granted through the REAL roles endpoint, so the boundary enum, V013's regenerated constraint and the per-request resolution are all on the path) refused by both real administrative endpoints. The grants are DISJOINT, asserted as its own property, with what the split does not buy stated honestly: ROLE_ASSIGN can still self-grant KYC_REVIEWER, and what the split buys is that the escalation is a recorded grant in the trail. **The reconciliation test had to learn that applied migrations are history**: it pinned the constraint to V010, which cannot be edited, so the constraint moves by REPLACEMENT (V013) and the test now derives the latest definition and pins V010's original literal separately - and its first directory-only derivation threw on the module's own jar, the P0-TSK-036 finding arriving as a file, failing in the loud direction. The contract diff is one added REQUEST-enum value, labelled BREAKING by the classifier's blanket rule and accepted on review: a client that never sends the value cannot be broken by it. **Six mutations, all caught by the intended assertion.** 891 hermetic tests, 473 database tests, 10 kafka tests. |
 | 2026-09-09 | **`P2-TSK-003` complete - `kyc` and `consent` exist as guarded modules.** The `P1-TSK-003` shape applied twice: two modules on the documented direction (app -> business -> platform -> sharedkernel, enforced structurally by Gradle before ArchUnit asserts it), two schemas owned by the migrator with default-deny privileges and NO tables - because the privilege floor is the deliverable: every DB-PRIVILEGE claim Phase 2 will make (immutable decisions INV-KYC-02, append-only evidence, append-only consent history INV-CNS-02, audited document reads INV-KYC-06) is only available at that rank because the owner cannot be bypassed and each table's grants arrive with its migration. **Five audit actions declared under the deliberately-few licence** - the two reason-required ones are the invariants speaking (INV-KYC-02's NOT NULL reason, INV-KYC-04's justified resolution), the document read deliberately requires none (the trail of who looked IS the control), the consent pair are a person's own acts - and case opening plus check outcomes are absent on purpose, left to the tasks whose designs shape them; all five joined NOT_YET_EMITTED naming their emitters. **The gate's finding: sibling isolation had quietly become one-directional** - the Phase 1 isolation tests forbade only each other, so party could have grown a dependency on kyc unnoticed, and that is the direction INV-KYC-05 cares about most (customer status is a projection of the decision); both extended to forbid all siblings. The build-logic lockfile drift (kotlin RC3->GA, a floating configuration in the Kotlin plugin) was met again and reverted on the P2-TSK-001 precedent; the verification metadata did not change at all, the new modules adding no artefact the build did not already trust. **Five probes, all caught by the intended guard** - a planted double in each module, a cross-module dependency caught by the isolation test itself rather than by lock resolution, a deleted catalogue section, and an unclassified column migrated into kyc caught against a real database. 888 hermetic tests, 471 database tests, 10 kafka tests. |
 | 2026-09-09 | **`P2-TSK-002` complete - the first consumer path, and the inbox meets a real transport.** `KafkaEventReceiver` (in `platform.inbox.kafka`, the broker rule's second exemption - the rule's condition was always broader than its name, because consuming directly past the inbox is the symmetric defect to publishing past the outbox) polls records, parses the eleven `finapp.*` headers into a Kafka-free `ReceivedEvent`, enters the producing flow's correlation with the event as the effect's cause, and runs registered `InboxEventHandler`s through `InboxConsumer` - one database transaction per handler committing effect and dedupe record together, **the broker offset committed only after that**, auto-commit disabled because auto-commit acknowledges regardless of what happened. The two commits cannot be atomic and the design does not pretend: every failure between them resolves as a redelivery into the dedupe, and a record that cannot be handled is SEEKED BACK TO, never skipped - the relay's block-don't-skip rule on the consuming side. One consumer group per consuming module, derived from `consumerName()`'s module segment; no scheduler and no lease, deliberately - work-sharing is Kafka's group protocol and correctness is the inbox primary key, with group offsets registered as explicitly non-authoritative (`DISTRIBUTED_EXECUTION.md` §3). **Demonstrated against a real broker**: a wire duplicate is one effect; a crash between the database commit and the offset commit redelivers into the dedupe; two consumers across a rebalance effect once per record; a handler failure rolls the dedupe record back so the redelivery retries. Offset-commit-after-effect is asserted rather than described - a journalling consumer pins the ordering, and inverting it in code fails exactly that test. **The inbox-metrics debt row is paid** (`finapp.inbox.consumption` by outcome, eager, its trigger - the first live consumer - being this task), with `INV-MON-01`'s `Counter.increment(double)` exemption gaining its third same-case entry. **The gate found two stale architecture-document claims left by `P2-TSK-001`** - the *"deliberately absent"* transport adapter and the *"still empty"* module-granularity exemption - neither caught by any guard because the equivalence test pins rule names, not prose about exemption sets; corrected with provenance. **Five mutations, all caught by the intended assertion.** 884 hermetic tests, 471 database tests, 10 kafka tests. |
 | 2026-09-09 | **`P1-TSK-033` complete - a logged-in person can change their own password**, closing the ninth backlog defect `P1-DOC-002` found: `POST /v1/me/credential`, declared by the plan for the whole phase and built by nothing. **Composition, not new mechanism**: `matchCurrent` re-proves the current password (no upgrade-on-use - the credential is about to be superseded), the new one is derived outside the transaction (`P1-TSK-026`), the supersede is conditional so ten concurrent changes yield one credential, every OTHER session is revoked (`INV-IDN-03`) and the caller's own is ROTATED at the same assurance (`P1-TSK-015`'s fixation defence), the response carrying the replacement token via the `AuthenticatedSession` shape rather than a fourth near-identical record. **The plan's `MULTI_FACTOR` row was corrected**: taken literally it makes the endpoint unreachable for password-only customers, so the requirement is conditional on a factor existing - a domain check, not a static annotation (the `P1-TSK-019` finding) - and an MFA-enrolled identity on a `PASSWORD` session gets the actionable `identity.AssuranceRequired` while others change at `PASSWORD`. A wrong current password is counted toward lockout: a stolen session must not be an unthrottled oracle. **The gate found a test asserting less than it claimed** - the wrong-password test checked the FAILED audit record but not that the counter incremented, and the refuse helper writes the audit either way, so a mutation removing recordFailureFor survived; strengthened to drive the account to its lockout threshold and prove the correct current password is then refused. The session-token unwrap, the rotation call site, the `CREDENTIAL_CHANGED` audit action and the two secret request fields each joined their guard's register with a claim. **Five mutations, all caught by the intended assertion.** 874 hermetic tests, 471 database tests. |

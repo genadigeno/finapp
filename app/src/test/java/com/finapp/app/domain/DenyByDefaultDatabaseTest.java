@@ -87,6 +87,17 @@ class DenyByDefaultDatabaseTest {
         }
 
         /**
+         * The reviewer's permission, which no production endpoint carries until
+         * {@code P2-TSK-012} — a probe for the {@code P1-TSK-018} reason: inventing a production
+         * surface to give a check something to guard would be a surface chosen to suit a test.
+         */
+        @com.finapp.app.session.RequiresPermission(PermissionName.KYC_REVIEW)
+        @GetMapping("/probe/review")
+        String review() {
+            return "reached";
+        }
+
+        /**
          * <strong>Declares two rules, and they contradict.</strong> Found served by the completion
          * gate.
          */
@@ -194,6 +205,33 @@ class DenyByDefaultDatabaseTest {
         givenTheRole(identity, RoleName.ADMINISTRATOR);
 
         assertThat(get("/probe/privileged", session).statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("the two administrative populations are disjoint, proven from both directions")
+    void theTwoPopulationsAreDisjoint() throws Exception {
+        IdentityId administrator = givenAnIdentity();
+        String adminSession = givenASessionFor(administrator);
+        givenTheRole(administrator, RoleName.ADMINISTRATOR);
+
+        IdentityId reviewer = givenAnIdentity();
+        String reviewerSession = givenASessionFor(reviewer);
+        givenTheRole(reviewer, RoleName.KYC_REVIEWER);
+
+        // Positive controls first, so neither refusal below can be a blanket one.
+        assertThat(get("/probe/privileged", adminSession).statusCode()).isEqualTo(200);
+        assertThat(get("/probe/review", reviewerSession).statusCode()).isEqualTo(200);
+
+        // The least-privilege split, tested from the attacker's direction on BOTH sides
+        // (INV-AUD-03). This is the behavioural half of the mutation P1-TSK-020 recorded as
+        // untestable at one role: a role granting everything passes every positive control in
+        // this suite and fails exactly these two assertions.
+        assertThat(get("/probe/review", adminSession).statusCode())
+                .as("an administrator does not review cases")
+                .isEqualTo(403);
+        assertThat(get("/probe/privileged", reviewerSession).statusCode())
+                .as("a reviewer does not manage identities")
+                .isEqualTo(403);
     }
 
     // -----------------------------------------------------------------

@@ -156,6 +156,29 @@ class IdentityAdministrationDatabaseTest {
                 .isEqualTo(204);
     }
 
+    @Test
+    @DisplayName("a KYC reviewer is refused by both administrative endpoints (P2-TSK-004)")
+    void aReviewerIsRefusedByBothAdministrativeEndpoints() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        IdentityId reviewer = givenAnIdentity();
+
+        // Granted through the REAL endpoint rather than a fixture row, so the whole path is
+        // exercised: the request enum admits the new value at the boundary, V013's regenerated
+        // constraint admits the row, and the grant is audited like any other.
+        assertThat(post(rolesOf(reviewer), givenASessionFor(admin), reviewerRole()).statusCode())
+                .isEqualTo(204);
+
+        String reviewerSession = givenASessionFor(reviewer);
+        IdentityId subject = givenAnIdentity();
+        assertThat(post(suspensionOf(subject), reviewerSession, REASON).statusCode())
+                .as("the least-privilege split: reviewing cases is not managing identities")
+                .isEqualTo(403);
+        assertThat(post(rolesOf(subject), reviewerSession, adminRole()).statusCode())
+                .as("and certainly not granting roles - the permission that grants permissions")
+                .isEqualTo(403);
+        assertThat(statusOf(subject)).isEqualTo("ACTIVE");
+    }
+
     // -----------------------------------------------------------------
     // The inverted ownership rule
 
@@ -447,6 +470,10 @@ class IdentityAdministrationDatabaseTest {
 
     private static String adminRole() {
         return "{\"role\":\"ADMINISTRATOR\",\"reason\":\"offboarding, ticket OPS-4417\"}";
+    }
+
+    private static String reviewerRole() {
+        return "{\"role\":\"KYC_REVIEWER\",\"reason\":\"reviewer onboarding, ticket OPS-5510\"}";
     }
 
     private HttpResponse<String> post(String path, String token, String body) throws Exception {

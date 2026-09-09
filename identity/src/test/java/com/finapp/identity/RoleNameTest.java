@@ -19,16 +19,18 @@ import org.junit.jupiter.api.Test;
  * completion gate found it had <strong>no test at all</strong>, which is the {@link AssuranceLevel}
  * finding from {@code P1-TSK-013} repeated on the type that decides who may do anything privileged.
  *
- * <h2>The recorded limit, stated here rather than discovered later</h2>
+ * <h2>The recorded limit, and the task that closed it</h2>
  *
- * <p>With <strong>one</strong> role holding <strong>both</strong> permissions, the mapping cannot be
- * meaningfully mutated: the gate's first attempt — {@code permissions()} returns
- * {@code EnumSet.allOf(PermissionName.class)} — <strong>survived</strong>, correctly, because it is
- * the same set. It was re-aimed at the role granting <em>nothing</em>, which is caught.
+ * <p>With <strong>one</strong> role holding <strong>both</strong> permissions, the mapping could not
+ * be meaningfully mutated: {@code P1-TSK-020}'s gate found that {@code permissions()} returning
+ * {@code EnumSet.allOf(PermissionName.class)} <strong>survived</strong>, correctly, because it was
+ * the same set — and recorded that the interesting mutations become available at the second role.
  *
- * <p>So what these tests protect today is that the grant is <em>exact and closed</em>. The
- * interesting mutation — one role gaining another's permission — becomes available at the second
- * role, which is {@code P1-TSK-028}.
+ * <p>{@code P2-TSK-004} is that role, and closing the limit is its acceptance criterion: a role
+ * granting everything, a role gaining its sibling's permission, and the two grants swapped are all
+ * caught now — by the exact-grant assertions here, and independently by the cross-population
+ * refusal tests over HTTP ({@code DenyByDefaultDatabaseTest}), which is two controls blind in
+ * different directions rather than a duplication.
  */
 @DisplayName("what a role grants (P1-TSK-020)")
 class RoleNameTest {
@@ -44,6 +46,28 @@ class RoleNameTest {
                 .as("granting a permission is a reviewed code change, so widening must fail a test")
                 .containsExactlyInAnyOrder(
                         PermissionName.IDENTITY_SUSPEND, PermissionName.ROLE_ASSIGN);
+    }
+
+    @Test
+    @DisplayName("KYC_REVIEWER grants exactly KYC_REVIEW - and neither administrative permission")
+    void kycReviewerGrantsExactlyOne() {
+        // The least-privilege split is the point of the role (P2-TSK-004), so it is asserted as
+        // an exact set: this is the assertion that catches the previously-untestable mutations -
+        // the role granting everything, or quietly gaining IDENTITY_SUSPEND or ROLE_ASSIGN.
+        assertThat(RoleName.KYC_REVIEWER.permissions())
+                .as("a reviewer reviews; managing identities is a different trust decision")
+                .containsExactlyInAnyOrder(PermissionName.KYC_REVIEW);
+    }
+
+    @Test
+    @DisplayName("the two grants are disjoint, so the populations really are separate")
+    void theGrantsAreDisjoint() {
+        // Neither exact-set assertion alone says the SETS do not overlap - each pins its own
+        // role. Disjointness is the design's own word ("the first real least-privilege split
+        // between administrative populations"), so it gets its own assertion, and a permission
+        // added to both roles fails here even if somebody edits both exact-set tests to match.
+        assertThat(RoleName.ADMINISTRATOR.permissions())
+                .doesNotContainAnyElementsOf(RoleName.KYC_REVIEWER.permissions());
     }
 
     @Test
@@ -82,6 +106,6 @@ class RoleNameTest {
         // is the other half: that the generator produces what the reconciliation compares. Kept and
         // made load-bearing, where PermissionName's identical method was deleted as dead - the
         // P1-TSK-013 disposition, where isLiveAt was kept and idleBoundAfterUseAt removed.
-        assertThat(RoleName.sqlValueList()).isEqualTo("'ADMINISTRATOR'");
+        assertThat(RoleName.sqlValueList()).isEqualTo("'ADMINISTRATOR', 'KYC_REVIEWER'");
     }
 }

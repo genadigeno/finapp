@@ -841,7 +841,8 @@
           },
           "role": {
             "enum": [
-              "ADMINISTRATOR"
+              "ADMINISTRATOR",
+              "KYC_REVIEWER"
             ],
             "type": "string"
           }

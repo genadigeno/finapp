@@ -18,20 +18,36 @@ import java.util.stream.Collectors;
  * data, which means 'why was this denied?' is answered by evaluating a rule set rather than by
  * reading a method."* Putting the mapping in a table would give away exactly what the ADR paid for.
  *
- * <h2>One role, because Phase 1 has one kind of privileged actor</h2>
+ * <h2>Two roles, one per kind of privileged actor — and still no `CUSTOMER` role</h2>
  *
  * <p>There is deliberately no `CUSTOMER` role. Every session endpoint is available to every
  * session-holder against their **own** resources, and the control there is ownership rather than
  * permission (`P1-TSK-016`). A `CUSTOMER` role would have to be assigned at registration, would
  * grant nothing, and would be a row per person that no check ever reads.
  *
- * <p>ADR-0031 records role explosion as a medium-term risk and declines to pre-solve it. One role is
- * where that starts.
+ * <p>The second role arrived with the second privileged population (`P2-TSK-004`), not before:
+ * ADR-0031 records role explosion as a medium-term risk and declines to pre-solve it, and a role
+ * exists here when a distinct trust decision does. **The two grants are disjoint on purpose** —
+ * managing identities and reviewing cases are different decisions about different people, and the
+ * disjointness is what `RoleNameTest`'s exact-grant assertions hold: a role quietly gaining the
+ * other's permission is the mutation `P1-TSK-020` recorded as untestable at one role, and this is
+ * the task that made it fail the build.
  */
 public enum RoleName {
 
     /** Everything Phase 1 calls privileged. Held by nobody until somebody assigns it. */
-    ADMINISTRATOR(EnumSet.of(PermissionName.IDENTITY_SUSPEND, PermissionName.ROLE_ASSIGN));
+    ADMINISTRATOR(EnumSet.of(PermissionName.IDENTITY_SUSPEND, PermissionName.ROLE_ASSIGN)),
+
+    /**
+     * Reviews KYC/KYB cases and nothing else (`P2-TSK-004`).
+     *
+     * <p>Holds neither {@code IDENTITY_SUSPEND} nor {@code ROLE_ASSIGN}: a reviewer refused by
+     * the administrative endpoints is asserted over HTTP, in both directions, because least
+     * privilege is only real when it is tested from the attacker's side ({@code INV-AUD-03}).
+     * The first assignment needs no bootstrap: administrators exist and hold
+     * {@code ROLE_ASSIGN}, so a reviewer arrives through the ordinary audited endpoint.
+     */
+    KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW));
 
     private final Set<PermissionName> permissions;
 
