@@ -54,6 +54,8 @@ dependencies {
     // derive it and every rule silently stops protecting it.
     implementation(project(":party"))
     implementation(project(":identity"))
+    implementation(project(":kyc"))
+    implementation(project(":consent"))
 
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)

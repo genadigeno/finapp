@@ -49,4 +49,12 @@ include("platform")
 include("party")
 include("identity")
 
+// Phase 2 business modules (P2-TSK-003), on the same reasoning. `kyc` owns the verification
+// decision and its evidence; `consent` owns the lawful basis for processing. Two modules
+// because they are two bounded contexts with different authorities - and consent is neither
+// authentication nor authorization (CLAUDE.md §Domain Distinctions), so it does not live in
+// `identity` either.
+include("kyc")
+include("consent")
+
 include("app")

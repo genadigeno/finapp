@@ -160,6 +160,37 @@ assignment nobody has to justify is privilege escalation with a clean audit trai
 `INV-AUD-04`'s four-eyes requirement is not yet modelled — `audit_record` records one actor — and
 that is recorded debt rather than an omission here.
 
+### `kyc` — `KycAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `kyc.DecisionRecorded` | **Yes** | A KYC/KYB decision was recorded on a case, naming its actor, reason and policy version. |
+| `kyc.ScreeningHitResolved` | **Yes** | A reviewer resolved a screening hit, with the resolution and its justification. |
+| `kyc.DocumentContentRead` | No | Document content was read, naming who looked and at which document. |
+
+The two reason-required actions are the invariants speaking: `INV-KYC-02` makes a decision's
+reason a `NOT NULL` column, and `INV-KYC-04` requires a hit's resolution to carry its
+justification — a name match is a probability, and both silent outcomes are unacceptable in
+opposite directions. **`kyc.DocumentContentRead` requires no reason, deliberately**: reading a
+document is the routine act of every legitimate review, and a mandatory reason on a routine
+action produces a column of `"review"` (§4). What `INV-KYC-06` demands is *the trail of who
+looked*, and the record names the actor. **Case opening and check outcomes are absent on
+purpose** — their emitters and shapes belong to `P2-TSK-005`/`-007` and `P2-TSK-009`, the
+"deliberately few" licence applied as `party` applied it.
+
+### `consent` — `ConsentAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `consent.ConsentGranted` | No | A party granted consent for a purpose, against a named version of the consent text. |
+| `consent.ConsentWithdrawn` | No | A party withdrew consent for a purpose; the gated capability blocks from this record on. |
+
+Neither requires a reason: both are a person's own act, and for withdrawal specifically a
+demanded justification would be pressure applied exactly where none may exist. The audit record
+and the consent history row are **not the same thing and neither substitutes**: the consent row
+is the lawful basis the gate queries (`INV-CNS-01`), the audit record is the trail of the act
+(`INV-AUD-01`), and they live under different retention and access regimes.
+
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure
 in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today

@@ -31,11 +31,13 @@ import org.junit.jupiter.api.Test;
 class PartyModuleIsolationTest {
 
     @Test
-    @DisplayName("party sees neither its sibling business module nor the composition root")
+    @DisplayName("party sees no sibling business module and not the composition root")
     void seesNoSiblingAndNoCompositionRoot() {
         // `app` is the composition root and depends on this module. Seeing it here would mean the
-        // dependency direction had been inverted.
-        for (String forbidden : List.of("identity", "app")) {
+        // dependency direction had been inverted. `kyc` matters especially in this direction:
+        // INV-KYC-05 makes customer status a PROJECTION of the KYC decision, updated in reaction
+        // to it - a compile-time edge from party onto kyc is the first step toward computing it.
+        for (String forbidden : List.of("identity", "kyc", "consent", "app")) {
             assertThat(classpathEntries())
                     .as("party must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));

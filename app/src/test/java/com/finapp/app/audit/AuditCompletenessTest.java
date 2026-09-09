@@ -64,8 +64,9 @@ class AuditCompletenessTest {
      * future arriving is what removes it.
      *
      * What remains is the three outbox actions, which are recorded Phase 15 debt rather than
-     * unbuilt endpoints - so the list no longer contains a single entry that a Phase 1 task will
-     * close.
+     * unbuilt endpoints - plus the five Phase 2 actions P2-TSK-003 declared with the module
+     * skeletons, each named for the task that builds its emitter, exactly the shape the two
+     * departed Phase 1 entries had.
      */
     private static final Map<String, String> NOT_YET_EMITTED =
             Map.of(
@@ -76,7 +77,18 @@ class AuditCompletenessTest {
                     "Recorded debt: performed today as a manual UPDATE with no tooling. Phase 15.",
                     "outbox.EventDiscarded",
                     "Recorded debt: a relay decision visible only as a log line, which ADR-0010 is"
-                        + " explicit does not count as an audit trail. Phase 15.");
+                        + " explicit does not count as an audit trail. Phase 15.",
+                    "kyc.DecisionRecorded",
+                    "P2-TSK-013 builds the decision record; the module skeleton declared the"
+                        + " action because INV-KYC-02 designs it outright.",
+                    "kyc.ScreeningHitResolved",
+                    "P2-TSK-012 builds the reviewer endpoints; INV-KYC-04 designs the action.",
+                    "kyc.DocumentContentRead",
+                    "P2-TSK-008 builds the one audited read path; INV-KYC-06 designs the action.",
+                    "consent.ConsentGranted",
+                    "P2-TSK-018 builds the consent endpoints; ADR-0037 designs the record.",
+                    "consent.ConsentWithdrawn",
+                    "P2-TSK-018 builds the consent endpoints; ADR-0037 designs the record.");
 
     @Test
     @DisplayName("no registered action is silently unemitted")

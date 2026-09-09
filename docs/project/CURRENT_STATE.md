@@ -60,8 +60,8 @@ class, again).
 ## Current Milestone
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
-**3 of 5** (2026-09-09) — the broker adapter, the credential change and the first consumer path
-done; next is `P2-TSK-003`, the module skeletons. **The milestone's stated acceptance now holds
+**4 of 5** (2026-09-09) — the broker adapter, the credential change, the first consumer path
+and the module skeletons done; next is `P2-TSK-004`, the reviewer role, the milestone's last. **The milestone's stated acceptance now holds
 in full** — an outbox event reaches a real consumer through Kafka with exactly one effect per
 fact, and a person can change their password — and the milestone stays open anyway, because two
 of its scheduled tasks remain: acceptance is what a milestone *means* (the M1.2 lesson), never a
@@ -214,10 +214,71 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-002` completed 2026-09-09 — the inbox has met a real transport,
-and M2.1's integration acceptance now holds end to end. **Next: `P2-TSK-003` (`READY`).**
+**None in progress.** `P2-TSK-003` completed 2026-09-09 — `kyc` and `consent` exist as guarded
+modules with owned schemas, so every later Phase 2 task lands inside an enforced boundary.
+**Next: `P2-TSK-004` (`READY`), the last task of M2.1.**
 
 ### Just completed
+
+**`P2-TSK-003` — `kyc` and `consent` module skeletons** — `COMPLETE` (2026-09-09). The
+`P1-TSK-003` shape applied twice: two modules on the documented direction, two schemas each
+owned by the migrator with default-deny privileges (`REVOKE ALL FROM PUBLIC`, `USAGE` only to
+`finapp_app`, no tables), isolation tests in both directions, audit-action enums with their
+catalogue rows, two new lockfiles from the §7a one-invocation regeneration.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Build green with both modules | 888 hermetic + 471 database tests, locking enforced |
+| Every existing sweep provably covers them | Five probes, all caught: a planted `double` in each module, a cross-module dependency, a deleted catalogue section, an unclassified migrated column |
+
+### The privilege floor is the deliverable, and it is why the schemas come first
+
+Everything Phase 2 will claim at `DB-PRIVILEGE` rank — immutable decisions (`INV-KYC-02`),
+append-only evidence (`INV-HIST-02`), append-only consent history (`INV-CNS-02`), audited
+document reads (`INV-KYC-06`) — is only *available* at that rank because the migrator owns the
+objects and each table's grants arrive with the migration that creates it. A schema created
+casually later, under the wrong owner, forecloses the strongest enforcement the catalogue knows
+for the phase whose product is defensible decisions.
+
+### Five audit actions, declared under the deliberately-few licence
+
+The licence is `P1-TSK-003`'s: declare what the design states outright, never what a later
+task's design will shape. `kyc.DecisionRecorded` and `kyc.ScreeningHitResolved` require a
+reason because **the invariants themselves say so** (`INV-KYC-02`'s `NOT NULL` reason,
+`INV-KYC-04`'s justified resolution); `kyc.DocumentContentRead` deliberately does not — the
+trail of *who looked* is `INV-KYC-06`'s control, and a mandatory reason on a routine review
+read produces a column of `"review"`. `consent.ConsentGranted`/`ConsentWithdrawn` are a
+person's own acts, and demanding a justification at the moment of withdrawal would be pressure
+applied exactly where none may exist. **Case opening and check outcomes are absent on
+purpose** — their emitters are `P2-TSK-005`/`-007` and `P2-TSK-009`'s designs. All five joined
+`AuditCompletenessTest.NOT_YET_EMITTED` naming their owning tasks, so "deliberately not built
+yet" stays distinguishable from "somebody removed the call".
+
+### The gate's finding: sibling isolation had quietly become one-directional
+
+The new modules' isolation tests forbid every sibling — and checking the precedent showed the
+Phase 1 tests do not: `PartyModuleIsolationTest` forbade `identity` and `app` only, so from the
+moment a third business module existed, `party` could have grown a compile-time dependency on
+`kyc` with nothing failing. That edge matters most in exactly that direction: `INV-KYC-05`
+makes customer status a *projection* of the KYC decision, and a `party`→`kyc` dependency is the
+first step toward computing it. Both Phase 1 tests now forbid all three siblings — the
+stale-list defect, in the tests that exist to catch structural drift.
+
+### The build-logic lockfile drift, met again and reverted again
+
+The `--write-locks` run rewrote `build-logic/gradle.lockfile` from kotlin `2.4.20-RC3` to
+`2.4.20` — the `kotlinAbiValidationCompatClasspath` configuration floats to the newest kotlin,
+so any regeneration on any task picks up whatever shipped since. Reverted on the `P2-TSK-001`
+precedent: a toolchain version movement is not this task's dependency change. The verification
+metadata did not change at all — the new modules add no artefact the build did not already
+trust, which is what made a warm regeneration sufficient.
+
+**Five probes, all caught by the intended guard** — including the cross-module dependency
+caught by the isolation test itself rather than by lock resolution, and the unclassified
+column caught against a real database with the mutated migration applied from scratch.
+**888 hermetic tests, 471 database tests, 10 kafka tests.**
+
+### Previously
 
 **`P2-TSK-002` — The first consumer path: Kafka in, inbox dedupe, effect once** — `COMPLETE`
 (2026-09-09). The inbox (`P0-TSK-021`) meets a real transport for the first time: a Kafka
@@ -5487,20 +5548,22 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-003` — `kyc` and `consent` module skeletons.** Status `READY`; the next task of M2.1,
-no dependencies.
+**`P2-TSK-004` — `KYC_REVIEW` permission and the `KYC_REVIEWER` role.** Status `READY`; the
+last task of M2.1, no dependencies.
 
-Two modules, two schemas (`V001` each: schema, ownership, `REVOKE PUBLIC`, `USAGE` to
-`finapp_app`), isolation tests in both directions, audit-action enums with their catalogue rows
-— the `P1-TSK-003` shape, so every derived guard (classification, taxonomy, boundaries, secrets)
-sees the modules from their first commit. Acceptance: `./gradlew build` green with both modules
-and every existing sweep provably covering them (the planted-`double` probe).
+A second role and third permission, with the migration `RoleName.sqlValueList` regenerates and
+`V010`'s reconciling test guards. **The role→permission mapping finally becomes
+mutation-testable** — `P1-TSK-020` recorded that limit in as many words (*"it becomes testable
+at the second role"*), and that previously-impossible mutation failing the build is this task's
+acceptance. `KYC_REVIEWER` deliberately holds neither `IDENTITY_SUSPEND` nor `ROLE_ASSIGN`: the
+first real least-privilege split between administrative populations.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P2-TSK-003` complete - `kyc` and `consent` exist as guarded modules.** The `P1-TSK-003` shape applied twice: two modules on the documented direction (app -> business -> platform -> sharedkernel, enforced structurally by Gradle before ArchUnit asserts it), two schemas owned by the migrator with default-deny privileges and NO tables - because the privilege floor is the deliverable: every DB-PRIVILEGE claim Phase 2 will make (immutable decisions INV-KYC-02, append-only evidence, append-only consent history INV-CNS-02, audited document reads INV-KYC-06) is only available at that rank because the owner cannot be bypassed and each table's grants arrive with its migration. **Five audit actions declared under the deliberately-few licence** - the two reason-required ones are the invariants speaking (INV-KYC-02's NOT NULL reason, INV-KYC-04's justified resolution), the document read deliberately requires none (the trail of who looked IS the control), the consent pair are a person's own acts - and case opening plus check outcomes are absent on purpose, left to the tasks whose designs shape them; all five joined NOT_YET_EMITTED naming their emitters. **The gate's finding: sibling isolation had quietly become one-directional** - the Phase 1 isolation tests forbade only each other, so party could have grown a dependency on kyc unnoticed, and that is the direction INV-KYC-05 cares about most (customer status is a projection of the decision); both extended to forbid all siblings. The build-logic lockfile drift (kotlin RC3->GA, a floating configuration in the Kotlin plugin) was met again and reverted on the P2-TSK-001 precedent; the verification metadata did not change at all, the new modules adding no artefact the build did not already trust. **Five probes, all caught by the intended guard** - a planted double in each module, a cross-module dependency caught by the isolation test itself rather than by lock resolution, a deleted catalogue section, and an unclassified column migrated into kyc caught against a real database. 888 hermetic tests, 471 database tests, 10 kafka tests. |
 | 2026-09-09 | **`P2-TSK-002` complete - the first consumer path, and the inbox meets a real transport.** `KafkaEventReceiver` (in `platform.inbox.kafka`, the broker rule's second exemption - the rule's condition was always broader than its name, because consuming directly past the inbox is the symmetric defect to publishing past the outbox) polls records, parses the eleven `finapp.*` headers into a Kafka-free `ReceivedEvent`, enters the producing flow's correlation with the event as the effect's cause, and runs registered `InboxEventHandler`s through `InboxConsumer` - one database transaction per handler committing effect and dedupe record together, **the broker offset committed only after that**, auto-commit disabled because auto-commit acknowledges regardless of what happened. The two commits cannot be atomic and the design does not pretend: every failure between them resolves as a redelivery into the dedupe, and a record that cannot be handled is SEEKED BACK TO, never skipped - the relay's block-don't-skip rule on the consuming side. One consumer group per consuming module, derived from `consumerName()`'s module segment; no scheduler and no lease, deliberately - work-sharing is Kafka's group protocol and correctness is the inbox primary key, with group offsets registered as explicitly non-authoritative (`DISTRIBUTED_EXECUTION.md` §3). **Demonstrated against a real broker**: a wire duplicate is one effect; a crash between the database commit and the offset commit redelivers into the dedupe; two consumers across a rebalance effect once per record; a handler failure rolls the dedupe record back so the redelivery retries. Offset-commit-after-effect is asserted rather than described - a journalling consumer pins the ordering, and inverting it in code fails exactly that test. **The inbox-metrics debt row is paid** (`finapp.inbox.consumption` by outcome, eager, its trigger - the first live consumer - being this task), with `INV-MON-01`'s `Counter.increment(double)` exemption gaining its third same-case entry. **The gate found two stale architecture-document claims left by `P2-TSK-001`** - the *"deliberately absent"* transport adapter and the *"still empty"* module-granularity exemption - neither caught by any guard because the equivalence test pins rule names, not prose about exemption sets; corrected with provenance. **Five mutations, all caught by the intended assertion.** 884 hermetic tests, 471 database tests, 10 kafka tests. |
 | 2026-09-09 | **`P1-TSK-033` complete - a logged-in person can change their own password**, closing the ninth backlog defect `P1-DOC-002` found: `POST /v1/me/credential`, declared by the plan for the whole phase and built by nothing. **Composition, not new mechanism**: `matchCurrent` re-proves the current password (no upgrade-on-use - the credential is about to be superseded), the new one is derived outside the transaction (`P1-TSK-026`), the supersede is conditional so ten concurrent changes yield one credential, every OTHER session is revoked (`INV-IDN-03`) and the caller's own is ROTATED at the same assurance (`P1-TSK-015`'s fixation defence), the response carrying the replacement token via the `AuthenticatedSession` shape rather than a fourth near-identical record. **The plan's `MULTI_FACTOR` row was corrected**: taken literally it makes the endpoint unreachable for password-only customers, so the requirement is conditional on a factor existing - a domain check, not a static annotation (the `P1-TSK-019` finding) - and an MFA-enrolled identity on a `PASSWORD` session gets the actionable `identity.AssuranceRequired` while others change at `PASSWORD`. A wrong current password is counted toward lockout: a stolen session must not be an unthrottled oracle. **The gate found a test asserting less than it claimed** - the wrong-password test checked the FAILED audit record but not that the counter incremented, and the refuse helper writes the audit either way, so a mutation removing recordFailureFor survived; strengthened to drive the account to its lockout threshold and prove the correct current password is then refused. The session-token unwrap, the rotation call site, the `CREDENTIAL_CHANGED` audit action and the two secret request fields each joined their guard's register with a claim. **Five mutations, all caught by the intended assertion.** 874 hermetic tests, 471 database tests. |
 | 2026-09-09 | **`P2-TSK-001` complete - the broker adapter, and the platform publishes its first events.** `KafkaEventPublisher` maps one outbox event onto one Kafka record - payload bytes verbatim as the value, the ten envelope fields plus media type as `finapp.*` headers so a consumer can route and deduplicate an event it cannot parse, the aggregate as the record key so the relay's per-aggregate ordering is one consumers actually observe, one topic per producing module with the revisit trigger recorded. **The acceptance was corrected before it was met**: the backlog promised exactly-once on the broker, which the port's own javadoc refuses - honest at-least-once instead, and the crash-between-ack-and-mark test DEMONSTRATES the duplicate (same `finapp.eventId` on both copies, the inbox's dedupe key) rather than hiding it. **Producer construction and its acknowledgement configuration live in the adapter's `connect` factory** (`acks=all`, idempotence, bounded timeouts - and Kafka 4.x refused the naive `delivery = request` equality because linger's default is no longer zero, found by constructing one), so the composition root passes strings and never sees a Kafka type. **Two build rules modified, each with its own proof**: the broker rule's exemption narrowed from the recorded module to the outbox package - module granularity would have let every platform concern touch the client silently - with a sibling-package fixture proving the precision; and `nothingSchedulesAmbiently` gained its first exemption, `OutboxRelaySchedule`, the case the rule's own because-clause carves out: every instance polls deliberately, the per-aggregate advisory lock being the lease the rule demands, register row in `DISTRIBUTED_EXECUTION.md` §3, proven load-bearing. **The kafka test tier arrived as `P0-TSK-036` pre-decided** - its own tier, not a widening of `database` - wired through the convention plugin, `TestTier` (whose detection keys on ACQUISITION, `KafkaProducer`, not the client package, so `MockProducer` unit tests stay hermetic), the taxonomy guard, `TESTING.md` and CI in one guarded change, with `KafkaUnderTest` supplying a catalog-pinned broker per tier JVM. **The background worker meets the suite as a choice**: the schedule is property-gated and disabled in an application.properties overlay (a .properties file deliberately - a test application.yaml would shadow the real one) because a background worker mutating outbox rows mid-assertion turns deterministic tests into races; the kafka tier runs it on purpose. `KafkaTransportGuard` keeps ADR-0023's promise on schedule - a non-loopback bootstrap over PLAINTEXT refuses startup. Debt: the broker-adapter row closes, the relay-metrics row pays in full (`finapp.outbox.publication` by outcome, eager, fed from `RelayPollResult`), the Kafka-plaintext row narrows to Redis and the deployed posture. **Five mutations, all caught by the intended assertion** - the first return-before-ack form was caught by compilation and rewritten, the P1-TSK-026 rule applied to this gate's own sweep; and the v4/v7 identifier lesson was met by its own chronicler. 874 hermetic tests, 465 database tests, 5 kafka tests. |

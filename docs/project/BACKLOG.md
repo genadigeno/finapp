@@ -2693,7 +2693,7 @@ capability map, and the task list below is the schedule.
   "still empty" exemption), both corrected with provenance.
 - Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
 
-**P2-TSK-003 — `kyc` and `consent` module skeletons** — `READY` (2026-09-09, next in M2.1)
+**P2-TSK-003 — `kyc` and `consent` module skeletons** — `COMPLETE` (2026-09-09)
 - Context: kyc / consent
 - Description: Two modules, two schemas (`V001` each: schema, ownership, `REVOKE PUBLIC`,
   `USAGE` to `finapp_app`), isolation tests both directions, audit-action enums with their
@@ -2707,9 +2707,21 @@ capability map, and the task list below is the schedule.
   a planted unclassified column fails the build.
 - Accept: `./gradlew build` green with both modules and every existing sweep provably covering
   them (planted-`double` probe, the `P1-TSK-003` acceptance).
+- **Gate evidence (2026-09-09)**: five probes, all caught by the intended guard — a `double`
+  planted in each module fails the floating-point rules; a cross-module dependency added to
+  `kyc` fails **its isolation test itself**, not merely lock resolution; a catalogue section
+  removed fails the registry reconciliation; an unclassified column migrated into `kyc` fails
+  the classification guard against a real database. Five audit actions declared under the
+  deliberately-few licence (the two reason-required ones are `INV-KYC-02`/`-04` speaking; case
+  opening and check outcomes left to their owning tasks on purpose), each with a
+  `NOT_YET_EMITTED` entry naming its emitter. **The gate's own finding: sibling isolation had
+  quietly become one-directional** — the Phase 1 isolation tests forbade only each other, so
+  `party` could have grown a dependency on `kyc` unnoticed; both extended to forbid all
+  siblings. The `build-logic` lockfile drift (kotlin RC3→GA floating resolution) was met again
+  and reverted on the `P2-TSK-001` precedent.
 - Risk: Low. Cx: S. DoD: `DOD-BUILD`
 
-**P2-TSK-004 — `KYC_REVIEW` permission and the `KYC_REVIEWER` role** — `TODO`
+**P2-TSK-004 — `KYC_REVIEW` permission and the `KYC_REVIEWER` role** — `READY` (2026-09-09, last task of M2.1)
 - Context: identity
 - Description: A second role and third permission; `V0xx` migration for the role constraint
   (`RoleName.sqlValueList` regenerates it, `V010`'s reconciling test catches drift).
