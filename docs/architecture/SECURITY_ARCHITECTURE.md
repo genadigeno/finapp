@@ -174,6 +174,17 @@ before the handler runs — and the **target**, which names the customer. Each f
 comes to the enumeration and says this for itself; the entry is per handler, never a blanket
 "consumers are the platform".
 
+**The fifth site is a check outcome being recorded** (`P2-TSK-009`).
+`VerificationRunService.audit` writes `kyc.CheckCompleted` after a provider's answer is
+normalised into the platform's own vocabulary, and nobody is present when a machine records
+what a machine answered: a verification run has no authenticated caller, and attributing the
+outcome to the customer under verification would record them as having assessed themselves.
+The platform asking the question is the honest actor. What ties the record to the person is
+the **correlation** — the run inherits the flow that started the checks — and the **target**,
+which names the check, whose case names the customer. The record is deliberately about the
+*outcome being recorded*, never the decision: `INV-KYC-01` keeps the provider's verdict
+evidence, and the decision that will gate on it is `P2-TSK-013`'s separately audited act.
+
 **The review is now conducted by the build, not by memory.** `SystemActorCallSitesAreEnumeratedTest`
 holds this list against the code: a **new** place claiming the platform is the actor fails the build
 until somebody writes down why there is no honest alternative. ADR-0021 called `enterSystem()` *"the

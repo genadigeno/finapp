@@ -329,6 +329,33 @@ adding "just the user agent", which is why the ceiling is set before anything po
 | `kyc_document` | `content_length` | `CONFIDENTIAL` | Weakly identifying on its own; with the type it narrows a known document. Errs up, because ADR-0022 forbids reclassifying later |
 | `kyc_document` | `uploaded_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
 
+### `kyc.verification_check` — *added by `P2-TSK-009`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `verification_check` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `verification_check` | `case_id` | `INTERNAL` | As `kyc_case.id` — an identifier of a thing |
+| `verification_check` | `check_type` | `CONFIDENTIAL` | *Which questions were asked about a person* is a fact about them: a SANCTIONS row existing at all says the platform screened this customer, and the set of types narrows what kind of customer they are. `kyc_case.status`'s tipping-off reasoning, one table down |
+| `verification_check` | `status` | `CONFIDENTIAL` | **The sharper tipping-off column.** `HIT` on a SANCTIONS check is precisely the disclosure that is an offence in some regimes; `INDETERMINATE` says a review is unresolved. The case's status is shaped to hide exactly this, so the underlying value gets at least the case's level |
+| `verification_check` | `requested_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
+| `verification_check` | `status_changed_at` | `CONFIDENTIAL` | Dates the outcome, which with the status says *when* a hit landed — `kyc_case.status_changed_at`'s reasoning |
+
+### `kyc.verification_evidence` — *added by `P2-TSK-009`*
+
+The `kyc_document` at-rest shape (ADR-0036 groups provider evidence and document content under
+one treatment), and the same classifications for the same columns, for the same reasons.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `verification_evidence` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `verification_evidence` | `check_id` | `INTERNAL` | As `verification_check.id` — an identifier of a thing |
+| `verification_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The provider's raw answer about a person.** Classified at the ceiling of what it decrypts to (ADR-0022): a screening response can carry the match — names, dates of birth, list entries — and the level is what governs handling if the encryption is ever broken, mis-keyed or stripped. `kyc_document.content_ciphertext`'s reasoning verbatim |
+| `verification_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
+| `verification_evidence` | `key_version` | `INTERNAL` | Which key wrote the row — operational metadata for rotation |
+| `verification_evidence` | `checksum_sha256` | `RESTRICTED-PII` | The possession oracle again: anyone holding a candidate payload can confirm this is the answer the provider gave about this person. Classified with what it fingerprints — `kyc_document.checksum_sha256` |
+| `verification_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a hit response is longer than `{"status":"clear"}`, so the length leaks the outcome's shape. Errs up, because ADR-0022 forbids reclassifying later |
+| `verification_evidence` | `received_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

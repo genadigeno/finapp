@@ -59,10 +59,11 @@ class, again).
 
 ## Current Milestone
 
-**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **3 of 7**
-(2026-09-09) — the case aggregate, the first production consumer and the document store done;
-next is `P2-TSK-009`, the check machine (`P2-TSK-006` blocked on the consent gate). Acceptance: a case opened over
-HTTP reaches `READY_FOR_DECISION` on clean simulated checks, with evidence retained verbatim.
+**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **4 of 7**
+(2026-09-09) — the case aggregate, the first production consumer, the document store and the
+check machine done; next is `P2-TSK-010`, screening (`P2-TSK-006` blocked on the consent gate).
+Acceptance: a case opened over HTTP reaches `READY_FOR_DECISION` on clean simulated checks,
+with evidence retained verbatim — the checks-run half is real as of `P2-TSK-009`.
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
 **CLOSED 2026-09-09, 5 of 5.** The stated acceptance — an outbox event reaches a real consumer
@@ -221,13 +222,97 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-008` completed 2026-09-09 — the platform holds its first
-`RESTRICTED-PII` evidence: documents encrypted under a key outside the database, checksummed at
-capture and verified on read, append-only at `DB-PRIVILEGE`, with one audited read path.
-**Next: `P2-TSK-009` (`READY`)** — the check machine and the provider port; `P2-TSK-006` stays
+**None in progress.** `P2-TSK-009` completed 2026-09-09 — checks run: a case walks to
+`READY_FOR_DECISION` on clean simulated verifications, with the raw provider answers retained
+verbatim and encrypted, and every misbehaviour a provider can produce normalised to a result
+rather than an exception. **Next: `P2-TSK-010` (`READY`)** — screening; `P2-TSK-006` stays
 blocked on the consent gate.
 
 ### Just completed
+
+**`P2-TSK-009` — VerificationCheck, the provider port, and the simulated verifier** —
+`COMPLETE` (2026-09-09). The harness `P0-TSK-037` built has waited two phases for exactly this
+caller: the check machine (`REQUESTED → DISPATCHED → {CLEAR | HIT | INDETERMINATE}`), the
+`VerificationProvider` port (our vocabulary in, our vocabulary out — ADR-0008), two adapters
+over the simulated wire, and the run choreography that keeps all of it honest under N
+instances.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A clean simulated run takes a case to `READY_FOR_DECISION` with retained evidence | `VerificationRunDatabaseTest`: two providers answer clear over real HTTP, the case row reads `READY_FOR_DECISION`, the evidence rows hold the bytes received, and the audit trail carries `kyc.CheckCompleted` with `actor_id = 'system'` |
+| Every `SimulatedProvider` outbound mode drives a defined outcome | `VerificationAdapterTest`, the full matrix: clear, hit, unknown state, timeout (bounded), unavailable, 5xx, malformed, garbage, lost response (provably received — `requestCount == 1`), slow-but-in-time |
+
+### The terminals ARE the outcomes, and INDETERMINATE never flaps
+
+One machine, not a status beside an outcome column free to disagree with it.
+`INDETERMINATE` is **terminal**: its resolution is a **new check** of the same type (ADR-0038),
+so a check never flaps, the evidence of the failed attempt stays true, and the partial unique
+index — in-flight states only — is what makes the successor insertable. `INV-LIFE-03` arrives
+three phases before its catalogued owner, and the port's contract is **total**: provider
+misbehaviour is a result, never an exception, with the mapping's default branch
+`INDETERMINATE` — never success — and whatever bytes arrived retained verbatim
+(`INV-HIST-02`), encrypted with the same at-rest treatment as documents (ADR-0036 groups them).
+
+### The choreography: dispatch durable, call connectionless, outcome atomic, assessment after
+
+Per check, two transactions with the provider call between them. The dispatch (conditional
+`REQUESTED → DISPATCHED`, row count is the outcome) **commits before the provider is asked**,
+so a crash mid-call leaves a visible `DISPATCHED` fact to reconcile, never an unknown — and
+only the instance whose conditional won calls the provider, which is what makes
+`requestCount == checkCount` assertable under a ten-way race. The call holds **no database
+connection** (`P1-TSK-026`'s failure shape). The outcome transaction writes the conditional
+completion, the evidence, the audit record and the counter together or not at all.
+
+**And the assessment is a separate transaction after the outcome commits, which is
+load-bearing**: two instances completing a case's last two checks simultaneously would each
+assess inside their own outcome transaction, each see the other's check still `DISPATCHED`,
+and nobody would move the case. Assessed afterwards, the last assessor sees every committed
+outcome, both may attempt the transition, and the conditional `moveStatus` lets exactly one
+win — which is also what heals a crash landing between an outcome and the case transition.
+
+### The case moves only by our assessment, and a HIT wins every tie
+
+No branch maps a provider verdict onto the case (`INV-KYC-01`). `ChecksAssessment` reads the
+whole: **`BLOCKED` on any `HIT` is decided first** — not even a later `CLEAR` of the same type
+un-blocks, because a hit is resolved by a *person* (`INV-KYC-04`), and the routing that gives a
+blocked case its exit is `P2-TSK-010`'s, so a hit case stays honestly in
+`CHECKS_IN_PROGRESS`. An empty required-type set is **refused**: no requirement can never mean
+"proceed" — it would decide a case by absence of questions.
+
+### The residual race, recorded rather than locked away
+
+`requestOrConverge`'s pre-flight read is the business rule (one question per type), not a
+substitute for the index (`P1-TSK-006`'s distinction) — and an instance reading just before
+another's terminal commit can insert a redundant second question, because the terminal check
+has left the partial index. That race produces a wasted provider call and an extra answer,
+**never a wrong one** (an extra CLEAR changes no assessment; an extra HIT only blocks harder).
+A check stranded `DISPATCHED` by a crash is likewise visible-by-design; the sweeper that
+re-drives it is recorded remainder, not silent absence.
+
+### The guards fed
+
+The **fifth enumerated `enterSystem()` site** — nobody is present when a machine records what
+a machine answered, and attributing the outcome to the customer would record them as having
+assessed themselves; justification in `SECURITY_ARCHITECTURE.md`. `kyc.CheckCompleted`
+catalogued (no reason — recording an outcome is taken for and against nobody; the
+reason-required acts are the decision and the resolution). Fourteen new columns classified at
+their ceiling — `verification_check.status` is the sharper tipping-off column, the evidence
+ciphertext and checksum `RESTRICTED-PII` per the document reasoning. `OwnershipIsScopedTest`
+refused four unclassified store methods and the register gained them, all `AUTHORITATIVE_ID`
+on `findOpenFor` — and the `moveStatus` entry's *"no production caller yet"* went stale this
+task and was corrected. The v4/v7 identifier trap was met **and caught in self-review**:
+`UUID.randomUUID()` in `appendEvidence` became `EvidenceId`, minted by the runner.
+
+**Six mutations, all caught by the intended assertion** — dispatch-before-call inverted and
+the duplicate-dispatch conditional removed (both by the ten-instance race's call-per-check
+equality), a HIT allowed past the assessment, an unknown verdict mapped to CLEAR, the
+evidence write dropped, the audit write dropped. The sweep's first run reported all six
+**VOID** — `cmd` refused the bare `gradlew.bat` name, so the build never started — caught by
+the harness's build-actually-ran assertion, which exists because of `P1-TSK-026`'s identical
+finding; re-run with the absolute path, all six caught.
+**945 hermetic tests, 491 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TSK-008` — Documents: captured, encrypted, checksummed, access-audited** — `COMPLETE`
 (2026-09-09). The most sensitive bytes the platform holds before card data, held the way
@@ -5790,6 +5875,7 @@ phases early), `INV-HIST-02`. Accept: a clean simulated run takes a case to
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P2-TSK-009` complete - checks run, and the harness built two phases ago meets its caller.** The check machine (`REQUESTED → DISPATCHED → {CLEAR | HIT | INDETERMINATE}` - the terminals ARE the outcomes, one machine rather than a status beside an outcome column free to disagree), the `VerificationProvider` port (our vocabulary in, our vocabulary out; misbehaviour is a RESULT, never an exception, defaulting to INDETERMINATE and never to success), two adapters over the simulated wire, and `VerificationRunService`'s choreography: **dispatch durable before the call** (a crash mid-call leaves a visible DISPATCHED fact, never an unknown - `INV-LIFE-03` three phases early), the call holding **no connection**, the outcome transaction writing completion + evidence + audit + counter atomically, and the **assessment in a separate transaction after the commit** - two instances assessing inside their own outcome transactions would each see the other still DISPATCHED and nobody would move the case; separated, the last assessor sees all and the conditional moveStatus picks one winner, which also heals a crash between outcome and transition. `INDETERMINATE` is terminal and its resolution a NEW check (ADR-0038), so a check never flaps and the partial one-in-flight index is what makes the successor insertable. **A HIT wins every tie** in `ChecksAssessment` - not even a later CLEAR of the same type un-blocks (`INV-KYC-04`) - and the empty required-type set is refused, because no requirement can never mean proceed. Evidence retained verbatim (`INV-HIST-02`) under the document at-rest treatment (ADR-0036 groups them; same cipher, same key, key_version per row). The acceptance driven whole: two providers over real HTTP, the case at `READY_FOR_DECISION`, the bytes received in the evidence rows, `kyc.CheckCompleted` naming the system actor - the **fifth enumerated site**. Ten instances racing one case: `requestCount sum == checkCount`, the call-per-check equality that is the load-bearing race assertion. The residual redundant-question race recorded (a wasted call, never a wrong answer); the stuck-DISPATCHED sweeper recorded remainder. Fourteen columns classified; four store methods joined the ownership register; the v4/v7 trap met and caught in self-review (`EvidenceId`). **Six mutations, all caught by the intended assertion** - after a first sweep reported all six VOID because cmd refused the bare gradlew.bat name and the build never started, caught by the harness's build-actually-ran assertion (`P1-TSK-026`'s lesson holding). 945 hermetic tests, 491 database tests, 14 kafka tests. Next: P2-TSK-010. |
 | 2026-09-09 | **`P2-TSK-008` complete - documents: captured, encrypted, checksummed, access-audited.** The most sensitive bytes before card data, held as ADR-0036 decided: in PostgreSQL behind the DocumentStore port (the object-storage seam), AES-256-GCM under FINAPP_DOC_KEY, SHA-256 of the bytes received recorded at capture and RE-VERIFIED on every read - GCM answers 'is this ciphertext the one this key wrote', the checksum answers 'are these the bytes received', separated by a test that substitutes a ciphertext the same key genuinely wrote. Append-only at DB-PRIVILEGE (SELECT, INSERT and nothing else); plaintext in no column, swept from information_schema. **Content-addressed convergence is the idempotency mechanism**: UNIQUE (case_id, checksum_sha256) + the savepoint idiom, so a retry, a double-tap and ten racing instances land on one row and one 201 - no Idempotency-Key, content addressing is stronger. **The cipher is SecretCipher's mechanism, deliberately not its class**: module isolation forbids the import, and moving it would pull an expose() site out of the pinned identity set - the duplication is the recorded cost. DocumentKey is the THIRD per-credential loopback confinement, meeting the debt row's trigger one phase early (premise corrected, not left stale); one published default literal, referenced, domain-separated locally. POST /v1/me/kyc/documents is the /v1/me ownership-by-absence shape, one hop longer - Session -> Identity -> live Customer -> open case - with the decision-racing-upload race ACCEPTED and stated (a decision references its evidence explicitly, INV-KYC-02). The audited read path (kyc.DocumentContentRead, INV-KYC-06 - the trail of who looked is the control) has no HTTP caller yet BY PLAN: P2-TSK-012's reviewer surface arrives to it. The guards fed: three new ownership register entries, a third credential in the startup guard test (the P1-TSK-017 precedent met again), ten columns classified at their ceiling with the checksum called what it is - a possession oracle. **Six mutations, all caught by the intended assertion.** 920 hermetic tests, 486 database tests, 14 kafka tests. Next: P2-TSK-009. |
 | 2026-09-09 | **`P2-TSK-007` complete - the first production consumer, and the broker path carries a real business flow.** A registration opens a KYC case: HTTP -> outbox -> relay schedule -> Kafka -> consumer loop -> inbox -> case row, driven WHOLE - the app booted with relay and consumer enabled, the two workers every other suite disables, and no test call anywhere in the middle. **A naming drift corrected rather than propagated**: the backlog named party.CustomerRegistered, which is the AUDIT action; the event is party.CustomerOpened, whose aggregate IS the customer - so the handler reads no payload at all, the envelope's metadata-only principle paying off at the first real consumer. Created announces (kyc.CaseOpened's first emitter, plus kyc.KycCaseOpened caused by the consumed event); converged is silent. The platform is the actor - the fourth enumerated enterSystem() site, recorded as the CLASS every future consumer with an audited effect will be. **The sweep found the kafka test asserting less than it claimed**: removing the converged-guard survived the wire-duplicate test, because an exact duplicate never reaches the handler - the INBOX absorbs it by eventId - and the guard's real subject is a DISTINCT event converging on an existing case, now driven end to end (one case, one audit record, one announcement) and catching the mutation. The booted context gained @DirtiesContext, because a cached context's live relay kept polling after its class finished - one alphabetical reordering from racing a sibling's assertions. KycPolicyVersion.CURRENT lost its dot to EventPayload's charset. **Six mutations: five caught first time, one survived and strengthened the suite.** 903 hermetic tests, 477 database tests, 14 kafka tests. Next: P2-TSK-008. |
 | 2026-09-09 | **`P2-TSK-005` complete - the KycCase aggregate, and the phase's spine stands.** One verification of one customer, OPEN -> CHECKS_IN_PROGRESS -> {READY_FOR_DECISION | IN_REVIEW} -> READY_FOR_DECISION -> {APPROVED | REJECTED}, machine on the enum, rules in the aggregate (INV-LIFE-02, the exhaustive cross-product sweep derived from the machine), terminals terminal (INV-LIFE-04, both swept separately). **The one-open-case rule is the database's**: a partial unique index on (customer_id) over the NON-terminal states - a rule across aggregates of the same type, P1-TSK-005's reasoning verbatim - and ten instances with ten connections produce one row with nine losers CONVERGED onto it behind a savepoint, because 'ensure my case exists' is what both callers-to-come mean. **Two generated schema artefacts**: the status CHECK from sqlValueList() and the index predicate from sqlTerminalValueList(), both reconciled, so a state added without deciding which side of the predicate it sits on cannot land quietly - and the freed slot is demonstrated, a case walked to APPROVED admitting its successor. policy_version NOT NULL pinned at open (INV-HIST-04 at the moment it is free; the artefact it names is P2-TSK-013's). The ownership rule refused the unclassified moveStatus and the register gained its AUTHORITATIVE_ID entry, with the predicate vocabulary gaining the third entry its own javadoc predicted (customer_id = ?). Six columns classified at their ceiling, with kyc_case.status named for what it is - the tipping-off column. kyc.CaseOpened declared, catalogued, NOT_YET_EMITTED naming its two emitters. **Five mutations, all caught by the intended assertion** - a terminal reopened, the aggregate check dropped, the index made total, convergence removed, the conditional made unconditional. 901 hermetic tests, 477 database tests, 10 kafka tests. Next: P2-TSK-007 (P2-TSK-006 blocked on the consent gate). |

@@ -357,15 +357,58 @@ class OwnershipIsScopedTest {
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
                                     "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
-                                    "P2-TSK-005, and no production caller yet - the seam the check"
-                                        + " tasks drive. A case identifier can only come from"
-                                        + " findOpenFor or from openOrConverge's own insert, both"
-                                        + " scoped by customer_id in the statement; no endpoint"
-                                        + " accepts a case identifier at all until P2-TSK-012,"
-                                        + " whose reviewer surface is ADMINISTERED and must come"
-                                        + " here and say so. The statement's AND status = ? is the"
-                                        + " concurrency protocol, not an ownership predicate -"
-                                        + " JdbcIdentityStore.moveStatus's recorded distinction.")));
+                                    "P2-TSK-005's seam, driven since P2-TSK-009 by"
+                                        + " VerificationRunService's assessment. A case identifier"
+                                        + " can only come from findOpenFor or from openOrConverge's"
+                                        + " own insert, both scoped by customer_id in the"
+                                        + " statement; no endpoint accepts a case identifier at"
+                                        + " all until P2-TSK-012, whose reviewer surface is"
+                                        + " ADMINISTERED and must come here and say so. The"
+                                        + " statement's AND status = ? is the concurrency"
+                                        + " protocol, not an ownership predicate -"
+                                        + " JdbcIdentityStore.moveStatus's recorded distinction.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.newestOfType",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                                    "P2-TSK-009. The convergence read of requestOrConverge (one"
+                                        + " question per type): its KycCaseId comes from the run,"
+                                        + " which resolved the case through findOpenFor - scoped"
+                                        + " by customer_id in the statement. A private helper"
+                                        + " found by the detector, the JdbcDocumentStore"
+                                        + ".findByChecksum shape.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.forCase",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                                    "P2-TSK-009. The assessment's read of a case's checks; the"
+                                        + " KycCaseId comes from findOpenFor. No endpoint accepts"
+                                        + " a case identifier - the reviewer surface (P2-TSK-012)"
+                                        + " is ADMINISTERED and must come here and say so.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.move",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                                    "P2-TSK-009. The conditional transition behind dispatch and"
+                                        + " complete: the CheckId is read off a VerificationCheck"
+                                        + " the run holds, minted or converged by"
+                                        + " requestOrConverge under a case findOpenFor resolved."
+                                        + " No check identifier appears in any request. The"
+                                        + " statement's AND status = ? is the concurrency"
+                                        + " protocol, not an ownership predicate.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.appendEvidence",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                                    "P2-TSK-009. Evidence is retained against the check whose"
+                                        + " complete() the writer just won - the same in-memory"
+                                        + " VerificationCheck, provenance as move. INV-HIST-02's"
+                                        + " append; the row is never read back by identifier from"
+                                        + " any request.")));
 
     /**
      * The negative test that proves each {@link Scope#OWNER_SCOPED} predicate is load-bearing.

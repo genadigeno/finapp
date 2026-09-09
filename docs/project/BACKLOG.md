@@ -2868,7 +2868,7 @@ capability map, and the task list below is the schedule.
   **Six mutations, all caught by the intended assertion.**
 - Risk: High. Cx: M. DoD: `DOD-SEC`
 
-**P2-TSK-009 — VerificationCheck, the provider port, and the simulated verifier** — `READY` (2026-09-09)
+**P2-TSK-009 — VerificationCheck, the provider port, and the simulated verifier** — `COMPLETE` (2026-09-09)
 - Context: kyc / integration
 - Description: The check entity (`REQUESTED → DISPATCHED → CLEAR | HIT | INDETERMINATE`), a
   `VerificationProvider` port (ADR-0008: our vocabulary in, our vocabulary out), and identity- +
@@ -2886,9 +2886,28 @@ capability map, and the task list below is the schedule.
 - Tests: every `SimulatedProvider` outbound mode drives a defined check outcome; evidence bytes
   identical to bytes received; timeout → INDETERMINATE and the case does not decide.
 - Accept: a clean simulated run takes a case to `READY_FOR_DECISION` with retained evidence.
+- **Gate evidence (2026-09-09)**: the acceptance is driven against a real database and a real
+  HTTP provider — two adapters answer clear, the case reads `READY_FOR_DECISION`, the evidence
+  rows hold the bytes received, and `kyc.CheckCompleted` names the system actor (the fifth
+  enumerated site). **The choreography is the deliverable**: dispatch committed BEFORE the
+  provider call (a crash mid-call leaves a DISPATCHED fact, never an unknown), the call holds no
+  connection, the outcome transaction writes completion + evidence + audit + counter together,
+  and the assessment is a SEPARATE transaction after the commit — two instances assessing
+  inside their own outcome transactions would each see the other still DISPATCHED and nobody
+  would move the case. Ten instances racing one case: `requestCount sum == checkCount`, the
+  call-per-check equality that is the load-bearing race assertion, and one `READY_FOR_DECISION`.
+  All five `CheckType`s declared (plan §4 states them outright — a later constraint-replacement
+  migration avoided); `INDETERMINATE` is terminal and its resolution a NEW check (ADR-0038);
+  a HIT wins every tie in `ChecksAssessment`, not even a later CLEAR of the same type
+  un-blocks (`INV-KYC-04`); the empty required-type set is refused. The residual
+  redundant-question race is recorded (a wasted call, never a wrong answer); the
+  stuck-DISPATCHED sweeper is recorded remainder. **Six mutations, all caught by the intended
+  assertion** — after a first sweep whose six VOID results (the build never ran; cmd refused
+  the bare gradlew.bat name) were caught by the harness's build-actually-ran assertion, the
+  `P1-TSK-026` lesson holding.
 - Risk: High. Cx: L. DoD: `DOD-KERNEL`
 
-**P2-TSK-010 — Screening: sanctions, PEP, adverse media** — `TODO`
+**P2-TSK-010 — Screening: sanctions, PEP, adverse media** — `READY` (2026-09-09)
 - Context: kyc / integration
 - Description: The three screening check types over the same port and harness; a HIT routes the
   case to `IN_REVIEW` and creates review tasks.

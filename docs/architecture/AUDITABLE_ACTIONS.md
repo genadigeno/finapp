@@ -167,6 +167,7 @@ that is recorded debt rather than an omission here.
 | `kyc.CaseOpened` | No | A KYC/KYB case was opened for a customer, under a named policy version. |
 | `kyc.DecisionRecorded` | **Yes** | A KYC/KYB decision was recorded on a case, naming its actor, reason and policy version. |
 | `kyc.ScreeningHitResolved` | **Yes** | A reviewer resolved a screening hit, with the resolution and its justification. |
+| `kyc.CheckCompleted` | No | A verification check reached its outcome — the platform recording a provider's answer in its own vocabulary. |
 | `kyc.DocumentContentRead` | No | Document content was read, naming who looked and at which document. |
 
 The two reason-required actions are the invariants speaking: `INV-KYC-02` makes a decision's
@@ -177,9 +178,12 @@ document is the routine act of every legitimate review, and a mandatory reason o
 action produces a column of `"review"` (§4). What `INV-KYC-06` demands is *the trail of who
 looked*, and the record names the actor. `kyc.CaseOpened` joined at `P2-TSK-005`, the task
 whose design fixed its meaning — no reason, because opening is the customer's own act or the
-platform reacting to a registration, neither taken *against* anybody. **Check outcomes remain
-absent on purpose** — `P2-TSK-009`'s to declare, the "deliberately few" licence applied as
-`party` applied it.
+platform reacting to a registration, neither taken *against* anybody. `kyc.CheckCompleted`
+joined at `P2-TSK-009` and requires no reason for the same shape of argument: recording an
+outcome is the platform normalising a provider's answer, an act taken *for* nobody and
+*against* nobody — the acts that demand justification are the decision and the hit
+resolution, which are the two reason-required rows above. It is deliberately **not** a
+decision record (`INV-KYC-01`: a provider verdict is evidence, never the decision).
 
 ### `consent` — `ConsentAuditAction`
 

@@ -69,6 +69,23 @@ public enum KycAuditAction implements AuditableAction {
             true),
 
     /**
+     * A verification check reached its outcome.
+     *
+     * <p>Declared and emitted by `P2-TSK-009`, the task whose design fixed its meaning — the
+     * "check outcomes are absent on purpose" remainder, arrived. The record is what ties a
+     * provider's answer into the defensible-decision trail: the decision ({@code INV-KYC-02})
+     * references checks, and a check whose outcome nobody can date or attribute is a chain with
+     * a broken middle link. No reason required — the outcome is the platform's normalisation of
+     * a provider's answer, and the reason-bearing acts are the review resolution and the
+     * decision. The actor is the platform ({@code enterSystem()}, the fifth enumerated site):
+     * nobody is present when a machine records what a machine answered.
+     */
+    KYC_CHECK_COMPLETED(
+            "kyc.CheckCompleted",
+            "A verification check reached its normalised outcome, with its evidence retained.",
+            false),
+
+    /**
      * Somebody read document content.
      *
      * <p>{@code INV-KYC-06}: identity documents are the most sensitive bytes the platform holds

@@ -69,4 +69,8 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+
+    // P2-TSK-009: the SimulatedProvider harness (P0-TSK-037), getting its first real caller
+    // two phases after it was built - the verification adapters are exactly what it was for.
+    testImplementation(testFixtures(project(":platform")))
 }

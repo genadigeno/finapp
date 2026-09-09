@@ -103,6 +103,67 @@ public class KycBeans {
     }
 
     @Bean
+    com.finapp.kyc.CheckStore<Connection> checkStore(DocumentCipher documentCipher) {
+        // The same cipher as documents, deliberately: provider evidence and document content are
+        // one at-rest concern (ADR-0036 groups them), and key_version per row keeps a later
+        // split one rotation away.
+        return new com.finapp.kyc.JdbcCheckStore(documentCipher);
+    }
+
+    /**
+     * The verification providers and their runner — present only where a provider endpoint is
+     * configured.
+     *
+     * <p>{@code finapp.kyc.provider.url} has <strong>no default</strong>: ADR-0008 simulates
+     * providers, so the only endpoint that exists is whatever a test (or a demo compose file)
+     * stands up, and a deployed instance without one simply lacks these beans rather than
+     * carrying adapters aimed at nothing. The kafka-relay property-gate precedent, by absence
+     * of a bean rather than a flag.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    com.finapp.kyc.IdentityVerificationAdapter identityVerificationAdapter(
+            @Value("${finapp.kyc.provider.url}") java.net.URI providerUrl,
+            @Value("${finapp.kyc.provider.timeout:PT2S}") java.time.Duration timeout) {
+        return new com.finapp.kyc.IdentityVerificationAdapter(providerUrl, timeout);
+    }
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    com.finapp.kyc.DocumentVerificationAdapter documentVerificationAdapter(
+            @Value("${finapp.kyc.provider.url}") java.net.URI providerUrl,
+            @Value("${finapp.kyc.provider.timeout:PT2S}") java.time.Duration timeout) {
+        return new com.finapp.kyc.DocumentVerificationAdapter(providerUrl, timeout);
+    }
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    VerificationRunService verificationRunService(
+            KycCaseStore<Connection> kycCaseStore,
+            com.finapp.kyc.CheckStore<Connection> checkStore,
+            java.util.List<com.finapp.kyc.VerificationProvider> providers,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionTemplate kycTransactions,
+            DataSource dataSource,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new VerificationRunService(
+                kycCaseStore,
+                checkStore,
+                providers,
+                auditWriter,
+                idGenerator,
+                clock,
+                kycTransactions,
+                dataSource,
+                meterRegistry);
+    }
+
+    @Bean
     DocumentUploadService documentUploadService(
             IdentityStore<Connection> identityStore,
             PartyStore<Connection> partyStore,
