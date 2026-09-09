@@ -46,7 +46,15 @@ enum TestTier {
     SLICE("slice", "sliceTest"),
 
     /** Needs a real PostgreSQL. */
-    DATABASE("database", "databaseTest");
+    DATABASE("database", "databaseTest"),
+
+    /**
+     * Needs a real Kafka broker — and the database, because what the tier exists to test is the
+     * outbox reaching the broker. Its own tier rather than a widening of {@code database}: the
+     * decision `P0-TSK-036` recorded two phases before the client existed, because a tier name
+     * that means two things is a tier whose cost and failure conditions nobody can state.
+     */
+    KAFKA("kafka", "kafkaTest");
 
     /**
      * Type-name prefixes whose presence in a test class proves it needs that tier.
@@ -92,6 +100,21 @@ enum TestTier {
                     // The shared harness: DatabaseRoles, SimulatedInstance, DatabaseUnderTest.
                     "com.finapp.platform.testing.database.");
 
+    /**
+     * Acquiring a broker connection, never merely mentioning the client — the exact
+     * {@code DATABASE_SIGNATURE} lesson one tier down: {@code org.apache.kafka.} wholesale would
+     * push a unit test using {@code MockProducer} (which connects to nothing) into the broker
+     * tier, and a rule with false positives is a rule somebody turns off. The concrete
+     * {@code KafkaProducer}/{@code KafkaConsumer}/admin entry points are what actually dial a
+     * broker; the harness package proves the need without the test touching a client type.
+     */
+    private static final List<String> KAFKA_SIGNATURE =
+            List.of(
+                    "org.apache.kafka.clients.producer.KafkaProducer",
+                    "org.apache.kafka.clients.consumer.KafkaConsumer",
+                    "org.apache.kafka.clients.admin.",
+                    "com.finapp.platform.testing.kafka.");
+
     private static final String TAG_ANNOTATION = "org.junit.jupiter.api.Tag";
 
     private final String tag;
@@ -125,7 +148,7 @@ enum TestTier {
      * introspected — a test JVM cannot see the task graph that launched it.
      */
     String coveringCiTask() {
-        return this == DATABASE ? taskName : "build";
+        return this == DATABASE || this == KAFKA ? taskName : "build";
     }
 
     /** The heavier of two tiers. */
@@ -145,6 +168,9 @@ enum TestTier {
      */
     static TestTier requiredBy(JavaClass testClass) {
         Set<String> referenced = referencedTypeNames(testClass);
+        if (matches(referenced, KAFKA_SIGNATURE)) {
+            return KAFKA;
+        }
         if (matches(referenced, DATABASE_SIGNATURE)) {
             return DATABASE;
         }

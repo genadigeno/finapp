@@ -3,12 +3,14 @@
 # This file is expected to be part of source control.
 # To regenerate this file, run: ./gradlew :platform:dependencies --write-locks
 aopalliance:aopalliance:1.0=compileClasspath,runtimeClasspath,testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
+at.yawk.lz4:lz4-java:1.10.1=runtimeClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 ch.qos.logback:logback-classic:1.5.38=testCompileClasspath,testRuntimeClasspath
 ch.qos.logback:logback-core:1.5.38=testCompileClasspath,testRuntimeClasspath
 com.fasterxml.jackson.core:jackson-annotations:2.21=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 com.github.docker-java:docker-java-api:3.7.1=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 com.github.docker-java:docker-java-transport-zerodep:3.7.1=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 com.github.docker-java:docker-java-transport:3.7.1=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
+com.github.luben:zstd-jni:1.5.6-10=runtimeClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 commons-codec:commons-codec:1.21.0=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 commons-io:commons-io:2.20.0=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 io.micrometer:context-propagation:1.2.1=compileClasspath,runtimeClasspath,testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
@@ -19,6 +21,7 @@ net.bytebuddy:byte-buddy:1.18.11=testCompileClasspath,testFixturesCompileClasspa
 net.java.dev.jna:jna:5.18.1=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 org.apache.commons:commons-compress:1.28.0=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 org.apache.commons:commons-lang3:3.20.0=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
+org.apache.kafka:kafka-clients:4.2.1=compileClasspath,runtimeClasspath,testCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 org.apiguardian:apiguardian-api:1.1.2=testCompileClasspath,testFixturesCompileClasspath
 org.assertj:assertj-core:3.27.7=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 org.checkerframework:checker-qual:3.55.1=testFixturesRuntimeClasspath,testRuntimeClasspath
@@ -41,9 +44,11 @@ org.slf4j:slf4j-api:2.0.18=compileClasspath,runtimeClasspath,testCompileClasspat
 org.springframework.boot:spring-boot-dependencies:4.1.1=compileClasspath,runtimeClasspath,testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 org.testcontainers:testcontainers-database-commons:2.0.5=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 org.testcontainers:testcontainers-jdbc:2.0.5=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
+org.testcontainers:testcontainers-kafka:2.0.5=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 org.testcontainers:testcontainers-postgresql:2.0.5=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 org.testcontainers:testcontainers:2.0.5=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 org.wiremock:wiremock-standalone:3.13.2=testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
+org.xerial.snappy:snappy-java:1.1.10.7=runtimeClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 tools.jackson.core:jackson-core:3.1.5=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 tools.jackson.core:jackson-databind:3.1.5=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath
 tools.jackson:jackson-bom:3.1.5=testCompileClasspath,testFixturesCompileClasspath,testFixturesRuntimeClasspath,testRuntimeClasspath

@@ -395,8 +395,11 @@ class TestTaxonomyTest {
                 Set.of(System.getProperty(EXTERNAL_TIERS_PROPERTY, "").split(","));
 
         assertThat(external)
-                .as("only the database tier needs something outside the JVM today")
-                .containsExactly(TestTier.DATABASE.taskName());
+                .as("exactly the database and kafka tiers need something outside the JVM today"
+                        + " (P2-TSK-001) - a third entry here is a deliberate decision, not a"
+                        + " convenience")
+                .containsExactlyInAnyOrder(
+                        TestTier.DATABASE.taskName(), TestTier.KAFKA.taskName());
     }
 
     // ------------------------------------------------------------------

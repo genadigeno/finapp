@@ -76,6 +76,21 @@ cannot affect correctness.
 | `SessionStore` / `JdbcSessionStore` | none — all state in the row | Reads and writes on the caller's connection and keeps nothing between calls. Extending the idle bound is a conditional `UPDATE … WHERE` clamped by `LEAST(…, absolute_expires_at)`, so a touch can neither resurrect a revoked session nor outlast the absolute bound | Delegates to the row |
 | `SessionRevocation` | none — all state in the row | Bulk revocation takes `SELECT … FROM identity.identity … FOR UPDATE`, and a session insert takes `FOR KEY SHARE` on the same row **through its foreign key**. The two conflict, so a session cannot be issued concurrently with a revocation and survive it (`PHASE_1_PLAN.md` §8). Only the revoking side needs an explicit lock — an explicit one on the issuing side was written, found redundant by a surviving mutation, and removed rather than left to read as the mechanism | Delegates to the row |
 
+### `OutboxRelaySchedule` — why every instance runs a scheduler (`P2-TSK-001`)
+
+The named exemption to `nothingSchedulesAmbiently`, and the register row that exemption points
+at. Every instance runs the relay poll on a fixed delay **deliberately — there is no leader**:
+the rule's stated bar is that scheduled work be idempotent per period *or take an explicit
+database lease*, and each poll takes a transaction-scoped advisory lock **per aggregate** in
+PostgreSQL (`P0-TSK-020`). Ten pollers drain disjoint aggregates; a poll that wins no locks does
+nothing; losing the executor costs this instance's polling and nothing else. The exemption names
+this class alone and is proven load-bearing — any future scheduler that is not lease-protected
+is a new decision, not a ride on this one.
+
+The `KafkaProducer` the adapter holds is likewise per-instance and non-authoritative: its
+buffers are in-flight copies of durable outbox rows, and losing them costs a retry, never a
+fact.
+
 ### `IdGenerator` — why a per-instance counter is acceptable
 
 The 12-bit field is a counter rather than randomness, and that counter is process-local. It is

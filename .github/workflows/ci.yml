@@ -181,6 +181,11 @@ jobs:
         # readiness, and it would have run on a developer's machine and nowhere else.
         run: ./gradlew databaseTest --stacktrace
 
+      # The kafka tier: the outbox reaching a real broker (P2-TSK-001). Unqualified, for the
+      # same stale-list reason as the line above.
+      - name: Kafka tier
+        run: ./gradlew kafkaTest --stacktrace
+
       - name: Stop PostgreSQL
         if: always()
         run: docker compose down -v

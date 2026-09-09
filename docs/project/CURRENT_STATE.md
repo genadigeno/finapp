@@ -37,8 +37,9 @@ adapter (owned now by the Phase 1 → 2 transition, whose phase holds the first 
 is named by any exit criterion; both are recorded with owners.
 
 **Phase 2 — KYC/KYB and Consent**
-Status: **`READY`** — entry gate passed 2026-09-09, all twelve criteria
-([`reviews/PHASE_1_TO_2_TRANSITION.md`](reviews/PHASE_1_TO_2_TRANSITION.md)). Not started.
+Status: **`IN_PROGRESS`** — entry gate passed 2026-09-09, all twelve criteria
+([`reviews/PHASE_1_TO_2_TRANSITION.md`](reviews/PHASE_1_TO_2_TRANSITION.md)); started the same
+day with `P2-TSK-001`.
 
 Planned in [`PHASE_2_PLAN.md`](PHASE_2_PLAN.md): a Party verified to the standard a regulator
 requires, with evidence retained and the decision defensible — KYC/KYB cases, screening with
@@ -59,8 +60,10 @@ class, again).
 ## Current Milestone
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
-**0 of 5, not started.** Acceptance: an outbox event reaches a real consumer through Kafka
-exactly once per fact, and a person can change their password.
+**1 of 5** (2026-09-09). Acceptance: an outbox event reaches a real consumer through Kafka with
+exactly one effect per fact, and a person can change their password. (The milestone's own
+wording inherited the backlog's exactly-once promise; corrected the same way — the *effect* is
+exactly-once, the delivery is at-least-once.)
 
 ### Phase 1 milestones — all closed
 
@@ -206,8 +209,85 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** The Phase 1 → 2 transition completed 2026-09-09; **Phase 2 is `READY` and
-not started.** The selected task is **`P2-TSK-001` — the broker adapter** (status `READY`).
+**None in progress.** `P2-TSK-001` completed 2026-09-09 — Phase 2's first task, and the platform
+publishes its first events. **Next: `P1-TSK-033` (`READY`).**
+
+### Just completed
+
+**`P2-TSK-001` — The broker adapter: outbox events reach Kafka** — `COMPLETE` (2026-09-09).
+The events the outbox has held durably-and-unread since 2026-09-06 are published.
+
+| Acceptance criterion (as corrected) | Evidence |
+|---|---|
+| One publication on the non-crash path, envelope and bytes intact | `KafkaOutboxDeliveryKafkaTest.aCommittedEventIsDelivered` — consumed off a real broker, eleven headers, verbatim bytes |
+| Per-aggregate order under concurrent relays | Two relay instances, one aggregate, one partition, broker order = event order |
+| Crash between ack and mark **redelivers with the same `eventId`** | The duplicate is demonstrated, not hidden — at-least-once per ADR-0005, dedupable by the inbox |
+| Broker unavailability blocks, backs off, bounded | Failure recorded in `last_error` naming the class and never the payload |
+| Non-loopback plaintext refused at startup | `KafkaTransportGuard` — ADR-0023's promise, kept by the task that added the client |
+
+### The acceptance was corrected before it was met, and that is the first thing worth keeping
+
+The backlog promised *"observable on the broker exactly once per fact"* — a promise the
+`EventPublisher` port's own javadoc refuses, because an adapter claiming exactly-once invites
+consumers to skip their inbox. The design corrected it to honest at-least-once and the crash test
+**shows** the duplicate: same `finapp.eventId` on both copies, which is precisely what makes the
+consumer inbox able to absorb it (`INV-IDEM-04`).
+
+### The wire format, settled where two documents deferred it
+
+Value = payload bytes verbatim; the ten envelope fields + media type as `finapp.*` record
+headers, so a consumer can route and deduplicate an event it cannot parse — the envelope's own
+metadata-only principle, extended to the wire; key = the aggregate, so one aggregate rides one
+partition and the relay's ordering is one consumers actually observe; **one topic per producing
+module**, with the revisit trigger recorded. Producer configuration (`acks=all`, idempotence,
+bounded `max.block`/`delivery.timeout`) lives in the adapter's `connect` factory — **the
+composition root passes strings and never sees a Kafka type**, which is what let the broker
+rule's exemption stay one package wide.
+
+### Two build rules were modified, and each modification carries its own proof
+
+**The broker rule's exemption was narrowed from the recorded "module" to the outbox package.**
+The original javadoc chose module granularity; adding the exemption showed that would have let
+every platform concern — audit writer, API layer, correlation kernel — touch a broker client
+silently. Package granularity keeps the recorded reason (the relay may grow classes) and a
+sibling-package violation fixture proves the precision in both directions.
+
+**`nothingSchedulesAmbiently` gained its first exemption**, and it is the case the rule's own
+`because` clause carves out: `OutboxRelaySchedule` polls on every instance **deliberately** —
+no leader — because each poll takes the rule's required lease, the per-aggregate advisory lock,
+in PostgreSQL. Register row in `DISTRIBUTED_EXECUTION.md` §3; proven load-bearing in both
+directions; the set names classes, never packages, so the next scheduler is a decision.
+
+### The background worker meets the test suite as a choice, not a leak
+
+`EventingBeans` would have started a live relay under every `@SpringBootTest`, mutating outbox
+rows mid-assertion. The schedule is property-gated (`matchIfMissing = true`, so a deployed
+instance polls unconfigured) and the app test suite disables it in an
+`application.properties` overlay — a `.properties` file deliberately, because a test-resources
+`application.yaml` would shadow the real one. The kafka tier runs the schedule on purpose,
+which is the difference between disabling a control and choosing when a worker runs.
+
+### Three findings against my own work, en route
+
+Kafka 4.x refused my `delivery.timeout = request.timeout` equality (linger's default is no
+longer zero) — found by constructing a producer, not by reading. My first
+return-before-ack mutation was caught by **compilation** (orphaned catch clauses) and was
+rewritten to compile, whereupon `theWaitIsBounded` caught it — the `P1-TSK-026` rule applied to
+this gate's own sweep. And I met the v4/v7 identifier lesson (`P1-TSK-028`) personally:
+`UUID.randomUUID()` in a fixture, refused as malformed by `EntityId`.
+
+### Debt movements
+
+The broker-adapter row **closes** (trigger reached 2026-09-06, paid here). The relay-metrics row
+**pays in full**: `finapp.outbox.publication` by outcome, eager, fed from `RelayPollResult`,
+asserted present before any flow. The Kafka-plaintext row's premise changed: the first client
+arrived **with its guard**, and the row narrows to Redis plus the deployed-TLS posture
+(Phase 15). Nine inert `kotlin-2.4.20` verification entries from an aborted `build-logic`
+resolution are recorded as explained: trust entries for artefacts nothing resolves, left because
+regeneration merges and never prunes (§7a's recorded behaviour).
+
+**Five mutations, all caught by the intended assertion.** 874 hermetic tests, 465 database
+tests, and the new **kafka tier: 5 tests** against a real broker.
 
 ### Just completed
 
@@ -5207,9 +5287,9 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
-| **Broker adapter behind `EventPublisher`.** The relay publishes through a port; nothing implements it | An adapter decides the topic scheme, the broker wire format and the producer acknowledgement configuration, and puts a broker client on the classpath. The **stored** payload format is no longer deferred - `P1-TSK-006` settled it as `application/json` via `EventPayload`, because the first producer could not leave it open | **The trigger has now been reached**: `P1-TSK-006` emits three domain events, so the outbox is no longer empty and nothing publishes them. The risk is still bounded rather than absent - there is no consumer either, so the events are durable and unread rather than lost, and `INV-EVT-01` holds. It becomes real with the first consumer | Reached 2026-09-06. **Re-owned by `P1-DOC-002` (2026-09-09)**: Phase 1 closed without it, deliberately - an adapter with no consumer anywhere cannot be exercised end to end, and the wire-format half of the requirement WAS delivered (`EventPayload`). The Phase 1 → 2 transition creates the owning task, its phase holding the first consumers (`DELIVERY_PLAN.md` §Phase 2.8) | Phase 2 (transition creates the task) |
+| ~~**Broker adapter behind `EventPublisher`.**~~ - **closed 2026-09-09** by `P2-TSK-001`. `KafkaEventPublisher` publishes every outbox event to Kafka - payload bytes verbatim, envelope as record headers, aggregate as the record key, one topic per producing module - and `OutboxRelaySchedule` polls on every instance, safely, because the per-aggregate advisory lock is the lease (`DISTRIBUTED_EXECUTION.md` §3). Delivery is at-least-once with `finapp.eventId` as the consumer dedupe key, and the crash duplicate is DEMONSTRATED in `KafkaOutboxDeliveryKafkaTest` rather than hidden. | - | - | - | - |
 | **Outbox retention.** Published rows are never deleted | `V005` says a published row may be deleted once retained long enough for diagnosis; the sweep is a scheduled job with its own cluster-safety question, and no task owned it | Unbounded table growth. The partial pending index does **not** grow with it — published rows leave it — so the cost is storage and vacuum, not relay latency | Table size becoming operationally material | Phase 15 (data retention and deletion) |
-| ~~**Relay metrics.**~~ - **partly paid** by `P0-TSK-029`. Outbox depth and age are gauges over the database (`finapp.outbox.pending`, `finapp.outbox.oldest`), so a stalled aggregate is alertable rather than discoverable by reading logs - and readable precisely when the relay is down. **Still open:** throughput, failure and dead-letter counts from `RelayPollResult`, which need a relay that actually runs | Nothing schedules a relay, so those meters would be structurally always zero - which reads as "nothing is failing" rather than "nothing is running" | The remaining risk is narrower: a relay that is running but failing is visible as a growing backlog, not as a failure count | A scheduled relay | Phase 3 |
+| ~~**Relay metrics.**~~ - **paid in full 2026-09-09** (`P0-TSK-029` the gauges, `P2-TSK-001` the counters): `finapp.outbox.publication` by outcome (published, failed, deadlettered), registered eagerly and fed from `RelayPollResult` by the schedule that now actually runs. The eager series is asserted before any flow in `OutboxRelayScheduleKafkaTest` | Nothing schedules a relay, so those meters would be structurally always zero - which reads as "nothing is failing" rather than "nothing is running" | The remaining risk is narrower: a relay that is running but failing is visible as a growing backlog, not as a failure count | A scheduled relay | Phase 3 |
 | **Inbox retention sweep.** Records are never deleted | The sweep is a scheduled job with its own cluster-safety question, and `V007` deliberately adds no `expires_at` index until its predicate is written | Unbounded growth of a table whose only index is its primary key. **Not** a correctness risk in this direction: a record that is never swept deduplicates forever, and it is early expiry that admits a duplicate (`DATA_MIGRATIONS.md` §9) | Table size becoming operationally material, or the first consumer going live | Phase 15 (data retention and deletion) |
 | **Inbox metrics.** Duplicate and contention rates are returned as outcomes and aggregated nowhere | The metrics infrastructure now exists (`P0-TSK-029`), but nothing consumes messages: a counter incremented by no one is a meter that is structurally always zero | A rising duplicate rate is a signal about the transport and a rising contention rate about consumer concurrency; both remain visible only as log lines, one at debug | The first live consumer | Phase 3 |
 | **Audit retention and archival.** Records are never deleted, and the application role cannot delete them | ADR-0010 is explicit that deletion is not an option and that archival must preserve queryability - which is a Phase 15 deliverable, not a sweep | Unbounded growth of a table written on every privileged action. **Not** a correctness risk: the inability to delete is the invariant working, and archival must preserve the trail rather than trim it | Table size becoming operationally material | Phase 15 (retention and archival) |
@@ -5218,7 +5298,7 @@ carries, what triggers paying it down, and the owning phase.
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
 | ~~**Thirteen test classes open connections through their own private helper.**~~ — **closed** by `P0-TSK-036`. All thirteen now use `DatabaseRoles`, so the property names and the driver call have one definition. What they had been copying was a connection as the **superuser**, which `DatabaseRoles.bootstrap()` now documents as the wrong default and confines to tests making no privilege claim. All 173 database tests pass unchanged. | — | — | — | — |
-| **Kafka and Redis are plaintext with no enforcement.** The transport guard covers PostgreSQL only | There is no Kafka or Redis client on the classpath, so a guard for those connections would be guarding nothing - the same argument that kept a `Classification` enum out of `P0-TSK-033` | **None today**, because nothing connects to either. The expectations are documented per hop in `SECURITY_ARCHITECTURE.md`, so the gap is a decision rather than an omission; the risk arrives with the first client, which is also when it becomes enforceable | The first Kafka or Redis client | Phase 3 (broker adapter) |
+| **Redis is plaintext with no enforcement; Kafka is now guarded.** `P2-TSK-001` brought the first Kafka client and, with it, `KafkaTransportGuard` - a non-loopback bootstrap over `PLAINTEXT` refuses startup, which is ADR-0023's recorded promise kept on schedule. TLS/SASL themselves remain Phase 15's deployment posture, and the guard's limit is stated in `SECURITY_ARCHITECTURE.md` | There is still no Redis client, so a Redis guard would guard nothing | **Bounded**: the local broker is loopback-only and the guard holds the boundary; Redis carries no risk until a client exists | The first Redis client; a deployed broker for the TLS posture | Phase 15 |
 | ~~**A caller can put personal or financial data into the correlation identifier.**~~ - **closed 2026-09-04** by `P1-TSK-002` / ADR-0034. The platform now mints the identifier on every request and never adopts an inbound one; a well-formed caller value is echoed in `X-Client-Correlation-Id` and reaches no sink. **Narrowing the charset was the obvious repair and does not work** - a date of birth, a phone number and an account number are alphanumeric, so any charset still able to carry a UUID carries them; of the four probed values it would have stopped two and left two. The control had to be structural. | - | - | - | - |
 | ~~**No production code establishes a security scope.**~~ - **closed 2026-09-06** by `P1-TSK-006`. `RegistrationService` establishes one for `POST /v1/registrations`, and the actor is `enterSystem()` because the caller is **unauthenticated** - which is a call site that *stays* after Phase 1 revisits it, not one to be removed. The alternative, attributing the action to the Party it creates, is circular and is unavailable on the refusal path where nothing was created; an actor that differs between success and failure is worse than a uniform honest one. The information is carried by the audit record's **target** instead - the attempted login identifier, on both paths. | - | - | - | - |
 | **The loopback confinement is per credential, not a general mechanism.** `DatabaseCredentialGuard` guards the datasource password; `MfaKey` guards itself | **The recorded trigger - the second credential - was reached and handled** (`P1-DOC-002`, 2026-09-09): `P1-TSK-017`'s MFA key confines its own published default to loopback, tested (`MfaKeyTest`), so the risk the row named - a second published default aimed anywhere - was closed by the credential that arrived. What remains unbuilt is the general mechanism, still rightly deferred: two hand-written guards are not yet a pattern worth abstracting | **Low.** The build rule remains general - a third credential cannot arrive as a literal - and what it would not get is the confinement, now a known per-credential obligation with two precedents | The third credential, which is Phase 5's provider adapters | Phase 5 |
@@ -5276,24 +5356,23 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-001` — the broker adapter: outbox events reach Kafka.** Status `READY`; Phase 2's
-first task, M2.1.
+**`P1-TSK-033` — `POST /v1/me/credential`: a logged-in person can change their password.**
+Status `READY`; the second task of M2.1, keeping its Phase 1 ID because IDs are permanent.
 
-The outbox has held events durably-and-unread since `P1-TSK-006`; this task implements
-`EventPublisher` over a Kafka producer, decides the topic scheme and acknowledgement
-configuration ADR-0005 deferred to the first adapter, and schedules the relay cluster-safely
-(ADR-0024 forbids ambient scheduling — the mechanism is part of the design). Acceptance: an
-event committed through the outbox is observable on the broker exactly once per fact, envelope
-intact, under a killed-and-restarted relay. **The Kafka transport-security debt trigger fires
-with this task** (first broker client) and its gate must say what it did about it.
+The exit review's finding (`P1-DOC-002`): the plan declared the endpoint, nothing built it, and
+a person with a stolen password and no verified channel cannot replace their credential through
+the platform. The design questions the backlog entry already names: the **current** password
+re-proven in the request (a stolen session must not suffice to change the credential it rides
+on), derivation outside the transaction, conditional supersede, `revokeAllForExcept` (the person
+keeps the session they are acting from — its javadoc has described this exact caller since
+`P1-TSK-014`), audited against the person, `MULTI_FACTOR` per the plan's row.
 
-Then **`P1-TSK-033`** (`POST /v1/me/credential`) — the exit review's finding, scheduled second so
-the security capability gap closes before feature work widens.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P2-TSK-001` complete - the broker adapter, and the platform publishes its first events.** `KafkaEventPublisher` maps one outbox event onto one Kafka record - payload bytes verbatim as the value, the ten envelope fields plus media type as `finapp.*` headers so a consumer can route and deduplicate an event it cannot parse, the aggregate as the record key so the relay's per-aggregate ordering is one consumers actually observe, one topic per producing module with the revisit trigger recorded. **The acceptance was corrected before it was met**: the backlog promised exactly-once on the broker, which the port's own javadoc refuses - honest at-least-once instead, and the crash-between-ack-and-mark test DEMONSTRATES the duplicate (same `finapp.eventId` on both copies, the inbox's dedupe key) rather than hiding it. **Producer construction and its acknowledgement configuration live in the adapter's `connect` factory** (`acks=all`, idempotence, bounded timeouts - and Kafka 4.x refused the naive `delivery = request` equality because linger's default is no longer zero, found by constructing one), so the composition root passes strings and never sees a Kafka type. **Two build rules modified, each with its own proof**: the broker rule's exemption narrowed from the recorded module to the outbox package - module granularity would have let every platform concern touch the client silently - with a sibling-package fixture proving the precision; and `nothingSchedulesAmbiently` gained its first exemption, `OutboxRelaySchedule`, the case the rule's own because-clause carves out: every instance polls deliberately, the per-aggregate advisory lock being the lease the rule demands, register row in `DISTRIBUTED_EXECUTION.md` §3, proven load-bearing. **The kafka test tier arrived as `P0-TSK-036` pre-decided** - its own tier, not a widening of `database` - wired through the convention plugin, `TestTier` (whose detection keys on ACQUISITION, `KafkaProducer`, not the client package, so `MockProducer` unit tests stay hermetic), the taxonomy guard, `TESTING.md` and CI in one guarded change, with `KafkaUnderTest` supplying a catalog-pinned broker per tier JVM. **The background worker meets the suite as a choice**: the schedule is property-gated and disabled in an application.properties overlay (a .properties file deliberately - a test application.yaml would shadow the real one) because a background worker mutating outbox rows mid-assertion turns deterministic tests into races; the kafka tier runs it on purpose. `KafkaTransportGuard` keeps ADR-0023's promise on schedule - a non-loopback bootstrap over PLAINTEXT refuses startup. Debt: the broker-adapter row closes, the relay-metrics row pays in full (`finapp.outbox.publication` by outcome, eager, fed from `RelayPollResult`), the Kafka-plaintext row narrows to Redis and the deployed posture. **Five mutations, all caught by the intended assertion** - the first return-before-ack form was caught by compilation and rewritten, the P1-TSK-026 rule applied to this gate's own sweep; and the v4/v7 identifier lesson was met by its own chronicler. 874 hermetic tests, 465 database tests, 5 kafka tests. |
 | 2026-09-09 | **Phase 1 → Phase 2 transition conducted — Phase 2 is `READY`.** The full completion gate re-audited Phase 1 across seventeen categories (17 PASS), the distributed-system audit found **no single-instance assumption** (every authoritative decision arbitrated by PostgreSQL; the seven mandated questions answered with mechanisms), and the security audit passed with five weaknesses stated and owned. **The transition's own finding was in the gate machinery it was about to use**: both phase-derived guards keyed on the highest phase NAMED, so naming Phase 2 would have demanded its meters and invariant demonstrations before any code exists AND silently dropped Phase 1's plan from `PlannedMetersExistTest`'s checked set. Both now key on phases recorded `COMPLETE` - the status flip is the guarded act, proven by probe in both directions - and the probe's first run exposed a second defect by passing against a build that had not run: neither `CURRENT_STATE.md` nor the phase plans were declared `:app:test` inputs (the `P0-TSK-023` class, in the two newest document-backed guards). Repaired, plus four governance-record decays (ADR index rows stale at `Proposed`, `DECISIONS.md`'s invariant count stale since `INV-IDN-08`, `ROADMAP.md` frozen at 2026-09-04, the backlog's Phase 1 header). **Phase 2 initialised without implementing it**: `PHASE_2_PLAN.md` (case/check/review/decision model, consent as append-only history, twelve failure scenarios, six meters, six milestones); ADR-0035 (KYC owns the decision, Party projects it), ADR-0036 (evidence verbatim in PostgreSQL, object storage deferred with a trigger), ADR-0037 (consent history append-only, current basis derived), ADR-0038 (a provider verdict is evidence; hits are resolved by a person, never by silence) - all `Proposed`; the `INV-KYC-01`…`06` and `INV-CNS-01`…`04` groups catalogued on the Phase 0 → 1 precedent (the gate's six prose bullets were the weaker regime the `INV-IDN` group escaped), **82 invariants** platform-wide; and 24 backlog items across M2.1–M2.6, with the exit review's two leftovers scheduled first (`P2-TSK-001` broker adapter, `P1-TSK-033`). All twelve entry criteria hold; criterion 7 is vacuous and says so (no money moves in Phase 2). 864 hermetic tests, 465 database tests, green on the post-repair run. |
 | 2026-09-09 | **`P1-DOC-002` complete - the exit review re-run, and Phase 1 is `COMPLETE`.** All twelve universal criteria and all six phase-specific criteria hold; criteria 1 and 6 re-assessed against the code (the login token opens a protected endpoint with nothing inserted; `PlannedMetersExistTest` makes criterion 6 a build failure), the other ten re-checked, and the `PARTIAL` phase-specific criterion closes - `AuditCompletenessTest`'s `NOT_YET_EMITTED` holds exactly the three Phase-15 `outbox.*` actions. **Everything recounted, nothing inherited** - the first review had three numbers wrong for inheriting them - and the recount earned its keep: **`POST /v1/me/credential` is declared by the plan, built by nothing, and owned by nobody**, the ninth backlog defect of the class, found **in the first review's own area 7 table**, which had attributed it to `P1-TSK-026` - falsely, since that item's description reads *“Extend POST /v1/registrations”* and never included it. A false owner is worse than no owner for the reason a false exemption is worse than none: it reads as handled, so nobody asks. Recorded as `P1-TSK-033` with the capability gap stated honestly - a person with a stolen password and no verified channel cannot replace their credential through the platform - and it blocks no criterion, by the review's own `P1-TSK-028`/`-030` precedent. **A javadoc cited the missing capability as an incident-response tool** - `IdentityAdministration` told an administrator they have *“session revocation and a credential change”* - the ninth javadoc this phase to assert something the code does not do; corrected. **The broker adapter was ruled on rather than stepped around**: `PHASE_1_PLAN.md` §12 calls it required and it does not exist - non-blocking, because the phase objective needs no event delivery, the events are durable and unread (`INV-EVT-01` holds), the wire-format half of the requirement WAS delivered, and an adapter with no consumer cannot be exercised end to end, which is the gate's own standard; the plan is corrected where it was wrong and ownership passes to the Phase 1 → 2 transition, whose phase holds the first consumers. **Three debt rows owned by “Phase 1” resolved**, because a `COMPLETE` phase cannot own open debt: broker → the transition; registration throttling → Phase 15, merged with per-source rate limiting since the missing input is identical; and the loopback-credential row's trigger was reached **and handled** by `MfaKey`'s own tested confinement, remainder → Phase 5. **Recounted**: 17 endpoints, 10 tables, 8 aggregates, 20 auditable actions, 72 invariants, 6 ADRs, 864 hermetic and 465 database tests, backlog 34 of 34. **Phase 1 is `COMPLETE` (2026-09-09); next is the Phase 1 → 2 transition.** |
 | 2026-09-09 | **`P1-TSK-032` complete - reinstatement, and suspension stops being a one-way door.** `DELETE /v1/identities/{id}/suspension` moves a `SUSPENDED` identity back to `ACTIVE` - the mirror of `suspend`: a conditional `UPDATE ... WHERE status = 'SUSPENDED'` whose row count is the outcome, a required reason, an audit record (`identity.IdentityReinstated`, actor never the subject) and an outbox event. **The acceptance was driven end to end with a REGISTERED person rather than a fixture row**, because *"can authenticate again afterwards"* is unreachable from an identity that has no credential - suspend, login refused, reinstate, login succeeds - **and the pre-suspension session stays dead**: the suspension revoked it, `INV-HIST-01` does not un-happen things, and a resurrected bearer token would come back to life in whoever's hands last held it, possibly the attacker whose activity caused the suspension. Reinstatement restores the ability to log in, never the sessions. **Both self-refusal decisions were revisited together, as the backlog required.** Self-suspension stays refused on a corrected argument - the recorded reason was the one-way door, and reinstatement removes it only when a *second* administrator exists, which the platform does not guarantee; the last administrator self-suspending is still locked out with the out-of-band remedy of `README.md` §5e, and the no-self-loop trail argument is untouched. Self-reinstatement gets its own `SELF` branch that is **nearly dead code, deliberately**: a suspended identity holds no live session, so the branch is reachable only in the race where the actor is suspended mid-request - kept for that race and for the property that no administrative record ever names one party twice, and tested at the domain because HTTP cannot reach it. **The permission is `IDENTITY_SUSPEND`, not a new one** - `ROLE_ASSIGN`'s own *"grant or revoke"* shape: one capability, two directions, and a third permission held by the only role that exists would be vocabulary with no decision behind it. **The reason travels in a DELETE body**, which is unusual and correct: it is free prose that may name a person or an incident, and a query parameter would put it into access logs, proxies and browser history (`INV-AUD-02`). **`NOT_SUSPENDED` is named for what is checked** - `ACTIVE` and `CLOSED` both land on the 409 and only the first could honestly be called *already done*; `CLOSED` is terminal (`INV-LIFE-04`), refused by the conditional at the write and by the aggregate independently (`INV-LIFE-02`), and proven to stay closed. **Three guards demanded declarations before the build would pass**: the contract test presented a 14-line all-additions diff whose `BREAKING` labels are the classifier erring safe on a brand-new schema's `required` fields (`P1-TSK-006`'s precedent); `CredentialReachesNoEmittedSinkTest` refused the new request body until it joined the bounded exemption list; and the registry pair required `identity.IdentityReinstated` catalogued and emitted. `PHASE_1_PLAN.md` §7 gains the endpoint row with its provenance stated, so `P1-DOC-002`'s recount counts it rather than trips over it. **Four mutations, all caught by the intended assertion** - the wrong from-status in the conditional, the `SELF` check removed, the audit call removed, and the permission annotation removed. **The Phase 1 backlog is 34 of 34.** 864 hermetic tests, 465 database tests. |

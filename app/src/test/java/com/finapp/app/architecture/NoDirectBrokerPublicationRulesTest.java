@@ -47,10 +47,14 @@ import org.junit.jupiter.api.Test;
  * the moment it is first needed. This is the same reasoning as the cross-module entity rule,
  * which matches the JPA annotation by name for the same reason.
  *
- * <p><strong>The exemption is a module, not a class.</strong> The relay must publish; it is the
- * one component whose job that is. Naming the module rather than a class means the relay can be
- * built out of several classes without anyone editing this rule — and means the exemption stays
- * one obvious place rather than a growing list.
+ * <p><strong>The exemption is the outbox package, not a module and not a class.</strong> The
+ * original text here said "a module", and `P2-TSK-001` — the task that finally added the
+ * exemption — narrowed it while keeping its reason: package granularity still lets the relay be
+ * built out of several classes without anyone editing this rule, and a <em>module</em> exemption
+ * would have let every platform concern — the audit writer, the API layer, the correlation
+ * kernel — touch a broker client silently, which was never the intent. The relay <em>is</em> the
+ * outbox package. Proven load-bearing in both directions below: a broker call in a sibling
+ * platform package still fails, and one in the outbox package passes.
  */
 @Tag("architecture")
 // NOT a duplicate of the line above. ArchUnit runs @ArchTest fields under its OWN
@@ -78,11 +82,12 @@ class NoDirectBrokerPublicationRulesTest {
                     "javax.jms.");
 
     /**
-     * The module allowed to publish. Empty until P0-TSK-020 builds the relay — deliberately, so
-     * that between now and then <em>nothing</em> may publish, and the exemption arrives with the
-     * component that needs it rather than in advance of it.
+     * The one package allowed to publish. Empty from P0-TSK-019 until `P2-TSK-001` built the
+     * adapter — deliberately, so the exemption arrived with the component that needs it rather
+     * than in advance of it.
      */
-    private static final Set<String> PUBLISHING_MODULES = Set.of();
+    private static final Set<String> PUBLISHING_PACKAGES =
+            Set.of("com.finapp.platform.outbox");
 
     @ArchTest
     static void everyModuleWithProductionCodeIsAnalysed(JavaClasses imported) {
@@ -125,6 +130,26 @@ class NoDirectBrokerPublicationRulesTest {
         assertThatCode(() -> nothingPublishesToABrokerDirectly.check(clean)).doesNotThrowAnyException();
     }
 
+    @Test
+    @DisplayName("the exemption is one package, proven in both directions")
+    void theExemptionIsExactlyTheOutboxPackage() {
+        // The adapter itself must pass - the exemption is load-bearing, not decorative...
+        assertThatCode(
+                        () ->
+                                nothingPublishesToABrokerDirectly.check(
+                                        new ClassFileImporter()
+                                                .importClasses(
+                                                        com.finapp.platform.outbox
+                                                                .KafkaEventPublisher.class)))
+                .doesNotThrowAnyException();
+
+        // ...and a broker call one package sideways must still fail, or "the outbox package" has
+        // quietly become "the platform module" - the widening the P2-TSK-001 narrowing exists to
+        // prevent. The fixture declares a platform sibling package; the rule keys on the package
+        // name, which is exactly why this is provable from test sources.
+        assertRejects(com.finapp.platform.brokerprobe.PublishesFromAPlatformSibling.class);
+    }
+
     private static void assertRejects(Class<?> violation) {
         JavaClasses violating = new ClassFileImporter().importClasses(violation);
 
@@ -146,7 +171,7 @@ class NoDirectBrokerPublicationRulesTest {
         return new ArchCondition<>("not reach a message broker directly") {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
-                if (PUBLISHING_MODULES.contains(ProductionModules.of(javaClass))) {
+                if (PUBLISHING_PACKAGES.contains(javaClass.getPackageName())) {
                     return;
                 }
                 for (JavaMethodCall call : javaClass.getMethodCallsFromSelf()) {

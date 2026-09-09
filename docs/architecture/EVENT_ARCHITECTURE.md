@@ -60,7 +60,21 @@ the outbox's and the relay's decision (`P0-EPIC-06`).
 
 ### The stored payload format — decided by the first producer (`P1-TSK-006`)
 
-The *broker* wire format remains the adapter's decision and is still open. The format of the bytes
+The *broker* wire format was settled by the first adapter (`P2-TSK-001`,
+`KafkaEventPublisher`), exactly where this section deferred it to: **the record value is the
+payload bytes verbatim; the ten envelope fields plus the payload media type ride as
+`finapp.`-prefixed record headers; the record key is the aggregate identifier**, so Kafka's
+partitioner keeps one aggregate on one partition and the relay's per-aggregate ordering is an
+ordering consumers actually observe. **Topics are one per producing module**
+(`finapp.identity`, `finapp.party`, …), a small stable set, with `finapp.eventType` in the
+headers for consumer-side filtering — revisit trigger: a topic whose consumers' interests
+diverge materially. `finapp.eventId` on every record is the consumer's dedupe key
+(`INV-IDEM-04`), and delivery is **at-least-once, said plainly**: a relay crash between broker
+acknowledgement and the publication mark republishes with the same `eventId`
+(`KafkaOutboxDeliveryKafkaTest` demonstrates the duplicate rather than hiding it).
+
+The line below records what this section said until then, because the deferral was itself a
+decision: the wire format was the adapter's and stayed open until an adapter existed. The format of the bytes
 **in the outbox row** could not stay open past the first module that emits an event, so it is
 settled here as ADR-0005's recorded follow-up rather than as a new decision:
 

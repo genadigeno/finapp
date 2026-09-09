@@ -143,7 +143,13 @@ class NoFloatingPointMoneyRulesTest {
                     // returns `long`, not `double`, because that half WAS avoidable and "it is only
                     // a metric" is the reasoning that spreads the habit to something that is not.
                     "com.finapp.app.telemetry.IdentityMetrics",
-                    "com.finapp.app.telemetry.IdentityMetrics$Cached");
+                    "com.finapp.app.telemetry.IdentityMetrics$Cached",
+                    // P2-TSK-001. The SAME case again, not a new one: counts of published,
+                    // failed and dead-lettered events - ints out of RelayPollResult - published
+                    // through Counter.increment(double), the only instrument Micrometer offers.
+                    // The counts are ints end to end; the double appears at the registry
+                    // boundary and nowhere else.
+                    "com.finapp.app.eventing.OutboxRelaySchedule");
 
     // ---------------------------------------------------------------------
     // Guard: the rules must actually see the code they claim to protect.

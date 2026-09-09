@@ -92,6 +92,31 @@ public final class DatabaseEndpoint {
         return hosts;
     }
 
+    /**
+     * True when every entry of a comma-separated {@code host:port} list is on this machine.
+     *
+     * <p>The Kafka bootstrap form (`P2-TSK-001`): no scheme, no path — just the authority list a
+     * JDBC URL carries after {@code //}. Same fail-closed rule as {@link #isEntirelyLoopback}: an
+     * empty or unreadable list has not been shown to be local.
+     */
+    static boolean allLoopbackHostPorts(String hostPortList) {
+        if (hostPortList == null || hostPortList.isBlank()) {
+            return false;
+        }
+        boolean any = false;
+        for (String candidate : hostPortList.split(",")) {
+            String host = stripPort(candidate.trim());
+            if (host.isEmpty()) {
+                return false;
+            }
+            if (!isLoopback(host)) {
+                return false;
+            }
+            any = true;
+        }
+        return any;
+    }
+
     private static String stripPort(String hostAndPort) {
         if (hostAndPort.startsWith("[")) {
             // IPv6 literal: the colons inside the brackets are part of the address.

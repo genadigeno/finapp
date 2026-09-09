@@ -111,6 +111,20 @@ class NoSingleInstanceAssumptionRulesTest {
                     "java.util.concurrent.Phaser",
                     "java.util.concurrent.Exchanger");
 
+    /**
+     * Classes permitted to hold a scheduler, because their scheduled work takes an explicit
+     * database lease — the rule's own stated bar (`P2-TSK-001`).
+     *
+     * <p>{@code OutboxRelaySchedule} runs the relay on every instance <em>deliberately</em>:
+     * each poll takes a transaction-scoped advisory lock per aggregate in PostgreSQL
+     * (`P0-TSK-020`), so N pollers drain disjoint aggregates and a poll that wins no locks does
+     * nothing. The register row is `DISTRIBUTED_EXECUTION.md` §3; the exemption is proven
+     * load-bearing below, and any future scheduled work that is NOT lease-protected does not get
+     * to ride on it — the set names classes, never packages, so the next scheduler is a decision.
+     */
+    private static final Set<String> LEASE_PROTECTED_SCHEDULERS =
+            Set.of("com.finapp.app.eventing.OutboxRelaySchedule");
+
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =
             Set.of(
@@ -200,7 +214,11 @@ class NoSingleInstanceAssumptionRulesTest {
     @ArchTest
     static final ArchRule nothingSchedulesAmbiently =
             classes()
-                    .should(useAnyOf(AMBIENT_SCHEDULERS, "an ambient scheduler"))
+                    .should(
+                            useAnyOfExcept(
+                                    AMBIENT_SCHEDULERS,
+                                    "an ambient scheduler",
+                                    LEASE_PROTECTED_SCHEDULERS))
                     .because(
                             "every instance runs the scheduler, so a job with no lease runs N times."
                                 + " A scheduled financial process must be idempotent per period"
@@ -328,6 +346,29 @@ class NoSingleInstanceAssumptionRulesTest {
         }
     }
 
+    @Test
+    @DisplayName("the scheduler exemption is load-bearing, not decorative")
+    void theSchedulerExemptionIsReal() {
+        // The same rule with an empty permitted set must fire on the exempted class, or the
+        // exemption protects nothing and its register row describes a decision nobody had to
+        // take. And the exempted rule must still fire on an unexempted scheduler, or the
+        // exemption quietly became the rule being off.
+        ArchRule withoutExemptions =
+                classes()
+                        .should(useAnyOfExcept(AMBIENT_SCHEDULERS, "an ambient scheduler", Set.of()))
+                        .because("probe");
+        JavaClasses schedule =
+                new ClassFileImporter()
+                        .importClasses(com.finapp.app.eventing.OutboxRelaySchedule.class);
+        assertThatThrownBy(() -> withoutExemptions.check(schedule))
+                .as("OutboxRelaySchedule must really hold a scheduler, or its exemption is empty")
+                .isInstanceOf(AssertionError.class);
+
+        assertThatCode(() -> nothingSchedulesAmbiently.check(schedule))
+                .as("and the shipped rule must accept exactly it")
+                .doesNotThrowAnyException();
+    }
+
     private static void assertRejects(ArchRule rule, Class<?> violation) {
         JavaClasses violating = new ClassFileImporter().importClasses(violation);
 
@@ -349,6 +390,21 @@ class NoSingleInstanceAssumptionRulesTest {
      * and a {@code @Scheduled} annotation, which a field-typed rule would both miss - and
      * {@code @Scheduled} is how a Spring developer would actually introduce ambient scheduling.
      */
+    /** {@link #useAnyOf}, minus the named lease-protected classes. */
+    private static ArchCondition<JavaClass> useAnyOfExcept(
+            Set<String> types, String what, Set<String> permitted) {
+        ArchCondition<JavaClass> base = useAnyOf(types, what);
+        return new ArchCondition<>(base.getDescription()) {
+            @Override
+            public void check(JavaClass item, ConditionEvents events) {
+                if (permitted.contains(item.getFullName())) {
+                    return;
+                }
+                base.check(item, events);
+            }
+        };
+    }
+
     private static ArchCondition<JavaClass> useAnyOf(Set<String> types, String what) {
         return new ArchCondition<>("not use " + what) {
             @Override

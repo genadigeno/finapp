@@ -208,6 +208,12 @@ tasks.withType<Test>().configureEach {
     doFirst { systemProperty("finapp.runtime.classpath", applicationRuntimeArtefacts.get()) }
 }
 
+// The kafka tier, exactly as platform's task supplies it (P2-TSK-001).
+tasks.named<Test>("kafkaTest") {
+    systemProperty("finapp.db.image", "postgres:" + libs.versions.postgresImage.get())
+    systemProperty("finapp.kafka.image", "apache/kafka:" + libs.versions.kafkaImage.get())
+}
+
 tasks.named<Test>("databaseTest") {
     // The container image, from the version catalog, exactly as platform's task supplies it.
     // Without this the shared harness runs, finds no image, and returns - which is how these

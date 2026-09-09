@@ -118,6 +118,14 @@ dependencies {
     // nothing and fails silently rather than loudly.
     implementation(platform(libs.spring.boot.bom))
     testImplementation(platform(libs.spring.boot.bom))
+    testFixturesImplementation(platform(libs.spring.boot.bom))
+
+    // The broker client, version managed by the Boot BOM. `implementation`, never `api`: no
+    // Kafka type appears in platform's public signatures - the adapter takes a Producer through
+    // its own constructor and everything else sees only the EventPublisher port. The one class
+    // allowed to touch this is KafkaEventPublisher; NoDirectBrokerPublicationRulesTest holds
+    // that boundary for every other class in the platform (P2-TSK-001).
+    implementation(libs.kafka.clients)
 
     // `api`, not `implementation`: correlation identifiers are written into the caller's
     // log context, so a consumer of platform legitimately compiles against MDC.
@@ -154,6 +162,9 @@ dependencies {
     // Fixture scope, which is test scope: nothing ships.
     testFixturesImplementation(platform(libs.spring.boot.bom))
     testFixturesImplementation(libs.testcontainers.postgresql)
+    // The Kafka harness (KafkaUnderTest), gated on its image property exactly as the database
+    // harness is - a JVM whose task supplies no image starts nothing (P2-TSK-001).
+    testFixturesImplementation(libs.testcontainers.kafka)
     testFixturesImplementation(libs.junit.platform.launcher)
     testFixturesImplementation(libs.flyway.core)
     testFixturesRuntimeOnly(libs.flyway.database.postgresql)
@@ -178,6 +189,7 @@ dependencies {
     // applies the same migrations from Java, so a container gets the schema the same way a real
     // database does, in the same order, with the same history table.
     testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.testcontainers.kafka)
     // The LauncherSessionListener API. Gradle puts the launcher on a hidden configuration for
     // running tests; compiling against it needs it declared.
     testImplementation(libs.junit.platform.launcher)
@@ -194,6 +206,19 @@ dependencies {
 // of this module. What belongs here is only what is specific to platform — the coordinates the
 // database tests connect with.
 // ---------------------------------------------------------------------------
+// The kafka tier needs the database AND a broker: what it tests is the outbox reaching Kafka.
+// Both images from the version catalog, so the broker tests run against is the broker
+// compose.yaml runs and verifyInfrastructureVersions guards (P2-TSK-001).
+tasks.named<Test>("kafkaTest") {
+    systemProperty("finapp.db.image", "postgres:" + libs.versions.postgresImage.get())
+    systemProperty("finapp.kafka.image", "apache/kafka:" + libs.versions.kafkaImage.get())
+    if (providers.environmentVariable("FINAPP_DB_URL").isPresent) {
+        systemProperty("finapp.db.url", dbUrl)
+        systemProperty("finapp.db.user", dbUser)
+        systemProperty("finapp.db.password", dbPassword)
+    }
+}
+
 tasks.named<Test>("databaseTest") {
     // The same three environment variables the Flyway configuration above uses, so the
     // migration tool and the round-trip test can never be pointed at different databases.

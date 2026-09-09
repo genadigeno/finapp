@@ -26,6 +26,7 @@ differently, and nothing will notice. Grouping by *requirement* can be checked, 
 | **architecture** | the compiled classes of every module | `architecture` | `architectureTest` |
 | **slice** | a Spring application context | `slice` | `sliceTest` |
 | **database** | a real PostgreSQL | `database` | `databaseTest` |
+| **kafka** | a real Kafka broker, and the database — what the tier tests is the outbox reaching the broker | `kafka` | `kafkaTest` |
 
 The tiers are declared once, in `finapp.java-conventions.gradle.kts`, and mirrored in `TestTier`.
 The build passes its declaration to the tests as a system property so the two can be compared —
@@ -137,6 +138,7 @@ acquire the ability to have one casually.
 | `DatabaseRoles` | `…testing.database` | A connection as each role, and the assertion that the connected role cannot bypass the privileges under test |
 | `SimulatedInstance` | `…testing.database` | One simulated instance: its own connection and its own clock, server-anchored |
 | `SimulatedProvider` | `…testing.provider` | An external provider that misbehaves on demand (`P0-TSK-037`) |
+| `KafkaUnderTest` | `…testing.kafka` | Starts one Kafka broker per kafka-tier JVM and publishes `finapp.kafka.bootstrap` (`P2-TSK-001`). Its own package, because tier detection keys on package prefixes and a Kafka harness is not evidence a test needs PostgreSQL |
 | `RepositoryPaths` | `…testing` | Locates a repository file without assuming a working directory |
 
 **The database harnesses have their own package, and the tier rule is why.** They first sat beside

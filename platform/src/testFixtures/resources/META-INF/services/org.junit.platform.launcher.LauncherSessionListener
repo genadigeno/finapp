@@ -1,1 +1,2 @@
 com.finapp.platform.testing.database.DatabaseUnderTest
+com.finapp.platform.testing.kafka.KafkaUnderTest

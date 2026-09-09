@@ -118,12 +118,16 @@ val taggedTiers = linkedMapOf(
     "architectureTest" to "architecture",
     "sliceTest" to "slice",
     "databaseTest" to "database",
+    // A Kafka client gets its own tier rather than being folded into `database` - recorded in
+    // TESTING.md by P0-TSK-036, two phases before the client existed (P2-TSK-001). The tier
+    // needs a broker AND a database: the thing under test is the outbox reaching the broker.
+    "kafkaTest" to "kafka",
 )
 
 // Tiers needing something outside the JVM. These are excluded from `test`, so `./gradlew build`
 // stays green on a machine with nothing running - and they are a task you can SEE did not run,
 // rather than a test that skips itself, because a skipped test reports success.
-val externalInfrastructureTiers = setOf("databaseTest")
+val externalInfrastructureTiers = setOf("databaseTest", "kafkaTest")
 
 val externalTierTags = taggedTiers.filterKeys { it in externalInfrastructureTiers }.values.toTypedArray()
 

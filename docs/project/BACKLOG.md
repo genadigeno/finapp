@@ -2461,7 +2461,7 @@ repository exists to prevent.
 - Risk: Low — a fixture, not production code, and the constraint it trips is the platform being
   correct. Cx: S. DoD: `DOD-TEST`
 
-**P1-TSK-033 — `POST /v1/me/credential`: a logged-in person can change their password** — `TODO`
+**P1-TSK-033 — `POST /v1/me/credential`: a logged-in person can change their password** — `READY` (2026-09-09, the second task of M2.1)
 - Context: identity / api
 - Description: The endpoint `PHASE_1_PLAN.md` §7 has declared since the phase was planned —
   `session, MULTI_FACTOR`, revokes every other session — and nothing built.
@@ -2614,7 +2614,7 @@ capability map, and the task list below is the schedule.
 
 ## P2-EPIC-08 — Foundations settle (M2.1)
 
-**P2-TSK-001 — The broker adapter: outbox events reach Kafka** — `TODO`
+**P2-TSK-001 — The broker adapter: outbox events reach Kafka** — `COMPLETE` (2026-09-09)
 - Context: platform / integration
 - Description: An `EventPublisher` implementation over a Kafka producer, plus a cluster-safe
   schedule for the relay, so the events the outbox has held durably since `P1-TSK-006` are
@@ -2637,8 +2637,18 @@ capability map, and the task list below is the schedule.
 - Tests: database tier with a Kafka container — published once per fact under relay crash/restart
   (`P0-TST-005` extended to the real broker); ordering per aggregate under two relays; the
   dead-letter path still blocks its aggregate.
-- Accept: an event committed through the outbox is observable on the broker exactly once per
-  fact, with envelope intact, under a killed-and-restarted relay.
+- Accept *(corrected by the design — the original line promised what the port's own javadoc
+  refuses)*: exactly one publication on the non-crash path, envelope and bytes intact;
+  per-aggregate order under concurrent relays; a crash between broker acknowledgement and the
+  publication mark **redelivers with the same `eventId`** — at-least-once per ADR-0005, with the
+  consumer inbox as the dedupe — never a lost event; broker unavailability blocks and backs off,
+  bounded; a non-loopback plaintext bootstrap refused at startup.
+- **Gate evidence (2026-09-09)**: every corrected acceptance clause has a named green test in
+  the new kafka tier; **five mutations, all caught by the intended assertion** — the dedupe
+  header dropped, return-before-acknowledgement (rewritten once, because the first form was
+  caught by *compilation* and proved nothing), the guard inverted, the counter unfed — plus the
+  two in-suite exemption proofs. The composition root never touches a Kafka type: producer
+  construction and configuration live in the adapter's factory, inside the one exempted package.
 - Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
 
 **P2-TSK-002 — The first consumer path: Kafka in, inbox dedupe, effect once** — `TODO`

@@ -76,7 +76,7 @@ The expectations per hop, and what enforces them (`P0-TSK-034`, ADR-0023).
 | Hop | Local | Deployed | Enforced by |
 |---|---|---|---|
 | Application to PostgreSQL | plaintext, loopback only | `sslmode=verify-full` | `TransportSecurityGuard` - the application refuses to start otherwise |
-| Application to Kafka | `PLAINTEXT` listeners | TLS with client authentication | *Decided, not yet implemented* - there is no Kafka client on the classpath |
+| Application to Kafka | `PLAINTEXT` listeners, loopback only | TLS with client authentication | **Guarded at the boundary that exists** (`P2-TSK-001`): `KafkaTransportGuard` refuses startup when any bootstrap server is non-loopback while the protocol is `PLAINTEXT` - ADR-0023's promise, kept by the task that added the first client. TLS/SASL themselves are Phase 15's deployment posture; the guard's limit is that it cannot see hostname verification disabled elsewhere |
 | Application to Redis | plaintext, no auth | TLS, and a credential | *Decided, not yet implemented* - there is no Redis client |
 | Inbound HTTP | plaintext | TLS terminated at the edge; the application is never the TLS endpoint | *Decided, not yet implemented* - Phase 15, with deployment |
 | Application to a provider | none exist | TLS with certificate verification, never a disabled check | Phase 5, with the first adapter |

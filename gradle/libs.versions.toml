@@ -270,6 +270,11 @@ springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-w
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
+# Version from the Spring Boot BOM's Testcontainers management, like its postgresql sibling.
+testcontainers-kafka = { module = "org.testcontainers:testcontainers-kafka" }
+# Version from the Spring Boot BOM (kafka.version), which manages the client the broker in
+# compose.yaml is compatible with. P2-TSK-001; the broker image stays pinned separately above.
+kafka-clients = { module = "org.apache.kafka:kafka-clients" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 postgresql-driver = { module = "org.postgresql:postgresql", version.ref = "postgresqlDriver" }
 
