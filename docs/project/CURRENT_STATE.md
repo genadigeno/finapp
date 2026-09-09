@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-09
+Last updated: 2026-09-09 (Phase 1 → 2 transition)
 
 ---
 
@@ -36,7 +36,33 @@ money anywhere in it, by design.
 adapter (owned now by the Phase 1 → 2 transition, whose phase holds the first consumers). Neither
 is named by any exit criterion; both are recorded with owners.
 
+**Phase 2 — KYC/KYB and Consent**
+Status: **`READY`** — entry gate passed 2026-09-09, all twelve criteria
+([`reviews/PHASE_1_TO_2_TRANSITION.md`](reviews/PHASE_1_TO_2_TRANSITION.md)). Not started.
+
+Planned in [`PHASE_2_PLAN.md`](PHASE_2_PLAN.md): a Party verified to the standard a regulator
+requires, with evidence retained and the decision defensible — KYC/KYB cases, screening with
+human-resolved hits, encrypted access-audited documents, an append-only consent history with an
+enforcement gate, and the platform's first broker adapter and consumer. Decisions in
+ADR-0035…0038 (`Proposed`); properties in the new `INV-KYC-01`…`06` and `INV-CNS-01`…`04` groups
+(**82 invariants** platform-wide). 24 backlog items across six milestones; the two items the exit
+review left open — the broker adapter and `P1-TSK-033` — are scheduled first, in M2.1.
+
+**The transition repaired its own gate machinery before using it**: both phase-derived guards
+(`MutationDemonstrationTest`, `PlannedMetersExistTest`) keyed on the highest phase *named*, which
+would have demanded Phase 2's meters and demonstrations at entry and silently dropped Phase 1's
+plan from the checked set. They now key on phases recorded **`COMPLETE`**, so the status flip is
+the guarded act — and `CURRENT_STATE.md` plus the phase plans are now declared build inputs,
+because the probe that found this passed against a build that had not run (the `P0-TSK-023`
+class, again).
+
 ## Current Milestone
+
+**M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
+**0 of 5, not started.** Acceptance: an outbox event reaches a real consumer through Kafka
+exactly once per fact, and a person can change their password.
+
+### Phase 1 milestones — all closed
 
 **M1.2 — That person can authenticate.** **CLOSED 2026-09-08**, two days after its last numbered
 task, by `P1-TSK-027`. Its stated acceptance is *"an identity authenticates and **receives a
@@ -180,10 +206,49 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-DOC-002` completed 2026-09-09 — **the Phase 1 backlog is closed and the
-phase is `COMPLETE`.**
+**None in progress.** The Phase 1 → 2 transition completed 2026-09-09; **Phase 2 is `READY` and
+not started.** The selected task is **`P2-TSK-001` — the broker adapter** (status `READY`).
 
 ### Just completed
+
+**Phase 1 → Phase 2 transition** — **CONDUCTED** (2026-09-09).
+[`reviews/PHASE_1_TO_2_TRANSITION.md`](reviews/PHASE_1_TO_2_TRANSITION.md)
+
+| Part | Outcome |
+|---|---|
+| Phase 1 completion audit, 17 categories | **17 `PASS`** (operational readiness scoped to Phase 15's remit) |
+| Distributed-system audit | **No single-instance assumption found**; the seven questions answered with mechanisms, not adjectives |
+| Security audit | Pass, with five weaknesses stated and owned rather than glossed |
+| Architecture consistency | No drift in the architecture; **four decays in the governance record**, fixed |
+| Testing audit | 864 hermetic + 465 database tests green, fresh run; adequacy argued from the mutation register and coordination-asserting tests, not from green |
+| Phase 1 verdict | **`COMPLETE`** (confirming `P1-DOC-002`) |
+| Phase 2 entry gate | **All twelve criteria hold → `READY`** |
+
+### The transition's own finding: the gate machinery would have broken at the boundary
+
+Both phase-derived guards keyed on the highest phase **named** in this document. Naming Phase 2 —
+this transition's required act — would have demanded Phase 2's planned meters and invariant
+demonstrations **before any Phase 2 code exists**, and `PlannedMetersExistTest` would have
+silently **stopped checking Phase 1's plan** the same moment. Both now key on phases recorded
+**`COMPLETE`**: the status flip is the guarded act (criteria 3 and 6 enforced at exactly the
+moment they apply), and every completed phase's plan stays checked for ever. Proven in both
+directions by probe — `READY` widens nothing, a simulated `COMPLETE` fails both guards.
+
+**And the probe's first run passed against a build that had not run**: neither this document nor
+the phase plans were declared `:app:test` inputs, so the guards that derive the phase from them
+could go stale against them — the `P0-TSK-023` class, in the two newest document-backed guards.
+Both are inputs now.
+
+### What the transition produced
+
+The Phase 2 plan (`PHASE_2_PLAN.md`); ADR-0035…0038 (`Proposed`); the `INV-KYC-01`…`06` and
+`INV-CNS-01`…`04` groups — Phase 2's six prose gate bullets given stable IDs, ranked enforcement
+and named verification, the Phase 0 → 1 precedent, taking the platform to **82 invariants**; 24
+backlog items across six milestones with the two exit-review leftovers scheduled first; and the
+governance-record repairs above. **No application code was written**, which is the constraint a
+transition is performed under.
+
+### Previously
 
 **`P1-DOC-002` — the Phase 1 exit review, re-run** — `COMPLETE` (2026-09-09). **The gate passes
 and Phase 1 is `COMPLETE`.**
@@ -4969,10 +5034,10 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phase 0 and Phase 1 are both `COMPLETE`.
 
-The last work performed was `P1-DOC-002` — the Phase 1 exit-review re-run (2026-09-09), a
-governance act that ruled the gate passed and found the ninth backlog defect of the phase's
-recurring class on the way. The next work is the **Phase 1 → 2 transition**, which is planning and
-governance rather than implementation, per the Phase 0 → 1 precedent.
+The last work performed was the **Phase 1 → 2 transition** (2026-09-09) — planning and
+governance rather than implementation: the completion audit, the guard-machinery repair, the
+Phase 2 plan, ADR-0035…0038, the `INV-KYC`/`INV-CNS` groups and the Phase 2 backlog. The next
+work is `P2-TSK-001`, the broker adapter.
 
 *(This section had said "Phase 1 is `READY` but not started" since 2026-09-04 — pre-existing drift
 the re-run's criterion 9 check caught, corrected here rather than left because a review about
@@ -5211,21 +5276,25 @@ Resolved during initiation:
 
 ## Next Task
 
-**The Phase 1 → 2 transition.** Phase 1 is `COMPLETE`; what comes next is a governance act, not an
-implementation one, per the Phase 0 → 1 precedent: the Phase 2 plan (KYC/KYB and Consent), its
-backlog elaborated to task granularity, its entry gate against `PHASE_GATES.md` §2, and the
-invariants it must protect (`INV-HIST-02` is `Phase: 2 (screening)` in the catalogue).
+**`P2-TSK-001` — the broker adapter: outbox events reach Kafka.** Status `READY`; Phase 2's
+first task, M2.1.
 
-**The transition inherits three named items from the re-run**: creating the owning task for the
-**broker adapter** (its phase holds the first consumers — `DELIVERY_PLAN.md` §Phase 2.8);
-scheduling **`P1-TSK-033`** (`POST /v1/me/credential`, planned and unbuilt); and Phase 2's own
-decisions. None of the three blocks Phase 1's gate, and each is recorded with the reasoning in the
-review's 2026-09-09 addendum.
+The outbox has held events durably-and-unread since `P1-TSK-006`; this task implements
+`EventPublisher` over a Kafka producer, decides the topic scheme and acknowledgement
+configuration ADR-0005 deferred to the first adapter, and schedules the relay cluster-safely
+(ADR-0024 forbids ambient scheduling — the mechanism is part of the design). Acceptance: an
+event committed through the outbox is observable on the broker exactly once per fact, envelope
+intact, under a killed-and-restarted relay. **The Kafka transport-security debt trigger fires
+with this task** (first broker client) and its gate must say what it did about it.
+
+Then **`P1-TSK-033`** (`POST /v1/me/credential`) — the exit review's finding, scheduled second so
+the security capability gap closes before feature work widens.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **Phase 1 → Phase 2 transition conducted — Phase 2 is `READY`.** The full completion gate re-audited Phase 1 across seventeen categories (17 PASS), the distributed-system audit found **no single-instance assumption** (every authoritative decision arbitrated by PostgreSQL; the seven mandated questions answered with mechanisms), and the security audit passed with five weaknesses stated and owned. **The transition's own finding was in the gate machinery it was about to use**: both phase-derived guards keyed on the highest phase NAMED, so naming Phase 2 would have demanded its meters and invariant demonstrations before any code exists AND silently dropped Phase 1's plan from `PlannedMetersExistTest`'s checked set. Both now key on phases recorded `COMPLETE` - the status flip is the guarded act, proven by probe in both directions - and the probe's first run exposed a second defect by passing against a build that had not run: neither `CURRENT_STATE.md` nor the phase plans were declared `:app:test` inputs (the `P0-TSK-023` class, in the two newest document-backed guards). Repaired, plus four governance-record decays (ADR index rows stale at `Proposed`, `DECISIONS.md`'s invariant count stale since `INV-IDN-08`, `ROADMAP.md` frozen at 2026-09-04, the backlog's Phase 1 header). **Phase 2 initialised without implementing it**: `PHASE_2_PLAN.md` (case/check/review/decision model, consent as append-only history, twelve failure scenarios, six meters, six milestones); ADR-0035 (KYC owns the decision, Party projects it), ADR-0036 (evidence verbatim in PostgreSQL, object storage deferred with a trigger), ADR-0037 (consent history append-only, current basis derived), ADR-0038 (a provider verdict is evidence; hits are resolved by a person, never by silence) - all `Proposed`; the `INV-KYC-01`…`06` and `INV-CNS-01`…`04` groups catalogued on the Phase 0 → 1 precedent (the gate's six prose bullets were the weaker regime the `INV-IDN` group escaped), **82 invariants** platform-wide; and 24 backlog items across M2.1–M2.6, with the exit review's two leftovers scheduled first (`P2-TSK-001` broker adapter, `P1-TSK-033`). All twelve entry criteria hold; criterion 7 is vacuous and says so (no money moves in Phase 2). 864 hermetic tests, 465 database tests, green on the post-repair run. |
 | 2026-09-09 | **`P1-DOC-002` complete - the exit review re-run, and Phase 1 is `COMPLETE`.** All twelve universal criteria and all six phase-specific criteria hold; criteria 1 and 6 re-assessed against the code (the login token opens a protected endpoint with nothing inserted; `PlannedMetersExistTest` makes criterion 6 a build failure), the other ten re-checked, and the `PARTIAL` phase-specific criterion closes - `AuditCompletenessTest`'s `NOT_YET_EMITTED` holds exactly the three Phase-15 `outbox.*` actions. **Everything recounted, nothing inherited** - the first review had three numbers wrong for inheriting them - and the recount earned its keep: **`POST /v1/me/credential` is declared by the plan, built by nothing, and owned by nobody**, the ninth backlog defect of the class, found **in the first review's own area 7 table**, which had attributed it to `P1-TSK-026` - falsely, since that item's description reads *“Extend POST /v1/registrations”* and never included it. A false owner is worse than no owner for the reason a false exemption is worse than none: it reads as handled, so nobody asks. Recorded as `P1-TSK-033` with the capability gap stated honestly - a person with a stolen password and no verified channel cannot replace their credential through the platform - and it blocks no criterion, by the review's own `P1-TSK-028`/`-030` precedent. **A javadoc cited the missing capability as an incident-response tool** - `IdentityAdministration` told an administrator they have *“session revocation and a credential change”* - the ninth javadoc this phase to assert something the code does not do; corrected. **The broker adapter was ruled on rather than stepped around**: `PHASE_1_PLAN.md` §12 calls it required and it does not exist - non-blocking, because the phase objective needs no event delivery, the events are durable and unread (`INV-EVT-01` holds), the wire-format half of the requirement WAS delivered, and an adapter with no consumer cannot be exercised end to end, which is the gate's own standard; the plan is corrected where it was wrong and ownership passes to the Phase 1 → 2 transition, whose phase holds the first consumers. **Three debt rows owned by “Phase 1” resolved**, because a `COMPLETE` phase cannot own open debt: broker → the transition; registration throttling → Phase 15, merged with per-source rate limiting since the missing input is identical; and the loopback-credential row's trigger was reached **and handled** by `MfaKey`'s own tested confinement, remainder → Phase 5. **Recounted**: 17 endpoints, 10 tables, 8 aggregates, 20 auditable actions, 72 invariants, 6 ADRs, 864 hermetic and 465 database tests, backlog 34 of 34. **Phase 1 is `COMPLETE` (2026-09-09); next is the Phase 1 → 2 transition.** |
 | 2026-09-09 | **`P1-TSK-032` complete - reinstatement, and suspension stops being a one-way door.** `DELETE /v1/identities/{id}/suspension` moves a `SUSPENDED` identity back to `ACTIVE` - the mirror of `suspend`: a conditional `UPDATE ... WHERE status = 'SUSPENDED'` whose row count is the outcome, a required reason, an audit record (`identity.IdentityReinstated`, actor never the subject) and an outbox event. **The acceptance was driven end to end with a REGISTERED person rather than a fixture row**, because *"can authenticate again afterwards"* is unreachable from an identity that has no credential - suspend, login refused, reinstate, login succeeds - **and the pre-suspension session stays dead**: the suspension revoked it, `INV-HIST-01` does not un-happen things, and a resurrected bearer token would come back to life in whoever's hands last held it, possibly the attacker whose activity caused the suspension. Reinstatement restores the ability to log in, never the sessions. **Both self-refusal decisions were revisited together, as the backlog required.** Self-suspension stays refused on a corrected argument - the recorded reason was the one-way door, and reinstatement removes it only when a *second* administrator exists, which the platform does not guarantee; the last administrator self-suspending is still locked out with the out-of-band remedy of `README.md` §5e, and the no-self-loop trail argument is untouched. Self-reinstatement gets its own `SELF` branch that is **nearly dead code, deliberately**: a suspended identity holds no live session, so the branch is reachable only in the race where the actor is suspended mid-request - kept for that race and for the property that no administrative record ever names one party twice, and tested at the domain because HTTP cannot reach it. **The permission is `IDENTITY_SUSPEND`, not a new one** - `ROLE_ASSIGN`'s own *"grant or revoke"* shape: one capability, two directions, and a third permission held by the only role that exists would be vocabulary with no decision behind it. **The reason travels in a DELETE body**, which is unusual and correct: it is free prose that may name a person or an incident, and a query parameter would put it into access logs, proxies and browser history (`INV-AUD-02`). **`NOT_SUSPENDED` is named for what is checked** - `ACTIVE` and `CLOSED` both land on the 409 and only the first could honestly be called *already done*; `CLOSED` is terminal (`INV-LIFE-04`), refused by the conditional at the write and by the aggregate independently (`INV-LIFE-02`), and proven to stay closed. **Three guards demanded declarations before the build would pass**: the contract test presented a 14-line all-additions diff whose `BREAKING` labels are the classifier erring safe on a brand-new schema's `required` fields (`P1-TSK-006`'s precedent); `CredentialReachesNoEmittedSinkTest` refused the new request body until it joined the bounded exemption list; and the registry pair required `identity.IdentityReinstated` catalogued and emitted. `PHASE_1_PLAN.md` §7 gains the endpoint row with its provenance stated, so `P1-DOC-002`'s recount counts it rather than trips over it. **Four mutations, all caught by the intended assertion** - the wrong from-status in the conditional, the `SELF` check removed, the audit call removed, and the permission annotation removed. **The Phase 1 backlog is 34 of 34.** 864 hermetic tests, 465 database tests. |
 | 2026-09-09 | **`P1-TSK-031` complete - the suite no longer assumes `now()` moves forwards.** The container's clock runs fast and is corrected backwards, so an insert-then-update fixture that reads `now()` twice can write a status change that precedes its creation - observed at 225 ms during `P1-TSK-025`'s gate, with the constraint that fired being **right**. **The shape was in five files, not the two the item recorded** - surveyed rather than trusted: four identity fixtures and `PartyAndIdentitySchemaDatabaseTest`'s customer fixture, whose twin constraint nothing had named. Every other timestamp-ordering constraint is reached by a single statement, an already back-dated write, or one a privilege refuses. **The INSERT is back-dated by one hour and the UPDATE stays at `now()`** - the update models what production writes, and the backlog's one-statement alternative cannot fix a pair whose two reads are in different statements by construction. **Proven in-suite with its own vacuity control**: a simulated thirty-minute correction succeeds against a back-dated row, and the same update against a row written at plain `now()` is still refused - so a pass proves the back-dating is load-bearing rather than the constraint dead. No build rule scans test sources for the pattern, recorded deliberately: a Low-risk `Cx: S` fixture item does not buy machinery (`EXECUTION_PROTOCOL` rule 4). 864 hermetic tests, 460 database tests. |

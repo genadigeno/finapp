@@ -34,10 +34,13 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-09-04).** **Phase 0 is `COMPLETE`** — backlog 62 of 62, all twelve exit
-criteria, and CI green on a runner. **Phase 1 is `READY`** and not started: planned in full in
-`PHASE_1_PLAN.md`, with `ADR-0029`…`ADR-0032`, the `INV-IDN-01`…`07` invariant group, and 25
-backlog items at task granularity. The first task is `P1-TSK-001`, the data-access ADR.
+**Current position (2026-09-09).** **Phase 0 and Phase 1 are `COMPLETE`** — Phase 1 closed by
+the re-run exit review (`P1-DOC-002`): 34 of 34 backlog items, all eighteen exit criteria, 17
+published endpoints, 864 hermetic and 465 database tests. **Phase 2 is `READY`**: planned in full
+in `PHASE_2_PLAN.md`, with ADR-0035…0038 `Proposed`, the `INV-KYC`/`INV-CNS` invariant groups
+(the platform now catalogues 82), and 24 backlog items at task granularity across six milestones.
+The first task is `P2-TSK-001`, the broker adapter — the outbox has held published-nothing events
+since 2026-09-06, and Phase 2 holds the first consumers.
 
 ---
 

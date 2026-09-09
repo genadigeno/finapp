@@ -9,6 +9,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -138,43 +139,66 @@ class PlannedMetersExistTest {
 
     private static Set<String> plannedMeters() {
         Set<String> planned = new TreeSet<>();
-        for (String line : read(planPath())) {
-            Matcher row = PLANNED_METER.matcher(line);
-            if (row.find()) {
-                planned.add(row.group(1));
+        for (Path plan : planPaths()) {
+            for (String line : read(plan)) {
+                Matcher row = PLANNED_METER.matcher(line);
+                if (row.find()) {
+                    planned.add(row.group(1));
+                }
             }
         }
         return planned;
     }
 
     /**
-     * The plan for the phase this project has reached.
+     * The plans of every phase recorded {@code COMPLETE} — because criterion 6 is an <em>exit</em>
+     * criterion, and the Phase 1 &rarr; 2 transition found what enforcing the <em>named</em> phase
+     * does at a boundary in <strong>both</strong> directions.
      *
-     * <p>The <strong>highest</strong> phase the section names rather than the one marked
-     * {@code IN_PROGRESS}: a status word is prose that changes shape between phases, and a phase
-     * that has been reached does not stop having been reached when it completes
-     * ({@code P1-TSK-024}).
+     * <p>Forwards: naming Phase 2 as {@code READY} would demand Phase 2's planned meters before
+     * any Phase 2 flow exists — a guard that is red for weeks at every phase start is one somebody
+     * turns off. Backwards, and worse: reading only the <em>highest</em> plan meant that the
+     * moment Phase 2 was named, <strong>Phase 1's meters silently stopped being checked at
+     * all</strong> — a deleted `finapp.identity.lockout` would have passed this guard while its
+     * alert evaluated nothing, which is the exact defect the guard was built to catch.
+     *
+     * <p>So: the union of every {@code COMPLETE} phase's plan. A phase's meters become enforced by
+     * the act of recording it {@code COMPLETE} — criterion 6 checked at exactly the moment it
+     * applies — and stay enforced for ever after. {@code COMPLETE} is `PHASE_GATES.md` §1's closed
+     * status vocabulary, matched in its backticked form on the Status line; a reworded line
+     * degrades enforcement of the newest phase only, and the teeth test still requires Phase 1's
+     * meters to be found.
      */
-    private static Path planPath() {
-        int phase = 0;
+    private static List<Path> planPaths() {
+        List<Path> plans = new ArrayList<>();
+        int pending = -1;
         boolean inSection = false;
         for (String line : read(repositoryFile("docs/project/CURRENT_STATE.md"))) {
             if (line.startsWith("## ")) {
                 inSection = line.startsWith("## Current Phase");
             }
+            if (!inSection) {
+                continue;
+            }
             Matcher heading = PHASE_HEADING.matcher(line);
-            if (inSection && heading.find()) {
-                phase = Math.max(phase, Integer.parseInt(heading.group(1)));
+            if (heading.find()) {
+                pending = Integer.parseInt(heading.group(1));
+                continue;
+            }
+            if (pending >= 1 && line.startsWith("Status:") && line.contains("`COMPLETE`")) {
+                Path plan = repositoryFile("docs/project/PHASE_" + pending + "_PLAN.md");
+                assertThat(plan)
+                        .as("a phase recorded COMPLETE must have a plan, and its Observability"
+                                + " table is what criterion 6 is assessed against")
+                        .exists();
+                plans.add(plan);
             }
         }
-        assertThat(phase).as("CURRENT_STATE.md must name the phase this project has reached").isPositive();
-
-        Path plan = repositoryFile("docs/project/PHASE_" + phase + "_PLAN.md");
-        assertThat(plan)
-                .as("a phase that has been reached must have a plan, and its §Observability table"
-                        + " is what criterion 6 is assessed against")
-                .exists();
-        return plan;
+        assertThat(plans)
+                .as("at least one phase is COMPLETE - Phase 1 is, so an empty list means the"
+                        + " status parse broke, not that the project moved backwards")
+                .isNotEmpty();
+        return plans;
     }
 
     private static Path repositoryFile(String relative) {

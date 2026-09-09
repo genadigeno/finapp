@@ -46,12 +46,16 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0026](ADR-0026-keeping-pins-fresh.md) | A pin that nothing maintains is a pin that rots | Accepted | 0 | Security |
 | [0027](ADR-0027-tests-bring-their-own-database.md) | Tests bring their own database | Accepted | 0 | Testing |
 | [0028](ADR-0028-test-tiers-by-requirement.md) | A test tier is what the test needs, not what it proves | Accepted | 0 | Testing |
-| [0029](ADR-0029-party-customer-identity-are-three-aggregates.md) | Party, Customer and Identity are three aggregates | Proposed | 1 | Domain |
-| [0030](ADR-0030-server-side-sessions-and-assurance-level.md) | Server-side sessions, and assurance is a level rather than a flag | Proposed | 1 | Security |
-| [0031](ADR-0031-authorization-model.md) | Roles grant permissions; ownership is checked separately | Proposed | 1 | Security |
-| [0032](ADR-0032-credential-storage-and-rotation.md) | Credentials store a derivation and the parameters that produced it | Proposed | 1 | Security |
-| [0033](ADR-0033-explicit-sql-and-no-object-relational-mapper.md) | Explicit SQL, and no object-relational mapper | Proposed | 1 | Data |
-| [0034](ADR-0034-the-platform-owns-the-correlation-identifier.md) | The platform owns the correlation identifier | Proposed | 1 | Security |
+| [0029](ADR-0029-party-customer-identity-are-three-aggregates.md) | Party, Customer and Identity are three aggregates | Accepted | 1 | Domain |
+| [0030](ADR-0030-server-side-sessions-and-assurance-level.md) | Server-side sessions, and assurance is a level rather than a flag | Accepted | 1 | Security |
+| [0031](ADR-0031-authorization-model.md) | Roles grant permissions; ownership is checked separately | Accepted | 1 | Security |
+| [0032](ADR-0032-credential-storage-and-rotation.md) | Credentials store a derivation and the parameters that produced it | Accepted | 1 | Security |
+| [0033](ADR-0033-explicit-sql-and-no-object-relational-mapper.md) | Explicit SQL, and no object-relational mapper | Accepted | 1 | Data |
+| [0034](ADR-0034-the-platform-owns-the-correlation-identifier.md) | The platform owns the correlation identifier | Accepted | 1 | Security |
+| [0035](ADR-0035-kyc-owns-the-verification-decision.md) | The KYC context owns the verification decision; Party projects it | Proposed | 2 | Domain |
+| [0036](ADR-0036-verification-evidence-and-document-storage.md) | Verification evidence verbatim in PostgreSQL; object storage deferred | Proposed | 2 | Data |
+| [0037](ADR-0037-consent-is-an-append-only-history.md) | Consent is an append-only history; the current basis is derived | Proposed | 2 | Domain |
+| [0038](ADR-0038-provider-verdicts-are-evidence.md) | A provider verdict is evidence; the decision is ours | Proposed | 2 | Security |
 
 ## Anticipated ADRs
 

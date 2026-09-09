@@ -372,6 +372,24 @@ tasks.withType<Test>().configureEach {
         .withPropertyName("providerAdapterAdr")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // The eleventh and twelfth, added by the Phase 1 -> 2 transition, which found them by
+    // probing: flipping a phase to COMPLETE in CURRENT_STATE.md left :app:test UP-TO-DATE and the
+    // probe reported green having run nothing - the P0-TSK-023 defect class, in the two guards
+    // that derive the enforced phase from this document (MutationDemonstrationTest,
+    // PlannedMetersExistTest). The phase plans are the meters guard's other undeclared half: a
+    // meter renamed in a plan alone would never re-run the guard that reads it. CURRENT_STATE.md
+    // is large and edited constantly, so this re-runs :app:test often - the same trade BACKLOG.md
+    // above already accepted, for the same reason: the alternative goes stale at exactly the
+    // moment the guard exists for, the phase status flip.
+    inputs.files(rootProject.layout.projectDirectory.file("docs/project/CURRENT_STATE.md"))
+        .withPropertyName("currentState")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(
+        rootProject.fileTree("docs/project") { include("PHASE_*_PLAN.md") }
+    )
+        .withPropertyName("phasePlans")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // The tenth. TestTaxonomyTest holds this document and the tier declaration to each other:
     // the document must name exactly the tiers that exist, with the task and tag each one
     // actually uses. Same reason as every line above it.

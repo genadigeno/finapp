@@ -375,8 +375,10 @@ where later capability is structurally needed earlier, the earlier phase defines
 → [ADR-0007](../adr/ADR-0007-phase-gated-delivery.md), [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md)
 
 ### Invariant governance
-Seventy-one financial, security and operational invariants are catalogued with stable IDs,
-enforcement mechanisms and verification methods. Phases declare the invariants they protect
+Eighty-two financial, security and operational invariants are catalogued with stable IDs,
+enforcement mechanisms and verification methods. (This line said "seventy-one" until the
+Phase 1 → 2 transition — stale since `INV-IDN-08` — and now derives its correction from the
+catalogue's own index.) Phases declare the invariants they protect
 at the entry gate and prove them by test at the exit gate. →
 [`FINANCIAL_INVARIANTS.md`](../domain/FINANCIAL_INVARIANTS.md)
 

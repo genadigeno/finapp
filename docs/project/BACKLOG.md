@@ -1060,7 +1060,9 @@ remaining gate failure is a fact about the repository's hosting, not about what 
 
 # Phase 1 — Identity and Customer Foundation
 
-Status: `IN_PROGRESS` — entry gate passed 2026-09-04 (all twelve criteria), first task complete.
+Status: `COMPLETE` (2026-09-09) — exit gate ruled passed by `P1-DOC-002`
+([`reviews/PHASE_1_REVIEW.md`](reviews/PHASE_1_REVIEW.md)); 34 of 34 items. One item created by
+the exit review remains open and is scheduled into Phase 2's M2.1: `P1-TSK-033`.
 Elaborated to task granularity 2026-09-03 by the Phase 0 → Phase 1 transition.
 
 The engineering plan is [`PHASE_1_PLAN.md`](PHASE_1_PLAN.md): scope, domain model, security model,
@@ -2581,21 +2583,422 @@ repository exists to prevent.
 
 ---
 
-# Phases 2–4 — Epics and Capabilities
+# Phase 2 — KYC/KYB and Consent
 
-Status: `PLANNED` — features and tasks elaborated at each phase's entry gate.
+Status: `READY` — entry gate passed 2026-09-09 by the Phase 1 → 2 transition
+([`reviews/PHASE_1_TO_2_TRANSITION.md`](reviews/PHASE_1_TO_2_TRANSITION.md)).
+Elaborated to task granularity by the same transition.
 
-## Phase 2 — KYC/KYB and Consent
+The engineering plan is [`PHASE_2_PLAN.md`](PHASE_2_PLAN.md); decisions are ADR-0035…0038
+(`Proposed`); the properties to protect are `INV-KYC-01`…`06` and `INV-CNS-01`…`04`. Every task
+below assumes **N concurrent instances, N never 1**, and inherits the standing security rules
+(`.claude/rules/security.md`) and the DoD profile it names.
+
+**Two inherited items are scheduled into M2.1**: the broker adapter (`P2-TSK-001`, re-owned to
+this phase by `P1-DOC-002`) and **`P1-TSK-033`** (`POST /v1/me/credential`, which keeps its
+Phase 1 ID — IDs are permanent — and is worked as the second task of the phase).
 
 | Epic | Capabilities |
 |------|-------------|
 | P2-EPIC-01 KYC case management | Case lifecycle; verification checks; decision recording; evidence retention |
 | P2-EPIC-02 KYB and beneficial ownership | Business verification; ownership graph; control-person identification |
-| P2-EPIC-03 Document capture | Secure upload; object storage; encryption; audited access |
+| P2-EPIC-03 Document capture | Secure upload; encryption; audited access (object storage deferred — ADR-0036) |
 | P2-EPIC-04 Screening | Sanctions adapter; PEP adapter; adverse media adapter; hit disposition |
 | P2-EPIC-05 Manual review | Review queue; reviewer decision with reason codes; four-eyes on high risk |
 | P2-EPIC-06 Consent | Versioned consent text; grant/withdraw lifecycle; consent-dependent capability gating |
 | P2-EPIC-07 Onboarding gate | Queryable verification status for downstream contexts |
+| P2-EPIC-08 Foundations settle | Broker adapter and first consumer; module skeletons; reviewer role; `P1-TSK-033` |
+
+Document-capture tasks live under the epic that consumes them; the epic labels above are the
+capability map, and the task list below is the schedule.
+
+## P2-EPIC-08 — Foundations settle (M2.1)
+
+**P2-TSK-001 — The broker adapter: outbox events reach Kafka** — `TODO`
+- Context: platform / integration
+- Description: An `EventPublisher` implementation over a Kafka producer, plus a cluster-safe
+  schedule for the relay, so the events the outbox has held durably since `P1-TSK-006` are
+  actually published.
+- Why: **The trigger was reached 2026-09-06 and re-owned here by `P1-DOC-002`** — this phase
+  holds the first consumers. Decides the topic scheme and acknowledgement configuration
+  (`acks=all`; idempotent producer), which ADR-0005 deferred to the first adapter.
+- Deps: none.
+- Implementation: adapter in `platform` behind the existing port; topic per aggregate type;
+  producer configured for at-least-once with the relay's dedupe key as the record key so
+  per-aggregate ordering survives partitioning; relay scheduling through an explicit, injected
+  scheduler (ADR-0024 forbids ambient scheduling — the mechanism is part of this task's design).
+- Out of scope: any consumer (P2-TSK-002); broker TLS (no non-loopback broker exists; the debt
+  row stands).
+- Distributed: N relays already safe (advisory locks, `P0-TSK-020`); the adapter must not
+  introduce a second ordering authority; publish-then-crash re-publishes (at-least-once, stated).
+- Security: no payload changes; `EventPayload` charset unchanged; no credential in producer
+  config beyond externalised bootstrap address.
+- Invariants: `INV-EVT-01`…`04`.
+- Tests: database tier with a Kafka container — published once per fact under relay crash/restart
+  (`P0-TST-005` extended to the real broker); ordering per aggregate under two relays; the
+  dead-letter path still blocks its aggregate.
+- Accept: an event committed through the outbox is observable on the broker exactly once per
+  fact, with envelope intact, under a killed-and-restarted relay.
+- Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
+
+**P2-TSK-002 — The first consumer path: Kafka in, inbox dedupe, effect once** — `TODO`
+- Context: platform / integration
+- Description: A Kafka consumer shell that hands records to `InboxConsumer`, so duplicate and
+  redelivered records produce one effect (`INV-IDEM-04`), proven against a real broker.
+- Why: the inbox (`P0-TSK-021`) has never met a real transport; consumer restart and rebalance
+  are the §Failure Engineering modes nothing has yet exercised.
+- Deps: P2-TSK-001.
+- Implementation: manual offset commit **after** the inbox transaction commits, so a crash
+  between effect and commit redelivers into the dedupe rather than losing the record; consumer
+  group per consuming module.
+- Out of scope: any business handler (P2-TSK-007 is the first).
+- Distributed: two consumers in one group across a rebalance produce one effect per record;
+  offset-commit-after-effect is the load-bearing ordering and is asserted, not described.
+- Invariants: `INV-IDEM-04`, `INV-EVT-04`.
+- Tests: duplicate delivery, redelivery after crash-before-commit, rebalance mid-batch — all
+  counting effects in a side-effect table (`P0-TSK-021`'s idiom).
+- Accept: at-least-once transport, exactly-once effect, demonstrated under restart and rebalance.
+- Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
+
+**P2-TSK-003 — `kyc` and `consent` module skeletons** — `TODO`
+- Context: kyc / consent
+- Description: Two modules, two schemas (`V001` each: schema, ownership, `REVOKE PUBLIC`,
+  `USAGE` to `finapp_app`), isolation tests both directions, audit-action enums with their
+  catalogue rows.
+- Why: the `P1-TSK-003` shape; every derived guard (classification, taxonomy, boundaries,
+  secrets) must see the modules from their first commit.
+- Deps: none. Out of scope: any table beyond the schema bootstrap.
+- Distributed: none (DDL). Security: schema privileges are the enforcement floor for everything
+  after.
+- Tests: isolation both directions with non-vacuity halves; migrations apply/validate/re-apply;
+  a planted unclassified column fails the build.
+- Accept: `./gradlew build` green with both modules and every existing sweep provably covering
+  them (planted-`double` probe, the `P1-TSK-003` acceptance).
+- Risk: Low. Cx: S. DoD: `DOD-BUILD`
+
+**P2-TSK-004 — `KYC_REVIEW` permission and the `KYC_REVIEWER` role** — `TODO`
+- Context: identity
+- Description: A second role and third permission; `V0xx` migration for the role constraint
+  (`RoleName.sqlValueList` regenerates it, `V010`'s reconciling test catches drift).
+- Why: the reviewer surface must exist before any reviewer endpoint; **and the role→permission
+  mapping finally becomes mutation-testable** — `P1-TSK-020` recorded that limit in as many
+  words: *"it becomes testable at the second role."* That mutation is this task's acceptance.
+- Deps: none.
+- Distributed: role grant/revoke concurrency already proven (`P1-TSK-020`); no new mechanism.
+- Security: `KYC_REVIEWER` deliberately does **not** hold `IDENTITY_SUSPEND` or `ROLE_ASSIGN` —
+  the first real least-privilege split between administrative populations.
+- Invariants: `INV-IDN-04`, `INV-AUD-03`.
+- Tests: the role-mapping mutation ("a role granting everything") now caught; migration/enum
+  reconciliation; a `KYC_REVIEWER` refused by an administrative endpoint and vice versa.
+- Accept: the recorded `P1-TSK-020` limit closes, demonstrated by the previously-impossible
+  mutation failing the build.
+- Risk: Low. Cx: S. DoD: `DOD-SEC`
+
+## P2-EPIC-01 — KYC case management (M2.2)
+
+**P2-TSK-005 — The KycCase aggregate and its lifecycle** — `TODO`
+- Context: kyc
+- Description: `KycCase` with the §5 machine, `V002` case table — status `CHECK`s generated from
+  the enum, `NOT NULL` policy version, and the **one-open-case partial unique index** on
+  `(customer_id) WHERE status NOT IN (terminal)`.
+- Why: the phase's spine. The one-open-case rule is a cross-aggregate uniqueness rule, so only
+  the database can arbitrate it (`P1-TSK-005`'s reasoning, verbatim).
+- Deps: P2-TSK-003.
+- Out of scope: checks, documents, decisions — later tasks; no endpoint yet.
+- Distributed: concurrent opens for one customer produce one case (the index is the mechanism;
+  ten instances, ten connections); conditional status transitions whose row count is the outcome.
+- Invariants: `INV-LIFE-02`, `INV-LIFE-04`, `INV-KYC-05` (the case is where the authority lives).
+- Tests: exhaustive invalid-transition sweep **derived from the machine** (`P1-TSK-005` idiom);
+  10-way open race; terminal-state immutability.
+- Accept: every invalid transition rejected by the aggregate; one open case under contention.
+- Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
+
+**P2-TSK-006 — `POST /v1/me/kyc` and `GET /v1/me/kyc`** — `TODO`
+- Context: kyc / api
+- Description: The caller opens (or converges on) their case and reads its status —
+  `SESSION_DERIVED`, no identifier anywhere in the request (the `/v1/me` shape).
+- Why: the customer's half of onboarding; **"ensure my case exists" semantics** so it converges
+  with the auto-open consumer (P2-TSK-007) instead of racing it.
+- Deps: P2-TSK-005, P2-TSK-019 (the consent gate: opening a case is the first gated capability).
+- Distributed: double-tap and retry meet the one-open-case index; the answer names the existing
+  case rather than erroring.
+- Security: status shaping — a screening hit is indistinguishable from ordinary processing in the
+  customer-facing status (`IN_PROGRESS` covers both; tipping-off, `INV-IDN-07`'s reasoning); the
+  response carries no screening vocabulary at all.
+- Invariants: `INV-CNS-01` (gate), `INV-KYC-05`.
+- Tests: over HTTP; ownership by construction (no parameter); the hit-invisibility assertion;
+  consent-absent refusal.
+- Accept: a registered, consented person reaches an open case; a second POST is the same case.
+- Risk: Medium. Cx: S. DoD: `DOD-SEC`
+
+**P2-TSK-007 — The first production consumer: a registration opens a case** — `TODO`
+- Context: kyc / integration
+- Description: `kyc` consumes `party.CustomerRegistered` through P2-TSK-002's shell and opens
+  the case eagerly.
+- Why: `DELIVERY_PLAN.md` §Phase 2.8 — downstream contexts react; and it makes the broker path
+  carry a real business flow rather than a test's.
+- Deps: P2-TSK-002, P2-TSK-005.
+- Distributed: the inbox dedupes the event; the one-open-case index arbitrates against a
+  concurrent `POST /v1/me/kyc`; both paths converge on one case — asserted under the race.
+- Invariants: `INV-IDEM-04`, `INV-KYC-03`'s mechanism.
+- Tests: duplicate event → one case; event racing the endpoint → one case; consumer restart
+  mid-handling → one case.
+- Accept: registration alone yields exactly one open case, through the real broker.
+- Risk: Medium. Cx: S. DoD: `DOD-KERNEL`
+
+**P2-TSK-008 — Documents: captured, encrypted, checksummed, access-audited** — `TODO`
+- Context: kyc
+- Description: `V003` document tables (append-only at `DB-PRIVILEGE`; AES-256-GCM content under
+  `FINAPP_DOC_KEY`; SHA-256 recorded), the `DocumentStore` port (ADR-0036's seam),
+  `POST /v1/me/kyc/documents`, and the audited read path.
+- Why: ADR-0036; the most sensitive bytes the platform holds before card data.
+- Deps: P2-TSK-005.
+- Out of scope: object storage (the port is the seam); document *verification* (P2-TSK-009).
+- Distributed: concurrent uploads append; no update path exists to race on.
+- Security: `INV-KYC-06` in full — plaintext content in no column (`information_schema` sweep,
+  the `P1-TSK-007` idiom); tampered ciphertext refused; wrong key cannot read; every content
+  read writes an audit record naming the actor; size/type bounds at the boundary; key guard
+  confines the published default to loopback (`MfaKey`'s shape, third instance of the
+  per-credential confinement).
+- Invariants: `INV-KYC-06`, `INV-HIST-02` (checksum), `INV-AUD-02`.
+- Tests: the sweep, tamper, wrong-key, unaudited-access mutation, oversized/foreign-type upload
+  refused at the boundary, upload-then-case-update atomicity.
+- Accept: content readable only through the audited path; every listed refusal proven.
+- Risk: High. Cx: M. DoD: `DOD-SEC`
+
+**P2-TSK-009 — VerificationCheck, the provider port, and the simulated verifier** — `TODO`
+- Context: kyc / integration
+- Description: The check entity (`REQUESTED → DISPATCHED → CLEAR | HIT | INDETERMINATE`), a
+  `VerificationProvider` port (ADR-0008: our vocabulary in, our vocabulary out), and identity- +
+  document-verification adapters over `SimulatedProvider`.
+- Why: ADR-0038's evidence layer; the harness `P0-TSK-037` built has waited two phases for
+  exactly this caller.
+- Deps: P2-TSK-005, P2-TSK-008.
+- Distributed: dispatch is recorded before the provider call (a crash mid-call leaves a
+  DISPATCHED check to reconcile, never an unknown); duplicate dispatch prevented by conditional
+  transition.
+- Invariants: `INV-KYC-01` (evidence verbatim + separate normalised outcome), `INV-LIFE-03`
+  (INDETERMINATE on timeout — the invariant arriving three phases early, recorded), `INV-HIST-02`.
+- Security: provider payloads are `RESTRICTED-PII` evidence — append-only, classified; no
+  provider vocabulary in domain or contract (boundary test extends the ADR-0008 rule).
+- Tests: every `SimulatedProvider` outbound mode drives a defined check outcome; evidence bytes
+  identical to bytes received; timeout → INDETERMINATE and the case does not decide.
+- Accept: a clean simulated run takes a case to `READY_FOR_DECISION` with retained evidence.
+- Risk: High. Cx: L. DoD: `DOD-KERNEL`
+
+**P2-TSK-010 — Screening: sanctions, PEP, adverse media** — `TODO`
+- Context: kyc / integration
+- Description: The three screening check types over the same port and harness; a HIT routes the
+  case to `IN_REVIEW` and creates review tasks.
+- Why: the gate's screening criteria; one check machine, not a second one (plan §5).
+- Deps: P2-TSK-009.
+- Distributed: as P2-TSK-009; concurrent HIT arrivals create review tasks idempotently
+  (conditional insert keyed on check).
+- Invariants: `INV-KYC-04` (no silent path from HIT to terminal), `INV-KYC-01`.
+- Tests: HIT → IN_REVIEW with a task; no code path from HIT to a terminal state without a
+  review resolution (asserted structurally and behaviourally); adverse-media INDETERMINATE
+  handling.
+- Accept: a hit case cannot terminate without a person.
+- Risk: Medium. Cx: M. DoD: `DOD-SEC`
+
+**P2-TSK-011 — Provider callbacks, deduplicated** — `TODO`
+- Context: kyc / api / integration
+- Description: The inbound callback endpoint for asynchronous provider results, deduplicated
+  through the platform inbox, updating checks by conditional transition.
+- Why: `INV-KYC-03`; duplicate webhooks are the §Failure Engineering norm, and this is the
+  phase's inbound door.
+- Deps: P2-TSK-009.
+- Distributed: duplicate and concurrent callbacks → one check transition (inbox +
+  `WHERE status = 'DISPATCHED'`); a late callback for a terminal check is recorded as evidence
+  and changes nothing (`INV-LIFE-04`).
+- Security: simulated-signature verification at the boundary (the real scheme is Phase 5's
+  webhook work; the seam and its limit stated); callback bodies are untrusted input — bounded,
+  refused loudly, never a 500.
+- Invariants: `INV-KYC-03`, `INV-IDEM-04`, `INV-LIFE-03`/`04`.
+- Tests: duplicate, concurrent, late and malformed callbacks — one transition, no 500, evidence
+  retained.
+- Accept: the four callback scenarios each proven against a real database.
+- Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
+
+## P2-EPIC-05 / 01 — Decisions and review (M2.3)
+
+**P2-TSK-012 — Review tasks and the reviewer endpoints** — `TODO`
+- Context: kyc / api
+- Description: `ReviewTask`, `GET /v1/kyc/cases/{id}` and
+  `POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution` — behind
+  `@RequiresPermission(KYC_REVIEW)`, reason required, everything audited.
+- Why: `INV-KYC-04`'s human half; the phase's privileged surface.
+- Deps: P2-TSK-004, P2-TSK-010.
+- Distributed: concurrent resolutions of one task — one wins by conditional UPDATE, the loser
+  gets 409, **one** audit record (the `P1-TSK-028` suspension shape).
+- Security: negative authorization tests per endpoint (`INV-AUD-03`); case reads audited (the
+  reviewer is the insider surface); reason bounds cite the audit record's (the
+  `SuspensionRequest` constants pattern); identifiers `ADMINISTERED` in the ownership register.
+- Invariants: `INV-KYC-04`, `INV-AUD-01`/`03`.
+- Tests: no-role refusal audited; resolution race; reason bounds parity; resolution of another
+  case's task refused (task-belongs-to-case predicate in the statement).
+- Accept: a review task resolves exactly once, by an authorized person, with a reason, audibly.
+- Risk: Medium. Cx: M. DoD: `DOD-SEC`
+
+**P2-TSK-013 — The decision: immutable, attributable, policy-pinned** — `TODO`
+- Context: kyc
+- Description: `KycDecision` (`V004`: append-only at `DB-PRIVILEGE`, `NOT NULL` actor / reason /
+  policy version / evidence refs) plus the stated automatic policy for all-clear cases and
+  `POST /v1/kyc/cases/{id}/decision` for reviewed ones.
+- Why: ADR-0038; `INV-KYC-02` is the record every later phase gates on.
+- Deps: P2-TSK-012.
+- Distributed: decision races the case transition — conditional on `READY_FOR_DECISION`, row
+  count is the outcome; two deciders → one decision, one audit record.
+- Invariants: `INV-KYC-02`, `INV-HIST-04` (policy pinned), `INV-LIFE-04`.
+- Tests: `UPDATE`/`DELETE` denied on every column (the `P0-TST-007` idiom); replay: evidence +
+  pinned policy re-derives the decision; decision race; automatic path refuses a case with any
+  non-CLEAR check.
+- Accept: one immutable decision per case, reproducible from what it references.
+- Risk: High. Cx: M. DoD: `DOD-SEC`
+
+**P2-TSK-014 — The projection: a decision moves `customer.status`** — `TODO`
+- Context: app / party / kyc
+- Description: The `app` orchestration: recording a decision and transitioning
+  `party.customer.status` (`PENDING → ACTIVE`/`REJECTED`) in **one transaction** (ADR-0035);
+  the `party` grant for the status column arrives with this capability (`V00x`,
+  column-narrow — the `V004` display-name precedent).
+- Why: the onboarding gate every later phase queries; the moment `PENDING` finally moves.
+- Deps: P2-TSK-013.
+- Distributed: kill between decision and projection impossible by construction — asserted by the
+  atomicity test (`P1-TSK-006`'s idiom: inject failure at the last write).
+- Invariants: `INV-KYC-05` (one authority; projection reconciles), `INV-LIFE-02` on Customer.
+- Tests: atomicity under injected failure and backend kill; reconciliation (decision ↔ status
+  agree, swept); grant narrowness asserted.
+- Accept: an approved case's customer is `ACTIVE`, atomically, and the reconciliation sweep
+  proves the pair cannot drift.
+- Risk: High. Cx: M. DoD: `DOD-KERNEL`
+
+**P2-TST-001 — The KYC gate criteria, demonstrated** — `TODO`
+- Context: kyc / test
+- Description: The Phase 2 gate's first three bullets held by demonstration: exhaustive invalid
+  transitions; verdict-is-evidence (no decision from a provider outcome without the platform's
+  act); duplicate callback → one decision. Register rows for `INV-KYC-01`…`05` land here or with
+  their owning tasks — whichever proved them first — and the register guard begins demanding
+  them when Phase 2's status flips `COMPLETE`.
+- Deps: P2-TSK-013.
+- Accept: each demonstration recorded in `MUTATION_TESTING.md` §2 with its named test, per the
+  convention (`P0-TSK-038`).
+- Risk: Low. Cx: S. DoD: `DOD-TEST`
+
+## P2-EPIC-02 — KYB and beneficial ownership (M2.4)
+
+**P2-TSK-015 — KybCase and the beneficial-ownership graph** — `TODO`
+- Context: kyc / party
+- Description: `KybCase` for `ORGANISATION` customers; `BeneficialOwner` rows linking the case
+  to natural-person Parties with stake/control attributes; the decision precondition: every
+  owner's verification terminal before `READY_FOR_DECISION`.
+- Why: GLOSSARY — *"not a KYC Case with a flag set"*; the graph is recursive and terminates in
+  verified persons.
+- Deps: P2-TSK-013.
+- Distributed: owner additions race the readiness transition — the readiness check is a
+  predicate in the transition statement, not a read-then-act.
+- Invariants: `INV-KYC-02`/`05`; the owner set is part of the decision's evidence.
+- Tests: a case with an unverified owner cannot reach `READY_FOR_DECISION`; owner added during
+  review re-routes; graph termination (an owner who is an organisation needs their own case —
+  bounded depth for Phase 2, recorded).
+- Accept: an organisation decides only on a fully verified ownership graph.
+- Risk: High. Cx: L. DoD: `DOD-KERNEL`
+
+**P2-TSK-016 — KYB endpoints** — `TODO`
+- Context: kyc / api
+- Description: Owner declaration and KYB case views for the organisation's acting person;
+  reviewer views extended.
+- Deps: P2-TSK-015.
+- Security: who may act for an organisation is **this task's design question** (the ADR-0031
+  split trigger names organisations); Phase 2 scopes it to the registering identity, recorded
+  as the deliberate minimum with delegated access out of scope (Phase 6+).
+- Tests: over HTTP; ownership; a stranger cannot declare owners onto another's case.
+- Accept: the M2.4 milestone criterion end to end.
+- Risk: Medium. Cx: M. DoD: `DOD-SEC`
+
+## P2-EPIC-06 — Consent (M2.5)
+
+**P2-TSK-017 — Consent texts and the append-only record** — `TODO`
+- Context: consent
+- Description: `V002`: `consent_text` (versioned, immutable) and `consent_record` (append-only
+  at `DB-PRIVILEGE`, `NOT NULL` text-version reference); the derivation query; the
+  `ConsentPurpose` enumeration.
+- Why: ADR-0037 made real.
+- Deps: P2-TSK-003.
+- Distributed: concurrent grant+withdraw append two facts; the derivation orders by a
+  server-assigned ordering column, not by two instances' clocks (`P0-TST-009`'s lesson).
+- Invariants: `INV-CNS-02`/`04`.
+- Tests: privilege sweep on every column; derivation under interleaved records; version-pinning
+  refused null.
+- Accept: the history is the store, proven immutable.
+- Risk: Medium. Cx: S. DoD: `DOD-KERNEL`
+
+**P2-TSK-018 — Consent endpoints** — `TODO`
+- Context: consent / api
+- Description: `POST /v1/me/consents`, `DELETE /v1/me/consents/{purpose}`,
+  `GET /v1/me/consents` — session-derived, no identifiers.
+- Deps: P2-TSK-017.
+- Distributed: repeated grants/withdrawals are new facts and converge; no conflict surface.
+- Security: withdrawal must not be refusable by anything but authentication — a person can
+  always withdraw; audited (`consent.ConsentWithdrawn` et al.).
+- Invariants: `INV-CNS-01`/`02`/`04`, `INV-IDN-04`.
+- Tests: over HTTP; grant against a stale text version refused when the current version demands
+  re-consent; absence vs withdrawal indistinguishable to a caller of the query.
+- Accept: the lifecycle over HTTP with the audit trail naming the person.
+- Risk: Low. Cx: S. DoD: `DOD-SEC`
+
+**P2-TSK-019 — The consent gate, and the first capability behind it** — `TODO`
+- Context: consent / kyc / app
+- Description: The gate (`ConsentGate.require(party, purpose)`) reading authoritative state per
+  decision, and its first consumer: opening a KYC case requires a current `KYC_PROCESSING`
+  grant.
+- Why: `INV-CNS-01`/`03`; the gate bullet — *withdrawal demonstrably blocks the dependent
+  capability* — needs a dependent capability to block.
+- Deps: P2-TSK-017, P2-TSK-005.
+- Distributed: withdrawal on one instance blocks the capability on another, immediately —
+  the multi-instance test is the acceptance (`P0-TST-009` convention); **no process-local
+  consent cache**, asserted the `NoProcessLocalSessionStateTest` way.
+- Invariants: `INV-CNS-01`, `INV-CNS-03`.
+- Tests: absent, withdrawn and stale-version bases each refuse; the cross-instance immediacy
+  race; the cache detector.
+- Accept: `P2-TST-002`'s demonstration is possible and performed.
+- Risk: Medium. Cx: M. DoD: `DOD-SEC`
+
+**P2-TST-002 — Consent withdrawal blocks the capability, across instances** — `TODO`
+- Context: consent / test
+- Description: The gate bullet demonstrated: withdraw on one simulated instance, the gated
+  capability refused on another, with the register row recorded.
+- Deps: P2-TSK-019.
+- Accept: the demonstration fails when the gate's authoritative read is replaced by a cached
+  value — performed, not asserted.
+- Risk: Low. Cx: S. DoD: `DOD-TEST`
+
+## P2-EPIC-07 — Observability and the gate (M2.6)
+
+**P2-TSK-020 — The six planned meters, eagerly registered** — `TODO`
+- Context: kyc / consent / platform
+- Description: `PHASE_2_PLAN.md` §10's table, registered at construction (`P1-TSK-029`'s rule),
+  plus a dashboard row with queries that resolve (`DashboardQueriesResolveTest` extends).
+- Deps: the flows they measure (P2-TSK-013, P2-TSK-018).
+- Accept: a freshly started instance publishes every §10 series; `PlannedMetersExistTest` will
+  hold them from the day the phase completes.
+- Risk: Low. Cx: S. DoD: `DOD-OBS`
+
+**P2-DOC-001 — Phase 2 review record** — `TODO`
+- Context: process
+- Description: The `PHASE_GATES.md` §4 review: eight areas, twelve universal criteria, the six
+  Phase 2-specific ones, with evidence — and the ADR-0035…0038 acceptance decision.
+- Deps: everything above.
+- Accept: every criterion assessed with evidence and a verdict; numbers counted, never quoted
+  (`P1-DOC-001`'s own finding); the phase flips `COMPLETE` only here, which since the
+  transition's guard redesign is itself build-guarded.
+- Risk: Low. Cx: S. DoD: `DOD-DOC`
+
+---
+
+# Phases 3–4 — Epics and Capabilities
+
+Status: `PLANNED` — features and tasks elaborated at each phase's entry gate.
 
 ## Phase 3 — Accounts and Financial Ledger
 

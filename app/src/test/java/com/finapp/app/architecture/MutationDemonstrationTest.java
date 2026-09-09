@@ -39,15 +39,28 @@ import org.junit.jupiter.api.Test;
  * appeared nowhere in the project's records. Criterion 3 is now checked continuously rather than
  * discovered at the gate.
  *
- * <h2>Extended to every phase reached, and the current one is derived rather than written down</h2>
+ * <h2>Extended to every phase reached, and the phase is derived rather than written down</h2>
  *
  * <p>The first version enforced <strong>Phase 0 only</strong>, which left the {@code INV-IDN} group in
  * exactly the regime the Phase 0 &rarr; 1 transition created it to escape — <em>"a materially weaker
  * regime than every other property on this platform gets"</em>. It now requires a demonstration for
- * every invariant whose phase is at most the current one, and reads the current phase from
- * {@code CURRENT_STATE.md}, whose stated role is to be <em>the canonical description of where the
- * project is</em>. A constant here would be the stale list this repository closes by derivation
- * everywhere else, and it would need editing again at Phase 2.
+ * every in-scope invariant, and reads the phase from {@code CURRENT_STATE.md}, whose stated role is
+ * to be <em>the canonical description of where the project is</em>. A constant here would be the
+ * stale list this repository closes by derivation everywhere else.
+ *
+ * <h2>"Reached" means COMPLETED, and the Phase 1 &rarr; 2 transition is why</h2>
+ *
+ * <p>The first derivation took the highest phase §Current Phase <em>names</em>, and the transition
+ * found what that does at a phase boundary: naming Phase 2 as {@code READY} would demand a
+ * demonstration for every Phase 2 invariant <strong>before any Phase 2 code exists</strong> — a
+ * build red for weeks is not a false requirement somebody investigates, it is a guard somebody
+ * turns off. `PHASE_GATES.md` criterion 3 is an <em>exit</em> criterion, so the honest enforcement
+ * boundary is the phase status: every invariant of every phase recorded {@code COMPLETE} must have
+ * its demonstration. <strong>That makes the status flip itself the guarded act</strong> — recording
+ * a phase {@code COMPLETE} in {@code CURRENT_STATE.md} while one of its invariants lacks a
+ * demonstration fails the build, which is criterion 3 enforced at exactly the moment it applies,
+ * and continuously ever after. The status word is not free prose: {@code COMPLETE} is
+ * `PHASE_GATES.md` §1's closed vocabulary, matched in its backticked form.
  *
  * <h2>The row grammar was narrower than the rows people write</h2>
  *
@@ -225,11 +238,28 @@ class MutationDemonstrationTest {
     }
 
     @Test
-    @DisplayName("every P0-TST item has a demonstration")
+    @DisplayName("every test item of every completed phase has a demonstration")
     void everyTestItemHasADemonstration() {
+        // Bounded by the completed phases, the same boundary as the invariant check and for the
+        // same reason the Phase 1 -> 2 transition established: a P2-TST item exists in the backlog
+        // from the day the phase is PLANNED, and a demonstration cannot exist before the code it
+        // demonstrates. The register gains the row when the item is performed, and the phase's
+        // COMPLETE flip is what begins demanding it.
+        int enforced = currentPhase();
+        Set<String> due = new TreeSet<>();
+        for (String item : backlogTestItems()) {
+            int phase = Integer.parseInt(item.substring(1, item.indexOf('-')));
+            if (phase <= enforced) {
+                due.add(item);
+            }
+        }
         assertThat(itemRows())
-                .as("%s section 4 must cover every P{n}-TST-* item in %s", REGISTER, BACKLOG)
-                .containsAll(backlogTestItems());
+                .as("%s section 4 must cover every P{n}-TST-* item of every COMPLETE phase in %s",
+                        REGISTER, BACKLOG)
+                .containsAll(due);
+
+        // Vacuity: the boundary must not have emptied the obligation.
+        assertThat(due).contains("P0-TST-001", "P1-TST-001");
     }
 
     @Test
@@ -346,9 +376,10 @@ class MutationDemonstrationTest {
         // check and the P0-TSK-033 review found in a register parser. Named entries rather than
         // counts, because a count is satisfied by parsing the wrong table.
         assertThat(currentPhase())
-                .as("a current phase of 0 would silently reduce this guard to what it was before"
-                        + " P1-TSK-024, and the register would stop covering Phase 1 with nothing"
-                        + " reporting it")
+                .as("an enforced phase below 1 would silently reduce this guard to what it was"
+                        + " before P1-TSK-024, and the register would stop covering Phase 1 with"
+                        + " nothing reporting it - Phase 1 is COMPLETE, so the status parse finding"
+                        + " less than 1 means the parse broke, not the project moved")
                 .isGreaterThanOrEqualTo(1);
 
         assertThat(invariantsUpToCurrentPhase())
@@ -391,19 +422,31 @@ class MutationDemonstrationTest {
      * that has been reached does not stop having been reached when it completes.
      */
     private static int currentPhase() {
-        int highest = -1;
+        int pending = -1;
+        int completed = -1;
         for (String line : stateSection("## Current Phase")) {
             Matcher heading = PHASE_HEADING.matcher(line);
             if (heading.find()) {
-                highest = Math.max(highest, Integer.parseInt(heading.group(1)));
+                pending = Integer.parseInt(heading.group(1));
+                continue;
+            }
+            // The backticked literal from PHASE_GATES.md section 1's closed status vocabulary.
+            // Anchored to the Status line so the word COMPLETE in surrounding prose cannot
+            // promote a phase; if the line is ever reworded past recognition, enforcement stays
+            // at the previous completed phase and the vacuity assertion below still requires
+            // Phase 1 - the guard degrades to demanding less about the NEWEST phase only, never
+            // to demanding nothing.
+            if (pending >= 0 && line.startsWith("Status:") && line.contains("`COMPLETE`")) {
+                completed = Math.max(completed, pending);
             }
         }
-        if (highest < 0) {
+        if (completed < 0) {
             throw new IllegalStateException(
-                    "No phase heading in " + STATE + " section Current Phase. Without one, "
-                            + "\"every phase reached\" would silently become \"no phase at all\".");
+                    "No phase in " + STATE + " section Current Phase is recorded COMPLETE. Without"
+                            + " one, \"every phase reached\" would silently become \"no phase at"
+                            + " all\".");
         }
-        return highest;
+        return completed;
     }
 
     /** The lines of one {@code CURRENT_STATE.md} section, bounded as {@link #registerSection} is. */

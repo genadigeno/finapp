@@ -742,6 +742,131 @@ and that a different key cannot read it.
 
 ---
 
+# Verification and Case Management — `INV-KYC`
+
+Added by the Phase 1 → 2 transition (2026-09-09), on the Phase 0 → 1 precedent: Phase 2's exit
+criteria existed only as prose bullets in `PHASE_GATES.md` §5 — no stable ID, no ranked
+enforcement mechanism, no named verification method — which is the weaker regime the `INV-IDN`
+group was created to escape, and Phase 2 is the phase whose product is *defensible decisions*.
+Catalogued before any case-handling code is written against prose.
+
+### INV-KYC-01 — A provider verdict is evidence, never the decision
+**Statement:** No provider response, screening result or verification verdict is ever itself the
+platform's decision. Every decision is a separately recorded act of the platform, referencing the
+evidence it rested on; the raw provider payload is retained verbatim (`INV-HIST-02`).
+**Why:** The platform, not the vendor, answers to the regulator. A decision that IS a provider's
+JSON cannot be defended, reproduced or reviewed — and providers time out, disagree and revise.
+**Enforce:** `DOMAIN` (the decision record references checks; no code path maps a provider outcome
+onto a case status directly) + `DB-PRIVILEGE` (evidence tables are append-only).
+**Verify:** A test drives a provider verdict and asserts no decision exists until the platform's
+own decisioning ran; evidence bytes asserted identical to the bytes received.
+**Phase:** 2
+
+### INV-KYC-02 — A decision is immutable, attributable and reproducible
+**Statement:** A recorded KYC/KYB decision is never updated or deleted; it names its actor
+(a reviewer, or the platform under a stated automatic policy), its reason, the policy version
+applied (`INV-HIST-04`) and the evidence it rested on. Changed circumstances produce a new case
+event, never an edit.
+**Why:** An onboarding decision is the record later financial phases gate on and the record a
+dispute replays. `INV-CRD-02`'s regime, three phases early, for the same reason.
+**Enforce:** `DB-PRIVILEGE` (no `UPDATE`/`DELETE` for the application role) + `DB-CONSTRAINT`
+(`NOT NULL` actor, reason, policy version).
+**Verify:** Privilege tests; a replay test re-deriving the decision from retained evidence and the
+pinned policy.
+**Phase:** 2
+
+### INV-KYC-03 — Duplicate provider callbacks produce at most one decision
+**Statement:** The same provider callback, webhook or result delivered any number of times — or
+concurrently to N instances — advances a case at most once and produces at most one decision.
+**Why:** `INV-IDEM-04` is the general rule; it is restated here with a stable ID because a
+duplicated *decision* is the phase's most damaging duplicate — two decisions on one case make the
+answer to "may this party transact?" ambiguous forever.
+**Enforce:** `DB-CONSTRAINT` — the platform inbox dedupe key (`P0-TSK-021`), plus conditional
+state transitions whose row count is the outcome.
+**Verify:** Duplicate- and concurrent-delivery tests against a real database.
+**Phase:** 2
+
+### INV-KYC-04 — A screening hit is resolved by a person, never by silence
+**Statement:** A screening hit (sanctions, PEP, adverse media) never auto-clears and never
+auto-rejects. It becomes an explicit review item, and its resolution requires elevated
+authorization, a recorded reason, and an audit record naming the reviewer.
+**Why:** A name match is a probability. Silently cleared is a sanctions breach; silently rejected
+is a person refused service by string similarity. Both are invisible without the review record.
+**Enforce:** `DOMAIN` (no code path from hit to terminal case state without a review decision) +
+`DOMAIN` (`@RequiresPermission` on review endpoints).
+**Verify:** Negative authorization tests; a test asserting a hit case cannot reach a terminal
+state without a recorded review decision.
+**Phase:** 2
+
+### INV-KYC-05 — The verification outcome has one authority
+**Statement:** The KYC context owns the verification decision. Any copy elsewhere — including
+`party.customer.status` — is a projection: updated in reaction to the decision, never computed or
+edited independently, and never authoritative in a dispute.
+**Why:** Two writable authorities for "is this party verified?" is the shared-mutable-ownership
+defect `CLAUDE.md` forbids, on the field every financial phase will gate on.
+**Enforce:** `DOMAIN` + `STATIC` (module boundaries: nothing outside `kyc` writes a decision;
+nothing outside the orchestration transitions customer status from a verification outcome).
+**Verify:** A reconciliation test asserting projection and decision agree; boundary tests.
+**Phase:** 2
+
+### INV-KYC-06 — Documents and evidence are least-privilege, encrypted, and every access audited
+**Statement:** Document content and screening evidence are classified at their ceiling
+(`RESTRICTED-PII`), encrypted at rest under a key held outside the database, readable only
+through an access-controlled path, and every read of document content produces an audit record
+naming the actor.
+**Why:** Identity documents are the most sensitive bytes the platform holds before card data, and
+the reader is an insider threat surface: the trail of who looked is the control.
+**Enforce:** `DOMAIN` (one read path, audited) + `DB-PRIVILEGE` (append-only content tables) +
+`PROCESS` (key externalised, published default confined to loopback — the `INV-IDN-08` mechanism).
+**Verify:** Column-sweep tests that plaintext content appears nowhere; tamper and wrong-key
+refusal; an access-without-audit mutation caught.
+**Phase:** 2
+
+---
+
+# Consent — `INV-CNS`
+
+### INV-CNS-01 — No processing without a recorded, current, purpose-scoped basis
+**Statement:** A capability declared consent-gated proceeds only when a current grant for that
+specific purpose exists. Absence of a record is refusal, indistinguishable to the caller from an
+explicit withdrawal. Authentication and authorization never substitute (`INV-IDN-04`).
+**Why:** Consent is a legal precondition; a default-permit consent check is not a consent check.
+**Enforce:** `DOMAIN` — the gate queries the consent history per decision; no cached or assumed
+basis.
+**Verify:** Consent-absent and consent-withdrawn refusal tests per gated capability; the
+withdrawal test proves the dependent capability blocks (`PHASE_GATES.md` §5 Phase 2).
+**Phase:** 2
+
+### INV-CNS-02 — Consent history is append-only
+**Statement:** Grants and withdrawals are immutable facts. Withdrawal is a new record; no consent
+record is ever updated or deleted by any application role.
+**Why:** "Was there a basis on the day it happened?" is answerable only from history; an updated
+row has destroyed the evidence the question needs.
+**Enforce:** `DB-PRIVILEGE` — `INSERT`/`SELECT` only, the audit-table mechanism.
+**Verify:** Privilege tests on every column; the derived current basis flips on a new record.
+**Phase:** 2
+
+### INV-CNS-03 — Withdrawal is immediate on every instance
+**Statement:** From the transaction that records a withdrawal, every instance refuses the gated
+capability on its next decision. Consent state is never held in process memory.
+**Why:** An eventually-withdrawn consent is an unwithdrawn consent — `INV-IDN-03`'s reasoning
+applied to lawful basis.
+**Enforce:** `DOMAIN` — authoritative reads per decision; no process-local consent cache
+(ADR-0024's rules apply).
+**Verify:** Multi-instance test: withdraw on one connection, refused on another (`P0-TST-009`).
+**Phase:** 2
+
+### INV-CNS-04 — A grant is bound to the version of the text it was given against
+**Statement:** Every consent record carries the version of the consent text presented. Whether a
+new version requires re-consent is a recorded property of the version, never a guess.
+**Why:** `INV-HIST-04`'s rule applied to the artefact a person agreed to: a grant against text v3
+proves nothing about v4.
+**Enforce:** `DB-CONSTRAINT` (`NOT NULL` version reference to a versioned, immutable text record).
+**Verify:** Schema tests; a gate test under a version requiring re-consent.
+**Phase:** 2
+
+---
+
 # Invariant Index
 
 | Group | IDs | Concern |
@@ -762,6 +887,8 @@ and that a different key cannot read it.
 | `INV-AUD` | 01–04 | Security and audit |
 | `INV-CRD` | 01–04 | Credit decisioning |
 | `INV-IDN` | 01–08 | Identity, credentials and sessions |
+| `INV-KYC` | 01–06 | Verification and case management |
+| `INV-CNS` | 01–04 | Consent |
 
-**72 invariants.** Every one must be enforced and verified before the phase that owns it can
+**82 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate.
