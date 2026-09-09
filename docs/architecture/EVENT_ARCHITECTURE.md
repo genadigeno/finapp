@@ -163,10 +163,12 @@ Both statements are manual `UPDATE`s against a table the application role can wr
 acceptable only because the outbox is transport rather than financial history (`INV-EVT-02`,
 `V005`). The same action against a ledger table would not be.
 
-**The transport adapter is deliberately absent.** The relay publishes through an
-`EventPublisher` port; writing an adapter decides the wire format, the topic scheme and the
-producer's acknowledgement configuration, and puts a broker client on the classpath. Those
-belong with the phase that has events to publish.
+**The transport adapters exist since Phase 2, one per direction.** `KafkaEventPublisher`
+(`P2-TSK-001`) settled the wire format, the topic scheme and the acknowledgement configuration
+described above; `KafkaEventReceiver` (`P2-TSK-002`) is the consuming shell. *(This paragraph
+said the adapter was "deliberately absent" — true when written, corrected by the task that added
+the second adapter after the first had left it stale.)* Each lives in its own package, the only
+two `NoDirectBrokerPublicationRulesTest` exempts, so a broker client can appear nowhere else.
 
 ## Consumption
 
@@ -189,7 +191,18 @@ roll back. A consumer never waits long for a race it does not need to win.
 
 **Retention is a correctness bound**, not housekeeping: a dedupe record that expires while the
 producer can still redeliver admits exactly the duplicate effect it existed to refuse.
-`DATA_MIGRATIONS.md` §9 states the policy and what the window must exceed.
+`DATA_MIGRATIONS.md` §9 states the policy and what the window must exceed — for Kafka the
+redelivery window is bounded by topic retention, which is what the shell's default dedupe
+retention is sized against.
+
+**The shell acknowledges only what has committed** (`P2-TSK-002`). `KafkaEventReceiver` commits
+the broker offset strictly after the inbox transaction commits, with auto-commit disabled; the
+two commits cannot be atomic, and every failure between them — crash, rebalance, lost connection
+— resolves as a redelivery into the dedupe, the safe direction. A record that cannot be handled
+is **seeked back to rather than skipped**: acknowledging past it would be an undetectable gap,
+the relay's block-don't-skip rule on the consuming side. Consumer-group offsets are transport
+bookkeeping, never truth (`DISTRIBUTED_EXECUTION.md` §3): losing them replays the topic and the
+inbox absorbs it.
 
 ## Delivery Assumptions
 
@@ -199,6 +212,8 @@ Consumers must tolerate:
 - out-of-order delivery where ordering is not guaranteed
 - replay
 - consumer restart
+- rebalance — partition ownership moving while a record is in flight, so two instances can
+  briefly hold the same delivery; the inbox primary key is the arbiter
 
 **The inbox addresses duplication only.** Delay, reordering and replay remain the handler's
 problem, and no dedupe table can solve them: a handler that would be wrong seeing

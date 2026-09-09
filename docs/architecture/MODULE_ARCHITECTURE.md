@@ -697,13 +697,19 @@ record one commit — and that guarantee lasts exactly as long as nobody takes t
   rule one syntax away from being bypassed is not enforcement.
   *(ArchUnit: `nothingPublishesToABrokerDirectly`)*
 
-The exemption is a **module**, not a class list, so the relay can be built from several classes
-without editing the rule. It is still **empty** after `P0-TSK-020`, and that is not an
-oversight: the relay publishes through an `EventPublisher` port and no adapter behind it exists
-yet, so no production class touches a broker client and none needs exempting. The exemption
-arrives with the adapter — with the dependency, the wire format and the topic scheme it brings —
-rather than in advance of it, which keeps the list at exactly the modules that have actually
-taken the privilege.
+The exemptions are the two broker **adapter packages** — `platform.outbox`
+(`KafkaEventPublisher`, `P2-TSK-001`) and `platform.inbox.kafka` (`KafkaEventReceiver`,
+`P2-TSK-002`) — matched exactly, so the inbox parent package where `InboxConsumer` lives stays
+forbidden, and each is proven load-bearing in both directions by the rule's own teeth. *(This
+paragraph previously said the exemption was "a module" and "still empty after `P0-TSK-020`" —
+true when written, stale from the day `P2-TSK-001` narrowed the granularity to a package and
+added the first entry, and caught by `P2-TSK-002`'s widening rather than by any guard: the
+equivalence test pins rule names, not prose about their exemption sets.)* Each exemption arrived
+**with** its adapter — the dependency, the wire format, the config it brings — never in advance,
+which keeps the list at exactly the packages that have actually taken the privilege; and the
+rule's condition is deliberately broader than its name, because consuming directly past the
+inbox is the symmetric defect to publishing past the outbox (`INV-IDEM-04` and `INV-EVT-01`
+respectively, each losing its guarantee silently).
 
 ### Secrets cannot be held in a field that would print itself
 

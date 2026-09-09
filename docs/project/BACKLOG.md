@@ -2663,7 +2663,7 @@ capability map, and the task list below is the schedule.
   construction and configuration live in the adapter's factory, inside the one exempted package.
 - Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
 
-**P2-TSK-002 — The first consumer path: Kafka in, inbox dedupe, effect once** — `READY` (2026-09-09, next in M2.1)
+**P2-TSK-002 — The first consumer path: Kafka in, inbox dedupe, effect once** — `COMPLETE` (2026-09-09)
 - Context: platform / integration
 - Description: A Kafka consumer shell that hands records to `InboxConsumer`, so duplicate and
   redelivered records produce one effect (`INV-IDEM-04`), proven against a real broker.
@@ -2680,9 +2680,20 @@ capability map, and the task list below is the schedule.
 - Tests: duplicate delivery, redelivery after crash-before-commit, rebalance mid-batch — all
   counting effects in a side-effect table (`P0-TSK-021`'s idiom).
 - Accept: at-least-once transport, exactly-once effect, demonstrated under restart and rebalance.
+- **Gate evidence (2026-09-09)**: `KafkaInboxDeliveryKafkaTest`, five tests against a real broker
+  and a real PostgreSQL — end to end with bytes verbatim and correlation on the inbox row; a wire
+  duplicate (the relay's own crash duplicate, replayed on purpose) is one effect; a crash between
+  the database commit and the offset commit redelivers into the dedupe; two consumers across a
+  rebalance effect once per record; a handler failure rolls the dedupe record back so the
+  redelivery retries. Offset-commit-after-effect is **asserted, not described** — a journalling
+  consumer proves the ordering, and inverting it in code fails exactly that test. **Five
+  mutations, all caught by the intended assertion.** The broker rule gained its second exemption
+  (`platform.inbox.kafka`) with fixture proofs in both directions, and the gate found two stale
+  architecture-document claims left from `P2-TSK-001` (the "deliberately absent" adapter, the
+  "still empty" exemption), both corrected with provenance.
 - Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
 
-**P2-TSK-003 — `kyc` and `consent` module skeletons** — `TODO`
+**P2-TSK-003 — `kyc` and `consent` module skeletons** — `READY` (2026-09-09, next in M2.1)
 - Context: kyc / consent
 - Description: Two modules, two schemas (`V001` each: schema, ownership, `REVOKE PUBLIC`,
   `USAGE` to `finapp_app`), isolation tests both directions, audit-action enums with their

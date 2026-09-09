@@ -68,6 +68,7 @@ cannot affect correctness.
 | `OutboxRelay` | none — all state in the row | **Transaction-scoped advisory lock per aggregate.** Every instance polls; one drains a given aggregate at a time; conditional `UPDATE ... WHERE published_at IS NULL` on every write | Delegates to the row |
 | `platform.inbox_message` | durable | **Primary key** on (consumer, dedupe_key). The database arbitrates between two instances handed the same redelivery | **Yes**, for "has this consumer handled this?" |
 | `InboxConsumer` / `JdbcInboxRecordStore` | none — all state in the row | Insert-then-handle in the caller's transaction; a bounded `lock_timeout`, then report `CONTENDED` and let the broker redeliver | Delegates to the row |
+| `KafkaEventReceiver` / `InboxConsumers` | consumer-group offsets, held **broker-side**; a poll loop thread per module per instance | **Non-authoritative, explicitly.** An offset is committed only after the inbox transaction committed, so every failure between the two — crash, rebalance, lost connection — redelivers into the dedupe, and losing the offsets entirely replays the topic into it. The group protocol shares work; it never decides correctness — during a rebalance two instances can hold the same in-flight record, and the arbiter is `platform.inbox_message`'s primary key. The loop threads are per-instance mechanics whose loss costs this instance's consumption and nothing else | No — delegates to the inbox row |
 | `platform.audit_record` | durable | Append-only by **privilege**, not by convention: the application role holds no `UPDATE` or `DELETE`, so no instance can edit the trail whatever its code does | **Yes** |
 | `AuditWriter` / `JdbcAuditWriter` | none | Writes on the caller's connection and opens nothing of its own; insert-only, so there is no lost update to have | Delegates to the row |
 | `identity.authentication_failure` | durable | **One row per identity, updated by one atomic statement** — `INSERT … ON CONFLICT DO UPDATE … RETURNING`, so the post-increment count is produced *by the write*. There is no read-then-write to lose, which is what `INV-CON-03` means by a limit that is not bypassable: with a read-then-count, ten concurrent attempts at the threshold all read nine and all proceed. Every window and expiry decision uses the **server's** `now()` (`V004`, ADR-0014) | **Yes** |
@@ -90,6 +91,20 @@ is a new decision, not a ride on this one.
 The `KafkaProducer` the adapter holds is likewise per-instance and non-authoritative: its
 buffers are in-flight copies of durable outbox rows, and losing them costs a retry, never a
 fact.
+
+### `InboxConsumers` — why the consumer loops need no lease (`P2-TSK-002`)
+
+The consuming counterpart, and deliberately **not** a second exemption to
+`nothingSchedulesAmbiently`: each loop is a plain thread whose pacing is the poll's own bounded
+blocking — no scheduler, so the rule has nothing to see. Every instance runs the loops, and
+that needs no lease because the two jobs a lease would do are done elsewhere: **work-sharing**
+is Kafka's consumer-group protocol (one group per consuming module, partitions assigned
+disjointly in the steady state), and **correctness** is the inbox primary key — which is why a
+rebalance handing the same in-flight record to two instances is the design's normal case rather
+than a hazard. The offset commit happens strictly after the inbox transaction commits; the two
+cannot be atomic, and every failure between them resolves as a redelivery into the dedupe,
+which is the safe direction. The reverse ordering — acknowledge, then effect — is the one that
+loses records, and `KafkaEventReceiverTest` asserts the order rather than describing it.
 
 ### `IdGenerator` — why a per-instance counter is acceptable
 

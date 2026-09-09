@@ -1,12 +1,19 @@
 package com.finapp.app.eventing;
 
 import com.finapp.app.security.KafkaTransportGuard;
+import com.finapp.platform.inbox.InboxConsumer;
+import com.finapp.platform.inbox.InboxEventHandler;
+import com.finapp.platform.inbox.JdbcInboxRecordStore;
+import com.finapp.platform.inbox.kafka.KafkaEventReceiver;
 import com.finapp.platform.outbox.EventPublisher;
 import com.finapp.platform.outbox.KafkaEventPublisher;
 import com.finapp.platform.outbox.OutboxRelay;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.sql.Connection;
+import java.time.Clock;
 import java.time.Duration;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -74,5 +81,54 @@ public class EventingBeans {
             @Value("${finapp.outbox.poll-interval:PT1S}") Duration pollInterval,
             MeterRegistry registry) {
         return new OutboxRelaySchedule(relay, pollInterval, registry);
+    }
+
+    /**
+     * The consuming half (`P2-TSK-002`). One instance app-wide; retention is the dedupe window
+     * and must exceed every window in which a record can be redelivered — for Kafka that is
+     * bounded by topic retention (7 days by default), so the default here is twice that
+     * ({@code DATA_MIGRATIONS.md} §9: too long costs storage, too short admits the duplicate
+     * effect the inbox exists to prevent).
+     */
+    @Bean
+    InboxConsumer<Connection> inboxConsumer(
+            Clock clock, @Value("${finapp.inbox.retention:P14D}") Duration retention) {
+        return new InboxConsumer<>(new JdbcInboxRecordStore(), clock, retention);
+    }
+
+    // The same gate shape as the relay schedule, for the same reason: a background worker
+    // consuming records under every @SpringBootTest would race assertions, so the app test
+    // overlay disables it and the kafka tier runs the real thing deliberately. matchIfMissing:
+    // a DEPLOYED instance consumes without configuration.
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "finapp.inbox.consumer.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    InboxConsumers inboxConsumers(
+            ObjectProvider<InboxEventHandler> handlers,
+            DataSource dataSource,
+            InboxConsumer<Connection> inboxConsumer,
+            MeterRegistry registry,
+            @Value("${finapp.kafka.bootstrap-servers:localhost:29092}") String bootstrapServers,
+            @Value("${finapp.kafka.security-protocol:PLAINTEXT}") String securityProtocol,
+            @Value("${finapp.inbox.poll-timeout:PT1S}") Duration pollTimeout,
+            @Value("${finapp.inbox.failure-backoff:PT1S}") Duration failureBackoff,
+            // The transport guard as a parameter for the producer's reason: the consumer dials
+            // the same bootstrap, so it must not exist before the guard has ruled on it.
+            KafkaTransportGuard guard) {
+        return new InboxConsumers(
+                handlers.orderedStream().toList(),
+                (groupId, groupHandlers) ->
+                        KafkaEventReceiver.connect(
+                                bootstrapServers,
+                                securityProtocol,
+                                groupId,
+                                dataSource::getConnection,
+                                inboxConsumer,
+                                groupHandlers,
+                                pollTimeout),
+                failureBackoff,
+                registry);
     }
 }

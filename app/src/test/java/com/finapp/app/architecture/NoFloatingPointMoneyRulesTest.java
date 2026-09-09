@@ -149,7 +149,11 @@ class NoFloatingPointMoneyRulesTest {
                     // through Counter.increment(double), the only instrument Micrometer offers.
                     // The counts are ints end to end; the double appears at the registry
                     // boundary and nowhere else.
-                    "com.finapp.app.eventing.OutboxRelaySchedule");
+                    "com.finapp.app.eventing.OutboxRelaySchedule",
+                    // P2-TSK-002. The consuming twin of the entry above, same argument
+                    // verbatim: ints out of ReceiverPollResult, Counter.increment(double) at
+                    // the registry boundary, floating point nowhere else in the class.
+                    "com.finapp.app.eventing.InboxConsumers$Loop");
 
     // ---------------------------------------------------------------------
     // Guard: the rules must actually see the code they claim to protect.

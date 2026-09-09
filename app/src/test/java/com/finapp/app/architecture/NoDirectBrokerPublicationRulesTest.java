@@ -47,14 +47,19 @@ import org.junit.jupiter.api.Test;
  * the moment it is first needed. This is the same reasoning as the cross-module entity rule,
  * which matches the JPA annotation by name for the same reason.
  *
- * <p><strong>The exemption is the outbox package, not a module and not a class.</strong> The
- * original text here said "a module", and `P2-TSK-001` — the task that finally added the
- * exemption — narrowed it while keeping its reason: package granularity still lets the relay be
+ * <p><strong>The exemptions are the two adapter packages, not a module and not a class.</strong>
+ * The original text here said "a module", and `P2-TSK-001` — the task that added the first
+ * exemption — narrowed it while keeping its reason: package granularity still lets an adapter be
  * built out of several classes without anyone editing this rule, and a <em>module</em> exemption
  * would have let every platform concern — the audit writer, the API layer, the correlation
- * kernel — touch a broker client silently, which was never the intent. The relay <em>is</em> the
- * outbox package. Proven load-bearing in both directions below: a broker call in a sibling
- * platform package still fails, and one in the outbox package passes.
+ * kernel — touch a broker client silently, which was never the intent. `P2-TSK-002` added the
+ * second: the inbox's Kafka adapter, and the rule's condition was always broader than its name —
+ * it forbids <em>touching</em> a broker client, correctly, because consuming directly past the
+ * inbox is the symmetric defect (effects with no dedupe, {@code INV-IDEM-04}) just as publishing
+ * directly is effects with no outbox ({@code INV-EVT-01}). Each exemption is proven load-bearing
+ * in both directions below: the adapter passes, and a broker touch one package sideways — a
+ * platform sibling for the producer side, the inbox <em>parent</em> package for the consumer
+ * side — still fails.
  */
 @Tag("architecture")
 // NOT a duplicate of the line above. ArchUnit runs @ArchTest fields under its OWN
@@ -82,12 +87,14 @@ class NoDirectBrokerPublicationRulesTest {
                     "javax.jms.");
 
     /**
-     * The one package allowed to publish. Empty from P0-TSK-019 until `P2-TSK-001` built the
-     * adapter — deliberately, so the exemption arrived with the component that needs it rather
-     * than in advance of it.
+     * The packages allowed to touch a broker client — one per direction of the pipe. Empty from
+     * P0-TSK-019 until `P2-TSK-001` built the publishing adapter and `P2-TSK-002` the consuming
+     * one — deliberately, so each exemption arrived with the component that needs it rather than
+     * in advance of it. Matched exactly, never by prefix: the inbox <em>parent</em> package,
+     * where {@code InboxConsumer} lives, stays forbidden, and the teeth prove it.
      */
-    private static final Set<String> PUBLISHING_PACKAGES =
-            Set.of("com.finapp.platform.outbox");
+    private static final Set<String> BROKER_ADAPTER_PACKAGES =
+            Set.of("com.finapp.platform.outbox", "com.finapp.platform.inbox.kafka");
 
     @ArchTest
     static void everyModuleWithProductionCodeIsAnalysed(JavaClasses imported) {
@@ -131,7 +138,7 @@ class NoDirectBrokerPublicationRulesTest {
     }
 
     @Test
-    @DisplayName("the exemption is one package, proven in both directions")
+    @DisplayName("the publishing exemption is one package, proven in both directions")
     void theExemptionIsExactlyTheOutboxPackage() {
         // The adapter itself must pass - the exemption is load-bearing, not decorative...
         assertThatCode(
@@ -148,6 +155,26 @@ class NoDirectBrokerPublicationRulesTest {
         // prevent. The fixture declares a platform sibling package; the rule keys on the package
         // name, which is exactly why this is provable from test sources.
         assertRejects(com.finapp.platform.brokerprobe.PublishesFromAPlatformSibling.class);
+    }
+
+    @Test
+    @DisplayName("the consuming exemption is one package, proven in both directions")
+    void theExemptionIsExactlyTheInboxKafkaPackage() {
+        // The receiver itself must pass - the second exemption is load-bearing (P2-TSK-002)...
+        assertThatCode(
+                        () ->
+                                nothingPublishesToABrokerDirectly.check(
+                                        new ClassFileImporter()
+                                                .importClasses(
+                                                        com.finapp.platform.inbox.kafka
+                                                                .KafkaEventReceiver.class)))
+                .doesNotThrowAnyException();
+
+        // ...and a consumer-client touch in the inbox PARENT package must still fail: the
+        // exemption set matches package names exactly, and this is what keeps that a
+        // demonstrated property. InboxConsumer lives one level up, and the boundary between
+        // "deduplicates deliveries" and "talks to a broker" is precisely there.
+        assertRejects(com.finapp.platform.inbox.ConsumesBesideTheInbox.class);
     }
 
     private static void assertRejects(Class<?> violation) {
@@ -171,7 +198,7 @@ class NoDirectBrokerPublicationRulesTest {
         return new ArchCondition<>("not reach a message broker directly") {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
-                if (PUBLISHING_PACKAGES.contains(javaClass.getPackageName())) {
+                if (BROKER_ADAPTER_PACKAGES.contains(javaClass.getPackageName())) {
                     return;
                 }
                 for (JavaMethodCall call : javaClass.getMethodCallsFromSelf()) {

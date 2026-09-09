@@ -60,8 +60,12 @@ class, again).
 ## Current Milestone
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
-**2 of 5** (2026-09-09) — the broker adapter and the credential change done; next is `P2-TSK-002`,
-the first consumer path. Acceptance: an outbox event reaches a real consumer through Kafka with
+**3 of 5** (2026-09-09) — the broker adapter, the credential change and the first consumer path
+done; next is `P2-TSK-003`, the module skeletons. **The milestone's stated acceptance now holds
+in full** — an outbox event reaches a real consumer through Kafka with exactly one effect per
+fact, and a person can change their password — and the milestone stays open anyway, because two
+of its scheduled tasks remain: acceptance is what a milestone *means* (the M1.2 lesson), never a
+licence to strand the members still inside it. Acceptance: an outbox event reaches a real consumer through Kafka with
 exactly one effect per fact, and a person can change their password. (The milestone's own
 wording inherited the backlog's exactly-once promise; corrected the same way — the *effect* is
 exactly-once, the delivery is at-least-once.)
@@ -210,11 +214,82 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-033` completed 2026-09-09 — the exit review's finding is closed and
-a person with a stolen password can now self-serve a credential replacement. **Next:
-`P2-TSK-002` (`READY`).**
+**None in progress.** `P2-TSK-002` completed 2026-09-09 — the inbox has met a real transport,
+and M2.1's integration acceptance now holds end to end. **Next: `P2-TSK-003` (`READY`).**
 
 ### Just completed
+
+**`P2-TSK-002` — The first consumer path: Kafka in, inbox dedupe, effect once** — `COMPLETE`
+(2026-09-09). The inbox (`P0-TSK-021`) meets a real transport for the first time: a Kafka
+consumer shell hands records through the flow's correlation to `InboxConsumer`, and a duplicate,
+a redelivery, a crash and a rebalance all produce **one effect per fact** — proven against a
+real broker, with the effect counted in a side-effect table rather than inferred from anything's
+return value.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| At-least-once transport, exactly-once effect | The relay's own crash duplicate — two records, one `eventId` — replayed on purpose; one effect |
+| Demonstrated under restart | DB commit lands, the offset commit never does (a consumer whose acknowledgements are silently lost — byte-for-byte what the broker sees from a real crash); the restarted group redelivers, the dedupe absorbs it |
+| Demonstrated under rebalance | A second member joins mid-stream; four events, four effects, no `event_id` twice |
+| Offset-commit-after-effect **asserted, not described** | A journalling consumer pins the order `effect-committed` → `offsets-acknowledged`; inverting it in code fails exactly that test |
+
+### The load-bearing ordering, and what is honestly not atomic
+
+Per record, per interested handler, one database transaction commits the effect together with
+its dedupe record; **the broker offset is committed only after that**, with auto-commit disabled
+because auto-commit acknowledges on the next poll regardless of what happened. The two commits
+cannot be atomic and the design does not pretend: every failure between them resolves as a
+redelivery into the dedupe — the safe direction — while the reverse ordering would lose records
+silently. A record that cannot be handled is **seeked back to, never skipped** (the relay's
+block-don't-skip rule on the consuming side: a gap in the stream is undetectable), so a poison
+record stalls its partition loudly at a bounded retry rate; dead-letter tooling stays Phase 15
+debt.
+
+### The seam is Kafka-free, and the rule that guards it got its second exemption
+
+`InboxEventHandler` and `ReceivedEvent` carry no broker type, so a consuming module never sees
+the client — `P2-TSK-007` registers a bean and nothing more. The client itself lives in
+`platform.inbox.kafka`, the second exemption to `NoDirectBrokerPublicationRulesTest`, whose
+condition was always broader than its name: consuming directly past the inbox is the symmetric
+defect to publishing past the outbox (`INV-IDEM-04` / `INV-EVT-01`). The exemption is
+exact-match — the inbox *parent* package where `InboxConsumer` lives stays forbidden — and both
+directions are proven by fixture, including a consumer-client probe class the producer-side
+precedent now has a twin of.
+
+### No scheduler, no lease, and why that is not the relay's exemption
+
+Each consuming module gets one loop — a plain thread whose pacing is the poll's own bounded
+blocking, so `nothingSchedulesAmbiently` has nothing to see and needed no second exemption.
+Work-sharing is Kafka's group protocol; **correctness is the inbox primary key** — during a
+rebalance two instances can hold the same in-flight record, and the database arbitrates, which
+is the design's normal case rather than a hazard. Group offsets are registered in
+`DISTRIBUTED_EXECUTION.md` §3 as explicitly non-authoritative: losing them replays the topic
+into the dedupe. Groups derive from `consumerName()`'s module segment, so extraction takes a
+module's offsets with it.
+
+### The debt row whose trigger was this task, paid
+
+`finapp.inbox.consumption` by outcome — processed, duplicate, contended, failed — registered
+**eagerly** (`P1-TSK-029`'s rule), asserted at zero before any record has ever arrived. The
+inbox-metrics debt row named *"the first live consumer"* as its trigger, and this is it.
+`INV-MON-01` fired on `Counter.increment(double)` on the way, and the exemption entry is the
+third of the **same case** — ints end to end, the double at the registry boundary only.
+
+### The gate found two stale architecture-document claims, both left by the previous task
+
+`EVENT_ARCHITECTURE.md` still said the transport adapter was *"deliberately absent"* and
+`MODULE_ARCHITECTURE.md` §6 still said the broker-rule exemption was *"a module"* and *"still
+empty after `P0-TSK-020`"* — both true when written, both stale from the day `P2-TSK-001`
+landed, and neither caught by any guard, because the equivalence test pins rule names rather
+than prose about their exemption sets. Corrected with provenance. One defect was caught by
+review before any run: the kafka-tier probe reads used the application role against a
+bootstrap-owned probe table it holds no grant on.
+
+**Five mutations, all caught by the intended assertion** — the ordering inverted, the seek-back
+removed, a contended record acknowledged, a failed handler committing its dedupe record, and the
+dedupe key made per-delivery. **884 hermetic tests, 471 database tests, 10 kafka tests.**
+
+### Previously
 
 **`P1-TSK-033` — `POST /v1/me/credential`: a logged-in person changes their own password** —
 `COMPLETE` (2026-09-09). The endpoint the plan declared for the whole phase and `P1-DOC-002`'s
@@ -5347,7 +5422,7 @@ carries, what triggers paying it down, and the owning phase.
 | **Outbox retention.** Published rows are never deleted | `V005` says a published row may be deleted once retained long enough for diagnosis; the sweep is a scheduled job with its own cluster-safety question, and no task owned it | Unbounded table growth. The partial pending index does **not** grow with it — published rows leave it — so the cost is storage and vacuum, not relay latency | Table size becoming operationally material | Phase 15 (data retention and deletion) |
 | ~~**Relay metrics.**~~ - **paid in full 2026-09-09** (`P0-TSK-029` the gauges, `P2-TSK-001` the counters): `finapp.outbox.publication` by outcome (published, failed, deadlettered), registered eagerly and fed from `RelayPollResult` by the schedule that now actually runs. The eager series is asserted before any flow in `OutboxRelayScheduleKafkaTest` | Nothing schedules a relay, so those meters would be structurally always zero - which reads as "nothing is failing" rather than "nothing is running" | The remaining risk is narrower: a relay that is running but failing is visible as a growing backlog, not as a failure count | A scheduled relay | Phase 3 |
 | **Inbox retention sweep.** Records are never deleted | The sweep is a scheduled job with its own cluster-safety question, and `V007` deliberately adds no `expires_at` index until its predicate is written | Unbounded growth of a table whose only index is its primary key. **Not** a correctness risk in this direction: a record that is never swept deduplicates forever, and it is early expiry that admits a duplicate (`DATA_MIGRATIONS.md` §9) | Table size becoming operationally material, or the first consumer going live | Phase 15 (data retention and deletion) |
-| **Inbox metrics.** Duplicate and contention rates are returned as outcomes and aggregated nowhere | The metrics infrastructure now exists (`P0-TSK-029`), but nothing consumes messages: a counter incremented by no one is a meter that is structurally always zero | A rising duplicate rate is a signal about the transport and a rising contention rate about consumer concurrency; both remain visible only as log lines, one at debug | The first live consumer | Phase 3 |
+| ~~**Inbox metrics.**~~ - **paid in full 2026-09-09** by `P2-TSK-002`, whose trigger this row named: *"the first live consumer"*. `finapp.inbox.consumption` by outcome (processed, duplicate, contended, failed), registered eagerly and fed from `ReceiverPollResult` by the consumer loops; asserted present at zero before any record has ever arrived | - | - | - | - |
 | **Audit retention and archival.** Records are never deleted, and the application role cannot delete them | ADR-0010 is explicit that deletion is not an option and that archival must preserve queryability - which is a Phase 15 deliverable, not a sweep | Unbounded growth of a table written on every privileged action. **Not** a correctness risk: the inability to delete is the invariant working, and archival must preserve the trail rather than trim it | Table size becoming operationally material | Phase 15 (retention and archival) |
 | **Four-eyes approver is not modelled.** `audit_record` records one actor | `INV-AUD-04` applies to manual adjustments, break resolutions, policy activations and period close - none of which exist yet. ADR-0010 schedules it for Phases 3, 8 and 14 | None today: there is no four-eyes action to under-record. When one arrives it needs a second actor column, which is an ordinary forward migration | The first action requiring a second approver | Phase 3 |
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
@@ -5412,20 +5487,21 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-002` — the first consumer path: Kafka in, inbox dedupe, effect once.** Status `READY`;
-the next task of M2.1, its dependency `P2-TSK-001` complete.
+**`P2-TSK-003` — `kyc` and `consent` module skeletons.** Status `READY`; the next task of M2.1,
+no dependencies.
 
-A Kafka consumer shell hands records to `InboxConsumer`, so a duplicate or redelivered record
-produces one effect (`INV-IDEM-04`) — proven against a real broker for the first time. The offset
-is committed **after** the inbox transaction, so a crash between effect and commit redelivers into
-the dedupe rather than losing the record; consumer restart and rebalance are the §Failure
-Engineering modes nothing has yet exercised. No business handler yet — `P2-TSK-007` is the first.
+Two modules, two schemas (`V001` each: schema, ownership, `REVOKE PUBLIC`, `USAGE` to
+`finapp_app`), isolation tests in both directions, audit-action enums with their catalogue rows
+— the `P1-TSK-003` shape, so every derived guard (classification, taxonomy, boundaries, secrets)
+sees the modules from their first commit. Acceptance: `./gradlew build` green with both modules
+and every existing sweep provably covering them (the planted-`double` probe).
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P2-TSK-002` complete - the first consumer path, and the inbox meets a real transport.** `KafkaEventReceiver` (in `platform.inbox.kafka`, the broker rule's second exemption - the rule's condition was always broader than its name, because consuming directly past the inbox is the symmetric defect to publishing past the outbox) polls records, parses the eleven `finapp.*` headers into a Kafka-free `ReceivedEvent`, enters the producing flow's correlation with the event as the effect's cause, and runs registered `InboxEventHandler`s through `InboxConsumer` - one database transaction per handler committing effect and dedupe record together, **the broker offset committed only after that**, auto-commit disabled because auto-commit acknowledges regardless of what happened. The two commits cannot be atomic and the design does not pretend: every failure between them resolves as a redelivery into the dedupe, and a record that cannot be handled is SEEKED BACK TO, never skipped - the relay's block-don't-skip rule on the consuming side. One consumer group per consuming module, derived from `consumerName()`'s module segment; no scheduler and no lease, deliberately - work-sharing is Kafka's group protocol and correctness is the inbox primary key, with group offsets registered as explicitly non-authoritative (`DISTRIBUTED_EXECUTION.md` §3). **Demonstrated against a real broker**: a wire duplicate is one effect; a crash between the database commit and the offset commit redelivers into the dedupe; two consumers across a rebalance effect once per record; a handler failure rolls the dedupe record back so the redelivery retries. Offset-commit-after-effect is asserted rather than described - a journalling consumer pins the ordering, and inverting it in code fails exactly that test. **The inbox-metrics debt row is paid** (`finapp.inbox.consumption` by outcome, eager, its trigger - the first live consumer - being this task), with `INV-MON-01`'s `Counter.increment(double)` exemption gaining its third same-case entry. **The gate found two stale architecture-document claims left by `P2-TSK-001`** - the *"deliberately absent"* transport adapter and the *"still empty"* module-granularity exemption - neither caught by any guard because the equivalence test pins rule names, not prose about exemption sets; corrected with provenance. **Five mutations, all caught by the intended assertion.** 884 hermetic tests, 471 database tests, 10 kafka tests. |
 | 2026-09-09 | **`P1-TSK-033` complete - a logged-in person can change their own password**, closing the ninth backlog defect `P1-DOC-002` found: `POST /v1/me/credential`, declared by the plan for the whole phase and built by nothing. **Composition, not new mechanism**: `matchCurrent` re-proves the current password (no upgrade-on-use - the credential is about to be superseded), the new one is derived outside the transaction (`P1-TSK-026`), the supersede is conditional so ten concurrent changes yield one credential, every OTHER session is revoked (`INV-IDN-03`) and the caller's own is ROTATED at the same assurance (`P1-TSK-015`'s fixation defence), the response carrying the replacement token via the `AuthenticatedSession` shape rather than a fourth near-identical record. **The plan's `MULTI_FACTOR` row was corrected**: taken literally it makes the endpoint unreachable for password-only customers, so the requirement is conditional on a factor existing - a domain check, not a static annotation (the `P1-TSK-019` finding) - and an MFA-enrolled identity on a `PASSWORD` session gets the actionable `identity.AssuranceRequired` while others change at `PASSWORD`. A wrong current password is counted toward lockout: a stolen session must not be an unthrottled oracle. **The gate found a test asserting less than it claimed** - the wrong-password test checked the FAILED audit record but not that the counter incremented, and the refuse helper writes the audit either way, so a mutation removing recordFailureFor survived; strengthened to drive the account to its lockout threshold and prove the correct current password is then refused. The session-token unwrap, the rotation call site, the `CREDENTIAL_CHANGED` audit action and the two secret request fields each joined their guard's register with a claim. **Five mutations, all caught by the intended assertion.** 874 hermetic tests, 471 database tests. |
 | 2026-09-09 | **`P2-TSK-001` complete - the broker adapter, and the platform publishes its first events.** `KafkaEventPublisher` maps one outbox event onto one Kafka record - payload bytes verbatim as the value, the ten envelope fields plus media type as `finapp.*` headers so a consumer can route and deduplicate an event it cannot parse, the aggregate as the record key so the relay's per-aggregate ordering is one consumers actually observe, one topic per producing module with the revisit trigger recorded. **The acceptance was corrected before it was met**: the backlog promised exactly-once on the broker, which the port's own javadoc refuses - honest at-least-once instead, and the crash-between-ack-and-mark test DEMONSTRATES the duplicate (same `finapp.eventId` on both copies, the inbox's dedupe key) rather than hiding it. **Producer construction and its acknowledgement configuration live in the adapter's `connect` factory** (`acks=all`, idempotence, bounded timeouts - and Kafka 4.x refused the naive `delivery = request` equality because linger's default is no longer zero, found by constructing one), so the composition root passes strings and never sees a Kafka type. **Two build rules modified, each with its own proof**: the broker rule's exemption narrowed from the recorded module to the outbox package - module granularity would have let every platform concern touch the client silently - with a sibling-package fixture proving the precision; and `nothingSchedulesAmbiently` gained its first exemption, `OutboxRelaySchedule`, the case the rule's own because-clause carves out: every instance polls deliberately, the per-aggregate advisory lock being the lease the rule demands, register row in `DISTRIBUTED_EXECUTION.md` §3, proven load-bearing. **The kafka test tier arrived as `P0-TSK-036` pre-decided** - its own tier, not a widening of `database` - wired through the convention plugin, `TestTier` (whose detection keys on ACQUISITION, `KafkaProducer`, not the client package, so `MockProducer` unit tests stay hermetic), the taxonomy guard, `TESTING.md` and CI in one guarded change, with `KafkaUnderTest` supplying a catalog-pinned broker per tier JVM. **The background worker meets the suite as a choice**: the schedule is property-gated and disabled in an application.properties overlay (a .properties file deliberately - a test application.yaml would shadow the real one) because a background worker mutating outbox rows mid-assertion turns deterministic tests into races; the kafka tier runs it on purpose. `KafkaTransportGuard` keeps ADR-0023's promise on schedule - a non-loopback bootstrap over PLAINTEXT refuses startup. Debt: the broker-adapter row closes, the relay-metrics row pays in full (`finapp.outbox.publication` by outcome, eager, fed from `RelayPollResult`), the Kafka-plaintext row narrows to Redis and the deployed posture. **Five mutations, all caught by the intended assertion** - the first return-before-ack form was caught by compilation and rewritten, the P1-TSK-026 rule applied to this gate's own sweep; and the v4/v7 identifier lesson was met by its own chronicler. 874 hermetic tests, 465 database tests, 5 kafka tests. |
 | 2026-09-09 | **Phase 1 → Phase 2 transition conducted — Phase 2 is `READY`.** The full completion gate re-audited Phase 1 across seventeen categories (17 PASS), the distributed-system audit found **no single-instance assumption** (every authoritative decision arbitrated by PostgreSQL; the seven mandated questions answered with mechanisms), and the security audit passed with five weaknesses stated and owned. **The transition's own finding was in the gate machinery it was about to use**: both phase-derived guards keyed on the highest phase NAMED, so naming Phase 2 would have demanded its meters and invariant demonstrations before any code exists AND silently dropped Phase 1's plan from `PlannedMetersExistTest`'s checked set. Both now key on phases recorded `COMPLETE` - the status flip is the guarded act, proven by probe in both directions - and the probe's first run exposed a second defect by passing against a build that had not run: neither `CURRENT_STATE.md` nor the phase plans were declared `:app:test` inputs (the `P0-TSK-023` class, in the two newest document-backed guards). Repaired, plus four governance-record decays (ADR index rows stale at `Proposed`, `DECISIONS.md`'s invariant count stale since `INV-IDN-08`, `ROADMAP.md` frozen at 2026-09-04, the backlog's Phase 1 header). **Phase 2 initialised without implementing it**: `PHASE_2_PLAN.md` (case/check/review/decision model, consent as append-only history, twelve failure scenarios, six meters, six milestones); ADR-0035 (KYC owns the decision, Party projects it), ADR-0036 (evidence verbatim in PostgreSQL, object storage deferred with a trigger), ADR-0037 (consent history append-only, current basis derived), ADR-0038 (a provider verdict is evidence; hits are resolved by a person, never by silence) - all `Proposed`; the `INV-KYC-01`…`06` and `INV-CNS-01`…`04` groups catalogued on the Phase 0 → 1 precedent (the gate's six prose bullets were the weaker regime the `INV-IDN` group escaped), **82 invariants** platform-wide; and 24 backlog items across M2.1–M2.6, with the exit review's two leftovers scheduled first (`P2-TSK-001` broker adapter, `P1-TSK-033`). All twelve entry criteria hold; criterion 7 is vacuous and says so (no money moves in Phase 2). 864 hermetic tests, 465 database tests, green on the post-repair run. |
