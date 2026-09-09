@@ -263,6 +263,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // legitimately appears - never returned and never in a URL or header.
                         "ChangePasswordRequest",
                         "RoleAssignmentRequest",
+                        // P2-TSK-008. Carries no secret and no PII field by name - the document
+                        // CONTENT is RESTRICTED-PII, and what protects it is not the secret
+                        // vocabulary (a field named `content` is exactly the innocent name the
+                        // vocabulary must not match) but the store: encrypted at rest, plaintext
+                        // in no column, one audited read path (INV-KYC-06). Here because the set
+                        // is every schema REACHABLE from a request body.
+                        "DocumentUploadRequest",
                         // P1-TSK-030. Carries a display name - RESTRICTED-PII, and the clearest
                         // such column on the platform - which is why it is here and worth a second
                         // look. It is a request body rather than a response field, so the secret

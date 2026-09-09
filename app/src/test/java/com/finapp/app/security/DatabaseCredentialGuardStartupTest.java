@@ -49,7 +49,8 @@ class DatabaseCredentialGuardStartupTest {
                                         .web(WebApplicationType.NONE)
                                         .run(
                                                 "--spring.datasource.hikari.jdbc-url=jdbc:postgresql://db.internal:5432/x",
-                                                "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="))
+                                                "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+                                                "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Refusing to start");
@@ -69,11 +70,12 @@ class DatabaseCredentialGuardStartupTest {
                                         .run(
                                                 "--spring.datasource.url=jdbc:postgresql://db.internal:5432/x",
                                 // P1-TSK-017: supplied so the DATABASE guard is what this
-                                // assertion is about. Two guards now refuse a remote host
+                                // assertion is about. Three guards now refuse a remote host
                                 // with a marked default, and a test that let either fire
                                 // would pass for the wrong reason - the P0-TSK-031 lesson
                                 // that a probe must be isolated to its own subject.
                                 "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+                                                "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--spring.datasource.password=supplied-by-the-deployment"))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
@@ -91,11 +93,12 @@ class DatabaseCredentialGuardStartupTest {
                         .run(
                                 "--spring.datasource.url=jdbc:postgresql://db.internal:5432/x",
                                 // P1-TSK-017: supplied so the DATABASE guard is what this
-                                // assertion is about. Two guards now refuse a remote host
+                                // assertion is about. Three guards now refuse a remote host
                                 // with a marked default, and a test that let either fire
                                 // would pass for the wrong reason - the P0-TSK-031 lesson
                                 // that a probe must be isolated to its own subject.
                                 "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+                                                "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                 "--spring.datasource.password=supplied-by-the-deployment",
                                 "--spring.datasource.hikari.data-source-properties.sslmode=verify-full")) {
             assertThat(context.getBean(TransportSecurityGuard.class)).isNotNull();
@@ -131,14 +134,17 @@ class DatabaseCredentialGuardStartupTest {
     /**
      * Starts the application against a database URL.
      *
-     * <p>An MFA key is always supplied, so that the <strong>database</strong> guard is what every
-     * assertion here is about. Since {@code P1-TSK-017} two guards refuse a non-loopback host with a
-     * marked default, and a test that let either one fire would pass for the wrong reason — the
+     * <p>An MFA key and a document key are always supplied, so that the <strong>database</strong> guard is what every
+     * assertion here is about. Since {@code P1-TSK-017} (and {@code P2-TSK-008}'s document key) three guards refuse a
+     * non-loopback host with a marked default, and a test that let either one fire would pass for the wrong reason — the
      * {@code P0-TSK-031} lesson that a probe must be isolated to the assertion under test.
      */
     private ConfigurableApplicationContext start(String url) {
         return new SpringApplicationBuilder(FinappApplication.class)
                 .web(WebApplicationType.NONE)
-                .run("--spring.datasource.url=" + url, "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=");
+                .run(
+                        "--spring.datasource.url=" + url,
+                        "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+                        "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=");
     }
 }

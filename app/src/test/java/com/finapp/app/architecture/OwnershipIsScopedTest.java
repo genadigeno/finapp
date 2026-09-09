@@ -318,6 +318,41 @@ class OwnershipIsScopedTest {
                                         + " which was read by identity. Nothing accepts a credential"
                                         + " identifier from anywhere.")),
                     Map.entry(
+                            "com.finapp.party.JdbcPartyStore.findLiveCustomerFor",
+                            new Entry(
+                                    Scope.SESSION_DERIVED,
+                                    "com.finapp.app.kyc.KycDocumentController",
+                                    "P2-TSK-008. The PartyId comes from the proven session's"
+                                        + " Identity - the findById chain, one hop further: the"
+                                        + " endpoint names no case, no customer and no party, so"
+                                        + " there is nothing for an attacker to point at somebody"
+                                        + " else's relationship.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcDocumentStore.findByChecksum",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                                    "The converge branch of appendOrConverge: the KycCaseId it"
+                                        + " takes is the one the document being appended already"
+                                        + " carries, which came from findOpenFor - scoped by"
+                                        + " customer_id in the statement. A private helper found"
+                                        + " by the detector, which is the P1-TSK-021 finding"
+                                        + " working as designed.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcDocumentStore.readContent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-008, and no production HTTP caller yet - the"
+                                        + " reviewer surface (P2-TSK-012) names documents by"
+                                        + " identifier from a case it reached with KYC_REVIEW,"
+                                        + " and must come here and say so. What stands in for the"
+                                        + " missing ownership predicate TODAY is structural:"
+                                        + " production code reads content only through"
+                                        + " DocumentAccess, which writes the INV-KYC-06 audit"
+                                        + " record in the same unit of work - the trail of who"
+                                        + " looked is the control, asserted by"
+                                        + " DocumentUploadDatabaseTest.")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcKycCaseStore.moveStatus",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

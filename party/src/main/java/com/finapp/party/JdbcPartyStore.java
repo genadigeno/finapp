@@ -49,6 +49,37 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
     }
 
     @Override
+    public Optional<Customer> findLiveCustomerFor(Connection unitOfWork, PartyId partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+
+        // The predicate is the customer_one_live_relationship_per_party index's own
+        // (status <> 'CLOSED'), so this read and the rule that makes it unique agree by
+        // construction.
+        String sql =
+                "SELECT id, party_id, status, opened_at, status_changed_at FROM party.customer"
+                        + " WHERE party_id = ? AND status <> 'CLOSED'";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setObject(1, partyId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next()
+                        ? Optional.of(
+                                Customer.rehydrate(
+                                        CustomerId.of((UUID) rows.getObject("id")),
+                                        PartyId.of((UUID) rows.getObject("party_id")),
+                                        CustomerStatus.valueOf(rows.getString("status")),
+                                        rows.getTimestamp("opened_at").toInstant(),
+                                        rows.getTimestamp("status_changed_at").toInstant()))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new PartyStorageException(
+                    DatabaseFailure.describe(
+                            "Could not read the live customer of party " + partyId, e));
+        }
+    }
+
+    @Override
     public Optional<PartyName> rename(Connection unitOfWork, PartyId id, PartyName newName) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");

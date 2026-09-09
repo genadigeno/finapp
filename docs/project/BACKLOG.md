@@ -2834,7 +2834,7 @@ capability map, and the task list below is the schedule.
   the case-level instance being exactly that convergence test.
 - Risk: Medium. Cx: S. DoD: `DOD-KERNEL`
 
-**P2-TSK-008 — Documents: captured, encrypted, checksummed, access-audited** — `READY` (2026-09-09)
+**P2-TSK-008 — Documents: captured, encrypted, checksummed, access-audited** — `COMPLETE` (2026-09-09)
 - Context: kyc
 - Description: `V003` document tables (append-only at `DB-PRIVILEGE`; AES-256-GCM content under
   `FINAPP_DOC_KEY`; SHA-256 recorded), the `DocumentStore` port (ADR-0036's seam),
@@ -2852,9 +2852,23 @@ capability map, and the task list below is the schedule.
 - Tests: the sweep, tamper, wrong-key, unaudited-access mutation, oversized/foreign-type upload
   refused at the boundary, upload-then-case-update atomicity.
 - Accept: content readable only through the audited path; every listed refusal proven.
+- **Gate evidence (2026-09-09)**: every listed refusal proven — the information_schema column
+  sweep, GCM tamper, wrong-key, the unaudited-access mutation, oversized/foreign-type at the
+  boundary, one-transaction atomicity (plus the schema's in-module FK, which makes the orphan
+  impossible even for a writer that skips the service). **Content-addressed convergence is the
+  idempotency mechanism**: UNIQUE (case_id, checksum_sha256) + savepoint, so a retry, a
+  double-tap and ten racing instances all land on one row and one 201 — no Idempotency-Key,
+  content addressing is stronger. **The cipher is SecretCipher's mechanism, deliberately not its
+  class** (module isolation; moving it would pull an expose() site out of the pinned identity
+  set); one key per concern, FINAPP_DOC_KEY, the marked default REFERENCED from MfaKey so one
+  literal exists, domain-separated locally, confined to loopback — the third per-credential
+  guard, meeting the debt row's trigger one phase early (premise corrected). The read path has
+  no HTTP caller yet BY PLAN (P2-TSK-012's reviewer surface); building it now is what makes
+  "readable only through the audited path" true from the first day content exists.
+  **Six mutations, all caught by the intended assertion.**
 - Risk: High. Cx: M. DoD: `DOD-SEC`
 
-**P2-TSK-009 — VerificationCheck, the provider port, and the simulated verifier** — `TODO`
+**P2-TSK-009 — VerificationCheck, the provider port, and the simulated verifier** — `READY` (2026-09-09)
 - Context: kyc / integration
 - Description: The check entity (`REQUESTED → DISPATCHED → CLEAR | HIT | INDETERMINATE`), a
   `VerificationProvider` port (ADR-0008: our vocabulary in, our vocabulary out), and identity- +

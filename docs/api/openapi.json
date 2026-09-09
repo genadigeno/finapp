@@ -542,6 +542,41 @@
           }
         }
       },
+      "kyc.NoOpenCase": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "kyc.NoOpenCase"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/kyc.NoOpenCase"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] You have no open verification case for this to apply to.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "party.RegistrationRefused": {
         "content": {
           "application/problem+json": {
@@ -647,6 +682,47 @@
         "required": [
           "token"
         ],
+        "type": "object"
+      },
+      "DocumentUploadRequest": {
+        "properties": {
+          "content": {
+            "maxLength": 699052,
+            "minLength": 0,
+            "type": "string"
+          },
+          "contentType": {
+            "enum": [
+              "JPEG",
+              "PNG",
+              "PDF"
+            ],
+            "type": "string"
+          },
+          "documentType": {
+            "enum": [
+              "PASSPORT",
+              "ID_CARD_FRONT",
+              "ID_CARD_BACK",
+              "DRIVING_LICENCE",
+              "PROOF_OF_ADDRESS"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "contentType",
+          "documentType"
+        ],
+        "type": "object"
+      },
+      "DocumentUploadResponse": {
+        "properties": {
+          "documentId": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ElevatedSession": {
@@ -1148,6 +1224,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuthenticatedSession"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/kyc/documents": {
+      "post": {
+        "operationId": "uploadDocument",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUploadResponse"
                 }
               }
             },

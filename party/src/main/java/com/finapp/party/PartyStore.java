@@ -23,6 +23,23 @@ public interface PartyStore<T> {
     Optional<Party> findById(T unitOfWork, PartyId id);
 
     /**
+     * The live Customer relationship of a Party, if one exists (`P2-TSK-008`).
+     *
+     * <p>"Live" is the partial unique index's own predicate — {@code status <> 'CLOSED'} — so
+     * "the live customer" and "the relationship the one-live-relationship index guards" cannot be
+     * two different questions, which is {@code JdbcKycCaseStore.findOpenFor}'s discipline applied
+     * here. At most one row can match, by that index.
+     *
+     * <p>{@code PENDING} counts as live deliberately: KYC happens <em>while</em> a relationship is
+     * pending — that is what pending means (`P1-TSK-005`) — so the document upload this read
+     * serves must resolve a customer the decision has not yet activated.
+     *
+     * <p>The identifier never comes from a request: it is resolved from the proven session's
+     * Identity, the same chain as {@link #findById}.
+     */
+    Optional<Customer> findLiveCustomerFor(T unitOfWork, PartyId partyId);
+
+    /**
      * Changes the display name, and reports what it replaced.
      *
      * <p><strong>One statement, and that is what makes the audit record true.</strong> A read

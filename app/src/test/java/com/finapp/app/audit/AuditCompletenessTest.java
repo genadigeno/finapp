@@ -58,15 +58,15 @@ class AuditCompletenessTest {
      * action dropping out of production code without an entry fails the build.
      */
     /*
-     * `identity.IdentitySuspended` left this map at P1-TSK-028 and `party.ProfileChanged` at
-     * P1-TSK-030, each when the endpoint that emits it was built. That is the list working in the
-     * direction it is usually not exercised in: an entry is a claim about the future, and the
-     * future arriving is what removes it.
+     * `identity.IdentitySuspended` left this map at P1-TSK-028, `party.ProfileChanged` at
+     * P1-TSK-030, `kyc.CaseOpened` at P2-TSK-007 and `kyc.DocumentContentRead` at P2-TSK-008 -
+     * each when the code that emits it was built. That is the list working in the direction it
+     * is usually not exercised in: an entry is a claim about the future, and the future arriving
+     * is what removes it.
      *
      * What remains is the three outbox actions, which are recorded Phase 15 debt rather than
-     * unbuilt endpoints - plus the five Phase 2 actions P2-TSK-003 declared with the module
-     * skeletons, each named for the task that builds its emitter, exactly the shape the two
-     * departed Phase 1 entries had.
+     * unbuilt endpoints - plus the Phase 2 actions P2-TSK-003 declared with the module
+     * skeletons, each named for the task that builds its emitter.
      */
     private static final Map<String, String> NOT_YET_EMITTED =
             Map.of(
@@ -83,8 +83,6 @@ class AuditCompletenessTest {
                         + " action because INV-KYC-02 designs it outright.",
                     "kyc.ScreeningHitResolved",
                     "P2-TSK-012 builds the reviewer endpoints; INV-KYC-04 designs the action.",
-                    "kyc.DocumentContentRead",
-                    "P2-TSK-008 builds the one audited read path; INV-KYC-06 designs the action.",
                     "consent.ConsentGranted",
                     "P2-TSK-018 builds the consent endpoints; ADR-0037 designs the record.",
                     "consent.ConsentWithdrawn",

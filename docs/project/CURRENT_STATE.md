@@ -59,9 +59,9 @@ class, again).
 
 ## Current Milestone
 
-**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **2 of 7**
-(2026-09-09) — the case aggregate and the first production consumer done; next is `P2-TSK-008`,
-documents (`P2-TSK-006` blocked on the consent gate). Acceptance: a case opened over
+**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **3 of 7**
+(2026-09-09) — the case aggregate, the first production consumer and the document store done;
+next is `P2-TSK-009`, the check machine (`P2-TSK-006` blocked on the consent gate). Acceptance: a case opened over
 HTTP reaches `READY_FOR_DECISION` on clean simulated checks, with evidence retained verbatim.
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
@@ -221,12 +221,83 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-007` completed 2026-09-09 — the broker path carries its first
-business flow: a registration opens a KYC case, end to end, with no call from any test in the
-middle. **Next: `P2-TSK-008` (`READY`)** — documents; `P2-TSK-006` stays blocked on the consent
-gate.
+**None in progress.** `P2-TSK-008` completed 2026-09-09 — the platform holds its first
+`RESTRICTED-PII` evidence: documents encrypted under a key outside the database, checksummed at
+capture and verified on read, append-only at `DB-PRIVILEGE`, with one audited read path.
+**Next: `P2-TSK-009` (`READY`)** — the check machine and the provider port; `P2-TSK-006` stays
+blocked on the consent gate.
 
 ### Just completed
+
+**`P2-TSK-008` — Documents: captured, encrypted, checksummed, access-audited** — `COMPLETE`
+(2026-09-09). The most sensitive bytes the platform holds before card data, held the way
+ADR-0036 decided: in PostgreSQL behind the `DocumentStore` port (the object-storage seam),
+AES-256-GCM under `FINAPP_DOC_KEY`, SHA-256 of the bytes received recorded at capture and
+re-verified on every read.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Content readable only through the audited path | Structurally — content is not a field on any type, and the one method returning it has one production caller, `DocumentAccess`, which writes `kyc.DocumentContentRead` in the same unit of work — and behaviourally: the mutation removing the audit call is caught |
+| Every listed refusal proven | The `information_schema` column sweep, GCM tamper, wrong-key, oversized/foreign-type/bad-base64 at the boundary, no-open-case, unauthenticated — each its own test, none a 500 |
+
+### Content-addressed convergence is the idempotency mechanism
+
+`UNIQUE (case_id, checksum_sha256)` plus the savepoint idiom: a retry after a lost response, a
+double-tap, and ten instances racing the same bytes all land on **one row and one 201** — the
+lost-response case *is* the idempotency case, answered by the checksum rather than by an
+`Idempotency-Key` (not money-moving, and content addressing is stronger). Different bytes append
+freely; evidence is never edited (`INV-HIST-02`), so the grants are `SELECT, INSERT` and nothing
+else, and deletion stays Phase 15's recorded retention/erasure tension.
+
+### The cipher is `SecretCipher`'s mechanism, deliberately not its class
+
+Module isolation forbids `kyc` seeing `identity`; moving the class to `platform` would refactor
+proven Phase 1 code and pull an `expose()` call site out of the set
+`SecretsAreUnwrappedInOnePlaceTest` pins to `identity` — a security-rule modification to save
+sixty lines — and it speaks `Sensitive<String>` where a document is bytes. So `DocumentCipher`
+restates the mechanism over `byte[]`: fresh 96-bit nonce per encryption (a fixed-nonce mutation
+is caught), key version per row (`INV-HIST-04` applied to a key), tamper and wrong-key one
+indistinguishable refusal. **GCM answers "is this ciphertext the one this key wrote"; the
+checksum answers "are these the bytes received at capture"** — separated by a test that
+substitutes a ciphertext the same key genuinely wrote, which only the checksum can catch.
+
+### The third per-credential confinement, and the debt row met its trigger early
+
+`DocumentKey` is `MfaKey`'s shape: the marked local default **referenced** from
+`MfaKey.MARKED_LOCAL_DEFAULT` so the repository keeps exactly one published literal,
+domain-separated locally (`/doc`) so two concerns never share key bytes, confined to loopback
+via `DatabaseEndpoint`. The debt row had predicted the third credential as *"Phase 5's provider
+adapters"* — it arrived here instead, and the row's premise is corrected rather than left
+stale; generalising inside a document task would be rule 4's smuggled refactor.
+
+### The ownership chain, one hop longer — and no read endpoint, by plan
+
+`POST /v1/me/kyc/documents` is the `/v1/me` shape: no path variable, no body field names a case
+or customer — Session → Identity → the party's **live** Customer (a new `PartyStore` read whose
+predicate is the one-live-relationship index's own) → that customer's open case. A decision
+racing the upload is an **accepted race, stated**: evidence may land on a just-decided case,
+harmless because a decision references its evidence explicitly (`INV-KYC-02`). No open case is
+`409 kyc.NoOpenCase` — a distinct code because it is actionable (`P1-TSK-018`'s test). The read
+path has **no HTTP caller yet**: the reviewer surface is `P2-TSK-012`'s, the customer gets no
+download endpoint at all, and building the audited path now is what makes the property true from
+the first day content exists.
+
+### The guards fed
+
+`OwnershipIsScopedTest` refused three unclassified methods and the register gained
+`findLiveCustomerFor` (`SESSION_DERIVED`), `findByChecksum` (`AUTHORITATIVE_ID` on
+`findOpenFor`) and `readContent` (`ADMINISTERED`, with `P2-TSK-012` named as the arrival that
+must come and say so). `DatabaseCredentialGuardStartupTest` broke because a production-like
+configuration now has **three** credentials — the `P1-TSK-017` precedent, met again. Ten new
+columns classified at their ceiling, the ciphertext at `RESTRICTED-PII` *of what it decrypts
+to*, and the checksum too — a possession oracle. `kyc.DocumentContentRead` leaves
+`NOT_YET_EMITTED`; a stale class javadoc ("nothing here is emitted yet", false since
+`P2-TSK-007`) corrected on the way.
+
+**Six mutations, all caught by the intended assertion.**
+**920 hermetic tests, 486 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TSK-007` — The first production consumer: a registration opens a case** — `COMPLETE`
 (2026-09-09). `DELIVERY_PLAN.md` §Phase 2.8's *downstream contexts react*, real for the first
@@ -5648,7 +5719,7 @@ carries, what triggers paying it down, and the owning phase.
 | **Redis is plaintext with no enforcement; Kafka is now guarded.** `P2-TSK-001` brought the first Kafka client and, with it, `KafkaTransportGuard` - a non-loopback bootstrap over `PLAINTEXT` refuses startup, which is ADR-0023's recorded promise kept on schedule. TLS/SASL themselves remain Phase 15's deployment posture, and the guard's limit is stated in `SECURITY_ARCHITECTURE.md` | There is still no Redis client, so a Redis guard would guard nothing | **Bounded**: the local broker is loopback-only and the guard holds the boundary; Redis carries no risk until a client exists | The first Redis client; a deployed broker for the TLS posture | Phase 15 |
 | ~~**A caller can put personal or financial data into the correlation identifier.**~~ - **closed 2026-09-04** by `P1-TSK-002` / ADR-0034. The platform now mints the identifier on every request and never adopts an inbound one; a well-formed caller value is echoed in `X-Client-Correlation-Id` and reaches no sink. **Narrowing the charset was the obvious repair and does not work** - a date of birth, a phone number and an account number are alphanumeric, so any charset still able to carry a UUID carries them; of the four probed values it would have stopped two and left two. The control had to be structural. | - | - | - | - |
 | ~~**No production code establishes a security scope.**~~ - **closed 2026-09-06** by `P1-TSK-006`. `RegistrationService` establishes one for `POST /v1/registrations`, and the actor is `enterSystem()` because the caller is **unauthenticated** - which is a call site that *stays* after Phase 1 revisits it, not one to be removed. The alternative, attributing the action to the Party it creates, is circular and is unavailable on the refusal path where nothing was created; an actor that differs between success and failure is worse than a uniform honest one. The information is carried by the audit record's **target** instead - the attempted login identifier, on both paths. | - | - | - | - |
-| **The loopback confinement is per credential, not a general mechanism.** `DatabaseCredentialGuard` guards the datasource password; `MfaKey` guards itself | **The recorded trigger - the second credential - was reached and handled** (`P1-DOC-002`, 2026-09-09): `P1-TSK-017`'s MFA key confines its own published default to loopback, tested (`MfaKeyTest`), so the risk the row named - a second published default aimed anywhere - was closed by the credential that arrived. What remains unbuilt is the general mechanism, still rightly deferred: two hand-written guards are not yet a pattern worth abstracting | **Low.** The build rule remains general - a third credential cannot arrive as a literal - and what it would not get is the confinement, now a known per-credential obligation with two precedents | The third credential, which is Phase 5's provider adapters | Phase 5 |
+| **The loopback confinement is per credential, not a general mechanism.** `DatabaseCredentialGuard` guards the datasource password; `MfaKey` and `DocumentKey` guard themselves | **The row's predicted trigger - "the third credential, which is Phase 5's provider adapters" - was met one phase early**: `P2-TSK-008`'s document key (`FINAPP_DOC_KEY`) arrived as the third, confined and tested (`DocumentKeyTest`) in `MfaKey`'s shape rather than by generalising, because folding a refactor of two proven guards into a document-storage task is `EXECUTION_PROTOCOL.md` rule 4's case. Three hand-written instances now exist, so the pattern question is real rather than speculative | **Low.** The build rule remains general - a fourth credential cannot arrive as a literal - and the confinement is a known per-credential obligation with three precedents, each derived from the one published marker | The fourth credential, or Phase 5's provider adapters - whichever asks first | Phase 5 |
 | ~~**No output scrubber for text the platform does not control.**~~ - **answered 2026-09-06** by `P1-TSK-009`, and the answer is that the scrubber is **not built**. A scrubber is a deny-list over emitted text, and to recognise a secret it must be *given* the secret - which makes the plaintext travel **further**, into a filter invoked on every log statement in the platform, rather than less far; it also produces exactly the false confidence ADR-0019 warns about, since a deny-list that misses one shape is indistinguishable from one that misses none. **What replaces it is the opposite shape and is checkable**: a plaintext can only reach any sink if something first *unwraps* it, and every unwrap is a call to `expose()` - named to be found, deliberately. `SecretsAreUnwrappedInOnePlaceTest` pins that set to **four production classes, all in `identity`**, so a new unwrap anywhere fails the build and forces a decision. **The residual is stated rather than closed**: inside `identity` a plaintext could still be handed to a log call and nothing mechanical would catch it - bounded by the set being four classes rather than a codebase, and by the one production log call on that path being asserted quiet against a real database. |
 | **The scrape endpoint widens the unauthenticated surface to three.** `/actuator/prometheus` joins health and info | `DOD-OBS` requires the dashboard to render live data from a running instance, which needs a scrape endpoint, and there is no authentication anywhere yet | A scrape publishes JVM internals, HTTP route templates and pool statistics - a description of the running system rather than its secrets. The **content** is constrained by a build failure: no tag may carry a request-influenced value | `P0-EPIC-10` landing | Phase 0, M0.4 |
 | **The operational endpoints are unauthenticated.** `/actuator/health/*` and `/actuator/info` are reachable by anyone who can reach the port | `DOD-API` requires a negative authentication test for every new surface, and there is no authentication anywhere in the platform yet - `P0-EPIC-10` is the epic that brings it. Building one authentication mechanism for the actuator alone would be a second scheme to retire | **Low, and bounded by what is published.** The bodies are pinned by exact-match test to a status and, for the aggregate, its group names; details, components, environment, JVM and OS are all off, and twelve other endpoints are proven absent. What remains is that an unauthenticated caller can learn the instance is up and which build it runs | `P0-EPIC-10` landing, at which point `show-details: when-authorized` also becomes available | Phase 0, M0.4 |
@@ -5703,20 +5774,23 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-008` — Documents: captured, encrypted, checksummed, access-audited.** Status `READY`;
-dep `P2-TSK-005` complete.
+**`P2-TSK-009` — VerificationCheck, the provider port, and the simulated verifier.** Status
+`READY`; deps `P2-TSK-005` and `P2-TSK-008` complete.
 
-`V003` document tables (append-only at `DB-PRIVILEGE`; AES-256-GCM content under
-`FINAPP_DOC_KEY` — the `INV-IDN-08` mechanism reused per ADR-0036; SHA-256 recorded), the
-`DocumentStore` port as the object-storage seam, `POST /v1/me/kyc/documents`, and the one
-audited read path (`INV-KYC-06`: the trail of who looked is the control — `kyc.DocumentContentRead`
-gets its emitter). Out of scope: object storage itself, document verification (`P2-TSK-009`).
+The check entity (`REQUESTED → DISPATCHED → CLEAR | HIT | INDETERMINATE`), a
+`VerificationProvider` port (ADR-0008: our vocabulary in, our vocabulary out), and identity- +
+document-verification adapters over `SimulatedProvider` — the harness `P0-TSK-037` built has
+waited two phases for exactly this caller. Dispatch recorded before the provider call;
+`INV-KYC-01` (evidence verbatim, outcome ours), `INV-LIFE-03` (INDETERMINATE on timeout, three
+phases early), `INV-HIST-02`. Accept: a clean simulated run takes a case to
+`READY_FOR_DECISION` with retained evidence.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P2-TSK-008` complete - documents: captured, encrypted, checksummed, access-audited.** The most sensitive bytes before card data, held as ADR-0036 decided: in PostgreSQL behind the DocumentStore port (the object-storage seam), AES-256-GCM under FINAPP_DOC_KEY, SHA-256 of the bytes received recorded at capture and RE-VERIFIED on every read - GCM answers 'is this ciphertext the one this key wrote', the checksum answers 'are these the bytes received', separated by a test that substitutes a ciphertext the same key genuinely wrote. Append-only at DB-PRIVILEGE (SELECT, INSERT and nothing else); plaintext in no column, swept from information_schema. **Content-addressed convergence is the idempotency mechanism**: UNIQUE (case_id, checksum_sha256) + the savepoint idiom, so a retry, a double-tap and ten racing instances land on one row and one 201 - no Idempotency-Key, content addressing is stronger. **The cipher is SecretCipher's mechanism, deliberately not its class**: module isolation forbids the import, and moving it would pull an expose() site out of the pinned identity set - the duplication is the recorded cost. DocumentKey is the THIRD per-credential loopback confinement, meeting the debt row's trigger one phase early (premise corrected, not left stale); one published default literal, referenced, domain-separated locally. POST /v1/me/kyc/documents is the /v1/me ownership-by-absence shape, one hop longer - Session -> Identity -> live Customer -> open case - with the decision-racing-upload race ACCEPTED and stated (a decision references its evidence explicitly, INV-KYC-02). The audited read path (kyc.DocumentContentRead, INV-KYC-06 - the trail of who looked is the control) has no HTTP caller yet BY PLAN: P2-TSK-012's reviewer surface arrives to it. The guards fed: three new ownership register entries, a third credential in the startup guard test (the P1-TSK-017 precedent met again), ten columns classified at their ceiling with the checksum called what it is - a possession oracle. **Six mutations, all caught by the intended assertion.** 920 hermetic tests, 486 database tests, 14 kafka tests. Next: P2-TSK-009. |
 | 2026-09-09 | **`P2-TSK-007` complete - the first production consumer, and the broker path carries a real business flow.** A registration opens a KYC case: HTTP -> outbox -> relay schedule -> Kafka -> consumer loop -> inbox -> case row, driven WHOLE - the app booted with relay and consumer enabled, the two workers every other suite disables, and no test call anywhere in the middle. **A naming drift corrected rather than propagated**: the backlog named party.CustomerRegistered, which is the AUDIT action; the event is party.CustomerOpened, whose aggregate IS the customer - so the handler reads no payload at all, the envelope's metadata-only principle paying off at the first real consumer. Created announces (kyc.CaseOpened's first emitter, plus kyc.KycCaseOpened caused by the consumed event); converged is silent. The platform is the actor - the fourth enumerated enterSystem() site, recorded as the CLASS every future consumer with an audited effect will be. **The sweep found the kafka test asserting less than it claimed**: removing the converged-guard survived the wire-duplicate test, because an exact duplicate never reaches the handler - the INBOX absorbs it by eventId - and the guard's real subject is a DISTINCT event converging on an existing case, now driven end to end (one case, one audit record, one announcement) and catching the mutation. The booted context gained @DirtiesContext, because a cached context's live relay kept polling after its class finished - one alphabetical reordering from racing a sibling's assertions. KycPolicyVersion.CURRENT lost its dot to EventPayload's charset. **Six mutations: five caught first time, one survived and strengthened the suite.** 903 hermetic tests, 477 database tests, 14 kafka tests. Next: P2-TSK-008. |
 | 2026-09-09 | **`P2-TSK-005` complete - the KycCase aggregate, and the phase's spine stands.** One verification of one customer, OPEN -> CHECKS_IN_PROGRESS -> {READY_FOR_DECISION | IN_REVIEW} -> READY_FOR_DECISION -> {APPROVED | REJECTED}, machine on the enum, rules in the aggregate (INV-LIFE-02, the exhaustive cross-product sweep derived from the machine), terminals terminal (INV-LIFE-04, both swept separately). **The one-open-case rule is the database's**: a partial unique index on (customer_id) over the NON-terminal states - a rule across aggregates of the same type, P1-TSK-005's reasoning verbatim - and ten instances with ten connections produce one row with nine losers CONVERGED onto it behind a savepoint, because 'ensure my case exists' is what both callers-to-come mean. **Two generated schema artefacts**: the status CHECK from sqlValueList() and the index predicate from sqlTerminalValueList(), both reconciled, so a state added without deciding which side of the predicate it sits on cannot land quietly - and the freed slot is demonstrated, a case walked to APPROVED admitting its successor. policy_version NOT NULL pinned at open (INV-HIST-04 at the moment it is free; the artefact it names is P2-TSK-013's). The ownership rule refused the unclassified moveStatus and the register gained its AUTHORITATIVE_ID entry, with the predicate vocabulary gaining the third entry its own javadoc predicted (customer_id = ?). Six columns classified at their ceiling, with kyc_case.status named for what it is - the tipping-off column. kyc.CaseOpened declared, catalogued, NOT_YET_EMITTED naming its two emitters. **Five mutations, all caught by the intended assertion** - a terminal reopened, the aggregate check dropped, the index made total, convergence removed, the conditional made unconditional. 901 hermetic tests, 477 database tests, 10 kafka tests. Next: P2-TSK-007 (P2-TSK-006 blocked on the consent gate). |
 | 2026-09-09 | **`P2-TSK-004` complete - the KYC_REVIEWER role, and the limit P1-TSK-020 recorded closes. M2.1 closes with it, 5 of 5.** A second role (`KYC_REVIEWER`, granting exactly `KYC_REVIEW`) and third permission - the first whose actions live outside `identity`, with authorization staying there per ADR-0031's recorded merge. **The acceptance criterion was the previously-impossible mutation failing the build**, and it fails twice: `KYC_REVIEWER` granting everything is caught by RoleNameTest's exact-grant assertions AND independently by the cross-population HTTP test - an administrator refused by the KYC_REVIEW probe, a reviewer (granted through the REAL roles endpoint, so the boundary enum, V013's regenerated constraint and the per-request resolution are all on the path) refused by both real administrative endpoints. The grants are DISJOINT, asserted as its own property, with what the split does not buy stated honestly: ROLE_ASSIGN can still self-grant KYC_REVIEWER, and what the split buys is that the escalation is a recorded grant in the trail. **The reconciliation test had to learn that applied migrations are history**: it pinned the constraint to V010, which cannot be edited, so the constraint moves by REPLACEMENT (V013) and the test now derives the latest definition and pins V010's original literal separately - and its first directory-only derivation threw on the module's own jar, the P0-TSK-036 finding arriving as a file, failing in the loud direction. The contract diff is one added REQUEST-enum value, labelled BREAKING by the classifier's blanket rule and accepted on review: a client that never sends the value cannot be broken by it. **Six mutations, all caught by the intended assertion.** 891 hermetic tests, 473 database tests, 10 kafka tests. |

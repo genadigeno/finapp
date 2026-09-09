@@ -275,7 +275,10 @@ class OpenApiContractTest {
                         // P1-TSK-030. Declared by the plan for the whole phase and owned by no
                         // task until the review found it.
                         ApiVersion.CURRENT_PREFIX + "/me",
-                        ApiVersion.CURRENT_PREFIX + "/me/credential");
+                        ApiVersion.CURRENT_PREFIX + "/me/credential",
+                        // P2-TSK-008. The phase's first customer-facing kyc surface: the upload
+                        // onto one's own open case, the /v1/me ownership-by-absence shape.
+                        ApiVersion.CURRENT_PREFIX + "/me/kyc/documents");
     }
 
     @Test

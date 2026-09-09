@@ -131,6 +131,18 @@ meanings is what §4 forbids.
 **401 and not 403**: 403 means authenticated and not permitted, which presupposes an established
 identity — and presupposing one here would disclose that there is one.
 
+### `kyc` — `KycErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `kyc.NoOpenCase` | 409 | You have no open verification case for this to apply to. |
+
+**A distinct code because it is actionable** (`P1-TSK-018`'s test for earning one): the caller's
+case was decided, changed circumstances are a *new* case (`INV-LIFE-04`), so the remedy is opening
+one rather than retrying the upload. No enumeration concern applies — the caller is the
+authenticated owner asking about their own case, the opposite of `party.RegistrationRefused`'s
+stranger, so telling them the truth discloses nothing they do not already own.
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

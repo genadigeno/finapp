@@ -16,9 +16,12 @@ import com.finapp.platform.audit.AuditableAction;
  * {@code P2-TSK-005}, the task whose design fixed its meaning; check outcomes remain
  * <em>absent on purpose</em>, {@code P2-TSK-009}'s to declare.
  *
- * <p><strong>Nothing here is emitted yet</strong>; each constant names its owning task in
- * {@code AuditCompletenessTest.NOT_YET_EMITTED}, so "deliberately not built yet" and "somebody
- * removed the audit call" stay distinguishable.
+ * <p>{@code KYC_CASE_OPENED} is emitted since {@code P2-TSK-007} and
+ * {@code DOCUMENT_CONTENT_READ} since {@code P2-TSK-008}; each still-unemitted constant names its
+ * owning task in {@code AuditCompletenessTest.NOT_YET_EMITTED}, so "deliberately not built yet"
+ * and "somebody removed the audit call" stay distinguishable. <em>(This paragraph said "nothing
+ * here is emitted yet" until {@code P2-TSK-008} — stale from the day the consumer landed, the
+ * recurring claim-the-code-outgrew class.)</em>
  */
 public enum KycAuditAction implements AuditableAction {
 

@@ -314,6 +314,21 @@ adding "just the user agent", which is why the ceiling is set before anything po
 | `kyc_case` | `opened_at` | `CONFIDENTIAL` | As `customer.opened_at` — it dates onboarding |
 | `kyc_case` | `status_changed_at` | `CONFIDENTIAL` | Dates a review event, which is more disclosive than the status alone — `customer.status_changed_at`'s reasoning |
 
+### `kyc.kyc_document` — *added by `P2-TSK-008`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `kyc_document` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `kyc_document` | `case_id` | `INTERNAL` | As `kyc_case.id` — an identifier of a thing |
+| `kyc_document` | `document_type` | `CONFIDENTIAL` | *Which papers a person submitted* is a fact about them — a driving licence versus a passport narrows who they are, and the row's existence dates their onboarding |
+| `kyc_document` | `content_type` | `INTERNAL` | A media format. Three values, none about a person |
+| `kyc_document` | `content_ciphertext` | `RESTRICTED-PII` | **The document.** Classified at the ceiling of what it decrypts to (ADR-0022), not at the comfort of its encryption: the level is what governs handling if the encryption is ever broken, mis-keyed or stripped by a migration — exactly the day the classification must already be right |
+| `kyc_document` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
+| `kyc_document` | `key_version` | `INTERNAL` | Which key wrote the row — operational metadata for rotation |
+| `kyc_document` | `checksum_sha256` | `RESTRICTED-PII` | **A possession oracle over the content.** Anyone holding a candidate document can hash it and confirm this person submitted exactly it — the checksum identifies the content without revealing it, which is a disclosure about a person, not about a system. Classified with what it fingerprints |
+| `kyc_document` | `content_length` | `CONFIDENTIAL` | Weakly identifying on its own; with the type it narrows a known document. Errs up, because ADR-0022 forbids reclassifying later |
+| `kyc_document` | `uploaded_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,
