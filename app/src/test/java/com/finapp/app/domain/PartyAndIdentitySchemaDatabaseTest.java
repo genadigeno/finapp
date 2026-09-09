@@ -322,6 +322,74 @@ class PartyAndIdentitySchemaDatabaseTest {
         }
     }
 
+    /**
+     * The insert-then-update fixture shape is proven insensitive to a backwards clock correction
+     * ({@code P1-TSK-031}).
+     *
+     * <p>The local container's clock runs fast and is corrected backwards, so PostgreSQL's
+     * {@code now()} is not monotonic across two statements — a fixture that inserts a row at
+     * {@code now()} and later moves its status with {@code status_changed_at = now()} reads the
+     * clock twice with nothing ordering the second read after the first. Observed, not theorised:
+     * {@code P1-TSK-025}'s gate failed on a status change 225 ms before its creation, and the
+     * constraint that fired was <strong>right</strong>.
+     *
+     * <p>The remedy is back-dating the INSERT ({@code OutboxRelayTest.backDate}'s precedent), and
+     * this test is what makes it load-bearing rather than a comment: the update simulates a
+     * correction of thirty minutes — absurdly worse than the observed hundreds of milliseconds —
+     * and must succeed against a back-dated row. The second half is the vacuity control: the same
+     * update against a row written at plain {@code now()} must still be refused, so a pass proves
+     * the back-dating carries the property rather than the constraint being dead.
+     */
+    @Test
+    @DisplayName("a back-dated fixture survives a backwards clock correction, one at now() does not")
+    void fixturesSurviveABackwardsClockCorrection() throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            UUID party = insertParty(app, "PERSON", "Ada Lovelace");
+
+            UUID backDated = UUID.randomUUID();
+            try (PreparedStatement insert =
+                    app.prepareStatement(
+                            "INSERT INTO identity.identity"
+                                + " (id, party_id, login_identifier, status, created_at,"
+                                + " status_changed_at) VALUES (?, ?, ?, 'ACTIVE',"
+                                + " now() - interval '1 hour', now() - interval '1 hour')")) {
+                insert.setObject(1, backDated);
+                insert.setObject(2, party);
+                insert.setString(3, login());
+                insert.executeUpdate();
+            }
+            assertThatCode(
+                            () ->
+                                    execute(
+                                            app,
+                                            "UPDATE identity.identity SET status = 'SUSPENDED',"
+                                                    + " status_changed_at ="
+                                                    + " now() - interval '30 minutes'"
+                                                    + " WHERE id = ?",
+                                            backDated))
+                    .as("a clock corrected backwards between the two statements must not refuse"
+                            + " the fixture")
+                    .doesNotThrowAnyException();
+
+            UUID atNow = insertIdentity(app, party, login(), "ACTIVE");
+            assertThatThrownBy(
+                            () ->
+                                    execute(
+                                            app,
+                                            "UPDATE identity.identity SET status = 'SUSPENDED',"
+                                                    + " status_changed_at ="
+                                                    + " now() - interval '30 minutes'"
+                                                    + " WHERE id = ?",
+                                            atNow))
+                    .as("the same update against a row written at now() is refused - the"
+                            + " constraint is alive, so the back-dating is what carries the"
+                            + " property")
+                    .isInstanceOf(SQLException.class)
+                    .extracting(e -> ((SQLException) e).getSQLState())
+                    .isEqualTo(CHECK_VIOLATION);
+        }
+    }
+
     // -----------------------------------------------------------------
 
     /**
@@ -354,9 +422,14 @@ class PartyAndIdentitySchemaDatabaseTest {
         UUID id = UUID.randomUUID();
         try (PreparedStatement statement =
                 connection.prepareStatement(
+                        // Back-dated: a test later moves this row's status with an UPDATE that
+                        // reads now() again, and the container's clock is corrected backwards
+                        // between statements (P1-TSK-031). The ordering constraint is right and
+                        // a fixture must not depend on two now() reads being ordered.
                         "INSERT INTO party.customer"
                                 + " (id, party_id, status, opened_at, status_changed_at)"
-                                + " VALUES (?, ?, ?, now(), now())")) {
+                                + " VALUES (?, ?, ?, now() - interval '1 hour',"
+                                + " now() - interval '1 hour')")) {
             statement.setObject(1, id);
             statement.setObject(2, partyId);
             statement.setString(3, status);

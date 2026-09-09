@@ -2399,7 +2399,7 @@ repository exists to prevent.
   source now, `OutboxBacklog`'s shape.
 - Risk: Medium — a security signal nobody can see. Cx: S. DoD: `DOD-OBS`
 
-**P1-TSK-031 — Two fixtures read `now()` twice and assume it moves forwards** — `TODO`
+**P1-TSK-031 — Two fixtures read `now()` twice and assume it moves forwards** — `COMPLETE` (2026-09-09)
 - Context: identity / test
 - Description: `AuthenticationCostsTheSameDatabaseTest.suspend` (and the same shape wherever a
   fixture inserts with `created_at = now()` and then updates `status_changed_at = now()`) can write
@@ -2422,6 +2422,20 @@ repository exists to prevent.
 - Tests: the fixture must produce a valid row under a clock that moves backwards between the two
   statements — provable by setting the second timestamp behind the first deliberately.
 - Accept: the suite is not sensitive to a backwards clock correction.
+- **The shape was in five files, not two** — surveyed rather than trusted: the named
+  `AuthenticationCostsTheSameDatabaseTest`, plus `AuthenticationEndpointDatabaseTest`,
+  `CredentialVerificationDatabaseTest`, `RecoveryAbuseDatabaseTest` (identity), and
+  `PartyAndIdentitySchemaDatabaseTest.insertCustomer` (the customer twin,
+  `customer_status_change_is_not_before_opening`). Every other timestamp-ordering constraint is
+  reached by a single statement, an already back-dated write, or a privilege-refused one.
+- **The INSERT is back-dated and the UPDATE stays at `now()`**: the update models what production
+  writes; "both columns in one statement" cannot fix an insert-then-*update* pair, whose two reads
+  are in different statements by construction.
+- **Proven in-suite with its own vacuity control**
+  (`PartyAndIdentitySchemaDatabaseTest.fixturesSurviveABackwardsClockCorrection`): a simulated
+  correction of thirty minutes — absurdly worse than the observed 225 ms — succeeds against a
+  back-dated row, and the same update against a row written at plain `now()` is still refused, so a
+  pass proves the back-dating carries the property rather than the constraint being dead.
 - Risk: Low — a fixture, not production code, and the constraint it trips is the platform being
   correct. Cx: S. DoD: `DOD-TEST`
 

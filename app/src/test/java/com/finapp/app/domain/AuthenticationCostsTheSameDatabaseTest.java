@@ -257,8 +257,13 @@ class AuthenticationCostsTheSameDatabaseTest {
                     party);
             execute(
                     app,
+                    // Back-dated: this fixture is later moved to another status by an UPDATE that
+                    // reads now() again, and the local container's clock is corrected backwards
+                    // between statements (P1-TSK-031; observed 225 ms). The ordering constraint is
+                    // right and a fixture must not depend on two now() reads being ordered.
                     "INSERT INTO identity.identity (id, party_id, login_identifier, status,"
-                            + " created_at, status_changed_at) VALUES (?, ?, ?, 'ACTIVE', now(), now())",
+                            + " created_at, status_changed_at) VALUES (?, ?, ?, 'ACTIVE',"
+                            + " now() - interval '1 hour', now() - interval '1 hour')",
                     identity,
                     party,
                     login.value());
