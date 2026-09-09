@@ -2804,7 +2804,7 @@ capability map, and the task list below is the schedule.
 - Accept: a registered, consented person reaches an open case; a second POST is the same case.
 - Risk: Medium. Cx: S. DoD: `DOD-SEC`
 
-**P2-TSK-007 — The first production consumer: a registration opens a case** — `READY` (2026-09-09; P2-TSK-006 stays blocked on the consent gate P2-TSK-019)
+**P2-TSK-007 — The first production consumer: a registration opens a case** — `COMPLETE` (2026-09-09)
 - Context: kyc / integration
 - Description: `kyc` consumes `party.CustomerRegistered` through P2-TSK-002's shell and opens
   the case eagerly.
@@ -2817,9 +2817,24 @@ capability map, and the task list below is the schedule.
 - Tests: duplicate event → one case; event racing the endpoint → one case; consumer restart
   mid-handling → one case.
 - Accept: registration alone yields exactly one open case, through the real broker.
+- **Gate evidence (2026-09-09)**: the acceptance is driven on the deployed chain — the app
+  booted whole with relay AND consumer enabled, registration over HTTP, no call from the test
+  anywhere in the middle. **A naming drift corrected**: this item said the consumer handles
+  `party.CustomerRegistered`, which is the *audit action*; the event is `party.CustomerOpened`,
+  whose aggregate IS the customer — so the handler reads no payload at all, the envelope's
+  metadata-only principle paying off at the first real consumer. Created announces
+  (`kyc.CaseOpened` audit — its first emitter — plus `kyc.KycCaseOpened` on the outbox, caused
+  by the consumed event); converged is silent. The platform is the actor, the fourth enumerated
+  `enterSystem()` site and the class every future consumer will be. **Six mutations: five
+  caught first time, one survived and strengthened the suite** — the converged-guard removal
+  survived the wire-duplicate test because an exact duplicate never reaches the handler (the
+  INBOX absorbs it by eventId); the guard's real subject is a DISTINCT event converging on an
+  existing case, now driven end to end and asserting one case, one audit record, one
+  announcement. Restart-mid-handling maps to the shell's proven crash/rollback properties, with
+  the case-level instance being exactly that convergence test.
 - Risk: Medium. Cx: S. DoD: `DOD-KERNEL`
 
-**P2-TSK-008 — Documents: captured, encrypted, checksummed, access-audited** — `TODO`
+**P2-TSK-008 — Documents: captured, encrypted, checksummed, access-audited** — `READY` (2026-09-09)
 - Context: kyc
 - Description: `V003` document tables (append-only at `DB-PRIVILEGE`; AES-256-GCM content under
   `FINAPP_DOC_KEY`; SHA-256 recorded), the `DocumentStore` port (ADR-0036's seam),

@@ -31,8 +31,13 @@ public record KycPolicyVersion(String value) implements Serializable {
     /**
      * The policy regime cases open under today. Bumped by the task that changes the policy —
      * a reviewed code change, exactly like a role's permission set.
+     *
+     * <p>Dashes rather than a dot, because the version travels in the {@code KycCaseOpened}
+     * event payload and {@code EventPayload}'s charset — identifiers and enumerated names only —
+     * admits no dot. The type permits dots; the platform's own label simply does not use one
+     * (`P2-TSK-007`).
      */
-    public static final KycPolicyVersion CURRENT = new KycPolicyVersion("kyc-2026.09");
+    public static final KycPolicyVersion CURRENT = new KycPolicyVersion("kyc-2026-09");
 
     public KycPolicyVersion {
         Objects.requireNonNull(value, "policy version must not be null");

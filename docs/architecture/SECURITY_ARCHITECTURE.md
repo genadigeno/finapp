@@ -163,6 +163,17 @@ lockout threshold, so it must run inside that scope; the first version had it ou
 lockout test failed with *"no actor has been established"*, which is `require()` doing exactly its
 job.
 
+**The fourth site is the first production consumer** (`P2-TSK-007`), and it is the *class* of
+site every later consumer with an audited effect will be. `CustomerOpenedOpensCase.handle` opens
+a KYC case in reaction to a registration event, and a consumer has no authenticated caller: the
+person whose registration caused the event is not present, and the registration's own audit
+records already name that flow's actor. Opening the case is the platform's own policy act, so
+the platform is the honest actor. What ties the consumer's record to the person is the
+**correlation** — the producing flow's, entered by the consumer shell from the message envelope
+before the handler runs — and the **target**, which names the customer. Each future consumer
+comes to the enumeration and says this for itself; the entry is per handler, never a blanket
+"consumers are the platform".
+
 **The review is now conducted by the build, not by memory.** `SystemActorCallSitesAreEnumeratedTest`
 holds this list against the code: a **new** place claiming the platform is the actor fails the build
 until somebody writes down why there is no honest alternative. ADR-0021 called `enterSystem()` *"the

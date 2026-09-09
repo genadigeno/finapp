@@ -76,7 +76,17 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " 'where does recovery claim to be the platform?' reads one method."
                         + " Adding a channel does NOT come through here - it requires a session, so"
                         + " the interceptor has already established a real actor, and that asymmetry"
-                        + " is what makes the first move in a takeover cost a stolen password.");
+                        + " is what makes the first move in a takeover cost a stolen password.",
+                    "com.finapp.kyc.CustomerOpenedOpensCase.handle",
+                    "The platform's first production CONSUMER (P2-TSK-007): a registration event"
+                        + " opens a KYC case. A consumer has no authenticated caller - the person"
+                        + " whose registration caused this is not present, and the registration's"
+                        + " own audit records already name that flow's actor. Opening the case is"
+                        + " the platform's own policy act, so the platform is the honest actor;"
+                        + " what ties the record to the person is the CORRELATION (the producing"
+                        + " flow's, entered by the consumer shell from the message envelope) and"
+                        + " the TARGET, which names the customer. The class of site every future"
+                        + " consumer with an audited effect will be: each comes here and says so.");
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

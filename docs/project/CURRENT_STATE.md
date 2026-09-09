@@ -59,9 +59,9 @@ class, again).
 
 ## Current Milestone
 
-**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **1 of 7**
-(2026-09-09) — the case aggregate and its lifecycle done; next is `P2-TSK-007`, the first
-production consumer (`P2-TSK-006` blocked on the consent gate). Acceptance: a case opened over
+**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **2 of 7**
+(2026-09-09) — the case aggregate and the first production consumer done; next is `P2-TSK-008`,
+documents (`P2-TSK-006` blocked on the consent gate). Acceptance: a case opened over
 HTTP reaches `READY_FOR_DECISION` on clean simulated checks, with evidence retained verbatim.
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
@@ -221,12 +221,60 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-005` completed 2026-09-09 — the phase's spine stands: a KycCase
-with an exhaustively-enforced lifecycle and the one-open-case rule arbitrated by the database.
-**Next: `P2-TSK-007` (`READY`)** — `P2-TSK-006` stays blocked on the consent gate
-(`P2-TSK-019`), so the first production consumer goes first.
+**None in progress.** `P2-TSK-007` completed 2026-09-09 — the broker path carries its first
+business flow: a registration opens a KYC case, end to end, with no call from any test in the
+middle. **Next: `P2-TSK-008` (`READY`)** — documents; `P2-TSK-006` stays blocked on the consent
+gate.
 
 ### Just completed
+
+**`P2-TSK-007` — The first production consumer: a registration opens a case** — `COMPLETE`
+(2026-09-09). `DELIVERY_PLAN.md` §Phase 2.8's *downstream contexts react*, real for the first
+time: HTTP registration → outbox → relay schedule → Kafka → consumer loop → inbox → case row,
+the deployed chain, driven whole.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Registration alone yields exactly one open case, through the real broker | The app booted with relay **and** consumer enabled — the two workers every other suite disables — and the case appears, audited and announced, with no test call in the middle |
+
+### The naming drift, and what reading the producer bought
+
+The backlog said the consumer handles `party.CustomerRegistered` — that is the **audit
+action's** code; the events registration publishes are `party.PartyRegistered` and
+`party.CustomerOpened`. Corrected rather than propagated. And `party.CustomerOpened`'s
+aggregate **is the Customer**, so the handler reads no payload at all:
+`ReceivedEvent.aggregateId()` is the reactive key — the envelope's metadata-only principle
+(`P0-TSK-018`) paying off at the platform's first real consumer.
+
+### Created announces; converged is silent — and the gate proved the second half properly
+
+Only the delivery that *created* the case writes `kyc.CaseOpened` (its first emitter — the
+`NOT_YET_EMITTED` entry leaves the list) and publishes `kyc.KycCaseOpened`, caused by the
+consumed event so the causal tree keeps its shape. A converged delivery records nothing: two
+opening records on one case is the ambiguity `INV-KYC-03` exists to prevent.
+
+**The mutation sweep found the kafka-level test asserting less than the sweep assumed.**
+Removing the converged-guard survived the wire-duplicate test — because an exact duplicate
+never reaches the handler at all: the **inbox absorbs it by `eventId`**, and the guard's real
+subject is a **distinct** event converging on an existing case, which is precisely what the
+consumer racing `POST /v1/me/kyc` will produce. That path is now driven end to end — one case,
+one audit record, one announcement — and the mutation is caught by exactly that test.
+
+### The platform is the actor, and the enumeration met its predicted class
+
+A consumer has no authenticated caller; the registration's own records name that flow's actor,
+and opening the case is the platform's policy act. The fourth `enterSystem()` site joined the
+enumeration with its justification in `SECURITY_ARCHITECTURE.md` — recorded as the *class* of
+site every future consumer with an audited effect will be, each coming to say so for itself.
+What ties the record to the person is the correlation (the producing flow's, entered by the
+shell) and the target, which names the customer. One small charset collision surfaced:
+`KycPolicyVersion.CURRENT` carried a dot, which `EventPayload` refuses — the label now uses
+dashes, the type unchanged.
+
+**Six mutations: five caught first time, one survived and strengthened the suite.**
+**903 hermetic tests, 477 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TSK-005` — The KycCase aggregate and its lifecycle** — `COMPLETE` (2026-09-09). The
 phase's spine: one verification of one customer, `OPEN` to a terminal decision state, with the
@@ -5655,21 +5703,21 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-007` — The first production consumer: a registration opens a case.** Status `READY`;
-deps `P2-TSK-002` and `P2-TSK-005`, both complete. (`P2-TSK-006` stays blocked on the consent
-gate, `P2-TSK-019`.)
+**`P2-TSK-008` — Documents: captured, encrypted, checksummed, access-audited.** Status `READY`;
+dep `P2-TSK-005` complete.
 
-`kyc` consumes `party.CustomerRegistered` through the consumer shell and opens the case eagerly
-— the broker path carries its first real business flow. The inbox dedupes the event; the
-one-open-case index arbitrates against a concurrent `POST /v1/me/kyc`; both paths converge on
-one case. Tests: duplicate event → one case; event racing the endpoint → one case; consumer
-restart mid-handling → one case. This emits `kyc.CaseOpened` for the consumer path.
+`V003` document tables (append-only at `DB-PRIVILEGE`; AES-256-GCM content under
+`FINAPP_DOC_KEY` — the `INV-IDN-08` mechanism reused per ADR-0036; SHA-256 recorded), the
+`DocumentStore` port as the object-storage seam, `POST /v1/me/kyc/documents`, and the one
+audited read path (`INV-KYC-06`: the trail of who looked is the control — `kyc.DocumentContentRead`
+gets its emitter). Out of scope: object storage itself, document verification (`P2-TSK-009`).
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P2-TSK-007` complete - the first production consumer, and the broker path carries a real business flow.** A registration opens a KYC case: HTTP -> outbox -> relay schedule -> Kafka -> consumer loop -> inbox -> case row, driven WHOLE - the app booted with relay and consumer enabled, the two workers every other suite disables, and no test call anywhere in the middle. **A naming drift corrected rather than propagated**: the backlog named party.CustomerRegistered, which is the AUDIT action; the event is party.CustomerOpened, whose aggregate IS the customer - so the handler reads no payload at all, the envelope's metadata-only principle paying off at the first real consumer. Created announces (kyc.CaseOpened's first emitter, plus kyc.KycCaseOpened caused by the consumed event); converged is silent. The platform is the actor - the fourth enumerated enterSystem() site, recorded as the CLASS every future consumer with an audited effect will be. **The sweep found the kafka test asserting less than it claimed**: removing the converged-guard survived the wire-duplicate test, because an exact duplicate never reaches the handler - the INBOX absorbs it by eventId - and the guard's real subject is a DISTINCT event converging on an existing case, now driven end to end (one case, one audit record, one announcement) and catching the mutation. The booted context gained @DirtiesContext, because a cached context's live relay kept polling after its class finished - one alphabetical reordering from racing a sibling's assertions. KycPolicyVersion.CURRENT lost its dot to EventPayload's charset. **Six mutations: five caught first time, one survived and strengthened the suite.** 903 hermetic tests, 477 database tests, 14 kafka tests. Next: P2-TSK-008. |
 | 2026-09-09 | **`P2-TSK-005` complete - the KycCase aggregate, and the phase's spine stands.** One verification of one customer, OPEN -> CHECKS_IN_PROGRESS -> {READY_FOR_DECISION | IN_REVIEW} -> READY_FOR_DECISION -> {APPROVED | REJECTED}, machine on the enum, rules in the aggregate (INV-LIFE-02, the exhaustive cross-product sweep derived from the machine), terminals terminal (INV-LIFE-04, both swept separately). **The one-open-case rule is the database's**: a partial unique index on (customer_id) over the NON-terminal states - a rule across aggregates of the same type, P1-TSK-005's reasoning verbatim - and ten instances with ten connections produce one row with nine losers CONVERGED onto it behind a savepoint, because 'ensure my case exists' is what both callers-to-come mean. **Two generated schema artefacts**: the status CHECK from sqlValueList() and the index predicate from sqlTerminalValueList(), both reconciled, so a state added without deciding which side of the predicate it sits on cannot land quietly - and the freed slot is demonstrated, a case walked to APPROVED admitting its successor. policy_version NOT NULL pinned at open (INV-HIST-04 at the moment it is free; the artefact it names is P2-TSK-013's). The ownership rule refused the unclassified moveStatus and the register gained its AUTHORITATIVE_ID entry, with the predicate vocabulary gaining the third entry its own javadoc predicted (customer_id = ?). Six columns classified at their ceiling, with kyc_case.status named for what it is - the tipping-off column. kyc.CaseOpened declared, catalogued, NOT_YET_EMITTED naming its two emitters. **Five mutations, all caught by the intended assertion** - a terminal reopened, the aggregate check dropped, the index made total, convergence removed, the conditional made unconditional. 901 hermetic tests, 477 database tests, 10 kafka tests. Next: P2-TSK-007 (P2-TSK-006 blocked on the consent gate). |
 | 2026-09-09 | **`P2-TSK-004` complete - the KYC_REVIEWER role, and the limit P1-TSK-020 recorded closes. M2.1 closes with it, 5 of 5.** A second role (`KYC_REVIEWER`, granting exactly `KYC_REVIEW`) and third permission - the first whose actions live outside `identity`, with authorization staying there per ADR-0031's recorded merge. **The acceptance criterion was the previously-impossible mutation failing the build**, and it fails twice: `KYC_REVIEWER` granting everything is caught by RoleNameTest's exact-grant assertions AND independently by the cross-population HTTP test - an administrator refused by the KYC_REVIEW probe, a reviewer (granted through the REAL roles endpoint, so the boundary enum, V013's regenerated constraint and the per-request resolution are all on the path) refused by both real administrative endpoints. The grants are DISJOINT, asserted as its own property, with what the split does not buy stated honestly: ROLE_ASSIGN can still self-grant KYC_REVIEWER, and what the split buys is that the escalation is a recorded grant in the trail. **The reconciliation test had to learn that applied migrations are history**: it pinned the constraint to V010, which cannot be edited, so the constraint moves by REPLACEMENT (V013) and the test now derives the latest definition and pins V010's original literal separately - and its first directory-only derivation threw on the module's own jar, the P0-TSK-036 finding arriving as a file, failing in the loud direction. The contract diff is one added REQUEST-enum value, labelled BREAKING by the classifier's blanket rule and accepted on review: a client that never sends the value cannot be broken by it. **Six mutations, all caught by the intended assertion.** 891 hermetic tests, 473 database tests, 10 kafka tests. |
 | 2026-09-09 | **`P2-TSK-003` complete - `kyc` and `consent` exist as guarded modules.** The `P1-TSK-003` shape applied twice: two modules on the documented direction (app -> business -> platform -> sharedkernel, enforced structurally by Gradle before ArchUnit asserts it), two schemas owned by the migrator with default-deny privileges and NO tables - because the privilege floor is the deliverable: every DB-PRIVILEGE claim Phase 2 will make (immutable decisions INV-KYC-02, append-only evidence, append-only consent history INV-CNS-02, audited document reads INV-KYC-06) is only available at that rank because the owner cannot be bypassed and each table's grants arrive with its migration. **Five audit actions declared under the deliberately-few licence** - the two reason-required ones are the invariants speaking (INV-KYC-02's NOT NULL reason, INV-KYC-04's justified resolution), the document read deliberately requires none (the trail of who looked IS the control), the consent pair are a person's own acts - and case opening plus check outcomes are absent on purpose, left to the tasks whose designs shape them; all five joined NOT_YET_EMITTED naming their emitters. **The gate's finding: sibling isolation had quietly become one-directional** - the Phase 1 isolation tests forbade only each other, so party could have grown a dependency on kyc unnoticed, and that is the direction INV-KYC-05 cares about most (customer status is a projection of the decision); both extended to forbid all siblings. The build-logic lockfile drift (kotlin RC3->GA, a floating configuration in the Kotlin plugin) was met again and reverted on the P2-TSK-001 precedent; the verification metadata did not change at all, the new modules adding no artefact the build did not already trust. **Five probes, all caught by the intended guard** - a planted double in each module, a cross-module dependency caught by the isolation test itself rather than by lock resolution, a deleted catalogue section, and an unclassified column migrated into kyc caught against a real database. 888 hermetic tests, 471 database tests, 10 kafka tests. |
