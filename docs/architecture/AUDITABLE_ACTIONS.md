@@ -104,6 +104,7 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.ContactChannelVerified` | No | Control of a contact channel was proven, making it usable for account recovery. |
 | `identity.RecoveryInitiated` | No | Account recovery was begun for an identity holding a verified channel. |
 | `identity.RecoveryCompleted` | No | A credential was replaced through account recovery, ending every session. |
+| `identity.CredentialChanged` | No | A person changed their own password; every other session was ended. |
 
 `identity.IdentityCreated` and the two authentication actions require no reason: using your own
 login is not an action taken against anybody. The two admin actions below them are, which is the

@@ -60,7 +60,8 @@ class, again).
 ## Current Milestone
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
-**1 of 5** (2026-09-09). Acceptance: an outbox event reaches a real consumer through Kafka with
+**2 of 5** (2026-09-09) — the broker adapter and the credential change done; next is `P2-TSK-002`,
+the first consumer path. Acceptance: an outbox event reaches a real consumer through Kafka with
 exactly one effect per fact, and a person can change their password. (The milestone's own
 wording inherited the backlog's exactly-once promise; corrected the same way — the *effect* is
 exactly-once, the delivery is at-least-once.)
@@ -209,8 +210,63 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-001` completed 2026-09-09 — Phase 2's first task, and the platform
-publishes its first events. **Next: `P1-TSK-033` (`READY`).**
+**None in progress.** `P1-TSK-033` completed 2026-09-09 — the exit review's finding is closed and
+a person with a stolen password can now self-serve a credential replacement. **Next:
+`P2-TSK-002` (`READY`).**
+
+### Just completed
+
+**`P1-TSK-033` — `POST /v1/me/credential`: a logged-in person changes their own password** —
+`COMPLETE` (2026-09-09). The endpoint the plan declared for the whole phase and `P1-DOC-002`'s
+recount found owned by nobody — the ninth backlog defect of that class, and the one with a real
+capability gap behind it.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Current password re-proven; a stolen session is not enough | `matchCurrent`; wrong current password → uniform 401, **counted toward lockout** (proven: ten wrong attempts lock, then even the correct one is refused) |
+| New credential derived outside the transaction | `prepare` mints it with no connection held (`P1-TSK-026`) |
+| Every other session revoked, the caller's own rotated | `ChangePasswordDatabaseTest`: other token dead, pre-change token dead, rotated token live |
+| Audited against the person | `identity.CredentialChanged`, `sessionsEnded=n`, never the password |
+| Ten instances → one credential | The conditional supersede is the arbiter |
+
+### Composition, not new mechanism — and the one real decision was the plan conflict
+
+Every piece existed: `CredentialVerifier` (gaining a `matchCurrent` that re-proves by identity with
+**no upgrade-on-use**, because the credential is about to be superseded), `Credential.forPassword`,
+the conditional `CredentialStore.supersede`, `SessionRevocation.revokeAllExcept`,
+`SessionRotation.rotate`. The task contributed the order and the transaction — a wiring file and a
+domain service, nothing more.
+
+**The plan's endpoint row read `MULTI_FACTOR`, which taken literally makes the endpoint unreachable
+for every password-only customer.** The requirement is conditional on whether a factor exists, and
+a boundary annotation is static per handler — the exact `P1-TSK-019` re-enrolment finding. So the
+check lives in the domain: an MFA-enrolled identity must present a `MULTI_FACTOR` session (refused
+`identity.AssuranceRequired` — actionable, so distinguished from the uniform 401), and one without
+changes at `PASSWORD`. `PHASE_1_PLAN.md` §7 corrected with the provenance noted.
+
+### The rotated session is returned, and the refusals are two shapes for a reason
+
+A password change rotates the caller's own session (`P1-TSK-015`'s fixation defence — a change is
+what you do after suspecting theft, so the identifier you hold must be replaced too), so the
+response carries the replacement or the customer is logged out by their own action. It reuses
+`AuthenticatedSession` — the same fact, a session handed to its owner in the response that created
+it — rather than a fourth near-identical record. A wrong current password, a lock, a lost supersede
+race and a concurrently-killed session are **one** uniform 401; the MFA step-up is a distinct 403,
+because that one is actionable.
+
+### The gate found one test asserting less than it claimed
+
+The wrong-current-password test asserted the FAILED audit record but not that the lockout **counter**
+incremented — and the `refuse` helper writes the audit either way, so a mutation removing
+`recordFailureFor` survived. Strengthened to drive the account to its lockout threshold and prove
+the correct current password is then refused, which no audit assertion could have shown. **Five
+mutations, all caught by the intended assertion.** And I met the v4/v7 identifier lesson twice more —
+in the seeded MFA fixture — the `P1-TSK-028` finding, now thoroughly personal.
+
+**874 hermetic tests, 471 database tests.**
+
+### Previously
+
 
 ### Just completed
 
@@ -5356,22 +5412,21 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-TSK-033` — `POST /v1/me/credential`: a logged-in person can change their password.**
-Status `READY`; the second task of M2.1, keeping its Phase 1 ID because IDs are permanent.
+**`P2-TSK-002` — the first consumer path: Kafka in, inbox dedupe, effect once.** Status `READY`;
+the next task of M2.1, its dependency `P2-TSK-001` complete.
 
-The exit review's finding (`P1-DOC-002`): the plan declared the endpoint, nothing built it, and
-a person with a stolen password and no verified channel cannot replace their credential through
-the platform. The design questions the backlog entry already names: the **current** password
-re-proven in the request (a stolen session must not suffice to change the credential it rides
-on), derivation outside the transaction, conditional supersede, `revokeAllForExcept` (the person
-keeps the session they are acting from — its javadoc has described this exact caller since
-`P1-TSK-014`), audited against the person, `MULTI_FACTOR` per the plan's row.
+A Kafka consumer shell hands records to `InboxConsumer`, so a duplicate or redelivered record
+produces one effect (`INV-IDEM-04`) — proven against a real broker for the first time. The offset
+is committed **after** the inbox transaction, so a crash between effect and commit redelivers into
+the dedupe rather than losing the record; consumer restart and rebalance are the §Failure
+Engineering modes nothing has yet exercised. No business handler yet — `P2-TSK-007` is the first.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P1-TSK-033` complete - a logged-in person can change their own password**, closing the ninth backlog defect `P1-DOC-002` found: `POST /v1/me/credential`, declared by the plan for the whole phase and built by nothing. **Composition, not new mechanism**: `matchCurrent` re-proves the current password (no upgrade-on-use - the credential is about to be superseded), the new one is derived outside the transaction (`P1-TSK-026`), the supersede is conditional so ten concurrent changes yield one credential, every OTHER session is revoked (`INV-IDN-03`) and the caller's own is ROTATED at the same assurance (`P1-TSK-015`'s fixation defence), the response carrying the replacement token via the `AuthenticatedSession` shape rather than a fourth near-identical record. **The plan's `MULTI_FACTOR` row was corrected**: taken literally it makes the endpoint unreachable for password-only customers, so the requirement is conditional on a factor existing - a domain check, not a static annotation (the `P1-TSK-019` finding) - and an MFA-enrolled identity on a `PASSWORD` session gets the actionable `identity.AssuranceRequired` while others change at `PASSWORD`. A wrong current password is counted toward lockout: a stolen session must not be an unthrottled oracle. **The gate found a test asserting less than it claimed** - the wrong-password test checked the FAILED audit record but not that the counter incremented, and the refuse helper writes the audit either way, so a mutation removing recordFailureFor survived; strengthened to drive the account to its lockout threshold and prove the correct current password is then refused. The session-token unwrap, the rotation call site, the `CREDENTIAL_CHANGED` audit action and the two secret request fields each joined their guard's register with a claim. **Five mutations, all caught by the intended assertion.** 874 hermetic tests, 471 database tests. |
 | 2026-09-09 | **`P2-TSK-001` complete - the broker adapter, and the platform publishes its first events.** `KafkaEventPublisher` maps one outbox event onto one Kafka record - payload bytes verbatim as the value, the ten envelope fields plus media type as `finapp.*` headers so a consumer can route and deduplicate an event it cannot parse, the aggregate as the record key so the relay's per-aggregate ordering is one consumers actually observe, one topic per producing module with the revisit trigger recorded. **The acceptance was corrected before it was met**: the backlog promised exactly-once on the broker, which the port's own javadoc refuses - honest at-least-once instead, and the crash-between-ack-and-mark test DEMONSTRATES the duplicate (same `finapp.eventId` on both copies, the inbox's dedupe key) rather than hiding it. **Producer construction and its acknowledgement configuration live in the adapter's `connect` factory** (`acks=all`, idempotence, bounded timeouts - and Kafka 4.x refused the naive `delivery = request` equality because linger's default is no longer zero, found by constructing one), so the composition root passes strings and never sees a Kafka type. **Two build rules modified, each with its own proof**: the broker rule's exemption narrowed from the recorded module to the outbox package - module granularity would have let every platform concern touch the client silently - with a sibling-package fixture proving the precision; and `nothingSchedulesAmbiently` gained its first exemption, `OutboxRelaySchedule`, the case the rule's own because-clause carves out: every instance polls deliberately, the per-aggregate advisory lock being the lease the rule demands, register row in `DISTRIBUTED_EXECUTION.md` §3, proven load-bearing. **The kafka test tier arrived as `P0-TSK-036` pre-decided** - its own tier, not a widening of `database` - wired through the convention plugin, `TestTier` (whose detection keys on ACQUISITION, `KafkaProducer`, not the client package, so `MockProducer` unit tests stay hermetic), the taxonomy guard, `TESTING.md` and CI in one guarded change, with `KafkaUnderTest` supplying a catalog-pinned broker per tier JVM. **The background worker meets the suite as a choice**: the schedule is property-gated and disabled in an application.properties overlay (a .properties file deliberately - a test application.yaml would shadow the real one) because a background worker mutating outbox rows mid-assertion turns deterministic tests into races; the kafka tier runs it on purpose. `KafkaTransportGuard` keeps ADR-0023's promise on schedule - a non-loopback bootstrap over PLAINTEXT refuses startup. Debt: the broker-adapter row closes, the relay-metrics row pays in full (`finapp.outbox.publication` by outcome, eager, fed from `RelayPollResult`), the Kafka-plaintext row narrows to Redis and the deployed posture. **Five mutations, all caught by the intended assertion** - the first return-before-ack form was caught by compilation and rewritten, the P1-TSK-026 rule applied to this gate's own sweep; and the v4/v7 identifier lesson was met by its own chronicler. 874 hermetic tests, 465 database tests, 5 kafka tests. |
 | 2026-09-09 | **Phase 1 → Phase 2 transition conducted — Phase 2 is `READY`.** The full completion gate re-audited Phase 1 across seventeen categories (17 PASS), the distributed-system audit found **no single-instance assumption** (every authoritative decision arbitrated by PostgreSQL; the seven mandated questions answered with mechanisms), and the security audit passed with five weaknesses stated and owned. **The transition's own finding was in the gate machinery it was about to use**: both phase-derived guards keyed on the highest phase NAMED, so naming Phase 2 would have demanded its meters and invariant demonstrations before any code exists AND silently dropped Phase 1's plan from `PlannedMetersExistTest`'s checked set. Both now key on phases recorded `COMPLETE` - the status flip is the guarded act, proven by probe in both directions - and the probe's first run exposed a second defect by passing against a build that had not run: neither `CURRENT_STATE.md` nor the phase plans were declared `:app:test` inputs (the `P0-TSK-023` class, in the two newest document-backed guards). Repaired, plus four governance-record decays (ADR index rows stale at `Proposed`, `DECISIONS.md`'s invariant count stale since `INV-IDN-08`, `ROADMAP.md` frozen at 2026-09-04, the backlog's Phase 1 header). **Phase 2 initialised without implementing it**: `PHASE_2_PLAN.md` (case/check/review/decision model, consent as append-only history, twelve failure scenarios, six meters, six milestones); ADR-0035 (KYC owns the decision, Party projects it), ADR-0036 (evidence verbatim in PostgreSQL, object storage deferred with a trigger), ADR-0037 (consent history append-only, current basis derived), ADR-0038 (a provider verdict is evidence; hits are resolved by a person, never by silence) - all `Proposed`; the `INV-KYC-01`…`06` and `INV-CNS-01`…`04` groups catalogued on the Phase 0 → 1 precedent (the gate's six prose bullets were the weaker regime the `INV-IDN` group escaped), **82 invariants** platform-wide; and 24 backlog items across M2.1–M2.6, with the exit review's two leftovers scheduled first (`P2-TSK-001` broker adapter, `P1-TSK-033`). All twelve entry criteria hold; criterion 7 is vacuous and says so (no money moves in Phase 2). 864 hermetic tests, 465 database tests, green on the post-repair run. |
 | 2026-09-09 | **`P1-DOC-002` complete - the exit review re-run, and Phase 1 is `COMPLETE`.** All twelve universal criteria and all six phase-specific criteria hold; criteria 1 and 6 re-assessed against the code (the login token opens a protected endpoint with nothing inserted; `PlannedMetersExistTest` makes criterion 6 a build failure), the other ten re-checked, and the `PARTIAL` phase-specific criterion closes - `AuditCompletenessTest`'s `NOT_YET_EMITTED` holds exactly the three Phase-15 `outbox.*` actions. **Everything recounted, nothing inherited** - the first review had three numbers wrong for inheriting them - and the recount earned its keep: **`POST /v1/me/credential` is declared by the plan, built by nothing, and owned by nobody**, the ninth backlog defect of the class, found **in the first review's own area 7 table**, which had attributed it to `P1-TSK-026` - falsely, since that item's description reads *“Extend POST /v1/registrations”* and never included it. A false owner is worse than no owner for the reason a false exemption is worse than none: it reads as handled, so nobody asks. Recorded as `P1-TSK-033` with the capability gap stated honestly - a person with a stolen password and no verified channel cannot replace their credential through the platform - and it blocks no criterion, by the review's own `P1-TSK-028`/`-030` precedent. **A javadoc cited the missing capability as an incident-response tool** - `IdentityAdministration` told an administrator they have *“session revocation and a credential change”* - the ninth javadoc this phase to assert something the code does not do; corrected. **The broker adapter was ruled on rather than stepped around**: `PHASE_1_PLAN.md` §12 calls it required and it does not exist - non-blocking, because the phase objective needs no event delivery, the events are durable and unread (`INV-EVT-01` holds), the wire-format half of the requirement WAS delivered, and an adapter with no consumer cannot be exercised end to end, which is the gate's own standard; the plan is corrected where it was wrong and ownership passes to the Phase 1 → 2 transition, whose phase holds the first consumers. **Three debt rows owned by “Phase 1” resolved**, because a `COMPLETE` phase cannot own open debt: broker → the transition; registration throttling → Phase 15, merged with per-source rate limiting since the missing input is identical; and the loopback-credential row's trigger was reached **and handled** by `MfaKey`'s own tested confinement, remainder → Phase 5. **Recounted**: 17 endpoints, 10 tables, 8 aggregates, 20 auditable actions, 72 invariants, 6 ADRs, 864 hermetic and 465 database tests, backlog 34 of 34. **Phase 1 is `COMPLETE` (2026-09-09); next is the Phase 1 → 2 transition.** |

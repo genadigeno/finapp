@@ -2461,7 +2461,7 @@ repository exists to prevent.
 - Risk: Low — a fixture, not production code, and the constraint it trips is the platform being
   correct. Cx: S. DoD: `DOD-TEST`
 
-**P1-TSK-033 — `POST /v1/me/credential`: a logged-in person can change their password** — `READY` (2026-09-09, the second task of M2.1)
+**P1-TSK-033 — `POST /v1/me/credential`: a logged-in person can change their password** — `COMPLETE` (2026-09-09)
 - Context: identity / api
 - Description: The endpoint `PHASE_1_PLAN.md` §7 has declared since the phase was planned —
   `session, MULTI_FACTOR`, revokes every other session — and nothing built.
@@ -2488,6 +2488,18 @@ repository exists to prevent.
 - **Does not reopen the Phase 1 gate**: no exit criterion names it (`P1-DOC-002`'s recorded
   ruling, on the review's own `P1-TSK-028`/`-030` precedent). Scheduled by the Phase 1 → 2
   transition.
+- **Gate evidence (2026-09-09)**: composition, not new mechanism — `CredentialVerifier.matchCurrent`
+  re-proves the current password (no upgrade-on-use: the credential is about to be superseded), the
+  new one is derived outside the transaction, the supersede is conditional so ten concurrent changes
+  yield one credential, every other session is revoked and the caller's own rotated at the same
+  assurance level. **The plan's `MULTI_FACTOR` row was corrected**: the requirement is conditional
+  on a factor existing (a domain check, not a static annotation — the `P1-TSK-019` finding), so an
+  MFA-enrolled identity on a `PASSWORD` session gets the actionable `identity.AssuranceRequired`
+  while a password-only one changes at `PASSWORD`. **Five mutations, all caught by the intended
+  assertion** — one (the wrong-password lockout count) survived first and the test was strengthened
+  to prove the counter drives a lock rather than only writing an audit record. The session-token
+  unwrap, the rotation call site, the new audit action and the two secret request fields each joined
+  their guard's register with a claim.
 - Risk: Medium. Cx: M. DoD: `DOD-SEC`
 
 **P1-DOC-002 — Re-run the Phase 1 exit review** — `COMPLETE` (2026-09-09)
@@ -2651,7 +2663,7 @@ capability map, and the task list below is the schedule.
   construction and configuration live in the adapter's factory, inside the one exempted package.
 - Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
 
-**P2-TSK-002 — The first consumer path: Kafka in, inbox dedupe, effect once** — `TODO`
+**P2-TSK-002 — The first consumer path: Kafka in, inbox dedupe, effect once** — `READY` (2026-09-09, next in M2.1)
 - Context: platform / integration
 - Description: A Kafka consumer shell that hands records to `InboxConsumer`, so duplicate and
   redelivered records produce one effect (`INV-IDEM-04`), proven against a real broker.

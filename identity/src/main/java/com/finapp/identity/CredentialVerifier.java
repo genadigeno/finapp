@@ -150,6 +150,51 @@ public final class CredentialVerifier {
     }
 
     /**
+     * Re-proves a caller's <em>current</em> password against the credential of a known identity,
+     * for a credential change (`P1-TSK-033`).
+     *
+     * <p>Keyed by {@link IdentityId} rather than {@link LoginIdentifier}, because the caller holds a
+     * <strong>proven session</strong> and its identity, not a login string — the {@code /me} shape.
+     *
+     * <p><strong>No upgrade-on-use here, deliberately.</strong> {@link #verify} re-derives a
+     * below-policy credential because the plaintext is legitimately in hand and the credential
+     * survives. Here it does <em>not</em> survive — it is about to be superseded — so upgrading it
+     * would be ~46&nbsp;ms of work on a row that is about to become history. The credential is
+     * returned so the caller supersedes exactly the one this matched, in one read.
+     *
+     * <p>The equal-work discipline is kept for the same reason {@link #verify} keeps it: an
+     * identity concurrently closed, or one whose credential was concurrently superseded, must cost
+     * what a wrong password costs, or the outcome is readable from a clock. It runs inside the
+     * caller's transaction like everything else it coordinates with.
+     *
+     * @return the active credential, if the password matched it; empty on any failure, having done
+     *     equivalent work
+     */
+    public Optional<Credential> matchCurrent(
+            Connection unitOfWork, IdentityId identityId, RawPassword password) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(identityId, "identityId must not be null");
+        Objects.requireNonNull(password, "password must not be null");
+        requireTransaction(unitOfWork);
+
+        Optional<Identity> identity = identities.findById(unitOfWork, identityId);
+        if (identity.isEmpty() || !identity.get().canAuthenticate()) {
+            failAfterDoingTheWork(password);
+            return Optional.empty();
+        }
+        Optional<Credential> credential =
+                credentials.findActive(unitOfWork, identityId, CredentialType.PASSWORD);
+        if (credential.isEmpty()) {
+            failAfterDoingTheWork(password);
+            return Optional.empty();
+        }
+        if (!deriver.matches(password, credential.get().credentialDerivation())) {
+            return Optional.empty();
+        }
+        return credential;
+    }
+
+    /**
      * Fails, having done the work an attempt would have cost (`P1-TSK-010`).
      *
      * <p>For a caller that cannot even construct a {@link RawPassword} from what it was given - a

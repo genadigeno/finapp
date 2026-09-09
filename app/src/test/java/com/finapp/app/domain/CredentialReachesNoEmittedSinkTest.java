@@ -258,6 +258,10 @@ class CredentialReachesNoEmittedSinkTest {
                         // P1-TSK-032: the mirror of SuspensionRequest - a reason, never a secret,
                         // and the same bounds cited from the same constants.
                         "ReinstatementRequest",
+                        // P1-TSK-033: the body of POST /v1/me/credential carries the current and
+                        // new passwords. A secret may be SENT - a request body is the one place it
+                        // legitimately appears - never returned and never in a URL or header.
+                        "ChangePasswordRequest",
                         "RoleAssignmentRequest",
                         // P1-TSK-030. Carries a display name - RESTRICTED-PII, and the clearest
                         // such column on the platform - which is why it is here and worth a second

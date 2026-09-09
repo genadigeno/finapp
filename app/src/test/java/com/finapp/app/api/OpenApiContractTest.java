@@ -274,7 +274,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/identities/{id}/roles",
                         // P1-TSK-030. Declared by the plan for the whole phase and owned by no
                         // task until the review found it.
-                        ApiVersion.CURRENT_PREFIX + "/me");
+                        ApiVersion.CURRENT_PREFIX + "/me",
+                        ApiVersion.CURRENT_PREFIX + "/me/credential");
     }
 
     @Test

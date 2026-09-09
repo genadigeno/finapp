@@ -305,6 +305,24 @@ public enum IdentityAuditAction implements AuditableAction {
     RECOVERY_COMPLETED(
             "identity.RecoveryCompleted",
             "A credential was replaced through account recovery, ending every session.",
+            false),
+
+    /**
+     * A logged-in person changed their own password (`P1-TSK-033`).
+     *
+     * <p>No reason required, and the {@link #CONTACT_CHANNEL_ADDED} argument is why: the actor is
+     * the account's owner acting on their own credential, and demanding a justification for
+     * changing your own password would be a control on the wrong person. The record names who,
+     * when, and how many other sessions it ended - never the password, old or new
+     * ({@code INV-AUD-02}).
+     *
+     * <p>Distinct from {@link #RECOVERY_COMPLETED}: that replaces a credential for someone who
+     * could <em>not</em> prove it, through a verified channel; this one is the ordinary
+     * self-service change by someone who just did prove it.
+     */
+    CREDENTIAL_CHANGED(
+            "identity.CredentialChanged",
+            "A person changed their own password; every other session was ended.",
             false);
 
     private final String code;

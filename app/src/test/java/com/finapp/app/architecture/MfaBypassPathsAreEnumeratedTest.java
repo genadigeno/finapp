@@ -106,7 +106,14 @@ class MfaBypassPathsAreEnumeratedTest {
                             + " below.",
                     "com.finapp.identity.MfaChallenge.elevate",
                     "The only caller that raises assurance, and it refuses without a code verified"
-                            + " against an ACTIVE factor whose step has not been spent.");
+                            + " against an ACTIVE factor whose step has not been spent.",
+                    "com.finapp.identity.CredentialChange.apply",
+                    "A password change rotates the caller's own session (`P1-TSK-033`). Not a"
+                            + " bypass because it rotates at the SAME level - toAssurance is"
+                            + " current.assurance(), so assurance never increases here - and it is"
+                            + " reached only after the current password is re-proven and, for an"
+                            + " MFA-enrolled identity, a MULTI_FACTOR session is required. A"
+                            + " same-level rotation is the fixation defence, not an elevation.");
 
     /** What a call site must invoke to count as creating or elevating a session. */
     private static final Set<String> SESSION_ORIGINS =

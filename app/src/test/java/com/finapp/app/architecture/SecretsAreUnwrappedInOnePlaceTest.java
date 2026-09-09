@@ -111,6 +111,15 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // entitled to it, at the boundary, in the response to the request that created
                     // it. An entry for anything read out of storage would be a different claim.
                     "com.finapp.app.authentication.AuthenticationService",
+                    // P1-TSK-033. The SAME case a fourth time: a password change ROTATES the
+                    // caller's session (P1-TSK-015's fixation defence), so the response must carry
+                    // the replacement token or the customer is logged out by their own password
+                    // change. A session token being handed to the one caller entitled to it, at
+                    // the boundary, in the response to the request that created it - the exact
+                    // claim the three entries above make, and no other unwrap happens here: both
+                    // passwords cross this class still wrapped, becoming RawPassword without an
+                    // expose() (the RegistrationService shape).
+                    "com.finapp.app.credential.ChangePasswordService",
                     // P1-TSK-023. All three inside `identity`, which is the property this list
                     // exists to keep true - and the recovery boundary was DELIBERATELY built to
                     // keep them there. The controllers pass Sensitive<String> straight through from
