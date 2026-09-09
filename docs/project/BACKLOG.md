@@ -2754,7 +2754,7 @@ capability map, and the task list below is the schedule.
 
 ## P2-EPIC-01 — KYC case management (M2.2)
 
-**P2-TSK-005 — The KycCase aggregate and its lifecycle** — `READY` (2026-09-09, M2.2 opens)
+**P2-TSK-005 — The KycCase aggregate and its lifecycle** — `COMPLETE` (2026-09-09)
 - Context: kyc
 - Description: `KycCase` with the §5 machine, `V002` case table — status `CHECK`s generated from
   the enum, `NOT NULL` policy version, and the **one-open-case partial unique index** on
@@ -2769,6 +2769,21 @@ capability map, and the task list below is the schedule.
 - Tests: exhaustive invalid-transition sweep **derived from the machine** (`P1-TSK-005` idiom);
   10-way open race; terminal-state immutability.
 - Accept: every invalid transition rejected by the aggregate; one open case under contention.
+- **Gate evidence (2026-09-09)**: the exhaustive cross-product sweep is derived from the machine
+  (`P1-TSK-005` idiom) and both terminal states are swept separately; ten instances with ten
+  connections produce one case, with the nine losers **converged** onto the winner's case behind
+  a savepoint rather than errored — the semantics both callers-to-come need. **Two generated
+  schema artefacts, not one**: the status `CHECK` from `sqlValueList()` and the one-open-case
+  index predicate from `sqlTerminalValueList()`, both reconciled, so a state added without a
+  decision about whether it frees the slot cannot land quietly. A decided case demonstrably
+  frees the slot (the successor-case test). `policy_version NOT NULL` pinned at open
+  (`INV-HIST-04` at the moment it is free). The ownership rule fired and got its entries: the
+  store's `moveStatus` classified `AUTHORITATIVE_ID` on `findOpenFor`, and the predicate
+  vocabulary gained the third entry its own javadoc predicted (`customer_id = ?`, the kyc
+  schema's owner column). `kyc.CaseOpened` declared with the aggregate whose design fixed its
+  meaning, catalogued, `NOT_YET_EMITTED` naming `P2-TSK-006`/`-007`. **Five mutations, all
+  caught by the intended assertion** — a terminal state reopened, the aggregate check dropped,
+  the index made total, convergence removed, the conditional transition made unconditional.
 - Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
 
 **P2-TSK-006 — `POST /v1/me/kyc` and `GET /v1/me/kyc`** — `TODO`
@@ -2789,7 +2804,7 @@ capability map, and the task list below is the schedule.
 - Accept: a registered, consented person reaches an open case; a second POST is the same case.
 - Risk: Medium. Cx: S. DoD: `DOD-SEC`
 
-**P2-TSK-007 — The first production consumer: a registration opens a case** — `TODO`
+**P2-TSK-007 — The first production consumer: a registration opens a case** — `READY` (2026-09-09; P2-TSK-006 stays blocked on the consent gate P2-TSK-019)
 - Context: kyc / integration
 - Description: `kyc` consumes `party.CustomerRegistered` through P2-TSK-002's shell and opens
   the case eagerly.

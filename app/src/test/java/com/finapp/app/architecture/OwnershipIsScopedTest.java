@@ -316,7 +316,21 @@ class OwnershipIsScopedTest {
                                     "com.finapp.identity.JdbcCredentialStore.findActive",
                                     "Upgrade-on-use supersedes the credential it just verified,"
                                         + " which was read by identity. Nothing accepts a credential"
-                                        + " identifier from anywhere.")));
+                                        + " identifier from anywhere.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcKycCaseStore.moveStatus",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                                    "P2-TSK-005, and no production caller yet - the seam the check"
+                                        + " tasks drive. A case identifier can only come from"
+                                        + " findOpenFor or from openOrConverge's own insert, both"
+                                        + " scoped by customer_id in the statement; no endpoint"
+                                        + " accepts a case identifier at all until P2-TSK-012,"
+                                        + " whose reviewer surface is ADMINISTERED and must come"
+                                        + " here and say so. The statement's AND status = ? is the"
+                                        + " concurrency protocol, not an ownership predicate -"
+                                        + " JdbcIdentityStore.moveStatus's recorded distinction.")));
 
     /**
      * The negative test that proves each {@link Scope#OWNER_SCOPED} predicate is load-bearing.
@@ -343,18 +357,19 @@ class OwnershipIsScopedTest {
     /**
      * Predicates that establish <em>whose</em> row this is.
      *
-     * <p>Two, each a real proof rather than a convenience. {@code identity_id = ?} names the owner
+     * <p>Three, each a real proof rather than a convenience. {@code identity_id = ?} names the owner
      * directly. {@code token_hash = ?} is the session lookup: a session token is a bearer credential,
      * so presenting it <strong>is</strong> the proof of ownership — which is why the interceptor may
-     * touch the row it just authenticated without a second check.
-     *
-     * <p>A third would need writing down, which is the point of the set being small and explicit.
+     * touch the row it just authenticated without a second check. {@code customer_id = ?} is the
+     * {@code kyc} schema's owner column (`P2-TSK-005`): a case belongs to the customer under
+     * verification, and every read that hands out a case identifier is scoped by it — the entry
+     * this set's own javadoc predicted would need writing down, written down.
      */
     /** What a {@link Scope#BEARER_SCOPED} statement must carry. */
     private static final String BEARER_PREDICATE = "token_hash = ?";
 
     private static final Set<String> OWNERSHIP_PREDICATES =
-            Set.of(OWNER_PREDICATE, "token_hash = ?");
+            Set.of(OWNER_PREDICATE, "token_hash = ?", "customer_id = ?");
 
     private record Entry(Scope scope, String authoritativeRead, String reason) {
         Entry(Scope scope, String reason) {

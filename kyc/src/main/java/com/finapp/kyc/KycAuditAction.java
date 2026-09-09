@@ -12,15 +12,29 @@ import com.finapp.platform.audit.AuditableAction;
  * The licence is {@code P1-TSK-003}'s: declare what the module's documented responsibility makes
  * certain — {@code MODULE_ARCHITECTURE.md} §`kyc` states reviewer actions carry reason codes and
  * document access is audited, and {@code INV-KYC-02}, {@code -04} and {@code -06} each name
- * their record outright — never what a later task's design will shape. Case opening and check
- * outcomes are therefore <em>absent on purpose</em>: their emitters and shapes belong to
- * {@code P2-TSK-005}/{@code -007} and {@code P2-TSK-009}, which declare them.
+ * their record outright — never what a later task's design will shape. Case opening joined at
+ * {@code P2-TSK-005}, the task whose design fixed its meaning; check outcomes remain
+ * <em>absent on purpose</em>, {@code P2-TSK-009}'s to declare.
  *
  * <p><strong>Nothing here is emitted yet</strong>; each constant names its owning task in
  * {@code AuditCompletenessTest.NOT_YET_EMITTED}, so "deliberately not built yet" and "somebody
  * removed the audit call" stay distinguishable.
  */
 public enum KycAuditAction implements AuditableAction {
+
+    /**
+     * A KYC/KYB case was opened for a customer.
+     *
+     * <p>The record that starts every defensible-decision trail: the decision (`INV-KYC-02`)
+     * references a case, and a case nobody can date or attribute is a chain with a missing
+     * first link. No reason required — opening is either the customer's own act
+     * ({@code POST /v1/me/kyc}, {@code P2-TSK-006}) or the platform reacting to a registration
+     * ({@code P2-TSK-007}), and neither is an action taken <em>against</em> somebody.
+     */
+    KYC_CASE_OPENED(
+            "kyc.CaseOpened",
+            "A KYC/KYB case was opened for a customer, under a named policy version.",
+            false),
 
     /**
      * The platform recorded a KYC/KYB decision on a case.

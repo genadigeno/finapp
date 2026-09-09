@@ -303,6 +303,17 @@ purpose. Every other column is a fact about the *session*; `device` is a fact ab
 what they own and where they are. It is also the column most likely to be widened later by somebody
 adding "just the user agent", which is why the ceiling is set before anything populates it.
 
+### `kyc.kyc_case` — *added by `P2-TSK-005`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `kyc_case` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `kyc_case` | `customer_id` | `INTERNAL` | As `customer.party_id` — an identifier of a thing, not a fact about it. `RESTRICTED-PII` here would forbid it from the log lines and audit records that make a case investigable, and what must never be logged is what it *resolves to* |
+| `kyc_case` | `status` | `CONFIDENTIAL` | **The tipping-off column.** `IN_REVIEW` means a screening hit or an unresolvable check — exactly what the customer-facing status is shaped to hide (`PHASE_2_PLAN.md` §6), and disclosure of a sanctions review in progress is not merely embarrassing but in some regimes an offence. As `customer.status`, with more behind it |
+| `kyc_case` | `policy_version` | `CONFIDENTIAL` | The `credential.algorithm` reasoning: not a fact about a person on its face, but *which accounts were assessed under the lax regime* is a targeting aid, and the same query serves the upgrade campaign and the attacker |
+| `kyc_case` | `opened_at` | `CONFIDENTIAL` | As `customer.opened_at` — it dates onboarding |
+| `kyc_case` | `status_changed_at` | `CONFIDENTIAL` | Dates a review event, which is more disclosive than the status alone — `customer.status_changed_at`'s reasoning |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,
