@@ -2459,7 +2459,36 @@ repository exists to prevent.
 - Risk: Low — a fixture, not production code, and the constraint it trips is the platform being
   correct. Cx: S. DoD: `DOD-TEST`
 
-**P1-DOC-002 — Re-run the Phase 1 exit review** — `TODO`
+**P1-TSK-033 — `POST /v1/me/credential`: a logged-in person can change their password** — `TODO`
+- Context: identity / api
+- Description: The endpoint `PHASE_1_PLAN.md` §7 has declared since the phase was planned —
+  `session, MULTI_FACTOR`, revokes every other session — and nothing built.
+- Why: **Found by `P1-DOC-002`'s recount, the ninth backlog defect of this class in Phase 1** — and
+  the sharpest form of it, because the first review's area 7 table attributed the endpoint to
+  `P1-TSK-026`, whose description reads *"Extend `POST /v1/registrations`"* and never included it.
+  **The capability gap is real**: a person with a stolen password and no verified channel cannot
+  replace their credential through the platform — session revocation ends the attacker's sessions,
+  not their knowledge, and recovery requires a verified channel registration does not create.
+  `IdentityAdministration`'s javadoc cited "a credential change" as an incident-response tool; the
+  claim is corrected until this exists.
+- Deps: none — every mechanism exists (`CredentialStore.supersede`, `RawPassword`, the deriver,
+  `SessionRevocation.revokeAllForExcept`, whose javadoc has described this exact caller since
+  `P1-TSK-014`).
+- Implementation: require the **current** password re-proven in the request (a stolen session must
+  not suffice to change the credential it rides on), derive outside the transaction
+  (`P1-TSK-026`'s reasoning), supersede conditionally, revoke every **other** session
+  (`revokeAllForExcept` — the person changing their password keeps the session they are doing it
+  from), audit against the person, `MULTI_FACTOR` per the plan's row.
+- Tests: ownership (the session's identity, no identifier in the request — `SESSION_DERIVED`);
+  a wrong current password refused without disclosure; other sessions dead, the current one alive;
+  the old password refused and the new one accepted afterwards.
+- Accept: all four, and the plan's §7 row stops being a declaration nothing implements.
+- **Does not reopen the Phase 1 gate**: no exit criterion names it (`P1-DOC-002`'s recorded
+  ruling, on the review's own `P1-TSK-028`/`-030` precedent). Scheduled by the Phase 1 → 2
+  transition.
+- Risk: Medium. Cx: M. DoD: `DOD-SEC`
+
+**P1-DOC-002 — Re-run the Phase 1 exit review** — `COMPLETE` (2026-09-09)
 - Context: process
 - Description: Re-assess criteria 1 and 6 and record the verdict.
 - Why: `PHASE_GATES.md` §4. `P1-DOC-001` returned the phase to `IN_PROGRESS` on two failures; both
@@ -2472,7 +2501,21 @@ repository exists to prevent.
 - **The four open items do not block it**: `P1-TSK-025`, `-026`, `-028` and `-030` are named by no
   universal or phase-specific criterion. The gate blocks on the criteria, not on the backlog being
   empty — the distinction `P1-DOC-001` recorded.
-- Accept: every universal criterion assessed with evidence, and a verdict.
+- Accept: every universal criterion assessed with evidence, and a verdict — **met**: all twelve
+  re-assessed with recounted evidence (17 endpoints, 20 auditable actions, 864 hermetic and 465
+  database tests — none inherited), all pass, and **Phase 1 is `COMPLETE` (2026-09-09)**. The
+  `PARTIAL` phase-specific criterion closes: every registered action is emitted or declared with a
+  Phase 15 owner.
+- **The recount found the ninth backlog defect of the class, in the review's own area 7 table**:
+  `POST /v1/me/credential` is planned, unbuilt and owned by nobody — the table had attributed it to
+  `P1-TSK-026`, falsely, and a false owner is worse than no owner for the reason a false exemption
+  is. Recorded as `P1-TSK-033`; a javadoc citing the missing capability as an incident-response
+  tool was corrected.
+- **Three debt rows owned by "Phase 1" were resolved**, because a `COMPLETE` phase cannot own open
+  debt: broker adapter → the Phase 1 → 2 transition (first consumers are Phase 2's);
+  registration throttling → Phase 15, merged with per-source rate limiting; the loopback-credential
+  row's trigger was reached **and handled** by `MfaKey`'s own tested confinement, remainder →
+  Phase 5.
 - Risk: Low. Cx: S. DoD: `DOD-DOC`
 
 **P1-TSK-030 — `GET /v1/me` and `PATCH /v1/me`** — `COMPLETE` (2026-09-08)

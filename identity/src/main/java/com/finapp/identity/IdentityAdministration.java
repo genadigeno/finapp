@@ -56,8 +56,11 @@ import java.util.Optional;
  * out-of-band operator action of {@code README.md} §5e. And the trail argument is untouched: an
  * administrative record naming one party twice reads like a system action rather than a decision
  * somebody took. An administrator who suspects their own account is compromised has session
- * revocation and a credential change, which are the tools for that and are reversible by them
- * alone.
+ * revocation and — through a verified channel — account recovery to replace the credential.
+ * (An earlier version of this paragraph named "a credential change" as one of the tools; no
+ * logged-in credential-change endpoint exists — {@code POST /v1/me/credential} is planned and
+ * unbuilt, {@code P1-TSK-033} — and `P1-DOC-002` corrected the claim rather than let a reader
+ * plan an incident response around a tool that is not there.)
  */
 public final class IdentityAdministration {
 

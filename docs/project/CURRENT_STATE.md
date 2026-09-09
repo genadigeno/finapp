@@ -14,31 +14,27 @@ Last updated: 2026-09-09
 Status: ✅ **`COMPLETE`** (2026-09-04) — **all twelve exit criteria hold.**
 
 **Phase 1 — Identity and Customer Foundation**
-Status: **`IN_PROGRESS`** — entry gate passed 2026-08-31; started 2026-09-04.
-**Exit gate reviewed 2026-09-08 and NOT passed** —
-[`reviews/PHASE_1_REVIEW.md`](reviews/PHASE_1_REVIEW.md). Ten of twelve universal criteria hold; two
-fail, and `PHASE_GATES.md` §4 returns the phase to `IN_PROGRESS` rather than letting it ship through.
+Status: ✅ **`COMPLETE`** (2026-09-09) — **all twelve universal and all six phase-specific exit
+criteria hold**, ruled by the re-run of the exit review
+([`reviews/PHASE_1_REVIEW.md`](reviews/PHASE_1_REVIEW.md), addendum of 2026-09-09, `P1-DOC-002`).
 
-- ~~**Criterion 1**~~ — **CLOSED 2026-09-08** by `P1-TSK-027`. A login now issues a session, and the
-  closure is verified the way the failure demanded: the token a login returns is used to open
-  `GET /v1/sessions` over real HTTP with nothing inserted by the test. The finding was never *"no
-  row is written"* — it was that a real client could not obtain one while the suite could, so an
-  assertion that a token came back would have repeated the same blindness one layer up. See the
-  review's addendum.
-- ~~**Criterion 6**~~ — **CLOSED 2026-09-08** by `P1-TSK-029`. All six `finapp.identity.*` meters
-  exist, and the criterion is now a **build failure** rather than a review opinion:
-  `PlannedMetersExistTest` reads the plan's own §10 table and asserts every meter it names is in the
-  live registry. It found the problem was worse than the review recorded — the two meters counted as
-  *existing* were created **lazily**, so a freshly started instance published no series for them at
-  all.
+The path there is the gate model working as designed: the review of 2026-09-08 (`P1-DOC-001`)
+failed the gate on two criteria; the remediations landed the same day (`P1-TSK-027`, `P1-TSK-029`);
+and the phase stayed `IN_PROGRESS` for a day **on purpose**, because a phase becomes `COMPLETE`
+when a **review** says so, never because its remediation landed. The re-run re-assessed all twelve
+criteria with **recounted** evidence — the first review had three numbers wrong for inheriting them
+— and found one more defect of the phase's recurring class on the way (`P1-TSK-033`, below).
 
-**Both gate failures are now closed.** The phase stays `IN_PROGRESS` until the review is **re-run**
-against them, which is `PHASE_GATES.md` §4's own procedure and a governance act rather than an
-implementation one: an implementation task declaring its own phase complete is the shape the gate
-model exists to prevent.
+**What the phase delivered**: a Party can exist, become a Customer, hold an Identity, prove it over
+HTTP, hold a session with a recorded assurance level, and have every privileged action authorised
+and audited — 17 published endpoints, 10 tables in two new schema-owning modules, 20 auditable
+actions, 8 new invariants (72 platform-wide), 6 ADRs, 864 hermetic and 465 database tests, and no
+money anywhere in it, by design.
 
-**Neither failure was architectural.** The design work was done; what was missing was a connection
-between two things the phase built — now made — and four meters.
+**Two items leave the phase open-eyed rather than silently**: `P1-TSK-033`
+(`POST /v1/me/credential`, planned and unbuilt, found by the re-run's recount) and the broker
+adapter (owned now by the Phase 1 → 2 transition, whose phase holds the first consumers). Neither
+is named by any exit criterion; both are recorded with owners.
 
 ## Current Milestone
 
@@ -184,10 +180,63 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P1-TSK-032` completed 2026-09-09. **The Phase 1 backlog is 34 of 34**;
-only `P1-DOC-002`, the exit-review re-run, stands between the phase and `COMPLETE`.
+**None in progress.** `P1-DOC-002` completed 2026-09-09 — **the Phase 1 backlog is closed and the
+phase is `COMPLETE`.**
 
 ### Just completed
+
+**`P1-DOC-002` — the Phase 1 exit review, re-run** — `COMPLETE` (2026-09-09). **The gate passes
+and Phase 1 is `COMPLETE`.**
+
+| | Outcome |
+|---|---|
+| Universal criteria (12) | **12 `PASS`** — criteria 1 and 6 re-assessed against the code, the other ten re-checked |
+| Phase 1-specific (6) | **6 `PASS`** — the `PARTIAL` closes, every registered action emitted or declared |
+| **Verdict** | **Phase 1 `COMPLETE` (2026-09-09)** |
+
+### Everything recounted, nothing inherited — and the recount earned its keep
+
+The first review had three numbers wrong for quoting them, so the re-run counted: **17** endpoints
+(12 at the review), **20** auditable actions, **864 + 465** tests, 10 tables, 8 aggregates, 72
+invariants. Counting the endpoints against the plan's §7 table is what surfaced the finding below.
+
+### The ninth backlog defect of the class, found in the review's own table
+
+**`POST /v1/me/credential` is declared by the plan, built by nothing, and owned by nobody** — and
+the first review's area 7 table had attributed it to *"`P1-TSK-026` (`TODO`)"*, an item whose
+description reads *"Extend `POST /v1/registrations`"* and never included it. **A false owner is
+worse than no owner**, for the reason a false exemption is worse than none: it reads as handled, so
+nobody asks. The review that found the eighth defect of this class committed the ninth in the same
+table.
+
+The capability gap is stated honestly: a person with a stolen password and **no verified channel**
+cannot replace their credential through the platform — revocation ends the attacker's sessions, not
+their knowledge, and recovery needs a channel registration does not create. Recorded as
+**`P1-TSK-033`**, scheduled by the Phase 1 → 2 transition; it blocks no criterion, by the review's
+own `P1-TSK-028`/`-030` precedent. And `IdentityAdministration`'s javadoc — which cited *"a
+credential change"* as an incident-response tool — is corrected: **the ninth javadoc this phase to
+assert something the code does not do.**
+
+### The broker adapter was ruled on rather than stepped around
+
+`PHASE_1_PLAN.md` §12 calls it a *"genuinely required minimal foundation"* and it does not exist.
+The re-run rules it non-blocking, with the reasoning in the addendum: the phase objective needs no
+event delivery; the events are durable and unread (`INV-EVT-01` holds); the load-bearing half of
+§12's own reasoning — the wire format — **was** delivered (`EventPayload`, `P1-TSK-006`); and an
+adapter with no consumer anywhere cannot be exercised end to end, which is the exit gate's own
+standard for a deliverable. The plan is corrected where it was wrong, and ownership passes to the
+Phase 1 → 2 transition — `DELIVERY_PLAN.md` §Phase 2.8 holds the first consumers.
+
+### Three debt rows owned by "Phase 1" resolved, because a `COMPLETE` phase cannot own open debt
+
+Broker adapter → the Phase 1 → 2 transition. Registration throttling → **Phase 15**, merged in
+argument with per-source rate limiting, because the missing input is identical — a deployment
+topology and a trusted-proxy declaration, an unauthenticated endpoint having no identity to key on.
+And the loopback-credential row's trigger — *"the second credential"* — was **reached and
+handled**: `P1-TSK-017`'s MFA key carries its own tested loopback confinement, so the remaining
+generalisation is re-owned to Phase 5, the third credential.
+
+### Previously
 
 **`P1-TSK-032` — Reinstatement: the other half of suspension** — `COMPLETE` (2026-09-09).
 `DELETE /v1/identities/{id}/suspension`, and suspension stops being a one-way door.
@@ -4918,13 +4967,16 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-**None in progress.** Phase 0 is `COMPLETE` and Phase 1 is `READY` but not started.
+**None in progress.** Phase 0 and Phase 1 are both `COMPLETE`.
 
-The last work performed was `P0-TSK-042` — a git remote, and the first three CI runs — and before
-it the **Phase 0 → Phase 1 transition** (2026-09-04), which is planning and governance rather than
-implementation: the gate audit, the phase review, the `INV-IDN` group, ADR-0029 through ADR-0032,
-`PHASE_1_PLAN.md`, and the elaboration of Phase 1 to task granularity. No application code was
-written, which is the constraint the transition was performed under.
+The last work performed was `P1-DOC-002` — the Phase 1 exit-review re-run (2026-09-09), a
+governance act that ruled the gate passed and found the ninth backlog defect of the phase's
+recurring class on the way. The next work is the **Phase 1 → 2 transition**, which is planning and
+governance rather than implementation, per the Phase 0 → 1 precedent.
+
+*(This section had said "Phase 1 is `READY` but not started" since 2026-09-04 — pre-existing drift
+the re-run's criterion 9 check caught, corrected here rather than left because a review about
+documentation reflecting reality must not leave its own document stale.)*
 
 ## Blockers
 
@@ -5090,7 +5142,7 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
-| **Broker adapter behind `EventPublisher`.** The relay publishes through a port; nothing implements it | An adapter decides the topic scheme, the broker wire format and the producer acknowledgement configuration, and puts a broker client on the classpath. The **stored** payload format is no longer deferred - `P1-TSK-006` settled it as `application/json` via `EventPayload`, because the first producer could not leave it open | **The trigger has now been reached**: `P1-TSK-006` emits three domain events, so the outbox is no longer empty and nothing publishes them. The risk is still bounded rather than absent - there is no consumer either, so the events are durable and unread rather than lost, and `INV-EVT-01` holds. It becomes real with the first consumer | Reached 2026-09-06. **No backlog task owns it**, although `PHASE_1_PLAN.md` §12 names it a required minimal foundation - a gap recorded here rather than closed, since creating it is another task | Phase 1 |
+| **Broker adapter behind `EventPublisher`.** The relay publishes through a port; nothing implements it | An adapter decides the topic scheme, the broker wire format and the producer acknowledgement configuration, and puts a broker client on the classpath. The **stored** payload format is no longer deferred - `P1-TSK-006` settled it as `application/json` via `EventPayload`, because the first producer could not leave it open | **The trigger has now been reached**: `P1-TSK-006` emits three domain events, so the outbox is no longer empty and nothing publishes them. The risk is still bounded rather than absent - there is no consumer either, so the events are durable and unread rather than lost, and `INV-EVT-01` holds. It becomes real with the first consumer | Reached 2026-09-06. **Re-owned by `P1-DOC-002` (2026-09-09)**: Phase 1 closed without it, deliberately - an adapter with no consumer anywhere cannot be exercised end to end, and the wire-format half of the requirement WAS delivered (`EventPayload`). The Phase 1 → 2 transition creates the owning task, its phase holding the first consumers (`DELIVERY_PLAN.md` §Phase 2.8) | Phase 2 (transition creates the task) |
 | **Outbox retention.** Published rows are never deleted | `V005` says a published row may be deleted once retained long enough for diagnosis; the sweep is a scheduled job with its own cluster-safety question, and no task owned it | Unbounded table growth. The partial pending index does **not** grow with it — published rows leave it — so the cost is storage and vacuum, not relay latency | Table size becoming operationally material | Phase 15 (data retention and deletion) |
 | ~~**Relay metrics.**~~ - **partly paid** by `P0-TSK-029`. Outbox depth and age are gauges over the database (`finapp.outbox.pending`, `finapp.outbox.oldest`), so a stalled aggregate is alertable rather than discoverable by reading logs - and readable precisely when the relay is down. **Still open:** throughput, failure and dead-letter counts from `RelayPollResult`, which need a relay that actually runs | Nothing schedules a relay, so those meters would be structurally always zero - which reads as "nothing is failing" rather than "nothing is running" | The remaining risk is narrower: a relay that is running but failing is visible as a growing backlog, not as a failure count | A scheduled relay | Phase 3 |
 | **Inbox retention sweep.** Records are never deleted | The sweep is a scheduled job with its own cluster-safety question, and `V007` deliberately adds no `expires_at` index until its predicate is written | Unbounded growth of a table whose only index is its primary key. **Not** a correctness risk in this direction: a record that is never swept deduplicates forever, and it is early expiry that admits a duplicate (`DATA_MIGRATIONS.md` §9) | Table size becoming operationally material, or the first consumer going live | Phase 15 (data retention and deletion) |
@@ -5104,14 +5156,14 @@ carries, what triggers paying it down, and the owning phase.
 | **Kafka and Redis are plaintext with no enforcement.** The transport guard covers PostgreSQL only | There is no Kafka or Redis client on the classpath, so a guard for those connections would be guarding nothing - the same argument that kept a `Classification` enum out of `P0-TSK-033` | **None today**, because nothing connects to either. The expectations are documented per hop in `SECURITY_ARCHITECTURE.md`, so the gap is a decision rather than an omission; the risk arrives with the first client, which is also when it becomes enforceable | The first Kafka or Redis client | Phase 3 (broker adapter) |
 | ~~**A caller can put personal or financial data into the correlation identifier.**~~ - **closed 2026-09-04** by `P1-TSK-002` / ADR-0034. The platform now mints the identifier on every request and never adopts an inbound one; a well-formed caller value is echoed in `X-Client-Correlation-Id` and reaches no sink. **Narrowing the charset was the obvious repair and does not work** - a date of birth, a phone number and an account number are alphanumeric, so any charset still able to carry a UUID carries them; of the four probed values it would have stopped two and left two. The control had to be structural. | - | - | - | - |
 | ~~**No production code establishes a security scope.**~~ - **closed 2026-09-06** by `P1-TSK-006`. `RegistrationService` establishes one for `POST /v1/registrations`, and the actor is `enterSystem()` because the caller is **unauthenticated** - which is a call site that *stays* after Phase 1 revisits it, not one to be removed. The alternative, attributing the action to the Party it creates, is circular and is unavailable on the refusal path where nothing was created; an actor that differs between success and failure is worse than a uniform honest one. The information is carried by the audit record's **target** instead - the attempted login identifier, on both paths. | - | - | - | - |
-| **The loopback guard covers one credential.** `DatabaseCredentialGuard` knows about the datasource password and nothing else | It is the only credential that exists. A general mechanism - every externalised credential declaring its own marked default and being checked - would be designed against one example, which is how you get an abstraction that fits nothing later | **Low today.** The build rule is already general: any credential-named key in any configuration file is covered, so a second credential cannot arrive as a literal. What it would not get is the loopback confinement, so a second published default could be aimed anywhere | The second credential, which is Phase 1's authentication or Phase 5's provider adapters | Phase 1 |
+| **The loopback confinement is per credential, not a general mechanism.** `DatabaseCredentialGuard` guards the datasource password; `MfaKey` guards itself | **The recorded trigger - the second credential - was reached and handled** (`P1-DOC-002`, 2026-09-09): `P1-TSK-017`'s MFA key confines its own published default to loopback, tested (`MfaKeyTest`), so the risk the row named - a second published default aimed anywhere - was closed by the credential that arrived. What remains unbuilt is the general mechanism, still rightly deferred: two hand-written guards are not yet a pattern worth abstracting | **Low.** The build rule remains general - a third credential cannot arrive as a literal - and what it would not get is the confinement, now a known per-credential obligation with two precedents | The third credential, which is Phase 5's provider adapters | Phase 5 |
 | ~~**No output scrubber for text the platform does not control.**~~ - **answered 2026-09-06** by `P1-TSK-009`, and the answer is that the scrubber is **not built**. A scrubber is a deny-list over emitted text, and to recognise a secret it must be *given* the secret - which makes the plaintext travel **further**, into a filter invoked on every log statement in the platform, rather than less far; it also produces exactly the false confidence ADR-0019 warns about, since a deny-list that misses one shape is indistinguishable from one that misses none. **What replaces it is the opposite shape and is checkable**: a plaintext can only reach any sink if something first *unwraps* it, and every unwrap is a call to `expose()` - named to be found, deliberately. `SecretsAreUnwrappedInOnePlaceTest` pins that set to **four production classes, all in `identity`**, so a new unwrap anywhere fails the build and forces a decision. **The residual is stated rather than closed**: inside `identity` a plaintext could still be handed to a log call and nothing mechanical would catch it - bounded by the set being four classes rather than a codebase, and by the one production log call on that path being asserted quiet against a real database. |
 | **The scrape endpoint widens the unauthenticated surface to three.** `/actuator/prometheus` joins health and info | `DOD-OBS` requires the dashboard to render live data from a running instance, which needs a scrape endpoint, and there is no authentication anywhere yet | A scrape publishes JVM internals, HTTP route templates and pool statistics - a description of the running system rather than its secrets. The **content** is constrained by a build failure: no tag may carry a request-influenced value | `P0-EPIC-10` landing | Phase 0, M0.4 |
 | **The operational endpoints are unauthenticated.** `/actuator/health/*` and `/actuator/info` are reachable by anyone who can reach the port | `DOD-API` requires a negative authentication test for every new surface, and there is no authentication anywhere in the platform yet - `P0-EPIC-10` is the epic that brings it. Building one authentication mechanism for the actuator alone would be a second scheme to retire | **Low, and bounded by what is published.** The bodies are pinned by exact-match test to a status and, for the aggregate, its group names; details, components, environment, JVM and OS are all off, and twelve other endpoints are proven absent. What remains is that an unauthenticated caller can learn the instance is up and which build it runs | `P0-EPIC-10` landing, at which point `show-details: when-authorized` also becomes available | Phase 0, M0.4 |
 | ~~**Connection-pool sizing is not reasoned about across instances.**~~ - **closed 2026-09-04** by `P1-TSK-004`. The relationship `instances x pool <= max_connections - reserved` is declared as configuration and enforced by `ConnectionPoolSizingGuard` at startup, with the shipped numbers additionally checked in the build. **The obvious repair - divide `max_connections` by the instance count - is the wrong one**: that treats the limit as a budget to spend when it is a ceiling not to hit, and PostgreSQL throughput stops improving once the cores are busy, after which extra connections queue *inside* the database where the queueing is invisible. The pool is sized small for throughput and the fleet check is a separate question asked afterwards. `DISTRIBUTED_EXECUTION.md` §4a. | - | - | - | - |
 | ~~**`@ArchTest` rules do not run in the `architectureTest` tier.**~~ - **closed 2026-09-08** by `P1-TSK-025`, and the defect was worse than this row described: the rules were not missing from the tier, they were **in the wrong one**. `unitTest` selects by *exclusion*, so it took all **28** untagged rule fields; `architectureTest` selects by *inclusion* and got none - and `ModuleBoundaryRulesTest`, which has no `@Test` method at all, produced **no result file** there: not a suite that ran zero cases, a suite that did not appear. **Root cause established by disassembling the engine**: `AbstractArchUnitTestDescriptor.findTagsOn` loads exactly one annotation, `com.tngtech.archunit.junit.ArchTag`, and cannot see JUnit's `@Tag`. Fixed with `@ArchTag` beside `@Tag` on all seven suites. **No existing guard could see it because the partition check asserts a SUM, and the sum was right** - every rule was in exactly one tier. | - | - | - | - |
 | **No per-source rate limiting.** Lockout bounds *guessing* per identity; nothing bounds the *volume* one source can generate | **Building it now would be harmful, not merely premature.** `SYSTEM_ARCHITECTURE.md` §Multi-Instance Execution commits to N replicas behind a load balancer, so `getRemoteAddr()` is the balancer: every user shares one bucket, the threshold is reached in seconds, and authentication goes down for everyone. `X-Forwarded-For` is caller-supplied and ADR-0034 settled that such values are not trusted; no trusted-proxy configuration exists. The missing input is a deployment topology, not effort (`P1-TSK-011`) | **Resource exhaustion, and it is the platform's most expensive unauthenticated operation**: ADR-0032 makes each attempt cost ~46 ms and ~19 MiB *by design*, so the work factor protecting a stolen credential store is the one an attacker spends for free. Ten concurrent attempts is ~190 MiB on one instance. `INV-IDN-07` still holds - every response is identical, so flooding discloses nothing - and lockout now bounds what an attacker learns, though not what they cost. Bounded today only by the fact that nothing is deployed | A deployment topology and a trusted-proxy declaration | Phase 15 |
-| **`POST /v1/registrations` is unauthenticated and unthrottled.** Anyone who can reach the port can create Parties, Customers and Identities without limit | There is no rate-limiting mechanism anywhere on the platform. `P1-TSK-011` builds one for **authentication** - failure counting and lockout keyed on an identity - and none of that applies to an endpoint whose whole point is that no identity exists yet. Building a second, differently-shaped mechanism here before that one exists would be designing the general case from one example | **Resource exhaustion, not disclosure - and `P1-TSK-026` made it materially worse, which is recorded rather than left for somebody to notice.** Every response is still identical whatever is sent, so flooding discloses nothing (`INV-IDN-07` holds). What changed is the cost: a required password means **every** request now performs an Argon2id derivation, ~46 ms of CPU and ~19 MiB, *before* anything can refuse it (ADR-0032) - so this endpoint has become the same CPU-and-memory amplifier `POST /v1/authentications` already is, and unlike that one it needs no existing account. It also still fills three tables and the outbox, and the idempotency key does not help since a flooder generates a fresh one. Bounded today only by the fact that nothing is deployed | `P1-TSK-011` landing, which is when a throttling mechanism exists to extend rather than invent | Phase 1 |
+| **`POST /v1/registrations` is unauthenticated and unthrottled.** Anyone who can reach the port can create Parties, Customers and Identities without limit | There is no rate-limiting mechanism anywhere on the platform. `P1-TSK-011` builds one for **authentication** - failure counting and lockout keyed on an identity - and none of that applies to an endpoint whose whole point is that no identity exists yet. Building a second, differently-shaped mechanism here before that one exists would be designing the general case from one example | **Resource exhaustion, not disclosure - and `P1-TSK-026` made it materially worse, which is recorded rather than left for somebody to notice.** Every response is still identical whatever is sent, so flooding discloses nothing (`INV-IDN-07` holds). What changed is the cost: a required password means **every** request now performs an Argon2id derivation, ~46 ms of CPU and ~19 MiB, *before* anything can refuse it (ADR-0032) - so this endpoint has become the same CPU-and-memory amplifier `POST /v1/authentications` already is, and unlike that one it needs no existing account. It also still fills three tables and the outbox, and the idempotency key does not help since a flooder generates a fresh one. Bounded today only by the fact that nothing is deployed | **Re-owned by `P1-DOC-002` (2026-09-09)**: `P1-TSK-011`'s mechanism is keyed on an identity, and an unauthenticated endpoint has none - the only usable key is the source, so this row's missing input is per-source rate limiting's missing input, a deployment topology and a trusted-proxy declaration. Merged with that row's trigger | Phase 15 |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
 
 None of these is financial-correctness debt.
@@ -5159,27 +5211,22 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P1-DOC-002` — re-run the Phase 1 exit review.** The only thing left between Phase 1 and
-`COMPLETE`.
+**The Phase 1 → 2 transition.** Phase 1 is `COMPLETE`; what comes next is a governance act, not an
+implementation one, per the Phase 0 → 1 precedent: the Phase 2 plan (KYC/KYB and Consent), its
+backlog elaborated to task granularity, its entry gate against `PHASE_GATES.md` §2, and the
+invariants it must protect (`INV-HIST-02` is `Phase: 2 (screening)` in the catalogue).
 
-`P1-DOC-001` found two failing criteria and both are closed — criterion 1 by `P1-TSK-027` (a login
-issues a session) and criterion 6 by `P1-TSK-029` (every planned meter exists). The phase has stayed
-`IN_PROGRESS` since, deliberately: `PHASE_GATES.md` §4 makes a phase `COMPLETE` when a **review**
-says so, never because its remediation landed. **An implementation task declaring its own phase
-complete is the shape the gate model exists to prevent.**
-
-Since that review the phase also gained the three endpoints it had declared and nobody owned —
-`P1-TSK-028`'s two administrative ones and `P1-TSK-030`'s `/v1/me` — so area 7's endpoint count is
-one of the things the re-run has to recount rather than inherit.
-
-**No implementation items remain open.** The backlog is 34 of 34; the review is the last act
-of the phase. Note for the recount: `P1-TSK-032` added a sixteenth endpoint
-(`DELETE /v1/identities/{id}/suspension`), declared in `PHASE_1_PLAN.md` §7 with its provenance.
+**The transition inherits three named items from the re-run**: creating the owning task for the
+**broker adapter** (its phase holds the first consumers — `DELIVERY_PLAN.md` §Phase 2.8);
+scheduling **`P1-TSK-033`** (`POST /v1/me/credential`, planned and unbuilt); and Phase 2's own
+decisions. None of the three blocks Phase 1's gate, and each is recorded with the reasoning in the
+review's 2026-09-09 addendum.
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | **`P1-DOC-002` complete - the exit review re-run, and Phase 1 is `COMPLETE`.** All twelve universal criteria and all six phase-specific criteria hold; criteria 1 and 6 re-assessed against the code (the login token opens a protected endpoint with nothing inserted; `PlannedMetersExistTest` makes criterion 6 a build failure), the other ten re-checked, and the `PARTIAL` phase-specific criterion closes - `AuditCompletenessTest`'s `NOT_YET_EMITTED` holds exactly the three Phase-15 `outbox.*` actions. **Everything recounted, nothing inherited** - the first review had three numbers wrong for inheriting them - and the recount earned its keep: **`POST /v1/me/credential` is declared by the plan, built by nothing, and owned by nobody**, the ninth backlog defect of the class, found **in the first review's own area 7 table**, which had attributed it to `P1-TSK-026` - falsely, since that item's description reads *“Extend POST /v1/registrations”* and never included it. A false owner is worse than no owner for the reason a false exemption is worse than none: it reads as handled, so nobody asks. Recorded as `P1-TSK-033` with the capability gap stated honestly - a person with a stolen password and no verified channel cannot replace their credential through the platform - and it blocks no criterion, by the review's own `P1-TSK-028`/`-030` precedent. **A javadoc cited the missing capability as an incident-response tool** - `IdentityAdministration` told an administrator they have *“session revocation and a credential change”* - the ninth javadoc this phase to assert something the code does not do; corrected. **The broker adapter was ruled on rather than stepped around**: `PHASE_1_PLAN.md` §12 calls it required and it does not exist - non-blocking, because the phase objective needs no event delivery, the events are durable and unread (`INV-EVT-01` holds), the wire-format half of the requirement WAS delivered, and an adapter with no consumer cannot be exercised end to end, which is the gate's own standard; the plan is corrected where it was wrong and ownership passes to the Phase 1 → 2 transition, whose phase holds the first consumers. **Three debt rows owned by “Phase 1” resolved**, because a `COMPLETE` phase cannot own open debt: broker → the transition; registration throttling → Phase 15, merged with per-source rate limiting since the missing input is identical; and the loopback-credential row's trigger was reached **and handled** by `MfaKey`'s own tested confinement, remainder → Phase 5. **Recounted**: 17 endpoints, 10 tables, 8 aggregates, 20 auditable actions, 72 invariants, 6 ADRs, 864 hermetic and 465 database tests, backlog 34 of 34. **Phase 1 is `COMPLETE` (2026-09-09); next is the Phase 1 → 2 transition.** |
 | 2026-09-09 | **`P1-TSK-032` complete - reinstatement, and suspension stops being a one-way door.** `DELETE /v1/identities/{id}/suspension` moves a `SUSPENDED` identity back to `ACTIVE` - the mirror of `suspend`: a conditional `UPDATE ... WHERE status = 'SUSPENDED'` whose row count is the outcome, a required reason, an audit record (`identity.IdentityReinstated`, actor never the subject) and an outbox event. **The acceptance was driven end to end with a REGISTERED person rather than a fixture row**, because *"can authenticate again afterwards"* is unreachable from an identity that has no credential - suspend, login refused, reinstate, login succeeds - **and the pre-suspension session stays dead**: the suspension revoked it, `INV-HIST-01` does not un-happen things, and a resurrected bearer token would come back to life in whoever's hands last held it, possibly the attacker whose activity caused the suspension. Reinstatement restores the ability to log in, never the sessions. **Both self-refusal decisions were revisited together, as the backlog required.** Self-suspension stays refused on a corrected argument - the recorded reason was the one-way door, and reinstatement removes it only when a *second* administrator exists, which the platform does not guarantee; the last administrator self-suspending is still locked out with the out-of-band remedy of `README.md` §5e, and the no-self-loop trail argument is untouched. Self-reinstatement gets its own `SELF` branch that is **nearly dead code, deliberately**: a suspended identity holds no live session, so the branch is reachable only in the race where the actor is suspended mid-request - kept for that race and for the property that no administrative record ever names one party twice, and tested at the domain because HTTP cannot reach it. **The permission is `IDENTITY_SUSPEND`, not a new one** - `ROLE_ASSIGN`'s own *"grant or revoke"* shape: one capability, two directions, and a third permission held by the only role that exists would be vocabulary with no decision behind it. **The reason travels in a DELETE body**, which is unusual and correct: it is free prose that may name a person or an incident, and a query parameter would put it into access logs, proxies and browser history (`INV-AUD-02`). **`NOT_SUSPENDED` is named for what is checked** - `ACTIVE` and `CLOSED` both land on the 409 and only the first could honestly be called *already done*; `CLOSED` is terminal (`INV-LIFE-04`), refused by the conditional at the write and by the aggregate independently (`INV-LIFE-02`), and proven to stay closed. **Three guards demanded declarations before the build would pass**: the contract test presented a 14-line all-additions diff whose `BREAKING` labels are the classifier erring safe on a brand-new schema's `required` fields (`P1-TSK-006`'s precedent); `CredentialReachesNoEmittedSinkTest` refused the new request body until it joined the bounded exemption list; and the registry pair required `identity.IdentityReinstated` catalogued and emitted. `PHASE_1_PLAN.md` §7 gains the endpoint row with its provenance stated, so `P1-DOC-002`'s recount counts it rather than trips over it. **Four mutations, all caught by the intended assertion** - the wrong from-status in the conditional, the `SELF` check removed, the audit call removed, and the permission annotation removed. **The Phase 1 backlog is 34 of 34.** 864 hermetic tests, 465 database tests. |
 | 2026-09-09 | **`P1-TSK-031` complete - the suite no longer assumes `now()` moves forwards.** The container's clock runs fast and is corrected backwards, so an insert-then-update fixture that reads `now()` twice can write a status change that precedes its creation - observed at 225 ms during `P1-TSK-025`'s gate, with the constraint that fired being **right**. **The shape was in five files, not the two the item recorded** - surveyed rather than trusted: four identity fixtures and `PartyAndIdentitySchemaDatabaseTest`'s customer fixture, whose twin constraint nothing had named. Every other timestamp-ordering constraint is reached by a single statement, an already back-dated write, or one a privilege refuses. **The INSERT is back-dated by one hour and the UPDATE stays at `now()`** - the update models what production writes, and the backlog's one-statement alternative cannot fix a pair whose two reads are in different statements by construction. **Proven in-suite with its own vacuity control**: a simulated thirty-minute correction succeeds against a back-dated row, and the same update against a row written at plain `now()` is still refused - so a pass proves the back-dating is load-bearing rather than the constraint dead. No build rule scans test sources for the pattern, recorded deliberately: a Low-risk `Cx: S` fixture item does not buy machinery (`EXECUTION_PROTOCOL` rule 4). 864 hermetic tests, 460 database tests. |
 | 2026-09-08 | **`P1-TSK-030` complete - a person's own profile, and the last endpoint the plan declared that nobody owned.** `GET /v1/me` and `PATCH /v1/me`, which `PHASE_1_PLAN.md` §7 listed for the whole phase while no backlog task owned either - the eighth backlog defect of that class in Phase 1 and the first found by a **review** rather than by the task that tripped over it. **Ownership is enforced by there being no parameter, and that changes what the test can be**: neither endpoint takes a path variable, a query parameter or a body field naming a party, so ADR-0031's defect - *trusting an identifier out of the request* - has nothing to act on, and the chain is entirely derived from the proven session. An attacker therefore **cannot name a victim**, the usual negative ownership test is impossible to write, and the test proves the *resolution chain* instead - a weaker shape of test for a stronger shape of control, which is worth saying rather than implying the two are the same. **The catalogue description promised what the classification forbids**: `PARTY_PROFILE_CHANGED` read *“recording what was held before and after”*, and those values are display names - `RESTRICTED-PII`, *“the clearest RESTRICTED-PII column on the platform”* - while `audit_record.change_summary` is `RESTRICTED-FINANCIAL`. **Those are peers, not a hierarchy**: a name written there sits outside the PII rules (retention, subject access, erasure), and ADR-0022 forbids reclassifying a column that holds data. The record names the **field** and never the value, which is the choice `PartyRegistration` had already made and this description contradicted; corrected in the enum and in `AUDITABLE_ACTIONS.md`, with the consequence stated - there is no name history in Phase 1 and this does not create one. **`AUTHORITATIVE_ID` was tried and `OwnershipIsScopedTest` refused it, correctly**: the read in the chain is `JdbcIdentityStore.findById`, which `P1-TSK-028` classified `ADMINISTERED` because an administrator names its subject from a URL, so citing it as owner-constrained would have been false - and the guard said so in those words, *“every operation citing it inherits the gap”*. A sixth class, **`SESSION_DERIVED`**, records what is true: the identifier comes from a proven `Session` **held in memory**, which is `P1-TSK-021`'s recorded uncheckable case arriving. Its entry names the **endpoint** rather than a read, and a new assertion checks the one mechanically checkable thing that is also the real control - that endpoint's handlers accept no request-supplied identifier. **Two guards were written to break on this day and both did**: `partyHasNothingToScope`, and `PartyAndIdentitySchemaDatabaseTest`'s grant assertion, whose own comment read *“nothing about a party changes yet; the grant arrives with the capability”*. **And `PATCH` failed with SQLState 42501 before a line of it had been reviewed** - the application role had no `UPDATE` on `party.party`, because `V002` was written when nothing ever changed one. That is `P0-TSK-022`'s privilege model working: the grant IS the enforcement, so widening one is a migration with a stated argument. **`V004` grants `UPDATE (display_name)` and nothing else**, leaving `kind` and `registered_at` unwritable because they are facts rather than fields - and column-level is precisely the mechanism `P0-TST-007` found can widen a privilege **invisibly**, used here deliberately to narrow, with an assertion that checks its narrowness so a reader auditing `table_privileges` knows to look in `column_privileges` too. **Absence and explicit null are the same thing here**, which costs nothing while the column is `NOT NULL` and can never be cleared; the first genuinely nullable field cannot be expressed by a record and needs a wrapper type or JSON Merge Patch, recorded rather than built now. **A no-op rename succeeds and writes no audit record**, because an entry reading *“changed from Ada to Ada”* is noise and would let anybody pad the trail. **The completion gate found a javadoc of mine asserting the opposite of what the code does**: `updateProfile` said the value <em>“is normalised by `PartyName` on the way in”</em>, and `PartyName` normalises nothing - its own documentation refuses to, since *“sanitising input at construction to defend an output is how a value gets silently corrupted for every consumer to protect one”*. The eighth javadoc this phase to assert something the code does not do, mine again; the decision stands on a truer argument - a PATCH returning nothing makes a client guess - so the reason was corrected rather than the behaviour. The gate also replaced several tests with one: eight PATCH body shapes driven, **none produces a 500**, and it is where the absent-versus-null decision is actually checked rather than only documented. **Seven mutations, all caught.** 864 hermetic tests, 459 database tests. |

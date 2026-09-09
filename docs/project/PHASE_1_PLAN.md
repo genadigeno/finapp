@@ -232,7 +232,7 @@ All under `/v1` (ADR-0015). Every error is an RFC 9457 problem detail (`ERROR_CO
 | `DELETE /v1/sessions/{id}` | session | Ownership; immediate |
 | `GET /v1/me` | session | Profile |
 | `PATCH /v1/me` | session | |
-| `POST /v1/me/credential` | session, `MULTI_FACTOR` | Revokes other sessions |
+| `POST /v1/me/credential` | session, `MULTI_FACTOR` | Revokes other sessions. **Declared and unbuilt** - found by `P1-DOC-002`'s recount after the first review mis-attributed it to `P1-TSK-026`; owned by `P1-TSK-033`, scheduled by the Phase 1 → 2 transition |
 | `POST /v1/me/mfa` | session | Enrolment — returns the provisioning URI **once** |
 | `POST /v1/me/mfa/confirmation` | session | **Added by `P1-TSK-017`.** This table listed one row, and the same plan requires that *"enrolment is not complete until confirmed by a valid code"* — which is a second request, because the customer must go and read their authenticator in between. Under-specified rather than wrong |
 | `POST /v1/recoveries` | none | Enumeration-safe; always the same response |
@@ -467,6 +467,11 @@ structurally needed, a **seam** only.
    events, and Phase 0 recorded the adapter as debt owned by "the first module that emits a domain
    event". That is now. Only the adapter: the wire format and topic scheme are decided here because
    they must be, and no consumer is built.
+   **Corrected by `P1-DOC-002`**: the phase closed without it, deliberately. The load-bearing half
+   of this item — the wire format — *was* decided (`EventPayload`, `application/json`,
+   `P1-TSK-006`); the adapter itself, with no consumer anywhere, cannot be exercised end to end,
+   which is the exit gate's own standard for a deliverable. Ownership passed to the Phase 1 → 2
+   transition, whose phase holds the first consumers (`DELIVERY_PLAN.md` §Phase 2.8).
 2. **The data-access mechanism** (unresolved question 12) — six aggregates cannot be persisted
    without it, and choosing by accident is the risk `MoneyColumns` was written to avoid.
 3. **Connection-pool sizing** — Phase 1 is the first real pool user, and ten instances at the

@@ -519,3 +519,140 @@ Prometheus series.
 Nothing, on the criteria. `P1-DOC-002` re-assesses criteria 1 and 6 against the code and records the
 verdict; `P1-TSK-025`, `-026`, `-028` and `-030` remain open and are named by no criterion, which is
 the distinction this review recorded in §What happens next.
+
+---
+
+## Addendum — the re-run (2026-09-09, `P1-DOC-002`): the gate passes
+
+Both remediations landed on 2026-09-08, and the phase stayed `IN_PROGRESS` for a day on purpose:
+`PHASE_GATES.md` §4 makes a phase `COMPLETE` when a **review** says so, never because its
+remediation landed. This addendum is that re-run. **Everything below is recounted from the
+repository, nothing inherited** — the original record had three numbers wrong for exactly the
+inheriting reason, and six tasks have landed since it was written (`P1-TSK-025`, `-026`, `-028`,
+`-030`, `-031`, `-032`).
+
+### Criterion 1 — re-assessed: **PASS**
+
+The failure was that a real client could not obtain a session while the suite could. The closure is
+verified the way the failure demanded:
+`AuthenticationIssuesASessionDatabaseTest.aLoginProducesAUsableSession` takes the token
+`POST /v1/authentications` returns and opens `GET /v1/sessions` with it over HTTP, **having
+inserted nothing**, with a fabricated token as the negative control — green in the full database
+run of 2026-09-09.
+
+The phase objective is now walkable end to end through published endpoints alone: register (with a
+credential, `P1-TSK-026`) → authenticate (`201` with the session) → hold and see sessions → enrol
+and prove a second factor → have every privileged action authorised and audited, including the
+administrative pair (`P1-TSK-028`) and its undo (`P1-TSK-032`). **Seventeen endpoints are
+published and each is driven over HTTP by a database test.**
+
+**The broker adapter is ruled on rather than stepped around.** `PHASE_1_PLAN.md` §12 names it a
+*"genuinely required minimal foundation"*, it does not exist, and this re-run had to say whether
+that fails criterion 1. It does not, for reasons this record's own body already carried: the phase
+objective needs no event delivery; the events are durable and unread rather than lost, so
+`INV-EVT-01` holds; and the half of §12's reasoning that was load-bearing — *"the wire format …
+decided here because it must be"* — **was delivered** (`EventPayload`, `application/json`,
+`P1-TSK-006`). An adapter with no consumer cannot be exercised end to end, which is this
+criterion's own standard. What §12 got wrong is recorded in the plan rather than papered over, and
+**ownership passes to the Phase 1 → 2 transition**: `DELIVERY_PLAN.md` §Phase 2.8 has the first
+consumers (*"downstream contexts react to decisions"*), so the transition that elaborates Phase 2's
+backlog is the body that can create the owning task.
+
+### Criterion 6 — re-assessed: **PASS**
+
+All six meters the plan names exist, **at startup rather than after their flow first runs** — the
+correction the first addendum recorded. Re-verified against the mechanism rather than the claim:
+`PlannedMetersExistTest` reads `PHASE_1_PLAN.md` §10's own table, boots a context, runs no flow,
+and asserts every named meter is in the live registry, in both directions. It is in the hermetic
+suite, so the criterion is a build failure now and not a review opinion — this re-run's evidence is
+that the build is green, which is the strongest form available.
+
+### The twelve universal criteria, re-run
+
+| # | Criterion | Verdict | Evidence, recounted 2026-09-09 |
+|---|---|---|---|
+| 1 | Required functionality exists | **PASS** | Above. 17 endpoints published, each driven over HTTP; the objective walkable end to end |
+| 2 | Boundaries respected | `PASS` | Isolation tests both directions; no cross-module FK (asserted); and stronger than at the review — the `architectureTest` tier actually runs the rules since `P1-TSK-025` |
+| 3 | Invariants tested | `PASS` | All nine Phase 1 invariants in the register, enforced every build by `MutationDemonstrationTest` |
+| 4 | Failure cases handled | `PASS` | Unchanged; and the suite itself no longer assumes `now()` is monotonic (`P1-TSK-031`) |
+| 5 | Security implemented | `PASS` | Stronger than at the review: the two `@RequiresPermission` endpoints exist with negative tests, refusals audited, suspension actually suspends, reinstatement negative-tested |
+| 6 | Observability exists | **PASS** | Above. Six of six, eager, build-enforced |
+| 7 | Integration tests pass | `PASS` | **465** database tests green against real PostgreSQL, 2026-09-09 |
+| 8 | Documentation reflects reality | `PASS` **after this addendum's corrections** — the same procedure the original applied; see the finding below |
+| 9 | `CURRENT_STATE.md` updated | `PASS` | Updated by this re-run with the verdict |
+| 10 | ADRs `Accepted` | `PASS` | ADR-0029…0034; no ADR-level decision has been taken since — `P1-TSK-032`'s permission choice is recorded on the enum |
+| 11 | No unresolved critical issues | `PASS` | Blockers: none. And the three debt rows owned by "Phase 1" are resolved below, because a `COMPLETE` phase cannot own open debt |
+| 12 | Formal review conducted | `PASS` | This record and this re-run |
+
+### The phase-specific `PARTIAL` closes
+
+*"Every privileged action produces an audit record with all seven fields"* was `PARTIAL` because
+`identity.IdentitySuspended` had no endpoint. It does now (`P1-TSK-028`), and so do
+`identity.IdentityReinstated` (`P1-TSK-032`) and `party.ProfileChanged` (`P1-TSK-030`).
+Re-verified at the mechanism: `AuditCompletenessTest`'s `NOT_YET_EMITTED` map holds **exactly the
+three `outbox.*` actions**, all platform-owned Phase 15 debt — every Phase 1 action is emitted by
+production code the sweep can see. **Six of six phase-specific criteria pass.**
+
+### The recount found the ninth backlog defect of the class — in this review's own table
+
+**`POST /v1/me/credential` is declared by the plan, built by nothing, and owned by nobody.** The
+plan's §7 row promises `session, MULTI_FACTOR` and *"revokes other sessions"*; no controller maps
+it and no backlog task's description includes it.
+
+**And this review's area 7 table said otherwise**: it listed the endpoint as owned by
+*"`P1-TSK-026` (`TODO`)"* — an item whose description reads *"Extend `POST /v1/registrations`"*
+and never mentioned a credential-change endpoint. A false owner is worse than no owner, for the
+reason a false exemption is worse than none: it reads as handled, so nobody asks. The review that
+found the eighth defect of this class committed the ninth in the same table.
+
+**The capability gap is stated honestly rather than sized down.** A person who suspects their
+password is stolen has session revocation (ends the attacker's sessions, not their knowledge) and
+account recovery (replaces the credential — but only through a **verified channel**, which
+registration does not create). A person with a stolen password and no verified channel cannot
+replace their credential through the platform. Recorded as **`P1-TSK-033`**.
+
+**It does not block this gate**, by this review's own recorded precedent: `P1-TSK-028` and
+`P1-TSK-030` were planned-and-unbuilt endpoints on the day the review ruled they do not block,
+because *"the gate blocks on the criteria, not on the backlog being empty"* — and no universal or
+phase-specific criterion names a credential change. The Phase 1 → 2 transition owns scheduling it.
+
+**A javadoc asserted the missing capability, and it was this review era's own text.**
+`IdentityAdministration`'s class javadoc told an administrator suspecting compromise that they have
+*"session revocation and a credential change"*. The ninth Phase 1 occurrence of a javadoc
+asserting something the code does not do — corrected by this re-run, which is what lets criterion 8
+read `PASS` (the original review's procedure: correct, then pass).
+
+### Three debt rows owned by "Phase 1" are resolved
+
+A phase recorded `COMPLETE` while the debt table says it owes open work is a contradiction a reader
+should never meet, so each row is ruled on:
+
+| Row | Ruling |
+|---|---|
+| **Broker adapter** | Re-owned to the **Phase 1 → 2 transition**, which elaborates the backlog of the phase holding the first consumers. The trigger stands reached; the risk stands bounded (durable, unread, `INV-EVT-01`) |
+| **`POST /v1/registrations` unthrottled** | Re-owned to **Phase 15**, merged in argument with per-source rate limiting: the missing input is the same — a deployment topology and a trusted-proxy declaration. An unauthenticated endpoint has no identity to key on, so per-source is the only key it could use |
+| **Loopback guard covers one credential** | **The trigger was reached and handled.** The second credential arrived (`P1-TSK-017`'s MFA key) and carries its own loopback confinement, tested (`MfaKeyTest`). The general mechanism remains unbuilt and is re-owned to **Phase 5**, the third credential |
+
+### What the phase actually produced — recounted
+
+| | At the review | Now |
+|---|---|---|
+| Endpoints published | 12 | **17** |
+| Tables | 10 | 10 |
+| Aggregates and entities | 8 | 8 |
+| Auditable actions | 19 | **20** |
+| Invariants | 72 platform-wide | 72 |
+| ADRs | 6 | 6 |
+| Tests | 847 hermetic, 404 database | **864 hermetic, 465 database** |
+| Backlog | 25 of 31 | **34 of 34**, the last being this review |
+
+### Verdict
+
+**All twelve universal criteria hold. All six phase-specific criteria hold. Phase 1 is
+`COMPLETE`** (2026-09-09).
+
+What happens next is the **Phase 1 → 2 transition** — a separate governance act, per the
+Phase 0 → 1 precedent: the Phase 2 plan, its backlog elaborated to task granularity, its entry
+gate, and its invariants — and it inherits three named items from this re-run: the broker adapter
+task, `P1-TSK-033`, and Phase 2's own decisions about KYC/KYB and consent.
+
