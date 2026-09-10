@@ -263,6 +263,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // legitimately appears - never returned and never in a URL or header.
                         "ChangePasswordRequest",
                         "RoleAssignmentRequest",
+                        // P2-TSK-012: the reviewer's resolution reason - free prose, never a
+                        // secret, the SuspensionRequest shape with the same bounds cited from the
+                        // same constants. What bounds the prose is that it reaches exactly two
+                        // sinks, both designed for it: the audit record's reason column and
+                        // review_task.resolution_reason (RESTRICTED-PII at its ceiling, rendered
+                        // only on the reviewer surface). No event carries it.
+                        "ResolutionRequest",
                         // P2-TSK-008. Carries no secret and no PII field by name - the document
                         // CONTENT is RESTRICTED-PII, and what protects it is not the secret
                         // vocabulary (a field named `content` is exactly the innocent name the

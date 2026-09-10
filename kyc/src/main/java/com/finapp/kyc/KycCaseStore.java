@@ -60,4 +60,30 @@ public interface KycCaseStore<T> {
      */
     boolean moveStatus(
             T unitOfWork, KycCaseId caseId, KycCaseStatus from, KycCaseStatus to, Instant at);
+
+    /**
+     * One case by its identifier — the reviewer surface's read (`P2-TSK-012`).
+     *
+     * <p>The identifier comes from a URL a {@code KYC_REVIEW} holder typed, which is the
+     * {@code ADMINISTERED} shape: the permission at the boundary and the audited read are what
+     * stand in for an ownership predicate, and {@code OwnershipIsScopedTest} carries the entry.
+     */
+    Optional<KycCase> findById(T unitOfWork, KycCaseId caseId);
+
+    /**
+     * The {@code IN_REVIEW → READY_FOR_DECISION} exit: moves only while the case holds
+     * {@code from} <strong>and no {@code OPEN} review task remains</strong> — the predicate
+     * `P2-TSK-010` recorded that this transition must carry <em>in the statement</em>.
+     *
+     * <p>Never a read-then-move: a task can join an already-in-review case, and two instances
+     * resolving a case's last two tasks would each read one still open. As a single conditional
+     * {@code UPDATE} the database arbitrates — each resolver attempts the exit <em>after its
+     * resolution commits</em> (the `P2-TSK-009` assess-after-commit argument: inside the
+     * resolving transaction, the other resolver's still-uncommitted task keeps the predicate
+     * false for both and nobody moves), the last committer sees every resolution, and the
+     * {@code status = from} half lets exactly one win. Row count is the outcome; a lost race or
+     * a still-open task are both the harmless answer {@code false}.
+     */
+    boolean moveStatusWhenNoOpenTasks(
+            T unitOfWork, KycCaseId caseId, KycCaseStatus from, KycCaseStatus to, Instant at);
 }

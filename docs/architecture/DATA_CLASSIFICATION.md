@@ -368,6 +368,9 @@ resolution's reason arrives with `P2-TSK-012`'s columns, classified then.
 | `review_task` | `check_id` | `INTERNAL` | As `verification_check.id` — an identifier of a thing |
 | `review_task` | `status` | `CONFIDENTIAL` | **The tipping-off column, one table further down.** A review task *existing* says screening raised something about this person — a hit or an unresolvable check — which is exactly what the customer-facing status is shaped to hide (`PHASE_2_PLAN.md` §6), and in some regimes disclosing a sanctions review in progress is an offence. As `verification_check.status` |
 | `review_task` | `opened_at` | `CONFIDENTIAL` | Dates a screening event on a named person — `kyc_case.status_changed_at`'s reasoning, sharpened: *when the platform started worrying* |
+| `review_task` | `resolved_by` | `RESTRICTED-PII` | *Added by `P2-TSK-012`.* The reviewer's `IdentityId` — as `audit_record.actor_id`: from Phase 1 an identity names a person, and the ceiling is what the column may ever hold |
+| `review_task` | `resolved_at` | `CONFIDENTIAL` | *Added by `P2-TSK-012`.* Dates a person's judgement about a screening event — `opened_at`'s reasoning, the other end |
+| `review_task` | `resolution_reason` | `RESTRICTED-PII` | *Added by `P2-TSK-012`.* **Free text written by a person** about somebody's screening result — it may name the customer, a list entry or a case number. `audit_record.reason`'s ceiling, for `audit_record.reason`'s reason |
 
 ### Free text, classified at its ceiling
 

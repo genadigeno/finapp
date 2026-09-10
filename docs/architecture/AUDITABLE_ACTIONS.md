@@ -166,22 +166,30 @@ that is recorded debt rather than an omission here.
 |---|---|---|
 | `kyc.CaseOpened` | No | A KYC/KYB case was opened for a customer, under a named policy version. |
 | `kyc.DecisionRecorded` | **Yes** | A KYC/KYB decision was recorded on a case, naming its actor, reason and policy version. |
-| `kyc.ScreeningHitResolved` | **Yes** | A reviewer resolved a screening hit, with the resolution and its justification. |
+| `kyc.ReviewResolved` | **Yes** | A reviewer resolved a review task — the judgement a non-clean check owed a person — with its justification. |
 | `kyc.CheckCompleted` | No | A verification check reached its outcome — the platform recording a provider's answer in its own vocabulary. |
 | `kyc.DocumentContentRead` | No | Document content was read, naming who looked and at which document. |
+| `kyc.CaseRead` | No | A reviewer read a KYC/KYB case, naming who looked and at which case. |
 
 The two reason-required actions are the invariants speaking: `INV-KYC-02` makes a decision's
 reason a `NOT NULL` column, and `INV-KYC-04` requires a hit's resolution to carry its
 justification — a name match is a probability, and both silent outcomes are unacceptable in
-opposite directions. **`kyc.DocumentContentRead` requires no reason, deliberately**: reading a
+opposite directions. *(`kyc.ReviewResolved` was catalogued as `kyc.ScreeningHitResolved` until
+`P2-TSK-012` — renamed before its first emission, because a task is raised by any check type's
+`HIT` and by a budget-exhausted `INDETERMINATE`, so the old code claimed something that can be
+false; a vocabulary correction is free exactly while zero records carry the code.)*
+**`kyc.DocumentContentRead` requires no reason, deliberately**: reading a
 document is the routine act of every legitimate review, and a mandatory reason on a routine
 action produces a column of `"review"` (§4). What `INV-KYC-06` demands is *the trail of who
-looked*, and the record names the actor. `kyc.CaseOpened` joined at `P2-TSK-005`, the task
+looked*, and the record names the actor. `kyc.CaseRead` (`P2-TSK-012`) is the same argument one
+level up: the reviewer is the platform's canonical insider surface, and the trail of who looked
+at a case is the control on the person with every right to look. `kyc.CaseOpened` joined at
+`P2-TSK-005`, the task
 whose design fixed its meaning — no reason, because opening is the customer's own act or the
 platform reacting to a registration, neither taken *against* anybody. `kyc.CheckCompleted`
 joined at `P2-TSK-009` and requires no reason for the same shape of argument: recording an
 outcome is the platform normalising a provider's answer, an act taken *for* nobody and
-*against* nobody — the acts that demand justification are the decision and the hit
+*against* nobody — the acts that demand justification are the decision and the review
 resolution, which are the two reason-required rows above. It is deliberately **not** a
 decision record (`INV-KYC-01`: a provider verdict is evidence, never the decision).
 

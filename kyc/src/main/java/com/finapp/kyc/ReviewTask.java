@@ -4,6 +4,8 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * The explicit work item a non-clean check becomes (`P2-TSK-010`, ADR-0038,
@@ -22,9 +24,13 @@ import java.util.Objects;
  * task. That totality is also what makes creation idempotent under N instances — the
  * {@code ON CONFLICT} arbiter in {@code JdbcReviewTaskStore}.
  *
- * <p>Resolution — the transition, its reason, its reviewer — is `P2-TSK-012`'s; this aggregate
- * deliberately has no {@code resolve()} until the columns and the caller exist, because a method
- * nothing can call is dead code carrying confident javadoc (the {@code P1-TSK-013} finding).
+ * <p>Resolution — the transition, its reason, its reviewer — arrived with `P2-TSK-012`, as
+ * <strong>state</strong> rather than as a {@code resolve()} method. V005's javadoc had promised
+ * the method "when the columns and the caller exist"; the caller that exists is the conditional
+ * {@code UPDATE} in {@link JdbcReviewTaskStore#resolve} (a pre-flight read is not a substitute
+ * for the conditional — `P1-TSK-006`'s rule), so an aggregate transition method would have no
+ * caller, which is exactly the dead-code shape the same paragraph refused. The machine's rules
+ * live on {@link ReviewTaskStatus}; this class carries what a row says.
  */
 public final class ReviewTask {
 
@@ -33,18 +39,49 @@ public final class ReviewTask {
     private final CheckId checkId;
     private final ReviewTaskStatus status;
     private final Instant openedAt;
+    private final Optional<Resolution> resolution;
+
+    /**
+     * A person's recorded judgement: who, when, why ({@code INV-KYC-04}).
+     *
+     * <p>The reason is free prose that may name a person or a list entry — rendered only to the
+     * reviewer surface, never to a log ({@code INV-AUD-02}); the record's {@code toString} keeps
+     * it out on purpose.
+     */
+    public record Resolution(UUID resolvedBy, Instant resolvedAt, String reason) {
+        public Resolution {
+            Objects.requireNonNull(resolvedBy, "resolvedBy must not be null");
+            Objects.requireNonNull(resolvedAt, "resolvedAt must not be null");
+            Objects.requireNonNull(reason, "reason must not be null");
+        }
+
+        /** Who and when — never the prose. */
+        @Override
+        public String toString() {
+            return "Resolution[by=" + resolvedBy + ", at=" + resolvedAt + "]";
+        }
+    }
 
     private ReviewTask(
             ReviewTaskId id,
             KycCaseId caseId,
             CheckId checkId,
             ReviewTaskStatus status,
-            Instant openedAt) {
+            Instant openedAt,
+            Optional<Resolution> resolution) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.caseId = Objects.requireNonNull(caseId, "caseId must not be null");
         this.checkId = Objects.requireNonNull(checkId, "checkId must not be null");
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.openedAt = Objects.requireNonNull(openedAt, "openedAt must not be null");
+        this.resolution = Objects.requireNonNull(resolution, "resolution must not be null");
+        // The V006 coherence CHECK, restated where an in-memory instance is born: a resolved
+        // task without its who/when/why - or an open one carrying them - is unrepresentable.
+        if ((status == ReviewTaskStatus.RESOLVED) != resolution.isPresent()) {
+            throw new IllegalArgumentException(
+                    "a task is RESOLVED exactly when it carries its resolution; status was "
+                            + status);
+        }
     }
 
     /** Opens the task a raising check owes a person. {@code OPEN}, dated by the injected clock. */
@@ -53,7 +90,12 @@ public final class ReviewTask {
         Objects.requireNonNull(ids, "ids must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
         return new ReviewTask(
-                ReviewTaskId.next(ids), caseId, checkId, ReviewTaskStatus.OPEN, Instant.now(clock));
+                ReviewTaskId.next(ids),
+                caseId,
+                checkId,
+                ReviewTaskStatus.OPEN,
+                Instant.now(clock),
+                Optional.empty());
     }
 
     /** Reconstitutes from storage. Applies no transition rules: the row was already valid. */
@@ -62,8 +104,9 @@ public final class ReviewTask {
             KycCaseId caseId,
             CheckId checkId,
             ReviewTaskStatus status,
-            Instant openedAt) {
-        return new ReviewTask(id, caseId, checkId, status, openedAt);
+            Instant openedAt,
+            Optional<Resolution> resolution) {
+        return new ReviewTask(id, caseId, checkId, status, openedAt, resolution);
     }
 
     public ReviewTaskId id() {
@@ -84,6 +127,11 @@ public final class ReviewTask {
 
     public Instant openedAt() {
         return openedAt;
+    }
+
+    /** Present exactly when {@link #status()} is {@code RESOLVED}. */
+    public Optional<Resolution> resolution() {
+        return resolution;
     }
 
     @Override

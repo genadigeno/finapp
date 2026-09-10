@@ -43,7 +43,7 @@ public record SuspensionRequest(
      * an absent minimum as {@code minLength: 0}, which tells a client generator that an empty
      * string is acceptable when it is not ({@code RegistrationRequest}'s recorded finding).
      */
-    static final int REASON_MIN = 1;
+    public static final int REASON_MIN = 1;
 
     /**
      * Mirrors {@code AuditRecord.MAX_REASON_LENGTH}, which mirrors the {@code CHECK} on
@@ -52,8 +52,8 @@ public record SuspensionRequest(
      * still agree, because a boundary that admitted more than the record accepts would turn a
      * caller's over-long reason into a 500 at the last write.
      */
-    static final int REASON_MAX = 1000;
+    public static final int REASON_MAX = 1000;
 
     /** Everything except control, format, surrogate, private-use and unassigned code points. */
-    static final String REASON_CHARSET = "[^\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Cn}]+";
+    public static final String REASON_CHARSET = "[^\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Cn}]+";
 }

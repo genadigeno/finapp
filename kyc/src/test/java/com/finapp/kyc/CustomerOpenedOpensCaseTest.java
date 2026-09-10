@@ -173,6 +173,21 @@ class CustomerOpenedOpensCaseTest {
                 Instant at) {
             throw new UnsupportedOperationException("not part of this test");
         }
+
+        @Override
+        public java.util.Optional<KycCase> findById(Connection unitOfWork, KycCaseId caseId) {
+            throw new UnsupportedOperationException("not part of this test");
+        }
+
+        @Override
+        public boolean moveStatusWhenNoOpenTasks(
+                Connection unitOfWork,
+                KycCaseId caseId,
+                KycCaseStatus from,
+                KycCaseStatus to,
+                Instant at) {
+            throw new UnsupportedOperationException("not part of this test");
+        }
     }
 
     private static final class RecordingAudit implements AuditWriter<Connection> {

@@ -285,6 +285,31 @@ public class KycBeans {
                 dataSource);
     }
 
+    /**
+     * The reviewer surface (`P2-TSK-012`). Unconditional, unlike the provider beans: reviewing
+     * needs no provider endpoint — a case with tasks is reviewable wherever it came from.
+     */
+    @Bean
+    ReviewService reviewService(
+            KycCaseStore<Connection> kycCaseStore,
+            com.finapp.kyc.CheckStore<Connection> checkStore,
+            com.finapp.kyc.ReviewTaskStore<Connection> reviewTaskStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionTemplate kycTransactions,
+            DataSource dataSource) {
+        return new ReviewService(
+                kycCaseStore,
+                checkStore,
+                reviewTaskStore,
+                auditWriter,
+                idGenerator,
+                clock,
+                kycTransactions,
+                dataSource);
+    }
+
     @Bean
     DocumentUploadService documentUploadService(
             IdentityStore<Connection> identityStore,

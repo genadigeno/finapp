@@ -195,13 +195,18 @@ class ScreeningRunDatabaseTest {
     }
 
     @Test
-    @DisplayName("review tasks are INSERT-and-SELECT only - the resolution grant is P2-TSK-012's")
-    void theResolutionGrantArrivesWithTheCapability() throws Exception {
-        // Proven now so the UPDATE arriving with P2-TSK-012 is a migration with an argument
-        // rather than a privilege that was silently always there (the V004 precedent).
+    @DisplayName("the resolution grant arrived with its capability, and nothing wider")
+    void theResolutionGrantArrivedWithTheCapability() throws Exception {
+        // This test's first form asserted UPDATE was denied entirely - written by P2-TSK-010
+        // to break on the day the grant arrived, and it did: V006 grants
+        // UPDATE (status, resolved_by, resolved_at, resolution_reason), the V004
+        // column-level-to-narrow precedent. What stays pinned here is the boundary of that
+        // grant: an identity column stays unwritable, and DELETE never arrived at all -
+        // resolved tasks are permanent evidence (INV-KYC-02). ReviewDatabaseTest holds the
+        // resolution path itself, trigger included.
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement update =
-                        app.prepareStatement("UPDATE kyc.review_task SET status = 'RESOLVED'")) {
+                        app.prepareStatement("UPDATE kyc.review_task SET check_id = check_id")) {
             assertThatExceptionOfType(SQLException.class)
                     .isThrownBy(update::executeUpdate)
                     .withMessageContaining("permission denied");

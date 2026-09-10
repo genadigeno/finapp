@@ -81,8 +81,6 @@ class AuditCompletenessTest {
                     "kyc.DecisionRecorded",
                     "P2-TSK-013 builds the decision record; the module skeleton declared the"
                         + " action because INV-KYC-02 designs it outright.",
-                    "kyc.ScreeningHitResolved",
-                    "P2-TSK-012 builds the reviewer endpoints; INV-KYC-04 designs the action.",
                     "consent.ConsentGranted",
                     "P2-TSK-018 builds the consent endpoints; ADR-0037 designs the record.",
                     "consent.ConsentWithdrawn",

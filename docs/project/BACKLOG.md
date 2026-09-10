@@ -2996,7 +2996,7 @@ capability map, and the task list below is the schedule.
 
 ## P2-EPIC-05 / 01 — Decisions and review (M2.3)
 
-**P2-TSK-012 — Review tasks and the reviewer endpoints** — `READY` (2026-09-10)
+**P2-TSK-012 — Review tasks and the reviewer endpoints** — `COMPLETE` (2026-09-10)
 - Context: kyc / api
 - Description: `ReviewTask`, `GET /v1/kyc/cases/{id}` and
   `POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution` — behind
@@ -3012,9 +3012,38 @@ capability map, and the task list below is the schedule.
 - Tests: no-role refusal audited; resolution race; reason bounds parity; resolution of another
   case's task refused (task-belongs-to-case predicate in the statement).
 - Accept: a review task resolves exactly once, by an authorized person, with a reason, audibly.
+- **Gate evidence (2026-09-10)**: the acceptance driven whole over real HTTP against a real
+  database (`ReviewDatabaseTest`, 12 tests) — **exactly once**: a ten-way concurrent race
+  produces one 204, nine 409s, one audit record, and the recorded reviewer is one of the
+  racers; **by an authorized person**: a valid session holding no role is refused by both
+  endpoints (`INV-AUD-03`); **with a reason**: a missing one is a 422 naming the field
+  (`ResolutionRequest` cites `SuspensionRequest`'s constants across a package — they became
+  `public` for it — and `V006`'s CHECK carries the same bound, three copies reconciled by
+  test); **audibly**: `kyc.ReviewResolved` names the reviewer, rides the resolve's
+  transaction, and the 409 loser writes nothing. Resolution is **state, not an aggregate
+  method** — the conditional `UPDATE`'s three predicates (id, belongs-to-case, `OPEN`) are
+  the concurrency protocol, and RESOLVED rows **freeze whole** by trigger
+  (`review_task_resolution_is_final`), with the `UPDATE` grant column-narrowed to the four
+  resolution columns (the `V004` precedent; identity columns stay permission-denied). The
+  `IN_REVIEW → READY_FOR_DECISION` exit is conditional on no `OPEN` task **in the statement**
+  (`moveStatusWhenNoOpenTasks`, `NOT EXISTS` — the predicate `P2-TSK-010` recorded), runs in
+  a **separate transaction after the commit** (the `P2-TSK-009` argument), and the 409 path
+  re-attempts it — a stranded exit (crash between resolve-commit and exit) is healed by the
+  retried request, proven by fixture. `GET` is the audited read (`kyc.CaseRead`,
+  `INV-KYC-06`'s trail-of-who-looked one level up; a guessed id writes no record) returning
+  references only — no content endpoint, by plan. `kyc.ScreeningHitResolved` was **renamed
+  `kyc.ReviewResolved` before first emission** (a task arises from any check's HIT or
+  exhausted INDETERMINATE, so the old name could be false); `kyc.CaseRead` added.
+  `ScreeningRunDatabaseTest`'s grant test **broke on schedule** (written by `P2-TSK-010` to
+  break the day the grant arrived) and now pins the grant's boundary. One test of this task's
+  own was wrong: a `doesNotContain` over the whole migration matched its **prose comment**
+  (the `P1-TSK-021` lesson) — now statements-only with a vacuity control. **Seven mutations,
+  all caught by the intended assertion** — resolve unconditional, belongs-to-case removed,
+  exit's `NOT EXISTS` removed, resolution audit dropped, 409-path healing removed, freeze
+  trigger removed, read audit dropped. 983 hermetic / 514 database / 14 kafka.
 - Risk: Medium. Cx: M. DoD: `DOD-SEC`
 
-**P2-TSK-013 — The decision: immutable, attributable, policy-pinned** — `TODO`
+**P2-TSK-013 — The decision: immutable, attributable, policy-pinned** — `READY` (2026-09-10)
 - Context: kyc
 - Description: `KycDecision` (`V004`: append-only at `DB-PRIVILEGE`, `NOT NULL` actor / reason /
   policy version / evidence refs) plus the stated automatic policy for all-clear cases and

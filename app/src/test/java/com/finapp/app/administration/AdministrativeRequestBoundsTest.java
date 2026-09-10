@@ -55,6 +55,12 @@ class AdministrativeRequestBoundsTest {
                 .isEqualTo(sizeBoundOf(SuspensionRequest.class, "reason"));
         assertThat(sizeBoundOf(ReinstatementRequest.class, "reason"))
                 .isEqualTo(sizeBoundOf(SuspensionRequest.class, "reason"));
+        // The reviewer's resolution reason (P2-TSK-012) - the first citation from another
+        // package, which is why the constants became public. The V006 CHECK on
+        // review_task.resolution_reason carries the same bound; ReviewTaskMigrationTest
+        // reconciles that copy against AuditRecord's.
+        assertThat(sizeBoundOf(com.finapp.app.kyc.ResolutionRequest.class, "reason"))
+                .isEqualTo(sizeBoundOf(SuspensionRequest.class, "reason"));
     }
 
     @Test

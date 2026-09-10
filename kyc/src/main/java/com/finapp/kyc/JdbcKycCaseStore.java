@@ -134,6 +134,60 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
         }
     }
 
+    @Override
+    public Optional<KycCase> findById(Connection unitOfWork, KycCaseId caseId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(caseId, "caseId must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT id, customer_id, status, policy_version, opened_at,"
+                                + " status_changed_at FROM " + TABLE + " WHERE id = ?")) {
+            select.setObject(1, caseId.value());
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
+        } catch (SQLException failure) {
+            throw new KycStorageException(
+                    DatabaseFailure.describe("reading KYC case " + caseId, failure));
+        }
+    }
+
+    @Override
+    public boolean moveStatusWhenNoOpenTasks(
+            Connection unitOfWork, KycCaseId caseId, KycCaseStatus from, KycCaseStatus to, Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(caseId, "caseId must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(to, "to must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE " + TABLE
+                                + " SET status = ?, status_changed_at = ?"
+                                + " WHERE id = ? AND status = ?"
+                                // The predicate P2-TSK-010 recorded: in the statement, never a
+                                // read-then-move. The status = ? half above is what makes two
+                                // post-commit exit attempts produce exactly one winner.
+                                + " AND NOT EXISTS (SELECT 1 FROM kyc.review_task"
+                                + "     WHERE case_id = ? AND status = 'OPEN')")) {
+            update.setString(1, to.name());
+            update.setTimestamp(2, Timestamp.from(at));
+            update.setObject(3, caseId.value());
+            update.setString(4, from.name());
+            update.setObject(5, caseId.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new KycStorageException(
+                    DatabaseFailure.describe(
+                            "moving KYC case " + caseId + " from " + from + " to " + to
+                                    + " once no task remains open",
+                            failure));
+        }
+    }
+
     private static KycCase rehydrate(ResultSet row) throws SQLException {
         return KycCase.rehydrate(
                 KycCaseId.of(row.getObject("id", UUID.class)),

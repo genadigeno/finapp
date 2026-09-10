@@ -282,7 +282,11 @@ class OpenApiContractTest {
                         // P2-TSK-011. The inbound provider door: unauthenticated by honest
                         // declaration, authenticated in fact by the HMAC signature over the raw
                         // body - the deliberate act of publishing a machine-facing route.
-                        ApiVersion.CURRENT_PREFIX + "/providers/kyc/callbacks");
+                        ApiVersion.CURRENT_PREFIX + "/providers/kyc/callbacks",
+                        // P2-TSK-012. The reviewer surface, the phase's privileged endpoints:
+                        // both behind @RequiresPermission(KYC_REVIEW), the read audited.
+                        ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/reviews/{taskId}/resolution");
     }
 
     @Test

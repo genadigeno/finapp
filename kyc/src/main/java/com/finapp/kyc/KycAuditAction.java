@@ -55,18 +55,41 @@ public enum KycAuditAction implements AuditableAction {
             true),
 
     /**
-     * A person resolved a screening hit.
+     * A person resolved a review task.
      *
      * <p>{@code INV-KYC-04}: a hit never auto-clears and never auto-rejects — a name match is a
      * probability, silently cleared is a sanctions breach, silently rejected is a person refused
      * service by string similarity. <strong>Reason required</strong>, per the invariant: the
      * resolution is an elevated action against somebody's case and its justification is the
      * record's point. Emitted by {@code P2-TSK-012}.
+     *
+     * <p><em>Renamed from {@code kyc.ScreeningHitResolved} before its first emission</em>
+     * (`P2-TSK-012`): a task is raised by <strong>any</strong> check type's {@code HIT} and by a
+     * budget-exhausted {@code INDETERMINATE} (`P2-TSK-010`), so a code claiming every resolution
+     * concerns a screening hit is a name that can be false — the {@code NOT_ACTIVE} lesson. A
+     * vocabulary correction is free exactly while zero records carry the code, and impossible
+     * afterwards ({@code INV-HIST-03}).
      */
-    SCREENING_HIT_RESOLVED(
-            "kyc.ScreeningHitResolved",
-            "A reviewer resolved a screening hit, with the resolution and its justification.",
+    REVIEW_RESOLVED(
+            "kyc.ReviewResolved",
+            "A reviewer resolved a review task - the judgement a non-clean check owed a person -"
+                    + " with its justification.",
             true),
+
+    /**
+     * A reviewer read a case.
+     *
+     * <p>The {@code DOCUMENT_CONTENT_READ} reasoning, one level up ({@code INV-KYC-06}'s shape):
+     * the reviewer is the platform's canonical insider surface — somebody with every right to
+     * read cases, browsing them — and the trail of <em>who looked</em> is the control. No reason
+     * required, deliberately: reading a case is the routine act of every legitimate review, and
+     * a mandatory reason on a routine action produces a column of {@code "review"}. Emitted by
+     * {@code P2-TSK-012}, the reviewer's read path.
+     */
+    KYC_CASE_READ(
+            "kyc.CaseRead",
+            "A reviewer read a KYC/KYB case, naming who looked and at which case.",
+            false),
 
     /**
      * A verification check reached its outcome.

@@ -364,11 +364,14 @@ class OwnershipIsScopedTest {
                             "com.finapp.kyc.JdbcDocumentStore.readContent",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P2-TSK-008, and no production HTTP caller yet - the"
-                                        + " reviewer surface (P2-TSK-012) names documents by"
-                                        + " identifier from a case it reached with KYC_REVIEW,"
-                                        + " and must come here and say so. What stands in for the"
-                                        + " missing ownership predicate TODAY is structural:"
+                                    "P2-TSK-008. The reviewer surface (P2-TSK-012) arrived and"
+                                        + " brought NO content endpoint, because the plan's"
+                                        + " section 7 declares none and inventing one would be a"
+                                        + " security surface chosen to suit a register entry"
+                                        + " (the P1-TSK-028 rule) - so this still has no"
+                                        + " production HTTP caller, now as a recorded remainder"
+                                        + " rather than a prediction. What stands in for the"
+                                        + " missing ownership predicate is structural:"
                                         + " production code reads content only through"
                                         + " DocumentAccess, which writes the INV-KYC-06 audit"
                                         + " record in the same unit of work - the trail of who"
@@ -379,16 +382,68 @@ class OwnershipIsScopedTest {
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
                                     "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
-                                    "P2-TSK-005's seam, driven since P2-TSK-009 by"
-                                        + " VerificationRunService's assessment. A case identifier"
-                                        + " can only come from findOpenFor or from openOrConverge's"
-                                        + " own insert, both scoped by customer_id in the"
-                                        + " statement; no endpoint accepts a case identifier at"
-                                        + " all until P2-TSK-012, whose reviewer surface is"
-                                        + " ADMINISTERED and must come here and say so. The"
-                                        + " statement's AND status = ? is the concurrency"
-                                        + " protocol, not an ownership predicate -"
-                                        + " JdbcIdentityStore.moveStatus's recorded distinction.")),
+                                    "P2-TSK-005's seam, driven since P2-TSK-009 by the"
+                                        + " assessment. A case identifier reaching THIS method"
+                                        + " still comes only from findOpenFor or from"
+                                        + " openOrConverge's own insert, both scoped by"
+                                        + " customer_id in the statement - P2-TSK-012's reviewer"
+                                        + " surface came and said so: its URL-derived exit goes"
+                                        + " through moveStatusWhenNoOpenTasks (ADMINISTERED,"
+                                        + " below), never here. The statement's AND status = ?"
+                                        + " is the concurrency protocol, not an ownership"
+                                        + " predicate - JdbcIdentityStore.moveStatus's recorded"
+                                        + " distinction.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcKycCaseStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-012. A reviewer names a case from the URL - the"
+                                        + " ADMINISTERED shape: what stands in for the ownership"
+                                        + " predicate is KYC_REVIEW at the boundary, the read"
+                                        + " being on the record (kyc.CaseRead names who looked -"
+                                        + " the reviewer is the insider surface), and existence"
+                                        + " disclosure to a proven reviewer being the P1-TSK-028"
+                                        + " decision.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcKycCaseStore.moveStatusWhenNoOpenTasks",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-012. The IN_REVIEW -> READY_FOR_DECISION exit,"
+                                        + " reached with a URL-derived case identifier after a"
+                                        + " KYC_REVIEW-authorized resolution commits. Every"
+                                        + " branch is conditional: status = from AND no OPEN"
+                                        + " task, in the statement - a wrong identifier moves"
+                                        + " nothing and the losing branch changes nothing.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcReviewTaskStore.resolve",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-012. The task and case identifiers come from a"
+                                        + " reviewer's URL; what stands in for the ownership"
+                                        + " predicate is KYC_REVIEW at the boundary plus the"
+                                        + " statement's own three conditions - id, the"
+                                        + " belongs-to-case predicate (another case's task named"
+                                        + " through this URL matches nothing), and status ="
+                                        + " OPEN, so the losing branch writes nothing. The"
+                                        + " winner's kyc.ReviewResolved record names the"
+                                        + " reviewer in the same transaction (INV-KYC-04).")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcReviewTaskStore.findByIdForCase",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-012. The read that disambiguates a lost resolve"
+                                        + " (absent vs already resolved) and shares its"
+                                        + " composite predicate: id AND case_id, so another"
+                                        + " case's task is indistinguishable from no task."
+                                        + " KYC_REVIEW at the boundary.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcReviewTaskStore.forCase",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-012. The reviewer listing of a case's tasks,"
+                                        + " URL-derived case identifier; KYC_REVIEW at the"
+                                        + " boundary and the read audited as part of"
+                                        + " kyc.CaseRead in the same unit of work.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcCheckStore.newestOfType",
                             new Entry(
@@ -403,12 +458,19 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.kyc.JdbcCheckStore.forCase",
                             new Entry(
-                                    Scope.AUTHORITATIVE_ID,
-                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
-                                    "P2-TSK-009. The assessment's read of a case's checks; the"
-                                        + " KycCaseId comes from findOpenFor. No endpoint accepts"
-                                        + " a case identifier - the reviewer surface (P2-TSK-012)"
-                                        + " is ADMINISTERED and must come here and say so.")),
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-009 (AUTHORITATIVE_ID on findOpenFor), reclassified"
+                                        + " by P2-TSK-012 when the reviewer surface became its"
+                                        + " second caller with a URL-derived case identifier -"
+                                        + " the lockIdentity precedent: a label must be one"
+                                        + " thing, named for the WEAKER of two provenances,"
+                                        + " because naming the safer path (the assessment, whose"
+                                        + " id still comes from findOpenFor) would describe the"
+                                        + " caller that needs no protection. What stands in on"
+                                        + " the reviewer path: KYC_REVIEW at the boundary, the"
+                                        + " audited kyc.CaseRead in the same unit of work, and"
+                                        + " this being a read whose rows a reviewer is entitled"
+                                        + " to see.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcCheckStore.move",
                             new Entry(

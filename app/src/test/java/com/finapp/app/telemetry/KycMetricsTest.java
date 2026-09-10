@@ -78,5 +78,30 @@ class KycMetricsTest {
         public long countOpen(Connection unitOfWork) {
             return open;
         }
+
+        @Override
+        public boolean resolve(
+                Connection unitOfWork,
+                com.finapp.kyc.ReviewTaskId taskId,
+                com.finapp.kyc.KycCaseId caseId,
+                java.util.UUID resolvedBy,
+                String reason,
+                java.time.Instant at) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public java.util.Optional<ReviewTask> findByIdForCase(
+                Connection unitOfWork,
+                com.finapp.kyc.ReviewTaskId taskId,
+                com.finapp.kyc.KycCaseId caseId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public java.util.List<ReviewTask> forCase(
+                Connection unitOfWork, com.finapp.kyc.KycCaseId caseId) {
+            throw new UnsupportedOperationException();
+        }
     }
 }
