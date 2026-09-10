@@ -356,6 +356,19 @@ one treatment), and the same classifications for the same columns, for the same 
 | `verification_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a hit response is longer than `{"status":"clear"}`, so the length leaks the outcome's shape. Errs up, because ADR-0022 forbids reclassifying later |
 | `verification_evidence` | `received_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
 
+### `kyc.review_task` — *added by `P2-TSK-010`*
+
+Identifiers only, by design: the raising detail stays in the encrypted evidence, and the
+resolution's reason arrives with `P2-TSK-012`'s columns, classified then.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `review_task` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `review_task` | `case_id` | `INTERNAL` | As `kyc_case.id` — an identifier of a thing |
+| `review_task` | `check_id` | `INTERNAL` | As `verification_check.id` — an identifier of a thing |
+| `review_task` | `status` | `CONFIDENTIAL` | **The tipping-off column, one table further down.** A review task *existing* says screening raised something about this person — a hit or an unresolvable check — which is exactly what the customer-facing status is shaped to hide (`PHASE_2_PLAN.md` §6), and in some regimes disclosing a sanctions review in progress is an offence. As `verification_check.status` |
+| `review_task` | `opened_at` | `CONFIDENTIAL` | Dates a screening event on a named person — `kyc_case.status_changed_at`'s reasoning, sharpened: *when the platform started worrying* |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

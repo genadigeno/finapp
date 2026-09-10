@@ -9,6 +9,8 @@ import com.finapp.kyc.KycAuditAction;
 import com.finapp.kyc.KycCaseId;
 import com.finapp.kyc.KycCaseStatus;
 import com.finapp.kyc.KycCaseStore;
+import com.finapp.kyc.ReviewTask;
+import com.finapp.kyc.ReviewTaskStore;
 import com.finapp.kyc.VerificationCheck;
 import com.finapp.kyc.VerificationProvider;
 import com.finapp.platform.audit.AuditId;
@@ -68,19 +70,24 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@code moveStatus} lets exactly one win. A run over already-answered checks re-assesses too,
  * which is what makes a crash between outcome and transition self-healing on the next run.
  *
- * <h2>The case moves only by our assessment</h2>
+ * <h2>The case moves only by our assessment — and a blocked case moves to a person</h2>
  *
  * <p>No branch here maps a provider verdict onto the case ({@code INV-KYC-01}):
- * {@link ChecksAssessment} reads the whole, {@code CLEAR_TO_PROCEED} is the only path forward,
- * and a {@code HIT} or an unresolved {@code INDETERMINATE} leaves the case honestly in
- * {@code CHECKS_IN_PROGRESS} — the review routing that gives a blocked case its exit is
- * `P2-TSK-010`'s, together with the review tasks that make {@code IN_REVIEW} a state with a
- * real exit condition.
+ * {@link ChecksAssessment} reads the whole. {@code CLEAR_TO_PROCEED} moves the case toward its
+ * decision; {@code BLOCKED} — a {@code HIT}, or a required type {@code INDETERMINATE} past its
+ * retry budget — routes it to {@code IN_REVIEW} <strong>with its review tasks, atomically</strong>
+ * (`P2-TSK-010`, {@code INV-KYC-04}): the tasks are inserted and the conditional move is made in
+ * one transaction, so a case is never {@code IN_REVIEW} with nothing to resolve and
+ * `P2-TSK-012`'s exit condition ("every task resolved") can never be vacuously true on arrival.
+ * Task creation is unconditional on the case's status, deliberately — a late {@code HIT}
+ * completing against an already-in-review case still gets its task ({@code ON CONFLICT} absorbs
+ * re-runs), and the move's lost race is the ordinary outcome, not an error.
  */
 public class VerificationRunService {
 
     private final KycCaseStore<Connection> cases;
     private final CheckStore<Connection> checks;
+    private final ReviewTaskStore<Connection> reviewTasks;
     private final List<VerificationProvider> providers;
     private final Set<CheckType> requiredTypes;
     private final AuditWriter<Connection> auditWriter;
@@ -94,6 +101,7 @@ public class VerificationRunService {
     public VerificationRunService(
             KycCaseStore<Connection> kycCaseStore,
             CheckStore<Connection> checkStore,
+            ReviewTaskStore<Connection> reviewTaskStore,
             List<VerificationProvider> providers,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
@@ -103,6 +111,8 @@ public class VerificationRunService {
             MeterRegistry meterRegistry) {
         this.cases = Objects.requireNonNull(kycCaseStore, "kycCaseStore must not be null");
         this.checks = Objects.requireNonNull(checkStore, "checkStore must not be null");
+        this.reviewTasks =
+                Objects.requireNonNull(reviewTaskStore, "reviewTaskStore must not be null");
         this.providers = List.copyOf(Objects.requireNonNull(providers, "providers must not be null"));
         if (this.providers.isEmpty()) {
             throw new IllegalArgumentException(
@@ -238,6 +248,24 @@ public class VerificationRunService {
                                 caseId,
                                 KycCaseStatus.CHECKS_IN_PROGRESS,
                                 KycCaseStatus.READY_FOR_DECISION,
+                                Instant.now(clock));
+                    } else if (assessment == ChecksAssessment.BLOCKED) {
+                        // Tasks first, move second, ONE transaction: the state and its work item
+                        // commit together, so IN_REVIEW always has something to resolve
+                        // (INV-KYC-04 - the exit P2-TSK-012 builds must never be vacuously open).
+                        // Creation is unconditional on the case's status: a late HIT joining an
+                        // already-in-review case is real work, and its move simply loses.
+                        for (VerificationCheck raising :
+                                ChecksAssessment.needingReview(requiredTypes, all)) {
+                            reviewTasks.openForCheck(
+                                    unitOfWork,
+                                    ReviewTask.open(ids, clock, caseId, raising.id()));
+                        }
+                        cases.moveStatus(
+                                unitOfWork,
+                                caseId,
+                                KycCaseStatus.CHECKS_IN_PROGRESS,
+                                KycCaseStatus.IN_REVIEW,
                                 Instant.now(clock));
                     }
                     return new RunReport(assessment, all);

@@ -24,15 +24,27 @@ import java.util.UUID;
  *
  * <h2>The convergence rule, and its one residual race</h2>
  *
- * <p>{@code requestOrConverge} converges on an existing check of the type in <em>any</em> state
- * — a run must not re-ask an answered question — while the partial unique index arbitrates the
- * concurrent-insert race for in-flight checks. The pre-flight read is the <em>business rule</em>
- * (one question per type), not a substitute for the index (`P1-TSK-006`'s distinction). The
- * residual: an instance reading just before another's terminal commit can insert a redundant
- * second question, because the terminal check has left the index. That race produces a wasted
- * provider call and an extra answer, <strong>never a wrong one</strong> — an extra {@code CLEAR}
- * changes no assessment and an extra {@code HIT} only blocks harder — which is the safe
- * direction, and why it is recorded rather than locked away.
+ * <p>{@code requestOrConverge} converges on an existing check of the type when the newest is
+ * in-flight or answered ({@code CLEAR}, {@code HIT}) — a run must not re-ask an answered
+ * question. An {@code INDETERMINATE} newest is <strong>not an answered question</strong>
+ * (`P2-TSK-010`, correcting `P2-TSK-009`'s converge-in-any-state, which made an unknown
+ * unresolvable on the run path against ADR-0038's resolution-is-a-new-check): while the type's
+ * unknowns are under {@link ChecksAssessment#INDETERMINATE_RETRY_BUDGET} a <em>new</em> check is
+ * inserted — the retry — and at or past it the run converges on the newest, because the
+ * assessment now routes the type to a person rather than back to the machine. The count is
+ * compared with {@code >=}, so the race below overshooting the budget routes to review sooner,
+ * never later.
+ *
+ * <p>The partial unique index arbitrates the concurrent-insert race for in-flight checks —
+ * two instances both deciding to retry insert two {@code REQUESTED} rows, the index refuses the
+ * second, and the savepoint path hands the loser the winner's check. The pre-flight read is the
+ * <em>business rule</em> (one question per type), not a substitute for the index
+ * (`P1-TSK-006`'s distinction). The residual: an instance reading just before another's
+ * terminal commit can insert a redundant second question, because the terminal check has left
+ * the index. That race produces a wasted provider call and an extra answer, <strong>never a
+ * wrong one</strong> — an extra {@code CLEAR} changes no assessment, an extra {@code HIT} only
+ * blocks harder, and an extra {@code INDETERMINATE} only spends the budget faster — which is
+ * the safe direction, and why it is recorded rather than locked away.
  */
 public final class JdbcCheckStore implements CheckStore<Connection> {
 
@@ -55,7 +67,7 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
         try {
             Optional<VerificationCheck> existing =
                     newestOfType(unitOfWork, fresh.caseId(), fresh.type());
-            if (existing.isPresent()) {
+            if (existing.isPresent() && !retryable(unitOfWork, existing.get())) {
                 return new Requested(existing.get(), false);
             }
             Savepoint beforeInsert = unitOfWork.setSavepoint("verification_check_request");
@@ -85,6 +97,32 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
                     DatabaseFailure.describe(
                             "requesting a " + fresh.type() + " check on case " + fresh.caseId(),
                             failure));
+        }
+    }
+
+    /**
+     * Whether the newest check of a type invites a successor rather than convergence.
+     *
+     * <p>Only a terminal {@code INDETERMINATE} under the budget does: "we do not know" is not an
+     * answered question (ADR-0038), and its resolution is a new check — until the budget, after
+     * which the assessment routes the type to a person and the run stops asking machines.
+     */
+    private static boolean retryable(Connection unitOfWork, VerificationCheck newest)
+            throws SQLException {
+        if (newest.status() != CheckStatus.INDETERMINATE) {
+            return false;
+        }
+        try (PreparedStatement count =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*) FROM " + TABLE
+                                + " WHERE case_id = ? AND check_type = ?"
+                                + " AND status = 'INDETERMINATE'")) {
+            count.setObject(1, newest.caseId().value());
+            count.setString(2, newest.type().name());
+            try (ResultSet rows = count.executeQuery()) {
+                rows.next();
+                return rows.getLong(1) < ChecksAssessment.INDETERMINATE_RETRY_BUDGET;
+            }
         }
     }
 

@@ -70,6 +70,22 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The manual-review queue depth, as a gauge (`P2-TSK-010`, `PHASE_2_PLAN.md` §10).
+     *
+     * <p>Arrives with the queue it measures — the trigger-reached rule: a gauge registered before
+     * `P2-TSK-010` would have been structurally always zero, which reads as "nobody is waiting"
+     * rather than "nothing exists yet". Same {@code DataSource} reasoning as its siblings.
+     */
+    @Bean
+    KycMetrics kycMetrics(
+            com.finapp.kyc.ReviewTaskStore<java.sql.Connection> reviewTaskStore,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry) {
+        return new KycMetrics(reviewTaskStore, dataSource::getConnection, clock, registry);
+    }
+
+    /**
      * Wraps the auto-configured connection pool so acquiring a connection is visible in a trace.
      *
      * <p><strong>A {@code BeanPostProcessor} because a {@code @Bean} cannot do this.</strong>

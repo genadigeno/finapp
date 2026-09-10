@@ -144,6 +144,12 @@ class NoFloatingPointMoneyRulesTest {
                     // a metric" is the reasoning that spreads the habit to something that is not.
                     "com.finapp.app.telemetry.IdentityMetrics",
                     "com.finapp.app.telemetry.IdentityMetrics$Cached",
+                    // P2-TSK-010. The SAME case a third time: a count of OPEN review tasks -
+                    // a `long` from count(*) all the way to the registry boundary
+                    // (ReviewTaskStore.countOpen returns long) - published through the
+                    // ToDoubleFunction Micrometer's Gauge imposes.
+                    "com.finapp.app.telemetry.KycMetrics",
+                    "com.finapp.app.telemetry.KycMetrics$Cached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

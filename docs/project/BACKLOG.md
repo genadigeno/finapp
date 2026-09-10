@@ -2907,7 +2907,7 @@ capability map, and the task list below is the schedule.
   `P1-TSK-026` lesson holding.
 - Risk: High. Cx: L. DoD: `DOD-KERNEL`
 
-**P2-TSK-010 — Screening: sanctions, PEP, adverse media** — `READY` (2026-09-09)
+**P2-TSK-010 — Screening: sanctions, PEP, adverse media** — `COMPLETE` (2026-09-10)
 - Context: kyc / integration
 - Description: The three screening check types over the same port and harness; a HIT routes the
   case to `IN_REVIEW` and creates review tasks.
@@ -2920,9 +2920,32 @@ capability map, and the task list below is the schedule.
   review resolution (asserted structurally and behaviourally); adverse-media INDETERMINATE
   handling.
 - Accept: a hit case cannot terminate without a person.
+- **Gate evidence (2026-09-10)**: the acceptance held both ways — behaviourally (a sanctions
+  hit routes to `IN_REVIEW` with exactly one `OPEN` task on the hit check, and `IN_REVIEW` has
+  no exit in this build) and structurally (the machine has no edge from `IN_REVIEW` to a
+  terminal, and `ChecksAssessment` decides `HIT` first). **One `ScreeningAdapter`, three
+  static factories**, so a type-to-path mismatch is unconstructible; the misbehaviour matrix
+  is cited, not triplicated. **Routing is atomic**: tasks inserted and the conditional move
+  made in ONE transaction, so a case is never `IN_REVIEW` with nothing to resolve — and task
+  creation is unconditional on case status, so a late `HIT` joining an in-review case still
+  gets its task. `UNIQUE (check_id)` is TOTAL: one task per check EVER (changed circumstances
+  are a new check), and it is the ten-way-race arbiter (`ON CONFLICT DO NOTHING`, row count is
+  the outcome). **The convergence rule was corrected, not smuggled**: `P2-TSK-009`'s
+  converge-in-any-state made an `INDETERMINATE` unresolvable on the run path against
+  ADR-0038's resolution-is-a-new-check; now an under-budget unknown is retried as a NEW check
+  and the third (`INDETERMINATE_RETRY_BUDGET`) routes the type to a person — proven by the
+  adverse-media walk: three questions asked, a fourth run asks nothing, the case in review
+  with one task on the newest unknown. The asymmetry is deliberate and tested both ways: a
+  `CLEAR` never un-blocks a `HIT`; a later `CLEAR` DOES satisfy an exhausted type. Resolution
+  columns and the `UPDATE` grant are deferred to `P2-TSK-012` (grant-arrives-with-capability,
+  proven by permission-denied now); its exit must be conditional on "no OPEN task" IN THE
+  STATEMENT, recorded in the store's javadoc. `finapp.kyc.review.queue` arrives with the queue
+  it measures (NaN-never-zero, fleet-wide, `max()` not `sum()`). **Six mutations, all caught
+  by the intended assertion** — task creation removed, the move removed, `ON CONFLICT`
+  removed, retry-never (the 009 regression), budget unbounded, exhausted-no-longer-blocks.
 - Risk: Medium. Cx: M. DoD: `DOD-SEC`
 
-**P2-TSK-011 — Provider callbacks, deduplicated** — `TODO`
+**P2-TSK-011 — Provider callbacks, deduplicated** — `READY` (2026-09-10)
 - Context: kyc / api / integration
 - Description: The inbound callback endpoint for asynchronous provider results, deduplicated
   through the platform inbox, updating checks by conditional transition.

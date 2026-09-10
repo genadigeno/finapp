@@ -10,6 +10,7 @@ import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
 import com.finapp.kyc.KycCaseStatus;
+import com.finapp.kyc.ScreeningAdapter;
 import com.finapp.kyc.VerificationCheck;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
@@ -101,14 +102,16 @@ class VerificationRunDatabaseTest {
     void aCleanRunReachesReadyForDecision() throws Exception {
         Case opened = givenAnOpenCase();
         String identityAnswer = "{\"status\":\"clear\",\"score\":98}";
+        stubEveryPathClear();
         provider.succeedsWith(IdentityVerificationAdapter.PATH, 200, identityAnswer);
-        provider.succeedsWith(DocumentVerificationAdapter.PATH, 200, "{\"status\":\"clear\"}");
 
         VerificationRunService.RunReport report = run(opened);
 
         assertThat(report.assessment()).isEqualTo(ChecksAssessment.CLEAR_TO_PROCEED);
+        // Five questions since P2-TSK-010: identity, document and the three screening types -
+        // one machine, not a second one (PHASE_2_PLAN.md §5).
         assertThat(report.checks())
-                .hasSize(2)
+                .hasSize(5)
                 .allSatisfy(check -> assertThat(check.status()).isEqualTo(CheckStatus.CLEAR));
         assertThat(statusOf(opened.caseId()))
                 .as("the phase's spine: clean checks and the case awaits its decision")
@@ -137,7 +140,7 @@ class VerificationRunDatabaseTest {
     @DisplayName("a timeout is INDETERMINATE, and the case does not decide")
     void aTimeoutDoesNotDecide() throws Exception {
         Case opened = givenAnOpenCase();
-        provider.succeedsWith(IdentityVerificationAdapter.PATH, 200, "{\"status\":\"clear\"}");
+        stubEveryPathClear();
         provider.neverResponds(DocumentVerificationAdapter.PATH);
 
         VerificationRunService.RunReport report = run(opened);
@@ -145,7 +148,12 @@ class VerificationRunDatabaseTest {
         assertThat(report.assessment()).isEqualTo(ChecksAssessment.INCOMPLETE);
         assertThat(report.checks())
                 .extracting(VerificationCheck::status)
-                .containsExactlyInAnyOrder(CheckStatus.CLEAR, CheckStatus.INDETERMINATE);
+                .containsExactlyInAnyOrder(
+                        CheckStatus.CLEAR,
+                        CheckStatus.CLEAR,
+                        CheckStatus.CLEAR,
+                        CheckStatus.CLEAR,
+                        CheckStatus.INDETERMINATE);
         assertThat(statusOf(opened.caseId()))
                 .as("INV-LIFE-03: we do not know, and the case says in progress, not a verdict")
                 .isEqualTo("CHECKS_IN_PROGRESS");
@@ -155,27 +163,29 @@ class VerificationRunDatabaseTest {
     }
 
     @Test
-    @DisplayName("a hit blocks the run, and the case does not proceed")
+    @DisplayName("a hit blocks the run, and the case goes to a person")
     void aHitBlocks() throws Exception {
         Case opened = givenAnOpenCase();
-        provider.succeedsWith(IdentityVerificationAdapter.PATH, 200, "{\"status\":\"clear\"}");
+        stubEveryPathClear();
         provider.succeedsWith(DocumentVerificationAdapter.PATH, 200, "{\"status\":\"hit\"}");
 
         VerificationRunService.RunReport report = run(opened);
 
         assertThat(report.assessment()).isEqualTo(ChecksAssessment.BLOCKED);
+        // The P2-TSK-009 stopgap ("stays CHECKS_IN_PROGRESS") superseded by the capability that
+        // was always going to supersede it: the routing and its review tasks are
+        // ScreeningRunDatabaseTest's subject; here the run-level fact is that a hit case reaches
+        // a person and never a decision state.
         assertThat(statusOf(opened.caseId()))
-                .as("INV-KYC-04's first half: nothing routes a hit anywhere silently; the"
-                        + " review routing arrives with P2-TSK-010's review tasks")
-                .isEqualTo("CHECKS_IN_PROGRESS");
+                .as("INV-KYC-04: a hit becomes explicit work for a person")
+                .isEqualTo("IN_REVIEW");
     }
 
     @Test
     @DisplayName("ten instances running one case ask each question once and move the case once")
     void tenInstancesProduceOneRunsWorthOfEffects() throws Exception {
         Case opened = givenAnOpenCase();
-        provider.succeedsWith(IdentityVerificationAdapter.PATH, 200, "{\"status\":\"clear\"}");
-        provider.succeedsWith(DocumentVerificationAdapter.PATH, 200, "{\"status\":\"clear\"}");
+        stubEveryPathClear();
 
         List<Callable<VerificationRunService.RunReport>> racers = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
@@ -196,12 +206,15 @@ class VerificationRunDatabaseTest {
                         + " The recorded residual race may add a redundant question - never a"
                         + " wrong answer - so the floor is exact and the load-bearing property"
                         + " is the call-per-check equality below")
-                .isGreaterThanOrEqualTo(2);
+                .isGreaterThanOrEqualTo(5);
         // The property that matters most: a check is dispatched once, so the provider sees one
         // question per check row - the conditional dispatch is what makes ten instances safe.
         assertThat(
                         provider.requestCount(IdentityVerificationAdapter.PATH)
-                                + provider.requestCount(DocumentVerificationAdapter.PATH))
+                                + provider.requestCount(DocumentVerificationAdapter.PATH)
+                                + provider.requestCount(ScreeningAdapter.SANCTIONS_PATH)
+                                + provider.requestCount(ScreeningAdapter.PEP_PATH)
+                                + provider.requestCount(ScreeningAdapter.ADVERSE_MEDIA_PATH))
                 .isEqualTo(checkCountFor(opened.caseId()));
     }
 
@@ -209,8 +222,7 @@ class VerificationRunDatabaseTest {
     @DisplayName("evidence is append-only to the application role")
     void evidenceIsAppendOnly() throws Exception {
         Case opened = givenAnOpenCase();
-        provider.succeedsWith(IdentityVerificationAdapter.PATH, 200, "{\"status\":\"clear\"}");
-        provider.succeedsWith(DocumentVerificationAdapter.PATH, 200, "{\"status\":\"clear\"}");
+        stubEveryPathClear();
         run(opened);
 
         try (Connection app = DatabaseRoles.application();
@@ -233,6 +245,20 @@ class VerificationRunDatabaseTest {
     // -----------------------------------------------------------------
 
     private record Case(KycCaseId caseId, UUID customerId) {}
+
+    /** All five questions answer clear; a test then overrides the path it is about. */
+    private static void stubEveryPathClear() {
+        for (String path :
+                new String[] {
+                    IdentityVerificationAdapter.PATH,
+                    DocumentVerificationAdapter.PATH,
+                    ScreeningAdapter.SANCTIONS_PATH,
+                    ScreeningAdapter.PEP_PATH,
+                    ScreeningAdapter.ADVERSE_MEDIA_PATH
+                }) {
+            provider.succeedsWith(path, 200, "{\"status\":\"clear\"}");
+        }
+    }
 
     private VerificationRunService.RunReport run(Case opened) {
         try (CorrelationContext.Scope flow =

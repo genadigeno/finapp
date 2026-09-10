@@ -111,9 +111,88 @@ class ChecksAssessmentTest {
                 .isThrownBy(() -> ChecksAssessment.of(EnumSet.noneOf(CheckType.class), List.of()));
     }
 
+    @Test
+    @DisplayName("a budget-exhausted INDETERMINATE blocks, and review names the newest unknown")
+    void exhaustedIndeterminateGoesToAPerson() {
+        // P2-TSK-010: after the budget the platform stops asking machines and asks a person -
+        // silence resolves nothing in either direction (INV-KYC-04). The newest unknown is what
+        // the reviewer starts from; its predecessors stay true beside it (ADR-0038).
+        VerificationCheck newestUnknown =
+                at(CheckType.DOCUMENT, CheckStatus.INDETERMINATE, minutesLater(2));
+        List<VerificationCheck> checks =
+                List.of(
+                        at(CheckType.IDENTITY, CheckStatus.CLEAR, minutesLater(0)),
+                        at(CheckType.DOCUMENT, CheckStatus.INDETERMINATE, minutesLater(0)),
+                        at(CheckType.DOCUMENT, CheckStatus.INDETERMINATE, minutesLater(1)),
+                        newestUnknown);
+
+        assertThat(ChecksAssessment.of(REQUIRED, checks)).isEqualTo(ChecksAssessment.BLOCKED);
+        assertThat(ChecksAssessment.needingReview(REQUIRED, checks))
+                .containsExactly(newestUnknown);
+    }
+
+    @Test
+    @DisplayName("an INDETERMINATE under budget stays incomplete - still answerable by a retry")
+    void underBudgetIsStillIncomplete() {
+        List<VerificationCheck> checks =
+                List.of(
+                        at(CheckType.IDENTITY, CheckStatus.CLEAR, minutesLater(0)),
+                        at(CheckType.DOCUMENT, CheckStatus.INDETERMINATE, minutesLater(0)),
+                        at(CheckType.DOCUMENT, CheckStatus.INDETERMINATE, minutesLater(1)));
+
+        assertThat(ChecksAssessment.of(REQUIRED, checks)).isEqualTo(ChecksAssessment.INCOMPLETE);
+        assertThat(ChecksAssessment.needingReview(REQUIRED, checks))
+                .as("BLOCKED and needingReview must be one judgement: not blocked, no tasks")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("a later CLEAR satisfies an exhausted type - the asymmetry with a HIT, on purpose")
+    void aLaterClearSatisfiesAnExhaustedType() {
+        // A hit is an ANSWER that demands a person, so a CLEAR never un-blocks it
+        // (aHitBlocksEverything). Exhaustion is the ABSENCE of an answer, and an answer arriving
+        // ends the absence - resolution-is-a-new-check working (ADR-0038).
+        assertThat(
+                        ChecksAssessment.of(
+                                REQUIRED,
+                                List.of(
+                                        at(CheckType.IDENTITY, CheckStatus.CLEAR, minutesLater(0)),
+                                        at(
+                                                CheckType.DOCUMENT,
+                                                CheckStatus.INDETERMINATE,
+                                                minutesLater(0)),
+                                        at(
+                                                CheckType.DOCUMENT,
+                                                CheckStatus.INDETERMINATE,
+                                                minutesLater(1)),
+                                        at(
+                                                CheckType.DOCUMENT,
+                                                CheckStatus.INDETERMINATE,
+                                                minutesLater(2)),
+                                        at(CheckType.DOCUMENT, CheckStatus.CLEAR, minutesLater(3)))))
+                .isEqualTo(ChecksAssessment.CLEAR_TO_PROCEED);
+    }
+
+    @Test
+    @DisplayName("review on a hit names the hit check - every one of them")
+    void reviewOnAHitNamesTheHit() {
+        VerificationCheck hit = at(CheckType.DOCUMENT, CheckStatus.HIT, minutesLater(1));
+        List<VerificationCheck> checks =
+                List.of(at(CheckType.IDENTITY, CheckStatus.CLEAR, minutesLater(0)), hit);
+
+        assertThat(ChecksAssessment.needingReview(REQUIRED, checks)).containsExactly(hit);
+    }
+
     private VerificationCheck at(CheckType type, CheckStatus status) {
-        Instant requested = Instant.parse("2026-09-09T09:00:00Z");
+        return at(type, status, Instant.parse("2026-09-09T09:00:00Z"));
+    }
+
+    private VerificationCheck at(CheckType type, CheckStatus status, Instant requested) {
         return VerificationCheck.rehydrate(
                 CheckId.next(IDS), caseId, type, status, requested, requested.plusSeconds(1));
+    }
+
+    private static Instant minutesLater(int minutes) {
+        return Instant.parse("2026-09-09T09:00:00Z").plusSeconds(60L * minutes);
     }
 }

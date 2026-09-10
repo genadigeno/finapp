@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-09 (Phase 1 → 2 transition)
+Last updated: 2026-09-10 (`P2-TSK-010`)
 
 ---
 
@@ -59,11 +59,12 @@ class, again).
 
 ## Current Milestone
 
-**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **4 of 7**
-(2026-09-09) — the case aggregate, the first production consumer, the document store and the
-check machine done; next is `P2-TSK-010`, screening (`P2-TSK-006` blocked on the consent gate).
-Acceptance: a case opened over HTTP reaches `READY_FOR_DECISION` on clean simulated checks,
-with evidence retained verbatim — the checks-run half is real as of `P2-TSK-009`.
+**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **5 of 7**
+(2026-09-10) — the case aggregate, the first production consumer, the document store, the
+check machine and screening done; next is `P2-TSK-011`, provider callbacks (`P2-TSK-006`
+blocked on the consent gate). Acceptance: a case opened over HTTP reaches
+`READY_FOR_DECISION` on clean simulated checks, with evidence retained verbatim — real for
+all five check types as of `P2-TSK-010`, and a non-clean case now routes to a person.
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
 **CLOSED 2026-09-09, 5 of 5.** The stated acceptance — an outbox event reaches a real consumer
@@ -222,13 +223,88 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-009` completed 2026-09-09 — checks run: a case walks to
-`READY_FOR_DECISION` on clean simulated verifications, with the raw provider answers retained
-verbatim and encrypted, and every misbehaviour a provider can produce normalised to a result
-rather than an exception. **Next: `P2-TSK-010` (`READY`)** — screening; `P2-TSK-006` stays
-blocked on the consent gate.
+**None in progress.** `P2-TSK-010` completed 2026-09-10 — screening: the three screening
+types run over the same check machine, and a case with a hit — or a question the provider
+keeps not answering — becomes explicit work for a person, atomically, under any number of
+instances. **Next: `P2-TSK-011` (`READY`)** — provider callbacks; `P2-TSK-006` stays blocked
+on the consent gate.
 
 ### Just completed
+
+**`P2-TSK-010` — Screening: sanctions, PEP, adverse media** — `COMPLETE` (2026-09-10). The
+gate's screening criteria, on the machine `P2-TSK-009` built: one `ScreeningAdapter` with
+three type-and-path-binding static factories (a mismatch is unconstructible), the
+`ReviewTask` the plan names as *the explicit work item a non-clean case becomes*, and the
+routing that gives a blocked case its exit — into a person's queue, never past one.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A hit case cannot terminate without a person | Behaviourally: a sanctions hit → `IN_REVIEW` with exactly one `OPEN` task on the hit check, and `IN_REVIEW` has no exit in this build. Structurally: the machine has no edge from `IN_REVIEW` to a terminal, and `ChecksAssessment` decides `HIT` first — not even a later `CLEAR` of its own type un-blocks |
+| HIT → `IN_REVIEW` with a task, idempotently | `ScreeningRunDatabaseTest`: re-run converges (no second task, no re-asked question); ten racing instances produce one task per hit check, one transition, and `requestCount sum == checkCount` |
+| Adverse-media INDETERMINATE handling | Three unknowns exhaust `INDETERMINATE_RETRY_BUDGET`; the fourth run asks nothing more, and the case is in review with one task on the newest unknown |
+
+### The convergence rule was corrected, and that is the task's sharpest edit
+
+`P2-TSK-009`'s `requestOrConverge` converged on a check of the type in **any** state — which
+made an `INDETERMINATE` unresolvable on the run path, against ADR-0038's
+resolution-is-a-new-check. Now an under-budget unknown invites a **new** check (the retry,
+arbitrated by the same partial in-flight index and savepoint path), and at the budget the run
+converges and the assessment routes the type to a person: **after three unknowns the platform
+stops asking machines** — silence resolves nothing, in either direction. The budget count is
+compared with `>=`, so the recorded redundant-question race overshooting routes to review
+*sooner*, never later.
+
+### One task per check, ever — and the routing is atomic
+
+`UNIQUE (check_id)` on `kyc.review_task` is **total**, not partial: the resolution of *that
+question* is permanent evidence, a wrong resolution is a new review event, and changed
+circumstances are a **new check** with its own task. Totality is also the concurrency arbiter
+— N assessors reaching `BLOCKED` insert `ON CONFLICT DO NOTHING`, and exactly one wins per
+check. Tasks are inserted and the conditional move to `IN_REVIEW` made in **one
+transaction**, so the state and its work item commit together and `P2-TSK-012`'s exit
+condition ("every task resolved") can never be vacuously true on arrival; creation is
+unconditional on case status, so a late `HIT` joining an in-review case still gets its task.
+**Recorded for `P2-TSK-012`, in the store's javadoc**: the `IN_REVIEW → READY_FOR_DECISION`
+move must be conditional on "no `OPEN` task" *in the statement*.
+
+### The deliberate asymmetry, tested both ways
+
+A `CLEAR` of a type never un-blocks that type's `HIT` (a hit is an *answer* that demands a
+person); a later `CLEAR` **does** satisfy an exhausted type (exhaustion is the *absence* of
+an answer, and an answer arriving ends the absence). `needingReview` is empty exactly when
+the assessment is not `BLOCKED`, pinned by test, so the enum and the task-set derivation
+cannot disagree about whether a case needs review.
+
+### What deliberately did not arrive
+
+No new audit action — task creation is the platform's derived bookkeeping of an
+already-audited check outcome; the reason-required act is the **resolution**
+(`kyc.ScreeningHitResolved`, still `NOT_YET_EMITTED`, `P2-TSK-012`'s). No resolution columns
+and no `UPDATE` grant — the grant arrives with the capability, proven by permission-denied
+now (the `V004` precedent). No events, no endpoints. No `forCase` read — a read with no
+caller is dead code carrying confident javadoc (the `P1-TSK-013` finding); it arrives with
+the reviewer surface.
+
+### The guards fed
+
+`finapp.kyc.review.queue` arrives with the queue it measures — the plan-named gauge
+(`PHASE_2_PLAN.md` §10), `IdentityMetrics`' shape: over the database, fleet-wide, NaN when
+unreadable and never zero, cached behind a floor; two more entries in the `INV-MON-01`
+exemption set, argued as the same Micrometer-gauge case a third time. Five new columns
+classified at their ceiling — `review_task.status` is the tipping-off column one table
+further down: a task *existing* says screening raised something. The ownership register
+needed **no** new entries, and that was verified rather than assumed: `openForCheck` takes
+the aggregate and `countOpen` takes nothing, so neither carries a resource identifier the
+detector keys on. `VerificationRunDatabaseTest`'s hit expectation moved from "stays
+`CHECKS_IN_PROGRESS`" to "routes to `IN_REVIEW`" — the `P2-TSK-009` stopgap superseded by the
+capability that was always going to supersede it.
+
+**Six mutations, all caught by the intended assertion** — task creation removed, the move to
+`IN_REVIEW` removed, `ON CONFLICT` removed, convergence-never-retries (the `P2-TSK-009`
+regression restored), the budget unbounded, and exhausted-no-longer-blocks.
+**960 hermetic tests, 495 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TSK-009` — VerificationCheck, the provider port, and the simulated verifier** —
 `COMPLETE` (2026-09-09). The harness `P0-TSK-037` built has waited two phases for exactly this
@@ -5859,22 +5935,26 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-009` — VerificationCheck, the provider port, and the simulated verifier.** Status
-`READY`; deps `P2-TSK-005` and `P2-TSK-008` complete.
+**`P2-TSK-011` — Provider callbacks, deduplicated.** Status `READY`; dep `P2-TSK-009`
+complete.
 
-The check entity (`REQUESTED → DISPATCHED → CLEAR | HIT | INDETERMINATE`), a
-`VerificationProvider` port (ADR-0008: our vocabulary in, our vocabulary out), and identity- +
-document-verification adapters over `SimulatedProvider` — the harness `P0-TSK-037` built has
-waited two phases for exactly this caller. Dispatch recorded before the provider call;
-`INV-KYC-01` (evidence verbatim, outcome ours), `INV-LIFE-03` (INDETERMINATE on timeout, three
-phases early), `INV-HIST-02`. Accept: a clean simulated run takes a case to
-`READY_FOR_DECISION` with retained evidence.
+The inbound callback endpoint for asynchronous provider results, deduplicated through the
+platform inbox, updating checks by conditional transition — `INV-KYC-03`, because duplicate
+webhooks are the §Failure Engineering norm and this is the phase's inbound door. Duplicate,
+concurrent, late and malformed callbacks each proven against a real database: one transition,
+no 500, evidence retained; a late callback for a terminal check is recorded as evidence and
+changes nothing (`INV-LIFE-04`). Accept: the four callback scenarios each proven.
+
+*(This section still named `P2-TSK-009` as `READY` until 2026-09-10 — it was left stale by
+that task's own completion, which updated §Current Task and not this one. Corrected here, the
+`P1-DOC-001` class of drift: two statements of one fact, and only one was maintained.)*
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-10 | **`P2-TSK-010` complete - screening, and a non-clean case becomes work for a person.** The three screening types over the machine `P2-TSK-009` built (one machine, not a second one - plan §5): one `ScreeningAdapter` with three static factories binding type to path, so a mismatch is UNCONSTRUCTIBLE and the misbehaviour matrix stays cited rather than triplicated; the `ReviewTask` aggregate (`OPEN → RESOLVED`, terminal, no unresolve - a wrong resolution is a new review event, and changed circumstances are a NEW check with its own task); and the routing that gives a blocked case its exit. **The acceptance held both ways**: behaviourally - a sanctions hit routes to `IN_REVIEW` with exactly one `OPEN` task keyed to the hit check, idempotently under a ten-way race (`requestCount sum == checkCount` still holds) - and structurally, the machine has no edge from `IN_REVIEW` to a terminal and `ChecksAssessment` decides `HIT` first. **The convergence rule was corrected rather than smuggled**: `P2-TSK-009`'s converge-in-any-state made an `INDETERMINATE` unresolvable on the run path against ADR-0038's resolution-is-a-new-check; an under-budget unknown now invites a NEW check and the third (`INDETERMINATE_RETRY_BUDGET`, `>=` so the residual race errs toward review) routes the type to a person - proven by the adverse-media walk: three questions, a fourth run asks nothing, one task on the newest unknown. **The asymmetry is deliberate and tested both ways**: a `CLEAR` never un-blocks a `HIT`; a later `CLEAR` DOES satisfy an exhausted type. **Routing is atomic**: tasks inserted and the conditional move made in one transaction, so `IN_REVIEW` always has something to resolve and `P2-TSK-012`'s exit ("every task resolved" - conditional on no OPEN task IN THE STATEMENT, recorded in the store's javadoc) can never be vacuously true on arrival; `UNIQUE (check_id)` is TOTAL and is the `ON CONFLICT DO NOTHING` arbiter. Deliberately absent: a task-creation audit action (the platform's bookkeeping of an already-audited outcome; the reason-required act is `P2-TSK-012`'s resolution), resolution columns and the `UPDATE` grant (grant-arrives-with-capability, permission-denied proven now), events, endpoints, and a `forCase` read nothing calls. `finapp.kyc.review.queue` arrives with the queue it measures (the plan-named gauge, `IdentityMetrics`' shape, NaN-never-zero, aggregate with `max()`); five columns classified with `review_task.status` as the tipping-off column one table further down; the ownership register needed NO new entries, verified rather than assumed. **Six mutations, all caught by the intended assertion** - task creation removed, the move removed, `ON CONFLICT` removed, convergence-never-retries, budget unbounded, exhausted-no-longer-blocks. 960 hermetic tests, 495 database tests, 14 kafka tests. Next: P2-TSK-011. |
 | 2026-09-09 | **`P2-TSK-009` complete - checks run, and the harness built two phases ago meets its caller.** The check machine (`REQUESTED → DISPATCHED → {CLEAR | HIT | INDETERMINATE}` - the terminals ARE the outcomes, one machine rather than a status beside an outcome column free to disagree), the `VerificationProvider` port (our vocabulary in, our vocabulary out; misbehaviour is a RESULT, never an exception, defaulting to INDETERMINATE and never to success), two adapters over the simulated wire, and `VerificationRunService`'s choreography: **dispatch durable before the call** (a crash mid-call leaves a visible DISPATCHED fact, never an unknown - `INV-LIFE-03` three phases early), the call holding **no connection**, the outcome transaction writing completion + evidence + audit + counter atomically, and the **assessment in a separate transaction after the commit** - two instances assessing inside their own outcome transactions would each see the other still DISPATCHED and nobody would move the case; separated, the last assessor sees all and the conditional moveStatus picks one winner, which also heals a crash between outcome and transition. `INDETERMINATE` is terminal and its resolution a NEW check (ADR-0038), so a check never flaps and the partial one-in-flight index is what makes the successor insertable. **A HIT wins every tie** in `ChecksAssessment` - not even a later CLEAR of the same type un-blocks (`INV-KYC-04`) - and the empty required-type set is refused, because no requirement can never mean proceed. Evidence retained verbatim (`INV-HIST-02`) under the document at-rest treatment (ADR-0036 groups them; same cipher, same key, key_version per row). The acceptance driven whole: two providers over real HTTP, the case at `READY_FOR_DECISION`, the bytes received in the evidence rows, `kyc.CheckCompleted` naming the system actor - the **fifth enumerated site**. Ten instances racing one case: `requestCount sum == checkCount`, the call-per-check equality that is the load-bearing race assertion. The residual redundant-question race recorded (a wasted call, never a wrong answer); the stuck-DISPATCHED sweeper recorded remainder. Fourteen columns classified; four store methods joined the ownership register; the v4/v7 trap met and caught in self-review (`EvidenceId`). **Six mutations, all caught by the intended assertion** - after a first sweep reported all six VOID because cmd refused the bare gradlew.bat name and the build never started, caught by the harness's build-actually-ran assertion (`P1-TSK-026`'s lesson holding). 945 hermetic tests, 491 database tests, 14 kafka tests. Next: P2-TSK-010. |
 | 2026-09-09 | **`P2-TSK-008` complete - documents: captured, encrypted, checksummed, access-audited.** The most sensitive bytes before card data, held as ADR-0036 decided: in PostgreSQL behind the DocumentStore port (the object-storage seam), AES-256-GCM under FINAPP_DOC_KEY, SHA-256 of the bytes received recorded at capture and RE-VERIFIED on every read - GCM answers 'is this ciphertext the one this key wrote', the checksum answers 'are these the bytes received', separated by a test that substitutes a ciphertext the same key genuinely wrote. Append-only at DB-PRIVILEGE (SELECT, INSERT and nothing else); plaintext in no column, swept from information_schema. **Content-addressed convergence is the idempotency mechanism**: UNIQUE (case_id, checksum_sha256) + the savepoint idiom, so a retry, a double-tap and ten racing instances land on one row and one 201 - no Idempotency-Key, content addressing is stronger. **The cipher is SecretCipher's mechanism, deliberately not its class**: module isolation forbids the import, and moving it would pull an expose() site out of the pinned identity set - the duplication is the recorded cost. DocumentKey is the THIRD per-credential loopback confinement, meeting the debt row's trigger one phase early (premise corrected, not left stale); one published default literal, referenced, domain-separated locally. POST /v1/me/kyc/documents is the /v1/me ownership-by-absence shape, one hop longer - Session -> Identity -> live Customer -> open case - with the decision-racing-upload race ACCEPTED and stated (a decision references its evidence explicitly, INV-KYC-02). The audited read path (kyc.DocumentContentRead, INV-KYC-06 - the trail of who looked is the control) has no HTTP caller yet BY PLAN: P2-TSK-012's reviewer surface arrives to it. The guards fed: three new ownership register entries, a third credential in the startup guard test (the P1-TSK-017 precedent met again), ten columns classified at their ceiling with the checksum called what it is - a possession oracle. **Six mutations, all caught by the intended assertion.** 920 hermetic tests, 486 database tests, 14 kafka tests. Next: P2-TSK-009. |
 | 2026-09-09 | **`P2-TSK-007` complete - the first production consumer, and the broker path carries a real business flow.** A registration opens a KYC case: HTTP -> outbox -> relay schedule -> Kafka -> consumer loop -> inbox -> case row, driven WHOLE - the app booted with relay and consumer enabled, the two workers every other suite disables, and no test call anywhere in the middle. **A naming drift corrected rather than propagated**: the backlog named party.CustomerRegistered, which is the AUDIT action; the event is party.CustomerOpened, whose aggregate IS the customer - so the handler reads no payload at all, the envelope's metadata-only principle paying off at the first real consumer. Created announces (kyc.CaseOpened's first emitter, plus kyc.KycCaseOpened caused by the consumed event); converged is silent. The platform is the actor - the fourth enumerated enterSystem() site, recorded as the CLASS every future consumer with an audited effect will be. **The sweep found the kafka test asserting less than it claimed**: removing the converged-guard survived the wire-duplicate test, because an exact duplicate never reaches the handler - the INBOX absorbs it by eventId - and the guard's real subject is a DISTINCT event converging on an existing case, now driven end to end (one case, one audit record, one announcement) and catching the mutation. The booted context gained @DirtiesContext, because a cached context's live relay kept polling after its class finished - one alphabetical reordering from racing a sibling's assertions. KycPolicyVersion.CURRENT lost its dot to EventPayload's charset. **Six mutations: five caught first time, one survived and strengthened the suite.** 903 hermetic tests, 477 database tests, 14 kafka tests. Next: P2-TSK-008. |

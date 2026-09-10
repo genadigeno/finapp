@@ -27,7 +27,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Wiring for the {@code kyc} module (`P2-TSK-007`, `P2-TSK-008`).
+ * Wiring for the {@code kyc} module (`P2-TSK-007`, `P2-TSK-008`, `P2-TSK-010`).
  *
  * <p>The handler bean is what makes the consumer real: {@code InboxConsumers} discovers every
  * {@code InboxEventHandler} in the context, derives the {@code finapp.kyc} group from its
@@ -110,6 +110,11 @@ public class KycBeans {
         return new com.finapp.kyc.JdbcCheckStore(documentCipher);
     }
 
+    @Bean
+    com.finapp.kyc.ReviewTaskStore<Connection> reviewTaskStore() {
+        return new com.finapp.kyc.JdbcReviewTaskStore();
+    }
+
     /**
      * The verification providers and their runner — present only where a provider endpoint is
      * configured.
@@ -138,12 +143,46 @@ public class KycBeans {
         return new com.finapp.kyc.DocumentVerificationAdapter(providerUrl, timeout);
     }
 
+    /**
+     * The three screening questions (`P2-TSK-010`) — one adapter class, three type-and-path
+     * bindings, joining the same providers list under the same property as the verification
+     * adapters, so a configured endpoint answers all five questions and an unconfigured
+     * deployment carries none of them.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    com.finapp.kyc.ScreeningAdapter sanctionsScreeningAdapter(
+            @Value("${finapp.kyc.provider.url}") java.net.URI providerUrl,
+            @Value("${finapp.kyc.provider.timeout:PT2S}") java.time.Duration timeout) {
+        return com.finapp.kyc.ScreeningAdapter.sanctions(providerUrl, timeout);
+    }
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    com.finapp.kyc.ScreeningAdapter pepScreeningAdapter(
+            @Value("${finapp.kyc.provider.url}") java.net.URI providerUrl,
+            @Value("${finapp.kyc.provider.timeout:PT2S}") java.time.Duration timeout) {
+        return com.finapp.kyc.ScreeningAdapter.pep(providerUrl, timeout);
+    }
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    com.finapp.kyc.ScreeningAdapter adverseMediaScreeningAdapter(
+            @Value("${finapp.kyc.provider.url}") java.net.URI providerUrl,
+            @Value("${finapp.kyc.provider.timeout:PT2S}") java.time.Duration timeout) {
+        return com.finapp.kyc.ScreeningAdapter.adverseMedia(providerUrl, timeout);
+    }
+
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
             "finapp.kyc.provider.url")
     VerificationRunService verificationRunService(
             KycCaseStore<Connection> kycCaseStore,
             com.finapp.kyc.CheckStore<Connection> checkStore,
+            com.finapp.kyc.ReviewTaskStore<Connection> reviewTaskStore,
             java.util.List<com.finapp.kyc.VerificationProvider> providers,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
@@ -154,6 +193,7 @@ public class KycBeans {
         return new VerificationRunService(
                 kycCaseStore,
                 checkStore,
+                reviewTaskStore,
                 providers,
                 auditWriter,
                 idGenerator,
