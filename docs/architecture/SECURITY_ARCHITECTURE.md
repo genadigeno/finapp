@@ -189,6 +189,18 @@ which names the check, whose case names the customer. The record is deliberately
 *outcome being recorded*, never the decision: `INV-KYC-01` keeps the provider's verdict
 evidence, and the decision that will gate on it is `P2-TSK-013`'s separately audited act.
 
+**The sixth site is the automatic decision** (`P2-TSK-013`). `DecisionRecording.automatically`
+writes `kyc.DecisionRecorded` when the platform approves an all-clear case under its stated
+automatic policy — which is `INV-KYC-02`'s second actor case in the invariant's own words, *"a
+reviewer, or the platform under a stated automatic policy"*. Nobody is present: the assessment
+that reaches it runs from a verification run or a provider callback, and attributing the
+approval to whichever customer's callback happened to complete the last check would record them
+as **having approved themselves** — the fifth site's reasoning, at the decision. The scope is
+entered around the audit write only, so the **reviewer** path through the same class can never
+inherit it: a person's decision names the person the interceptor proved, and the acceptance
+suite asserts `decided_by` and the audit actor agree. What ties the automatic record to the
+person is the correlation and the target, which names the case, whose row names the customer.
+
 **The review is now conducted by the build, not by memory.** `SystemActorCallSitesAreEnumeratedTest`
 holds this list against the code: a **new** place claiming the platform is the actor fails the build
 until somebody writes down why there is no honest alternative. ADR-0021 called `enterSystem()` *"the

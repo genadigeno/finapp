@@ -61,6 +61,10 @@ class AdministrativeRequestBoundsTest {
         // reconciles that copy against AuditRecord's.
         assertThat(sizeBoundOf(com.finapp.app.kyc.ResolutionRequest.class, "reason"))
                 .isEqualTo(sizeBoundOf(SuspensionRequest.class, "reason"));
+        // P2-TSK-013: the decision's reason. The V007 CHECK on kyc_decision.reason carries the
+        // same bound; DecisionMigrationTest reconciles that copy against AuditRecord's.
+        assertThat(sizeBoundOf(com.finapp.app.kyc.DecisionRequest.class, "reason"))
+                .isEqualTo(sizeBoundOf(SuspensionRequest.class, "reason"));
     }
 
     @Test

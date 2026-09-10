@@ -372,6 +372,25 @@ resolution's reason arrives with `P2-TSK-012`'s columns, classified then.
 | `review_task` | `resolved_at` | `CONFIDENTIAL` | *Added by `P2-TSK-012`.* Dates a person's judgement about a screening event — `opened_at`'s reasoning, the other end |
 | `review_task` | `resolution_reason` | `RESTRICTED-PII` | *Added by `P2-TSK-012`.* **Free text written by a person** about somebody's screening result — it may name the customer, a list entry or a case number. `audit_record.reason`'s ceiling, for `audit_record.reason`'s reason |
 
+### `kyc.kyc_decision` and `kyc.kyc_decision_check` — *added by `P2-TSK-013`*
+
+The record every later financial phase gates on (`INV-KYC-02`), append-only at the privilege
+level. The decision's sensitive halves mirror the resolution's: who decided is a person, and
+the reason is a person's prose about a person.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `kyc_decision` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `kyc_decision` | `case_id` | `INTERNAL` | As `kyc_case.id` — an identifier of a thing |
+| `kyc_decision` | `outcome` | `CONFIDENTIAL` | Whether a named person was approved or refused onboarding is a fact about them — `kyc_case.status`'s reasoning, at its sharpest: this column is the answer, permanently |
+| `kyc_decision` | `decision_basis` | `CONFIDENTIAL` | `AUTOMATIC` discloses no review was raised; `REVIEWER` that one was — `review_task.status`'s tipping-off reasoning, one join away |
+| `kyc_decision` | `decided_by` | `RESTRICTED-PII` | The reviewer's `IdentityId` — as `review_task.resolved_by`: from Phase 1 an identity names a person. `NULL` exactly when the basis is `AUTOMATIC`, and the ceiling is what the column may ever hold |
+| `kyc_decision` | `reason` | `RESTRICTED-PII` | On the reviewer path, **free text written by a person** about somebody's verification — `review_task.resolution_reason`'s ceiling for the same reason. The automatic path writes a constant, and the ceiling is what the column may ever hold, not what the common row does |
+| `kyc_decision` | `policy_version` | `INTERNAL` | A platform label naming a regime — as `kyc_case.policy_version` |
+| `kyc_decision` | `decided_at` | `CONFIDENTIAL` | Dates the decision on a named person's case — `kyc_case.status_changed_at`'s reasoning |
+| `kyc_decision_check` | `decision_id` | `INTERNAL` | As `kyc_decision.id` — an identifier of a thing |
+| `kyc_decision_check` | `check_id` | `INTERNAL` | As `verification_check.id` — an identifier of a thing |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

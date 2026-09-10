@@ -113,8 +113,10 @@ class ProviderCallbackDatabaseTest {
                                 .digest(body.getBytes(StandardCharsets.UTF_8)));
         // INV-AUD-01: the outcome is recorded through the one trail, whichever door it came by.
         assertThat(auditRecordCountFor(fixture.pendingCheck())).isEqualTo(1);
-        // The callback answered the last outstanding question, so it must move the case.
-        assertThat(caseStatusOf(fixture.caseId())).isEqualTo("READY_FOR_DECISION");
+        // The callback answered the last outstanding question, so it must move the case - and
+        // since P2-TSK-013 the automatic policy decides an all-clear case in the same
+        // assessment, so the callback door drives the case all the way to its terminal.
+        assertThat(caseStatusOf(fixture.caseId())).isEqualTo("APPROVED");
     }
 
     @Test
@@ -147,7 +149,9 @@ class ProviderCallbackDatabaseTest {
                 .hasSize(1);
         assertThat(auditRecordCountFor(fixture.pendingCheck())).isEqualTo(1);
         assertThat(inboxRowCountFor(deliveryId)).isEqualTo(1);
-        assertThat(caseStatusOf(fixture.caseId())).isEqualTo("READY_FOR_DECISION");
+        // APPROVED since P2-TSK-013: the duplicate deliveries re-assess, and the decision's
+        // own conditional converges - one terminal, however many times the fact arrived.
+        assertThat(caseStatusOf(fixture.caseId())).isEqualTo("APPROVED");
     }
 
     @Test

@@ -60,9 +60,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ReviewController {
 
     private final ReviewService reviews;
+    private final DecisionRecording decisions;
 
-    public ReviewController(ReviewService reviews) {
+    public ReviewController(ReviewService reviews, DecisionRecording decisions) {
         this.reviews = Objects.requireNonNull(reviews, "reviews must not be null");
+        this.decisions = Objects.requireNonNull(decisions, "decisions must not be null");
     }
 
     /** The reviewer's view of one case. Reading it is on the record ({@code kyc.CaseRead}). */
@@ -113,6 +115,49 @@ public class ReviewController {
                     throw new ApiException(
                             PlatformErrorCode.NOT_FOUND,
                             "No review task matched the given case and task identifiers");
+        }
+    }
+
+    /**
+     * Records the one decision this case will ever get (`P2-TSK-013`, {@code INV-KYC-02}).
+     *
+     * <p>The two 409 details are named for what is checked, not the commonest cause (the
+     * {@code NOT_ACTIVE} lesson): a terminal case is <em>already decided</em> — a retry after a
+     * lost response lands here, honestly — while a case still in checks or review is <em>not
+     * ready</em>, and those call for different reviewer behaviour (stop, versus wait).
+     */
+    @PostMapping("/{id}/decision")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RequiresPermission(PermissionName.KYC_REVIEW)
+    public void decide(
+            @PathVariable String id,
+            @Valid @RequestBody DecisionRequest body,
+            HttpServletRequest request) {
+
+        DecisionRecording.Recording outcome =
+                decisions.byReviewer(
+                        caseId(id), reviewer(request), body.outcome(), body.reason());
+
+        switch (outcome) {
+            case RECORDED -> {
+                // The only path that returns.
+            }
+            case ALREADY_DECIDED ->
+                    // The original decision is untouched; a wrong one is a NEW case, never an
+                    // edit (INV-LIFE-04, INV-KYC-02).
+                    throw new ApiException(
+                            PlatformErrorCode.CONFLICT,
+                            "The case was already decided when this decision arrived",
+                            "this case is already decided");
+            case NOT_READY ->
+                    throw new ApiException(
+                            PlatformErrorCode.CONFLICT,
+                            "The case is not awaiting a decision",
+                            "this case is not ready for a decision");
+            case NOT_FOUND ->
+                    throw new ApiException(
+                            PlatformErrorCode.NOT_FOUND,
+                            "No KYC case matched the given identifier");
         }
     }
 

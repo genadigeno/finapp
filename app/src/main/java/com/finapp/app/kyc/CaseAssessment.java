@@ -46,6 +46,7 @@ public class CaseAssessment {
     private final KycCaseStore<Connection> cases;
     private final CheckStore<Connection> checks;
     private final ReviewTaskStore<Connection> reviewTasks;
+    private final DecisionRecording decisions;
     private final Set<CheckType> requiredTypes;
     private final IdGenerator ids;
     private final Clock clock;
@@ -55,6 +56,7 @@ public class CaseAssessment {
             KycCaseStore<Connection> kycCaseStore,
             CheckStore<Connection> checkStore,
             ReviewTaskStore<Connection> reviewTaskStore,
+            DecisionRecording decisionRecording,
             List<VerificationProvider> providers,
             IdGenerator idGenerator,
             Clock clock,
@@ -64,6 +66,8 @@ public class CaseAssessment {
         this.checks = Objects.requireNonNull(checkStore, "checkStore must not be null");
         this.reviewTasks =
                 Objects.requireNonNull(reviewTaskStore, "reviewTaskStore must not be null");
+        this.decisions =
+                Objects.requireNonNull(decisionRecording, "decisionRecording must not be null");
         // The required types ARE the registered providers' set (P2-TSK-009's decision): an
         // empty set would assess every case complete by absence of questions, and two
         // providers answering one type would leave a run not knowing which one a check means.
@@ -107,12 +111,21 @@ public class CaseAssessment {
                     List<VerificationCheck> all = checks.forCase(unitOfWork, caseId);
                     ChecksAssessment assessment = ChecksAssessment.of(requiredTypes, all);
                     if (assessment == ChecksAssessment.CLEAR_TO_PROCEED) {
+                        // The move's result is deliberately not the gate on the decision: a
+                        // re-assessment (a duplicate callback, a re-run) loses this conditional
+                        // against a case already READY_FOR_DECISION, and the decision's OWN
+                        // conditional is what arbitrates - which is also what heals a case an
+                        // older build's crash left awaiting its automatic decision.
                         cases.moveStatus(
                                 unitOfWork,
                                 caseId,
                                 KycCaseStatus.CHECKS_IN_PROGRESS,
                                 KycCaseStatus.READY_FOR_DECISION,
                                 Instant.now(clock));
+                        // Same transaction, deliberately (P2-TSK-013): the decision reads only
+                        // what this transaction already read, so atomicity costs nothing and
+                        // removes the stranded all-clear-and-undecided window entirely.
+                        decisions.automatically(unitOfWork, caseId, all);
                     } else if (assessment == ChecksAssessment.BLOCKED) {
                         // Tasks first, move second, ONE transaction: the state and its work item
                         // commit together, so IN_REVIEW always has something to resolve

@@ -97,7 +97,19 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " what ties the record to the person is the CORRELATION (the producing"
                         + " flow's, entered by the consumer shell from the message envelope) and"
                         + " the TARGET, which names the customer. The class of site every future"
-                        + " consumer with an audited effect will be: each comes here and says so.");
+                        + " consumer with an audited effect will be: each comes here and says so.",
+                    "com.finapp.app.kyc.DecisionRecording.automatically",
+                    "The AUTOMATIC decision (P2-TSK-013): the platform applying its own stated"
+                        + " policy to an all-clear case - INV-KYC-02's second actor case in the"
+                        + " invariant's own words, 'the platform under a stated automatic"
+                        + " policy'. Nobody is present: the assessment that reaches this runs"
+                        + " from a verification run or a provider callback, and attributing the"
+                        + " approval to whichever customer's callback happened to complete the"
+                        + " last check would record them as having approved themselves"
+                        + " (P2-TSK-009's reasoning, at the decision). The REVIEWER path in this"
+                        + " same class never comes here - it takes the person the interceptor"
+                        + " proved from the established scope, which is asserted by the"
+                        + " acceptance suite's decided_by and audit assertions.");
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

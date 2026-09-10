@@ -176,6 +176,37 @@ public class KycBeans {
         return com.finapp.kyc.ScreeningAdapter.adverseMedia(providerUrl, timeout);
     }
 
+    @Bean
+    com.finapp.kyc.KycDecisionStore<Connection> kycDecisionStore() {
+        return new com.finapp.kyc.JdbcKycDecisionStore();
+    }
+
+    /**
+     * The one decision-recording routine, both doors (`P2-TSK-013`). Unconditional, like
+     * {@code reviewService}: a reviewer decides a reviewed case wherever it came from, and only
+     * the automatic door rides the provider-conditional {@code CaseAssessment}.
+     */
+    @Bean
+    DecisionRecording decisionRecording(
+            KycCaseStore<Connection> kycCaseStore,
+            com.finapp.kyc.CheckStore<Connection> checkStore,
+            com.finapp.kyc.KycDecisionStore<Connection> kycDecisionStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionTemplate kycTransactions,
+            DataSource dataSource) {
+        return new DecisionRecording(
+                kycCaseStore,
+                checkStore,
+                kycDecisionStore,
+                auditWriter,
+                idGenerator,
+                clock,
+                kycTransactions,
+                dataSource);
+    }
+
     /** The assessment and its routing — shared by the run and the callback door (P2-TSK-011). */
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
@@ -184,6 +215,7 @@ public class KycBeans {
             KycCaseStore<Connection> kycCaseStore,
             com.finapp.kyc.CheckStore<Connection> checkStore,
             com.finapp.kyc.ReviewTaskStore<Connection> reviewTaskStore,
+            DecisionRecording decisionRecording,
             java.util.List<com.finapp.kyc.VerificationProvider> providers,
             IdGenerator idGenerator,
             Clock clock,
@@ -193,6 +225,7 @@ public class KycBeans {
                 kycCaseStore,
                 checkStore,
                 reviewTaskStore,
+                decisionRecording,
                 providers,
                 idGenerator,
                 clock,

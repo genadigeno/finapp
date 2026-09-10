@@ -78,9 +78,6 @@ class AuditCompletenessTest {
                     "outbox.EventDiscarded",
                     "Recorded debt: a relay decision visible only as a log line, which ADR-0010 is"
                         + " explicit does not count as an audit trail. Phase 15.",
-                    "kyc.DecisionRecorded",
-                    "P2-TSK-013 builds the decision record; the module skeleton declared the"
-                        + " action because INV-KYC-02 designs it outright.",
                     "consent.ConsentGranted",
                     "P2-TSK-018 builds the consent endpoints; ADR-0037 designs the record.",
                     "consent.ConsentWithdrawn",

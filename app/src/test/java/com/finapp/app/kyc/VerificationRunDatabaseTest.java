@@ -47,8 +47,9 @@ import org.springframework.test.context.DynamicPropertySource;
 
 /**
  * The acceptance of `P2-TSK-009`, against a real database and a real HTTP provider: a clean
- * simulated run takes a case to {@code READY_FOR_DECISION} with retained evidence — and a
- * timeout, a hit, and ten racing instances each land exactly where the design says.
+ * simulated run takes a case to its terminal with retained evidence — {@code APPROVED} since
+ * `P2-TSK-013` gave the all-clear branch its automatic decision — and a timeout, a hit, and
+ * ten racing instances each land exactly where the design says.
  *
  * <p>The provider is {@link SimulatedProvider}, wired through the same property a deployment
  * would use ({@code finapp.kyc.provider.url}), so the beans under test are the production
@@ -98,7 +99,7 @@ class VerificationRunDatabaseTest {
     }
 
     @Test
-    @DisplayName("a clean run takes the case to READY_FOR_DECISION with retained evidence")
+    @DisplayName("a clean run takes the case to APPROVED with retained evidence")
     void aCleanRunReachesReadyForDecision() throws Exception {
         Case opened = givenAnOpenCase();
         String identityAnswer = "{\"status\":\"clear\",\"score\":98}";
@@ -114,8 +115,12 @@ class VerificationRunDatabaseTest {
                 .hasSize(5)
                 .allSatisfy(check -> assertThat(check.status()).isEqualTo(CheckStatus.CLEAR));
         assertThat(statusOf(opened.caseId()))
-                .as("the phase's spine: clean checks and the case awaits its decision")
-                .isEqualTo("READY_FOR_DECISION");
+                // READY_FOR_DECISION until P2-TSK-013: the automatic policy now decides an
+                // all-clear case inside the assessment's own transaction, so the awaiting
+                // state has no observable instant on the clean path - the P2-TSK-010
+                // stopgap-superseded shape. DecisionDatabaseTest holds the decision itself.
+                .as("the phase's spine: clean checks and the case is decided")
+                .isEqualTo("APPROVED");
 
         // INV-HIST-02, proven at the row: the evidence is the provider's bytes - encrypted, so
         // the ciphertext differs from them, and checksummed on what was received, so the claim
@@ -200,7 +205,8 @@ class VerificationRunDatabaseTest {
             pool.shutdown();
         }
 
-        assertThat(statusOf(opened.caseId())).isEqualTo("READY_FOR_DECISION");
+        // APPROVED since P2-TSK-013: the automatic decision rides the winning assessment.
+        assertThat(statusOf(opened.caseId())).isEqualTo("APPROVED");
         assertThat(checkCountFor(opened.caseId()))
                 .as("one in-flight check per type: the partial unique index is the arbiter."
                         + " The recorded residual race may add a redundant question - never a"

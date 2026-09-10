@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-10 (`P2-TSK-012`)
+Last updated: 2026-09-10 (`P2-TSK-013`)
 
 ---
 
@@ -59,11 +59,13 @@ class, again).
 
 ## Current Milestone
 
-**M2.3 — Decisions and review.** `P2-TSK-012` … `P2-TSK-014`; **1 of 3** (2026-09-10) —
-the reviewer surface done: a review task resolves exactly once, by an authorized person,
-with a reason, audibly, and the case whose last task resolves exits to
-`READY_FOR_DECISION`. Next: `P2-TSK-013`, the decision record. Acceptance: one immutable,
-attributable, policy-pinned decision per case, and the customer projection moves with it.
+**M2.3 — Decisions and review.** `P2-TSK-012` … `P2-TSK-014`; **2 of 3** (2026-09-10) —
+the reviewer surface and the decision done: a review task resolves exactly once, and the
+case gets its one immutable, attributable, policy-pinned decision — a reviewer's through
+`POST /v1/kyc/cases/{id}/decision`, or the platform's automatic approval of an all-clear
+case inside the assessment's own transaction. Next: `P2-TSK-014`, the customer projection.
+Acceptance: a hit case cannot terminate without a reviewer, and a decision moves
+`customer.status` in one transaction.
 
 **M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **6 of 7**
 (2026-09-10) — the case aggregate, the first production consumer, the document store, the
@@ -231,11 +233,77 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-012` completed 2026-09-10 — the reviewer endpoints:
-`INV-KYC-04`'s human half, the phase's privileged surface. **Next: `P2-TSK-013` (`READY`)**
-— the decision record, M2.3's centrepiece; `P2-TSK-006` stays blocked on the consent gate.
+**None in progress.** `P2-TSK-013` completed 2026-09-10 — the decision: the record every
+later financial phase gates on, recorded by a person or by the stated automatic policy.
+**Next: `P2-TSK-014` (`READY`)** — the customer projection, closing M2.3; `P2-TSK-006`
+stays blocked on the consent gate.
 
 ### Just completed
+
+**`P2-TSK-013` — The decision: immutable, attributable, policy-pinned** — `COMPLETE`
+(2026-09-10). `KycDecision` (`V007`), the automatic policy for all-clear cases, and
+`POST /v1/kyc/cases/{id}/decision` for reviewed ones — `INV-KYC-02` made real: the answer
+to *"may this party transact?"* is now one row and its referenced evidence, permanently.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| One immutable decision per case | `DecisionDatabaseTest`: a ten-way reviewer race lands one 204, nine 409s, one row, one record; a second decision is a 409 with the first untouched; `UPDATE`/`DELETE` denied on **every column** of both tables (`P0-TST-007` idiom), with no `UPDATE` grant at all so the privilege IS the immutability (the `audit_record` model) |
+| Reproducible from what it references | The replay test rebuilds the decision's inputs from the check rows the record **references** and the pinned policy code, and re-derives the stored outcome — `INV-CRD-01`'s regime, three phases early |
+| Attributable, both actor cases | A reviewer's decision names the person in `decided_by` and in the audit record; the automatic one is `basis=AUTOMATIC`, `decided_by NULL`, actor `system` — coherence enforced by CHECK **and** constructor, so the pair cannot disagree |
+| Policy-pinned | The **case's own** `policy_version`, copied by the factory — never `CURRENT` re-read at decision time (`INV-HIST-04`) |
+
+### The automatic policy lives on the domain factory, and the refusal is the control
+
+`KycDecision.automatic` refuses a case with any non-`CLEAR` check — loudly, nothing
+constructed — because the silent alternative is an automatic approval of a case that owed a
+person a judgement (`INV-KYC-04`). Proven **at the domain** (`INV-LIFE-02`'s
+rejected-by-the-aggregate principle): production reachability alone would make the refusal
+untestable, since the assessment's `BLOCKED`-first ordering never routes a non-clean case
+to the automatic branch. That ordering is also what keeps the two doors honest: a reviewed
+case's `IN_REVIEW → READY_FOR_DECISION` stays durable — awaiting a person is a real state —
+while the all-clear path never exhibits it.
+
+### The decision rides the assessment's own transaction, deliberately
+
+The `P2-TSK-009` assess-after-commit rule exists so an assessor sees *other* transactions'
+committed outcomes; the automatic decision reads only what its own transaction already
+read, so that argument does not apply — and atomicity buys the absence of a stranded
+all-clear-and-undecided window entirely: `CHECKS_IN_PROGRESS → READY_FOR_DECISION →
+APPROVED`, the decision row, its evidence references and the audit record commit together
+or not at all. The `CIP → RFD` move's result is deliberately not the gate on the decision:
+the decision's **own** conditional (`RFD → APPROVED`) arbitrates, so a duplicate callback's
+re-assessment converges and one terminal exists however many times the fact arrived. Four
+assertions in two suites moved from `READY_FOR_DECISION` to `APPROVED` — the `P2-TSK-010`
+stopgap-superseded precedent, recorded in each.
+
+### The conditional move is the arbiter; the schema is defence in depth
+
+`moveStatus(READY_FOR_DECISION → terminal)`'s row count decides who records — N concurrent
+deciders, reviewer or automatic, produce one decision and N−1 losers told the truth, with
+the two 409 details named for what is checked ("already decided" stops a reviewer, "not
+ready" tells them to wait — the `NOT_ACTIVE` lesson). The **total** `UNIQUE (case_id)`
+index behind it would only ever fire on an invariant already violated, which is why the
+store's insert is plain and loud rather than a converge. Evidence references are a join
+table with real FKs — evidence appended after the decision (`P2-TSK-008`'s accepted race)
+is now **mechanically** outside what the decision rested on.
+
+### The sixth enumerated `enterSystem()` site
+
+The automatic decision's audit names the platform — nobody is present, and attributing the
+approval to whichever customer's callback completed the last check would record them as
+having approved themselves. The scope wraps the audit write only, so the reviewer path
+through the same class can never inherit it — and the mutation that made it do so was
+caught by the acceptance suite's attribution assertions, with the hermetic site
+enumeration as the independent second control. `kyc.DecisionRecorded` leaves
+`NOT_YET_EMITTED`, emitted on both paths.
+
+**Seven mutations, all caught by the intended assertion** — the arbiter ignored, the
+policy predicate removed, the evidence references dropped, the audit dropped, the
+automatic hook dropped, `UPDATE` granted in `V007` (caught against a from-scratch
+database), the reviewer's audit written as the platform.
+**995 hermetic tests, 524 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TSK-012` — Review tasks and the reviewer endpoints** — `COMPLETE` (2026-09-10).
 `GET /v1/kyc/cases/{id}` and `POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution`, both
@@ -6100,25 +6168,27 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-013` — The decision: immutable, attributable, policy-pinned.** Status `READY`;
-its one dep, `P2-TSK-012`, is complete. M2.3's centrepiece.
+**`P2-TSK-014` — The projection: a decision moves `customer.status`.** Status `READY`;
+its one dep, `P2-TSK-013`, is complete. Closes M2.3.
 
-`KycDecision` (`V007`: append-only at `DB-PRIVILEGE`, `NOT NULL` actor / reason / policy
-version / evidence refs) plus the stated automatic policy for all-clear cases and
-`POST /v1/kyc/cases/{id}/decision` for reviewed ones — ADR-0038, and `INV-KYC-02` is the
-record every later phase gates on. Distributed: the decision races the case transition —
-conditional on `READY_FOR_DECISION`, row count is the outcome; two deciders produce one
-decision and one audit record. Tests: `UPDATE`/`DELETE` denied on every column (the
-`P0-TST-007` idiom); a replay re-derives the decision from retained evidence and the
-pinned policy (`INV-CRD-01`'s regime three phases early); the automatic path refuses a
-case with any non-`CLEAR` check. `kyc.DecisionRecorded` leaves `NOT_YET_EMITTED`. Accept:
-one immutable decision per case, reproducible from what it references.
+The `app` orchestration ADR-0035 describes: recording a decision and transitioning
+`party.customer.status` (`PENDING → ACTIVE`/`REJECTED`) in **one transaction** — the
+registration precedent, `app` orchestrates and each module writes its own rows. The
+`party` grant for the status column arrives with this capability (column-narrow, the
+`V004` display-name precedent, and the `PENDING`-since-Phase-1 field finally moves).
+Failure scenario 10's atomicity ("crash between decision and projection → impossible:
+same transaction") becomes assertable; the decision↔projection reconciliation test is
+ADR-0035's carried obligation. Both decision doors — the reviewer endpoint and the
+automatic path — must move the projection, which is what `DecisionRecording` being one
+routine buys. Accept: a decision moves `customer.status` in the same transaction, on both
+doors, under N instances.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-10 | **`P2-TSK-013` complete - the decision, and the phase's product exists.** `KycDecision` (`V007`), the stated automatic policy, and `POST /v1/kyc/cases/{id}/decision` behind `@RequiresPermission(KYC_REVIEW)` - `INV-KYC-02` made real: immutable (append-only at DB-PRIVILEGE with NO UPDATE grant at all, so the privilege IS the immutability - the audit_record model, UPDATE/DELETE proven denied on every column of both tables from information_schema), attributable (INV-KYC-02's two actor cases: a reviewer named in `decided_by` and the audit record, or the platform as `basis=AUTOMATIC`/`decided_by NULL`/actor `system` - coherence a CHECK and a constructor invariant, so schema and domain cannot disagree), policy-pinned (the CASE's own version, copied by the factory, never CURRENT re-read - INV-HIST-04), and evidence-referencing through a join table with real FKs, so the P2-TSK-008 accepted upload race is now MECHANICALLY outside what the decision rested on. **Reproducible, proven**: the replay test rebuilds the inputs from the referenced check rows and the pinned policy code and re-derives the stored outcome (INV-CRD-01's regime three phases early). **The automatic policy lives on the domain factory** - `KycDecision.automatic` refuses any non-CLEAR check loudly (INV-LIFE-02's rejected-by-the-domain, proven at the domain because the assessment's BLOCKED-first ordering makes the refusal unreachable in production) - **and rides the assessment's own transaction, deliberately**: the assess-after-commit rule exists to see OTHER transactions' outcomes, which does not apply to rows this transaction already read, so the all-clear-and-undecided state has no observable instant and four assertions in two suites moved READY_FOR_DECISION → APPROVED (the P2-TSK-010 stopgap-superseded precedent). A reviewed case never reaches the automatic branch, so IN_REVIEW → RFD stays durable and the reviewer decides it - with the conditional case move (RFD → terminal) as the arbiter, ten racers landing one 204 / nine 409s / one row / one record, the two 409 details named for what is checked ("already decided" vs "not ready" - the NOT_ACTIVE lesson), and the total UNIQUE (case_id) as defence in depth whose firing would mean an invariant already broken. **The sixth enumerated enterSystem() site**: the automatic audit names the platform - attributing the approval to whichever customer's callback completed the last check would record them approving themselves - scoped around the audit write only, so the reviewer path cannot inherit it; the mutation that made it do so was caught by the attribution assertions with the hermetic site enumeration as second control. `kyc.DecisionRecorded` leaves NOT_YET_EMITTED, emitted on both doors. **Seven mutations, all caught by the intended assertion** - arbiter ignored, policy predicate removed, evidence refs dropped, audit dropped, automatic hook dropped, UPDATE granted in V007 (caught against a from-scratch database), reviewer's audit written as the platform. 995 hermetic tests, 524 database tests, 14 kafka tests. Next: P2-TSK-014. |
 | 2026-09-10 | **`P2-TSK-012` complete - the reviewer endpoints, and M2.3 opens.** `GET /v1/kyc/cases/{id}` and `POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution`, both behind `@RequiresPermission(KYC_REVIEW)` - `INV-KYC-04`'s human half: the judgement a non-clean check owed a person, recorded EXACTLY ONCE, with a reason, audibly. **Resolution is state, not an aggregate method**: the conditional `UPDATE`'s three predicates are the concurrency protocol (id names the task, case_id refuses another case's task through the wrong URL as a uniform 404 with nothing written, `status = 'OPEN'` arbitrates the race), a ten-way race lands one 204 / nine 409s / one `kyc.ReviewResolved` record naming a racer the row agrees with, and a RESOLVED row **freezes whole** by trigger (only `OPEN → RESOLVED`, identity columns immutable in any state - `INV-KYC-02`, the credential-freeze precedent) with the `UPDATE` grant column-narrowed to the four resolution columns (the V004 precedent, identity columns proven permission-denied). **The exit is in the statement, after the commit, and the 409 path heals**: `IN_REVIEW → READY_FOR_DECISION` via `moveStatusWhenNoOpenTasks` (`status = 'IN_REVIEW'` AND `NOT EXISTS (... status = 'OPEN')` - the predicate `P2-TSK-010` recorded), run in a separate transaction post-commit (the `P2-TSK-009` argument), re-attempted on ALREADY_RESOLVED - so a crash between a resolve's commit and its exit is healed by the reviewer's retried request, proven by fixture. **The read is audited** (`kyc.CaseRead` in the read's own unit of work - `INV-KYC-06`'s trail-of-who-looked one level up; a guessed identifier writes no record; references only, no content endpoint by plan). The reason bound is one number in three reconciled copies (boundary citing `SuspensionRequest`'s now-public constants, `V006`'s CHECK, `AuditRecord`); `kyc.ScreeningHitResolved` renamed **`kyc.ReviewResolved` before first emission** (a task arises from a HIT or an exhausted INDETERMINATE, so the old name could be false - the only free moment for a rename); `ScreeningRunDatabaseTest`'s grant test broke ON SCHEDULE and now pins the grant's boundary; and one of this task's own tests was wrong before it shipped - a `doesNotContain` over the whole migration matched its prose comment (the `P1-TSK-021` lesson), now statements-only with a vacuity control. **Seven mutations, all caught by the intended assertion** - resolve unconditional, belongs-to-case removed, exit's NOT EXISTS removed, resolution audit dropped, 409-path healing removed, freeze trigger removed, read audit dropped. 983 hermetic tests, 514 database tests, 14 kafka tests. Next: P2-TSK-013. |
 | 2026-09-10 | **`P2-TSK-011` complete - provider callbacks, and the phase's inbound door opens.** `POST /v1/providers/kyc/callbacks`, the platform's first machine-facing endpoint: an asynchronous provider answer completes a check EXACTLY ONCE however many times and however concurrently it arrives (`INV-KYC-03`, `INV-IDEM-04`). **The signature is the control and a checksum was rejected by name**: the callback is the input that clears sanctions screenings, so a tag anyone can compute would be an open door to check-outcome forgery - HMAC-SHA256 over the raw bytes, verified before parsing and before any read, in constant time (`MessageDigest.isEqual`, asserted STRUCTURALLY because no behavioural test can see timing), proven against RFC 4231's own vectors (the `P1-TSK-017` vetted-library reasoning); missing and wrong signature are one uniform 401 with NOTHING written, which is the proof the new `SIGNED_CALLBACK` ownership class names. The limits stated in `SECURITY_ARCHITECTURE.md`: one static key, no rotation, no per-provider keys (Phase 5's webhook work), and NO replay window at the signature layer deliberately - a replayed callback is byte-identical, so it is exactly the duplicate the inbox absorbs. **Two dedupe layers, blind in different directions, designed in rather than found by a gate** (the `P2-TSK-007` lesson applied at design time): the inbox absorbs IDENTICAL deliveries by `deliveryId`, the conditional completion absorbs DISTINCT re-sends and the callback racing the synchronous run; `CONTENDED` is not acknowledged (409, the inbox's own contract - the provider redelivers and either way the race went is correct). Evidence is appended ALWAYS - the late answer and the losing racer are genuine provider statements (`INV-HIST-02`) - where the run path retains only on a win, recorded as deliberate. **A late callback for a terminal check is evidence, never a transition** (`INV-LIFE-04`; resolution stays a NEW check, ADR-0038), acknowledged 204 because a refusal would make a correct provider retry a fact we will never accept. **The callback is the healer of `P2-TSK-009`'s stranded-DISPATCHED remainder** - the provider received that request, because dispatch commits first - and assessment heals one deeper: a duplicate delivery re-assesses, closing a crash between a delivery's commit and its assessment. **Composition earned by a second caller**: `CaseAssessment` and `CheckOutcomeTrail` extracted from `VerificationRunService` (the `P1-TSK-033` shape), and the enumerated `enterSystem()` site MOVED to `CheckOutcomeTrail.record` - one site whichever door, five sites still. `CallbackKey` is the FOURTH per-credential loopback confinement and the debt row's own trigger, now fired: the generalisation is recorded as due as its own work. `inbox_message.dedupe_key` met its first external supplier, charset-bounded at the boundary (`DATA_CLASSIFICATION.md` §5). Proven against a real database over real HTTP: a triple delivery and a ten-way concurrent race each land one completion, one evidence row, one audit record, one inbox row; eleven malformed-but-signed shapes each the caller's 4xx, never a 500. **The gate's findings**: `CallbackKey` had no test - the exact `P1-TSK-017` finding about to repeat on the fourth instance of the shape - closed by `CallbackKeyTest` with the confinement-removed mutation caught; and this task's own structural assertion was vacuous as first written (`doesNotContain("java/util/Arrays.equals")` can never match a constant pool, whose class and method names are separate entries) - corrected to the entries that appear. **Seven mutations, all caught by the intended assertion** - signature bypassed, inbox bypassed, completion made unconditional, evidence dropped, assessment dropped, constant-time swapped, confinement removed. 979 hermetic tests, 502 database tests, 14 kafka tests. Next: P2-TSK-012 (M2.3; P2-TSK-006 stays blocked on the consent gate). |
 | 2026-09-10 | **`P2-TSK-010` complete - screening, and a non-clean case becomes work for a person.** The three screening types over the machine `P2-TSK-009` built (one machine, not a second one - plan §5): one `ScreeningAdapter` with three static factories binding type to path, so a mismatch is UNCONSTRUCTIBLE and the misbehaviour matrix stays cited rather than triplicated; the `ReviewTask` aggregate (`OPEN → RESOLVED`, terminal, no unresolve - a wrong resolution is a new review event, and changed circumstances are a NEW check with its own task); and the routing that gives a blocked case its exit. **The acceptance held both ways**: behaviourally - a sanctions hit routes to `IN_REVIEW` with exactly one `OPEN` task keyed to the hit check, idempotently under a ten-way race (`requestCount sum == checkCount` still holds) - and structurally, the machine has no edge from `IN_REVIEW` to a terminal and `ChecksAssessment` decides `HIT` first. **The convergence rule was corrected rather than smuggled**: `P2-TSK-009`'s converge-in-any-state made an `INDETERMINATE` unresolvable on the run path against ADR-0038's resolution-is-a-new-check; an under-budget unknown now invites a NEW check and the third (`INDETERMINATE_RETRY_BUDGET`, `>=` so the residual race errs toward review) routes the type to a person - proven by the adverse-media walk: three questions, a fourth run asks nothing, one task on the newest unknown. **The asymmetry is deliberate and tested both ways**: a `CLEAR` never un-blocks a `HIT`; a later `CLEAR` DOES satisfy an exhausted type. **Routing is atomic**: tasks inserted and the conditional move made in one transaction, so `IN_REVIEW` always has something to resolve and `P2-TSK-012`'s exit ("every task resolved" - conditional on no OPEN task IN THE STATEMENT, recorded in the store's javadoc) can never be vacuously true on arrival; `UNIQUE (check_id)` is TOTAL and is the `ON CONFLICT DO NOTHING` arbiter. Deliberately absent: a task-creation audit action (the platform's bookkeeping of an already-audited outcome; the reason-required act is `P2-TSK-012`'s resolution), resolution columns and the `UPDATE` grant (grant-arrives-with-capability, permission-denied proven now), events, endpoints, and a `forCase` read nothing calls. `finapp.kyc.review.queue` arrives with the queue it measures (the plan-named gauge, `IdentityMetrics`' shape, NaN-never-zero, aggregate with `max()`); five columns classified with `review_task.status` as the tipping-off column one table further down; the ownership register needed NO new entries, verified rather than assumed. **Six mutations, all caught by the intended assertion** - task creation removed, the move removed, `ON CONFLICT` removed, convergence-never-retries, budget unbounded, exhausted-no-longer-blocks. 960 hermetic tests, 495 database tests, 14 kafka tests. Next: P2-TSK-011. |

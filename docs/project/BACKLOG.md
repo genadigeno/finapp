@@ -3043,7 +3043,7 @@ capability map, and the task list below is the schedule.
   trigger removed, read audit dropped. 983 hermetic / 514 database / 14 kafka.
 - Risk: Medium. Cx: M. DoD: `DOD-SEC`
 
-**P2-TSK-013 — The decision: immutable, attributable, policy-pinned** — `READY` (2026-09-10)
+**P2-TSK-013 — The decision: immutable, attributable, policy-pinned** — `COMPLETE` (2026-09-10)
 - Context: kyc
 - Description: `KycDecision` (`V004`: append-only at `DB-PRIVILEGE`, `NOT NULL` actor / reason /
   policy version / evidence refs) plus the stated automatic policy for all-clear cases and
@@ -3057,9 +3057,41 @@ capability map, and the task list below is the schedule.
   pinned policy re-derives the decision; decision race; automatic path refuses a case with any
   non-CLEAR check.
 - Accept: one immutable decision per case, reproducible from what it references.
+- **Gate evidence (2026-09-10)**: the acceptance driven whole (`DecisionDatabaseTest`, 10
+  tests over real HTTP and the real run) — **one immutable decision per case**: a ten-way
+  reviewer race lands one 204 / nine 409s / one row / one `kyc.DecisionRecorded` record;
+  a second decision is a 409 "already decided" with the first untouched; `UPDATE`/`DELETE`
+  denied on **every column** of both tables, list from `information_schema` (the
+  `P0-TST-007` idiom), with no `UPDATE` grant at all so no freeze trigger is needed (the
+  `audit_record` model); **reproducible**: the replay test rebuilds the decision's inputs
+  from the check rows the record *references* and the pinned policy code, and re-derives
+  the stored outcome. **Attributable both ways** (`INV-KYC-02`'s two actor cases): a
+  reviewer's decision names the person in `decided_by` and the audit record; the automatic
+  one is `basis=AUTOMATIC`, `decided_by NULL`, actor `system` — the **sixth enumerated
+  `enterSystem()` site**, justified in `SECURITY_ARCHITECTURE.md`, scoped around the audit
+  write only so the reviewer path can never inherit it. **Policy-pinned**: the CASE's own
+  `policy_version`, copied by the factory — never `CURRENT` re-read (`INV-HIST-04`) — and
+  the evidence references are a join table with real FKs, so the accepted upload race
+  (`P2-TSK-008`) is now *mechanically* harmless. **The automatic policy lives on the domain
+  factory** (`KycDecision.automatic` refuses any non-CLEAR check loudly — `INV-LIFE-02`'s
+  rejected-by-the-domain, proven at the domain since production reachability alone would
+  make the refusal untestable) and rides `CaseAssessment`'s own transaction — deliberately
+  unlike the assess-after-commit rule, because it reads only what that transaction already
+  read, so the all-clear-and-undecided state has **no observable instant**; a reviewed
+  case (BLOCKED-first assessment) never reaches it, so `IN_REVIEW → RFD` stays durable and
+  the reviewer endpoint decides it. The conditional case move
+  (`READY_FOR_DECISION → terminal`) is the arbiter; `UNIQUE (case_id)` **total** is defence
+  in depth. Four assertions in two suites were superseded from `READY_FOR_DECISION` to
+  `APPROVED` (the `P2-TSK-010` stopgap-superseded precedent). The 409 details are named
+  for what is checked — "already decided" vs "not ready" (the `NOT_ACTIVE` lesson).
+  **Seven mutations, all caught by the intended assertion** — arbiter ignored, policy
+  predicate removed, evidence refs dropped, audit dropped, automatic hook dropped,
+  `UPDATE` granted in V007 (caught against a from-scratch database), reviewer's audit
+  written as the platform (the hermetic site enumeration is the second control).
+  983→995 hermetic / 524 database / 14 kafka.
 - Risk: High. Cx: M. DoD: `DOD-SEC`
 
-**P2-TSK-014 — The projection: a decision moves `customer.status`** — `TODO`
+**P2-TSK-014 — The projection: a decision moves `customer.status`** — `READY` (2026-09-10)
 - Context: app / party / kyc
 - Description: The `app` orchestration: recording a decision and transitioning
   `party.customer.status` (`PENDING → ACTIVE`/`REJECTED`) in **one transaction** (ADR-0035);

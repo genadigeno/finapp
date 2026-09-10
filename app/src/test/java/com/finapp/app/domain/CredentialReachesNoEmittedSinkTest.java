@@ -270,6 +270,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // review_task.resolution_reason (RESTRICTED-PII at its ceiling, rendered
                         // only on the reviewer surface). No event carries it.
                         "ResolutionRequest",
+                        // P2-TSK-013: the decision's outcome and reason - an enumerated value
+                        // and free prose, never a secret. The ResolutionRequest shape: the
+                        // reason reaches exactly the audit record and kyc_decision.reason
+                        // (RESTRICTED-PII at its ceiling), and no event carries it.
+                        "DecisionRequest",
                         // P2-TSK-008. Carries no secret and no PII field by name - the document
                         // CONTENT is RESTRICTED-PII, and what protects it is not the secret
                         // vocabulary (a field named `content` is exactly the innocent name the

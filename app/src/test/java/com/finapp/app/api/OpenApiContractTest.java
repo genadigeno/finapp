@@ -286,7 +286,10 @@ class OpenApiContractTest {
                         // P2-TSK-012. The reviewer surface, the phase's privileged endpoints:
                         // both behind @RequiresPermission(KYC_REVIEW), the read audited.
                         ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}",
-                        ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/reviews/{taskId}/resolution");
+                        ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/reviews/{taskId}/resolution",
+                        // P2-TSK-013. The decision: the one recorded act every later phase
+                        // gates on (INV-KYC-02), behind the same permission.
+                        ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/decision");
     }
 
     @Test
