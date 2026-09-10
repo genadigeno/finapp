@@ -445,6 +445,23 @@ class OwnershipIsScopedTest {
                                         + " boundary and the read audited as part of"
                                         + " kyc.CaseRead in the same unit of work.")),
                     Map.entry(
+                            "com.finapp.party.JdbcPartyStore.moveCustomerStatus",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-014. The projection write (ADR-0035, INV-KYC-05):"
+                                        + " the customer identifier is never a request's - it is"
+                                        + " read from the kyc case row the decision names, and"
+                                        + " the one production caller is DecisionRecording,"
+                                        + " reached only past KYC_REVIEW or as the platform's"
+                                        + " automatic policy. What stands in for an ownership"
+                                        + " predicate is the statement's own conditional"
+                                        + " (status = PENDING - the machine's edge, so a wrong"
+                                        + " identifier or a non-pending customer moves nothing"
+                                        + " and the caller fails the whole transaction loudly),"
+                                        + " and the kyc.DecisionRecorded record riding the same"
+                                        + " transaction. Nothing else transitions a customer"
+                                        + " from a verification outcome.")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcCheckStore.newestOfType",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

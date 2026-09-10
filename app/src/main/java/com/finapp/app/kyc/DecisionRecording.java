@@ -11,6 +11,9 @@ import com.finapp.kyc.KycCaseStore;
 import com.finapp.kyc.KycDecision;
 import com.finapp.kyc.KycDecisionStore;
 import com.finapp.kyc.VerificationCheck;
+import com.finapp.party.CustomerId;
+import com.finapp.party.CustomerStatus;
+import com.finapp.party.PartyStore;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
@@ -72,6 +75,7 @@ public class DecisionRecording {
     private final KycCaseStore<Connection> cases;
     private final CheckStore<Connection> checks;
     private final KycDecisionStore<Connection> decisions;
+    private final PartyStore<Connection> parties;
     private final AuditWriter<Connection> auditWriter;
     private final IdGenerator ids;
     private final Clock clock;
@@ -81,6 +85,7 @@ public class DecisionRecording {
             KycCaseStore<Connection> kycCaseStore,
             CheckStore<Connection> checkStore,
             KycDecisionStore<Connection> kycDecisionStore,
+            PartyStore<Connection> partyStore,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
@@ -90,6 +95,7 @@ public class DecisionRecording {
         this.checks = Objects.requireNonNull(checkStore, "checkStore must not be null");
         this.decisions =
                 Objects.requireNonNull(kycDecisionStore, "kycDecisionStore must not be null");
+        this.parties = Objects.requireNonNull(partyStore, "partyStore must not be null");
         this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
         this.ids = Objects.requireNonNull(idGenerator, "idGenerator must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -147,6 +153,7 @@ public class DecisionRecording {
                     // The actor is the person the interceptor proved - never the platform
                     // (INV-KYC-02: the record names who decided).
                     audit(unitOfWork, decision, SecurityContext.require());
+                    project(unitOfWork, kycCase.get(), outcome);
                     return Recording.RECORDED;
                 });
     }
@@ -189,6 +196,45 @@ public class DecisionRecording {
         decisions.record(unitOfWork, decision);
         try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
             audit(unitOfWork, decision, SecurityContext.require());
+        }
+        project(unitOfWork, kycCase, DecisionOutcome.APPROVED);
+    }
+
+    /**
+     * The projection: the customer's status learns the decision, in the same transaction
+     * (`P2-TSK-014`, ADR-0035, {@code INV-KYC-05}).
+     *
+     * <p>The last write of the recording, deliberately — the atomicity test injects its
+     * failure here, and a crash between the decision and the projection is impossible because
+     * there is no between: one transaction commits both or neither.
+     *
+     * <p>The outcome-to-status mapping lives in {@code app} because {@code kyc} cannot see
+     * {@code party} (module isolation): the projection is precisely the cross-context fact the
+     * orchestration exists to carry. A lost conditional is a <strong>loud failure of the whole
+     * transaction</strong> — the only reachable cause is a customer no longer {@code PENDING}
+     * (closed mid-verification), and recording a decision beside an unmoved projection would
+     * be the silent drift {@code INV-KYC-05} forbids; refusing keeps the case decidable once
+     * the contradiction is resolved.
+     */
+    private void project(Connection unitOfWork, KycCase kycCase, DecisionOutcome outcome) {
+        CustomerStatus target =
+                switch (outcome) {
+                    case APPROVED -> CustomerStatus.ACTIVE;
+                    case REJECTED -> CustomerStatus.REJECTED;
+                };
+        boolean moved =
+                parties.moveCustomerStatus(
+                        unitOfWork,
+                        CustomerId.of(kycCase.customerId()),
+                        CustomerStatus.PENDING,
+                        target,
+                        Instant.now(clock));
+        if (!moved) {
+            throw new IllegalStateException(
+                    "customer " + kycCase.customerId() + " of case " + kycCase.id()
+                            + " was not PENDING when its decision was recorded: the projection"
+                            + " cannot follow the decision, so neither is recorded"
+                            + " (INV-KYC-05)");
         }
     }
 

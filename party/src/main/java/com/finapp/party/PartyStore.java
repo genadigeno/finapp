@@ -40,6 +40,28 @@ public interface PartyStore<T> {
     Optional<Customer> findLiveCustomerFor(T unitOfWork, PartyId partyId);
 
     /**
+     * {@code from → to} on a customer, conditionally — the projection write (`P2-TSK-014`).
+     *
+     * <p>The one production caller is the decision orchestration ({@code DecisionRecording},
+     * ADR-0035): the customer's status is a <strong>projection</strong> of the KYC decision
+     * ({@code INV-KYC-05}), moved in the same transaction that records it, and nothing else
+     * transitions a customer from a verification outcome. The conditional {@code WHERE
+     * status = ?} is the machine's edge in the statement — row count is the outcome, so N
+     * concurrent callers produce one move ({@code KycCaseStore.moveStatus}'s idiom).
+     *
+     * @return whether this caller moved the row. A false means the customer was not in
+     *     {@code from} — and the caller decides how loud that is; for the decision
+     *     orchestration it is a failure of the whole transaction, because a decision recorded
+     *     beside an unmoved projection is the drift {@code INV-KYC-05} forbids
+     */
+    boolean moveCustomerStatus(
+            T unitOfWork,
+            CustomerId customerId,
+            CustomerStatus from,
+            CustomerStatus to,
+            java.time.Instant at);
+
+    /**
      * Changes the display name, and reports what it replaced.
      *
      * <p><strong>One statement, and that is what makes the audit record true.</strong> A read

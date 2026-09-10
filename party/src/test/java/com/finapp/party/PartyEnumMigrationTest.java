@@ -29,6 +29,10 @@ class PartyEnumMigrationTest {
 
     private static final String MIGRATION = "db/migration/party/V002__create_party_and_customer.sql";
 
+    /** The migration that most recently replaced the status constraint and the index (P2-TSK-014). */
+    private static final String LATEST =
+            "db/migration/party/V005__customer_rejection_and_status_grant_narrowing.sql";
+
     @Test
     @DisplayName("the kind constraint lists exactly the kinds the enum declares")
     void kindsAgree() {
@@ -38,33 +42,39 @@ class PartyEnumMigrationTest {
     }
 
     @Test
-    @DisplayName("the status constraint lists exactly the statuses the enum declares")
+    @DisplayName("the LATEST status constraint lists exactly the statuses the enum declares")
     void statusesAgree() {
-        assertThat(readMigration())
-                .as("V002's CHECK must match CustomerStatus exactly")
+        // Applied migrations are history (ADR-0011): the constraint moved by REPLACEMENT when
+        // REJECTED arrived (V005), so the enum reconciles against the latest definition - the
+        // RoleAssignmentMigrationTest lesson, met here the day this file's original
+        // one-terminal assertion was built to break.
+        assertThat(read(LATEST))
+                .as("the latest CHECK must match CustomerStatus exactly")
                 .contains("CHECK (status IN (" + CustomerStatus.sqlValueList() + "))");
     }
 
     @Test
-    @DisplayName("the terminal state is the one the partial index treats as terminal")
-    void theTerminalStateMatchesTheIndex() {
+    @DisplayName("the LATEST index predicate excludes exactly the enum's terminal states")
+    void theTerminalStatesMatchTheIndex() {
         // The partial unique index says "at most one live relationship per party" by excluding
-        // WHERE status <> 'CLOSED'. That literal is the enum's terminal state, and if a second
-        // terminal state were added the index would silently keep letting a party hold one row in
-        // each - two dead relationships counting as live.
-        //
-        // Derived rather than hardcoded, so adding a terminal state fails here rather than in a
-        // duplicate-customer incident.
-        long terminals =
-                java.util.Arrays.stream(CustomerStatus.values())
-                        .filter(CustomerStatus::isTerminal)
-                        .count();
-        assertThat(terminals)
-                .as("the partial index encodes exactly one terminal state; see V002")
-                .isEqualTo(1);
+        // the terminal states. Derived from sqlTerminalValueList() so "terminal" and "frees
+        // the slot" stay one definition: a third terminal state added without a new index
+        // migration fails here rather than in a duplicate-customer incident - or, in the other
+        // direction, as a refused party blocked from re-onboarding forever.
+        assertThat(read(LATEST))
+                .contains(
+                        "WHERE status NOT IN (" + CustomerStatus.sqlTerminalValueList() + ")");
+    }
 
-        assertThat(readMigration())
-                .contains("WHERE status <> '" + CustomerStatus.CLOSED.name() + "'");
+    @Test
+    @DisplayName("history keeps its shape: V002's original literals are pinned")
+    void historyKeepsItsShape() {
+        // V002 cannot be edited (ADR-0011), and its original one-terminal forms staying
+        // exactly as applied is its own claim - separate from the latest definitions above.
+        String original = readMigration();
+        assertThat(original)
+                .contains("CHECK (status IN ('PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSED'))")
+                .contains("WHERE status <> 'CLOSED'");
     }
 
     @Test
@@ -84,17 +94,22 @@ class PartyEnumMigrationTest {
         // Without this, a renamed or moved file would make every assertion above pass over an
         // exception nobody sees - or, worse, over an empty string.
         assertThat(readMigration()).contains("CREATE TABLE party.party");
+        assertThat(read(LATEST)).contains("ALTER TABLE party.customer");
     }
 
     private static String readMigration() {
+        return read(MIGRATION);
+    }
+
+    private static String read(String resource) {
         try (InputStream stream =
-                PartyEnumMigrationTest.class.getClassLoader().getResourceAsStream(MIGRATION)) {
+                PartyEnumMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
             if (stream == null) {
-                throw new IllegalStateException(MIGRATION + " is not on the test classpath");
+                throw new IllegalStateException(resource + " is not on the test classpath");
             }
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new UncheckedIOException("Could not read " + MIGRATION, e);
+            throw new UncheckedIOException("Could not read " + resource, e);
         }
     }
 }

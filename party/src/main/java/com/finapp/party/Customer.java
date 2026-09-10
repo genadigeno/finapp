@@ -105,6 +105,18 @@ public final class Customer {
         return transitionTo(CustomerStatus.CLOSED, clock);
     }
 
+    /**
+     * {@code PENDING → REJECTED}. Terminal (`P2-TSK-014`, ADR-0035).
+     *
+     * <p>What a refusing KYC decision does to the relationship it was deciding: never usable,
+     * now decided so. Only {@code PENDING} can be rejected — an {@code ACTIVE} relationship
+     * that must end ends by {@link #close}, because rejection is an onboarding answer and not a
+     * way to terminate a relationship that was already admitted.
+     */
+    public Customer reject(Clock clock) {
+        return transitionTo(CustomerStatus.REJECTED, clock);
+    }
+
     private Customer transitionTo(CustomerStatus target, Clock clock) {
         Objects.requireNonNull(clock, "clock must not be null");
         if (!status.canTransitionTo(target)) {

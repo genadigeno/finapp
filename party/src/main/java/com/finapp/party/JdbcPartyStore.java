@@ -53,12 +53,14 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(partyId, "partyId must not be null");
 
-        // The predicate is the customer_one_live_relationship_per_party index's own
-        // (status <> 'CLOSED'), so this read and the rule that makes it unique agree by
-        // construction.
+        // The predicate is the customer_one_live_relationship_per_party index's own - the
+        // non-terminal states, V005's derived form - so this read and the rule that makes it
+        // unique agree by construction. Built from the same sqlTerminalValueList() the
+        // migration cites, so a third terminal state changes both or neither.
         String sql =
                 "SELECT id, party_id, status, opened_at, status_changed_at FROM party.customer"
-                        + " WHERE party_id = ? AND status <> 'CLOSED'";
+                        + " WHERE party_id = ? AND status NOT IN ("
+                        + CustomerStatus.sqlTerminalValueList() + ")";
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
             select.setObject(1, partyId.value());
             try (ResultSet rows = select.executeQuery()) {
@@ -76,6 +78,41 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
             throw new PartyStorageException(
                     DatabaseFailure.describe(
                             "Could not read the live customer of party " + partyId, e));
+        }
+    }
+
+    @Override
+    public boolean moveCustomerStatus(
+            Connection unitOfWork,
+            CustomerId customerId,
+            CustomerStatus from,
+            CustomerStatus to,
+            java.time.Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(to, "to must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+        if (!from.canTransitionTo(to)) {
+            // The machine's answer, asked before any SQL (INV-LIFE-02): the store must not be
+            // the second place a forbidden edge could be written.
+            throw new IllegalCustomerTransitionException(customerId, from, to);
+        }
+        String sql =
+                "UPDATE party.customer SET status = ?, status_changed_at = ?"
+                        + " WHERE id = ? AND status = ?";
+        try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
+            update.setString(1, to.name());
+            update.setTimestamp(2, java.sql.Timestamp.from(at));
+            update.setObject(3, customerId.value());
+            update.setString(4, from.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException e) {
+            throw new PartyStorageException(
+                    DatabaseFailure.describe(
+                            "Could not move customer " + customerId + " from " + from + " to "
+                                    + to,
+                            e));
         }
     }
 

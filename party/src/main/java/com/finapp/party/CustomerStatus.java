@@ -46,7 +46,20 @@ public enum CustomerStatus {
     SUSPENDED,
 
     /** Terminal. The relationship has ended and cannot be restarted. */
-    CLOSED;
+    CLOSED,
+
+    /**
+     * Terminal. The KYC decision refused onboarding (`P2-TSK-014`, ADR-0035).
+     *
+     * <p>Reachable only from {@code PENDING}: rejection is what can happen to a relationship
+     * that never became usable, and an {@code ACTIVE} relationship that must end ends by
+     * {@code CLOSED}. Deliberately not mapped onto {@code CLOSED}, which would overload one
+     * terminal with two meanings — "ended" and "refused" — and make this projection unfaithful
+     * to the decision it mirrors ({@code INV-KYC-05}). Re-onboarding after changed
+     * circumstances is a <em>new</em> Customer ({@code INV-LIFE-04}), which the one-live index
+     * permits because a terminal state frees the slot.
+     */
+    REJECTED;
 
     /**
      * The states reachable from this one.
@@ -56,10 +69,10 @@ public enum CustomerStatus {
      */
     public Set<CustomerStatus> permittedTransitions() {
         return switch (this) {
-            case PENDING -> EnumSet.of(ACTIVE, CLOSED);
+            case PENDING -> EnumSet.of(ACTIVE, CLOSED, REJECTED);
             case ACTIVE -> EnumSet.of(SUSPENDED, CLOSED);
             case SUSPENDED -> EnumSet.of(ACTIVE, CLOSED);
-            case CLOSED -> EnumSet.noneOf(CustomerStatus.class);
+            case CLOSED, REJECTED -> EnumSet.noneOf(CustomerStatus.class);
         };
     }
 
@@ -74,6 +87,24 @@ public enum CustomerStatus {
     /** The states as a SQL literal list, for the {@code CHECK} constraint. */
     public static String sqlValueList() {
         return Arrays.stream(values())
+                .map(status -> "'" + status.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * The terminal states as a SQL literal list, for the one-live-relationship index predicate
+     * (`P2-TSK-014`, the {@code KycCaseStatus.sqlTerminalValueList} shape).
+     *
+     * <p>Generated so that "terminal" and "frees the party's one-live slot" are one definition:
+     * {@code PartyEnumMigrationTest}'s original one-terminal assertion existed precisely to
+     * break the day a second terminal arrived — it did, here — and the repair it demanded is
+     * this derivation rather than a wider hand-written literal. A state added to this machine
+     * without a decision about which side of the predicate it sits on fails that reconciliation,
+     * never a duplicate-customer incident.
+     */
+    public static String sqlTerminalValueList() {
+        return Arrays.stream(values())
+                .filter(CustomerStatus::isTerminal)
                 .map(status -> "'" + status.name() + "'")
                 .collect(Collectors.joining(", "));
     }

@@ -135,18 +135,20 @@ class CustomerLifecycleTest {
     }
 
     @Test
-    @DisplayName("the machine has exactly one terminal state, and it is CLOSED")
-    void exactlyOneTerminalState() {
+    @DisplayName("the terminal states are CLOSED and REJECTED, and no others")
+    void exactlyTheTwoTerminalStates() {
         // A vacuity guard for the sweep above: if permittedTransitions() ever returned empty for
         // every state, every "must be refused" assertion would pass while the machine allowed
-        // nothing at all.
+        // nothing at all. REJECTED joined at P2-TSK-014 - the KYC decision's refusal, terminal
+        // for INV-LIFE-04's reason: re-onboarding is a new Customer, never a reopened one.
         Set<CustomerStatus> terminal = EnumSet.noneOf(CustomerStatus.class);
         for (CustomerStatus status : CustomerStatus.values()) {
             if (status.isTerminal()) {
                 terminal.add(status);
             }
         }
-        assertThat(terminal).containsExactly(CustomerStatus.CLOSED);
+        assertThat(terminal)
+                .containsExactlyInAnyOrder(CustomerStatus.CLOSED, CustomerStatus.REJECTED);
     }
 
     // -----------------------------------------------------------------
@@ -163,6 +165,7 @@ class CustomerLifecycleTest {
             case ACTIVE -> customer.activate(CLOCK);
             case SUSPENDED -> customer.suspend(CLOCK);
             case CLOSED -> customer.close(CLOCK);
+            case REJECTED -> customer.reject(CLOCK);
         };
     }
 }

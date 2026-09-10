@@ -3091,7 +3091,7 @@ capability map, and the task list below is the schedule.
   983→995 hermetic / 524 database / 14 kafka.
 - Risk: High. Cx: M. DoD: `DOD-SEC`
 
-**P2-TSK-014 — The projection: a decision moves `customer.status`** — `READY` (2026-09-10)
+**P2-TSK-014 — The projection: a decision moves `customer.status`** — `COMPLETE` (2026-09-10)
 - Context: app / party / kyc
 - Description: The `app` orchestration: recording a decision and transitioning
   `party.customer.status` (`PENDING → ACTIVE`/`REJECTED`) in **one transaction** (ADR-0035);
@@ -3106,9 +3106,42 @@ capability map, and the task list below is the schedule.
   agree, swept); grant narrowness asserted.
 - Accept: an approved case's customer is `ACTIVE`, atomically, and the reconciliation sweep
   proves the pair cannot drift.
+- **Gate evidence (2026-09-10)**: the acceptance driven whole (`CustomerProjectionDatabaseTest`,
+  8 tests) — **atomically, both doors**: a reviewer's approval and the automatic all-clear run
+  each leave the customer `ACTIVE` in the decision's own transaction, with the projection as
+  the recording's **last write** so the atomicity probes target it: an **injected failure**
+  and a **backend killed mid-recording** (the `P1-TSK-012` deterministic-kill idiom) each
+  leave *nothing* — no decision, no audit record, case still `READY_FOR_DECISION`, customer
+  still `PENDING`. **The sweep proves the pair cannot drift, in both directions**: every
+  decision's customer moved as the outcome says, and — the sharp direction — no customer
+  under verification left `PENDING` without a decision authorizing it (scoped to customers
+  *with* a KYC case, because schema-suite fixtures insert case-less `ACTIVE` rows to probe
+  the one-live index). **`CustomerStatus` gained `REJECTED`** — the plan's and ADR-0035's own
+  word: terminal, `PENDING`-only, deliberately not overloaded onto `CLOSED` ("refused" and
+  "ended" are different facts, and the projection stays faithful to the decision). Rejection
+  **frees the party's one-live slot**, proven behaviourally by the re-onboarding insert V005's
+  widened predicate admits — and `PartyEnumMigrationTest`'s one-terminal assertion, written
+  to break the day a second terminal arrived, **broke on schedule** and now derives the
+  latest CHECK and the index predicate from the enum's own `sqlTerminalValueList()` (the
+  `RoleAssignmentMigrationTest` applied-history lesson), with V002's originals pinned as
+  history. **The grant premise was corrected rather than propagated**: V002 had already paid
+  a table-level `UPDATE` before any writer existed, so V005 **narrows** it to
+  `(status, status_changed_at)` — the V004 precedent, proven by the per-column denial sweep
+  with its positive control. A lost projection conditional (a customer closed mid-KYC, the
+  one reachable cause) **fails the whole transaction loudly**: recording the decision beside
+  an unmoved projection would be the silent drift `INV-KYC-05` forbids, proven by the
+  closed-customer test (500, nothing written, case still decidable). The mapping lives in
+  `app` because `kyc` cannot see `party`; `JdbcPartyStore.moveCustomerStatus` asks the
+  machine before any SQL (`INV-LIFE-02`) and joined the ownership register (`ADMINISTERED`).
+  No new audit action, deliberately — the projection is derived bookkeeping of the audited
+  decision, one join away. **Seven mutations, all caught by the intended assertion** —
+  projection dropped (both doors), conditional from-status removed, lost-move failure
+  swallowed, mapping inverted, index predicate kept narrow (caught against a from-scratch
+  database), grant not narrowed, `status_changed_at` not written. 996 hermetic / 532
+  database / 14 kafka. **M2.3 closes, 3 of 3.**
 - Risk: High. Cx: M. DoD: `DOD-KERNEL`
 
-**P2-TST-001 — The KYC gate criteria, demonstrated** — `TODO`
+**P2-TST-001 — The KYC gate criteria, demonstrated** — `READY` (2026-09-10)
 - Context: kyc / test
 - Description: The Phase 2 gate's first three bullets held by demonstration: exhaustive invalid
   transitions; verdict-is-evidence (no decision from a provider outcome without the platform's
