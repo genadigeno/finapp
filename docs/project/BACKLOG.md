@@ -2945,7 +2945,7 @@ capability map, and the task list below is the schedule.
   removed, retry-never (the 009 regression), budget unbounded, exhausted-no-longer-blocks.
 - Risk: Medium. Cx: M. DoD: `DOD-SEC`
 
-**P2-TSK-011 — Provider callbacks, deduplicated** — `READY` (2026-09-10)
+**P2-TSK-011 — Provider callbacks, deduplicated** — `COMPLETE` (2026-09-10)
 - Context: kyc / api / integration
 - Description: The inbound callback endpoint for asynchronous provider results, deduplicated
   through the platform inbox, updating checks by conditional transition.
@@ -2962,11 +2962,41 @@ capability map, and the task list below is the schedule.
 - Tests: duplicate, concurrent, late and malformed callbacks — one transition, no 500, evidence
   retained.
 - Accept: the four callback scenarios each proven against a real database.
+- **Gate evidence (2026-09-10)**: all four scenarios proven over real HTTP against a real
+  database (`ProviderCallbackDatabaseTest`) — a triple delivery and a **ten-way concurrent
+  race** each land one completion, one evidence row, one audit record, one inbox row, every
+  response 204 or the inbox's honest 409 (`CONTENDED` is **not acknowledged**, its own
+  contract, so the provider redelivers and either resolution of the race is correct); a late
+  callback for a terminal check is evidence and never a transition (`INV-LIFE-04`,
+  acknowledged 204 — a refusal would make a correct provider retry a fact we will never
+  accept); eleven malformed-but-signed shapes are each the caller's 4xx, never a 500; and the
+  unsigned or mis-signed stranger gets one uniform 401 with **nothing written**. **The
+  signature is real authenticity, not a checksum**: the callback clears sanctions screenings,
+  so HMAC-SHA256 over the raw bytes is verified before parsing and before any read, constant
+  time asserted structurally, RFC 4231's own vectors in the suite (`CallbackSignatureTest`) —
+  limits (one static key, no rotation, no replay window BECAUSE the inbox dedupes) stated in
+  `SECURITY_ARCHITECTURE.md`. **Two dedupe layers designed in**: inbox for identical
+  deliveries, conditional completion for distinct re-sends; evidence appended ALWAYS on this
+  path (the late answer is a genuine provider statement, `INV-HIST-02`), deliberately unlike
+  the run's evidence-on-win. The callback **heals the stranded-DISPATCHED remainder**
+  `P2-TSK-009` recorded (dispatch-commits-before-call means the provider received that
+  request), and a duplicate delivery re-assesses, healing a crash between commit and
+  assessment. `CaseAssessment` + `CheckOutcomeTrail` extracted on the second-caller licence
+  (`P1-TSK-033`); the enumerated `enterSystem()` site MOVED to `CheckOutcomeTrail.record` —
+  one site whichever door. `OwnershipIsScopedTest` gained `SIGNED_CALLBACK` (its seventh
+  class; every existing label would say something false); `CallbackKey` is the **fourth**
+  per-credential confinement and the debt row's trigger, fired — generalisation recorded as
+  its own due work. **The gate found `CallbackKey` had no test** (the `P1-TSK-017` finding,
+  about to repeat) — `CallbackKeyTest` closes it — and found this task's own structural
+  assertion vacuous as first written (a constant pool holds class and method names as
+  separate entries). **Seven mutations, all caught by the intended assertion** — signature
+  bypassed, inbox bypassed, completion unconditional, evidence dropped, assessment dropped,
+  constant-time swapped for `Arrays.equals`, confinement removed.
 - Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
 
 ## P2-EPIC-05 / 01 — Decisions and review (M2.3)
 
-**P2-TSK-012 — Review tasks and the reviewer endpoints** — `TODO`
+**P2-TSK-012 — Review tasks and the reviewer endpoints** — `READY` (2026-09-10)
 - Context: kyc / api
 - Description: `ReviewTask`, `GET /v1/kyc/cases/{id}` and
   `POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution` — behind

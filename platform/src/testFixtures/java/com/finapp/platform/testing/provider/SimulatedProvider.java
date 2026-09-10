@@ -300,6 +300,39 @@ public final class SimulatedProvider implements AutoCloseable {
     }
 
     /**
+     * The provider calls us back, signing the body — HMAC-SHA256, hex, in
+     * {@value #SIGNATURE_HEADER}.
+     *
+     * <p>The scheme is <em>this</em> simulated provider's wire format (`P2-TSK-011`), computed
+     * here with JDK primitives because the harness cannot depend on the module that verifies
+     * it; the receiver's test reconciles the header name so the two cannot drift.
+     *
+     * @return the status the receiver returned for the last delivery
+     */
+    public int deliverSignedCallback(URI target, String body, byte[] signingSecret, int times) {
+        int status = -1;
+        for (int delivery = 0; delivery < times; delivery++) {
+            status = send(target, body, signatureOf(body, signingSecret));
+        }
+        return status;
+    }
+
+    /** The header {@link #deliverSignedCallback} delivers its signature in. */
+    public static final String SIGNATURE_HEADER = "X-Provider-Signature";
+
+    private static String signatureOf(String body, byte[] signingSecret) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(signingSecret, "HmacSHA256"));
+            return java.util.HexFormat.of()
+                    .formatHex(mac.doFinal(body.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException
+                | java.security.InvalidKeyException impossible) {
+            throw new IllegalStateException("HmacSHA256 is required by every JVM", impossible);
+        }
+    }
+
+    /**
      * The provider calls us back later than we expected it to.
      *
      * <p>{@code CLAUDE.md}: <em>settlement arrives late</em>, and <em>an event is late or
@@ -331,12 +364,19 @@ public final class SimulatedProvider implements AutoCloseable {
     }
 
     private int send(URI target, String body) {
-        HttpRequest request =
+        return send(target, body, null);
+    }
+
+    private int send(URI target, String body, String signature) {
+        HttpRequest.Builder builder =
                 HttpRequest.newBuilder(target)
                         .header("Content-Type", "application/json")
                         .timeout(Duration.ofSeconds(10))
-                        .POST(HttpRequest.BodyPublishers.ofString(body))
-                        .build();
+                        .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (signature != null) {
+            builder.header(SIGNATURE_HEADER, signature);
+        }
+        HttpRequest request = builder.build();
         try {
             return callbackClient.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
         } catch (IOException e) {

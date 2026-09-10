@@ -157,7 +157,29 @@ class OwnershipIsScopedTest {
          * <strong>no request-supplied identifier at all</strong>. An endpoint with nothing to name a
          * resource with cannot be pointed at somebody else's.
          */
-        SESSION_DERIVED
+        SESSION_DERIVED,
+
+        /**
+         * An external system names the resource, and a signature is what authorises the naming.
+         *
+         * <p>Added by {@code P2-TSK-011} for the provider-callback door, and it is a new class
+         * because every existing label would say something false: not {@link #ADMINISTERED} (no
+         * permission, no not-self rule — the caller is a machine, not a person with a role), not
+         * {@link #AUTHORITATIVE_ID} (the identifier comes straight from the request body, which
+         * is exactly the provenance that class excludes), not {@link #BEARER_SCOPED} (the
+         * statement carries no bearer predicate — the proof happened at the boundary, over the
+         * whole body). Squeezing it in would repeat the mistake this register's history warns
+         * about: {@code SESSION_DERIVED} and {@code BEARER_SCOPED} both exist because a squeeze
+         * would have lied.
+         *
+         * <p>What stands in for the ownership predicate, and the entry must say so: the HMAC
+         * signature verified over the raw body <em>before</em> the read runs (the caller proved
+         * it is the provider we dispatched to); the identifier is one the platform itself handed
+         * out — dispatch commits before the provider is ever called, so a check id the provider
+         * presents is a check id we gave it; and every write the callback can trigger is a
+         * conditional transition whose losing branch appends evidence and changes nothing.
+         */
+        SIGNED_CALLBACK
     }
 
     /**
@@ -399,6 +421,22 @@ class OwnershipIsScopedTest {
                                         + " No check identifier appears in any request. The"
                                         + " statement's AND status = ? is the concurrency"
                                         + " protocol, not an ownership predicate.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.findById",
+                            new Entry(
+                                    Scope.SIGNED_CALLBACK,
+                                    "P2-TSK-011. The CheckId comes from a provider callback's"
+                                        + " body - an external caller naming a resource, the"
+                                        + " exact shape this rule exists to force a decision"
+                                        + " on. What stands in for the ownership predicate: the"
+                                        + " HMAC signature verified at the boundary BEFORE this"
+                                        + " read runs, the identifier being one the platform"
+                                        + " handed the provider (dispatch-before-call), and"
+                                        + " every reachable write being a conditional"
+                                        + " transition whose losing branch appends evidence and"
+                                        + " changes nothing. ProviderCallbackDatabaseTest"
+                                        + " proves unsigned and mis-signed deliveries are"
+                                        + " refused with NOTHING written.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcCheckStore.appendEvidence",
                             new Entry(

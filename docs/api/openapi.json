@@ -1296,6 +1296,37 @@
         }
       }
     },
+    "/v1/providers/kyc/callbacks": {
+      "post": {
+        "operationId": "deliver",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Provider-Signature",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "format": "byte",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/v1/recoveries": {
       "post": {
         "operationId": "initiateRecovery",

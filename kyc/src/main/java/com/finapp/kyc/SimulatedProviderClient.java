@@ -6,7 +6,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -110,12 +109,9 @@ final class SimulatedProviderClient {
         if (!status.find()) {
             return CheckOutcome.INDETERMINATE;
         }
-        return switch (status.group(1).toLowerCase(Locale.ROOT)) {
-            case "clear" -> CheckOutcome.CLEAR;
-            case "hit" -> CheckOutcome.HIT;
-            // ADR-0008's sentence, executable: an unrecognised provider state maps to
-            // indeterminate, never to success or failure by assumption.
-            default -> CheckOutcome.INDETERMINATE;
-        };
+        // One definition of the wire vocabulary, shared with the callback parser (P2-TSK-011):
+        // ADR-0008's sentence - an unrecognised provider state maps to indeterminate, never to
+        // success or failure by assumption - must not exist twice.
+        return CheckOutcome.fromWire(status.group(1));
     }
 }

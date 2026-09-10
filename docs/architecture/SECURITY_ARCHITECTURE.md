@@ -174,13 +174,17 @@ before the handler runs — and the **target**, which names the customer. Each f
 comes to the enumeration and says this for itself; the entry is per handler, never a blanket
 "consumers are the platform".
 
-**The fifth site is a check outcome being recorded** (`P2-TSK-009`).
-`VerificationRunService.audit` writes `kyc.CheckCompleted` after a provider's answer is
+**The fifth site is a check outcome being recorded** (`P2-TSK-009`; the site **moved** from
+`VerificationRunService.audit` to `CheckOutcomeTrail.record` when `P2-TSK-011` gave outcomes a
+second door — the synchronous run and the provider callback both land here, because one site
+whichever door is what keeps this justification from existing in two copies that drift).
+`CheckOutcomeTrail.record` writes `kyc.CheckCompleted` after a provider's answer is
 normalised into the platform's own vocabulary, and nobody is present when a machine records
-what a machine answered: a verification run has no authenticated caller, and attributing the
-outcome to the customer under verification would record them as having assessed themselves.
-The platform asking the question is the honest actor. What ties the record to the person is
-the **correlation** — the run inherits the flow that started the checks — and the **target**,
+what a machine answered: neither a verification run nor a provider callback has an
+authenticated caller, and attributing the outcome to the customer under verification would
+record them as having assessed themselves. The platform asking the question is the honest
+actor. What ties the record to the person is the **correlation** — the run inherits the flow
+that started the checks, and a callback's is entered by the HTTP filter — and the **target**,
 which names the check, whose case names the customer. The record is deliberately about the
 *outcome being recorded*, never the decision: `INV-KYC-01` keeps the provider's verdict
 evidence, and the decision that will gate on it is `P2-TSK-013`'s separately audited act.
@@ -197,6 +201,39 @@ The actor is deliberately not part of the correlation context. A correlation ide
 execution and attributes nothing to anybody; an actor names a party. Merging them would put a
 customer identifier into every log line and every span, which is a disclosure into systems with
 different access control and retention (`INV-AUD-02`).
+
+## Signed provider callbacks
+
+`POST /v1/providers/kyc/callbacks` (`P2-TSK-011`) joins the small set of unauthenticated
+production endpoints, and it is the first whose caller is a **machine** rather than a person. What
+replaces authentication is an **HMAC-SHA256 signature over the raw request bytes**, presented in
+`X-Provider-Signature` and verified — in constant time, via `MessageDigest.isEqual` — **before
+anything else happens**: before the body is parsed, before any read, before the inbox is
+consulted. A missing, malformed and wrong signature are one uniform 401, because distinguishing
+them tells a forger which part of their attempt was close.
+
+**Why a signature and not a checksum.** The body decides whether a sanctions check reads `CLEAR`.
+An unauthenticated integrity check — a hash the caller computes themselves — would let anyone who
+can reach the port clear their own screening by sending a well-formed body with a matching hash.
+The tag must prove *possession of a shared secret*, which is what HMAC is; the key
+(`FINAPP_KYC_CALLBACK_KEY`, `CallbackKey`) is the fourth per-credential loopback confinement in
+`MfaKey`'s established shape.
+
+**The limits, stated rather than glossed:**
+
+- **One static key, no rotation.** Rotation needs either a key identifier in the header or a
+  try-both window, and both are mechanism built for a simulated provider nobody rotates. Phase 5's
+  real adapters own rotation.
+- **No per-provider keys.** One provider exists (the simulator behind every adapter). Real
+  multi-provider key management is Phase 5's.
+- **No replay window at the signature layer, deliberately.** A replayed callback is byte-identical,
+  so it carries the same `deliveryId` — and a duplicate delivery is exactly what the **inbox**
+  absorbs (`INV-IDEM-04`, `INV-KYC-03`). A timestamp-freshness check would add a clock agreement
+  with an external party to defend against a replay that is already harmless.
+- The signature proves the *sender*, not the *claim*: a signed callback naming a check the platform
+  never dispatched is refused because the check id is one the platform itself minted
+  (dispatch-commits-before-the-call, `P2-TSK-009`), which is the `SIGNED_CALLBACK` ownership class
+  in `OwnershipIsScopedTest`.
 
 ## Secrets
 

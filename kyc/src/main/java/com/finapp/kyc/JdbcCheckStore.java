@@ -179,6 +179,24 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
     }
 
     @Override
+    public Optional<VerificationCheck> findById(Connection unitOfWork, CheckId checkId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(checkId, "checkId must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT id, case_id, check_type, status, requested_at, status_changed_at"
+                                + " FROM " + TABLE + " WHERE id = ?")) {
+            select.setObject(1, checkId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next() ? Optional.of(rehydrate(rows)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new KycStorageException(
+                    DatabaseFailure.describe("reading check " + checkId, failure));
+        }
+    }
+
+    @Override
     public List<VerificationCheck> forCase(Connection unitOfWork, KycCaseId caseId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(caseId, "caseId must not be null");

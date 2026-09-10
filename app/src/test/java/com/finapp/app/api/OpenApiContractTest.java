@@ -278,7 +278,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/credential",
                         // P2-TSK-008. The phase's first customer-facing kyc surface: the upload
                         // onto one's own open case, the /v1/me ownership-by-absence shape.
-                        ApiVersion.CURRENT_PREFIX + "/me/kyc/documents");
+                        ApiVersion.CURRENT_PREFIX + "/me/kyc/documents",
+                        // P2-TSK-011. The inbound provider door: unauthenticated by honest
+                        // declaration, authenticated in fact by the HMAC signature over the raw
+                        // body - the deliberate act of publishing a machine-facing route.
+                        ApiVersion.CURRENT_PREFIX + "/providers/kyc/callbacks");
     }
 
     @Test

@@ -77,14 +77,17 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " Adding a channel does NOT come through here - it requires a session, so"
                         + " the interceptor has already established a real actor, and that asymmetry"
                         + " is what makes the first move in a takeover cost a stolen password.",
-                    "com.finapp.app.kyc.VerificationRunService.audit",
-                    "A check outcome is recorded (P2-TSK-009): the platform normalising a"
-                        + " provider's answer into its own vocabulary. Nobody is present when a"
-                        + " machine records what a machine answered - a run has no authenticated"
-                        + " caller, and attributing the outcome to the customer under"
-                        + " verification would record them as having assessed themselves. What"
-                        + " ties the record to the run is the CORRELATION, and the TARGET names"
-                        + " the check, whose case names the customer.",
+                    "com.finapp.app.kyc.CheckOutcomeTrail.record",
+                    "A check outcome is recorded (P2-TSK-009; the site MOVED here from"
+                        + " VerificationRunService.audit when P2-TSK-011 gave outcomes a second"
+                        + " door - one site whichever door, because two copies of this sentence"
+                        + " would drift): the platform normalising a provider's answer into its"
+                        + " own vocabulary. Nobody is present when a machine records what a"
+                        + " machine answered - neither a run nor a provider callback has an"
+                        + " authenticated caller, and attributing the outcome to the customer"
+                        + " under verification would record them as having assessed themselves."
+                        + " What ties the record to the flow is the CORRELATION, and the TARGET"
+                        + " names the check, whose case names the customer.",
                     "com.finapp.kyc.CustomerOpenedOpensCase.handle",
                     "The platform's first production CONSUMER (P2-TSK-007): a registration event"
                         + " opens a KYC case. A consumer has no authenticated caller - the person"

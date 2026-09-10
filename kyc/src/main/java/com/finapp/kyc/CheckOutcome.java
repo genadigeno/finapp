@@ -26,4 +26,24 @@ public enum CheckOutcome {
             case INDETERMINATE -> CheckStatus.INDETERMINATE;
         };
     }
+
+    /**
+     * The wire vocabulary's one definition (`P2-TSK-011`, extracted from the client the moment a
+     * second consumer arrived — the callback parser).
+     *
+     * <p>The default branch is {@link #INDETERMINATE}, <strong>never success</strong>: a state
+     * nobody mapped — including {@code null}, which a caller should refuse before calling this
+     * if absence is a boundary error — is "we do not know" (ADR-0008, {@code INV-LIFE-03}). Two
+     * copies of this switch would eventually disagree about exactly the branch that matters.
+     */
+    public static CheckOutcome fromWire(String status) {
+        if (status == null) {
+            return INDETERMINATE;
+        }
+        return switch (status.toLowerCase(java.util.Locale.ROOT)) {
+            case "clear" -> CLEAR;
+            case "hit" -> HIT;
+            default -> INDETERMINATE;
+        };
+    }
 }

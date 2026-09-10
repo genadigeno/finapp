@@ -176,15 +176,51 @@ public class KycBeans {
         return com.finapp.kyc.ScreeningAdapter.adverseMedia(providerUrl, timeout);
     }
 
+    /** The assessment and its routing — shared by the run and the callback door (P2-TSK-011). */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    CaseAssessment caseAssessment(
+            KycCaseStore<Connection> kycCaseStore,
+            com.finapp.kyc.CheckStore<Connection> checkStore,
+            com.finapp.kyc.ReviewTaskStore<Connection> reviewTaskStore,
+            java.util.List<com.finapp.kyc.VerificationProvider> providers,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionTemplate kycTransactions,
+            DataSource dataSource) {
+        return new CaseAssessment(
+                kycCaseStore,
+                checkStore,
+                reviewTaskStore,
+                providers,
+                idGenerator,
+                clock,
+                kycTransactions,
+                dataSource);
+    }
+
+    /** The one audit-and-counter trail for check outcomes, whichever door they arrive through. */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    CheckOutcomeTrail checkOutcomeTrail(
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new CheckOutcomeTrail(auditWriter, idGenerator, clock, meterRegistry);
+    }
+
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
             "finapp.kyc.provider.url")
     VerificationRunService verificationRunService(
             KycCaseStore<Connection> kycCaseStore,
             com.finapp.kyc.CheckStore<Connection> checkStore,
-            com.finapp.kyc.ReviewTaskStore<Connection> reviewTaskStore,
+            CaseAssessment caseAssessment,
+            CheckOutcomeTrail checkOutcomeTrail,
             java.util.List<com.finapp.kyc.VerificationProvider> providers,
-            AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
             TransactionTemplate kycTransactions,
@@ -193,14 +229,60 @@ public class KycBeans {
         return new VerificationRunService(
                 kycCaseStore,
                 checkStore,
-                reviewTaskStore,
+                caseAssessment,
+                checkOutcomeTrail,
                 providers,
-                auditWriter,
                 idGenerator,
                 clock,
                 kycTransactions,
                 dataSource,
                 meterRegistry);
+    }
+
+    /**
+     * The callback signing key, and the one place {@code FINAPP_KYC_CALLBACK_KEY} is read.
+     *
+     * <p>The {@code DocumentCipher} shape: a bad key stops the application here rather than at
+     * the first callback, and the marked local default is confined to loopback — the
+     * <strong>fourth</strong> per-credential confinement, the debt row's own trigger
+     * ({@code CallbackKey}'s javadoc carries the reckoning).
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    com.finapp.kyc.CallbackSignature callbackSignature(
+            @Value("${finapp.kyc.callback.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            Environment environment) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        return new com.finapp.kyc.CallbackSignature(CallbackKey.decode(configuredKey, loopback));
+    }
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            "finapp.kyc.provider.url")
+    ProviderCallbackService providerCallbackService(
+            com.finapp.kyc.CheckStore<Connection> checkStore,
+            com.finapp.kyc.CallbackSignature callbackSignature,
+            com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer,
+            CheckOutcomeTrail checkOutcomeTrail,
+            CaseAssessment caseAssessment,
+            tools.jackson.databind.ObjectMapper objectMapper,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionTemplate kycTransactions,
+            DataSource dataSource) {
+        return new ProviderCallbackService(
+                checkStore,
+                callbackSignature,
+                inboxConsumer,
+                checkOutcomeTrail,
+                caseAssessment,
+                objectMapper,
+                idGenerator,
+                clock,
+                kycTransactions,
+                dataSource);
     }
 
     @Bean

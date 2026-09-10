@@ -3,6 +3,7 @@ package com.finapp.kyc;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Stores verification checks and their evidence (`P2-TSK-009`).
@@ -21,11 +22,22 @@ public interface CheckStore<T> {
      *
      * <p>The one-in-flight partial unique index on {@code (case_id, check_type)} is the arbiter;
      * a lost race is handed the winner's check ({@code openOrConverge}'s semantics). Convergence
-     * looks for an existing check of the type in <em>any</em> state, newest first — a second run
-     * over a case with a {@code CLEAR} check must find that check, not insert a duplicate
-     * question.
+     * finds the newest check of the type: an in-flight or answered ({@code CLEAR}/{@code HIT})
+     * one is converged on — a second run must not re-ask an answered question — while a terminal
+     * {@code INDETERMINATE} under the retry budget invites a <em>new</em> check, and one at the
+     * budget is converged on because the assessment routes the type to a person (`P2-TSK-010`,
+     * correcting this doc's earlier "any state": an unknown is not an answer, ADR-0038).
      */
     Requested requestOrConverge(T unitOfWork, VerificationCheck fresh);
+
+    /**
+     * One check by its identifier.
+     *
+     * <p>Added for the callback door (`P2-TSK-011`), whose identifier arrives from an external
+     * caller — which is why {@code OwnershipIsScopedTest} classifies the implementation rather
+     * than waving it through: the signature at the boundary is what authorises the naming.
+     */
+    Optional<VerificationCheck> findById(T unitOfWork, CheckId checkId);
 
     /**
      * {@code REQUESTED → DISPATCHED}, conditionally.

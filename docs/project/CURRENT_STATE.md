@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-10 (`P2-TSK-010`)
+Last updated: 2026-09-10 (`P2-TSK-011`)
 
 ---
 
@@ -59,12 +59,14 @@ class, again).
 
 ## Current Milestone
 
-**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **5 of 7**
+**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **6 of 7**
 (2026-09-10) — the case aggregate, the first production consumer, the document store, the
-check machine and screening done; next is `P2-TSK-011`, provider callbacks (`P2-TSK-006`
-blocked on the consent gate). Acceptance: a case opened over HTTP reaches
-`READY_FOR_DECISION` on clean simulated checks, with evidence retained verbatim — real for
-all five check types as of `P2-TSK-010`, and a non-clean case now routes to a person.
+check machine, screening and the callback door done; the milestone's one remaining member,
+`P2-TSK-006`, stays blocked on the consent gate, so the next task is `P2-TSK-012` in M2.3.
+Acceptance: a case opened over HTTP reaches `READY_FOR_DECISION` on clean simulated checks,
+with evidence retained verbatim — real for all five check types as of `P2-TSK-010`, a
+non-clean case routes to a person, and a check a crash stranded mid-call now completes by
+the provider's own callback.
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
 **CLOSED 2026-09-09, 5 of 5.** The stated acceptance — an outbox event reaches a real consumer
@@ -223,13 +225,110 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-010` completed 2026-09-10 — screening: the three screening
-types run over the same check machine, and a case with a hit — or a question the provider
-keeps not answering — becomes explicit work for a person, atomically, under any number of
-instances. **Next: `P2-TSK-011` (`READY`)** — provider callbacks; `P2-TSK-006` stays blocked
-on the consent gate.
+**None in progress.** `P2-TSK-011` completed 2026-09-10 — provider callbacks: the phase's
+inbound door, authenticated by an HMAC signature over the raw bytes, deduplicated twice
+(inbox for identical deliveries, conditional completion for distinct re-sends), and the
+healer of the stranded-`DISPATCHED` remainder `P2-TSK-009` recorded. **Next: `P2-TSK-012`
+(`READY`)** — review tasks and the reviewer endpoints, opening M2.3; `P2-TSK-006` stays
+blocked on the consent gate.
 
 ### Just completed
+
+**`P2-TSK-011` — Provider callbacks, deduplicated** — `COMPLETE` (2026-09-10). The
+platform's first machine-facing endpoint: `POST /v1/providers/kyc/callbacks`, where an
+asynchronous provider answer completes a check **exactly once** however many times and
+however concurrently it arrives.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Duplicate and concurrent callbacks → one transition | `ProviderCallbackDatabaseTest`: a triple delivery and a ten-way concurrent race each land one completion, one evidence row, one audit record, one inbox row — every response 204 or the inbox's honest 409 |
+| A late callback is evidence, never a transition | A terminal `INDETERMINATE` stays terminal (`INV-LIFE-04`), the answer is retained verbatim (`INV-HIST-02`), zero audit records, and the delivery is acknowledged — a refusal would make a correct provider retry a fact we will never accept |
+| Malformed callbacks are the caller's 4xx, never our 500 | Eleven signed shapes swept — broken JSON, missing/blank/oversized/bad-charset deliveryId, missing/malformed/v4/unknown checkId, missing status, oversized body — each its own status, nothing written |
+| The unsigned stranger writes nothing | Missing and wrong signature are one uniform 401; the check stays `DISPATCHED`, no evidence, no audit, no inbox row |
+
+### The signature is the control, and a checksum was rejected by name
+
+The callback is the input that **clears sanctions screenings**, so a "signature" anyone can
+compute would be an open door to check-outcome forgery — qualitatively worse than any other
+unauthenticated surface here. HMAC-SHA256 over the raw bytes, verified before parsing,
+before any read, in constant time (`MessageDigest.isEqual`, asserted **structurally**
+because no behavioural test can see timing); proven against **RFC 4231's own vectors**, the
+`P1-TSK-017` vetted-library reasoning verbatim. The limits are stated in
+`SECURITY_ARCHITECTURE.md` rather than implied: one static key, no rotation, no per-provider
+keys — Phase 5's webhook work — and **no replay window at the signature layer, deliberately**:
+a replayed callback is byte-identical, so it is exactly the duplicate the inbox absorbs, and
+a freshness check would defend against a harmless replay with a clock agreement.
+
+### Two dedupe layers, blind in different directions — designed in, not found by a gate
+
+The `P2-TSK-007` lesson applied at design time: the **inbox** absorbs *identical*
+deliveries (the provider retrying one delivery reuses its `deliveryId`; the primary key on
+`(consumer, dedupe_key)` lets one instance run the handler), and the **conditional
+completion** absorbs *distinct* deliveries of the same result — a re-send under a fresh id,
+or a callback racing the synchronous run. `CONTENDED` is honoured as the inbox's contract
+demands: **not acknowledged** (409), so the provider redelivers and the dedupe absorbs or
+the redelivery lands, correct whichever way the race went. Evidence is appended **always**
+— the late answer and the losing racer are both genuine provider statements an
+investigation wants — where the run path retains evidence only on a win, and the difference
+is recorded as deliberate.
+
+### The callback is the healer, and assessment heals one deeper
+
+A check stranded `DISPATCHED` by a crash mid-call was `P2-TSK-009`'s visible-by-design
+remainder — and the provider *received* that request, because dispatch commits first. Its
+callback is how the stranded fact completes without a sweeper, which is why the fixtures
+build `DISPATCHED` checks through the stores: that state IS the scenario. After the delivery
+commits, the case is assessed in a separate transaction — and a **duplicate** re-assesses
+too, healing a crash that landed between a delivery's commit and its assessment.
+
+### Composition earned by a second caller, not invented for one
+
+The `P1-TSK-033` shape: `CaseAssessment` (assess + atomic tasks-then-move routing) and
+`CheckOutcomeTrail` (audit + eager counters) extracted from `VerificationRunService` when
+the callback became their second caller — and the **enumerated `enterSystem()` site moved**
+to `CheckOutcomeTrail.record`, one site whichever door the outcome arrives through, because
+two copies of that justification would drift. The site count stays five.
+`CheckOutcome.fromWire` normalises the wire status with the port's own totality: default
+`INDETERMINATE`, never success.
+
+### The guards fed
+
+`OwnershipIsScopedTest` gained its **seventh class**, `SIGNED_CALLBACK` — every existing
+label would say something false about an external system naming a resource under a boundary
+HMAC — with `JdbcCheckStore.findById` its first entry, resting on the signature, the
+platform-minted identifier (dispatch-before-call), and every reachable write being a
+conditional transition, with the nothing-written test named as the proof. `CallbackKey` is
+the **fourth per-credential loopback confinement**: the debt row's own trigger, met — the
+row now says the generalisation is due as its own work rather than predicting a next
+arrival. `DatabaseCredentialGuardStartupTest` broke because a production-like configuration
+now has **four** credentials — the `P1-TSK-017` precedent, met a third time. The OpenAPI
+baseline gained the endpoint (nine additions, zero removals; the two `BREAKING` labels are
+the classifier erring safe on a brand-new path — the `P1-TSK-002`/`P1-TSK-006` precedents,
+reviewed and accepted). `inbox_message.dedupe_key` met its **first external supplier**, and
+the `INTERNAL`-classification-as-requirement is enforced at the boundary with the
+idempotency-key charset; `DATA_CLASSIFICATION.md` §5 records it.
+
+### The gate's own findings
+
+**`CallbackKey` had no test** — the exact `P1-TSK-017` finding (*"`MfaKey` had no test at
+all, so removing the loopback confinement left everything green"*), about to repeat on the
+fourth hand-written instance of the shape. `CallbackKeyTest` closes it — confinement,
+domain separation from both sibling keys, and the at-least-32-bytes rule with its
+deliberate difference from `DocumentKey`'s exactly-32 stated — and the
+confinement-removed mutation is caught. **And this task's own structural assertion was
+vacuous as first written**: `doesNotContain("java/util/Arrays.equals")` can never match,
+because a class file's constant pool holds the class name and the method name as separate
+UTF-8 entries — corrected to the entries that actually appear, the reasoning
+`TotpVerifierTest` had already encoded in its descriptor check.
+
+**Seven mutations, all caught by the intended assertion** — signature verification
+bypassed, inbox dedupe bypassed (effect run directly), the conditional completion made
+unconditional (a late callback reopening a terminal), the evidence append dropped, the
+post-commit assessment dropped, the constant-time comparison swapped for `Arrays.equals`,
+and the `CallbackKey` confinement removed.
+**979 hermetic tests, 502 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TSK-010` — Screening: sanctions, PEP, adverse media** — `COMPLETE` (2026-09-10). The
 gate's screening criteria, on the machine `P2-TSK-009` built: one `ScreeningAdapter` with
@@ -5880,7 +5979,7 @@ carries, what triggers paying it down, and the owning phase.
 | **Redis is plaintext with no enforcement; Kafka is now guarded.** `P2-TSK-001` brought the first Kafka client and, with it, `KafkaTransportGuard` - a non-loopback bootstrap over `PLAINTEXT` refuses startup, which is ADR-0023's recorded promise kept on schedule. TLS/SASL themselves remain Phase 15's deployment posture, and the guard's limit is stated in `SECURITY_ARCHITECTURE.md` | There is still no Redis client, so a Redis guard would guard nothing | **Bounded**: the local broker is loopback-only and the guard holds the boundary; Redis carries no risk until a client exists | The first Redis client; a deployed broker for the TLS posture | Phase 15 |
 | ~~**A caller can put personal or financial data into the correlation identifier.**~~ - **closed 2026-09-04** by `P1-TSK-002` / ADR-0034. The platform now mints the identifier on every request and never adopts an inbound one; a well-formed caller value is echoed in `X-Client-Correlation-Id` and reaches no sink. **Narrowing the charset was the obvious repair and does not work** - a date of birth, a phone number and an account number are alphanumeric, so any charset still able to carry a UUID carries them; of the four probed values it would have stopped two and left two. The control had to be structural. | - | - | - | - |
 | ~~**No production code establishes a security scope.**~~ - **closed 2026-09-06** by `P1-TSK-006`. `RegistrationService` establishes one for `POST /v1/registrations`, and the actor is `enterSystem()` because the caller is **unauthenticated** - which is a call site that *stays* after Phase 1 revisits it, not one to be removed. The alternative, attributing the action to the Party it creates, is circular and is unavailable on the refusal path where nothing was created; an actor that differs between success and failure is worse than a uniform honest one. The information is carried by the audit record's **target** instead - the attempted login identifier, on both paths. | - | - | - | - |
-| **The loopback confinement is per credential, not a general mechanism.** `DatabaseCredentialGuard` guards the datasource password; `MfaKey` and `DocumentKey` guard themselves | **The row's predicted trigger - "the third credential, which is Phase 5's provider adapters" - was met one phase early**: `P2-TSK-008`'s document key (`FINAPP_DOC_KEY`) arrived as the third, confined and tested (`DocumentKeyTest`) in `MfaKey`'s shape rather than by generalising, because folding a refactor of two proven guards into a document-storage task is `EXECUTION_PROTOCOL.md` rule 4's case. Three hand-written instances now exist, so the pattern question is real rather than speculative | **Low.** The build rule remains general - a fourth credential cannot arrive as a literal - and the confinement is a known per-credential obligation with three precedents, each derived from the one published marker | The fourth credential, or Phase 5's provider adapters - whichever asks first | Phase 5 |
+| **The loopback confinement is per credential, not a general mechanism.** `DatabaseCredentialGuard` guards the datasource password; `MfaKey`, `DocumentKey` and `CallbackKey` guard themselves | **The trigger is now met**: `P2-TSK-011`'s callback signing key (`FINAPP_KYC_CALLBACK_KEY`, `CallbackKey`) arrived as the **fourth** credential, again confined and tested in `MfaKey`'s shape rather than by generalising, because folding a refactor of three proven guards into a callback task is `EXECUTION_PROTOCOL.md` rule 4's case — but the row's own trigger ("the fourth credential, or Phase 5's provider adapters — whichever asks first") has fired, so the generalisation is **due as its own piece of work** rather than the next task's side effect | **Low but no longer shrinking.** The build rule remains general - a fifth credential cannot arrive as a literal - and four hand-written instances of one shape is exactly the count at which the copies start to drift | **Fired** (`P2-TSK-011`). The generalisation is owed as its own task; Phase 5's provider adapters are the natural host if nothing schedules it sooner | Phase 5 |
 | ~~**No output scrubber for text the platform does not control.**~~ - **answered 2026-09-06** by `P1-TSK-009`, and the answer is that the scrubber is **not built**. A scrubber is a deny-list over emitted text, and to recognise a secret it must be *given* the secret - which makes the plaintext travel **further**, into a filter invoked on every log statement in the platform, rather than less far; it also produces exactly the false confidence ADR-0019 warns about, since a deny-list that misses one shape is indistinguishable from one that misses none. **What replaces it is the opposite shape and is checkable**: a plaintext can only reach any sink if something first *unwraps* it, and every unwrap is a call to `expose()` - named to be found, deliberately. `SecretsAreUnwrappedInOnePlaceTest` pins that set to **four production classes, all in `identity`**, so a new unwrap anywhere fails the build and forces a decision. **The residual is stated rather than closed**: inside `identity` a plaintext could still be handed to a log call and nothing mechanical would catch it - bounded by the set being four classes rather than a codebase, and by the one production log call on that path being asserted quiet against a real database. |
 | **The scrape endpoint widens the unauthenticated surface to three.** `/actuator/prometheus` joins health and info | `DOD-OBS` requires the dashboard to render live data from a running instance, which needs a scrape endpoint, and there is no authentication anywhere yet | A scrape publishes JVM internals, HTTP route templates and pool statistics - a description of the running system rather than its secrets. The **content** is constrained by a build failure: no tag may carry a request-influenced value | `P0-EPIC-10` landing | Phase 0, M0.4 |
 | **The operational endpoints are unauthenticated.** `/actuator/health/*` and `/actuator/info` are reachable by anyone who can reach the port | `DOD-API` requires a negative authentication test for every new surface, and there is no authentication anywhere in the platform yet - `P0-EPIC-10` is the epic that brings it. Building one authentication mechanism for the actuator alone would be a second scheme to retire | **Low, and bounded by what is published.** The bodies are pinned by exact-match test to a status and, for the aggregate, its group names; details, components, environment, JVM and OS are all off, and twelve other endpoints are proven absent. What remains is that an unauthenticated caller can learn the instance is up and which build it runs | `P0-EPIC-10` landing, at which point `show-details: when-authorized` also becomes available | Phase 0, M0.4 |
@@ -5935,25 +6034,27 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-011` — Provider callbacks, deduplicated.** Status `READY`; dep `P2-TSK-009`
-complete.
+**`P2-TSK-012` — Review tasks and the reviewer endpoints.** Status `READY`; deps
+`P2-TSK-004` and `P2-TSK-010` both complete. Opens M2.3 — M2.2's one remaining member,
+`P2-TSK-006`, stays blocked on the consent gate.
 
-The inbound callback endpoint for asynchronous provider results, deduplicated through the
-platform inbox, updating checks by conditional transition — `INV-KYC-03`, because duplicate
-webhooks are the §Failure Engineering norm and this is the phase's inbound door. Duplicate,
-concurrent, late and malformed callbacks each proven against a real database: one transition,
-no 500, evidence retained; a late callback for a terminal check is recorded as evidence and
-changes nothing (`INV-LIFE-04`). Accept: the four callback scenarios each proven.
-
-*(This section still named `P2-TSK-009` as `READY` until 2026-09-10 — it was left stale by
-that task's own completion, which updated §Current Task and not this one. Corrected here, the
-`P1-DOC-001` class of drift: two statements of one fact, and only one was maintained.)*
+`GET /v1/kyc/cases/{id}` and `POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution` behind
+`@RequiresPermission(KYC_REVIEW)` — `INV-KYC-04`'s human half, the phase's privileged
+surface. Reason required (`kyc.ScreeningHitResolved` leaves `NOT_YET_EMITTED`); case reads
+audited, because the reviewer is the insider surface (`INV-KYC-06`'s trail-of-who-looked);
+concurrent resolutions of one task — one wins by conditional `UPDATE`, the loser gets 409,
+one audit record (the `P1-TSK-028` suspension shape); the `IN_REVIEW → READY_FOR_DECISION`
+exit conditional on "no `OPEN` task" **in the statement**, as `P2-TSK-010` recorded in the
+store's javadoc; the resolution `UPDATE` grant arrives with this capability (the
+permission-denied tests are waiting for it). Accept: a review task resolves exactly once,
+by an authorized person, with a reason, audibly.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-10 | **`P2-TSK-011` complete - provider callbacks, and the phase's inbound door opens.** `POST /v1/providers/kyc/callbacks`, the platform's first machine-facing endpoint: an asynchronous provider answer completes a check EXACTLY ONCE however many times and however concurrently it arrives (`INV-KYC-03`, `INV-IDEM-04`). **The signature is the control and a checksum was rejected by name**: the callback is the input that clears sanctions screenings, so a tag anyone can compute would be an open door to check-outcome forgery - HMAC-SHA256 over the raw bytes, verified before parsing and before any read, in constant time (`MessageDigest.isEqual`, asserted STRUCTURALLY because no behavioural test can see timing), proven against RFC 4231's own vectors (the `P1-TSK-017` vetted-library reasoning); missing and wrong signature are one uniform 401 with NOTHING written, which is the proof the new `SIGNED_CALLBACK` ownership class names. The limits stated in `SECURITY_ARCHITECTURE.md`: one static key, no rotation, no per-provider keys (Phase 5's webhook work), and NO replay window at the signature layer deliberately - a replayed callback is byte-identical, so it is exactly the duplicate the inbox absorbs. **Two dedupe layers, blind in different directions, designed in rather than found by a gate** (the `P2-TSK-007` lesson applied at design time): the inbox absorbs IDENTICAL deliveries by `deliveryId`, the conditional completion absorbs DISTINCT re-sends and the callback racing the synchronous run; `CONTENDED` is not acknowledged (409, the inbox's own contract - the provider redelivers and either way the race went is correct). Evidence is appended ALWAYS - the late answer and the losing racer are genuine provider statements (`INV-HIST-02`) - where the run path retains only on a win, recorded as deliberate. **A late callback for a terminal check is evidence, never a transition** (`INV-LIFE-04`; resolution stays a NEW check, ADR-0038), acknowledged 204 because a refusal would make a correct provider retry a fact we will never accept. **The callback is the healer of `P2-TSK-009`'s stranded-DISPATCHED remainder** - the provider received that request, because dispatch commits first - and assessment heals one deeper: a duplicate delivery re-assesses, closing a crash between a delivery's commit and its assessment. **Composition earned by a second caller**: `CaseAssessment` and `CheckOutcomeTrail` extracted from `VerificationRunService` (the `P1-TSK-033` shape), and the enumerated `enterSystem()` site MOVED to `CheckOutcomeTrail.record` - one site whichever door, five sites still. `CallbackKey` is the FOURTH per-credential loopback confinement and the debt row's own trigger, now fired: the generalisation is recorded as due as its own work. `inbox_message.dedupe_key` met its first external supplier, charset-bounded at the boundary (`DATA_CLASSIFICATION.md` §5). Proven against a real database over real HTTP: a triple delivery and a ten-way concurrent race each land one completion, one evidence row, one audit record, one inbox row; eleven malformed-but-signed shapes each the caller's 4xx, never a 500. **The gate's findings**: `CallbackKey` had no test - the exact `P1-TSK-017` finding about to repeat on the fourth instance of the shape - closed by `CallbackKeyTest` with the confinement-removed mutation caught; and this task's own structural assertion was vacuous as first written (`doesNotContain("java/util/Arrays.equals")` can never match a constant pool, whose class and method names are separate entries) - corrected to the entries that appear. **Seven mutations, all caught by the intended assertion** - signature bypassed, inbox bypassed, completion made unconditional, evidence dropped, assessment dropped, constant-time swapped, confinement removed. 979 hermetic tests, 502 database tests, 14 kafka tests. Next: P2-TSK-012 (M2.3; P2-TSK-006 stays blocked on the consent gate). |
 | 2026-09-10 | **`P2-TSK-010` complete - screening, and a non-clean case becomes work for a person.** The three screening types over the machine `P2-TSK-009` built (one machine, not a second one - plan §5): one `ScreeningAdapter` with three static factories binding type to path, so a mismatch is UNCONSTRUCTIBLE and the misbehaviour matrix stays cited rather than triplicated; the `ReviewTask` aggregate (`OPEN → RESOLVED`, terminal, no unresolve - a wrong resolution is a new review event, and changed circumstances are a NEW check with its own task); and the routing that gives a blocked case its exit. **The acceptance held both ways**: behaviourally - a sanctions hit routes to `IN_REVIEW` with exactly one `OPEN` task keyed to the hit check, idempotently under a ten-way race (`requestCount sum == checkCount` still holds) - and structurally, the machine has no edge from `IN_REVIEW` to a terminal and `ChecksAssessment` decides `HIT` first. **The convergence rule was corrected rather than smuggled**: `P2-TSK-009`'s converge-in-any-state made an `INDETERMINATE` unresolvable on the run path against ADR-0038's resolution-is-a-new-check; an under-budget unknown now invites a NEW check and the third (`INDETERMINATE_RETRY_BUDGET`, `>=` so the residual race errs toward review) routes the type to a person - proven by the adverse-media walk: three questions, a fourth run asks nothing, one task on the newest unknown. **The asymmetry is deliberate and tested both ways**: a `CLEAR` never un-blocks a `HIT`; a later `CLEAR` DOES satisfy an exhausted type. **Routing is atomic**: tasks inserted and the conditional move made in one transaction, so `IN_REVIEW` always has something to resolve and `P2-TSK-012`'s exit ("every task resolved" - conditional on no OPEN task IN THE STATEMENT, recorded in the store's javadoc) can never be vacuously true on arrival; `UNIQUE (check_id)` is TOTAL and is the `ON CONFLICT DO NOTHING` arbiter. Deliberately absent: a task-creation audit action (the platform's bookkeeping of an already-audited outcome; the reason-required act is `P2-TSK-012`'s resolution), resolution columns and the `UPDATE` grant (grant-arrives-with-capability, permission-denied proven now), events, endpoints, and a `forCase` read nothing calls. `finapp.kyc.review.queue` arrives with the queue it measures (the plan-named gauge, `IdentityMetrics`' shape, NaN-never-zero, aggregate with `max()`); five columns classified with `review_task.status` as the tipping-off column one table further down; the ownership register needed NO new entries, verified rather than assumed. **Six mutations, all caught by the intended assertion** - task creation removed, the move removed, `ON CONFLICT` removed, convergence-never-retries, budget unbounded, exhausted-no-longer-blocks. 960 hermetic tests, 495 database tests, 14 kafka tests. Next: P2-TSK-011. |
 | 2026-09-09 | **`P2-TSK-009` complete - checks run, and the harness built two phases ago meets its caller.** The check machine (`REQUESTED → DISPATCHED → {CLEAR | HIT | INDETERMINATE}` - the terminals ARE the outcomes, one machine rather than a status beside an outcome column free to disagree), the `VerificationProvider` port (our vocabulary in, our vocabulary out; misbehaviour is a RESULT, never an exception, defaulting to INDETERMINATE and never to success), two adapters over the simulated wire, and `VerificationRunService`'s choreography: **dispatch durable before the call** (a crash mid-call leaves a visible DISPATCHED fact, never an unknown - `INV-LIFE-03` three phases early), the call holding **no connection**, the outcome transaction writing completion + evidence + audit + counter atomically, and the **assessment in a separate transaction after the commit** - two instances assessing inside their own outcome transactions would each see the other still DISPATCHED and nobody would move the case; separated, the last assessor sees all and the conditional moveStatus picks one winner, which also heals a crash between outcome and transition. `INDETERMINATE` is terminal and its resolution a NEW check (ADR-0038), so a check never flaps and the partial one-in-flight index is what makes the successor insertable. **A HIT wins every tie** in `ChecksAssessment` - not even a later CLEAR of the same type un-blocks (`INV-KYC-04`) - and the empty required-type set is refused, because no requirement can never mean proceed. Evidence retained verbatim (`INV-HIST-02`) under the document at-rest treatment (ADR-0036 groups them; same cipher, same key, key_version per row). The acceptance driven whole: two providers over real HTTP, the case at `READY_FOR_DECISION`, the bytes received in the evidence rows, `kyc.CheckCompleted` naming the system actor - the **fifth enumerated site**. Ten instances racing one case: `requestCount sum == checkCount`, the call-per-check equality that is the load-bearing race assertion. The residual redundant-question race recorded (a wasted call, never a wrong answer); the stuck-DISPATCHED sweeper recorded remainder. Fourteen columns classified; four store methods joined the ownership register; the v4/v7 trap met and caught in self-review (`EvidenceId`). **Six mutations, all caught by the intended assertion** - after a first sweep reported all six VOID because cmd refused the bare gradlew.bat name and the build never started, caught by the harness's build-actually-ran assertion (`P1-TSK-026`'s lesson holding). 945 hermetic tests, 491 database tests, 14 kafka tests. Next: P2-TSK-010. |
 | 2026-09-09 | **`P2-TSK-008` complete - documents: captured, encrypted, checksummed, access-audited.** The most sensitive bytes before card data, held as ADR-0036 decided: in PostgreSQL behind the DocumentStore port (the object-storage seam), AES-256-GCM under FINAPP_DOC_KEY, SHA-256 of the bytes received recorded at capture and RE-VERIFIED on every read - GCM answers 'is this ciphertext the one this key wrote', the checksum answers 'are these the bytes received', separated by a test that substitutes a ciphertext the same key genuinely wrote. Append-only at DB-PRIVILEGE (SELECT, INSERT and nothing else); plaintext in no column, swept from information_schema. **Content-addressed convergence is the idempotency mechanism**: UNIQUE (case_id, checksum_sha256) + the savepoint idiom, so a retry, a double-tap and ten racing instances land on one row and one 201 - no Idempotency-Key, content addressing is stronger. **The cipher is SecretCipher's mechanism, deliberately not its class**: module isolation forbids the import, and moving it would pull an expose() site out of the pinned identity set - the duplication is the recorded cost. DocumentKey is the THIRD per-credential loopback confinement, meeting the debt row's trigger one phase early (premise corrected, not left stale); one published default literal, referenced, domain-separated locally. POST /v1/me/kyc/documents is the /v1/me ownership-by-absence shape, one hop longer - Session -> Identity -> live Customer -> open case - with the decision-racing-upload race ACCEPTED and stated (a decision references its evidence explicitly, INV-KYC-02). The audited read path (kyc.DocumentContentRead, INV-KYC-06 - the trail of who looked is the control) has no HTTP caller yet BY PLAN: P2-TSK-012's reviewer surface arrives to it. The guards fed: three new ownership register entries, a third credential in the startup guard test (the P1-TSK-017 precedent met again), ten columns classified at their ceiling with the checksum called what it is - a possession oracle. **Six mutations, all caught by the intended assertion.** 920 hermetic tests, 486 database tests, 14 kafka tests. Next: P2-TSK-009. |

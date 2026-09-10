@@ -388,6 +388,11 @@ correlation identifier is written to every log line as a top-level ECS field, st
 stored in four tables, and echoed back in the `X-Correlation-Id` response header and in every
 problem-detail body. There is nowhere for it to be anything else.
 
+`inbox_message.dedupe_key` gained its first genuinely external supplier in `P2-TSK-011` — a
+provider callback's `deliveryId` — and the requirement is held the way this section demands:
+the value is charset-bounded at the boundary (`[A-Za-z0-9._:@/+=-]`, the idempotency-key
+charset) before it can reach the column.
+
 **This scheme is what made the gap visible, and `P1-TSK-002` closed it.** It is recorded here in
 full rather than deleted, because the reasoning is what keeps the requirement true for the next
 caller-supplied column. Until 2026-09-04 the permitted charset was `[A-Za-z0-9._:@/+=-]`, a
