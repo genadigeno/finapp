@@ -3141,7 +3141,7 @@ capability map, and the task list below is the schedule.
   database / 14 kafka. **M2.3 closes, 3 of 3.**
 - Risk: High. Cx: M. DoD: `DOD-KERNEL`
 
-**P2-TST-001 — The KYC gate criteria, demonstrated** — `READY` (2026-09-10)
+**P2-TST-001 — The KYC gate criteria, demonstrated** — `COMPLETE` (2026-09-10)
 - Context: kyc / test
 - Description: The Phase 2 gate's first three bullets held by demonstration: exhaustive invalid
   transitions; verdict-is-evidence (no decision from a provider outcome without the platform's
@@ -3152,10 +3152,26 @@ capability map, and the task list below is the schedule.
 - Accept: each demonstration recorded in `MUTATION_TESTING.md` §2 with its named test, per the
   convention (`P0-TSK-038`).
 - Risk: Low. Cx: S. DoD: `DOD-TEST`
+- **Outcome:** five rows in `MUTATION_TESTING.md` §2 (`INV-KYC-01`…`05`) and the item's own §4 row.
+  **The audit found no demonstration missing**: every one of the five was performed by its owning
+  task's mutation sweep (`P2-TSK-005`, `-009`, `-010`, `-011`, `-013`, `-014`), so the work was
+  recording, not performing — each row names the mutation, the tests that caught it, and the
+  observed result, all **Recorded** form honestly, since every mutation changed production code or
+  a migration and cannot live in the suite. The gate's first bullet (exhaustive invalid
+  transitions) is the §4 row: `KycCaseLifecycleTest#everyTransitionIsEnforced`, `P2-TSK-005`'s
+  terminal-reopened mutation. `MutationDemonstrationTest`'s checks 3–7 hold the new rows to the
+  code **immediately** — every named class and method verified to exist on a green run — and the
+  guard's teeth were re-proven per §5: one method reference corrupted (backup-copy, not
+  `git checkout`), `everyNamedMethodExists` failed naming exactly it, restored, green. One
+  machinery hazard met on the way: a PowerShell round-trip re-encoded the register's non-ASCII
+  characters as mojibake; caught by byte-comparison against the backup before anything was
+  committed. `INV-KYC-06` and the `INV-CNS-*` rows are deliberately not here — 06's demonstrations
+  exist (`P2-TSK-008`) and its row lands with the exit review; the consent rows' owning tasks are
+  `TODO`.
 
 ## P2-EPIC-02 — KYB and beneficial ownership (M2.4)
 
-**P2-TSK-015 — KybCase and the beneficial-ownership graph** — `TODO`
+**P2-TSK-015 — KybCase and the beneficial-ownership graph** — `READY`
 - Context: kyc / party
 - Description: `KybCase` for `ORGANISATION` customers; `BeneficialOwner` rows linking the case
   to natural-person Parties with stake/control attributes; the decision precondition: every
