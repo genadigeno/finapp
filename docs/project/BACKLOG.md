@@ -3285,7 +3285,7 @@ capability map, and the task list below is the schedule.
 
 ## P2-EPIC-06 — Consent (M2.5)
 
-**P2-TSK-017 — Consent texts and the append-only record** — `READY`
+**P2-TSK-017 — Consent texts and the append-only record** — `COMPLETE` (2026-09-12)
 - Context: consent
 - Description: `V002`: `consent_text` (versioned, immutable) and `consent_record` (append-only
   at `DB-PRIVILEGE`, `NOT NULL` text-version reference); the derivation query; the
@@ -3299,8 +3299,44 @@ capability map, and the task list below is the schedule.
   refused null.
 - Accept: the history is the store, proven immutable.
 - Risk: Medium. Cx: S. DoD: `DOD-KERNEL`
+- **Outcome:** ADR-0037 made real, with the immutability landed one rank stronger than the
+  backlog asked in one place: `consent_record` is `SELECT, INSERT` and nothing else (the
+  `audit_record` model — the privilege IS the immutability, no freeze trigger), and
+  **`consent_text` is unwritable by the application entirely** (`SELECT` alone) — a consent
+  text is a reviewed platform artefact, and a forward-only migration is exactly the reviewed,
+  immutable channel it arrives through: v1 for both purposes is seeded by `V002`, a wording
+  change is a NEW version in a later migration, and `requires_reconsent` is a recorded
+  property of the version (`INV-CNS-04`), never a guess. The pin is **unforgeable twice
+  over**: `text_version NOT NULL` on BOTH kinds (a withdrawal pins the version current when
+  the person withdrew — the invariant's reference is unconditional) plus the **composite FK**
+  `(purpose, text_version) → consent_text (purpose, version)` (the V008 lesson: a record
+  cannot pin another purpose's text), and the NOT NULL is load-bearing BESIDE the FK because
+  SQL's composite-FK semantics let a NULL slip past it — proven by mutation. **The order of
+  the history is the server's**: `seq BIGINT GENERATED ALWAYS AS IDENTITY` — client values
+  refused, so no instance's clock or counter decides which racing fact is later — and the
+  derivation orders by it, never `recorded_at`, proven deterministically: a grant inserted
+  first (lower seq) with a LATER timestamp, committing LAST, still loses to the withdrawal
+  holding the higher seq, which kills the clock ordering and the commit-order intuition in
+  one held-transaction test. The derivation (`hasCurrentBasis`) is one statement, one
+  snapshot: latest fact is a `GRANT` AND no newer text version of the purpose requires
+  re-consent — with **absence-equals-withdrawal asserted as an equality between the causes**
+  (`INV-CNS-01`'s shape), and purpose-scoping proven. Ten instances append concurrently with
+  no locks and no losing branch; every appender succeeds and every reader agrees which fact
+  is last. **The privilege sweep found its own subtlety**: `GENERATED ALWAYS` refuses
+  `seq = seq` before the privilege check runs, so the sweep probes `seq = DEFAULT` — the one
+  update the identity mechanism admits, and the one that would RE-ORDER history if an
+  `UPDATE (seq)` grant ever appeared. `consent_text.body` is the platform's **first genuinely
+  PUBLIC column** (the words shown to every customer), which makes the classification
+  scheme's every-level-used check honest rather than vacuous. Deliberately absent: any bean
+  (no consumer until `P2-TSK-018` — the P1-TSK-007 unconsumed-wiring licence), endpoints,
+  audit emission (both actions stay `NOT_YET_EMITTED` naming 018), events, meters. **Nine
+  mutations, all caught first time** — UPDATE granted on the record table, INSERT granted on
+  texts, the composite FK dropped, both reads re-ordered by `recorded_at` (separately), the
+  re-consent clause dropped, the GRANT predicate dropped (a withdrawal deriving a basis),
+  `text_version` made nullable, and `seq` made `BY DEFAULT` (caught hermetically). 1016
+  hermetic tests, 564 database tests, 14 kafka tests. **M2.5 opens: 1 of 4.**
 
-**P2-TSK-018 — Consent endpoints** — `TODO`
+**P2-TSK-018 — Consent endpoints** — `READY`
 - Context: consent / api
 - Description: `POST /v1/me/consents`, `DELETE /v1/me/consents/{purpose}`,
   `GET /v1/me/consents` — session-derived, no identifiers.

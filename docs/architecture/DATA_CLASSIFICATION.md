@@ -337,6 +337,23 @@ adding "just the user agent", which is why the ceiling is set before anything po
 | `beneficial_owner` | `control_role` | `CONFIDENTIAL` | As the stake: who directs an entity is a fact about the person, not an identifier |
 | `beneficial_owner` | `declared_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
 
+### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `consent_text` | `purpose` | `INTERNAL` | An enumeration member |
+| `consent_text` | `version` | `INTERNAL` | A counter |
+| `consent_text` | `body` | `PUBLIC` | The words shown to every customer before they agree — published by design, and the first genuinely `PUBLIC` column on the platform. The classification is about the column's ceiling, and this column's ceiling is a notice |
+| `consent_text` | `requires_reconsent` | `INTERNAL` | A property of the artefact |
+| `consent_text` | `published_at` | `INTERNAL` | A property of the artefact |
+| `consent_record` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `consent_record` | `party_id` | `CONFIDENTIAL` | The `beneficial_owner.owner_party_id` reasoning: the pairing with `purpose` and `action` *is* the fact — this person granted or refused this processing — and the plan (§6) classifies the consent history `CONFIDENTIAL` in as many words. What it resolves to stays `RESTRICTED-PII` as ever |
+| `consent_record` | `purpose` | `INTERNAL` | An enumeration member; the fact lives in the pairing, carried by `party_id`'s level |
+| `consent_record` | `action` | `INTERNAL` | An enumeration of two values, the same reasoning |
+| `consent_record` | `text_version` | `INTERNAL` | A counter pinning an artefact (`INV-CNS-04`) |
+| `consent_record` | `recorded_at` | `CONFIDENTIAL` | Dates a consent event for a person — `kyc_case.opened_at`'s reasoning |
+| `consent_record` | `seq` | `INTERNAL` | The server-assigned position in the history — data only in the schema's sense |
+
 ### `kyc.kyc_document` — *added by `P2-TSK-008`*
 
 | Table | Column | Level | Note |

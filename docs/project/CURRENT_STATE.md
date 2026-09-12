@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-12 (`P2-TSK-016`)
+Last updated: 2026-09-12 (`P2-TSK-017`)
 
 ---
 
@@ -58,6 +58,14 @@ because the probe that found this passed against a build that had not run (the `
 class, again).
 
 ## Current Milestone
+
+**M2.5 — Consent.** `P2-TSK-017` … `P2-TSK-019` plus `P2-TST-002`; **1 of 4**
+(2026-09-12) — the store landed: versioned texts unwritable by the application, the
+append-only record with its server-assigned order, and the derivation whose one statement
+answers `INV-CNS-01` and `INV-CNS-04` together. The milestone's stated acceptance —
+*withdrawal demonstrably blocks the dependent capability, across instances* — needs the
+endpoints (`P2-TSK-018`) and the gate with its first consumer (`P2-TSK-019`), where
+`P2-TST-002` performs the demonstration.
 
 **M2.4 — KYB and beneficial ownership.** `P2-TSK-015` … `P2-TSK-016`; **CLOSED
 2026-09-12, 2 of 2.** The milestone's stated acceptance — *an organisation decides only on a
@@ -248,11 +256,80 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-016` completed 2026-09-12 — the KYB endpoints; M2.4 is
-CLOSED, 2 of 2. **Next: `P2-TSK-017` (`READY`)** — consent texts and the append-only
-record, opening M2.5; `P2-TSK-006` stays blocked on the consent gate it delivers.
+**None in progress.** `P2-TSK-017` completed 2026-09-12 — consent texts and the
+append-only record; M2.5 is open, 1 of 4. **Next: `P2-TSK-018` (`READY`)** — the consent
+endpoints; `P2-TSK-006` stays blocked on the consent gate (`P2-TSK-019`).
 
 ### Just completed
+
+**`P2-TSK-017` — Consent texts and the append-only record** — `COMPLETE` (2026-09-12).
+M2.5 opens with ADR-0037 made real: the history IS the store, the current basis is derived,
+and both are proven at the privilege level.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The history is the store, proven immutable | `ConsentHistoryDatabaseTest`: `UPDATE` denied on **every column** of `consent_record` (the list from `information_schema`, the P0-TST-007 idiom), `DELETE` and `TRUNCATE` denied — and `consent_text` refuses the application role's `INSERT`, `UPDATE` and `DELETE` outright |
+| Derivation under interleaved records | grant → withdraw → grant flips the basis each time; **absence equals withdrawal as an equality between the causes** (`INV-CNS-01`'s shape); purpose-scoping proven; ten instances append with no locks and no losers, and the derived answer agrees with the raw highest-`seq` row |
+| Version-pinning refused null | `23502` — and the NOT NULL is load-bearing **beside** the composite FK, because SQL lets a NULL slip past a composite FK (proven by the nullability mutation) |
+| The order is server-assigned | A grant inserted first (lower `seq`) with a **later** timestamp, committing **last**, loses to the higher-`seq` withdrawal — one held-transaction test killing the clock ordering and the commit-order intuition together |
+
+### Texts are unwritable by the application entirely
+
+The immutability question for `consent_text` had a stronger answer than a grant narrowing:
+the application never writes a text at all. A consent text is a reviewed platform artefact,
+and a forward-only migration (ADR-0011) is exactly the reviewed, immutable channel such an
+artefact arrives through — `V002` seeds v1 for both purposes, a wording change is a **new
+version in a new migration**, and `requires_reconsent` is a recorded property of the version
+(`INV-CNS-04`), never a guess. The application role holds `SELECT` alone. The record table is
+the `audit_record` model — `SELECT, INSERT`, no trigger needed, the privilege IS the
+immutability (`INV-CNS-02`).
+
+### The pin is unforgeable twice over
+
+`text_version` is `NOT NULL` on **both** kinds — a withdrawal pins the version current when
+the person withdrew, because the invariant's reference is unconditional — and the composite
+FK `(purpose, text_version) → consent_text (purpose, version)` is the V008 lesson applied: a
+record cannot pin another purpose's text, an artefact the person was never shown. The two are
+**independently** load-bearing: SQL's composite-FK semantics skip the check when any column
+is NULL, so dropping the NOT NULL lets an unpinned record through the FK — the mutation
+proves it, and it is why the schema carries both.
+
+### The order of the history is the server's, and the test holds the race open
+
+`seq BIGINT GENERATED ALWAYS AS IDENTITY`: client-supplied values are refused, so no
+instance's clock or counter can decide which of two racing facts is later — the backlog's
+`P0-TST-009` citation, honoured in the schema rather than in discipline. The derivation
+orders by `seq` and never `recorded_at`, and the test is deterministic rather than timed: one
+connection inserts a grant (lower `seq`, **later** `recorded_at`) and holds its transaction
+open while another commits a withdrawal (higher `seq`, earlier clock); after the grant
+finally commits, the basis is still withdrawn. A derivation ordered by timestamp resurrects
+the grant; one confused by commit order does too; both die on one test.
+
+### The sweep met the identity column's own gate
+
+`GENERATED ALWAYS` refuses `UPDATE ... SET seq = seq` before the privilege check ever runs —
+a refusal, but the wrong one to rest on, because `seq = DEFAULT` is the one update the
+identity mechanism admits, and it would **re-order history**, handing an old withdrawal the
+newest position. The per-column sweep probes `seq` with `DEFAULT` so the refusal it asserts
+is the grant's.
+
+### What deliberately did not arrive
+
+No bean (nothing consumes the store until `P2-TSK-018` — the P1-TSK-007 unconsumed-wiring
+licence), no endpoints, no audit emission (`consent.ConsentGranted`/`ConsentWithdrawn` stay
+`NOT_YET_EMITTED` naming 018), no events, no meters (P2-TSK-020's), no consent expiry
+(ADR-0037's recorded follow-up). `consent_text.body` is the platform's **first genuinely
+PUBLIC column** — the words shown to every customer — which makes the classification
+scheme's every-level-used check honest rather than technically satisfied.
+
+**Nine mutations, all caught first time** — UPDATE granted on the record table and INSERT on
+texts (both against a from-scratch database), the composite FK dropped, both reads
+re-ordered by `recorded_at` separately, the re-consent clause dropped, the GRANT predicate
+dropped (a withdrawal deriving a basis), `text_version` made nullable, and `seq` made
+`BY DEFAULT` (caught hermetically by the migration reconciliation). **1016 hermetic
+tests, 564 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TSK-016` — The KYB endpoints** — `COMPLETE` (2026-09-12). M2.4 closes: the graph
 `P2-TSK-015` built is carried over HTTP by the organisation's acting person — and *who may
@@ -6457,22 +6534,25 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-017` — Consent texts and the append-only record.** Status `READY`; its one dep,
-`P2-TSK-003`, is complete. M2.5 opens with it.
+**`P2-TSK-018` — Consent endpoints.** Status `READY`; its one dep, `P2-TSK-017`, is
+complete.
 
-`V002` in the consent schema: `consent_text` (versioned, immutable) and `consent_record`
-(append-only at `DB-PRIVILEGE`, `NOT NULL` text-version reference — `INV-CNS-02`/`04`); the
-derivation query; the `ConsentPurpose` enumeration. ADR-0037 made real. Distributed:
-concurrent grant+withdraw append two facts, and the derivation orders by a server-assigned
-ordering column, never by two instances' clocks (`P0-TST-009`'s lesson). Tests: privilege
-sweep on every column; derivation under interleaved records; version-pinning refused null.
-Accept: the history is the store, proven immutable. Risk: Medium. Cx: S. DoD: `DOD-KERNEL`.
+`POST /v1/me/consents`, `DELETE /v1/me/consents/{purpose}`, `GET /v1/me/consents` —
+session-derived, no identifiers. Repeated grants and withdrawals are new facts and converge;
+no conflict surface. Security: withdrawal must not be refusable by anything but
+authentication — a person can always withdraw; both acts audited
+(`consent.ConsentGranted`/`ConsentWithdrawn`, their first emitters). Invariants:
+`INV-CNS-01`/`02`/`04`, `INV-IDN-04`. Tests: over HTTP; a grant against a stale text version
+refused when the current version demands re-consent; absence vs withdrawal indistinguishable
+to a caller of the query. Accept: the lifecycle over HTTP with the audit trail naming the
+person. Risk: Low. Cx: S. DoD: `DOD-SEC`.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-12 | **`P2-TSK-017` complete - consent texts and the append-only record, and M2.5 opens.** ADR-0037 made real one rank stronger than asked: `consent_record` is SELECT+INSERT only (the audit_record model - the privilege IS the immutability), and **`consent_text` is unwritable by the application entirely** (SELECT alone) - a consent text is a reviewed platform artefact arriving only by forward-only migration, v1 seeded for both purposes, `requires_reconsent` a recorded property of the version (INV-CNS-04). The pin is unforgeable twice over: `text_version NOT NULL` on BOTH kinds (a withdrawal pins the version current at withdrawal) plus the composite FK `(purpose, text_version)` (the V008 lesson) - and the two are independently load-bearing, because SQL lets a NULL slip past a composite FK, proven by the nullability mutation. **The order of the history is the server's**: `seq GENERATED ALWAYS AS IDENTITY`, the derivation ordering by it and never `recorded_at` - proven deterministically by a held-open transaction whose lower-seq grant carries a LATER timestamp and commits LAST, and still loses. The derivation is one statement, one snapshot: latest fact is a GRANT and no newer text version requires re-consent, with absence-equals-withdrawal asserted as an equality between the causes (INV-CNS-01). Ten instances append with no locks and no losing branch. The privilege sweep met the identity column's own gate: GENERATED ALWAYS refuses `seq = seq` before the privilege check, so the sweep probes `seq = DEFAULT` - the one admitted update, which would re-order history. `consent_text.body` is the platform's first genuinely PUBLIC column. Deliberately absent: beans, endpoints, audit emission (both actions stay NOT_YET_EMITTED naming P2-TSK-018), events, meters. **Nine mutations, all caught first time.** 1016 hermetic tests, 564 database tests, 14 kafka tests. Next: P2-TSK-018. |
 | 2026-09-12 | **`P2-TSK-016` complete - the KYB endpoints, and M2.4 closes (2 of 2).** The milestone criterion end to end over HTTP: the acting person registers, declares, watches the gate, and reads the decision; a stranger cannot. **The design question was answered by building its missing precondition** - no production path created ORGANISATION parties, so `POST /v1/me/organisations` registers the caller's organisation with their Party as its one registrant under a TOTAL unique index (scope bound, arbiter and convergence key in one; append-only; delegation is Phase 6+). Convergence replays the original 201 - corrected at the gate from a 200 after the generated contract published "200" alone (the P1-TSK-006 ResponseEntity trap) and the platform's own convergence idiom already answered the question; created-vs-converged lives in the records (created audits as the proven person and announces; converged is silent, asserted as one record). A different name is 409 api.Conflict (INV-IDEM-03). Ownership is the /v1/me absence shape one hop further (registrant_party_id = ? in the statement; stranger 404; cross-organisation isolation proven); ownerPartyId names the declaration's SUBJECT, never a resource. Owner ineligibility is ONE byte-identical refusal across unknown/organisation/unregistered/malformed (no oracle over third parties), own-graph refusals specific. The view is shaped (IN_REVIEW renders IN_PROGRESS - tipping-off; owners as a pending boolean only) and the reviewer's case file gains the graph whole (INV-KYC-02: the owner rows are the decision's evidence). **Nine mutations: eight caught first time; the survivor found the no-500 sweep naming an unknown party** - refused by eligibility before the aggregate was constructed - re-aimed at an eligible owner and caught. 1006 hermetic tests, 557 database tests, 14 kafka tests. Next: P2-TSK-017, M2.5 opens. |
 | 2026-09-12 | **`P2-TSK-015` complete - KybCase and the beneficial-ownership graph, and M2.4 opens.** One case machine, two kinds: `kyc_case.case_kind` fixed at open by the `CaseKindResolver` port (`app` implements it over the party's kind - `kyc` cannot see `party`) and **unwritable at DB-PRIVILEGE** (V008 narrows the case grant to `(status, status_changed_at)`, because a KYB→KYC flip is the write that would disarm the gate silently); never a second table, since what makes KYB *"not a flag"* is the graph. `kyc.beneficial_owner` is append-only and **kind-bound at DB-CONSTRAINT** - composite FKs over a new `UNIQUE (id, case_kind)` admit owner rows only on KYB cases and only KYC cases as verifications, so the depth-1 bound is structural. An owner's verification is their own KYC case, **pinned at declaration** (`INV-HIST-04`'s shape); readiness demands every owner ANSWERED - terminal either way - not APPROVED, and **KYB never auto-decides**: `KycDecision.automatic` refuses the kind at the domain, because an automatic all-clear could clear a terminal-REJECTED owner by silence (`INV-KYC-04`). **The distributed edge was sharper than the backlog's own sentence**: the declaration INSERTs owner rows while readiness UPDATEs the case with NOT EXISTS subqueries - different rows - and under READ COMMITTED a blocked UPDATE re-runs its subqueries against the statement's ORIGINAL snapshot, so "predicate in the statement" alone still misses a just-committed owner. Write skew, closed by **lock-then-look on both sides** (`SELECT … FOR UPDATE` on the case row, then the predicate in a fresh statement), proven deterministically: the two-connection test observes the mover Lock-waiting in `pg_stat_activity`, both interleavings. Once RFD the owner set is **frozen** (declarations accepted only in OPEN/CIP/IN_REVIEW, under the same lock; append-only grants proven per column), so **the owner rows ARE the decision's evidence** with no join table. An owner's terminal decision **re-routes** waiting parents post-commit through both doors - assess, and `DecisionRecording.byReviewer` on RECORDED and ALREADY_DECIDED (the 409-path-heals shape). **The sweep's one survivor moved that hook**: it first lived in `ReviewController.decide` and nothing exercised it - both re-route tests drove the assess door - so it moved onto the recording itself, whose second caller already exists, with a new test driving an owner decided by a reviewer. Two Phase-2 bounds recorded: ORGANISATION owners refused (depth 1), unregistered owners refused - declaration never auto-opens cases. New audit action `kyc.OwnerDeclared`; stake in basis points with the per-case sum ≤ 10000 checked under the lock. **The completion battery found one real interaction**: the kafka race test's crafted event named a rowless customer, which the consumer's kind resolution refuses loudly - stalling the partition by the block-don't-skip design and timing out every later test; in production that event cannot exist (it commits in the customer's own transaction), and the fixture now inserts the rows production guarantees. **Ten mutations, all caught by the intended assertion** - gate neutralised, lock dropped (caught by the blocked-observation precondition), at-least-one-owner neutralised, KYB-automatic refusal dropped, accepting-status predicate dropped, composite FK dropped (from-scratch database), audit dropped, stake-sum removed, each re-route door dropped separately (the reviewer door caught after its survivor forced the move above). 1006 hermetic tests, 546 database tests, 14 kafka tests. Next: P2-TSK-016. |
 | 2026-09-10 | **`P2-TST-001` complete - the KYC gate criteria, demonstrated and registered.** Five rows for `INV-KYC-01`…`05` and the item's own §4 row landed in `MUTATION_TESTING.md`, before the exit review needs them - the register guard begins demanding them the moment Phase 2 flips `COMPLETE`, so the flip stays the guarded act. **The audit found no demonstration missing**: every one of the five was performed by its owning task's mutation sweep (`P2-TSK-005`, `-009`, `-010`, `-011`, `-013`, `-014`), so the work was recording rather than performing, and each row names the mutation, the catching tests by `Class#method`, and the observed result - all `Recorded` form honestly, since every mutation changed production code or a migration and cannot live in the suite. The gate's first bullet (exhaustive invalid transitions) is the §4 row: `KycCaseLifecycleTest#everyTransitionIsEnforced`, with `P2-TSK-005`'s terminal-reopened mutation. **The rows are held to the code immediately**: `MutationDemonstrationTest`'s checks 3-7 apply to every present row whatever its phase, all nine guard tests green, and the teeth were re-proven per the §5 convention - one method reference corrupted (backup-copy, never `git checkout`), `everyNamedMethodExists` failed naming exactly the corrupted reference, restored byte-identical, green again. **One machinery hazard caught before commit**: the probe's PowerShell round-trip re-encoded the register's non-ASCII characters as mojibake (`Get-Content` without `-Encoding utf8`), contained by the backup-copy discipline and verified by byte comparison. Deliberately not landed: `INV-KYC-06`'s row (demonstrations exist from `P2-TSK-008`; the row is the exit review's), the `INV-CNS-*` rows (owning tasks `TODO`), `P2-TST-002`'s §4 row. Next: `P2-TSK-015`, M2.4 opens. |
