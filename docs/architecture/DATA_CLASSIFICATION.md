@@ -315,6 +315,14 @@ adding "just the user agent", which is why the ceiling is set before anything po
 | `kyc_case` | `status_changed_at` | `CONFIDENTIAL` | Dates a review event, which is more disclosive than the status alone — `customer.status_changed_at`'s reasoning |
 | `kyc_case` | `case_kind` | `INTERNAL` | *Added by `P2-TSK-015`.* As `party.kind` — an enumeration of two values, saying no more about the customer than the party row already says |
 
+### `party.organisation_registrant` — *added by `P2-TSK-016`*
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `organisation_registrant` | `customer_id` | `INTERNAL` | An identifier of a thing, as `customer.id` |
+| `organisation_registrant` | `registrant_party_id` | `CONFIDENTIAL` | The `beneficial_owner.owner_party_id` reasoning, the other way round: the pairing *is* the fact — this person acts for that organisation. What it resolves to stays `RESTRICTED-PII` as ever |
+| `organisation_registrant` | `registered_at` | `INTERNAL` | Operational timestamp |
+
 ### `kyc.beneficial_owner` — *added by `P2-TSK-015`*
 
 | Table | Column | Level | Note |

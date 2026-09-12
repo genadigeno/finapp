@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-12 (`P2-TSK-015`)
+Last updated: 2026-09-12 (`P2-TSK-016`)
 
 ---
 
@@ -59,13 +59,16 @@ class, again).
 
 ## Current Milestone
 
-**M2.4 — KYB and beneficial ownership.** `P2-TSK-015` … `P2-TSK-016`; **1 of 2**
-(2026-09-12) — the KybCase and the ownership graph landed: one case machine with two kinds,
-the append-only kind-bound owner table, the readiness gate as a locked predicate in the
-transition statement, and the re-route that answers waiting parents. The milestone's stated
-acceptance — *an organisation decides only on a fully verified ownership graph* — holds at
-the store/orchestration surface and is mutation-proven; carrying it over HTTP is
-`P2-TSK-016`, the milestone's remaining member.
+**M2.4 — KYB and beneficial ownership.** `P2-TSK-015` … `P2-TSK-016`; **CLOSED
+2026-09-12, 2 of 2.** The milestone's stated acceptance — *an organisation decides only on a
+fully verified ownership graph* — now holds **end to end over HTTP**: the acting person
+registers the organisation, declares its owners, watches the gate refuse readiness until
+every owner's verification answers, and reads the reviewer's decision — with a stranger's
+own chain resolving to a 404, the shaped view keeping tipping-off closed, and the reviewer
+seeing the graph whole. `P2-TSK-015` built the gate, the lock and the re-route;
+`P2-TSK-016` carried them to the surface and answered the acting-person question by
+building its missing precondition. **Next: M2.5, consent**, opening with `P2-TSK-017`;
+`P2-TSK-006` stays blocked on the consent gate it delivers.
 
 **M2.3 — Decisions and review.** `P2-TSK-012` … `P2-TSK-014`; **CLOSED 2026-09-10, 3 of
 3.** The milestone's stated acceptance — *a hit case cannot terminate without a reviewer,
@@ -245,11 +248,90 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TSK-015` completed 2026-09-12 — KybCase and the
-beneficial-ownership graph; M2.4 is open, 1 of 2. **Next: `P2-TSK-016` (`READY`)** — the
-KYB endpoints; `P2-TSK-006` stays blocked on the consent gate.
+**None in progress.** `P2-TSK-016` completed 2026-09-12 — the KYB endpoints; M2.4 is
+CLOSED, 2 of 2. **Next: `P2-TSK-017` (`READY`)** — consent texts and the append-only
+record, opening M2.5; `P2-TSK-006` stays blocked on the consent gate it delivers.
 
 ### Just completed
+
+**`P2-TSK-016` — The KYB endpoints** — `COMPLETE` (2026-09-12). M2.4 closes: the graph
+`P2-TSK-015` built is carried over HTTP by the organisation's acting person — and *who may
+act for an organisation*, the task's stated design question, is answered at the boundary.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The M2.4 milestone criterion end to end | `KybEndpointDatabaseTest.theActingPersonCarriesTheGraphOverHttp`: register (201, the KYB case in the same commit) → declare (audited against the **proven person**) → the gate refuses readiness while the owner is unanswered → the owner's verification answers → readiness → the reviewer decides → the acting person reads `APPROVED` |
+| Over HTTP; ownership | The `/v1/me` absence shape, one hop further: Session → Identity → `organisationRegisteredBy` — the statement carries `registrant_party_id = ?` — → `findLatestFor`. Two acting persons' declarations provably land on their own organisations only |
+| A stranger cannot declare owners onto another's case | They have nothing to name it with: no endpoint takes a case identifier, and the stranger's own chain resolves to a 404 with nothing written |
+| `DOD-SEC`: negative tests for every control | Unauthenticated ×3; the stranger 404; cross-organisation isolation; the uniform owner refusal (four causes, byte-identical); the frozen-set 409; the stake 422; the tipping-off shaping with no "REVIEW" vocabulary in the body; no body shape a 500 |
+
+### The design question was answered by building its missing precondition
+
+**No production path created `ORGANISATION` parties** — `PartyRegistration` hardcodes
+`PERSON` — so "the registering identity" had no subject: the `P1-TSK-023` shape, a missing
+precondition of the requirement rather than a missing endpoint. `POST /v1/me/organisations`
+is the minimum that gives it one: a logged-in person registers the organisation they act
+for, and party `V006` records their Party as its one registrant under a **total**
+`UNIQUE (registrant_party_id)` — the Phase 2 scope bound (one organisation per person,
+ever), the concurrency arbiter (ten racing registrations, one row) and the convergence key,
+one index. The table is append-only; delegation, multiple representatives and registrant
+replacement are recorded as Phase 6+.
+
+### Convergence replays the original 201, and the gate corrected my 200
+
+Registration converges — a same-name repeat is one intent — and my first design answered
+the repeat with a 200 beside the creation's 201. **The generated contract said otherwise**:
+springdoc published `"200"` alone for a `ResponseEntity` handler (the `P1-TSK-006` trap,
+found again by reading the document), and the honest fix was not machinery but alignment —
+the platform's convergence idiom (`P2-TSK-008`'s documents endpoint, the idempotency replay
+itself) already answers a converged retry with the **original** status. One 201, however
+many times the request arrived; what distinguishes creation is the records — only the
+creating path audits (`party.OrganisationRegistered`, actor the proven person, never
+`enterSystem()`) and publishes, asserted as **one record however many arrivals**. A
+different name is `409 api.Conflict` (`INV-IDEM-03`'s shape), the stored name never echoed.
+The KYB case opens **inside the registration transaction**, so the acting person's first
+view has a case to show.
+
+### One refusal for third parties; specific refusals for your own graph
+
+`ownerPartyId` names a third party, so unknown, organisation, unregistered and **malformed**
+are one byte-identical `422 kyc.OwnerNotEligible` — a split would make the declaration
+endpoint an oracle over other people's registrations (`INV-IDN-07`'s reasoning applied to a
+body field; malformed-equals-absent, `P1-TSK-016`). The caller's own graph stays specific,
+because specificity there discloses nothing and each refusal calls for different behaviour:
+`kyc.OwnerAlreadyDeclared` (409, append-only honesty), `kyc.CaseNotAcceptingOwners` (409,
+the frozen set), `kyc.StakeExceedsWhole` (422). The at-least-one-qualification invariant is
+told at the boundary as a 422 rather than thrown from the aggregate as a 500.
+
+### The shaped view is the control, and the reviewer sees everything
+
+The acting person's view collapses `CHECKS_IN_PROGRESS` **and** `IN_REVIEW` to
+`IN_PROGRESS` — which of the two a case is in is exactly what tipping-off forbids
+disclosing (plan §6) — and an owner's verification appears only as a `verificationPending`
+boolean: never its status, outcome or case identifier. The reviewer's case file gains the
+graph **whole** (verification case id, real status), because the owner rows are the KYB
+decision's evidence (`INV-KYC-02`) and the person who must defend the decision cannot
+defend evidence they cannot see. `ownersOf` serves the status raw; shaping is the caller's.
+
+### The sweep's survivor found a test naming the wrong party
+
+The mutation dropping the at-least-one boundary check **survived**: the no-500 sweep's
+no-qualification shape named an *unknown* party, so eligibility refused it with the uniform
+422 before the aggregate was ever constructed, and the boundary check was exercised by
+nothing. Re-aimed at an **eligible** owner — the only kind that can reach the aggregate's
+`IllegalArgumentException` — the mutation is caught, and the test now says why the shape
+must name a real person.
+
+**Nine mutations, eight caught first time and the ninth after its survivor strengthened the
+suite** — the name-conflict check dropped (silent convergence), the KYB case opening dropped
+from the registration transaction, the uniform refusal split, the shaping dropped
+(`IN_REVIEW` leaking), the owners dropped from the reviewer's file, the ownership predicate
+neutralised in `organisationRegisteredBy` (caught by the cross-organisation isolation test),
+the registration audit dropped (caught by the one-record assertion), the lost race erroring
+instead of converging, and the boundary check above. **1006 hermetic tests, 557
+database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TSK-015` — KybCase and the beneficial-ownership graph** — `COMPLETE` (2026-09-12).
 M2.4 opens with the phase's namesake capability: an `ORGANISATION` customer's case is a KYB
@@ -6375,21 +6457,23 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-016` — KYB endpoints.** Status `READY`; its one dep, `P2-TSK-015`, is complete.
-M2.4 closes with it.
+**`P2-TSK-017` — Consent texts and the append-only record.** Status `READY`; its one dep,
+`P2-TSK-003`, is complete. M2.5 opens with it.
 
-Owner declaration and KYB case views over HTTP for the organisation's acting person, and
-the reviewer views extended. **Who may act for an organisation is this task's design
-question** — the ADR-0031 split trigger names organisations — and Phase 2 scopes it to the
-registering identity, recorded as the deliberate minimum with delegated access out of scope
-(Phase 6+). Tests: over HTTP; ownership; a stranger cannot declare owners onto another's
-case. Accept: the M2.4 milestone criterion end to end. Risk: Medium. Cx: M. DoD: `DOD-SEC`.
+`V002` in the consent schema: `consent_text` (versioned, immutable) and `consent_record`
+(append-only at `DB-PRIVILEGE`, `NOT NULL` text-version reference — `INV-CNS-02`/`04`); the
+derivation query; the `ConsentPurpose` enumeration. ADR-0037 made real. Distributed:
+concurrent grant+withdraw append two facts, and the derivation orders by a server-assigned
+ordering column, never by two instances' clocks (`P0-TST-009`'s lesson). Tests: privilege
+sweep on every column; derivation under interleaved records; version-pinning refused null.
+Accept: the history is the store, proven immutable. Risk: Medium. Cx: S. DoD: `DOD-KERNEL`.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-12 | **`P2-TSK-016` complete - the KYB endpoints, and M2.4 closes (2 of 2).** The milestone criterion end to end over HTTP: the acting person registers, declares, watches the gate, and reads the decision; a stranger cannot. **The design question was answered by building its missing precondition** - no production path created ORGANISATION parties, so `POST /v1/me/organisations` registers the caller's organisation with their Party as its one registrant under a TOTAL unique index (scope bound, arbiter and convergence key in one; append-only; delegation is Phase 6+). Convergence replays the original 201 - corrected at the gate from a 200 after the generated contract published "200" alone (the P1-TSK-006 ResponseEntity trap) and the platform's own convergence idiom already answered the question; created-vs-converged lives in the records (created audits as the proven person and announces; converged is silent, asserted as one record). A different name is 409 api.Conflict (INV-IDEM-03). Ownership is the /v1/me absence shape one hop further (registrant_party_id = ? in the statement; stranger 404; cross-organisation isolation proven); ownerPartyId names the declaration's SUBJECT, never a resource. Owner ineligibility is ONE byte-identical refusal across unknown/organisation/unregistered/malformed (no oracle over third parties), own-graph refusals specific. The view is shaped (IN_REVIEW renders IN_PROGRESS - tipping-off; owners as a pending boolean only) and the reviewer's case file gains the graph whole (INV-KYC-02: the owner rows are the decision's evidence). **Nine mutations: eight caught first time; the survivor found the no-500 sweep naming an unknown party** - refused by eligibility before the aggregate was constructed - re-aimed at an eligible owner and caught. 1006 hermetic tests, 557 database tests, 14 kafka tests. Next: P2-TSK-017, M2.5 opens. |
 | 2026-09-12 | **`P2-TSK-015` complete - KybCase and the beneficial-ownership graph, and M2.4 opens.** One case machine, two kinds: `kyc_case.case_kind` fixed at open by the `CaseKindResolver` port (`app` implements it over the party's kind - `kyc` cannot see `party`) and **unwritable at DB-PRIVILEGE** (V008 narrows the case grant to `(status, status_changed_at)`, because a KYB→KYC flip is the write that would disarm the gate silently); never a second table, since what makes KYB *"not a flag"* is the graph. `kyc.beneficial_owner` is append-only and **kind-bound at DB-CONSTRAINT** - composite FKs over a new `UNIQUE (id, case_kind)` admit owner rows only on KYB cases and only KYC cases as verifications, so the depth-1 bound is structural. An owner's verification is their own KYC case, **pinned at declaration** (`INV-HIST-04`'s shape); readiness demands every owner ANSWERED - terminal either way - not APPROVED, and **KYB never auto-decides**: `KycDecision.automatic` refuses the kind at the domain, because an automatic all-clear could clear a terminal-REJECTED owner by silence (`INV-KYC-04`). **The distributed edge was sharper than the backlog's own sentence**: the declaration INSERTs owner rows while readiness UPDATEs the case with NOT EXISTS subqueries - different rows - and under READ COMMITTED a blocked UPDATE re-runs its subqueries against the statement's ORIGINAL snapshot, so "predicate in the statement" alone still misses a just-committed owner. Write skew, closed by **lock-then-look on both sides** (`SELECT … FOR UPDATE` on the case row, then the predicate in a fresh statement), proven deterministically: the two-connection test observes the mover Lock-waiting in `pg_stat_activity`, both interleavings. Once RFD the owner set is **frozen** (declarations accepted only in OPEN/CIP/IN_REVIEW, under the same lock; append-only grants proven per column), so **the owner rows ARE the decision's evidence** with no join table. An owner's terminal decision **re-routes** waiting parents post-commit through both doors - assess, and `DecisionRecording.byReviewer` on RECORDED and ALREADY_DECIDED (the 409-path-heals shape). **The sweep's one survivor moved that hook**: it first lived in `ReviewController.decide` and nothing exercised it - both re-route tests drove the assess door - so it moved onto the recording itself, whose second caller already exists, with a new test driving an owner decided by a reviewer. Two Phase-2 bounds recorded: ORGANISATION owners refused (depth 1), unregistered owners refused - declaration never auto-opens cases. New audit action `kyc.OwnerDeclared`; stake in basis points with the per-case sum ≤ 10000 checked under the lock. **The completion battery found one real interaction**: the kafka race test's crafted event named a rowless customer, which the consumer's kind resolution refuses loudly - stalling the partition by the block-don't-skip design and timing out every later test; in production that event cannot exist (it commits in the customer's own transaction), and the fixture now inserts the rows production guarantees. **Ten mutations, all caught by the intended assertion** - gate neutralised, lock dropped (caught by the blocked-observation precondition), at-least-one-owner neutralised, KYB-automatic refusal dropped, accepting-status predicate dropped, composite FK dropped (from-scratch database), audit dropped, stake-sum removed, each re-route door dropped separately (the reviewer door caught after its survivor forced the move above). 1006 hermetic tests, 546 database tests, 14 kafka tests. Next: P2-TSK-016. |
 | 2026-09-10 | **`P2-TST-001` complete - the KYC gate criteria, demonstrated and registered.** Five rows for `INV-KYC-01`…`05` and the item's own §4 row landed in `MUTATION_TESTING.md`, before the exit review needs them - the register guard begins demanding them the moment Phase 2 flips `COMPLETE`, so the flip stays the guarded act. **The audit found no demonstration missing**: every one of the five was performed by its owning task's mutation sweep (`P2-TSK-005`, `-009`, `-010`, `-011`, `-013`, `-014`), so the work was recording rather than performing, and each row names the mutation, the catching tests by `Class#method`, and the observed result - all `Recorded` form honestly, since every mutation changed production code or a migration and cannot live in the suite. The gate's first bullet (exhaustive invalid transitions) is the §4 row: `KycCaseLifecycleTest#everyTransitionIsEnforced`, with `P2-TSK-005`'s terminal-reopened mutation. **The rows are held to the code immediately**: `MutationDemonstrationTest`'s checks 3-7 apply to every present row whatever its phase, all nine guard tests green, and the teeth were re-proven per the §5 convention - one method reference corrupted (backup-copy, never `git checkout`), `everyNamedMethodExists` failed naming exactly the corrupted reference, restored byte-identical, green again. **One machinery hazard caught before commit**: the probe's PowerShell round-trip re-encoded the register's non-ASCII characters as mojibake (`Get-Content` without `-Encoding utf8`), contained by the backup-copy discipline and verified by byte comparison. Deliberately not landed: `INV-KYC-06`'s row (demonstrations exist from `P2-TSK-008`; the row is the exit review's), the `INV-CNS-*` rows (owning tasks `TODO`), `P2-TST-002`'s §4 row. Next: `P2-TSK-015`, M2.4 opens. |
 | 2026-09-10 | **`P2-TSK-014` complete - the projection, and M2.3 closes (3 of 3).** The `app` orchestration ADR-0035 describes: a decision's customer moves `PENDING → ACTIVE`/`REJECTED` **in the decision's own transaction, on both doors** - the reviewer endpoint and the automatic all-clear run - with the projection as the recording's LAST write, so the atomicity probes target it: an injected failure and a backend killed mid-recording (the `P1-TSK-012` deterministic-kill idiom) each leave NOTHING - no decision, no audit record, case still `READY_FOR_DECISION`, customer still `PENDING`. **The reconciliation sweep holds the pair together in both directions** (`INV-KYC-05`, ADR-0035's carried obligation): every decision's customer moved as its outcome says, and - the sharp direction - no customer under verification left `PENDING` without a decision authorizing it, scoped to customers WITH a KYC case because a case-less customer has no pair to reconcile. **`REJECTED` joined the customer machine** (the plan's and ADR-0035's own word; mapping it onto `CLOSED` would overload one terminal with two meanings and make the projection unfaithful): terminal, `PENDING`-only, and it FREES the one-live slot - re-onboarding is a new Customer (`INV-LIFE-04`) - proven behaviourally by the insert V005's widened predicate admits. **`PartyEnumMigrationTest`'s one-terminal assertion, written by `P1-TSK-005` to break the day a second terminal arrived, broke on schedule**: it now derives the latest CHECK and index predicate from the enum's new `sqlTerminalValueList()` (the applied-history lesson) and pins V002's originals as history; `findLiveCustomerFor` is built from the same derivation so the read and the index cannot disagree. **The grant premise was corrected rather than propagated**: V002 had paid a table-level UPDATE before any writer existed, so V005 NARROWS it to `(status, status_changed_at)` - the V004 precedent, proven by the per-column denial sweep with its positive control. A lost projection conditional (a customer closed mid-KYC, the one reachable cause) fails the whole transaction LOUDLY - a decision beside an unmoved projection is the silent drift `INV-KYC-05` forbids - and the case stays decidable. The mapping lives in `app` (`kyc` cannot see `party`); `moveCustomerStatus` asks the machine before any SQL (`INV-LIFE-02`) and joined the ownership register (`ADMINISTERED`). No new audit action, deliberately: the projection is derived bookkeeping of the audited decision, one join away. **Seven mutations, all caught by the intended assertion** - projection dropped (both doors), conditional removed, lost-move swallowed, mapping inverted, index predicate kept narrow (caught against a from-scratch database), grant not narrowed, `status_changed_at` not written. 996 hermetic tests, 532 database tests, 14 kafka tests. Next: P2-TST-001. |

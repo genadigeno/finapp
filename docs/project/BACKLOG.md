@@ -3230,7 +3230,7 @@ capability map, and the task list below is the schedule.
   the finding above, and its fix is what the sweep is for. 1006 hermetic tests, 546 database
   tests, 14 kafka tests.
 
-**P2-TSK-016 — KYB endpoints** — `READY`
+**P2-TSK-016 — KYB endpoints** — `COMPLETE` (2026-09-12)
 - Context: kyc / api
 - Description: Owner declaration and KYB case views for the organisation's acting person;
   reviewer views extended.
@@ -3241,10 +3241,51 @@ capability map, and the task list below is the schedule.
 - Tests: over HTTP; ownership; a stranger cannot declare owners onto another's case.
 - Accept: the M2.4 milestone criterion end to end.
 - Risk: Medium. Cx: M. DoD: `DOD-SEC`
+- **Outcome:** the design question was answered by building its missing precondition: **no
+  production path created `ORGANISATION` parties** — `PartyRegistration` hardcodes `PERSON` —
+  so "the registering identity" had no subject (the `P1-TSK-023` shape: a missing precondition
+  of the requirement, built in-task at the minimum). `POST /v1/me/organisations`: a logged-in
+  person registers the organisation they act for, and party `V006` records their Party as its
+  one registrant under a **total** `UNIQUE (registrant_party_id)` — the Phase 2 scope bound,
+  the concurrency arbiter and the convergence key in one index — append-only
+  (`SELECT, INSERT`), with delegation, multiple representatives and registrant replacement
+  recorded as Phase 6+. Registration **converges**: a same-name repeat replays the original
+  **201** (the `P2-TSK-008` convergence idiom — corrected at the gate from a 200, where the
+  generated contract had published "200" only, the `P1-TSK-006` `ResponseEntity` trap met
+  again), a different name is `409 api.Conflict` (`INV-IDEM-03`'s shape, the stored name never
+  echoed), and no idempotency key, because convergence keyed on the registrant cannot be lost
+  by the client. Created audits (`party.OrganisationRegistered`, actor the **proven person**,
+  never `enterSystem()`) and publishes the same two events person registration publishes, so
+  the case-opening consumer's kind resolution converges; **converged is silent**, asserted as
+  one record however many times the request arrived; the KYB case opens **inside the
+  registration transaction**. Ownership is the `/v1/me` absence shape, one hop further:
+  Session → Identity.partyId → `organisationRegisteredBy` (the statement carries
+  `registrant_party_id = ?`) → `findLatestFor` — a stranger's own chain is a 404, two acting
+  persons' declarations provably land on their own organisations only, and the one
+  request-supplied identifier, `ownerPartyId`, names the declaration's **subject**, never a
+  resource (three new `SESSION_DERIVED` ownership-register entries). **Owner ineligibility is
+  one refusal**: unknown party, organisation party, unregistered person and malformed
+  identifier are byte-identical `422 kyc.OwnerNotEligible` — a split would make the endpoint
+  an oracle over third parties' registrations — while the caller's own-graph refusals stay
+  specific (`kyc.OwnerAlreadyDeclared` 409, `kyc.CaseNotAcceptingOwners` 409,
+  `kyc.StakeExceedsWhole` 422), and the at-least-one-qualification invariant is told at the
+  boundary as a 422 rather than thrown from the aggregate as a 500. **The view is shaped and
+  the shaping is the control**: `IN_PROGRESS` covers checks AND review (tipping-off, plan §6),
+  an owner's verification appears only as a `verificationPending` boolean — never status,
+  outcome or case identifier — and the reviewer's case file gains the graph **whole**
+  (verification case id and real status), because the owner rows are the decision's evidence
+  (`INV-KYC-02`). The M2.4 acceptance is driven end to end over HTTP: register → declare →
+  the gate refuses readiness → the owner's verification answers → readiness → the reviewer
+  decides → the acting person reads `APPROVED`; ten concurrent registrations produce ten 201s,
+  one registrant row, one audit record. **Nine mutations: eight caught first time; the
+  survivor was the boundary-check mutation**, which found the no-500 sweep's
+  no-qualification shape naming an *unknown* party — refused by eligibility before the
+  aggregate was ever constructed — re-aimed at an eligible owner and caught. 1006
+  hermetic tests, 557 database tests, 14 kafka tests. **M2.4 closes: 2 of 2.**
 
 ## P2-EPIC-06 — Consent (M2.5)
 
-**P2-TSK-017 — Consent texts and the append-only record** — `TODO`
+**P2-TSK-017 — Consent texts and the append-only record** — `READY`
 - Context: consent
 - Description: `V002`: `consent_text` (versioned, immutable) and `consent_record` (append-only
   at `DB-PRIVILEGE`, `NOT NULL` text-version reference); the derivation query; the

@@ -65,4 +65,26 @@ public interface BeneficialOwnerStore<T> {
      * {@code KYB}-kind cases as parents, so a parent is never itself somebody's verification.
      */
     List<KycCaseId> parentCasesOf(T unitOfWork, KycCaseId verificationCaseId);
+
+    /**
+     * The case's declared owners with each verification's <em>current</em> status
+     * (`P2-TSK-016`) — the read behind both KYB views.
+     *
+     * <p>One join, one snapshot: the owner rows and the verification statuses come from the
+     * same statement, so a view can never pair an owner with a status another transaction has
+     * already replaced. The status is served raw here; <strong>shaping is the caller's</strong>
+     * — the acting person's view collapses it to a pending boolean (tipping-off,
+     * {@code INV-IDN-07}'s reasoning), the reviewer's view shows it whole, and a shaped store
+     * would force the reviewer to ask a second question.
+     */
+    List<DeclaredOwner> ownersOf(T unitOfWork, KycCaseId caseId);
+
+    /** An owner row paired with its verification case's status, from one snapshot. */
+    record DeclaredOwner(BeneficialOwner owner, KycCaseStatus verificationStatus) {
+        public DeclaredOwner {
+            java.util.Objects.requireNonNull(owner, "owner must not be null");
+            java.util.Objects.requireNonNull(
+                    verificationStatus, "verificationStatus must not be null");
+        }
+    }
 }

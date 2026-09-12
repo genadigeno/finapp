@@ -12,9 +12,12 @@ import com.finapp.identity.Session;
 import com.finapp.identity.SessionPolicy;
 import com.finapp.identity.SessionStore;
 import com.finapp.identity.SessionToken;
+import com.finapp.kyc.BeneficialOwner;
+import com.finapp.kyc.BeneficialOwnerStore;
 import com.finapp.kyc.CheckOutcome;
 import com.finapp.kyc.CheckStore;
 import com.finapp.kyc.CheckType;
+import com.finapp.kyc.ControlRole;
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
@@ -85,6 +88,7 @@ class ReviewDatabaseTest {
     @Autowired private Authorization authorization;
     @Autowired private CheckStore<Connection> checkStore;
     @Autowired private ReviewTaskStore<Connection> reviewTaskStore;
+    @Autowired private BeneficialOwnerStore<Connection> ownerStore;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
@@ -326,6 +330,85 @@ class ReviewDatabaseTest {
         assertThat(auditCountOfActor(
                         "kyc.CaseRead", fixture.caseId().value().toString(), reviewer))
                 .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the reviewer's case file carries the owner graph, whole")
+    void theCaseFileCarriesTheOwners() throws Exception {
+        // A KYB case with one declared owner, built through the production stores.
+        UUID organisationParty = IDS.next();
+        UUID organisationCustomer = IDS.next();
+        UUID ownerParty = IDS.next();
+        UUID ownerCustomer = IDS.next();
+        KycCaseId kybCase;
+        KycCaseId verification;
+        try (Connection app = DatabaseRoles.application()) {
+            execute(
+                    app,
+                    "INSERT INTO party.party (id, kind, display_name, registered_at)"
+                            + " VALUES (?, 'ORGANISATION', 'Acme Holdings', now())",
+                    organisationParty);
+            execute(
+                    app,
+                    "INSERT INTO party.customer (id, party_id, status, opened_at,"
+                            + " status_changed_at) VALUES (?, ?, 'PENDING',"
+                            + " now() - interval '1 hour', now() - interval '1 hour')",
+                    organisationCustomer,
+                    organisationParty);
+            execute(
+                    app,
+                    "INSERT INTO party.party (id, kind, display_name, registered_at)"
+                            + " VALUES (?, 'PERSON', 'Grace Hopper', now())",
+                    ownerParty);
+            execute(
+                    app,
+                    "INSERT INTO party.customer (id, party_id, status, opened_at,"
+                            + " status_changed_at) VALUES (?, ?, 'PENDING',"
+                            + " now() - interval '1 hour', now() - interval '1 hour')",
+                    ownerCustomer,
+                    ownerParty);
+            app.setAutoCommit(false);
+            kybCase =
+                    cases.openOrConverge(
+                                    app,
+                                    KycCase.open(
+                                            IDS, CLOCK, organisationCustomer, KycCaseKind.KYB))
+                            .kycCase()
+                            .id();
+            verification =
+                    cases.openOrConverge(
+                                    app,
+                                    KycCase.open(IDS, CLOCK, ownerCustomer, KycCaseKind.KYC))
+                            .kycCase()
+                            .id();
+            assertThat(
+                            ownerStore.declare(
+                                    app,
+                                    BeneficialOwner.declare(
+                                            IDS,
+                                            CLOCK,
+                                            kybCase,
+                                            ownerParty,
+                                            verification,
+                                            java.util.OptionalInt.of(2500),
+                                            java.util.Optional.of(ControlRole.DIRECTOR))))
+                    .isEqualTo(BeneficialOwnerStore.Declared.DECLARED);
+            app.commit();
+        }
+
+        HttpResponse<String> response = get(caseOf(kybCase), givenASessionFor(givenAReviewer()));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        // The whole declaration, including precisely what the acting person's view hides:
+        // the verification case identifier and its REAL status. The owner rows are the KYB
+        // decision's evidence (INV-KYC-02), and the reviewer is the person who must defend
+        // it - shaping here would blind exactly the reader it exists to inform.
+        assertThat(response.body())
+                .contains(ownerParty.toString())
+                .contains(verification.value().toString())
+                .contains("\"verificationStatus\":\"OPEN\"")
+                .contains("\"stakeBasisPoints\":2500")
+                .contains("DIRECTOR");
     }
 
     @Test

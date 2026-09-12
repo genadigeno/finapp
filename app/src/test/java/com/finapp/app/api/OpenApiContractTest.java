@@ -289,7 +289,13 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/reviews/{taskId}/resolution",
                         // P2-TSK-013. The decision: the one recorded act every later phase
                         // gates on (INV-KYC-02), behind the same permission.
-                        ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/decision");
+                        ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/decision",
+                        // P2-TSK-016. The KYB surface: the /v1/me ownership-by-absence shape -
+                        // registration, the shaped view, and the owner declaration whose one
+                        // identifier names the declaration's subject, never a resource.
+                        ApiVersion.CURRENT_PREFIX + "/me/organisations",
+                        ApiVersion.CURRENT_PREFIX + "/me/kyb",
+                        ApiVersion.CURRENT_PREFIX + "/me/kyb/owners");
     }
 
     @Test

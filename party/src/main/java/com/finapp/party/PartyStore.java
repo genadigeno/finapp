@@ -62,6 +62,21 @@ public interface PartyStore<T> {
             java.time.Instant at);
 
     /**
+     * The organisation Customer this party registered, if any (`P2-TSK-016`).
+     *
+     * <p>The KYB surface's ownership read: {@code /v1/me/kyb} derives the organisation from the
+     * proven session's Party through this — no identifier in any request — and the statement
+     * carries the ownership predicate itself ({@code registrant_party_id = ?}), so "the caller's
+     * organisation" and "the organisation the one-per-registrant index guards" are one question.
+     * At most one row can match, by that total unique index.
+     *
+     * <p>Terminal customers are deliberately <em>not</em> filtered out: the acting person must
+     * still see a REJECTED organisation's outcome, and the registrant slot does not free in
+     * Phase 2 (the V006 bound) — so this is "the organisation", not "the live organisation".
+     */
+    Optional<Customer> organisationRegisteredBy(T unitOfWork, PartyId registrantPartyId);
+
+    /**
      * The kind of a Party — and nothing else (`P2-TSK-015`).
      *
      * <p>A deliberately narrow read beside {@link #findById}: the owner-declaration

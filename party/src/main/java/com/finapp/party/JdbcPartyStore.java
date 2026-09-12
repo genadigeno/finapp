@@ -82,6 +82,42 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
     }
 
     @Override
+    public Optional<Customer> organisationRegisteredBy(
+            Connection unitOfWork, PartyId registrantPartyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(registrantPartyId, "registrantPartyId must not be null");
+
+        // registrant_party_id = ? IS the ownership check, in the statement (ADR-0031): the
+        // identifier comes from the proven session's Identity, and the join can only ever
+        // surface the one organisation the V006 unique index lets this party register.
+        String sql =
+                "SELECT c.id, c.party_id, c.status, c.opened_at, c.status_changed_at"
+                        + " FROM party.organisation_registrant r"
+                        + " JOIN party.customer c ON c.id = r.customer_id"
+                        + " WHERE r.registrant_party_id = ?";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setObject(1, registrantPartyId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next()
+                        ? Optional.of(
+                                Customer.rehydrate(
+                                        CustomerId.of((UUID) rows.getObject("id")),
+                                        PartyId.of((UUID) rows.getObject("party_id")),
+                                        CustomerStatus.valueOf(rows.getString("status")),
+                                        rows.getTimestamp("opened_at").toInstant(),
+                                        rows.getTimestamp("status_changed_at").toInstant()))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new PartyStorageException(
+                    DatabaseFailure.describe(
+                            "Could not read the organisation registered by party "
+                                    + registrantPartyId,
+                            e));
+        }
+    }
+
+    @Override
     public Optional<PartyKind> kindOf(Connection unitOfWork, PartyId partyId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(partyId, "partyId must not be null");

@@ -88,6 +88,53 @@ public final class JdbcBeneficialOwnerStore implements BeneficialOwnerStore<Conn
         }
     }
 
+    @Override
+    public List<DeclaredOwner> ownersOf(Connection unitOfWork, KycCaseId caseId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(caseId, "caseId must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT bo.id, bo.case_id, bo.owner_party_id, bo.verification_case_id,"
+                                + " bo.stake_basis_points, bo.control_role, bo.declared_at,"
+                                + " oc.status AS verification_status"
+                                + " FROM " + TABLE + " bo"
+                                + " JOIN kyc.kyc_case oc ON oc.id = bo.verification_case_id"
+                                + " WHERE bo.case_id = ?"
+                                + " ORDER BY bo.declared_at, bo.id")) {
+            select.setObject(1, caseId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                List<DeclaredOwner> owners = new ArrayList<>();
+                while (rows.next()) {
+                    int stake = rows.getInt("stake_basis_points");
+                    boolean stakeAbsent = rows.wasNull();
+                    String role = rows.getString("control_role");
+                    owners.add(
+                            new DeclaredOwner(
+                                    BeneficialOwner.rehydrate(
+                                            BeneficialOwnerId.of(
+                                                    rows.getObject("id", UUID.class)),
+                                            KycCaseId.of(rows.getObject("case_id", UUID.class)),
+                                            rows.getObject("owner_party_id", UUID.class),
+                                            KycCaseId.of(
+                                                    rows.getObject(
+                                                            "verification_case_id", UUID.class)),
+                                            stakeAbsent
+                                                    ? OptionalInt.empty()
+                                                    : OptionalInt.of(stake),
+                                            Optional.ofNullable(role).map(ControlRole::valueOf),
+                                            rows.getTimestamp("declared_at").toInstant()),
+                                    KycCaseStatus.valueOf(
+                                            rows.getString("verification_status"))));
+                }
+                return List.copyOf(owners);
+            }
+        } catch (SQLException failure) {
+            throw new KycStorageException(
+                    DatabaseFailure.describe(
+                            "reading the declared owners of KYB case " + caseId, failure));
+        }
+    }
+
     private record LockedCase(KycCaseStatus status, KycCaseKind kind) {}
 
     /**

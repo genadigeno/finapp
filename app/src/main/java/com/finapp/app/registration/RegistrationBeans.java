@@ -85,6 +85,17 @@ class RegistrationBeans {
         return new PartyRegistration(ids, clock, auditWriter, outboxWriter);
     }
 
+    /** The organisation counterpart (`P2-TSK-016`): same collaborators, authenticated actor. */
+    @Bean
+    com.finapp.party.OrganisationRegistration organisationRegistration(
+            IdGenerator ids,
+            Clock clock,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter) {
+        return new com.finapp.party.OrganisationRegistration(
+                ids, clock, auditWriter, outboxWriter);
+    }
+
     /**
      * {@code credentialStore} and {@code passwordDeriver} are {@code AuthenticationBeans}' beans,
      * injected rather than re-declared: a second {@code Argon2PasswordDeriver} would be a second

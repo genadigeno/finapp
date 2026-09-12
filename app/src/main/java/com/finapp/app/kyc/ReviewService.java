@@ -1,6 +1,7 @@
 package com.finapp.app.kyc;
 
 import com.finapp.identity.IdentityId;
+import com.finapp.kyc.BeneficialOwnerStore;
 import com.finapp.kyc.CheckStore;
 import com.finapp.kyc.KycAuditAction;
 import com.finapp.kyc.KycCase;
@@ -67,13 +68,23 @@ public class ReviewService {
         NOT_FOUND
     }
 
-    /** The reviewer's view: the case, its checks, its tasks — references, never content. */
+    /**
+     * The reviewer's view: the case, its checks, its tasks — references, never content — and,
+     * since `P2-TSK-016`, the declared owners with their verification statuses: the owner rows
+     * ARE the evidence a KYB decision rests on ({@code INV-KYC-02}), and the person who must
+     * defend that decision cannot defend evidence they cannot see. Empty for a KYC case, by
+     * V008's composite FK rather than by filtering.
+     */
     public record CaseFile(
-            KycCase kycCase, List<VerificationCheck> checks, List<ReviewTask> tasks) {}
+            KycCase kycCase,
+            List<VerificationCheck> checks,
+            List<ReviewTask> tasks,
+            List<BeneficialOwnerStore.DeclaredOwner> owners) {}
 
     private final KycCaseStore<Connection> cases;
     private final CheckStore<Connection> checks;
     private final ReviewTaskStore<Connection> tasks;
+    private final BeneficialOwnerStore<Connection> owners;
     private final AuditWriter<Connection> auditWriter;
     private final IdGenerator ids;
     private final Clock clock;
@@ -83,6 +94,7 @@ public class ReviewService {
             KycCaseStore<Connection> kycCaseStore,
             CheckStore<Connection> checkStore,
             ReviewTaskStore<Connection> reviewTaskStore,
+            BeneficialOwnerStore<Connection> beneficialOwnerStore,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
@@ -91,6 +103,8 @@ public class ReviewService {
         this.cases = Objects.requireNonNull(kycCaseStore, "kycCaseStore must not be null");
         this.checks = Objects.requireNonNull(checkStore, "checkStore must not be null");
         this.tasks = Objects.requireNonNull(reviewTaskStore, "reviewTaskStore must not be null");
+        this.owners =
+                Objects.requireNonNull(beneficialOwnerStore, "beneficialOwnerStore must not be null");
         this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
         this.ids = Objects.requireNonNull(idGenerator, "idGenerator must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -112,7 +126,8 @@ public class ReviewService {
                                                     new CaseFile(
                                                             kycCase,
                                                             checks.forCase(unitOfWork, caseId),
-                                                            tasks.forCase(unitOfWork, caseId));
+                                                            tasks.forCase(unitOfWork, caseId),
+                                                            owners.ownersOf(unitOfWork, caseId));
                                             auditRead(unitOfWork, kycCase);
                                             return file;
                                         }));

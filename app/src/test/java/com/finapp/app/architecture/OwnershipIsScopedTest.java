@@ -358,6 +358,45 @@ class OwnershipIsScopedTest {
                                         + " customer identifier that then feeds"
                                         + " conditional-everything writes.")),
                     Map.entry(
+                            "com.finapp.party.JdbcPartyStore.organisationRegisteredBy",
+                            new Entry(
+                                    Scope.SESSION_DERIVED,
+                                    "com.finapp.app.kyc.KybController",
+                                    "P2-TSK-016. The KYB surface's ownership-by-absence chain:"
+                                        + " the PartyId is the proven session's own"
+                                        + " (Session.identityId() -> Identity.partyId(), held in"
+                                        + " memory), and the statement's registrant_party_id = ?"
+                                        + " IS the ownership predicate - the read can only ever"
+                                        + " resolve to the organisation this person registered."
+                                        + " The one request-supplied identifier on the endpoint,"
+                                        + " ownerPartyId, names the declaration's SUBJECT in the"
+                                        + " body and never a resource, which is exactly the"
+                                        + " distinction this class's check encodes.")),
+                    Map.entry(
+                            "com.finapp.party.OrganisationRegistration.findExisting",
+                            new Entry(
+                                    Scope.SESSION_DERIVED,
+                                    "com.finapp.app.kyc.OrganisationController",
+                                    "P2-TSK-016. The registration's pre-read and its"
+                                        + " post-conflict re-read: the registrant PartyId is the"
+                                        + " proven session's own, the statement filters by"
+                                        + " registrant_party_id = ?, and the endpoint takes no"
+                                        + " identifier at all - a name is not one. A private"
+                                        + " helper found by the detector, the revokeAll"
+                                        + " shape.")),
+                    Map.entry(
+                            "com.finapp.party.OrganisationRegistration.insertRegistrant",
+                            new Entry(
+                                    Scope.SESSION_DERIVED,
+                                    "com.finapp.app.kyc.OrganisationController",
+                                    "P2-TSK-016. The registrant row's insert: both identifiers"
+                                        + " are this transaction's own - the customer was minted"
+                                        + " two statements earlier and the registrant is the"
+                                        + " proven session's party - and the total unique index"
+                                        + " on registrant_party_id is the arbiter, so a lost"
+                                        + " race converges rather than double-registers. A"
+                                        + " private helper found by the detector.")),
+                    Map.entry(
                             "com.finapp.party.JdbcPartyStore.kindOf",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -489,6 +528,20 @@ class OwnershipIsScopedTest {
                                         + " identifiers only, and everything done with them is"
                                         + " a conditional, losing-branch-changes-nothing"
                                         + " move.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcBeneficialOwnerStore.ownersOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-016. The owner-graph read behind both views. The"
+                                        + " identifier's weakest provenance is the reviewer's"
+                                        + " URL-derived case id (the lockIdentity"
+                                        + " weaker-of-two-provenances rule), where KYC_REVIEW at"
+                                        + " the boundary and the kyc.CaseRead audit stand in for"
+                                        + " the ownership predicate; the stronger provenance is"
+                                        + " KybService's session-derived chain, which reaches"
+                                        + " only the caller's own organisation's case. A read"
+                                        + " that returns declarations - no document content, no"
+                                        + " evidence bytes.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcReviewTaskStore.resolve",
                             new Entry(

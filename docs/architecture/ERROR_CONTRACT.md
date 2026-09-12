@@ -136,12 +136,27 @@ identity — and presupposing one here would disclose that there is one.
 | Code | Status | Meaning |
 |---|---|---|
 | `kyc.NoOpenCase` | 409 | You have no open verification case for this to apply to. |
+| `kyc.OwnerNotEligible` | 422 | This party cannot be declared as a beneficial owner. |
+| `kyc.OwnerAlreadyDeclared` | 409 | This party is already declared on the ownership graph. |
+| `kyc.CaseNotAcceptingOwners` | 409 | The case is no longer accepting owner declarations. |
+| `kyc.StakeExceedsWhole` | 422 | The declared stakes would exceed the whole of the organisation. |
 
 **A distinct code because it is actionable** (`P1-TSK-018`'s test for earning one): the caller's
 case was decided, changed circumstances are a *new* case (`INV-LIFE-04`), so the remedy is opening
 one rather than retrying the upload. No enumeration concern applies — the caller is the
 authenticated owner asking about their own case, the opposite of `party.RegistrationRefused`'s
 stranger, so telling them the truth discloses nothing they do not already own.
+
+**The four KYB codes** (`P2-TSK-016`) split the same way. `kyc.OwnerAlreadyDeclared`,
+`kyc.CaseNotAcceptingOwners` and `kyc.StakeExceedsWhole` are about the caller's *own* graph and
+are specific, because specificity there discloses nothing and each calls for different behaviour
+(stop, too late, correct the stake). `kyc.OwnerNotEligible` is deliberately the opposite: it is
+**one refusal for three internally distinct causes** — the named party does not exist, is itself
+an organisation, or is not a registered customer with a verification case — because
+`ownerPartyId` names a *third party*, and distinguishing the refusals would make the declaration
+endpoint an oracle over other people's registrations (`INV-IDN-07`'s reasoning applied to a body
+field). A malformed identifier lands on the same code: a value that can name nobody is just
+another party that cannot be declared.
 
 ## 3a. Rejection at the boundary
 

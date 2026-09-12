@@ -57,6 +57,26 @@ public enum PartyAuditAction implements AuditableAction {
             false),
 
     /**
+     * An authenticated person registered an organisation they act for (`P2-TSK-016`).
+     *
+     * <p>One action for three writes — the ORGANISATION party, its customer, and the registrant
+     * record — for {@link #CUSTOMER_REGISTERED}'s reason: one decision, performed atomically,
+     * with no piece separately reachable. The change summary carries the registrant linkage,
+     * because <em>who may act for this organisation</em> is the record's point.
+     *
+     * <p>Unlike {@link #CUSTOMER_REGISTERED}, the actor is <strong>the proven person</strong>,
+     * never the platform: this caller is authenticated, so {@code enterSystem()} would erase
+     * exactly the attribution the trail exists for.
+     *
+     * <p>No reason required: registering one's own organisation is not an action taken against
+     * anybody.
+     */
+    ORGANISATION_REGISTERED(
+            "party.OrganisationRegistered",
+            "An organisation was registered, with the acting person recorded as its registrant.",
+            false),
+
+    /**
      * A party changed its own profile.
      *
      * <h2>The description used to promise the before and after values, and the classification

@@ -163,7 +163,7 @@ public class ReviewController {
 
     // -----------------------------------------------------------------
 
-    /** The reviewer's response shape: the case flat, its checks and tasks as references. */
+    /** The reviewer's response shape: the case flat, its checks, tasks and owners as references. */
     public record CaseFileResponse(
             UUID id,
             UUID customerId,
@@ -171,7 +171,8 @@ public class ReviewController {
             String policyVersion,
             Instant openedAt,
             List<CheckView> checks,
-            List<TaskView> reviewTasks) {
+            List<TaskView> reviewTasks,
+            List<OwnerView> owners) {
 
         static CaseFileResponse of(ReviewService.CaseFile file) {
             return new CaseFileResponse(
@@ -181,7 +182,34 @@ public class ReviewController {
                     file.kycCase().policyVersion().value(),
                     file.kycCase().openedAt(),
                     file.checks().stream().map(CheckView::of).toList(),
-                    file.tasks().stream().map(TaskView::of).toList());
+                    file.tasks().stream().map(TaskView::of).toList(),
+                    file.owners().stream().map(OwnerView::of).toList());
+        }
+    }
+
+    /**
+     * A declared owner, whole (`P2-TSK-016`): the reviewer sees the verification case and its
+     * real status, because the owner rows are the KYB decision's evidence ({@code INV-KYC-02})
+     * and the reviewer is the person who must defend it — the shaping the acting person's view
+     * applies would blind exactly the reader it exists to inform.
+     */
+    public record OwnerView(
+            UUID ownerPartyId,
+            Integer stakeBasisPoints,
+            String controlRole,
+            Instant declaredAt,
+            UUID verificationCaseId,
+            String verificationStatus) {
+        static OwnerView of(com.finapp.kyc.BeneficialOwnerStore.DeclaredOwner declared) {
+            return new OwnerView(
+                    declared.owner().ownerPartyId(),
+                    declared.owner().stakeBasisPoints().isPresent()
+                            ? declared.owner().stakeBasisPoints().getAsInt()
+                            : null,
+                    declared.owner().controlRole().map(Enum::name).orElse(null),
+                    declared.owner().declaredAt(),
+                    declared.owner().verificationCaseId().value(),
+                    declared.verificationStatus().name());
         }
     }
 

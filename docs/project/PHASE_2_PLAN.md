@@ -142,7 +142,10 @@ granted and withdrawn as records append.
 | `POST /v1/me/consents` | session | Grant for a purpose against the current text version |
 | `DELETE /v1/me/consents/{purpose}` | session | Withdrawal — a new record, not a deletion |
 | `GET /v1/me/consents` | session | Current basis per purpose |
-| `GET /v1/kyc/cases/{id}` | session, `KYC_REVIEW` | Full case with evidence references; access audited |
+| `POST /v1/me/organisations` | session | Registers the caller's organisation; converges per registrant — *added by `P2-TSK-016`, which answered the acting-person question this table predated* |
+| `GET /v1/me/kyb` | session | The acting person's shaped view of the organisation's case and graph — *added by `P2-TSK-016`* |
+| `POST /v1/me/kyb/owners` | session | Declares a beneficial owner onto the caller's organisation's case — *added by `P2-TSK-016`* |
+| `GET /v1/kyc/cases/{id}` | session, `KYC_REVIEW` | Full case with evidence references, incl. the owner graph (`P2-TSK-016`); access audited |
 | `POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution` | session, `KYC_REVIEW` | Reason required; not-self rule inapplicable (subject is a case) |
 | `POST /v1/kyc/cases/{id}/decision` | session, `KYC_REVIEW` | Records the immutable decision; transitions the customer projection in the same transaction |
 | *(inbound)* `POST /v1/providers/kyc/callbacks` | signed/simulated | Provider result delivery; inbox-deduplicated |

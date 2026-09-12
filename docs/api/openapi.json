@@ -542,6 +542,41 @@
           }
         }
       },
+      "kyc.CaseNotAcceptingOwners": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "kyc.CaseNotAcceptingOwners"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/kyc.CaseNotAcceptingOwners"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The case is no longer accepting owner declarations.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "kyc.NoOpenCase": {
         "content": {
           "application/problem+json": {
@@ -568,6 +603,111 @@
           }
         },
         "description": "[409] You have no open verification case for this to apply to.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "kyc.OwnerAlreadyDeclared": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "kyc.OwnerAlreadyDeclared"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/kyc.OwnerAlreadyDeclared"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This party is already declared on the ownership graph.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "kyc.OwnerNotEligible": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "kyc.OwnerNotEligible"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/kyc.OwnerNotEligible"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] This party cannot be declared as a beneficial owner.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "kyc.StakeExceedsWhole": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "kyc.StakeExceedsWhole"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/kyc.StakeExceedsWhole"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The declared stakes would exceed the whole of the organisation.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -666,6 +806,12 @@
           "openedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerView"
+            },
+            "type": "array"
           },
           "policyVersion": {
             "type": "string"
@@ -816,6 +962,20 @@
         },
         "type": "object"
       },
+      "KybCaseResponse": {
+        "properties": {
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MfaConfirmationRequest": {
         "properties": {
           "code": {
@@ -842,6 +1002,74 @@
           },
           "provisioningUri": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OrganisationRegistrationRequest": {
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "[^\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Cn}]+",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "OrganisationResponse": {
+        "properties": {
+          "customerId": {
+            "type": "string"
+          },
+          "organisationId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OwnerDeclarationRequest": {
+        "properties": {
+          "controlRole": {
+            "type": "string"
+          },
+          "ownerPartyId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "stakeBasisPoints": {
+            "format": "int32",
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ownerPartyId"
+        ],
+        "type": "object"
+      },
+      "OwnerView": {
+        "properties": {
+          "controlRole": {
+            "type": "string"
+          },
+          "declaredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ownerPartyId": {
+            "type": "string"
+          },
+          "stakeBasisPoints": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "verificationPending": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -1448,6 +1676,43 @@
         }
       }
     },
+    "/v1/me/kyb": {
+      "get": {
+        "operationId": "view",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KybCaseResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/kyb/owners": {
+      "post": {
+        "operationId": "declareOwner",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerDeclarationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/me/kyc/documents": {
       "post": {
         "operationId": "uploadDocument",
@@ -1508,6 +1773,33 @@
         "responses": {
           "204": {
             "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/me/organisations": {
+      "post": {
+        "operationId": "register_1",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganisationRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganisationResponse"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }

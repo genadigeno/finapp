@@ -62,7 +62,9 @@ public final class PartyRegistration {
     /** Kept in one place because it is a published value: consumers route on it. */
     static final String PRODUCER = "party";
 
-    private static final int EVENT_VERSION = 1;
+    // Package-private: OrganisationRegistration publishes the same two event types at the
+    // same version - one definition, so the wire cannot fork by module-internal drift.
+    static final int EVENT_VERSION = 1;
 
     private final IdGenerator ids;
     private final Clock clock;
@@ -178,7 +180,9 @@ public final class PartyRegistration {
 
     // -----------------------------------------------------------------
 
-    private static void insertParty(Connection unitOfWork, Party party) {
+    // Package-private: OrganisationRegistration writes the same rows with the same SQL
+    // (P2-TSK-016) - a second copy of an INSERT is a second place for a column to drift.
+    static void insertParty(Connection unitOfWork, Party party) {
         String sql =
                 "INSERT INTO party.party (id, kind, display_name, registered_at)"
                         + " VALUES (?, ?, ?, ?)";
@@ -195,7 +199,7 @@ public final class PartyRegistration {
         }
     }
 
-    private static void insertCustomer(Connection unitOfWork, Customer customer) {
+    static void insertCustomer(Connection unitOfWork, Customer customer) {
         String sql =
                 "INSERT INTO party.customer (id, party_id, status, opened_at, status_changed_at)"
                         + " VALUES (?, ?, ?, ?, ?)";

@@ -61,6 +61,7 @@ question, not a refactor.
 | Code | Reason required | What it is |
 |---|---|---|
 | `party.CustomerRegistered` | No | A party was registered and a customer relationship was opened for it. |
+| `party.OrganisationRegistered` | No | An organisation was registered, with the acting person recorded as its registrant. |
 | `party.ProfileChanged` | No | A party's own profile data was changed, recording which field and by whom. |
 
 `party.CustomerRegistered` is **one action for two writes**, deliberately. `PHASE_1_PLAN.md` §4
@@ -197,6 +198,13 @@ decision record (`INV-KYC-01`: a provider verdict is evidence, never the decisio
 decision will rest on (`INV-KYC-02` — the owner set is part of the decision's evidence), which
 is what makes it an action of consequence; no reason, because declaring the graph is the
 declarant's own compliance act, taken for and against nobody — the consent-pair argument.
+
+`party.OrganisationRegistered` joined at `P2-TSK-016`, and its actor is **the proven person,
+never the platform** — the opposite of `party.CustomerRegistered`, whose caller is
+unauthenticated. One record for three writes (the ORGANISATION party, its customer, the
+registrant row), on `party.CustomerRegistered`'s one-decision reasoning; the change summary
+carries the registrant linkage because *who may act for this organisation* is the record's
+point. No reason: registering one's own organisation is not an action taken against anybody.
 
 ### `consent` — `ConsentAuditAction`
 

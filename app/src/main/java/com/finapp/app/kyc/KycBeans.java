@@ -389,6 +389,7 @@ public class KycBeans {
             KycCaseStore<Connection> kycCaseStore,
             com.finapp.kyc.CheckStore<Connection> checkStore,
             com.finapp.kyc.ReviewTaskStore<Connection> reviewTaskStore,
+            com.finapp.kyc.BeneficialOwnerStore<Connection> beneficialOwnerStore,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
@@ -398,7 +399,34 @@ public class KycBeans {
                 kycCaseStore,
                 checkStore,
                 reviewTaskStore,
+                beneficialOwnerStore,
                 auditWriter,
+                idGenerator,
+                clock,
+                kycTransactions,
+                dataSource);
+    }
+
+    /** The acting person's KYB surface (`P2-TSK-016`): registration, declaration, the view. */
+    @Bean
+    KybService kybService(
+            IdentityStore<Connection> identityStore,
+            PartyStore<Connection> partyStore,
+            com.finapp.party.OrganisationRegistration organisationRegistration,
+            KycCaseStore<Connection> kycCaseStore,
+            com.finapp.kyc.BeneficialOwnerStore<Connection> beneficialOwnerStore,
+            OwnerDeclaration ownerDeclaration,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionTemplate kycTransactions,
+            DataSource dataSource) {
+        return new KybService(
+                identityStore,
+                partyStore,
+                organisationRegistration,
+                kycCaseStore,
+                beneficialOwnerStore,
+                ownerDeclaration,
                 idGenerator,
                 clock,
                 kycTransactions,

@@ -289,7 +289,16 @@ class CredentialReachesNoEmittedSinkTest {
                         // should not be is that ProfileService's audit record records the FIELD
                         // that changed and not its value (INV-AUD-02, and audit_record.change_
                         // summary is RESTRICTED-FINANCIAL rather than RESTRICTED-PII).
-                        "ProfileUpdateRequest");
+                        "ProfileUpdateRequest",
+                        // P2-TSK-016. Carries an organisation's name - a legal name, not a
+                        // person's, and no secret; here because the set is every schema
+                        // reachable from a request body.
+                        "OrganisationRegistrationRequest",
+                        // P2-TSK-016. Carries a PartyId (the declaration's subject), a stake
+                        // and a control role - identifiers and enumerations, no secret. The
+                        // pairing it creates is CONFIDENTIAL and lives in the store's
+                        // classification, not in this vocabulary.
+                        "OwnerDeclarationRequest");
     }
 
     @Test
