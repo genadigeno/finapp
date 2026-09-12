@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-10 (`P2-TST-001`)
+Last updated: 2026-09-12 (`P2-TSK-015`)
 
 ---
 
@@ -58,6 +58,14 @@ because the probe that found this passed against a build that had not run (the `
 class, again).
 
 ## Current Milestone
+
+**M2.4 — KYB and beneficial ownership.** `P2-TSK-015` … `P2-TSK-016`; **1 of 2**
+(2026-09-12) — the KybCase and the ownership graph landed: one case machine with two kinds,
+the append-only kind-bound owner table, the readiness gate as a locked predicate in the
+transition statement, and the re-route that answers waiting parents. The milestone's stated
+acceptance — *an organisation decides only on a fully verified ownership graph* — holds at
+the store/orchestration surface and is mutation-proven; carrying it over HTTP is
+`P2-TSK-016`, the milestone's remaining member.
 
 **M2.3 — Decisions and review.** `P2-TSK-012` … `P2-TSK-014`; **CLOSED 2026-09-10, 3 of
 3.** The milestone's stated acceptance — *a hit case cannot terminate without a reviewer,
@@ -237,11 +245,124 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TST-001` completed 2026-09-10 — the KYC gate criteria,
-demonstrated and registered. **Next: `P2-TSK-015` (`READY`)** — KybCase and the
-beneficial-ownership graph, opening M2.4; `P2-TSK-006` stays blocked on the consent gate.
+**None in progress.** `P2-TSK-015` completed 2026-09-12 — KybCase and the
+beneficial-ownership graph; M2.4 is open, 1 of 2. **Next: `P2-TSK-016` (`READY`)** — the
+KYB endpoints; `P2-TSK-006` stays blocked on the consent gate.
 
 ### Just completed
+
+**`P2-TSK-015` — KybCase and the beneficial-ownership graph** — `COMPLETE` (2026-09-12).
+M2.4 opens with the phase's namesake capability: an `ORGANISATION` customer's case is a KYB
+case, and what makes it *"not a KYC Case with a flag set"* (the glossary's own words) is the
+graph — `kyc.beneficial_owner` rows linking the case to natural-person Parties, each pinned
+to that person's **own KYC case** as its verification, with the decision gated on every
+owner's answer being terminal.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| An organisation decides only on a fully verified ownership graph | `KybCaseDatabaseTest.theGraphGatesTheDecision`, end to end: the gate holds while the owner's case is undecided; the owner's all-clear re-routes the parent to `READY_FOR_DECISION` undecided; the reviewer decides; the organisation's customer goes `ACTIVE` |
+| An unverified owner blocks `READY_FOR_DECISION` | The gate test, plus `anEmptyGraphIsNotAVerifiedGraph` — a KYB case with **no** owner rows is not vacuously verified, because the gate demands at least one owner AND no non-terminal verification |
+| An owner added during review re-routes | `anOwnerAddedDuringReviewReRoutes` — the case leaves `IN_REVIEW` only once the late owner's verification is terminal |
+| Graph termination, bounded and recorded | Depth 1 **structurally**: composite FKs admit only KYC-kind cases as verifications and only KYB-kind cases as owners' parents, and `anOrganisationOwnerIsRefused` / `anUnverifiableOwnerIsRefused` prove the two recorded Phase-2 bounds at the orchestration |
+| The declaration racing readiness is seen | `aDeclarationRacingReadinessIsSeen`, deterministic: the declarer holds the case lock uncommitted, the mover is **observed blocked** in `pg_stat_activity`, and on release refuses — both interleavings |
+
+### One case machine, two kinds — and the kind is unwritable
+
+`kyc_case.case_kind` (`KYC`|`KYB`), fixed at open by the `CaseKindResolver` port (`app`
+implements it over `PartyStore.kindOfCustomer`, because `kyc` cannot see `party`), and
+**immutable at DB-PRIVILEGE**: V008 revokes the table-wide `UPDATE` and re-grants exactly
+`(status, status_changed_at)` — the V004/V005 column-narrowing, applied here because a
+KYB→KYC flip is the one write that would disarm the ownership gate silently. A second table
+was refused: the machine, the checks, the review surface and the decision are one lifecycle,
+and the plan says so — one machine; KYB adds the ownership precondition to decisioning.
+
+### The write-skew the backlog's own sentence could not close
+
+The backlog required the readiness check as *"a predicate in the transition statement, not a
+read-then-act"* — necessary and not sufficient. The declaration INSERTs into
+`beneficial_owner` while readiness UPDATEs `kyc_case` with `NOT EXISTS` subqueries —
+different rows, so no write-write conflict — and under READ COMMITTED a blocked UPDATE's
+re-check re-runs its **subqueries against the statement's original snapshot**: a just-committed
+owner is invisible, and an organisation could be decided over a graph it had just grown.
+Closed by **lock-then-look on both sides**: declaration and mover each take
+`SELECT … FOR UPDATE` on the case row first, then act in a fresh statement whose snapshot
+postdates the lock grant. The predicate stays in the statement; the lock is what makes its
+snapshot trustworthy. Proven deterministically, not by timing luck: the two-connection test
+observes the mover Lock-waiting in `pg_stat_activity` (the `P0-TST-004` idiom — with the JDBC
+lesson that the placeholder renders as `$1`, so the filter matches the statement's shape).
+
+### Readiness is ANSWERED, not APPROVED — and KYB never auto-decides
+
+The gate demands every owner's verification **terminal either way**: a REJECTED owner still
+answers the question, and it is precisely then that an automatic approval must be impossible —
+so `KycDecision.automatic` refuses the kind at the domain (`INV-LIFE-02`'s
+rejected-by-the-aggregate, beside the orchestration's own skip), because an organisation's
+decision is a reviewer's judgement over its ownership graph (`INV-KYC-04`'s shape). The
+frozen set is the other half of `INV-KYC-02`: declarations are accepted only in
+OPEN/CHECKS_IN_PROGRESS/IN_REVIEW, checked under the same lock, and owner rows are
+append-only (`SELECT, INSERT` grants, proven per column) — so once a case is
+`READY_FOR_DECISION` its owner set can never change, the decision move needs no re-predicate,
+and **the owner rows of the case ARE the decision's evidence**, with no join table to drift.
+
+### The re-route is the third readiness event
+
+A parent's readiness can now change when **somebody else's case** decides. An owner's
+terminal decision re-attempts the parents' readiness post-commit through both doors:
+`CaseAssessment.assess` re-routes after a CLEAR_TO_PROCEED commit, and
+`DecisionRecording.byReviewer` re-routes after `RECORDED` **and** `ALREADY_DECIDED` — the
+`P2-TSK-012` 409-path-heals shape, so a crash between an owner's decision and its re-route
+is healed by the reviewer's retried request. Recursion is structurally depth-1 (only
+KYC-kind cases are verifications, and they carry no owners), and the recording reaches the
+assessment through an `ObjectProvider`, because `CaseAssessment` is provider-URL-conditional
+while recording a reviewer's decision is not — in a deployment with no providers, no check
+ever runs and no parent can be waiting.
+
+### The sweep's one survivor moved a hook off the HTTP boundary
+
+The reviewer-door re-route first lived in `ReviewController.decide`, and the mutation
+removing it **survived**: both re-route tests drove the assess door — the owner decided
+automatically — so the controller's call was exercised by nothing, and a KYB parent waiting
+on an owner whose verification went to a person would have stalled until some unrelated
+re-assessment healed it. The fix is a **move rather than a test for the controller**: the
+hook now sits on `DecisionRecording.byReviewer` itself, post-commit, because the recording
+already has a second caller (this very suite) and a consequence that lives only on the HTTP
+boundary is one a second caller silently loses — the platform's
+every-aggregate-meets-a-second-caller rule, applied to an orchestration.
+`anOwnerDecidedByAReviewerReRoutes` drives an owner decided by a reviewer through the
+recording, and the re-aimed mutation is caught.
+
+### Two Phase-2 bounds, recorded rather than hidden
+
+An `ORGANISATION` owner is refused — the depth-1 recursion bound, enforced by the composite
+FK as well as the orchestration — and an owner who is not a registered customer with a case
+is refused (`OWNER_NOT_VERIFIABLE`): declaration never auto-opens cases. Both are honest
+narrowings of the glossary's *"recursive graph"*, recorded in the javadoc and here with the
+`P1-TSK-005` tension acknowledged: full recursion arrives when a real KYB regime demands it,
+as its own decision.
+
+### The completion battery found one real interaction, and it was the designed loudness
+
+The full battery's kafka tier failed 3 of 4 `RegistrationOpensCaseKafkaTest` tests: the race
+test's crafted `party.CustomerOpened` named a customer **with no rows**, which the consumer's
+new kind resolution refuses loudly — and a throwing handler **stalls the partition** by the
+block-don't-skip design, timing out every test scheduled after it. In production the event
+commits in the customer's own transaction, so a rowless customer is a broken invariant and
+the stall is the poison-record behaviour working; the fixture now inserts the party and
+customer rows directly (no registration, so no third opener), keeping the race's subject
+intact. The masked exit code that nearly hid it (`| tail` reporting the pipeline's tail) is
+the second time this session; the battery is now read by grepping for `BUILD FAILED`.
+
+**Ten mutations, all caught by the intended assertion** — the ownership gate neutralised in
+the mover, the mover's lock dropped (caught by the race test's blocked-observation
+precondition — the deterministic protocol assertion doing exactly what an outcome assertion
+could not), the at-least-one-owner clause neutralised, the KYB refusal dropped from the
+automatic policy (hermetic), the accepting-status predicate dropped, the verification-kind
+composite FK dropped from V008 (caught against a from-scratch database), the declaration
+audit dropped, the stake-sum bound removed, and the re-route dropped from each door
+separately — nine caught first time, and the reviewer door's **survivor** is the finding
+above. **1006 hermetic tests, 546 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TST-001` — The KYC gate criteria, demonstrated** — `COMPLETE` (2026-09-10). The
 Phase 2 gate's first three bullets held by demonstration, and the `INV-KYC-01`…`05`
@@ -6254,24 +6375,22 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-015` — KybCase and the beneficial-ownership graph.** Status `READY`; its one
-dep, `P2-TSK-013`, is complete. M2.4 opens with it.
+**`P2-TSK-016` — KYB endpoints.** Status `READY`; its one dep, `P2-TSK-015`, is complete.
+M2.4 closes with it.
 
-`KybCase` for `ORGANISATION` customers; `BeneficialOwner` rows linking the case to
-natural-person Parties with stake/control attributes; and the decision precondition —
-every owner's verification terminal before `READY_FOR_DECISION`. The glossary is explicit
-that a KYB case is *"not a KYC Case with a flag set"*: the graph is recursive and
-terminates in verified persons. The distributed edge is owner additions racing the
-readiness transition — the readiness check must be a predicate in the transition
-statement, never a read-then-act. The owner set is part of the decision's evidence
-(`INV-KYC-02`/`05`). Accept: an organisation decides only on a fully verified ownership
-graph. Risk: High. Cx: L. DoD: `DOD-KERNEL`.
+Owner declaration and KYB case views over HTTP for the organisation's acting person, and
+the reviewer views extended. **Who may act for an organisation is this task's design
+question** — the ADR-0031 split trigger names organisations — and Phase 2 scopes it to the
+registering identity, recorded as the deliberate minimum with delegated access out of scope
+(Phase 6+). Tests: over HTTP; ownership; a stranger cannot declare owners onto another's
+case. Accept: the M2.4 milestone criterion end to end. Risk: Medium. Cx: M. DoD: `DOD-SEC`.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-12 | **`P2-TSK-015` complete - KybCase and the beneficial-ownership graph, and M2.4 opens.** One case machine, two kinds: `kyc_case.case_kind` fixed at open by the `CaseKindResolver` port (`app` implements it over the party's kind - `kyc` cannot see `party`) and **unwritable at DB-PRIVILEGE** (V008 narrows the case grant to `(status, status_changed_at)`, because a KYB→KYC flip is the write that would disarm the gate silently); never a second table, since what makes KYB *"not a flag"* is the graph. `kyc.beneficial_owner` is append-only and **kind-bound at DB-CONSTRAINT** - composite FKs over a new `UNIQUE (id, case_kind)` admit owner rows only on KYB cases and only KYC cases as verifications, so the depth-1 bound is structural. An owner's verification is their own KYC case, **pinned at declaration** (`INV-HIST-04`'s shape); readiness demands every owner ANSWERED - terminal either way - not APPROVED, and **KYB never auto-decides**: `KycDecision.automatic` refuses the kind at the domain, because an automatic all-clear could clear a terminal-REJECTED owner by silence (`INV-KYC-04`). **The distributed edge was sharper than the backlog's own sentence**: the declaration INSERTs owner rows while readiness UPDATEs the case with NOT EXISTS subqueries - different rows - and under READ COMMITTED a blocked UPDATE re-runs its subqueries against the statement's ORIGINAL snapshot, so "predicate in the statement" alone still misses a just-committed owner. Write skew, closed by **lock-then-look on both sides** (`SELECT … FOR UPDATE` on the case row, then the predicate in a fresh statement), proven deterministically: the two-connection test observes the mover Lock-waiting in `pg_stat_activity`, both interleavings. Once RFD the owner set is **frozen** (declarations accepted only in OPEN/CIP/IN_REVIEW, under the same lock; append-only grants proven per column), so **the owner rows ARE the decision's evidence** with no join table. An owner's terminal decision **re-routes** waiting parents post-commit through both doors - assess, and `DecisionRecording.byReviewer` on RECORDED and ALREADY_DECIDED (the 409-path-heals shape). **The sweep's one survivor moved that hook**: it first lived in `ReviewController.decide` and nothing exercised it - both re-route tests drove the assess door - so it moved onto the recording itself, whose second caller already exists, with a new test driving an owner decided by a reviewer. Two Phase-2 bounds recorded: ORGANISATION owners refused (depth 1), unregistered owners refused - declaration never auto-opens cases. New audit action `kyc.OwnerDeclared`; stake in basis points with the per-case sum ≤ 10000 checked under the lock. **The completion battery found one real interaction**: the kafka race test's crafted event named a rowless customer, which the consumer's kind resolution refuses loudly - stalling the partition by the block-don't-skip design and timing out every later test; in production that event cannot exist (it commits in the customer's own transaction), and the fixture now inserts the rows production guarantees. **Ten mutations, all caught by the intended assertion** - gate neutralised, lock dropped (caught by the blocked-observation precondition), at-least-one-owner neutralised, KYB-automatic refusal dropped, accepting-status predicate dropped, composite FK dropped (from-scratch database), audit dropped, stake-sum removed, each re-route door dropped separately (the reviewer door caught after its survivor forced the move above). 1006 hermetic tests, 546 database tests, 14 kafka tests. Next: P2-TSK-016. |
 | 2026-09-10 | **`P2-TST-001` complete - the KYC gate criteria, demonstrated and registered.** Five rows for `INV-KYC-01`…`05` and the item's own §4 row landed in `MUTATION_TESTING.md`, before the exit review needs them - the register guard begins demanding them the moment Phase 2 flips `COMPLETE`, so the flip stays the guarded act. **The audit found no demonstration missing**: every one of the five was performed by its owning task's mutation sweep (`P2-TSK-005`, `-009`, `-010`, `-011`, `-013`, `-014`), so the work was recording rather than performing, and each row names the mutation, the catching tests by `Class#method`, and the observed result - all `Recorded` form honestly, since every mutation changed production code or a migration and cannot live in the suite. The gate's first bullet (exhaustive invalid transitions) is the §4 row: `KycCaseLifecycleTest#everyTransitionIsEnforced`, with `P2-TSK-005`'s terminal-reopened mutation. **The rows are held to the code immediately**: `MutationDemonstrationTest`'s checks 3-7 apply to every present row whatever its phase, all nine guard tests green, and the teeth were re-proven per the §5 convention - one method reference corrupted (backup-copy, never `git checkout`), `everyNamedMethodExists` failed naming exactly the corrupted reference, restored byte-identical, green again. **One machinery hazard caught before commit**: the probe's PowerShell round-trip re-encoded the register's non-ASCII characters as mojibake (`Get-Content` without `-Encoding utf8`), contained by the backup-copy discipline and verified by byte comparison. Deliberately not landed: `INV-KYC-06`'s row (demonstrations exist from `P2-TSK-008`; the row is the exit review's), the `INV-CNS-*` rows (owning tasks `TODO`), `P2-TST-002`'s §4 row. Next: `P2-TSK-015`, M2.4 opens. |
 | 2026-09-10 | **`P2-TSK-014` complete - the projection, and M2.3 closes (3 of 3).** The `app` orchestration ADR-0035 describes: a decision's customer moves `PENDING → ACTIVE`/`REJECTED` **in the decision's own transaction, on both doors** - the reviewer endpoint and the automatic all-clear run - with the projection as the recording's LAST write, so the atomicity probes target it: an injected failure and a backend killed mid-recording (the `P1-TSK-012` deterministic-kill idiom) each leave NOTHING - no decision, no audit record, case still `READY_FOR_DECISION`, customer still `PENDING`. **The reconciliation sweep holds the pair together in both directions** (`INV-KYC-05`, ADR-0035's carried obligation): every decision's customer moved as its outcome says, and - the sharp direction - no customer under verification left `PENDING` without a decision authorizing it, scoped to customers WITH a KYC case because a case-less customer has no pair to reconcile. **`REJECTED` joined the customer machine** (the plan's and ADR-0035's own word; mapping it onto `CLOSED` would overload one terminal with two meanings and make the projection unfaithful): terminal, `PENDING`-only, and it FREES the one-live slot - re-onboarding is a new Customer (`INV-LIFE-04`) - proven behaviourally by the insert V005's widened predicate admits. **`PartyEnumMigrationTest`'s one-terminal assertion, written by `P1-TSK-005` to break the day a second terminal arrived, broke on schedule**: it now derives the latest CHECK and index predicate from the enum's new `sqlTerminalValueList()` (the applied-history lesson) and pins V002's originals as history; `findLiveCustomerFor` is built from the same derivation so the read and the index cannot disagree. **The grant premise was corrected rather than propagated**: V002 had paid a table-level UPDATE before any writer existed, so V005 NARROWS it to `(status, status_changed_at)` - the V004 precedent, proven by the per-column denial sweep with its positive control. A lost projection conditional (a customer closed mid-KYC, the one reachable cause) fails the whole transaction LOUDLY - a decision beside an unmoved projection is the silent drift `INV-KYC-05` forbids - and the case stays decidable. The mapping lives in `app` (`kyc` cannot see `party`); `moveCustomerStatus` asks the machine before any SQL (`INV-LIFE-02`) and joined the ownership register (`ADMINISTERED`). No new audit action, deliberately: the projection is derived bookkeeping of the audited decision, one join away. **Seven mutations, all caught by the intended assertion** - projection dropped (both doors), conditional removed, lost-move swallowed, mapping inverted, index predicate kept narrow (caught against a from-scratch database), grant not narrowed, `status_changed_at` not written. 996 hermetic tests, 532 database tests, 14 kafka tests. Next: P2-TST-001. |
 | 2026-09-10 | **`P2-TSK-013` complete - the decision, and the phase's product exists.** `KycDecision` (`V007`), the stated automatic policy, and `POST /v1/kyc/cases/{id}/decision` behind `@RequiresPermission(KYC_REVIEW)` - `INV-KYC-02` made real: immutable (append-only at DB-PRIVILEGE with NO UPDATE grant at all, so the privilege IS the immutability - the audit_record model, UPDATE/DELETE proven denied on every column of both tables from information_schema), attributable (INV-KYC-02's two actor cases: a reviewer named in `decided_by` and the audit record, or the platform as `basis=AUTOMATIC`/`decided_by NULL`/actor `system` - coherence a CHECK and a constructor invariant, so schema and domain cannot disagree), policy-pinned (the CASE's own version, copied by the factory, never CURRENT re-read - INV-HIST-04), and evidence-referencing through a join table with real FKs, so the P2-TSK-008 accepted upload race is now MECHANICALLY outside what the decision rested on. **Reproducible, proven**: the replay test rebuilds the inputs from the referenced check rows and the pinned policy code and re-derives the stored outcome (INV-CRD-01's regime three phases early). **The automatic policy lives on the domain factory** - `KycDecision.automatic` refuses any non-CLEAR check loudly (INV-LIFE-02's rejected-by-the-domain, proven at the domain because the assessment's BLOCKED-first ordering makes the refusal unreachable in production) - **and rides the assessment's own transaction, deliberately**: the assess-after-commit rule exists to see OTHER transactions' outcomes, which does not apply to rows this transaction already read, so the all-clear-and-undecided state has no observable instant and four assertions in two suites moved READY_FOR_DECISION → APPROVED (the P2-TSK-010 stopgap-superseded precedent). A reviewed case never reaches the automatic branch, so IN_REVIEW → RFD stays durable and the reviewer decides it - with the conditional case move (RFD → terminal) as the arbiter, ten racers landing one 204 / nine 409s / one row / one record, the two 409 details named for what is checked ("already decided" vs "not ready" - the NOT_ACTIVE lesson), and the total UNIQUE (case_id) as defence in depth whose firing would mean an invariant already broken. **The sixth enumerated enterSystem() site**: the automatic audit names the platform - attributing the approval to whichever customer's callback completed the last check would record them approving themselves - scoped around the audit write only, so the reviewer path cannot inherit it; the mutation that made it do so was caught by the attribution assertions with the hermetic site enumeration as second control. `kyc.DecisionRecorded` leaves NOT_YET_EMITTED, emitted on both doors. **Seven mutations, all caught by the intended assertion** - arbiter ignored, policy predicate removed, evidence refs dropped, audit dropped, automatic hook dropped, UPDATE granted in V007 (caught against a from-scratch database), reviewer's audit written as the platform. 995 hermetic tests, 524 database tests, 14 kafka tests. Next: P2-TSK-014. |

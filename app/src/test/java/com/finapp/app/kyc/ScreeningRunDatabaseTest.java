@@ -10,6 +10,7 @@ import com.finapp.kyc.IdentityVerificationAdapter;
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
+import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.ScreeningAdapter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
@@ -275,7 +276,7 @@ class ScreeningRunDatabaseTest {
                     customer,
                     party);
             app.setAutoCommit(false);
-            KycCase opened = cases.openOrConverge(app, KycCase.open(IDS, CLOCK, customer)).kycCase();
+            KycCase opened = cases.openOrConverge(app, KycCase.open(IDS, CLOCK, customer, KycCaseKind.KYC)).kycCase();
             app.commit();
             return new Case(opened.id(), customer);
         }

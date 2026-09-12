@@ -62,6 +62,31 @@ public interface PartyStore<T> {
             java.time.Instant at);
 
     /**
+     * The kind of a Party — and nothing else (`P2-TSK-015`).
+     *
+     * <p>A deliberately narrow read beside {@link #findById}: the owner-declaration
+     * orchestration must refuse an {@code ORGANISATION} owner (the bounded-depth rule), and its
+     * party identifier is <strong>request-supplied by the declarant</strong> — the provenance
+     * {@link #findById}'s {@code SESSION_DERIVED} classification explicitly excludes. Reusing
+     * that read would falsify its recorded claim ({@code OwnershipIsScopedTest}: every
+     * operation citing an entry inherits its gap), and this read discloses only the kind — a
+     * refusal input, not the person. Classified {@code ADMINISTERED}: what stands in for an
+     * ownership predicate is the declaration being an audited, authorized act
+     * ({@code kyc.OwnerDeclared}; the boundary permission arrives with `P2-TSK-016`).
+     */
+    Optional<PartyKind> kindOf(T unitOfWork, PartyId partyId);
+
+    /**
+     * The kind of the Party behind a customer (`P2-TSK-015`).
+     *
+     * <p>The case-kind resolution: an {@code ORGANISATION} customer's verification opens as a
+     * {@code KYB} case, and the case-opening consumer asks this through {@code kyc}'s
+     * {@code CaseKindResolver} port because {@code kyc} cannot see this module. The identifier
+     * is the consumed event's aggregate — minted by registration, never a request's.
+     */
+    Optional<PartyKind> kindOfCustomer(T unitOfWork, CustomerId customerId);
+
+    /**
      * Changes the display name, and reports what it replaced.
      *
      * <p><strong>One statement, and that is what makes the audit record true.</strong> A read

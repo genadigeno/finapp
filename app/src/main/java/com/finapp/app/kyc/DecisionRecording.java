@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.springframework.beans.factory.ObjectProvider;
 import javax.sql.DataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -80,6 +81,7 @@ public class DecisionRecording {
     private final IdGenerator ids;
     private final Clock clock;
     private final KycUnitOfWork units;
+    private final ObjectProvider<CaseAssessment> assessments;
 
     public DecisionRecording(
             KycCaseStore<Connection> kycCaseStore,
@@ -90,7 +92,8 @@ public class DecisionRecording {
             IdGenerator idGenerator,
             Clock clock,
             TransactionTemplate kycTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            ObjectProvider<CaseAssessment> caseAssessment) {
         this.cases = Objects.requireNonNull(kycCaseStore, "kycCaseStore must not be null");
         this.checks = Objects.requireNonNull(checkStore, "checkStore must not be null");
         this.decisions =
@@ -103,6 +106,11 @@ public class DecisionRecording {
                 new KycUnitOfWork(
                         Objects.requireNonNull(kycTransactions, "kycTransactions must not be null"),
                         Objects.requireNonNull(dataSource, "dataSource must not be null"));
+        // An ObjectProvider, because the assessment exists only where a provider endpoint is
+        // configured while recording a reviewer's decision is unconditional - and in a
+        // deployment with no providers no check ever runs, so no KYB parent can be waiting
+        // on a decision made here (P2-TSK-015).
+        this.assessments = Objects.requireNonNull(caseAssessment, "caseAssessment must not be null");
     }
 
     /**
@@ -117,7 +125,7 @@ public class DecisionRecording {
         Objects.requireNonNull(reviewer, "reviewer must not be null");
         Objects.requireNonNull(outcome, "outcome must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
-        return units.inTransaction(
+        Recording recorded = units.inTransaction(
                 unitOfWork -> {
                     Optional<KycCase> kycCase = cases.findById(unitOfWork, caseId);
                     if (kycCase.isEmpty()) {
@@ -156,6 +164,18 @@ public class DecisionRecording {
                     project(unitOfWork, kycCase.get(), outcome);
                     return Recording.RECORDED;
                 });
+        if (recorded == Recording.RECORDED || recorded == Recording.ALREADY_DECIDED) {
+            // The decided case may be some KYB case's pinned owner verification (P2-TSK-015):
+            // re-route the parents waiting on the answer, AFTER the commit (the exit-attempt
+            // discipline throughout this phase). On ALREADY_DECIDED too, deliberately - the
+            // retried request is what heals a crash that landed between the original
+            // decision's commit and its re-route (the P2-TSK-012 409-path-heals shape). The
+            // hook lives on the RECORDING rather than the reviewer controller, because
+            // byReviewer already has a second caller - and a consequence that lives only on
+            // the HTTP boundary is one a second caller silently loses.
+            assessments.ifAvailable(assessment -> assessment.reRouteParentsOf(caseId));
+        }
+        return recorded;
     }
 
     /**

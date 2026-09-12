@@ -342,13 +342,47 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.party.JdbcPartyStore.findLiveCustomerFor",
                             new Entry(
-                                    Scope.SESSION_DERIVED,
-                                    "com.finapp.app.kyc.KycDocumentController",
-                                    "P2-TSK-008. The PartyId comes from the proven session's"
-                                        + " Identity - the findById chain, one hop further: the"
-                                        + " endpoint names no case, no customer and no party, so"
-                                        + " there is nothing for an attacker to point at somebody"
-                                        + " else's relationship.")),
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-008 (SESSION_DERIVED via KycDocumentController,"
+                                        + " where the PartyId comes from the proven session's"
+                                        + " Identity and the endpoint names nobody),"
+                                        + " reclassified by P2-TSK-015 when OwnerDeclaration"
+                                        + " became its second caller with a DECLARANT-supplied"
+                                        + " party identifier - the lockIdentity rule: a label"
+                                        + " must be one thing, named for the weaker provenance,"
+                                        + " because naming the safer path would describe the"
+                                        + " caller that needs no protection. What stands in on"
+                                        + " the declaration path: the audited kyc.OwnerDeclared"
+                                        + " record, the acting-person authorization arriving"
+                                        + " with P2-TSK-016, and the read resolving only to a"
+                                        + " customer identifier that then feeds"
+                                        + " conditional-everything writes.")),
+                    Map.entry(
+                            "com.finapp.party.JdbcPartyStore.kindOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-015. A deliberately narrow read beside findById,"
+                                        + " added so the owner-declaration path would not"
+                                        + " falsify findById's SESSION_DERIVED claim: the"
+                                        + " PartyId is declarant-supplied, and what comes back"
+                                        + " is only the kind - the refusal input for the"
+                                        + " bounded-depth rule (an ORGANISATION owner is"
+                                        + " refused), never the person. Standing in: the"
+                                        + " audited declaration and P2-TSK-016's acting-person"
+                                        + " authorization.")),
+                    Map.entry(
+                            "com.finapp.party.JdbcPartyStore.kindOfCustomer",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-015. The case-kind resolution behind the"
+                                        + " case-opening consumer: the CustomerId is the"
+                                        + " consumed party.CustomerOpened event's aggregate -"
+                                        + " minted by registration, carried through the outbox"
+                                        + " and inbox, appearing in no request. Nothing"
+                                        + " request-supplied can reach it today; classified"
+                                        + " ADMINISTERED as the honest weaker label for a read"
+                                        + " whose caller is the platform acting on its own"
+                                        + " event, disclosing only PERSON-or-ORGANISATION.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcDocumentStore.findByChecksum",
                             new Entry(
@@ -388,7 +422,7 @@ class OwnershipIsScopedTest {
                                         + " openOrConverge's own insert, both scoped by"
                                         + " customer_id in the statement - P2-TSK-012's reviewer"
                                         + " surface came and said so: its URL-derived exit goes"
-                                        + " through moveStatusWhenNoOpenTasks (ADMINISTERED,"
+                                        + " through moveToReadyForDecision (ADMINISTERED,"
                                         + " below), never here. The statement's AND status = ?"
                                         + " is the concurrency protocol, not an ownership"
                                         + " predicate - JdbcIdentityStore.moveStatus's recorded"
@@ -405,15 +439,56 @@ class OwnershipIsScopedTest {
                                         + " disclosure to a proven reviewer being the P1-TSK-028"
                                         + " decision.")),
                     Map.entry(
-                            "com.finapp.kyc.JdbcKycCaseStore.moveStatusWhenNoOpenTasks",
+                            "com.finapp.kyc.JdbcKycCaseStore.moveToReadyForDecision",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P2-TSK-012. The IN_REVIEW -> READY_FOR_DECISION exit,"
-                                        + " reached with a URL-derived case identifier after a"
-                                        + " KYC_REVIEW-authorized resolution commits. Every"
-                                        + " branch is conditional: status = from AND no OPEN"
-                                        + " task, in the statement - a wrong identifier moves"
+                                    "P2-TSK-012's exit, consolidated by P2-TSK-015 into the one"
+                                        + " transition into READY_FOR_DECISION: reached with a"
+                                        + " URL-derived case identifier after a"
+                                        + " KYC_REVIEW-authorized resolution or decision"
+                                        + " commits, and by the assessment's re-route. Every"
+                                        + " clause is conditional in the statement - status ="
+                                        + " from AND no OPEN task AND the ownership gate, under"
+                                        + " the case-row lock - so a wrong identifier moves"
                                         + " nothing and the losing branch changes nothing.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcBeneficialOwnerStore.lockCase",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-015. The declaration's first act: the KYB case"
+                                        + " identifier is supplied by the declarant"
+                                        + " (P2-TSK-016's endpoint; today the OwnerDeclaration"
+                                        + " service's caller). What stands in for the ownership"
+                                        + " predicate: the declaration is an audited act"
+                                        + " (kyc.OwnerDeclared names who declared), the"
+                                        + " acting-person authorization arrives with the"
+                                        + " endpoint, and this locked read discloses only"
+                                        + " status and kind while every reachable write is"
+                                        + " refused unless the case is a KYB case still"
+                                        + " accepting owners. A private helper found by the"
+                                        + " detector - the revokeAll shape.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcBeneficialOwnerStore.declaredStake",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-015. The stake sum behind the 10000-basis-point"
+                                        + " bound, read under the case-row lock lockCase just"
+                                        + " took - same provenance, same standing-in controls,"
+                                        + " and a read that discloses a sum to a caller already"
+                                        + " entitled to declare onto the case.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcBeneficialOwnerStore.parentCasesOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-015's re-route read: which KYB cases pin this case"
+                                        + " as an owner's verification. The identifier's weakest"
+                                        + " provenance is the reviewer's URL-derived case id"
+                                        + " (the decision door), the lockIdentity"
+                                        + " weaker-of-two-provenances rule; the stronger one is"
+                                        + " the assessment's own chain. It returns case"
+                                        + " identifiers only, and everything done with them is"
+                                        + " a conditional, losing-branch-changes-nothing"
+                                        + " move.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcReviewTaskStore.resolve",
                             new Entry(

@@ -71,14 +71,15 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO " + TABLE
-                                + " (id, customer_id, status, policy_version, opened_at,"
-                                + " status_changed_at) VALUES (?, ?, ?, ?, ?, ?)")) {
+                                + " (id, customer_id, case_kind, status, policy_version,"
+                                + " opened_at, status_changed_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, kycCase.id().value());
             insert.setObject(2, kycCase.customerId());
-            insert.setString(3, kycCase.status().name());
-            insert.setString(4, kycCase.policyVersion().value());
-            insert.setTimestamp(5, Timestamp.from(kycCase.openedAt()));
-            insert.setTimestamp(6, Timestamp.from(kycCase.statusChangedAt()));
+            insert.setString(3, kycCase.kind().name());
+            insert.setString(4, kycCase.status().name());
+            insert.setString(5, kycCase.policyVersion().value());
+            insert.setTimestamp(6, Timestamp.from(kycCase.openedAt()));
+            insert.setTimestamp(7, Timestamp.from(kycCase.statusChangedAt()));
             insert.executeUpdate();
         }
     }
@@ -91,7 +92,7 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
         // and "the case the index guards" cannot be two different questions.
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
-                        "SELECT id, customer_id, status, policy_version, opened_at,"
+                        "SELECT id, customer_id, case_kind, status, policy_version, opened_at,"
                                 + " status_changed_at FROM " + TABLE
                                 + " WHERE customer_id = ? AND status NOT IN ("
                                 + KycCaseStatus.sqlTerminalValueList() + ")")) {
@@ -140,7 +141,7 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
         Objects.requireNonNull(caseId, "caseId must not be null");
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
-                        "SELECT id, customer_id, status, policy_version, opened_at,"
+                        "SELECT id, customer_id, case_kind, status, policy_version, opened_at,"
                                 + " status_changed_at FROM " + TABLE + " WHERE id = ?")) {
             select.setObject(1, caseId.value());
             try (ResultSet row = select.executeQuery()) {
@@ -156,34 +157,94 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
     }
 
     @Override
-    public boolean moveStatusWhenNoOpenTasks(
-            Connection unitOfWork, KycCaseId caseId, KycCaseStatus from, KycCaseStatus to, Instant at) {
+    public Optional<KycCase> findLatestFor(Connection unitOfWork, UUID customerId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        Objects.requireNonNull(caseId, "caseId must not be null");
-        Objects.requireNonNull(from, "from must not be null");
-        Objects.requireNonNull(to, "to must not be null");
-        Objects.requireNonNull(at, "at must not be null");
-        try (PreparedStatement update =
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        // Ordered by id: a UUIDv7 is time-ordered by construction (ADR-0013), which no clock
+        // correction can reshuffle - the opened_at column is display, not ordering.
+        try (PreparedStatement select =
                 unitOfWork.prepareStatement(
-                        "UPDATE " + TABLE
-                                + " SET status = ?, status_changed_at = ?"
-                                + " WHERE id = ? AND status = ?"
-                                // The predicate P2-TSK-010 recorded: in the statement, never a
-                                // read-then-move. The status = ? half above is what makes two
-                                // post-commit exit attempts produce exactly one winner.
-                                + " AND NOT EXISTS (SELECT 1 FROM kyc.review_task"
-                                + "     WHERE case_id = ? AND status = 'OPEN')")) {
-            update.setString(1, to.name());
-            update.setTimestamp(2, Timestamp.from(at));
-            update.setObject(3, caseId.value());
-            update.setString(4, from.name());
-            update.setObject(5, caseId.value());
-            return update.executeUpdate() == 1;
+                        "SELECT id, customer_id, case_kind, status, policy_version, opened_at,"
+                                + " status_changed_at FROM " + TABLE
+                                + " WHERE customer_id = ? ORDER BY id DESC LIMIT 1")) {
+            select.setObject(1, customerId);
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
         } catch (SQLException failure) {
             throw new KycStorageException(
                     DatabaseFailure.describe(
-                            "moving KYC case " + caseId + " from " + from + " to " + to
-                                    + " once no task remains open",
+                            "reading the latest KYC case of customer " + customerId, failure));
+        }
+    }
+
+    @Override
+    public boolean moveToReadyForDecision(
+            Connection unitOfWork, KycCaseId caseId, KycCaseStatus from, Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(caseId, "caseId must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+        try {
+            // Lock first, update second (P2-TSK-015). The UPDATE below would lock the row
+            // anyway; what the explicit FOR UPDATE buys is that the UPDATE is a NEW statement
+            // whose snapshot is taken AFTER the lock was granted - so an owner declaration
+            // that committed while we waited is visible to the subqueries. A blocked UPDATE
+            // alone re-evaluates its quals on resume, but READ COMMITTED re-runs subqueries
+            // against the statement's original snapshot, and a just-committed owner would be
+            // invisible: write skew, closed only by both sides taking this lock (the
+            // declaration does - BeneficialOwnerStore.declare carries the full argument).
+            try (PreparedStatement lock =
+                    unitOfWork.prepareStatement(
+                            "SELECT 1 FROM " + TABLE + " WHERE id = ? FOR UPDATE")) {
+                lock.setObject(1, caseId.value());
+                try (ResultSet row = lock.executeQuery()) {
+                    if (!row.next()) {
+                        return false;
+                    }
+                }
+            }
+            try (PreparedStatement update =
+                    unitOfWork.prepareStatement(
+                            "UPDATE " + TABLE
+                                    + " SET status = ?, status_changed_at = ?"
+                                    + " WHERE id = ? AND status = ?"
+                                    // The predicate P2-TSK-010 recorded: in the statement,
+                                    // never a read-then-move. Vacuous on the
+                                    // CHECKS_IN_PROGRESS door, load-bearing on IN_REVIEW.
+                                    + " AND NOT EXISTS (SELECT 1 FROM kyc.review_task"
+                                    + "     WHERE case_id = ? AND status = 'OPEN')"
+                                    // The ownership gate (P2-TSK-015): a KYB case is ready
+                                    // only over a declared, fully-terminal graph. Vacuously
+                                    // true for KYC - V008's composite FK admits no owner rows
+                                    // there.
+                                    + " AND (case_kind = '" + KycCaseKind.KYC.name() + "'"
+                                    + "     OR (EXISTS (SELECT 1 FROM kyc.beneficial_owner"
+                                    + "             WHERE case_id = ?)"
+                                    + "         AND NOT EXISTS ("
+                                    + "             SELECT 1 FROM kyc.beneficial_owner bo"
+                                    + "             JOIN " + TABLE + " oc"
+                                    + "                 ON oc.id = bo.verification_case_id"
+                                    + "             WHERE bo.case_id = ?"
+                                    + "               AND oc.status NOT IN ("
+                                    + KycCaseStatus.sqlTerminalValueList() + "))))")) {
+                update.setString(1, KycCaseStatus.READY_FOR_DECISION.name());
+                update.setTimestamp(2, Timestamp.from(at));
+                update.setObject(3, caseId.value());
+                update.setString(4, from.name());
+                update.setObject(5, caseId.value());
+                update.setObject(6, caseId.value());
+                update.setObject(7, caseId.value());
+                return update.executeUpdate() == 1;
+            }
+        } catch (SQLException failure) {
+            throw new KycStorageException(
+                    DatabaseFailure.describe(
+                            "moving KYC case " + caseId + " from " + from
+                                    + " to READY_FOR_DECISION once its exit conditions hold",
                             failure));
         }
     }
@@ -192,6 +253,7 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
         return KycCase.rehydrate(
                 KycCaseId.of(row.getObject("id", UUID.class)),
                 row.getObject("customer_id", UUID.class),
+                KycCaseKind.valueOf(row.getString("case_kind")),
                 KycCaseStatus.valueOf(row.getString("status")),
                 new KycPolicyVersion(row.getString("policy_version")),
                 row.getTimestamp("opened_at").toInstant(),

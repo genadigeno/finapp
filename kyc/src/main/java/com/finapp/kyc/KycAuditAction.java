@@ -109,6 +109,22 @@ public enum KycAuditAction implements AuditableAction {
             false),
 
     /**
+     * A beneficial owner was declared onto a KYB case.
+     *
+     * <p>The declaration changes what a regulator-facing decision will rest on
+     * ({@code INV-KYC-02}: the owner set is part of the decision's evidence), which makes it an
+     * action of consequence ({@code INV-AUD-01}). No reason required - declaring the graph is
+     * the declarant's own compliance act, taken for and against nobody (the consent-pair
+     * argument). Emitted by {@code P2-TSK-015}'s declaration service; the acting person arrives
+     * with `P2-TSK-016`'s endpoint.
+     */
+    KYB_OWNER_DECLARED(
+            "kyc.OwnerDeclared",
+            "A beneficial owner was declared onto a KYB case, pinning the verification case the"
+                    + " graph rests on.",
+            false),
+
+    /**
      * Somebody read document content.
      *
      * <p>{@code INV-KYC-06}: identity documents are the most sensitive bytes the platform holds

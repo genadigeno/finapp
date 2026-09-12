@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
+import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.KycCaseStatus;
 import com.finapp.kyc.KycCaseStore;
 import com.finapp.platform.testing.database.DatabaseRoles;
@@ -69,7 +70,7 @@ class KycCaseDatabaseTest {
                                 start.await();
                                 KycCaseStore.Opening opening =
                                         store.openOrConverge(
-                                                app, KycCase.open(IDS, CLOCK, customerId));
+                                                app, KycCase.open(IDS, CLOCK, customerId, KycCaseKind.KYC));
                                 app.commit();
                                 return opening;
                             }
@@ -100,7 +101,7 @@ class KycCaseDatabaseTest {
         UUID customerId = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
-            KycCase kycCase = store.openOrConverge(app, KycCase.open(IDS, CLOCK, customerId)).kycCase();
+            KycCase kycCase = store.openOrConverge(app, KycCase.open(IDS, CLOCK, customerId, KycCaseKind.KYC)).kycCase();
             // Instants derived from the aggregate, not from clock reads: two reads of a real
             // clock are not ordered (the P1-TSK-031 class), and the constraint compares stored
             // values.
@@ -141,10 +142,10 @@ class KycCaseDatabaseTest {
         UUID customerId = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
-            KycCase first = store.openOrConverge(app, KycCase.open(IDS, CLOCK, customerId)).kycCase();
+            KycCase first = store.openOrConverge(app, KycCase.open(IDS, CLOCK, customerId, KycCaseKind.KYC)).kycCase();
 
             // While it is open, a second ask converges rather than duplicating.
-            assertThat(store.openOrConverge(app, KycCase.open(IDS, CLOCK, customerId)).created())
+            assertThat(store.openOrConverge(app, KycCase.open(IDS, CLOCK, customerId, KycCaseKind.KYC)).created())
                     .isFalse();
 
             // Walk it to APPROVED through the machine's own legal path.
@@ -158,7 +159,7 @@ class KycCaseDatabaseTest {
             // case must admit a successor - a periodic re-verification is a new case, and the
             // decided one stays decided and stays true.
             KycCaseStore.Opening successor =
-                    store.openOrConverge(app, KycCase.open(IDS, CLOCK, customerId));
+                    store.openOrConverge(app, KycCase.open(IDS, CLOCK, customerId, KycCaseKind.KYC));
             app.commit();
             assertThat(successor.created()).as("the slot is free").isTrue();
             assertThat(successor.kycCase().id()).isNotEqualTo(first.id());
@@ -175,9 +176,12 @@ class KycCaseDatabaseTest {
             app.setAutoCommit(false);
             try (PreparedStatement insert =
                     app.prepareStatement(
-                            "INSERT INTO kyc.kyc_case (id, customer_id, status, policy_version,"
-                                    + " opened_at, status_changed_at)"
-                                    + " VALUES (?, ?, 'DECIDED', 'kyc-1', now(), now())")) {
+                            // case_kind stated explicitly: V008 dropped the backfill default,
+                            // so an INSERT that has not decided the kind is refused (23502)
+                            // before the status CHECK under probe here can even fire.
+                            "INSERT INTO kyc.kyc_case (id, customer_id, case_kind, status,"
+                                    + " policy_version, opened_at, status_changed_at)"
+                                    + " VALUES (?, ?, 'KYC', 'DECIDED', 'kyc-1', now(), now())")) {
                 insert.setObject(1, IDS.next());
                 insert.setObject(2, IDS.next());
                 assertThatThrownBy(insert::executeUpdate)

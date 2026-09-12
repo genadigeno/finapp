@@ -34,7 +34,7 @@ class KycCaseLifecycleTest {
     @Test
     @DisplayName("a case opens OPEN, dated once, with the current policy pinned")
     void opensOpen() {
-        KycCase kycCase = KycCase.open(IDS, CLOCK, IDS.next());
+        KycCase kycCase = KycCase.open(IDS, CLOCK, IDS.next(), KycCaseKind.KYC);
 
         assertThat(kycCase.status()).isEqualTo(KycCaseStatus.OPEN);
         assertThat(kycCase.openedAt()).isEqualTo(kycCase.statusChangedAt());
@@ -113,6 +113,7 @@ class KycCaseLifecycleTest {
         return KycCase.rehydrate(
                 KycCaseId.next(IDS),
                 IDS.next(),
+                KycCaseKind.KYC,
                 status,
                 KycPolicyVersion.CURRENT,
                 opened,

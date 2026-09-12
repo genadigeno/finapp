@@ -48,6 +48,23 @@ class KycDecisionTest {
     }
 
     @Test
+    @DisplayName("the automatic policy refuses a KYB case, whatever its checks say")
+    void theAutomaticPolicyRefusesAKybCase() {
+        // P2-TSK-015's policy, at the domain rather than only the orchestration branch: an
+        // organisation's decision is a reviewer's judgement over the ownership graph.
+        // Readiness requires every owner ANSWERED, not APPROVED - so an automatic all-clear
+        // approval here could clear a terminal-REJECTED owner by silence (INV-KYC-04's shape).
+        KycCase kybCase = KycCase.open(IDS, CLOCK, IDS.next(), KycCaseKind.KYB);
+        assertThatThrownBy(
+                        () ->
+                                KycDecision.automatic(
+                                        IDS, CLOCK, kybCase, List.of(check(CheckStatus.CLEAR))))
+                .as("all-clear checks must not buy an organisation an automatic approval")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("KYB");
+    }
+
+    @Test
     @DisplayName("an automatic decision is APPROVED, actorless, and carries the stated reason")
     void anAutomaticDecisionIsThePolicySpeaking() {
         KycCase kycCase = aCase();
@@ -139,7 +156,7 @@ class KycDecisionTest {
     // -----------------------------------------------------------------
 
     private static KycCase aCase() {
-        return KycCase.open(IDS, CLOCK, IDS.next());
+        return KycCase.open(IDS, CLOCK, IDS.next(), KycCaseKind.KYC);
     }
 
     private static VerificationCheck check(CheckStatus status) {

@@ -119,6 +119,17 @@ public final class KycDecision {
         Objects.requireNonNull(clock, "clock must not be null");
         Objects.requireNonNull(kycCase, "kycCase must not be null");
         Objects.requireNonNull(checks, "checks must not be null");
+        // Phase 2 policy (P2-TSK-015): an organisation is never decided automatically. Its
+        // decision is a person's judgement over the ownership graph - an owner may be
+        // terminal-REJECTED, and readiness deliberately requires only that every owner is
+        // ANSWERED, so an automatic all-clear approval here would clear adverse graph evidence
+        // by silence (INV-KYC-04's shape, one level up). Refused at the domain (INV-LIFE-02's
+        // rejected-by-the-aggregate principle), not only skipped by the orchestration branch.
+        if (kycCase.kind() == KycCaseKind.KYB) {
+            throw new IllegalArgumentException(
+                    "the automatic policy refuses a KYB case: an organisation's decision is a"
+                            + " reviewer's judgement over its ownership graph (P2-TSK-015)");
+        }
         for (VerificationCheck check : checks) {
             if (check.status() != CheckStatus.CLEAR) {
                 throw new IllegalArgumentException(

@@ -71,19 +71,39 @@ public interface KycCaseStore<T> {
     Optional<KycCase> findById(T unitOfWork, KycCaseId caseId);
 
     /**
-     * The {@code IN_REVIEW → READY_FOR_DECISION} exit: moves only while the case holds
-     * {@code from} <strong>and no {@code OPEN} review task remains</strong> — the predicate
-     * `P2-TSK-010` recorded that this transition must carry <em>in the statement</em>.
+     * The customer's most recent case — open or decided — or empty if they never had one.
      *
-     * <p>Never a read-then-move: a task can join an already-in-review case, and two instances
-     * resolving a case's last two tasks would each read one still open. As a single conditional
-     * {@code UPDATE} the database arbitrates — each resolver attempts the exit <em>after its
-     * resolution commits</em> (the `P2-TSK-009` assess-after-commit argument: inside the
-     * resolving transaction, the other resolver's still-uncommitted task keeps the predicate
-     * false for both and nobody moves), the last committer sees every resolution, and the
-     * {@code status = from} half lets exactly one win. Row count is the outcome; a lost race or
-     * a still-open task are both the harmless answer {@code false}.
+     * <p>`P2-TSK-015`'s linking read: a declaration pins the owner's <em>current</em>
+     * verification, which is the open case while one runs and the latest decided case
+     * otherwise. Ordered by {@code id}, because a UUIDv7 is time-ordered by construction
+     * (ADR-0013) — the one ordering a clock correction cannot reshuffle.
      */
-    boolean moveStatusWhenNoOpenTasks(
-            T unitOfWork, KycCaseId caseId, KycCaseStatus from, KycCaseStatus to, Instant at);
+    Optional<KycCase> findLatestFor(T unitOfWork, UUID customerId);
+
+    /**
+     * The one transition into {@code READY_FOR_DECISION}, from either door — and every clause
+     * of readiness is <strong>in the statement</strong>.
+     *
+     * <p>Moves only while the case still holds {@code from}, <strong>and</strong> no
+     * {@code OPEN} review task remains (the predicate `P2-TSK-010` recorded — vacuously true on
+     * the {@code CHECKS_IN_PROGRESS} door, where a committed open task cannot coexist with the
+     * status, and load-bearing on the {@code IN_REVIEW} door), <strong>and</strong> the
+     * ownership gate holds (`P2-TSK-015`): for a {@code KYB} case, at least one owner is
+     * declared and no owner's verification case is non-terminal — an organisation is ready to
+     * be decided only over a complete graph, and an empty graph is an unasked question deciding
+     * a case. For a {@code KYC} case the ownership clauses are vacuously true, because V008's
+     * composite FK admits no owner rows there.
+     *
+     * <p>Never a read-then-move — and, for the ownership half, <strong>not even a bare
+     * conditional</strong>: the implementation locks the case row {@code FOR UPDATE} first and
+     * updates in a fresh statement, because a declaration inserts into a <em>different</em>
+     * table and {@code READ COMMITTED} re-evaluates a blocked statement's subqueries against
+     * its original snapshot — predicate-only, a just-committed owner would be invisible. The
+     * declaration takes the same lock, so whichever side is second sees the first
+     * ({@code BeneficialOwnerStore#declare} carries the full argument). The
+     * {@code status = from} half still lets exactly one of N movers win; a lost race, a
+     * still-open task and an incomplete graph are all the harmless answer {@code false}.
+     */
+    boolean moveToReadyForDecision(
+            T unitOfWork, KycCaseId caseId, KycCaseStatus from, Instant at);
 }

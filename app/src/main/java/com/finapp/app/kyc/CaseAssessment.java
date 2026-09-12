@@ -1,8 +1,11 @@
 package com.finapp.app.kyc;
 
+import com.finapp.kyc.BeneficialOwnerStore;
 import com.finapp.kyc.CheckType;
 import com.finapp.kyc.ChecksAssessment;
+import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
+import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.KycCaseStatus;
 import com.finapp.kyc.KycCaseStore;
 import com.finapp.kyc.CheckStore;
@@ -46,6 +49,7 @@ public class CaseAssessment {
     private final KycCaseStore<Connection> cases;
     private final CheckStore<Connection> checks;
     private final ReviewTaskStore<Connection> reviewTasks;
+    private final BeneficialOwnerStore<Connection> owners;
     private final DecisionRecording decisions;
     private final Set<CheckType> requiredTypes;
     private final IdGenerator ids;
@@ -56,6 +60,7 @@ public class CaseAssessment {
             KycCaseStore<Connection> kycCaseStore,
             CheckStore<Connection> checkStore,
             ReviewTaskStore<Connection> reviewTaskStore,
+            BeneficialOwnerStore<Connection> beneficialOwnerStore,
             DecisionRecording decisionRecording,
             List<VerificationProvider> providers,
             IdGenerator idGenerator,
@@ -66,6 +71,9 @@ public class CaseAssessment {
         this.checks = Objects.requireNonNull(checkStore, "checkStore must not be null");
         this.reviewTasks =
                 Objects.requireNonNull(reviewTaskStore, "reviewTaskStore must not be null");
+        this.owners =
+                Objects.requireNonNull(
+                        beneficialOwnerStore, "beneficialOwnerStore must not be null");
         this.decisions =
                 Objects.requireNonNull(decisionRecording, "decisionRecording must not be null");
         // The required types ARE the registered providers' set (P2-TSK-009's decision): an
@@ -106,44 +114,108 @@ public class CaseAssessment {
     /** Assesses the case and applies the one transition the assessment permits. */
     public Result assess(KycCaseId caseId) {
         Objects.requireNonNull(caseId, "caseId must not be null");
-        return units.inTransaction(
-                unitOfWork -> {
-                    List<VerificationCheck> all = checks.forCase(unitOfWork, caseId);
-                    ChecksAssessment assessment = ChecksAssessment.of(requiredTypes, all);
-                    if (assessment == ChecksAssessment.CLEAR_TO_PROCEED) {
-                        // The move's result is deliberately not the gate on the decision: a
-                        // re-assessment (a duplicate callback, a re-run) loses this conditional
-                        // against a case already READY_FOR_DECISION, and the decision's OWN
-                        // conditional is what arbitrates - which is also what heals a case an
-                        // older build's crash left awaiting its automatic decision.
-                        cases.moveStatus(
-                                unitOfWork,
-                                caseId,
-                                KycCaseStatus.CHECKS_IN_PROGRESS,
-                                KycCaseStatus.READY_FOR_DECISION,
-                                Instant.now(clock));
-                        // Same transaction, deliberately (P2-TSK-013): the decision reads only
-                        // what this transaction already read, so atomicity costs nothing and
-                        // removes the stranded all-clear-and-undecided window entirely.
-                        decisions.automatically(unitOfWork, caseId, all);
-                    } else if (assessment == ChecksAssessment.BLOCKED) {
-                        // Tasks first, move second, ONE transaction: the state and its work item
-                        // commit together, so IN_REVIEW always has something to resolve
-                        // (INV-KYC-04 - the exit P2-TSK-012 builds must never be vacuously open).
-                        for (VerificationCheck raising :
-                                ChecksAssessment.needingReview(requiredTypes, all)) {
-                            reviewTasks.openForCheck(
+        Result result =
+                units.inTransaction(
+                        unitOfWork -> assessInTransaction(unitOfWork, caseId));
+        if (result.assessment() == ChecksAssessment.CLEAR_TO_PROCEED) {
+            // After the commit, never inside it (the exit-attempt discipline throughout this
+            // phase): if this case is some KYB case's pinned verification and the clear
+            // assessment just decided it, the parents waiting on the answer are re-routed now.
+            reRouteParentsOf(caseId);
+        }
+        return result;
+    }
+
+    private Result assessInTransaction(Connection unitOfWork, KycCaseId caseId) {
+        // The kind decides the CLEAR branch (P2-TSK-015): a KYB case moves to
+        // READY_FOR_DECISION - behind the ownership gate - and then WAITS for a
+        // KYC_REVIEWER, because an organisation is never decided automatically
+        // (KycDecision.automatic refuses one; the reasoning lives there).
+        KycCase kycCase =
+                cases.findById(unitOfWork, caseId)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an assessed case must exist: "
+                                                        + caseId));
+        List<VerificationCheck> all = checks.forCase(unitOfWork, caseId);
+        ChecksAssessment assessment = ChecksAssessment.of(requiredTypes, all);
+        if (assessment == ChecksAssessment.CLEAR_TO_PROCEED) {
+            // The move's result is deliberately not the gate on the decision: a
+            // re-assessment (a duplicate callback, a re-run) loses this conditional
+            // against a case already READY_FOR_DECISION, and the decision's OWN
+            // conditional is what arbitrates - which is also what heals a case an
+            // older build's crash left awaiting its automatic decision. For a KYB
+            // case the mover additionally refuses an undeclared or non-terminal
+            // graph - every clause in the statement, under the case-row lock.
+            cases.moveToReadyForDecision(
+                    unitOfWork,
+                    caseId,
+                    KycCaseStatus.CHECKS_IN_PROGRESS,
+                    Instant.now(clock));
+            if (kycCase.kind() == KycCaseKind.KYC) {
+                // Same transaction, deliberately (P2-TSK-013): the decision reads
+                // only what this transaction already read, so atomicity costs
+                // nothing and removes the stranded all-clear-and-undecided window
+                // entirely.
+                decisions.automatically(unitOfWork, caseId, all);
+            }
+        } else if (assessment == ChecksAssessment.BLOCKED) {
+            // Tasks first, move second, ONE transaction: the state and its work item
+            // commit together, so IN_REVIEW always has something to resolve
+            // (INV-KYC-04 - the exit P2-TSK-012 builds must never be vacuously open).
+            for (VerificationCheck raising :
+                    ChecksAssessment.needingReview(requiredTypes, all)) {
+                reviewTasks.openForCheck(
+                        unitOfWork,
+                        ReviewTask.open(ids, clock, caseId, raising.id()));
+            }
+            cases.moveStatus(
+                    unitOfWork,
+                    caseId,
+                    KycCaseStatus.CHECKS_IN_PROGRESS,
+                    KycCaseStatus.IN_REVIEW,
+                    Instant.now(clock));
+        }
+        return new Result(assessment, all);
+    }
+
+    /**
+     * Re-attempts the readiness of every KYB case whose graph pins {@code decidedCase} as an
+     * owner's verification (`P2-TSK-015`'s re-route).
+     *
+     * <p>An owner's terminal decision is the third event that can complete a KYB case's
+     * readiness — beside its own checks clearing and its last review task resolving — and
+     * nothing else would ever re-ask the question. Each attempt is a pair of conditional,
+     * idempotent moves, so calling this is unconditionally safe: {@link #assess} handles the
+     * {@code CHECKS_IN_PROGRESS} door (re-reading the checks, applying the gated move, never
+     * deciding a KYB case automatically), and the direct attempt below handles the
+     * {@code IN_REVIEW} door. Recursion is structurally bounded at depth one: V008's composite
+     * FK admits only {@code KYC}-kind cases as verifications and only {@code KYB}-kind cases
+     * carry owners, so a parent is never itself somebody's verification and its own re-route
+     * finds nothing.
+     *
+     * <p>Called after the automatic decision's transaction commits (from {@link #assess}) and
+     * after a reviewer's decision — including the {@code ALREADY_DECIDED} retry, which is what
+     * heals a crash that landed between an owner's decision and this re-route (the
+     * `P2-TSK-012` 409-path-heals shape). A parent stranded between those healings is visible
+     * ({@code CHECKS_IN_PROGRESS} or {@code IN_REVIEW} with everything satisfied) and recovers
+     * on the next re-assessment of any of its owners — the `P2-TSK-009` stranded-DISPATCHED
+     * class of recorded remainder.
+     */
+    public void reRouteParentsOf(KycCaseId decidedCase) {
+        Objects.requireNonNull(decidedCase, "decidedCase must not be null");
+        List<KycCaseId> parents =
+                units.inTransaction(unitOfWork -> owners.parentCasesOf(unitOfWork, decidedCase));
+        for (KycCaseId parent : parents) {
+            assess(parent);
+            units.inTransaction(
+                    unitOfWork ->
+                            cases.moveToReadyForDecision(
                                     unitOfWork,
-                                    ReviewTask.open(ids, clock, caseId, raising.id()));
-                        }
-                        cases.moveStatus(
-                                unitOfWork,
-                                caseId,
-                                KycCaseStatus.CHECKS_IN_PROGRESS,
-                                KycCaseStatus.IN_REVIEW,
-                                Instant.now(clock));
-                    }
-                    return new Result(assessment, all);
-                });
+                                    parent,
+                                    KycCaseStatus.IN_REVIEW,
+                                    Instant.now(clock)));
+        }
     }
 }

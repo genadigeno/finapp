@@ -82,6 +82,46 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
     }
 
     @Override
+    public Optional<PartyKind> kindOf(Connection unitOfWork, PartyId partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement("SELECT kind FROM party.party WHERE id = ?")) {
+            select.setObject(1, partyId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next()
+                        ? Optional.of(PartyKind.valueOf(rows.getString("kind")))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new PartyStorageException(
+                    DatabaseFailure.describe("Could not read the kind of party " + partyId, e));
+        }
+    }
+
+    @Override
+    public Optional<PartyKind> kindOfCustomer(Connection unitOfWork, CustomerId customerId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT p.kind FROM party.customer c"
+                                + " JOIN party.party p ON p.id = c.party_id"
+                                + " WHERE c.id = ?")) {
+            select.setObject(1, customerId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next()
+                        ? Optional.of(PartyKind.valueOf(rows.getString("kind")))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new PartyStorageException(
+                    DatabaseFailure.describe(
+                            "Could not read the party kind behind customer " + customerId, e));
+        }
+    }
+
+    @Override
     public boolean moveCustomerStatus(
             Connection unitOfWork,
             CustomerId customerId,

@@ -8,7 +8,7 @@ package com.finapp.kyc;
  * "{@code IN_REVIEW} implies at least one task exists" an atomic fact rather than a hope.
  *
  * <p>The {@code IN_REVIEW → READY_FOR_DECISION} exit this store's javadoc demanded lives in
- * {@link KycCaseStore#moveStatusWhenNoOpenTasks}: conditional on "no {@code OPEN} task"
+ * {@link KycCaseStore#moveToReadyForDecision}: conditional on "no {@code OPEN} task"
  * <em>in the statement</em>, never a read-then-move, because a task can join an
  * already-in-review case (a late {@code HIT} completing after the first routing) and two
  * instances resolving the last two tasks would each read one still open.

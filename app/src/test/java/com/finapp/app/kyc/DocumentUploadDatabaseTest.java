@@ -14,6 +14,7 @@ import com.finapp.identity.SessionToken;
 import com.finapp.kyc.DocumentAccess;
 import com.finapp.kyc.DocumentBytes;
 import com.finapp.kyc.DocumentCipher;
+import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.DocumentId;
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
@@ -481,7 +482,7 @@ class DocumentUploadDatabaseTest {
             // The store's savepoint needs a real transaction, exactly as production gives it one.
             app.setAutoCommit(false);
             KycCase opened =
-                    cases.openOrConverge(app, KycCase.open(IDS, CLOCK, person.customer()))
+                    cases.openOrConverge(app, KycCase.open(IDS, CLOCK, person.customer(), KycCaseKind.KYC))
                             .kycCase();
             app.commit();
             return new Person(

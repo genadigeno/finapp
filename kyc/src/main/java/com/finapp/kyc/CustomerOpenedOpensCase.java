@@ -65,6 +65,7 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
     private static final int EVENT_VERSION = 1;
 
     private final KycCaseStore<Connection> cases;
+    private final CaseKindResolver<Connection> kinds;
     private final IdGenerator ids;
     private final Clock clock;
     private final AuditWriter<Connection> auditWriter;
@@ -72,11 +73,13 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
 
     public CustomerOpenedOpensCase(
             KycCaseStore<Connection> cases,
+            CaseKindResolver<Connection> kinds,
             IdGenerator ids,
             Clock clock,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter) {
         this.cases = Objects.requireNonNull(cases, "cases must not be null");
+        this.kinds = Objects.requireNonNull(kinds, "kinds must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
@@ -102,9 +105,13 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
     @SuppressWarnings("try") // the actor scope is used for its close side effect
     public void handle(Connection unitOfWork, ReceivedEvent event) {
         try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
+            // The kind is party's fact (an ORGANISATION opens a KYB case), asked through a
+            // port on the same unit of work (P2-TSK-015) - the payload stays unread, and the
+            // metadata-only stance holds.
+            KycCaseKind kind = kinds.kindFor(unitOfWork, event.aggregateId());
             KycCaseStore.Opening opening =
                     cases.openOrConverge(
-                            unitOfWork, KycCase.open(ids, clock, event.aggregateId()));
+                            unitOfWork, KycCase.open(ids, clock, event.aggregateId(), kind));
             if (!opening.created()) {
                 // The case already exists - opened by an earlier delivery, or by the customer
                 // themselves. Nothing happened here, so nothing is recorded or announced:

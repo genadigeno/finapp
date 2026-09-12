@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
+import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.KycCaseStore;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.outbox.KafkaEventPublisher;
@@ -146,18 +147,22 @@ class RegistrationOpensCaseKafkaTest {
     @Test
     @DisplayName("the event racing the direct open path converges on one case")
     void theEventRacingTheOpenPathIsOneCase() throws Exception {
-        // A customer nobody registered, so only this test's two racing paths can open the case:
-        // the consumer (fed directly through the broker) and the direct openOrConverge - the
-        // mechanism POST /v1/me/kyc will use. Whoever wins, the index arbitrates and the loser
-        // converges.
-        UUID customerId = IDS.next();
+        // A customer created by fixture SQL rather than by registration, so no registration
+        // event exists and only this test's two racing paths can open the case: the consumer
+        // (fed directly through the broker) and the direct openOrConverge - the mechanism
+        // POST /v1/me/kyc will use. The rows themselves must exist since P2-TSK-015: the
+        // consumer resolves the case KIND from the customer's party, and an event naming a
+        // customer with no row is a broken invariant it refuses loudly - stalling the
+        // partition by the block-don't-skip design, which is exactly what a bare random
+        // UUID here did to every test scheduled after this one.
+        UUID customerId = givenAnUnregisteredCustomer();
         EventId eventId = EventId.next(IDS);
         try (KafkaEventPublisher publisher = directPublisher()) {
             publisher.publish(craftedCustomerOpened(eventId, customerId));
         }
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
-            cases.openOrConverge(app, KycCase.open(IDS, Clock.systemUTC(), customerId));
+            cases.openOrConverge(app, KycCase.open(IDS, Clock.systemUTC(), customerId, KycCaseKind.KYC));
             app.commit();
         }
 
@@ -311,7 +316,7 @@ class RegistrationOpensCaseKafkaTest {
         }
     }
 
-    /** A CustomerOpened for a customer nobody registered — the race test's clean subject. */
+    /** A crafted CustomerOpened: a DISTINCT event (fresh eventId), never a wire duplicate. */
     private static PendingEvent craftedCustomerOpened(EventId eventId, UUID customerId) {
         return new PendingEvent(
                 eventId,
@@ -327,6 +332,36 @@ class RegistrationOpensCaseKafkaTest {
                 "{\"customerId\":\"probe\"}".getBytes(StandardCharsets.UTF_8),
                 "application/json",
                 0);
+    }
+
+    /**
+     * A PERSON party and a PENDING customer inserted directly - rows without a registration,
+     * so nothing rides the outbox and no third opener exists. In production a
+     * {@code party.CustomerOpened} commits in the same transaction as the customer row, so
+     * the consumer's kind resolution always finds it; the fixture keeps that invariant true.
+     */
+    private static UUID givenAnUnregisteredCustomer() throws SQLException {
+        UUID party = IDS.next();
+        UUID customer = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            try (PreparedStatement insert =
+                    app.prepareStatement(
+                            "INSERT INTO party.party (id, kind, display_name, registered_at)"
+                                    + " VALUES (?, 'PERSON', 'Grace Hopper', now())")) {
+                insert.setObject(1, party);
+                insert.executeUpdate();
+            }
+            try (PreparedStatement insert =
+                    app.prepareStatement(
+                            "INSERT INTO party.customer (id, party_id, status, opened_at,"
+                                    + " status_changed_at) VALUES (?, ?, 'PENDING',"
+                                    + " now() - interval '1 hour', now() - interval '1 hour')")) {
+                insert.setObject(1, customer);
+                insert.setObject(2, party);
+                insert.executeUpdate();
+            }
+        }
+        return customer;
     }
 
     /** Waits on the condition, never for a duration; the bound is generous (P1-TSK-002). */

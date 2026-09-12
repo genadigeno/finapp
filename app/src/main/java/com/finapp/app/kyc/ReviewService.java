@@ -159,14 +159,16 @@ public class ReviewService {
         if (outcome != Resolution.NOT_FOUND) {
             // After the commit, never inside it - and on the 409 path too, which is what heals
             // a crash that landed between a resolve's commit and its exit. A false answer is
-            // harmless in every cause: a task still open, a case not IN_REVIEW, a lost race.
+            // harmless in every cause: a task still open, a case not IN_REVIEW, a lost race -
+            // and, since P2-TSK-015, a KYB case whose ownership graph is not yet terminal,
+            // whose exit the owner's own decision will re-attempt (CaseAssessment
+            // .reRouteParentsOf).
             units.inTransaction(
                     unitOfWork ->
-                            cases.moveStatusWhenNoOpenTasks(
+                            cases.moveToReadyForDecision(
                                     unitOfWork,
                                     caseId,
                                     KycCaseStatus.IN_REVIEW,
-                                    KycCaseStatus.READY_FOR_DECISION,
                                     Instant.now(clock)));
         }
         return outcome;

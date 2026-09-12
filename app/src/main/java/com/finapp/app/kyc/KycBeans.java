@@ -19,6 +19,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -40,6 +41,61 @@ public class KycBeans {
     @Bean
     KycCaseStore<Connection> kycCaseStore() {
         return new JdbcKycCaseStore();
+    }
+
+    @Bean
+    com.finapp.kyc.BeneficialOwnerStore<Connection> beneficialOwnerStore() {
+        return new com.finapp.kyc.JdbcBeneficialOwnerStore();
+    }
+
+    /**
+     * The case-kind resolution, implemented over {@code party} because the answer is that
+     * module's fact and {@code kyc} cannot see it — the {@code DecisionOutcome → CustomerStatus}
+     * mapping's reasoning (ADR-0035), pointing the other way (`P2-TSK-015`): an
+     * {@code ORGANISATION} customer's verification opens as a {@code KYB} case.
+     */
+    @Bean
+    com.finapp.kyc.CaseKindResolver<Connection> caseKindResolver(
+            PartyStore<Connection> partyStore) {
+        return (unitOfWork, customerId) ->
+                partyStore
+                        .kindOfCustomer(unitOfWork, com.finapp.party.CustomerId.of(customerId))
+                        .map(
+                                kind ->
+                                        kind == com.finapp.party.PartyKind.ORGANISATION
+                                                ? com.finapp.kyc.KycCaseKind.KYB
+                                                : com.finapp.kyc.KycCaseKind.KYC)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "no party behind customer " + customerId
+                                                        + ": the consumer runs after the"
+                                                        + " registration that created the"
+                                                        + " customer committed, so this is a"
+                                                        + " defect - and a defaulted kind would"
+                                                        + " silently disarm the ownership gate"));
+    }
+
+    /** The owner-declaration orchestration (`P2-TSK-015`); its endpoint is `P2-TSK-016`'s. */
+    @Bean
+    OwnerDeclaration ownerDeclaration(
+            KycCaseStore<Connection> kycCaseStore,
+            com.finapp.kyc.BeneficialOwnerStore<Connection> beneficialOwnerStore,
+            PartyStore<Connection> partyStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionTemplate kycTransactions,
+            DataSource dataSource) {
+        return new OwnerDeclaration(
+                kycCaseStore,
+                beneficialOwnerStore,
+                partyStore,
+                auditWriter,
+                idGenerator,
+                clock,
+                kycTransactions,
+                dataSource);
     }
 
     /**
@@ -196,7 +252,8 @@ public class KycBeans {
             IdGenerator idGenerator,
             Clock clock,
             TransactionTemplate kycTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            ObjectProvider<CaseAssessment> caseAssessment) {
         return new DecisionRecording(
                 kycCaseStore,
                 checkStore,
@@ -206,7 +263,8 @@ public class KycBeans {
                 idGenerator,
                 clock,
                 kycTransactions,
-                dataSource);
+                dataSource,
+                caseAssessment);
     }
 
     /** The assessment and its routing — shared by the run and the callback door (P2-TSK-011). */
@@ -217,6 +275,7 @@ public class KycBeans {
             KycCaseStore<Connection> kycCaseStore,
             com.finapp.kyc.CheckStore<Connection> checkStore,
             com.finapp.kyc.ReviewTaskStore<Connection> reviewTaskStore,
+            com.finapp.kyc.BeneficialOwnerStore<Connection> beneficialOwnerStore,
             DecisionRecording decisionRecording,
             java.util.List<com.finapp.kyc.VerificationProvider> providers,
             IdGenerator idGenerator,
@@ -227,6 +286,7 @@ public class KycBeans {
                 kycCaseStore,
                 checkStore,
                 reviewTaskStore,
+                beneficialOwnerStore,
                 decisionRecording,
                 providers,
                 idGenerator,
@@ -369,11 +429,12 @@ public class KycBeans {
     @Bean
     CustomerOpenedOpensCase customerOpenedOpensCase(
             KycCaseStore<Connection> kycCaseStore,
+            com.finapp.kyc.CaseKindResolver<Connection> caseKindResolver,
             IdGenerator idGenerator,
             Clock clock,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter) {
         return new CustomerOpenedOpensCase(
-                kycCaseStore, idGenerator, clock, auditWriter, outboxWriter);
+                kycCaseStore, caseKindResolver, idGenerator, clock, auditWriter, outboxWriter);
     }
 }

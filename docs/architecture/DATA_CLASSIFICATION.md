@@ -313,6 +313,21 @@ adding "just the user agent", which is why the ceiling is set before anything po
 | `kyc_case` | `policy_version` | `CONFIDENTIAL` | The `credential.algorithm` reasoning: not a fact about a person on its face, but *which accounts were assessed under the lax regime* is a targeting aid, and the same query serves the upgrade campaign and the attacker |
 | `kyc_case` | `opened_at` | `CONFIDENTIAL` | As `customer.opened_at` — it dates onboarding |
 | `kyc_case` | `status_changed_at` | `CONFIDENTIAL` | Dates a review event, which is more disclosive than the status alone — `customer.status_changed_at`'s reasoning |
+| `kyc_case` | `case_kind` | `INTERNAL` | *Added by `P2-TSK-015`.* As `party.kind` — an enumeration of two values, saying no more about the customer than the party row already says |
+
+### `kyc.beneficial_owner` — *added by `P2-TSK-015`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `beneficial_owner` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `beneficial_owner` | `case_id` | `INTERNAL` | As `kyc_case.id` — an identifier of a thing |
+| `beneficial_owner` | `case_kind` | `INTERNAL` | A pinned constant (`'KYB'`), the composite-FK leg — data only in the schema's sense |
+| `beneficial_owner` | `owner_party_id` | `CONFIDENTIAL` | **Deliberately above the `customer.party_id` precedent.** There the column is an identifier and the fact lives elsewhere; here the pairing with `case_id` *is* the fact — this person owns or controls that organisation — the `review_task.status` tipping-off reasoning applied to a link. What it resolves to stays `RESTRICTED-PII` as ever |
+| `beneficial_owner` | `verification_case_id` | `INTERNAL` | As `kyc_case.id` — an identifier of a thing |
+| `beneficial_owner` | `verification_case_kind` | `INTERNAL` | A pinned constant (`'KYC'`), the composite-FK leg |
+| `beneficial_owner` | `stake_basis_points` | `CONFIDENTIAL` | A person's ownership position in a named organisation — a fact about them, commercially sensitive in both directions |
+| `beneficial_owner` | `control_role` | `CONFIDENTIAL` | As the stake: who directs an entity is a fact about the person, not an identifier |
+| `beneficial_owner` | `declared_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
 
 ### `kyc.kyc_document` — *added by `P2-TSK-008`*
 

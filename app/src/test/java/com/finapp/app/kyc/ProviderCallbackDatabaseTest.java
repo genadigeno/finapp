@@ -10,6 +10,7 @@ import com.finapp.kyc.CheckType;
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
+import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.KycCaseStatus;
 import com.finapp.kyc.VerificationCheck;
 import com.finapp.platform.testing.database.DatabaseRoles;
@@ -304,7 +305,7 @@ class ProviderCallbackDatabaseTest {
                     customer,
                     party);
             app.setAutoCommit(false);
-            KycCase opened = cases.openOrConverge(app, KycCase.open(IDS, CLOCK, customer)).kycCase();
+            KycCase opened = cases.openOrConverge(app, KycCase.open(IDS, CLOCK, customer, KycCaseKind.KYC)).kycCase();
             CheckId pendingCheck = null;
             for (CheckType type : CheckType.values()) {
                 VerificationCheck check =

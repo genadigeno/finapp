@@ -170,6 +170,7 @@ that is recorded debt rather than an omission here.
 | `kyc.CheckCompleted` | No | A verification check reached its outcome — the platform recording a provider's answer in its own vocabulary. |
 | `kyc.DocumentContentRead` | No | Document content was read, naming who looked and at which document. |
 | `kyc.CaseRead` | No | A reviewer read a KYC/KYB case, naming who looked and at which case. |
+| `kyc.OwnerDeclared` | No | A beneficial owner was declared onto a KYB case, pinning the verification case the graph rests on. |
 
 The two reason-required actions are the invariants speaking: `INV-KYC-02` makes a decision's
 reason a `NOT NULL` column, and `INV-KYC-04` requires a hit's resolution to carry its
@@ -192,6 +193,10 @@ outcome is the platform normalising a provider's answer, an act taken *for* nobo
 *against* nobody — the acts that demand justification are the decision and the review
 resolution, which are the two reason-required rows above. It is deliberately **not** a
 decision record (`INV-KYC-01`: a provider verdict is evidence, never the decision).
+`kyc.OwnerDeclared` joined at `P2-TSK-015`: the declaration changes what a regulator-facing
+decision will rest on (`INV-KYC-02` — the owner set is part of the decision's evidence), which
+is what makes it an action of consequence; no reason, because declaring the graph is the
+declarant's own compliance act, taken for and against nobody — the consent-pair argument.
 
 ### `consent` — `ConsentAuditAction`
 

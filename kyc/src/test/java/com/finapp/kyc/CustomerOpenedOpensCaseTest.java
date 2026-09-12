@@ -35,6 +35,10 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings("try") // correlation Scopes are used for their close side effect
 class CustomerOpenedOpensCaseTest {
 
+    /** The kind resolution the app wires over party; here every customer is a person. */
+    private static final CaseKindResolver<Connection> PERSON_KIND =
+            (unitOfWork, customerId) -> KycCaseKind.KYC;
+
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), ZoneOffset.UTC);
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
@@ -47,7 +51,7 @@ class CustomerOpenedOpensCaseTest {
     void aCreatedCaseIsAuditedAndAnnounced() {
         ScriptedStore store = new ScriptedStore(true);
         CustomerOpenedOpensCase handler =
-                new CustomerOpenedOpensCase(store, IDS, CLOCK, audit, outbox);
+                new CustomerOpenedOpensCase(store, PERSON_KIND, IDS, CLOCK, audit, outbox);
         UUID customerId = IDS.next();
         EventId consumed = EventId.next(IDS);
         ReceivedEvent event = customerOpened(consumed, customerId);
@@ -95,7 +99,7 @@ class CustomerOpenedOpensCaseTest {
         // case exists.
         ScriptedStore store = new ScriptedStore(false);
         CustomerOpenedOpensCase handler =
-                new CustomerOpenedOpensCase(store, IDS, CLOCK, audit, outbox);
+                new CustomerOpenedOpensCase(store, PERSON_KIND, IDS, CLOCK, audit, outbox);
         EventId consumed = EventId.next(IDS);
 
         try (CorrelationContext.Scope scope = scopeFor(consumed)) {
@@ -152,6 +156,7 @@ class CustomerOpenedOpensCaseTest {
                     KycCase.rehydrate(
                             KycCaseId.next(IDS),
                             fresh.customerId(),
+                            KycCaseKind.KYC,
                             KycCaseStatus.OPEN,
                             KycPolicyVersion.CURRENT,
                             Instant.parse("2026-09-09T11:00:00Z"),
@@ -180,12 +185,14 @@ class CustomerOpenedOpensCaseTest {
         }
 
         @Override
-        public boolean moveStatusWhenNoOpenTasks(
-                Connection unitOfWork,
-                KycCaseId caseId,
-                KycCaseStatus from,
-                KycCaseStatus to,
-                Instant at) {
+        public java.util.Optional<KycCase> findLatestFor(
+                Connection unitOfWork, UUID customerId) {
+            throw new UnsupportedOperationException("not part of this test");
+        }
+
+        @Override
+        public boolean moveToReadyForDecision(
+                Connection unitOfWork, KycCaseId caseId, KycCaseStatus from, Instant at) {
             throw new UnsupportedOperationException("not part of this test");
         }
     }

@@ -33,11 +33,18 @@ import java.util.UUID;
  * <p>{@code INV-HIST-04}'s rule at the moment it is free: which regime a case was assessed under
  * is a fact about the case, unrecoverable if not recorded when the case is born. The decision
  * ({@code P2-TSK-013}) pins the same version again on its own record.
+ *
+ * <h2>The kind is fixed at open, like the policy version</h2>
+ *
+ * <p>{@code KYC} or {@code KYB} (`P2-TSK-015`): one machine, two kinds — see
+ * {@link KycCaseKind} for why the kind is a column rather than a second aggregate, and why it
+ * is immutable at {@code DB-PRIVILEGE} (a flip would disarm the ownership gate).
  */
 public final class KycCase {
 
     private final KycCaseId id;
     private final UUID customerId;
+    private final KycCaseKind kind;
     private final KycCaseStatus status;
     private final KycPolicyVersion policyVersion;
     private final Instant openedAt;
@@ -46,12 +53,14 @@ public final class KycCase {
     private KycCase(
             KycCaseId id,
             UUID customerId,
+            KycCaseKind kind,
             KycCaseStatus status,
             KycPolicyVersion policyVersion,
             Instant openedAt,
             Instant statusChangedAt) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.customerId = Objects.requireNonNull(customerId, "customerId must not be null");
+        this.kind = Objects.requireNonNull(kind, "kind must not be null");
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.policyVersion =
                 Objects.requireNonNull(policyVersion, "policyVersion must not be null");
@@ -61,23 +70,30 @@ public final class KycCase {
     }
 
     /** Opens a case for a customer, {@code OPEN}, under the current policy regime. */
-    public static KycCase open(IdGenerator ids, Clock clock, UUID customerId) {
+    public static KycCase open(IdGenerator ids, Clock clock, UUID customerId, KycCaseKind kind) {
         Objects.requireNonNull(ids, "ids must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
         Instant now = Instant.now(clock);
         return new KycCase(
-                KycCaseId.next(ids), customerId, KycCaseStatus.OPEN, KycPolicyVersion.CURRENT, now, now);
+                KycCaseId.next(ids),
+                customerId,
+                kind,
+                KycCaseStatus.OPEN,
+                KycPolicyVersion.CURRENT,
+                now,
+                now);
     }
 
     /** Reconstitutes from storage. Applies no transition rules: the row was already valid. */
     public static KycCase rehydrate(
             KycCaseId id,
             UUID customerId,
+            KycCaseKind kind,
             KycCaseStatus status,
             KycPolicyVersion policyVersion,
             Instant openedAt,
             Instant statusChangedAt) {
-        return new KycCase(id, customerId, status, policyVersion, openedAt, statusChangedAt);
+        return new KycCase(id, customerId, kind, status, policyVersion, openedAt, statusChangedAt);
     }
 
     /** {@code OPEN → CHECKS_IN_PROGRESS}: the first check was dispatched. */
@@ -117,7 +133,8 @@ public final class KycCase {
         if (!status.canTransitionTo(target)) {
             throw new IllegalKycCaseTransitionException(id, status, target);
         }
-        return new KycCase(id, customerId, target, policyVersion, openedAt, Instant.now(clock));
+        return new KycCase(
+                id, customerId, kind, target, policyVersion, openedAt, Instant.now(clock));
     }
 
     public KycCaseId id() {
@@ -127,6 +144,11 @@ public final class KycCase {
     /** The customer under verification. Fixed for the life of the case; a value, never an FK. */
     public UUID customerId() {
         return customerId;
+    }
+
+    /** Which variant of verification this is. Fixed for the life of the case. */
+    public KycCaseKind kind() {
+        return kind;
     }
 
     public KycCaseStatus status() {
@@ -159,6 +181,6 @@ public final class KycCase {
     /** Carries no personal data: identifiers, a status and a policy label. */
     @Override
     public String toString() {
-        return "KycCase[" + id + ", customer=" + customerId + ", " + status + "]";
+        return "KycCase[" + id + ", customer=" + customerId + ", " + kind + ", " + status + "]";
     }
 }

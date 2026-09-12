@@ -3171,7 +3171,7 @@ capability map, and the task list below is the schedule.
 
 ## P2-EPIC-02 — KYB and beneficial ownership (M2.4)
 
-**P2-TSK-015 — KybCase and the beneficial-ownership graph** — `READY`
+**P2-TSK-015 — KybCase and the beneficial-ownership graph** — `COMPLETE` (2026-09-12)
 - Context: kyc / party
 - Description: `KybCase` for `ORGANISATION` customers; `BeneficialOwner` rows linking the case
   to natural-person Parties with stake/control attributes; the decision precondition: every
@@ -3187,8 +3187,50 @@ capability map, and the task list below is the schedule.
   bounded depth for Phase 2, recorded).
 - Accept: an organisation decides only on a fully verified ownership graph.
 - Risk: High. Cx: L. DoD: `DOD-KERNEL`
+- **Outcome:** one case machine, two kinds — `kyc_case.case_kind` (`KYC`|`KYB`), fixed at open
+  and **unwritable at DB-PRIVILEGE** (V008 narrows the case grant to
+  `(status, status_changed_at)`), never a second table: what makes KYB "not a flag" is the
+  graph. `kyc.beneficial_owner` is append-only (`SELECT, INSERT` only), kind-bound at
+  `DB-CONSTRAINT` by **composite FKs** over a new `UNIQUE (id, case_kind)` — owner rows attach
+  only to KYB cases, verifications are only KYC cases, so the graph's depth-1 bound is
+  structural. An owner's verification is their **own KYC case, pinned at declaration**
+  (`findLatestFor`, the `INV-HIST-04` shape); readiness demands every owner ANSWERED (terminal
+  either way), not APPROVED, and **KYB never auto-decides** — `KycDecision.automatic` refuses
+  the kind at the domain, because an automatic approval could clear a terminal-REJECTED owner
+  by silence (`INV-KYC-04`'s shape). The distributed edge was sharper than the backlog's own
+  sentence: under READ COMMITTED a blocked UPDATE re-runs its subqueries against the
+  statement's ORIGINAL snapshot, so "predicate in the statement" alone still misses a
+  just-committed owner — **write skew, closed by lock-then-look on both sides**
+  (`SELECT … FOR UPDATE` on the case row, then the predicate in a fresh statement), proven by
+  a deterministic two-connection test that observes the mover blocked in `pg_stat_activity`.
+  Declarations are accepted only in OPEN/CHECKS_IN_PROGRESS/IN_REVIEW under the same lock, so
+  once RFD the owner set is **frozen** and "the owner rows of the case" ARE the decision's
+  evidence (`INV-KYC-02`) with no join table. An owner's terminal decision **re-routes**
+  waiting parents post-commit through both doors — assess, and the reviewer's recording on
+  RECORDED and ALREADY_DECIDED (the 409-heals path). **The sweep found the reviewer door
+  exercised by nothing** — both re-route tests drove the assess door, so removing the
+  controller's call survived — and the fix was a move, not a test for the controller: the
+  hook now sits on `DecisionRecording.byReviewer` itself, because the recording already has
+  a second caller and a consequence living only on the HTTP boundary is one a second caller
+  silently loses; a new test drives an owner decided by a reviewer, and the re-aimed
+  mutation is caught.
+  Both Phase-2 bounds recorded: ORGANISATION owners refused (depth-1, DB-enforced), owners
+  without a registered customer/case refused — declaration never auto-opens cases. Stake in
+  basis points (1..10000, `INV-MON-01` hygiene), per-case sum ≤ 10000 checked under the lock.
+  New audit action `kyc.OwnerDeclared`; `CaseKindResolver` port keeps `kyc` blind to `party`.
+  **The full battery found one real interaction**: the kafka race test's crafted event named a
+  customer with no rows, which the consumer's kind resolution now refuses loudly — stalling
+  the partition by the block-don't-skip design and timing out every later test; the fixture
+  now inserts the party/customer rows production guarantees exist. **Ten mutations, all caught
+  by the intended assertion** — the ownership gate neutralised, the mover's lock dropped
+  (caught by the race test's blocked-lock observation), the at-least-one-owner clause
+  neutralised, the KYB-automatic refusal dropped, the accepting-status predicate dropped, a
+  composite FK dropped (against a from-scratch database), the declaration audit dropped, the
+  stake-sum bound removed, and each re-route door dropped — the reviewer door's survivor is
+  the finding above, and its fix is what the sweep is for. 1006 hermetic tests, 546 database
+  tests, 14 kafka tests.
 
-**P2-TSK-016 — KYB endpoints** — `TODO`
+**P2-TSK-016 — KYB endpoints** — `READY`
 - Context: kyc / api
 - Description: Owner declaration and KYB case views for the organisation's acting person;
   reviewer views extended.

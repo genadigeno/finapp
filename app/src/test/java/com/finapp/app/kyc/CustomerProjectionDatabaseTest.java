@@ -21,6 +21,7 @@ import com.finapp.kyc.DecisionOutcome;
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
+import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.KycCaseStatus;
 import com.finapp.kyc.KycDecisionStore;
 import com.finapp.kyc.ReviewTask;
@@ -430,7 +431,15 @@ class CustomerProjectionDatabaseTest {
                 IDS,
                 CLOCK,
                 kycTransactions,
-                dataSource);
+                dataSource,
+                // No KYB parent exists in these fixtures, so the post-commit re-route has
+                // nothing to do - an absent assessment is the honest stand-in.
+                new org.springframework.beans.factory.ObjectProvider<CaseAssessment>() {
+                    @Override
+                    public CaseAssessment getIfAvailable() {
+                        return null;
+                    }
+                });
     }
 
     private Throwable decideExpectingFailure(DecisionRecording recording, Fixture fixture) {
@@ -462,6 +471,18 @@ class CustomerProjectionDatabaseTest {
         private FailingMove(PartyStore<Connection> real, Mode mode) {
             this.real = real;
             this.mode = mode;
+        }
+
+        @Override
+        public java.util.Optional<com.finapp.party.PartyKind> kindOf(
+                Connection unitOfWork, com.finapp.party.PartyId partyId) {
+            return real.kindOf(unitOfWork, partyId);
+        }
+
+        @Override
+        public java.util.Optional<com.finapp.party.PartyKind> kindOfCustomer(
+                Connection unitOfWork, com.finapp.party.CustomerId customerId) {
+            return real.kindOfCustomer(unitOfWork, customerId);
         }
 
         @Override
@@ -567,7 +588,7 @@ class CustomerProjectionDatabaseTest {
                     customer,
                     party);
             app.setAutoCommit(false);
-            KycCase opened = cases.openOrConverge(app, KycCase.open(IDS, CLOCK, customer)).kycCase();
+            KycCase opened = cases.openOrConverge(app, KycCase.open(IDS, CLOCK, customer, KycCaseKind.KYC)).kycCase();
             app.commit();
             return new Fixture(opened.id(), customer, party);
         }

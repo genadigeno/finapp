@@ -22,6 +22,7 @@ import com.finapp.kyc.IdentityVerificationAdapter;
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
+import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.KycCaseStatus;
 import com.finapp.kyc.KycDecision;
 import com.finapp.kyc.KycPolicyVersion;
@@ -365,6 +366,7 @@ class DecisionDatabaseTest {
                 KycCase.rehydrate(
                         opened.caseId(),
                         opened.customerId(),
+                        KycCaseKind.KYC,
                         KycCaseStatus.READY_FOR_DECISION,
                         new KycPolicyVersion(decision.policyVersion()),
                         Instant.now(CLOCK).minusSeconds(3600),
@@ -537,7 +539,7 @@ class DecisionDatabaseTest {
                     customer,
                     party);
             app.setAutoCommit(false);
-            KycCase opened = cases.openOrConverge(app, KycCase.open(IDS, CLOCK, customer)).kycCase();
+            KycCase opened = cases.openOrConverge(app, KycCase.open(IDS, CLOCK, customer, KycCaseKind.KYC)).kycCase();
             app.commit();
             return new Case(opened.id(), customer);
         }
