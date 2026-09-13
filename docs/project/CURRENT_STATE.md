@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-13 (`P3-TSK-003`)
+Last updated: 2026-09-13 (`P3-TSK-004`)
 
 ---
 
@@ -78,7 +78,7 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **3 of 24** backlog items; M3.1 closed the same day.
+same day with `P3-TSK-001`. **4 of 24** backlog items; M3.1 closed the same day.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -119,9 +119,10 @@ class, again).
 ## Current Milestone
 
 **M3.2 — A posting is possible and cannot be wrong.** `P3-TSK-004` … `P3-TSK-007`;
-**0 of 4, opens with `P3-TSK-004` (`READY`)** — the entry and line aggregates whose
-unbalanced shapes cannot be constructed, then persistence balanced-by-constraint and
-immutable-by-privilege, then the idempotent posting command, then the posting permissions.
+**1 of 4 — `P3-TSK-004` `COMPLETE`, next `P3-TSK-005` (`READY`)** — the entry and line
+aggregates whose unbalanced shapes cannot be constructed, then persistence
+balanced-by-constraint and immutable-by-privilege, then the idempotent posting command,
+then the posting permissions.
 Acceptance: an unbalanced entry is impossible at the domain **and** the database;
 `UPDATE`/`DELETE` denied on every column; ten identical keys produce one effect.
 
@@ -342,11 +343,77 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-003` is `COMPLETE` and **M3.1 closes, 3 of 3**. **Next:
-`P3-TSK-004` (`READY`)** — `JournalEntry` and `JournalLine`, the balance rule at the domain:
-an unbalanced entry cannot be constructed.
+**None in progress.** `P3-TSK-004` is `COMPLETE`; M3.2 is 1 of 4. **Next: `P3-TSK-005`
+(`READY`)** — postings persisted: the database refuses what the domain refuses, and refuses
+to let anything edit it afterwards.
 
 ### Just completed
+
+**`P3-TSK-004` — `JournalEntry` and `JournalLine`: the balance rule at the domain** —
+`COMPLETE` (2026-09-13). **M3.2 opens, 1 of 4.** The phase's first High-risk task: an
+unbalanced entry cannot be **constructed**, so `INV-LED-01` has no call site at which to be
+forgotten.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every unbalanced shape throws | The named cases — plain imbalance, the cross-subsidy (balanced in total, unbalanced per currency), single and empty line sets, zero and negative amounts, mixed scales — each the smallest example of its class, plus the sweep |
+| Property test over generated line sets | 2000 trials over JPY(0)/USD(2)/BHD(3): seeds repaired to balance all construct and re-verify against an **independent `BigDecimal` implementation** (the sweep must not certify `Money` with `Money`); every one-minor-unit perturbation throws; coverage asserted, not hoped — all three scales heavily exercised and over a quarter of trials multi-currency |
+
+### Direction carries the sign, and that choice is what the schema can inherit
+
+Amounts are strictly positive (a zero line asserts nothing; a negative one is a credit
+wearing a debit's clothes) and `Direction` is an enum — so "unbalanced" is **two sums that
+must be equal**, never a subtraction that happens to be non-zero, which is the property
+`INV-LED-01` actually states and the one `P3-TSK-005`'s constraint can carry.
+
+### The sums fold through `Money.plus`, and two properties come out structural
+
+Cross-currency addition is impossible (`INV-MON-04`), and **mixed scales within one
+currency refuse rather than normalise** — silently rescaling a line to make the sum
+computable is the implicit rounding `INV-MON-03` forbids. The cross-sides mix (debits at
+scale 2, credits at scale 3, equal value) surfaces as *unbalanced* under `Money`'s own
+scale-including equality — 1.50 and 1.500 are different stored facts (`INV-MON-05`) — and
+the fold's zero identity is scale-aware so a persisted-scale line is summable without the
+identity's own scale becoming an artefact, which its mutation proves is load-bearing.
+
+### The empty entry is why `INV-LED-02` is its own check
+
+A zero-line entry balances **vacuously** — every currency's two sums are equal at zero — so
+a balance check alone waves it through. The line-count refusal runs first and separately,
+and its mutation is caught by exactly the empty-entry half of the test, which is the
+load-bearing half.
+
+### The three dates arrive as the model demands
+
+Posting date and value date are **required inputs** — the factory demands both, so a
+component wanting a clock-derived accounting date has no overload to do it with; the
+substitution `DOMAIN_MODEL.md` §Time warns about now takes an explicit
+`LocalDate.now(clock)` at the caller, where a review can see it. No ordering between the
+three is imposed: back-dated corrections and late settlement are both legal shapes.
+
+### No amount reaches a rendering or a message
+
+`INV-AUD-02` at the type: a record's generated `toString` prints every component, so
+`JournalLine` overrides it (account, direction, currency — never the amount);
+`UnbalancedJournalEntryException` names the currency and the fact, never the sums, because
+an exception message reaches logs and journal amounts are `RESTRICTED-FINANCIAL`. Both
+asserted with a searchable needle, and the leak mutation is caught.
+
+### What deliberately did not arrive
+
+Attribution, entry type, reference and reason (the persisted record's fields — `P3-TSK-005`
+and `-006` fix their semantics); `seq` (persistence's; the list order here is the order);
+`Direction.opposite()` and `sqlValueList()` (dead until reversal and the migration — each
+arrives with its caller, the `P1-TSK-013` rule); any coupling to `SupportedCurrencies`
+(whether a currency is *postable* is the command's question against the chart, not a
+property of the value).
+
+**Six mutations, all caught by the intended assertion** — the balance check removed, the
+per-currency grouping collapsed onto one bucket, the line-count refusal removed, the
+positivity refusal removed, the amount leaked into a rendering, the fold's zero identity
+de-scaled. **1049 hermetic tests, 592 database tests.**
+
+### Previously
 
 **`P3-TSK-003` — The operational chart, seeded by migration** — `COMPLETE` (2026-09-13).
 **M3.1 closes, 3 of 3.** The platform's own accounts exist before anything can post,
@@ -7053,9 +7120,8 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-003` (2026-09-13): the operational chart seeded by
-migration, and the `SupportedCurrencies` definition. The next work is `P3-TSK-004`,
-`JournalEntry` and `JournalLine`.
+The last work performed was `P3-TSK-004` (2026-09-13): `JournalEntry` and `JournalLine`,
+the balance rule at construction. The next work is `P3-TSK-005`, postings persisted.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -7297,20 +7363,22 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P3-TSK-004` — `JournalEntry` and `JournalLine`: the balance rule at the domain.** Status
-`READY`; depends on `P3-TSK-002` (`COMPLETE`). M3.2's opener, and the phase's first
-High-risk task.
+**`P3-TSK-005` — Postings persisted: balanced by constraint, immutable by privilege.**
+Status `READY`; depends on `P3-TSK-004` (`COMPLETE`). High-risk.
 
-An unbalanced entry cannot be **constructed** (`INV-LED-01`, `INV-LED-02`): the two
-aggregates and the `Direction` enum, balancing validated **per currency** at construction,
-at least two lines, amounts positive with direction carrying the sign — so "unbalanced" is
-two sums that must be equal, never a subtraction that happens to be non-zero. Posting date
-and value date are **required inputs, never clock reads** (`DOMAIN_MODEL.md` §Time: a
-component that derives a posting date from the clock has silently decided execution time
-and accounting date are the same thing). Balanced and unbalanced shapes across JPY(0),
-USD(2) and BHD(3); a multi-currency entry balances in each; property test over generated
-line sets. No persistence, no command, no reversal — `P3-TSK-005`/`-006`/`-016`. Risk:
-High. Cx: M. DoD: `DOD-FIN`, `DOD-DOMAIN`.
+The database refuses what the domain refuses, and refuses to let anything edit it
+afterwards: `V004` creating `journal_entry` and `journal_line`, entry-level balance
+enforcement, `SELECT, INSERT` grants and **no `UPDATE`, no `DELETE`** (`INV-LED-03`,
+`INV-HIST-01` — the `DB-PRIVILEGE` mechanism that has waited since `P0-TSK-022` finally
+carrying the invariants it was built for), `NOT NULL` attribution (`INV-LED-05`). **The
+one real design problem is named in the backlog**: a `CHECK` cannot see sibling rows, so
+entry-level balance must be a constraint trigger or a deferred constraint — the task must
+choose, state why, and prove it against a direct `INSERT` that never passes through the
+domain, because that is the writer the constraint exists for. Also on its list: the
+`P0-TST-007` column sweep over both tables, money round-trips at `BIGINT` extremes for
+every scale, and the two self-armed guards from earlier tasks going live — the
+classification freeze trigger's posted branch and the seam test's line count. Risk: High.
+Cx: M. DoD: `DOD-FIN`.
 
 ### Superseded: the transition itself
 
@@ -7343,6 +7411,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-13 | **`P3-TSK-004` complete — the balance rule at the domain, and M3.2 opens.** `JournalEntry` and `JournalLine`: one factory validating `INV-LED-02` then `INV-LED-01`, so an unbalanced entry has no code path on which to exist. Direction carries the sign and amounts are strictly positive, making "unbalanced" two sums that must be equal — the property the schema can inherit (`P3-TSK-005`). Sums fold through `Money.plus`: cross-currency addition impossible, mixed scales within a currency refused rather than normalised (the cross-sides mix surfaces as unbalanced under `Money`'s scale-including equality — 1.50 and 1.500 are different stored facts), and the fold's zero identity is scale-aware, mutation-proven. The empty entry balances vacuously, which is exactly why `INV-LED-02` is a separate first check — its mutation is caught by the empty-entry half. Posting and value dates are required inputs (no overload exists for a clock-derived accounting date); no amount reaches any rendering or exception message (`INV-AUD-02`, needle-asserted). The property sweep: 2000 trials over JPY/USD/BHD, repaired-to-balance seeds all construct and re-verify against an independent `BigDecimal` check, every one-minor-unit perturbation throws, coverage asserted. **Six mutations, all caught by the intended assertion.** 1049 hermetic tests, 592 database tests. Next: `P3-TSK-005`. |
 | 2026-09-13 | **`P3-TSK-003` complete — the operational chart, and M3.1 closes (3 of 3).** The platform's own accounts exist before anything can post: `V003` seeds five operational purposes × three currencies, and `ChartOfAccounts.resolve` answers for every combination or throws naming the gap — never an empty `Optional`, because the caller that could handle absence does not exist. **The task's one open design question answered explicitly**: no document defined the supported currencies, so `SupportedCurrencies` (EUR, GBP, USD — jurisdiction-neutral, three so the per-currency structure is exercised) is the single definition, seed-reconciled in both directions and grown only by a reviewed seed migration. Seed ids are hand-minted UUIDv7 literals (v4 would fail rehydrate; deterministic ids are a runbook feature), timestamps literals never `now()`, and the type decisions (clearing ASSET, fees REVENUE, FX ASSET, residual EXPENSE, suspense LIABILITY) recorded in the migration and pinned by test — the pin being what catches a **coherent** flip that satisfies every schema CHECK. The seam test is self-arming: zero lines reference `FX_POSITION`/`SUSPENSE_UNMATCHED`, `to_regclass`-guarded, live the day `P3-TSK-005` creates the table. **Eight mutations: seven caught, one survived correctly** (`findOperational` losing `owner_ref IS NULL` — the CHECK chain makes the excluded rows unstorable; recorded defence in depth). 1040 hermetic tests, 592 database tests. Next: `P3-TSK-004`, M3.2 opens. |
 | 2026-09-13 | **`P3-TSK-002` complete — the chart's row, and `INV-LED-06` holds against every writer.** `LedgerAccount` (typed, single-currency, owner-opaque per ADR-0042), four enums plus the status machine, and `V002` — with **two derivations, no free choices**: `normal_balance` from the type and `owner_kind` from the purpose, each derived in one function, stored, and held to its derivation by a generated `CHECK`, so a writer that never ran our code cannot store an `ASSET` that grows by credit or hand fee revenue to a customer. **The freeze has two layers**: identity fields (purpose, currency, owner, creation instant) frozen unconditionally — an unposted account with the wrong currency is corrected by opening another — and the classification frozen exactly when a `journal_line` references the account, via a trigger that probes `P3-TSK-005`'s future table through `to_regclass()`/`EXECUTE` so the branch sleeps until the table exists rather than leaving a window where the schema permits what the invariant forbids. Proven with a positive control between the layers: the migrator corrects an unposted account, a stand-in line row lands, the same update refuses. The grant is column-narrowed to `(status, status_changed_at)` and proven per column — the grant binds the application, the trigger binds everyone else, two controls blind in different directions. One factory (`owned`); the operational chart is seeded by migration (`P3-TSK-003`), so `createOrConverge` refuses unowned aggregates and ten instances converge on one row behind a savepoint; a second partial index keeps the operational chart unambiguous per purpose+currency (`INV-BAL-03`'s designated account staying designated). `OwnershipIsScopedTest` demanded no entry — verified: neither store method takes an `EntityId`. **Six mutations, all caught by the intended assertion.** 1035 hermetic tests, 588 database tests. Next: `P3-TSK-003`. |
 | 2026-09-13 | **`P3-TSK-001` complete — the `ledger` module and the privilege floor; Phase 3 is `IN_PROGRESS`.** A guarded module on the documented direction, a `ledger` schema owned by `finapp_migrator` with `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, **no tables**, and deliberately no `ALTER DEFAULT PRIVILEGES` — because the tables that matter most here are exactly the ones that must never receive `UPDATE` or `DELETE`, each table's grants arrive in the migration that creates it. That ownership is what makes `INV-LED-03`, `INV-HIST-01` and `INV-LED-04` enforceable at `DB-PRIVILEGE` at all, which is why it precedes the first table. Two audit actions under the deliberately-few licence: `ledger.JournalEntryPosted` (no reason) and `ledger.AdjustmentPosted` (**reason required**, `INV-REV-04`), both `NOT_YET_EMITTED` naming `P3-TSK-006` and `P3-TSK-017`. Isolation both directions applied at design time rather than rediscovered: `ledger` forbids every sibling and `app`, and all four siblings forbid `ledger`. Migrate → validate → re-migrate on a throwaway PostgreSQL confirmed owner, ACL and one history row. **The four planned mutation probes and the re-run after the catalogue fix were not performed** — the owner stopped that run and closed the gate without it; coverage is evidenced by the registry sweep having reached `LedgerAuditAction`. **The registry caught this task's own catalogue row** (`Yes` where the convention is `**Yes**`) on the one action whose reason is mandated. `ledger/gradle.lockfile` byte-identical to `consent`'s, verification metadata unchanged, the `build-logic` Kotlin drift reverted a third time; two five-phase-stale *"no business modules exist yet"* comments and a stale §Active Work corrected. 1027 hermetic tests, 584 database tests. Next: `P3-TSK-002`. |

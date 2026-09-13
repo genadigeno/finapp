@@ -3706,7 +3706,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 ## P3-EPIC-02 — Postings that cannot be wrong (M3.2)
 
-**P3-TSK-004 — `JournalEntry` and `JournalLine`: the balance rule at the domain** — `READY`
+**P3-TSK-004 — `JournalEntry` and `JournalLine`: the balance rule at the domain** — `COMPLETE` (2026-09-13)
 - **Objective**: an unbalanced entry cannot be **constructed** (`INV-LED-01`, `INV-LED-02`).
 - **Context**: Ledger. **Scope**: the two aggregates; `Direction` enum; balancing validated per
   currency at construction; ≥2 lines; posting date and value date as **required inputs**, never
@@ -3722,9 +3722,25 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   balance **in each currency**; single-line refused; a posting date derived from the clock is
   impossible because the constructor demands one.
 - **Accept**: every unbalanced shape throws; property test over generated line sets.
+- **Gate evidence (2026-09-13)**: the one factory validates `INV-LED-02` then `INV-LED-01`,
+  so an unbalanced entry has no code path on which to exist; sums fold through
+  `Money.plus`, making cross-currency addition impossible and **mixed scales within one
+  currency a refusal rather than a normalisation** (the implicit rescale `INV-MON-03`
+  forbids — with the cross-sides case surfacing as unbalanced under `Money`'s own
+  scale-including equality, tested and documented). The property sweep (2000 trials,
+  JPY/USD/BHD, seeds repaired to balance then perturbed by **one minor unit**) asserts its
+  own coverage and re-verifies balance with an independent `BigDecimal` implementation, so
+  the sweep does not certify `Money` with `Money`. No amount reaches any rendering or
+  exception message (`INV-AUD-02`: `JournalLine`'s record `toString` is overridden, the
+  unbalanced refusal names the currency and the fact). **Six mutations, all caught by the
+  intended assertion** — the balance check removed, the per-currency grouping collapsed,
+  the line-count refusal removed (the empty entry is the load-bearing half: it balances
+  vacuously, which is why `INV-LED-02` is checked separately), the positivity refusal
+  removed, the amount leaked into a rendering, and the fold's scale-aware zero identity
+  removed. 1049 hermetic / 592 database tests.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
 
-**P3-TSK-005 — Postings persisted: balanced by constraint, immutable by privilege** — `TODO`
+**P3-TSK-005 — Postings persisted: balanced by constraint, immutable by privilege** — `READY`
 - **Objective**: the database refuses what the domain refuses, and refuses to let anything edit
   it afterwards (`INV-LED-01`, `INV-LED-03`, `INV-HIST-01`).
 - **Context**: Ledger. **Scope**: `V004` creating `journal_entry` and `journal_line`; the
