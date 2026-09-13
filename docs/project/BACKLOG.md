@@ -2786,7 +2786,7 @@ capability map, and the task list below is the schedule.
   the index made total, convergence removed, the conditional transition made unconditional.
 - Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
 
-**P2-TSK-006 — `POST /v1/me/kyc` and `GET /v1/me/kyc`** — `TODO`
+**P2-TSK-006 — `POST /v1/me/kyc` and `GET /v1/me/kyc`** — `READY`
 - Context: kyc / api
 - Description: The caller opens (or converges on) their case and reads its status —
   `SESSION_DERIVED`, no identifier anywhere in the request (the `/v1/me` shape).
@@ -3438,7 +3438,7 @@ capability map, and the task list below is the schedule.
   the gate memoizing per (party, purpose). 1019 hermetic tests, 576 database tests, 14 kafka
   tests. **M2.5: 3 of 4.**
 
-**P2-TST-002 — Consent withdrawal blocks the capability, across instances** — `READY`
+**P2-TST-002 — Consent withdrawal blocks the capability, across instances** — `COMPLETE` (2026-09-13)
 - Context: consent / test
 - Description: The gate bullet demonstrated: withdraw on one simulated instance, the gated
   capability refused on another, with the register row recorded.
@@ -3446,6 +3446,44 @@ capability map, and the task list below is the schedule.
 - Accept: the demonstration fails when the gate's authoritative read is replaced by a cached
   value — performed, not asserted.
 - Risk: Low. Cx: S. DoD: `DOD-TEST`
+- **Outcome:** The four `INV-CNS-01`…`04` rows landed in `MUTATION_TESTING.md` §2, the item's
+  own §4 row beside them, and **the acceptance was performed rather than recorded from
+  memory** — which is what found the two defects below. The register guard's teeth were
+  re-proven per §5: one method reference in the new `INV-CNS-03` row corrupted,
+  `everyNamedMethodExists` failed naming exactly it, restored from a backup **copy** and
+  verified byte-identical (never `git checkout --`, and never a PowerShell round-trip — the
+  `P2-TST-001` mojibake lesson).
+  **Performing the acceptance changed the test twice.** The demonstration shared **one**
+  `ConsentGate` across both simulated instances, so it caught the cached-read mutation by
+  accident (A memoises before B withdraws) — and `SimulatedInstance`'s own rule is never to
+  share the thing whose sharing hides the defect, which for a process-local cache is the gate.
+  Giving each instance its own gate then made the test **fail**, and the reason was the second
+  finding: it had been resting on autocommit, so B's withdrawal had never been a committed
+  fact and the commit boundary was asserted nowhere. It now **straddles the commit**, which is
+  the invariant's own wording (*"from the transaction that records a withdrawal"*): while
+  uncommitted A still permits — an instance refusing there would be reading dirty — and on A's
+  very next decision after the commit it refuses. Deterministic, no sleep, no polling.
+  **And reading the item's own words found the demonstration aimed one level too low.** It
+  proved the **gate's answer** flipped across instances and left the **capability** to a
+  composition argument over two green tests — the `P1-TSK-027` shape, where both halves worked
+  and nothing joined them. The bullet names the capability, so
+  `ConsentWithdrawalBlocksTheCapabilityDatabaseTest` drives the real consumer with the real
+  case store, party store, gate and audit/outbox writers, wired as `KycBeans` wires them, and
+  asserts that after a withdrawal committed on another instance it opens **nothing** — no
+  case, no audit record, no announcement — with a positive control, so a capability that could
+  never open anything cannot pass it.
+  **Three demonstrations performed, and two of them bound the claim rather than confirming
+  it.** D1, the acceptance: the gate's read replaced by a cached value — caught by the race
+  **and** by the capability test. D2: the same cache hidden one layer down in
+  `JdbcConsentStore` — caught by the race, and **survived the field detector**, because a
+  `Map<String, Boolean>` names no consent type; so the behavioural test is the load-bearing
+  control there and the detector is the second, blind in a different direction. D3: a cache
+  that remembers only **refusals** — **survived** the race, correctly, since withdrawal still
+  takes effect and `INV-CNS-03` says nothing about a stale refusal — and was caught at the
+  other door by the kafka test, whose second half opens a case for a party refused moments
+  earlier. Neither test covers a cache alone, and §3 records that rather than leaving a reader
+  of either to assume it does. 1019 hermetic tests, 577 database tests, 14 kafka tests.
+  **M2.5 CLOSES: 4 of 4.**
 
 ## P2-EPIC-07 — Observability and the gate (M2.6)
 

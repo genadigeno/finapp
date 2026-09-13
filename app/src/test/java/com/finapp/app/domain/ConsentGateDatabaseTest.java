@@ -11,6 +11,7 @@ import com.finapp.consent.ConsentRecord;
 import com.finapp.consent.ConsentStore;
 import com.finapp.consent.JdbcConsentStore;
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.platform.testing.database.SimulatedInstance;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.security.SecureRandom;
 import java.sql.Connection;
@@ -107,34 +108,71 @@ class ConsentGateDatabaseTest {
     }
 
     /**
-     * {@code INV-CNS-03}, in the {@code P0-TST-009} convention: two connections standing for
-     * two instances, and the withdrawal is effective on the other instance's <strong>very next
-     * decision</strong> — not after a TTL, not after a restart. This is the demonstration
-     * M2.5's acceptance names, performed.
+     * {@code INV-CNS-03}, in the {@code P0-TST-009} convention: two instances, and the
+     * withdrawal is effective on the other's <strong>very next decision</strong> — not after a
+     * TTL, not after a restart. This is the demonstration M2.5's acceptance names, performed,
+     * and {@code P2-TST-002}'s subject.
+     *
+     * <h2>Each instance gets its own gate, and that is the convention rather than ceremony</h2>
+     *
+     * <p>{@code SimulatedInstance}'s javadoc states the rule this follows: a test that shares
+     * the thing whose sharing hides the defect proves far less than it looks like it proves.
+     * Here the defect is a <strong>process-local cache</strong>, one {@code ConsentGate} bean
+     * per deployed instance — so two instances must be two gates, or the test could not tell a
+     * gate that caches from one that does not on the axis that matters. Sharing one gate
+     * happened to catch the mutation anyway (instance A memoises before B withdraws), and
+     * "happened to" is what this convention exists to remove.
+     *
+     * <h2>The boundary asserted is the COMMIT, which is what makes this deterministic</h2>
+     *
+     * <p>The invariant's own words are <em>"from the transaction that records a withdrawal"</em>,
+     * so the test holds B's transaction open and asserts <strong>both sides</strong>: while the
+     * withdrawal is uncommitted A still permits — it is not yet a fact, and an instance that
+     * refused here would be reading dirty — and on A's very next decision after the commit it
+     * refuses. No sleep, no polling, no timing luck: the commit is the event, and the
+     * assertion straddles it.
      */
     @Test
     @DisplayName("a withdrawal on one instance refuses the gate on another, immediately")
     void withdrawalOnOneInstanceRefusesOnAnother() throws SQLException {
         UUID party = IDS.next();
-        try (Connection instanceA = DatabaseRoles.application();
-                Connection instanceB = DatabaseRoles.application()) {
+        try (SimulatedInstance instanceA = SimulatedInstance.inAgreementWithTheServer();
+                SimulatedInstance instanceB = SimulatedInstance.inAgreementWithTheServer()) {
+            // Its own connection, its own clock, and its own gate - the component whose
+            // process-local state is the whole subject.
+            ConsentGate<Connection> gateOnA = new ConsentGate<>(new JdbcConsentStore());
+            ConsentGate<Connection> gateOnB = new ConsentGate<>(new JdbcConsentStore());
+
             store.append(
-                    instanceA,
+                    instanceA.connection(),
                     ConsentRecord.grant(IDS, CLOCK, party, ConsentPurpose.KYC_PROCESSING, 1));
-            assertThat(gate.permits(instanceA, party, ConsentPurpose.KYC_PROCESSING))
-                    .as("instance A holds a basis and has just seen it")
+            instanceA.commit();
+            assertThat(gateOnA.permits(instanceA.connection(), party, ConsentPurpose.KYC_PROCESSING))
+                    .as("instance A holds a basis and has just seen it - which is what gives a"
+                            + " cache something stale to serve")
                     .isTrue();
 
-            // Instance B records the withdrawal - the person acting through whichever
-            // instance the load balancer picked.
+            // Instance B records the withdrawal - the person acting through whichever instance
+            // the load balancer picked, which is never guaranteed to be A - and HOLDS the
+            // transaction open.
             store.append(
-                    instanceB,
+                    instanceB.connection(),
                     ConsentRecord.withdrawal(
                             IDS, CLOCK, party, ConsentPurpose.KYC_PROCESSING, 1));
 
-            assertThat(gate.permits(instanceA, party, ConsentPurpose.KYC_PROCESSING))
+            assertThat(gateOnA.permits(instanceA.connection(), party, ConsentPurpose.KYC_PROCESSING))
+                    .as("an UNCOMMITTED withdrawal is not yet a fact: A still permits, and an"
+                            + " instance that refused here would be reading dirty")
+                    .isTrue();
+
+            instanceB.commit();
+
+            assertThat(gateOnA.permits(instanceA.connection(), party, ConsentPurpose.KYC_PROCESSING))
                     .as("instance A's very next decision refuses: an eventually-withdrawn"
                             + " consent is an unwithdrawn consent (INV-CNS-03)")
+                    .isFalse();
+            assertThat(gateOnB.permits(instanceB.connection(), party, ConsentPurpose.KYC_PROCESSING))
+                    .as("and so does the instance that recorded it")
                     .isFalse();
         }
     }
