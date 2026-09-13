@@ -12,7 +12,7 @@ import java.util.UUID;
  * accounts in <strong>one</strong> transaction, which is only possible because every write here
  * joins the transaction of the operation performing it.
  *
- * <p><strong>Deliberately two methods.</strong> No {@code create} for operational accounts (the
+ * <p><strong>Deliberately three methods.</strong> No {@code create} for operational accounts (the
  * seed migration is their one writer, `P3-TSK-003`), no status move (`P3-TSK-014`'s close is the
  * first act that needs one and its design decides the conditional), no {@code findById}
  * (`P3-TSK-005`'s postings are its first caller) — a read with no caller is dead code carrying
@@ -53,4 +53,14 @@ public interface LedgerAccountStore<T> {
      */
     Optional<LedgerAccount> findOwned(
             T unitOfWork, UUID ownerRef, AccountPurpose purpose, CurrencyCode currency);
+
+    /**
+     * The platform's own account for one purpose in one currency, if seeded — the read behind
+     * {@link ChartOfAccounts#resolve} (`P3-TSK-003`). The predicate is the operational partial
+     * index's own ({@code owner_ref IS NULL}), so "the operational account" and "the row the
+     * index guards" are one question. Absence is a seed defect; {@code ChartOfAccounts} is
+     * where that becomes loud, which is why this stays an {@code Optional} and that does not.
+     */
+    Optional<LedgerAccount> findOperational(
+            T unitOfWork, AccountPurpose purpose, CurrencyCode currency);
 }

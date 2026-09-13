@@ -3663,7 +3663,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   `P3-TSK-014`'s status move will be the first. 1035 hermetic / 588 database tests.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
 
-**P3-TSK-003 — The operational chart, seeded by migration** — `READY`
+**P3-TSK-003 — The operational chart, seeded by migration** — `COMPLETE` (2026-09-13)
 - **Objective**: the platform's own accounts exist before anything can post, because a double
   entry needs both sides.
 - **Context**: Ledger. **Scope**: `V003` seeding operational accounts per supported currency —
@@ -3682,11 +3682,31 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   asserted so the seam stays a seam.
 - **Accept**: `ChartOfAccounts.resolve(purpose, currency)` answers for every combination; a
   missing seed fails the build.
+- **Gate evidence (2026-09-13)**: the task's one open design question — *which currencies?* —
+  answered explicitly rather than implied by a migration: **`SupportedCurrencies` (EUR, GBP,
+  USD) is the single definition in `ledger`**, jurisdiction-neutral, three so the
+  per-currency structure (the Phase 9 seam) is exercised rather than assumed; growing it is
+  a new seed migration in the same change, refused by `OperationalChartMigrationTest` until
+  both halves agree. Seed ids are **hand-minted UUIDv7 literals** — `gen_random_uuid()` is
+  v4 and `LedgerAccountId.of` would refuse it at rehydrate — and deterministic across
+  environments, which for operational accounts is a feature; timestamps are literals, never
+  `now()`. The seeded types are the seed's recorded decision, pinned by test as its
+  contract. **Eight mutations: seven caught by the intended assertion** — a seed row removed
+  (caught twice: the hermetic reconciliation and `resolve` against a from-scratch database),
+  a stray row added, a currency added with no seed, a *coherent-but-wrong* type flip (the
+  case only the pinned contract can catch: ASSET/DEBIT passes every schema CHECK), a v4 id,
+  the owned-purpose guard removed — **and one survived correctly**: `findOperational`
+  losing `owner_ref IS NULL`, because the purpose→owner-kind→owner-ref CHECK chain makes an
+  owned row with an operational purpose unstorable; the predicate is recorded defence in
+  depth for a future mixed-kind purpose. The seam test is **self-arming**: zero lines
+  reference `FX_POSITION`/`SUSPENSE_UNMATCHED`, structurally true while `journal_line` does
+  not exist and live from the day `P3-TSK-005` creates it. 1040 hermetic / 592 database
+  tests.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-FIN`
 
 ## P3-EPIC-02 — Postings that cannot be wrong (M3.2)
 
-**P3-TSK-004 — `JournalEntry` and `JournalLine`: the balance rule at the domain** — `TODO`
+**P3-TSK-004 — `JournalEntry` and `JournalLine`: the balance rule at the domain** — `READY`
 - **Objective**: an unbalanced entry cannot be **constructed** (`INV-LED-01`, `INV-LED-02`).
 - **Context**: Ledger. **Scope**: the two aggregates; `Direction` enum; balancing validated per
   currency at construction; ≥2 lines; posting date and value date as **required inputs**, never

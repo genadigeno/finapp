@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-13 (`P3-TSK-002`)
+Last updated: 2026-09-13 (`P3-TSK-003`)
 
 ---
 
@@ -78,7 +78,7 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **2 of 24** backlog items.
+same day with `P3-TSK-001`. **3 of 24** backlog items; M3.1 closed the same day.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -118,11 +118,20 @@ class, again).
 
 ## Current Milestone
 
-**M3.1 — The chart exists.** `P3-TSK-001` … `P3-TSK-003`; **2 of 3 — next `P3-TSK-003`
-(`READY`)** — the `ledger` module, its schema and the privilege floor, then the
-`LedgerAccount` aggregate whose classification cannot drift, then the operational chart seeded by
-migration. Acceptance: a ledger account is created with a type, normal balance and currency, and
-its classification cannot be changed once posted to.
+**M3.2 — A posting is possible and cannot be wrong.** `P3-TSK-004` … `P3-TSK-007`;
+**0 of 4, opens with `P3-TSK-004` (`READY`)** — the entry and line aggregates whose
+unbalanced shapes cannot be constructed, then persistence balanced-by-constraint and
+immutable-by-privilege, then the idempotent posting command, then the posting permissions.
+Acceptance: an unbalanced entry is impossible at the domain **and** the database;
+`UPDATE`/`DELETE` denied on every column; ten identical keys produce one effect.
+
+**M3.1 — The chart exists.** `P3-TSK-001` … `P3-TSK-003`; **CLOSED 2026-09-13, 3 of 3** —
+the module and privilege floor, the `LedgerAccount` whose classification cannot drift, the
+operational chart seeded by migration. The milestone's stated acceptance — *a ledger account
+is created with a type, normal balance and currency, and its classification cannot be changed
+once posted to* — holds by demonstration: the freeze proven in two layers with a positive
+control between them, and the chart resolving every purpose in every supported currency
+before anything can post.
 
 ### Phase 2 milestones — all closed
 
@@ -333,11 +342,73 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-002` is `COMPLETE`. **Next: `P3-TSK-003` (`READY`)** — the
-operational chart, seeded by migration: the platform's own accounts exist before anything can
-post, because a double entry needs both sides.
+**None in progress.** `P3-TSK-003` is `COMPLETE` and **M3.1 closes, 3 of 3**. **Next:
+`P3-TSK-004` (`READY`)** — `JournalEntry` and `JournalLine`, the balance rule at the domain:
+an unbalanced entry cannot be constructed.
 
 ### Just completed
+
+**`P3-TSK-003` — The operational chart, seeded by migration** — `COMPLETE` (2026-09-13).
+**M3.1 closes, 3 of 3.** The platform's own accounts exist before anything can post,
+because a double entry needs both sides — and the task's one open design question is
+answered explicitly rather than implied by a migration.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| `resolve(purpose, currency)` answers for every combination | `OperationalChartDatabaseTest`: all fifteen resolve through the application role against a from-scratch database, each row's derivations checked on the way back |
+| A missing seed fails the build | Proven twice by one mutation: the removed row fails the hermetic reconciliation **and** the resolve suite — and a gap at run time throws naming purpose and currency, never an empty `Optional` a caller forgets |
+
+### The supported-currency set now exists, and it is a definition rather than an accident
+
+No document defined which currencies the platform operates in — the backlog said *"per
+supported currency"* and nothing said which. **`SupportedCurrencies` (EUR, GBP, USD) is the
+single definition**, in `ledger`, with the seed derived from it and reconciled in both
+directions: a currency added without its seed rows fails the build (proven by mutation), and
+seed rows outside the definition fail the stray-row count. Three currencies, deliberately —
+one would let per-purpose assumptions creep in unexercised, and the per-currency structure
+is the Phase 9 seam — and jurisdiction-neutral, because a national default is a decision
+Phase 3 has no business taking. "Supported" means **postable**: every currency here has a
+residual account before any allocation posts (`INV-BAL-03`) and a suspense account before
+Phase 8 needs one (`INV-REC-05`); `CurrencyCode` still accepts all of ISO 4217, because a
+historical row must read back whatever the current list says (`INV-MON-05`).
+
+### The seed's mechanics each close a defect that would have arrived silently
+
+**Ids are hand-minted UUIDv7 literals**: `gen_random_uuid()` is v4, and the first resolve
+would have thrown at rehydrate (`LedgerAccountId.of` validates v7 — the `P1-TSK-028` lesson
+applied at authoring time, and pinned by a test over every literal's version nibble).
+Deterministic ids across environments are a feature for operational accounts — a runbook can
+name them. **Timestamps are literals, never `now()`**: a seed whose `created_at` varies per
+environment records the deployment schedule, not the chart. **The types are the seed's
+decision, recorded and pinned**: clearing ASSET, fees REVENUE, FX position ASSET, residual
+EXPENSE, suspense LIABILITY (value we hold that is not ours is value owed to somebody) —
+and the mutation that flips one **coherently** (suspense to ASSET/DEBIT, satisfying every
+schema `CHECK`) is caught only by the pinned contract, which is why the pin exists.
+
+### One mutation survived, correctly, and the reason is recorded
+
+`findOperational` losing its `owner_ref IS NULL` predicate changes nothing today: the
+purpose→owner-kind→owner-ref `CHECK` chain makes an owned row with an operational purpose
+unstorable, so the rows the predicate would exclude cannot exist. The predicate stays as
+recorded defence in depth — it is the partial index's own, and it is what keeps the answer
+right if a future purpose is ever held by more than one kind.
+
+### The seam test arms itself on schedule
+
+*Nothing posts to `FX_POSITION` or `SUSPENSE_UNMATCHED` in Phase 3* is asserted the only
+honest way available before a posting table exists: zero journal lines reference the seam
+accounts, with the count guarded by `to_regclass` — structurally true today, and **live from
+the day `P3-TSK-005` creates the table**, the freeze trigger's own pattern. Probing also
+re-met that trigger's lesson in the test itself: PostgreSQL parses a whole statement at
+prepare time, so the probe and the count are two statements, never one `CASE` around an
+absent name.
+
+**Eight mutations: seven caught by the intended assertion, one survived correctly** — a
+seed row removed (caught in both tiers), a stray row added, a currency added with no seed,
+the coherent type flip, a v4 id, the owned-purpose guard removed, and the predicate above.
+**1040 hermetic tests, 592 database tests.**
+
+### Previously
 
 **`P3-TSK-002` — `LedgerAccount`: typed, single-currency, and unchangeable once posted to**
 — `COMPLETE` (2026-09-13). **M3.1 is 2 of 3.** The chart's row exists, and `INV-LED-06`
@@ -6982,9 +7053,9 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-002` (2026-09-13): the `LedgerAccount` aggregate, the
-chart's schema and the two-layer freeze. The next work is `P3-TSK-003`, the operational
-chart seeded by migration.
+The last work performed was `P3-TSK-003` (2026-09-13): the operational chart seeded by
+migration, and the `SupportedCurrencies` definition. The next work is `P3-TSK-004`,
+`JournalEntry` and `JournalLine`.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -7226,18 +7297,20 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P3-TSK-003` — The operational chart, seeded by migration.** Status `READY`; depends on
-`P3-TSK-002` (`COMPLETE`).
+**`P3-TSK-004` — `JournalEntry` and `JournalLine`: the balance rule at the domain.** Status
+`READY`; depends on `P3-TSK-002` (`COMPLETE`). M3.2's opener, and the phase's first
+High-risk task.
 
-The platform's own accounts exist before anything can post, because a double entry needs
-both sides: `V003` seeding operational accounts per supported currency —
-`SETTLEMENT_CLEARING`, `FEE_REVENUE`, `FX_POSITION`, `ROUNDING_RESIDUAL`,
-`SUSPENSE_UNMATCHED` — and a `ChartOfAccounts` lookup resolving purpose + currency to the
-account, unambiguous because `P3-TSK-002`'s partial unique index made two operational rows
-for one pair impossible. The suspense and rounding accounts are the recorded seams
-(`INV-REC-05`, `INV-BAL-03`): they exist unused so Phase 8 can park value and the allocator
-can post residue without corrupting customer balances. Risk: Low-Medium. Cx: S-M.
-DoD: `DOD-FIN`.
+An unbalanced entry cannot be **constructed** (`INV-LED-01`, `INV-LED-02`): the two
+aggregates and the `Direction` enum, balancing validated **per currency** at construction,
+at least two lines, amounts positive with direction carrying the sign — so "unbalanced" is
+two sums that must be equal, never a subtraction that happens to be non-zero. Posting date
+and value date are **required inputs, never clock reads** (`DOMAIN_MODEL.md` §Time: a
+component that derives a posting date from the clock has silently decided execution time
+and accounting date are the same thing). Balanced and unbalanced shapes across JPY(0),
+USD(2) and BHD(3); a multi-currency entry balances in each; property test over generated
+line sets. No persistence, no command, no reversal — `P3-TSK-005`/`-006`/`-016`. Risk:
+High. Cx: M. DoD: `DOD-FIN`, `DOD-DOMAIN`.
 
 ### Superseded: the transition itself
 
@@ -7270,6 +7343,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-13 | **`P3-TSK-003` complete — the operational chart, and M3.1 closes (3 of 3).** The platform's own accounts exist before anything can post: `V003` seeds five operational purposes × three currencies, and `ChartOfAccounts.resolve` answers for every combination or throws naming the gap — never an empty `Optional`, because the caller that could handle absence does not exist. **The task's one open design question answered explicitly**: no document defined the supported currencies, so `SupportedCurrencies` (EUR, GBP, USD — jurisdiction-neutral, three so the per-currency structure is exercised) is the single definition, seed-reconciled in both directions and grown only by a reviewed seed migration. Seed ids are hand-minted UUIDv7 literals (v4 would fail rehydrate; deterministic ids are a runbook feature), timestamps literals never `now()`, and the type decisions (clearing ASSET, fees REVENUE, FX ASSET, residual EXPENSE, suspense LIABILITY) recorded in the migration and pinned by test — the pin being what catches a **coherent** flip that satisfies every schema CHECK. The seam test is self-arming: zero lines reference `FX_POSITION`/`SUSPENSE_UNMATCHED`, `to_regclass`-guarded, live the day `P3-TSK-005` creates the table. **Eight mutations: seven caught, one survived correctly** (`findOperational` losing `owner_ref IS NULL` — the CHECK chain makes the excluded rows unstorable; recorded defence in depth). 1040 hermetic tests, 592 database tests. Next: `P3-TSK-004`, M3.2 opens. |
 | 2026-09-13 | **`P3-TSK-002` complete — the chart's row, and `INV-LED-06` holds against every writer.** `LedgerAccount` (typed, single-currency, owner-opaque per ADR-0042), four enums plus the status machine, and `V002` — with **two derivations, no free choices**: `normal_balance` from the type and `owner_kind` from the purpose, each derived in one function, stored, and held to its derivation by a generated `CHECK`, so a writer that never ran our code cannot store an `ASSET` that grows by credit or hand fee revenue to a customer. **The freeze has two layers**: identity fields (purpose, currency, owner, creation instant) frozen unconditionally — an unposted account with the wrong currency is corrected by opening another — and the classification frozen exactly when a `journal_line` references the account, via a trigger that probes `P3-TSK-005`'s future table through `to_regclass()`/`EXECUTE` so the branch sleeps until the table exists rather than leaving a window where the schema permits what the invariant forbids. Proven with a positive control between the layers: the migrator corrects an unposted account, a stand-in line row lands, the same update refuses. The grant is column-narrowed to `(status, status_changed_at)` and proven per column — the grant binds the application, the trigger binds everyone else, two controls blind in different directions. One factory (`owned`); the operational chart is seeded by migration (`P3-TSK-003`), so `createOrConverge` refuses unowned aggregates and ten instances converge on one row behind a savepoint; a second partial index keeps the operational chart unambiguous per purpose+currency (`INV-BAL-03`'s designated account staying designated). `OwnershipIsScopedTest` demanded no entry — verified: neither store method takes an `EntityId`. **Six mutations, all caught by the intended assertion.** 1035 hermetic tests, 588 database tests. Next: `P3-TSK-003`. |
 | 2026-09-13 | **`P3-TSK-001` complete — the `ledger` module and the privilege floor; Phase 3 is `IN_PROGRESS`.** A guarded module on the documented direction, a `ledger` schema owned by `finapp_migrator` with `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, **no tables**, and deliberately no `ALTER DEFAULT PRIVILEGES` — because the tables that matter most here are exactly the ones that must never receive `UPDATE` or `DELETE`, each table's grants arrive in the migration that creates it. That ownership is what makes `INV-LED-03`, `INV-HIST-01` and `INV-LED-04` enforceable at `DB-PRIVILEGE` at all, which is why it precedes the first table. Two audit actions under the deliberately-few licence: `ledger.JournalEntryPosted` (no reason) and `ledger.AdjustmentPosted` (**reason required**, `INV-REV-04`), both `NOT_YET_EMITTED` naming `P3-TSK-006` and `P3-TSK-017`. Isolation both directions applied at design time rather than rediscovered: `ledger` forbids every sibling and `app`, and all four siblings forbid `ledger`. Migrate → validate → re-migrate on a throwaway PostgreSQL confirmed owner, ACL and one history row. **The four planned mutation probes and the re-run after the catalogue fix were not performed** — the owner stopped that run and closed the gate without it; coverage is evidenced by the registry sweep having reached `LedgerAuditAction`. **The registry caught this task's own catalogue row** (`Yes` where the convention is `**Yes**`) on the one action whose reason is mandated. `ledger/gradle.lockfile` byte-identical to `consent`'s, verification metadata unchanged, the `build-logic` Kotlin drift reverted a third time; two five-phase-stale *"no business modules exist yet"* comments and a stale §Active Work corrected. 1027 hermetic tests, 584 database tests. Next: `P3-TSK-002`. |
 | 2026-09-13 | **Phase 2 → Phase 3 transition conducted — Phase 2 `COMPLETE` (confirmed), Phase 3 `READY`.** A **second, independent** pass over the phase its exit review had ruled complete hours earlier (the Phase 1 → 2 precedent: a gate assessed only by whoever finished the work is not two checks). Sixteen completion categories **all `PASS`**; the mandatory multi-instance question answered **`PASS`** across all twenty-one hazards named, with every contended decision arbitrated by PostgreSQL and raced in a test using one connection per simulated instance; security `PASS` with five limits owned; 1025 hermetic / 584 database / 14 kafka / 147 architecture tests green on a fresh run. **The transition's own finding**: `DISTRIBUTED_EXECUTION.md` §3's component register had **no Phase 2 entries at all**, ending at `SessionRevocation` while the phase had introduced eleven pieces of shared state — and §3 is an **enforced exemption set**, not a record, so an absent row is a component whose next author finds no precedent and no recorded reason. Repaired with eleven rows and the note the audit earned: **Phase 2 introduced no coordination primitive of its own**, every row being one of four protocols Phase 0 already proved. Third occurrence of this decay class, now named: *a register maintained by discipline decays exactly where nobody is looking.* **Four ADRs taken, all irreversible once postings exist**: ADR-0039 (`READ COMMITTED`; postings are inserts and take no lock; balance-dependent decisions take `SELECT … FOR UPDATE` on the account row — **`SERIALIZABLE` rejected**, because a retry loop around a money-moving command is where a lost response becomes two effects), ADR-0040 (a **flat typed chart**, roll-up by attribute, no hierarchy to re-parent), ADR-0041 (the projection updates **in the posting's transaction** and **no decision may read it** — an async projector buys lag that `INV-BAL-05` then forces us to bound, monitor and exclude from every decision path), ADR-0042 (Customer Account / Ledger Account / Wallet / Operational Account are four things; ADR-0029's test one layer down). **No new invariant group**, unlike the last two transitions: Phase 3's properties were catalogued at initiation, because Phase 3 is what the catalogue was written for — and the plan states the exit review's lesson where it will be read, that the in-scope set is whatever the **catalogue** marks `Phase: 3`. Produced `PHASE_3_PLAN.md`, 24 backlog items across 8 epics and 8 milestones, extended Phase 3's exit criteria with the seven measurable ones the list omitted, and rewrote `LEDGER_MODEL.md` from a 28-line stub. **No application code was written**, which is the constraint a transition is performed under. Next: `P3-TSK-001`. |

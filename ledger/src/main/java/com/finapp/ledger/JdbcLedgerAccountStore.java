@@ -130,6 +130,32 @@ public final class JdbcLedgerAccountStore implements LedgerAccountStore<Connecti
         }
     }
 
+    @Override
+    public Optional<LedgerAccount> findOperational(
+            Connection unitOfWork, AccountPurpose purpose, CurrencyCode currency) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(purpose, "purpose must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE owner_ref IS NULL AND purpose = ? AND currency = ?")) {
+            select.setString(1, purpose.name());
+            select.setString(2, currency.code());
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe(
+                            "reading the operational " + purpose + " account in " + currency,
+                            failure));
+        }
+    }
+
     private static LedgerAccount rehydrate(ResultSet row) throws SQLException {
         String glCode = row.getString("gl_code");
         UUID ownerRef = row.getObject("owner_ref", UUID.class);
