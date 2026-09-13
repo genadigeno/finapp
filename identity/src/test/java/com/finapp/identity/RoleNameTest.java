@@ -60,14 +60,35 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("the two grants are disjoint, so the populations really are separate")
-    void theGrantsAreDisjoint() {
-        // Neither exact-set assertion alone says the SETS do not overlap - each pins its own
-        // role. Disjointness is the design's own word ("the first real least-privilege split
-        // between administrative populations"), so it gets its own assertion, and a permission
-        // added to both roles fails here even if somebody edits both exact-set tests to match.
-        assertThat(RoleName.ADMINISTRATOR.permissions())
-                .doesNotContainAnyElementsOf(RoleName.KYC_REVIEWER.permissions());
+    @DisplayName("LEDGER_OPERATOR grants exactly the two ledger permissions - nothing else")
+    void ledgerOperatorGrantsExactlyTwo() {
+        // One role, two permissions (P3-TSK-007): Phase 3 has one ledger-operating population,
+        // and the vocabulary stays precise so P3-TSK-017 can check LEDGER_ADJUST specifically.
+        // Exact set, so the role quietly gaining ROLE_ASSIGN - the permission that grants
+        // permissions - is a failing test rather than a silent expansion.
+        assertThat(RoleName.LEDGER_OPERATOR.permissions())
+                .as("operating the ledger is not managing identities or reviewing cases")
+                .containsExactlyInAnyOrder(
+                        PermissionName.LEDGER_POST, PermissionName.LEDGER_ADJUST);
+    }
+
+    @Test
+    @DisplayName("every pair of grants is disjoint, so the populations really are separate")
+    void theGrantsArePairwiseDisjoint() {
+        // No exact-set assertion alone says the SETS do not overlap - each pins its own role.
+        // Pairwise over values() rather than a hand-picked pair (the P2-TSK-004 assertion,
+        // generalised by P3-TSK-007 when the third role arrived), so a fourth role is held to
+        // the property without anyone editing this test - the stale-list defect, closed the way
+        // this repository closes it. A permission added to two roles fails here even if
+        // somebody edits both exact-set tests to match.
+        RoleName[] roles = RoleName.values();
+        for (int i = 0; i < roles.length; i++) {
+            for (int j = i + 1; j < roles.length; j++) {
+                assertThat(roles[i].permissions())
+                        .as("%s and %s must stay disjoint populations", roles[i], roles[j])
+                        .doesNotContainAnyElementsOf(roles[j].permissions());
+            }
+        }
     }
 
     @Test
@@ -106,6 +127,7 @@ class RoleNameTest {
         // is the other half: that the generator produces what the reconciliation compares. Kept and
         // made load-bearing, where PermissionName's identical method was deleted as dead - the
         // P1-TSK-013 disposition, where isLiveAt was kept and idleBoundAfterUseAt removed.
-        assertThat(RoleName.sqlValueList()).isEqualTo("'ADMINISTRATOR', 'KYC_REVIEWER'");
+        assertThat(RoleName.sqlValueList())
+                .isEqualTo("'ADMINISTRATOR', 'KYC_REVIEWER', 'LEDGER_OPERATOR'");
     }
 }

@@ -1388,7 +1388,8 @@
           "role": {
             "enum": [
               "ADMINISTRATOR",
-              "KYC_REVIEWER"
+              "KYC_REVIEWER",
+              "LEDGER_OPERATOR"
             ],
             "type": "string"
           }

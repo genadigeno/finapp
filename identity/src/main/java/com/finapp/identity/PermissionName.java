@@ -67,5 +67,33 @@ public enum PermissionName {
      * the trail rather than a capability that was silently always there ({@code P1-TSK-028}'s
      * honesty about what refusing self-elevation buys).
      */
-    KYC_REVIEW
+    KYC_REVIEW,
+
+    /**
+     * Command a journal posting directly over an HTTP surface (`P3-TSK-007`).
+     *
+     * <p>Posting authority becomes a privileged capability rather than an ambient one — but the
+     * permission gates <strong>surfaces where a person commands a posting</strong>, never the
+     * in-process command path: {@code PostingService} is the one write path {@code INV-LED-04}
+     * permits, invoked by the platform's own orchestrations under the flow's actor (a Phase 4
+     * transfer runs as the customer, and a customer moving their own money holds no ledger
+     * permission). It names an action the registry already declares
+     * ({@code ledger.JournalEntryPosted}); no production endpoint carries it yet, deliberately —
+     * inventing one to give the check a caller would be a surface chosen to suit a test (the
+     * {@code KYC_REVIEW} precedent), so it ships with a probe.
+     */
+    LEDGER_POST,
+
+    /**
+     * Post a manual adjustment — the highest-risk manual financial action (`P3-TSK-007`).
+     *
+     * <p>Distinct from {@link #LEDGER_POST} even though one role holds both today, because the
+     * <em>checks</em> differ per surface: `P3-TSK-017`'s adjustment endpoint checks exactly this
+     * one, and an adjustment additionally demands a recorded reason ({@code INV-REV-04}) with
+     * four-eyes arriving as recorded debt ({@code INV-AUD-04}). Splitting a permission later
+     * means re-auditing every check site; splitting a role later is a new role and a migration —
+     * so the vocabulary is precise and the bundling is coarse. Names
+     * {@code ledger.AdjustmentPosted}; the endpoint is `P3-TSK-017`'s, so it ships with a probe.
+     */
+    LEDGER_ADJUST
 }

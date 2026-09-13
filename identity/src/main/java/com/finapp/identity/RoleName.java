@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  * data, which means 'why was this denied?' is answered by evaluating a rule set rather than by
  * reading a method."* Putting the mapping in a table would give away exactly what the ADR paid for.
  *
- * <h2>Two roles, one per kind of privileged actor — and still no `CUSTOMER` role</h2>
+ * <h2>One role per kind of privileged actor — and still no `CUSTOMER` role</h2>
  *
  * <p>There is deliberately no `CUSTOMER` role. Every session endpoint is available to every
  * session-holder against their **own** resources, and the control there is ownership rather than
@@ -27,11 +27,12 @@ import java.util.stream.Collectors;
  *
  * <p>The second role arrived with the second privileged population (`P2-TSK-004`), not before:
  * ADR-0031 records role explosion as a medium-term risk and declines to pre-solve it, and a role
- * exists here when a distinct trust decision does. **The two grants are disjoint on purpose** —
- * managing identities and reviewing cases are different decisions about different people, and the
- * disjointness is what `RoleNameTest`'s exact-grant assertions hold: a role quietly gaining the
- * other's permission is the mutation `P1-TSK-020` recorded as untestable at one role, and this is
- * the task that made it fail the build.
+ * exists here when a distinct trust decision does. **The grants are pairwise disjoint on
+ * purpose** — managing identities, reviewing cases and operating the ledger are different
+ * decisions about different people, and the disjointness is what `RoleNameTest`'s exact-grant
+ * assertions hold: a role quietly gaining another's permission is the mutation `P1-TSK-020`
+ * recorded as untestable at one role, made a failing test by `P2-TSK-004` and held pairwise
+ * over every role since `P3-TSK-007`.
  */
 public enum RoleName {
 
@@ -47,7 +48,27 @@ public enum RoleName {
      * The first assignment needs no bootstrap: administrators exist and hold
      * {@code ROLE_ASSIGN}, so a reviewer arrives through the ordinary audited endpoint.
      */
-    KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW));
+    KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW)),
+
+    /**
+     * Operates the ledger and nothing else (`P3-TSK-007`): commands postings and manual
+     * adjustments over the surfaces that check {@link PermissionName#LEDGER_POST} and
+     * {@link PermissionName#LEDGER_ADJUST}.
+     *
+     * <p><strong>One role holding two permissions</strong>, because a role exists when a
+     * distinct trust decision does and Phase 3 has one ledger-operating population — while the
+     * permission vocabulary stays precise so `P3-TSK-017`'s adjustment endpoint can check
+     * {@code LEDGER_ADJUST} specifically. Holds none of the administrative or review
+     * permissions, and they hold neither of these: posting the platform's money and managing
+     * the people who hold it are different trust decisions, asserted pairwise and over HTTP in
+     * both directions ({@code INV-AUD-03}).
+     *
+     * <p><strong>The self-elevation limit, restated rather than re-argued</strong>
+     * (`P1-TSK-028`): an administrator holding {@code ROLE_ASSIGN} can grant themselves this
+     * role, and what the split buys is that the escalation is a recorded grant in the trail
+     * rather than a capability that was silently always there.
+     */
+    LEDGER_OPERATOR(EnumSet.of(PermissionName.LEDGER_POST, PermissionName.LEDGER_ADJUST));
 
     private final Set<PermissionName> permissions;
 

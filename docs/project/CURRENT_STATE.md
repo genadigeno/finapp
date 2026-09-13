@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-13 (`P3-TSK-006`)
+Last updated: 2026-09-14 (`P3-TSK-007`)
 
 ---
 
@@ -78,7 +78,7 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **6 of 24** backlog items; M3.1 closed the same day.
+same day with `P3-TSK-001`. **7 of 24** backlog items; M3.1 and M3.2 are closed.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -118,13 +118,21 @@ class, again).
 
 ## Current Milestone
 
+**M3.3 — A balance is explainable.** `P3-TSK-008` … `P3-TSK-010`;
+**0 of 3 — next `P3-TSK-008` (`READY`)** — the derivation from postings, the
+transactional projection, and the verification job.
+Acceptance: a balance recomputed from zero equals the projection, under sustained
+concurrent posting.
+
 **M3.2 — A posting is possible and cannot be wrong.** `P3-TSK-004` … `P3-TSK-007`;
-**3 of 4 — next `P3-TSK-007` (`READY`)** — the entry and line
-aggregates whose unbalanced shapes cannot be constructed, then persistence
-balanced-by-constraint and immutable-by-privilege, then the idempotent posting command,
-then the posting permissions.
-Acceptance: an unbalanced entry is impossible at the domain **and** the database;
-`UPDATE`/`DELETE` denied on every column; ten identical keys produce one effect.
+**CLOSED 2026-09-14, 4 of 4** — the entry and line aggregates whose unbalanced shapes
+cannot be constructed, persistence balanced-by-constraint and immutable-by-privilege,
+the idempotent posting command, and the posting permissions. The milestone's stated
+acceptance holds by demonstration: an unbalanced entry is impossible at the domain
+(`P3-TSK-004`'s unconstructible shapes) **and** the database (`P3-TSK-005`'s deferred
+constraint triggers against raw SQL); `UPDATE`/`DELETE` denied on every column of both
+journal tables, with the append-only trigger binding even the migrator; and ten
+identical keys produce one effect, counted in the table (`P3-TSK-006`'s race).
 
 **M3.1 — The chart exists.** `P3-TSK-001` … `P3-TSK-003`; **CLOSED 2026-09-13, 3 of 3** —
 the module and privilege floor, the `LedgerAccount` whose classification cannot drift, the
@@ -343,10 +351,59 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-006` is `COMPLETE`; M3.2 is 3 of 4. **Next: `P3-TSK-007`
-(`READY`)** — the `LEDGER_POST`/`LEDGER_ADJUST` permissions and the ledger role.
+**None in progress.** `P3-TSK-007` is `COMPLETE`; **M3.2 closes at 4 of 4**. **Next:
+`P3-TSK-008` (`READY`)** — the balance derived from postings, opening M3.3.
 
 ### Just completed
+
+**`P3-TSK-007` — `LEDGER_POST` and `LEDGER_ADJUST` permissions, and the ledger role**
+— `COMPLETE` (2026-09-14). **M3.2 closes: 4 of 4.** Posting authority is a privileged
+capability rather than an ambient one, and the third privileged population arrives
+with its least-privilege split proven from every direction.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Negative authorization test per new permission | `DenyByDefaultDatabaseTest.thePopulationsArePairwiseDisjoint`: an administrator and a reviewer each refused by a ledger probe, the operator refused by theirs — six refusals, four positive controls so none is blanket (`INV-AUD-03`) |
+| The role granting everything fails the build | The acceptance mutation, **caught twice**: `RoleNameTest`'s exact-grant assertion hermetically, and the HTTP pairwise-disjointness test independently — two controls blind in different directions |
+| Cross-population both ways | A ledger operator granted through the **real** roles endpoint is refused by both administrative endpoints; the disjointness test covers the other four direction-pairs |
+
+### Two permissions, one role — and the asymmetry is the design
+
+The permission vocabulary is precise because splitting a permission later means
+re-auditing every check site: `P3-TSK-017`'s adjustment endpoint checks
+`LEDGER_ADJUST` specifically, where `INV-REV-04`'s reason regime attaches and
+`INV-AUD-04`'s four-eyes stays recorded debt. The role bundles both because a role
+exists when a distinct trust decision does (`P2-TSK-004`'s rule) and Phase 3 has one
+ledger-operating population; splitting a role later is a new role and a migration.
+
+### What deliberately carries neither permission: the posting command
+
+ADR-0031 puts permission at the boundary, and `PostingService` is the in-process
+command path (`INV-LED-04`'s one write path), invoked by the platform's own
+orchestrations under the **flow's** actor — a Phase 4 transfer runs as the customer,
+and a customer moving their own money holds no ledger permission. The permissions gate
+the HTTP surfaces where a *person* commands a posting, so both ship with **probe
+endpoints and no production caller** — the `KYC_REVIEW` precedent, stated rather than
+smuggled, with `P3-TSK-017` named as the first real check site.
+
+### The machinery built for this day did its job with no edits
+
+`V014` is the `V013` ceremony — the constraint replaced from
+`RoleName.sqlValueList()`, and `RoleAssignmentMigrationTest`'s latest-constraint
+derivation reconciled it **without being touched**, `V010`'s pinned history untouched
+too. Disjointness generalised to **pairwise over `values()`** so the fourth role is
+held to the property without anyone editing the test — the stale-list defect, closed
+the way this repository closes it. The contract gained one request-enum value,
+labelled `BREAKING` by the classifier's blanket rule and accepted on review (a client
+that never sends the value cannot be broken by it — the `P2-TSK-004` precedent). The
+self-elevation limit is restated, not re-argued: `ROLE_ASSIGN` can still self-grant
+`LEDGER_OPERATOR`, and what the split buys is a recorded grant in the trail.
+
+**Six mutations, all caught by the intended assertion** — the operator granting
+everything (twice: hermetic and HTTP), the administrator gaining `LEDGER_POST`, the
+reviewer gaining `LEDGER_ADJUST`, the operator losing `LEDGER_ADJUST`, and `V014`
+keeping the old two-role list while the enum holds three.
+**1059 hermetic tests, 609 database tests.**
 
 **`P3-TSK-006` — The posting command: idempotent, atomic, audited, announced** —
 `COMPLETE` (2026-09-13). **M3.2 is 3 of 4.** One command, one financial effect, whatever
@@ -7242,8 +7299,8 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-006` (2026-09-13): the posting command over the Phase
-0 idempotency kernel. The next work is `P3-TSK-007`, the posting permissions.
+The last work performed was `P3-TSK-007` (2026-09-14): the posting permissions and the
+ledger role. The next work is `P3-TSK-008`, the balance derived from postings.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -7485,16 +7542,17 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P3-TSK-007` — `LEDGER_POST` and `LEDGER_ADJUST` permissions, and the ledger role.**
-Status `READY`; depends on `P3-TSK-001` (`COMPLETE`). M3.2's closer.
+**`P3-TSK-008` — Balance derived from postings.** Status `READY`; depends on
+`P3-TSK-005` (`COMPLETE`). M3.3 opens with the phase's defining question.
 
-Posting authority becomes a privileged capability rather than an ambient one: two
-permissions, one role (`LEDGER_OPERATOR`), and the migration widening the role constraint
-(`P2-TSK-004`'s latest-constraint derivation — the applied migration is history, the
-constraint moves by replacement). The grants are **disjoint** from `ADMINISTRATOR` and
-`KYC_REVIEWER`, asserted as its own property; cross-population negatives both ways
-(`INV-AUD-03`); the role-granting-everything mutation caught. The adjustment endpoint
-stays `P3-TSK-017`'s. Risk: Low. Cx: S. DoD: `DOD-SEC`.
+The authoritative number, computed from the rows (`INV-BAL-01`, `INV-BAL-02`):
+`BalanceDerivation` aggregating lines by direction and normal balance, per account per
+currency, with an "as of" (posting date or entry sequence). No cross-currency
+arithmetic anywhere (`INV-MON-04`); an account with no postings is zero **in its own
+currency**, never a bare `0`; replay from zero reproduces the balance for every
+account type and both normal balances. The projection and any endpoint stay out of
+scope — the derivation is the definition the projection is checked against. Risk:
+High. Cx: M. DoD: `DOD-FIN`.
 
 ### Superseded: the transition itself
 
@@ -7527,6 +7585,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-14 | **`P3-TSK-007` complete — the posting permissions, and M3.2 closes (4 of 4).** Two permissions (`LEDGER_POST`, `LEDGER_ADJUST`) naming exactly the two actions the registry has declared since `P3-TSK-001`, one role (`LEDGER_OPERATOR`) holding both — the asymmetry is the design: permission vocabulary precise because splitting a permission later re-audits every check site (`P3-TSK-017` checks `LEDGER_ADJUST` specifically), the role coarse because a role exists when a distinct trust decision does and Phase 3 has one ledger-operating population. **`PostingService` deliberately carries neither**: ADR-0031 puts permission at the boundary, and the in-process command runs under the flow's actor — a Phase 4 transfer runs as the customer, who holds no ledger permission; both permissions ship with probes and no production caller, the `KYC_REVIEW` precedent stated rather than smuggled. `V014` performed the `V013` ceremony and the latest-constraint reconciliation covered it with **no test edit** — the machinery built for this day doing its job. Disjointness generalised to pairwise over `values()` (a fourth role is covered automatically) and to three populations over HTTP, each refused by both others' surfaces (`INV-AUD-03` from every direction); a ledger operator granted through the real roles endpoint refused by both administrative endpoints; the contract's one added request-enum value reviewed past its blanket `BREAKING` label. **Six mutations, all caught by the intended assertion** — the acceptance one twice, hermetically and over HTTP. 1059 hermetic tests, 609 database tests. Next: `P3-TSK-008`, M3.3 opens. |
 | 2026-09-13 | **`P3-TSK-006` complete — the posting command, and the one write path `INV-LED-04` permits exists.** `PostingService` over the unmodified Phase 0 kernel: validate → claim → effect, joining the **caller's** transaction (Phase 4's transfer-and-posting atomicity depends on joining; "the ledger owns the posting transaction" means the write set). One call commits entry, lines, audit record (`ledger.JournalEntryPosted` leaves `NOT_YET_EMITTED`), outbox row and idempotency record together or not at all. An unbalanced request never consumes its key; a replay returns the original entry id; the fingerprint covers the money and excludes actor/correlation so a retried request on a new correlation still replays. The event carries enumerated names only — a consumer needing the amount reads the posting. **The validation question answered one rank stronger**: `V005`'s composite FK binds line currency to account currency for every writer (the domain deliberately cannot see it); account status is a recorded remainder owned by `P3-TSK-014`, whose lock is the only honest home for the refusal. Proven with the real executor and writers: retry replays, ten-way race one-effect-counted, `INV-IDEM-03` conflict, injected last-write failure leaving no entry **and no claim**, rollback leaving no outbox row, unestablished actor refused. **Six mutations, all caught by the intended assertion** — including the key-made-per-call shape that turns every retry into a second posting. 1058 hermetic tests, 608 database tests. Next: `P3-TSK-007`. |
 | 2026-09-13 | **`P3-TSK-005` complete — the journal persisted, balanced by constraint, immutable by privilege.** `V004`: `journal_entry` and `journal_line`, attribution `NOT NULL` (`INV-LED-05`), the `MoneyColumns` generated monetary shape pinned verbatim, and the grants the phase exists for — `SELECT, INSERT` and nothing else, so `INV-LED-03`/`INV-HIST-01` hold at `DB-PRIVILEGE`. **The named design problem answered**: entry-level balance is two `CONSTRAINT TRIGGER`s, deferred to COMMIT (a `CHECK` cannot see siblings or defer; `ASSERTION` unimplemented; sum columns fail multi-currency) — two because a zero-line entry balances vacuously and only an entry-anchored trigger can refuse it, `P3-TSK-004`'s finding at the schema. Proven against raw SQL: statements succeed, COMMIT throws naming the invariant. Immutability is two layers — the per-column sweep, and an unconditional append-only trigger binding even the migrator. `INV-MON-05` at `BIGINT` extremes and at an off-default stored scale planted by raw SQL, closing the scale-re-derivation hole by mutation. Ten concurrent postings to one account all succeed (ADR-0039). Findings: the driver rounds nanos to the column's micros (assertion corrected to the column's own claim); `OwnershipIsScopedTest` refused `findById` on the day the `OutboxRelay` entry predicted (`NOT_OWNED`, arriving surfaces named); `PostingAttribution` carries the actor id, never a typed guess. The freeze trigger re-proven against the real `journal_line`; the seam count live. **Eight mutations, all caught by the intended assertion.** 1057 hermetic tests, 600 database tests. Next: `P3-TSK-006`. |
 | 2026-09-13 | **`P3-TSK-004` complete — the balance rule at the domain, and M3.2 opens.** `JournalEntry` and `JournalLine`: one factory validating `INV-LED-02` then `INV-LED-01`, so an unbalanced entry has no code path on which to exist. Direction carries the sign and amounts are strictly positive, making "unbalanced" two sums that must be equal — the property the schema can inherit (`P3-TSK-005`). Sums fold through `Money.plus`: cross-currency addition impossible, mixed scales within a currency refused rather than normalised (the cross-sides mix surfaces as unbalanced under `Money`'s scale-including equality — 1.50 and 1.500 are different stored facts), and the fold's zero identity is scale-aware, mutation-proven. The empty entry balances vacuously, which is exactly why `INV-LED-02` is a separate first check — its mutation is caught by the empty-entry half. Posting and value dates are required inputs (no overload exists for a clock-derived accounting date); no amount reaches any rendering or exception message (`INV-AUD-02`, needle-asserted). The property sweep: 2000 trials over JPY/USD/BHD, repaired-to-balance seeds all construct and re-verify against an independent `BigDecimal` check, every one-minor-unit perturbation throws, coverage asserted. **Six mutations, all caught by the intended assertion.** 1049 hermetic tests, 592 database tests. Next: `P3-TSK-005`. |

@@ -98,6 +98,24 @@ class DenyByDefaultDatabaseTest {
         }
 
         /**
+         * The ledger permissions, which no production endpoint carries until {@code P3-TSK-017}
+         * - probes for the same {@code P1-TSK-018} reason as {@code /probe/review}. Two probes,
+         * not one: the permissions are checked separately by their surfaces, so each needs its
+         * own positive control and its own refusal.
+         */
+        @com.finapp.app.session.RequiresPermission(PermissionName.LEDGER_POST)
+        @GetMapping("/probe/ledger/post")
+        String ledgerPost() {
+            return "reached";
+        }
+
+        @com.finapp.app.session.RequiresPermission(PermissionName.LEDGER_ADJUST)
+        @GetMapping("/probe/ledger/adjust")
+        String ledgerAdjust() {
+            return "reached";
+        }
+
+        /**
          * <strong>Declares two rules, and they contradict.</strong> Found served by the completion
          * gate.
          */
@@ -208,8 +226,8 @@ class DenyByDefaultDatabaseTest {
     }
 
     @Test
-    @DisplayName("the two administrative populations are disjoint, proven from both directions")
-    void theTwoPopulationsAreDisjoint() throws Exception {
+    @DisplayName("the three privileged populations are pairwise disjoint, from every direction")
+    void thePopulationsArePairwiseDisjoint() throws Exception {
         IdentityId administrator = givenAnIdentity();
         String adminSession = givenASessionFor(administrator);
         givenTheRole(administrator, RoleName.ADMINISTRATOR);
@@ -218,19 +236,40 @@ class DenyByDefaultDatabaseTest {
         String reviewerSession = givenASessionFor(reviewer);
         givenTheRole(reviewer, RoleName.KYC_REVIEWER);
 
-        // Positive controls first, so neither refusal below can be a blanket one.
+        IdentityId operator = givenAnIdentity();
+        String operatorSession = givenASessionFor(operator);
+        givenTheRole(operator, RoleName.LEDGER_OPERATOR);
+
+        // Positive controls first, so no refusal below can be a blanket one - including BOTH
+        // ledger probes, because the role holds two permissions and a role quietly granting
+        // only one of them must fail a positive control rather than pass every refusal.
         assertThat(get("/probe/privileged", adminSession).statusCode()).isEqualTo(200);
         assertThat(get("/probe/review", reviewerSession).statusCode()).isEqualTo(200);
+        assertThat(get("/probe/ledger/post", operatorSession).statusCode()).isEqualTo(200);
+        assertThat(get("/probe/ledger/adjust", operatorSession).statusCode()).isEqualTo(200);
 
-        // The least-privilege split, tested from the attacker's direction on BOTH sides
-        // (INV-AUD-03). This is the behavioural half of the mutation P1-TSK-020 recorded as
-        // untestable at one role: a role granting everything passes every positive control in
-        // this suite and fails exactly these two assertions.
+        // The least-privilege split, tested from the attacker's direction on EVERY side
+        // (INV-AUD-03): each population refused by the others' surfaces. This is the
+        // behavioural half of the mutation P1-TSK-020 recorded as untestable at one role - a
+        // role granting everything passes every positive control and fails exactly its
+        // refusals below.
         assertThat(get("/probe/review", adminSession).statusCode())
                 .as("an administrator does not review cases")
                 .isEqualTo(403);
+        assertThat(get("/probe/ledger/post", adminSession).statusCode())
+                .as("an administrator does not post to the ledger")
+                .isEqualTo(403);
         assertThat(get("/probe/privileged", reviewerSession).statusCode())
                 .as("a reviewer does not manage identities")
+                .isEqualTo(403);
+        assertThat(get("/probe/ledger/adjust", reviewerSession).statusCode())
+                .as("a reviewer does not post adjustments")
+                .isEqualTo(403);
+        assertThat(get("/probe/privileged", operatorSession).statusCode())
+                .as("a ledger operator does not manage identities")
+                .isEqualTo(403);
+        assertThat(get("/probe/review", operatorSession).statusCode())
+                .as("a ledger operator does not review cases")
                 .isEqualTo(403);
     }
 

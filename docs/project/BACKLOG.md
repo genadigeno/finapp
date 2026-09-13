@@ -3834,7 +3834,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   effect.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-EVENT`
 
-**P3-TSK-007 — `LEDGER_POST` and `LEDGER_ADJUST` permissions, and the ledger role** — `READY`
+**P3-TSK-007 — `LEDGER_POST` and `LEDGER_ADJUST` permissions, and the ledger role** — `COMPLETE` (2026-09-14)
 - **Objective**: posting authority is a privileged capability rather than an ambient one.
 - **Context**: Identity (authorization) + Ledger. **Scope**: two permissions, one role
   (`LEDGER_OPERATOR`), the migration widening the role constraint (`P2-TSK-004`'s
@@ -3847,11 +3847,33 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Tests**: cross-population — a ledger operator refused by administrative and KYC surfaces and
   vice versa; the role granting everything fails the build.
 - **Accept**: negative authorization test per new permission.
+- **Gate evidence (2026-09-14)**: **two permissions, one role, and the asymmetry is the
+  design**: the permission vocabulary is precise (`P3-TSK-017`'s adjustment endpoint
+  checks `LEDGER_ADJUST` specifically, `INV-REV-04`'s reason regime attaching there)
+  because splitting a permission later means re-auditing every check site, while the
+  role bundles both because a role exists when a distinct trust decision does
+  (`P2-TSK-004`'s rule) and Phase 3 has one ledger-operating population.
+  **`PostingService` deliberately carries neither**: ADR-0031 puts permission at the
+  boundary, and the in-process command runs under the flow's actor — a Phase 4 transfer
+  runs as the customer, who holds no ledger permission; the permissions gate surfaces
+  where a *person* commands a posting, so both ship with probes and no production
+  caller (the `KYC_REVIEW` precedent, stated rather than smuggled). `V014` is the
+  `V013` ceremony — constraint replaced from `RoleName.sqlValueList()`, covered by the
+  latest-constraint reconciliation with **no test edit**, `V010`'s pinned history
+  untouched. Disjointness generalised to **pairwise over `values()`** in code and to
+  **three populations over HTTP** (each admitted by its own probes, refused by both
+  others' — `INV-AUD-03` from the attacker's direction, every side); a ledger operator
+  granted through the **real** roles endpoint is refused by both administrative
+  endpoints. The self-elevation limit restated, not re-argued. The contract gained one
+  request-enum value, `BREAKING` by the classifier's blanket rule, reviewed and
+  accepted (the `P2-TSK-004` precedent). **Six mutations, all caught by the intended
+  assertion** — the acceptance one counted twice, hermetically and over HTTP. 1059
+  hermetic / 609 database tests. **M3.2 closes: 4 of 4.**
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-SEC`
 
 ## P3-EPIC-03 — Balances that are explainable (M3.3)
 
-**P3-TSK-008 — Balance derived from postings** — `TODO`
+**P3-TSK-008 — Balance derived from postings** — `READY`
 - **Objective**: the authoritative number, computed from the rows (`INV-BAL-01`, `INV-BAL-02`).
 - **Context**: Ledger. **Scope**: `BalanceDerivation` aggregating lines by direction and normal
   balance, per account per currency, with an "as of" (posting date or entry sequence).

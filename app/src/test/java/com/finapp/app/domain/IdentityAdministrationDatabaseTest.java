@@ -179,6 +179,31 @@ class IdentityAdministrationDatabaseTest {
         assertThat(statusOf(subject)).isEqualTo("ACTIVE");
     }
 
+    @Test
+    @DisplayName("a ledger operator is refused by both administrative endpoints (P3-TSK-007)")
+    void aLedgerOperatorIsRefusedByBothAdministrativeEndpoints() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        IdentityId operator = givenAnIdentity();
+
+        // Granted through the REAL endpoint (the P2-TSK-004 reviewer precedent), so the whole
+        // path is exercised: the request enum admits the new value at the boundary, V014's
+        // regenerated constraint admits the row, and the grant is audited like any other.
+        assertThat(
+                        post(rolesOf(operator), givenASessionFor(admin), ledgerOperatorRole())
+                                .statusCode())
+                .isEqualTo(204);
+
+        String operatorSession = givenASessionFor(operator);
+        IdentityId subject = givenAnIdentity();
+        assertThat(post(suspensionOf(subject), operatorSession, REASON).statusCode())
+                .as("posting the platform's money is not managing the people who hold it")
+                .isEqualTo(403);
+        assertThat(post(rolesOf(subject), operatorSession, adminRole()).statusCode())
+                .as("and certainly not granting roles - the permission that grants permissions")
+                .isEqualTo(403);
+        assertThat(statusOf(subject)).isEqualTo("ACTIVE");
+    }
+
     // -----------------------------------------------------------------
     // The inverted ownership rule
 
@@ -474,6 +499,10 @@ class IdentityAdministrationDatabaseTest {
 
     private static String reviewerRole() {
         return "{\"role\":\"KYC_REVIEWER\",\"reason\":\"reviewer onboarding, ticket OPS-5510\"}";
+    }
+
+    private static String ledgerOperatorRole() {
+        return "{\"role\":\"LEDGER_OPERATOR\",\"reason\":\"operator onboarding, ticket OPS-7003\"}";
     }
 
     private HttpResponse<String> post(String path, String token, String body) throws Exception {
