@@ -295,7 +295,13 @@ class OpenApiContractTest {
                         // identifier names the declaration's subject, never a resource.
                         ApiVersion.CURRENT_PREFIX + "/me/organisations",
                         ApiVersion.CURRENT_PREFIX + "/me/kyb",
-                        ApiVersion.CURRENT_PREFIX + "/me/kyb/owners");
+                        ApiVersion.CURRENT_PREFIX + "/me/kyb/owners",
+                        // P2-TSK-018. The consent surface: the /v1/me shape, whose one path
+                        // variable is a closed enum naming a category of processing shared by
+                        // everyone - not a resource identifier, so there is still nothing here
+                        // an attacker can point at a victim.
+                        ApiVersion.CURRENT_PREFIX + "/me/consents",
+                        ApiVersion.CURRENT_PREFIX + "/me/consents/{purpose}");
     }
 
     @Test

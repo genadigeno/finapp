@@ -158,6 +158,22 @@ endpoint an oracle over other people's registrations (`INV-IDN-07`'s reasoning a
 field). A malformed identifier lands on the same code: a value that can name nobody is just
 another party that cannot be declared.
 
+### `consent` — `ConsentErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `consent.ReconsentRequired` | 409 | The consent text has changed and requires re-consent; grant against the current version. |
+| `consent.UnknownTextVersion` | 422 | No consent text with this version exists for this purpose. |
+
+**Both codes concern the grant, and there is deliberately no withdrawal code** (`P2-TSK-018`): a
+withdrawal must not be refusable by anything but authentication, so there is no withdrawal
+failure for a code to name. The two grant refusals are distinct because they demand different
+client behaviour — `consent.ReconsentRequired` is actionable (fetch `GET /v1/me/consents`,
+present the current words, grant against the current version), while
+`consent.UnknownTextVersion` is a client defect to fix, since no amount of re-presenting text
+produces a version that was never published. No enumeration concern applies to either: consent
+texts are the platform's most public artefact — the words shown to every customer.
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

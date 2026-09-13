@@ -298,7 +298,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // and a control role - identifiers and enumerations, no secret. The
                         // pairing it creates is CONFIDENTIAL and lives in the store's
                         // classification, not in this vocabulary.
-                        "OwnerDeclarationRequest");
+                        "OwnerDeclarationRequest",
+                        // P2-TSK-018. Carries a purpose (a closed enum) and a text version (an
+                        // integer) - no secret and no PII; here because the set is every schema
+                        // REACHABLE from a request body. The pairing the grant creates - who
+                        // consented to what - is CONFIDENTIAL and lives in consent_record's
+                        // classification, not in this vocabulary.
+                        "ConsentGrantRequest");
     }
 
     @Test

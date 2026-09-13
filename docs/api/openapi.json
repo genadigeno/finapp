@@ -472,6 +472,76 @@
           }
         }
       },
+      "consent.ReconsentRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "consent.ReconsentRequired"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/consent.ReconsentRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The consent text has changed and requires re-consent; grant against the current version.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "consent.UnknownTextVersion": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "consent.UnknownTextVersion"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/consent.UnknownTextVersion"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] No consent text with this version exists for this purpose.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "identity.AssuranceRequired": {
         "content": {
           "application/problem+json": {
@@ -862,6 +932,27 @@
         },
         "type": "object"
       },
+      "ConsentGrantRequest": {
+        "properties": {
+          "purpose": {
+            "enum": [
+              "KYC_PROCESSING",
+              "SCREENING"
+            ],
+            "type": "string"
+          },
+          "textVersion": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "purpose",
+          "textVersion"
+        ],
+        "type": "object"
+      },
       "ContactChannelRequest": {
         "properties": {
           "address": {
@@ -1141,6 +1232,24 @@
         "required": [
           "displayName"
         ],
+        "type": "object"
+      },
+      "PurposeBasisResponse": {
+        "properties": {
+          "currentText": {
+            "type": "string"
+          },
+          "currentTextVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "granted": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RecoveryCompletionRequest": {
@@ -1642,6 +1751,75 @@
           },
           "required": true
         },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/me/consents": {
+      "get": {
+        "operationId": "currentBases",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PurposeBasisResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurposeBasisResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/consents/{purpose}": {
+      "delete": {
+        "operationId": "withdraw",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "purpose",
+            "required": true,
+            "schema": {
+              "enum": [
+                "KYC_PROCESSING",
+                "SCREENING"
+              ],
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "204": {
             "description": "No Content"

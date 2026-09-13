@@ -50,4 +50,34 @@ public interface ConsentStore<T> {
      * table, so an empty answer is a deployment defect and throws rather than returning empty.
      */
     ConsentText currentTextFor(T unitOfWork, ConsentPurpose purpose);
+
+    /**
+     * Whether a grant against {@code textVersion} may be recorded (`P2-TSK-018`,
+     * {@code INV-CNS-04}).
+     *
+     * <p>One statement, one snapshot, and the refusal clause is <strong>the derivation's own,
+     * applied before the fact exists</strong>: {@link #hasCurrentBasis} judges a grant
+     * basis-less the moment any later version of the purpose's text records
+     * {@code requires_reconsent}, so recording such a grant would write a "consent" that
+     * consents to nothing while the client walks away believing a basis exists. A stale version
+     * <em>not</em> superseded by a re-consent-demanding one stays grantable — those are the
+     * words the person was shown, and the platform recorded, as a property of every later
+     * version, that they still suffice.
+     *
+     * <p>A version never published for the purpose is {@link GrantAssessment#UNKNOWN_VERSION} —
+     * a client defect, distinct because it calls for a different remedy than re-presenting
+     * text. The composite FK backs that refusal as defence in depth; answering it here is what
+     * keeps a client mistake from surfacing as our 500.
+     */
+    GrantAssessment assessGrant(T unitOfWork, ConsentPurpose purpose, int textVersion);
+
+    /** The three answers {@link #assessGrant} can give. */
+    enum GrantAssessment {
+        /** The version exists and no later version demands re-consent: record the grant. */
+        GRANTABLE,
+        /** No text with this version exists for the purpose. */
+        UNKNOWN_VERSION,
+        /** A later version records {@code requires_reconsent}: re-present the current text. */
+        RECONSENT_REQUIRED
+    }
 }

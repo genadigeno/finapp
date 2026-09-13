@@ -3336,7 +3336,7 @@ capability map, and the task list below is the schedule.
   `text_version` made nullable, and `seq` made `BY DEFAULT` (caught hermetically). 1016
   hermetic tests, 564 database tests, 14 kafka tests. **M2.5 opens: 1 of 4.**
 
-**P2-TSK-018 — Consent endpoints** — `READY`
+**P2-TSK-018 — Consent endpoints** — `COMPLETE` (2026-09-13)
 - Context: consent / api
 - Description: `POST /v1/me/consents`, `DELETE /v1/me/consents/{purpose}`,
   `GET /v1/me/consents` — session-derived, no identifiers.
@@ -3349,8 +3349,44 @@ capability map, and the task list below is the schedule.
   re-consent; absence vs withdrawal indistinguishable to a caller of the query.
 - Accept: the lifecycle over HTTP with the audit trail naming the person.
 - Risk: Low. Cx: S. DoD: `DOD-SEC`
+- **Outcome:** The store's first consumer, and the beans arrive with it (the P1-TSK-007
+  unconsumed-wiring licence expiring on schedule). The `/v1/me` shape with **one path
+  variable that is not an identifier**: `{purpose}` is a closed enum naming a category of
+  processing shared by everyone — it cannot name a resource, a person, or anything of
+  anybody else's — and mechanically the consent store takes a raw `UUID`, not an `EntityId`
+  subtype, so `OwnershipIsScopedTest`'s detector demands no entry (verified against the
+  detector, not assumed). **The grant carries the version the person was SHOWN**, because a
+  server-side "grant against current" would record consent to words the platform merely
+  hopes the person saw; the refusal rule is the derivation's own clause applied before the
+  fact exists (`ConsentStore.assessGrant`, one statement, one snapshot): refused exactly
+  when a later version records `requires_reconsent` — recording it would write a "consent"
+  the derivation immediately judges basis-less — and a stale version whose successors never
+  demanded re-consent stays grantable, the backlog's conditional honoured rather than
+  over-tightened. Two new codes catalogued (`consent.ReconsentRequired` 409 actionable,
+  `consent.UnknownTextVersion` 422 client defect; the composite FK backs the second as
+  defence in depth), and **deliberately no withdrawal code**: there is no withdrawal failure
+  for one to name. Withdrawal pins `currentTextFor().version()` server-side, requires no
+  prior grant (honest history, `INV-CNS-02`), and a repeated one is a new fact — proven as
+  the security property it is, from both plausible refusal causes. `GET` answers per purpose
+  from `hasCurrentBasis` with the **current text riding along** (the words are what a person
+  consents to, and `consent_text.body` is the platform's first PUBLIC column doing exactly
+  its job); absence vs withdrawal proven **byte-identical over HTTP** as an equality between
+  the causes. Both audit actions get their first emitters and leave `NOT_YET_EMITTED`
+  (three Phase-15 outbox actions remain): actor the **person**, never the platform; target a
+  consent record proven to exist; summary naming purpose and pinned version, never the
+  words. Record and trail commit in one transaction (the ProfileService idiom). No events,
+  deliberately: the gate reads authoritative state per decision (`INV-CNS-03`), so a
+  consent event would be transport with no consumer. No `Idempotency-Key`: retries append
+  new facts that converge (ADR-0037), asserted. The contract gained two paths and two
+  schemas, 178 added lines and zero removed; `ConsentGrantRequest` joined the
+  credential-sink pinned set with its reason. **Eight mutations, all caught** — grant audit
+  dropped, withdrawal audit dropped, stale-version refusal dropped, withdrawal made
+  conditional on a prior basis (204 silently writing nothing), the audit written as the
+  platform, the GET derivation inverted, the unknown-version refusal dropped (the FK
+  answering with our 500), a withdrawal recorded as a GRANT. 1016 hermetic tests, 573
+  database tests, 14 kafka tests. **M2.5: 2 of 4.**
 
-**P2-TSK-019 — The consent gate, and the first capability behind it** — `TODO`
+**P2-TSK-019 — The consent gate, and the first capability behind it** — `READY`
 - Context: consent / kyc / app
 - Description: The gate (`ConsentGate.require(party, purpose)`) reading authoritative state per
   decision, and its first consumer: opening a KYC case requires a current `KYC_PROCESSING`

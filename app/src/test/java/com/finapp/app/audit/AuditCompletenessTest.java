@@ -59,14 +59,13 @@ class AuditCompletenessTest {
      */
     /*
      * `identity.IdentitySuspended` left this map at P1-TSK-028, `party.ProfileChanged` at
-     * P1-TSK-030, `kyc.CaseOpened` at P2-TSK-007 and `kyc.DocumentContentRead` at P2-TSK-008 -
-     * each when the code that emits it was built. That is the list working in the direction it
-     * is usually not exercised in: an entry is a claim about the future, and the future arriving
-     * is what removes it.
+     * P1-TSK-030, `kyc.CaseOpened` at P2-TSK-007, `kyc.DocumentContentRead` at P2-TSK-008 and
+     * both consent actions at P2-TSK-018 - each when the code that emits it was built. That is
+     * the list working in the direction it is usually not exercised in: an entry is a claim
+     * about the future, and the future arriving is what removes it.
      *
      * What remains is the three outbox actions, which are recorded Phase 15 debt rather than
-     * unbuilt endpoints - plus the Phase 2 actions P2-TSK-003 declared with the module
-     * skeletons, each named for the task that builds its emitter.
+     * unbuilt endpoints.
      */
     private static final Map<String, String> NOT_YET_EMITTED =
             Map.of(
@@ -77,11 +76,7 @@ class AuditCompletenessTest {
                     "Recorded debt: performed today as a manual UPDATE with no tooling. Phase 15.",
                     "outbox.EventDiscarded",
                     "Recorded debt: a relay decision visible only as a log line, which ADR-0010 is"
-                        + " explicit does not count as an audit trail. Phase 15.",
-                    "consent.ConsentGranted",
-                    "P2-TSK-018 builds the consent endpoints; ADR-0037 designs the record.",
-                    "consent.ConsentWithdrawn",
-                    "P2-TSK-018 builds the consent endpoints; ADR-0037 designs the record.");
+                        + " explicit does not count as an audit trail. Phase 15.");
 
     @Test
     @DisplayName("no registered action is silently unemitted")

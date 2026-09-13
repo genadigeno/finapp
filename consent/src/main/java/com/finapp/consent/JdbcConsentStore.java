@@ -101,6 +101,39 @@ public final class JdbcConsentStore implements ConsentStore<Connection> {
     }
 
     @Override
+    public GrantAssessment assessGrant(
+            Connection unitOfWork, ConsentPurpose purpose, int textVersion) {
+        // Both existence questions in one statement, one snapshot: whether the named version
+        // was ever published, and whether any later version demands re-consent - the second
+        // being hasCurrentBasis's NOT EXISTS clause, asked before the fact exists so a grant
+        // the derivation would immediately judge basis-less is refused instead of recorded.
+        String sql =
+                "SELECT EXISTS (SELECT 1 FROM consent.consent_text"
+                        + "         WHERE purpose = ? AND version = ?),"
+                        + "       EXISTS (SELECT 1 FROM consent.consent_text"
+                        + "         WHERE purpose = ? AND version > ? AND requires_reconsent)";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setString(1, purpose.name());
+            select.setInt(2, textVersion);
+            select.setString(3, purpose.name());
+            select.setInt(4, textVersion);
+            try (ResultSet rows = select.executeQuery()) {
+                rows.next();
+                if (!rows.getBoolean(1)) {
+                    return GrantAssessment.UNKNOWN_VERSION;
+                }
+                return rows.getBoolean(2)
+                        ? GrantAssessment.RECONSENT_REQUIRED
+                        : GrantAssessment.GRANTABLE;
+            }
+        } catch (SQLException e) {
+            throw new ConsentStorageException(
+                    DatabaseFailure.describe(
+                            "assessing a grant against " + purpose + " v" + textVersion, e));
+        }
+    }
+
+    @Override
     public ConsentText currentTextFor(Connection unitOfWork, ConsentPurpose purpose) {
         String sql =
                 "SELECT purpose, version, body, requires_reconsent, published_at"
