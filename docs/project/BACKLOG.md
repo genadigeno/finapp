@@ -3619,7 +3619,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   `build-logic` Kotlin RC3→GA lockfile drift reverted a third time.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
 
-**P3-TSK-002 — `LedgerAccount`: typed, single-currency, and unchangeable once posted to** — `READY`
+**P3-TSK-002 — `LedgerAccount`: typed, single-currency, and unchangeable once posted to** — `COMPLETE` (2026-09-13)
 - **Objective**: the chart's row exists and its classification cannot drift (`INV-LED-06`).
 - **Context**: Ledger. **Scope**: `LedgerAccount` aggregate; `AccountType`, `NormalBalance`,
   `AccountPurpose`, `OwnerKind` enums generating their own `CHECK` constraints; `V002` creating
@@ -3644,9 +3644,26 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   **after** a line exists; ten concurrent creates produce one row.
 - **Accept**: reclassifying a posted-to account is refused by the database; a `CHECK` rejects an
   unknown type; the enum and the constraint cannot drift.
+- **Gate evidence (2026-09-13)**: six mutations, all caught by the intended assertion — the
+  type→normal-balance derivation inverted, the aggregate's transition check removed, the
+  coherence `CHECK` dropped from `V002`, the freeze trigger's posted-probe neutralised
+  (against a from-scratch database), the one-per-owner unique index dropped (the ten-way race
+  producing ten rows), and the `UPDATE` grant widened to the whole table (caught by the
+  per-column denial sweep). The freeze is proven in **two layers with a positive control
+  between them**: the migrator corrects the classification of an *unposted* account, then a
+  stand-in `ledger.journal_line` row makes the same coherent update refuse — so the test says
+  "frozen once posted to" rather than "frozen"; `P3-TSK-005`'s real table supersedes the
+  stand-in and its sweep must re-prove the trigger. The identity fields (purpose, currency,
+  owner, creation instant) are frozen **unconditionally**, stricter than the task's letter and
+  recorded in the migration: an unposted account with the wrong currency is corrected by
+  opening another. `owner_kind` is **derived from purpose and stored** — the same argument
+  the backlog makes for `normal_balance`, so both derivations generate their own `CHECK` and
+  the migration test reconciles all seven generated fragments. `OwnershipIsScopedTest`
+  demanded no entry, verified rather than assumed: neither store method takes an `EntityId`;
+  `P3-TSK-014`'s status move will be the first. 1035 hermetic / 588 database tests.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
 
-**P3-TSK-003 — The operational chart, seeded by migration** — `TODO`
+**P3-TSK-003 — The operational chart, seeded by migration** — `READY`
 - **Objective**: the platform's own accounts exist before anything can post, because a double
   entry needs both sides.
 - **Context**: Ledger. **Scope**: `V003` seeding operational accounts per supported currency —

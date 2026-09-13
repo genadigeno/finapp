@@ -337,6 +337,27 @@ adding "just the user agent", which is why the ceiling is set before anything po
 | `beneficial_owner` | `control_role` | `CONFIDENTIAL` | As the stake: who directs an entity is a fact about the person, not an identifier |
 | `beneficial_owner` | `declared_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
 
+### `ledger.ledger_account` — *added by `P3-TSK-002`*
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `ledger_account` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `ledger_account` | `account_type` | `INTERNAL` | An enumeration of the five classifications accounting has |
+| `ledger_account` | `normal_balance` | `INTERNAL` | An enumeration of two values, derived from the type |
+| `ledger_account` | `currency` | `INTERNAL` | An ISO 4217 code; which currency an account is in says nothing about anybody |
+| `ledger_account` | `owner_kind` | `INTERNAL` | An enumeration of three values |
+| `ledger_account` | `owner_ref` | `INTERNAL` | The `kyc_case.customer_id` reasoning: an identifier of a thing, not a fact about it — and it must appear in the log lines and audit records that make a posting investigable. What it *resolves to* is the accounts module's to classify |
+| `ledger_account` | `purpose` | `INTERNAL` | An enumeration member |
+| `ledger_account` | `gl_code` | `INTERNAL` | A GL classification code, free-form but platform-written (Phase 14); it classifies an account, never a person |
+| `ledger_account` | `status` | `CONFIDENTIAL` | `POSTING_SUSPENDED` is an operational freeze — from Phase 13 a plausible risk action — and disclosing that an account is frozen is the `kyc_case.status` tipping-off reasoning one register down. The ceiling rule: classified for what the column will mean, not what Phase 3 writes into it |
+| `ledger_account` | `created_at` | `CONFIDENTIAL` | For an owned account it dates a product opening — `customer.opened_at`'s reasoning, at its ceiling |
+| `ledger_account` | `status_changed_at` | `CONFIDENTIAL` | Dates a freeze or a closure, which is more disclosive than the status alone |
+
+**No amount column exists here, by design** — a balance is not a field on an account
+(`INV-BAL-01`, ADR-0042). The `RESTRICTED-FINANCIAL` rows arrive with the journal tables
+(`P3-TSK-005`), which is where the plan's *"balances and postings are RESTRICTED-FINANCIAL"*
+sentence lands.
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |
