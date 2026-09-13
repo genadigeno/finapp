@@ -219,6 +219,24 @@ and the consent history row are **not the same thing and neither substitutes**: 
 is the lawful basis the gate queries (`INV-CNS-01`), the audit record is the trail of the act
 (`INV-AUD-01`), and they live under different retention and access regimes.
 
+### `ledger` — `LedgerAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `ledger.JournalEntryPosted` | No | A balanced journal entry was posted to the ledger; the record names the entry, never an amount. |
+| `ledger.AdjustmentPosted` | **Yes** | A person posted a manual adjusting entry; the reason and the authorising actor are recorded. |
+
+Declared with the module skeleton (`P3-TSK-001`) under the deliberately-few licence: both are
+named outright by `PHASE_3_PLAN.md` §11, so their design is fixed, while holds, reversals and
+account creation are left to the tasks whose designs will shape them. A posting needs no reason
+because it is commanded by a flow whose own records carry the why; an adjustment requires one
+because `INV-REV-04` says so in as many words, and because a human choosing to move value the
+system would not have moved is the one act whose justification is its only evidence of
+legitimacy. **Four-eyes is not implied by the flag** — it is recorded debt (`INV-AUD-04`).
+`ledger.JournalEntryPosted` shares its code with the event the same posting publishes, as
+`identity.AuthenticationSucceeded` does: one fact, named once, in two registries. Emitted by
+`P3-TSK-006` and `P3-TSK-017` respectively.
+
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure
 in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today
@@ -236,7 +254,9 @@ every action against production code: each is **emitted**, or **declared not to 
 that will emit it. So *"deliberately not built yet"* and *"somebody removed the audit call"* stop
 being indistinguishable, and an action that silently **stops** being emitted fails the build.
 
-Three actions are currently declared unemitted: the three `outbox.*` actions above.
+Five actions are currently declared unemitted: the three `outbox.*` actions above, and the two
+`ledger.*` actions, which wait on the tasks that build posting (`P3-TSK-006`) and adjustment
+(`P3-TSK-017`).
 `identity.IdentitySuspended` left the list at `P1-TSK-028` and `party.ProfileChanged` at
 `P1-TSK-030`, each when the endpoint that emits it was built - which is the list working in the
 direction it is rarely exercised in, since an entry is a claim about the future and the future

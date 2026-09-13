@@ -1,6 +1,6 @@
 # Phase 3 Plan — Accounts and Financial Ledger
 
-**Status:** `READY` — entry gate passed 2026-09-13
+**Status:** `IN_PROGRESS` — entry gate passed 2026-09-13; started the same day with `P3-TSK-001`
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md))
 **Decisions:** ADR-0039 (posting concurrency), ADR-0040 (chart of accounts), ADR-0041 (balance
 projection), ADR-0042 (account model) — all `Proposed`, accepted at the exit review

@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-13 (Phase 2 → 3 transition)
+Last updated: 2026-09-13 (`P3-TSK-001`)
 
 ---
 
@@ -76,8 +76,9 @@ endpoints, 9 auditable actions, 10 new invariants (**82** platform-wide, **11 in
 ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in it, by design**.
 
 **Phase 3 — Accounts and Financial Ledger**
-Status: **`READY`** — entry gate passed 2026-09-13, all twelve criteria
-([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)). Not started.
+Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
+([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
+same day with `P3-TSK-001`. **1 of 24** backlog items.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -117,8 +118,8 @@ class, again).
 
 ## Current Milestone
 
-**M3.1 — The chart exists.** `P3-TSK-001` … `P3-TSK-003`; **0 of 3, opens with
-`P3-TSK-001` (`READY`)** — the `ledger` module, its schema and the privilege floor, then the
+**M3.1 — The chart exists.** `P3-TSK-001` … `P3-TSK-003`; **1 of 3 — `P3-TSK-001`
+`COMPLETE`, next `P3-TSK-002` (`READY`)** — the `ledger` module, its schema and the privilege floor, then the
 `LedgerAccount` aggregate whose classification cannot drift, then the operational chart seeded by
 migration. Acceptance: a ledger account is created with a type, normal balance and currency, and
 its classification cannot be changed once posted to.
@@ -332,18 +333,66 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** The Phase 2 → 3 transition was conducted 2026-09-13: Phase 2
-**`COMPLETE`** (confirmed), Phase 3 **`READY`**. **Next: `P3-TSK-001` (`READY`)** — the
-`ledger` module, its schema and the privilege floor.
-
-It is first for a reason worth stating: every `DB-PRIVILEGE` claim Phase 3 will make —
-immutable postings, unedited history, the ledger as sole writer — is only *available* at that
-rank because the migrator owns the objects and each table's grants arrive with the migration that
-creates it. A schema created casually later, under the wrong owner, forecloses the strongest
-enforcement the catalogue knows, in the phase whose product is financial correctness
-(`P2-TSK-003`'s recorded reasoning, at higher stakes).
+**None in progress.** `P3-TSK-001` is `COMPLETE`. **Next: `P3-TSK-002` (`READY`)** —
+`LedgerAccount`, typed, single-currency, and unchangeable once posted to (`INV-LED-06`): the
+chart's first table, landing inside the boundary and under the owner this task put in place.
 
 ### Just completed
+
+**`P3-TSK-001` — The `ledger` module, its schema, and the privilege floor** — `COMPLETE`
+(2026-09-13). **Phase 3 is `IN_PROGRESS`; M3.1 is 1 of 3.** No money yet, and none intended:
+the deliverable is the thing every later `DB-PRIVILEGE` claim in the phase rests on.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| `build databaseTest` green with the module present | 1027 hermetic tests, 584 database tests |
+| A planted `double` in `ledger` fails the floating-point rules | **Probe not performed** (owner's direction). Coverage evidenced instead: the app-level sweep reached `LedgerAuditAction` — the registry test failed on its row — through the derived module set the floating-point rules also analyse |
+| A cross-module dependency fails the isolation test | **Probe not performed.** `ledger` forbids all four siblings and `app`, all four siblings forbid `ledger`, and both `LedgerModuleIsolationTest` tests pass |
+| Migration applies to an empty database, validates, re-applies | Throwaway PostgreSQL: migrate → validate → migrate, one history row; owner `finapp_migrator`, ACL `finapp_app=U`, no `PUBLIC`, zero tables; `ColumnClassificationTest` green over the new schema |
+
+### The owner is the control, and the schema came first for that reason
+
+`INV-LED-03`, `INV-HIST-01` and `INV-LED-04` are all enforced at `DB-PRIVILEGE`: the
+application role will hold `INSERT` and `SELECT` on the journal tables and nothing else. A
+privilege is a control only when the objects belong to a role that cannot bypass it, so the
+migrator owns the schema, the application gets `USAGE` and nothing more, and — deliberately —
+**no `ALTER DEFAULT PRIVILEGES`**: a default would hand every future table here the same set,
+and the tables that matter most in this schema are exactly the ones that must *not* receive
+`UPDATE` or `DELETE`. Each table's grants arrive in the migration that creates it, where a
+reviewer reads them beside the table.
+
+### Two audit actions, and the one that requires a reason is the invariant speaking
+
+`ledger.JournalEntryPosted` (no reason — a posting is commanded by a flow whose own records
+carry the why, and `INV-LED-05` already makes the entry attributable) and
+`ledger.AdjustmentPosted` (**reason required**, because `INV-REV-04` says so in as many
+words). Holds, reversals and account creation are absent on purpose — their designs belong to
+their tasks. Both are in `NOT_YET_EMITTED` naming `P3-TSK-006` and `P3-TSK-017`. The posting
+action shares its code with the event the same posting will publish, on the
+`identity.AuthenticationSucceeded` precedent: one fact, named once, in two registries.
+
+**The registry caught my own catalogue row**: `ledger.AdjustmentPosted` was written `Yes`
+where the convention is `**Yes**`, and `AuditableActionRegistryTest`'s reason-required
+reconciliation failed the first battery. The code and the document disagreed about the one
+action whose reason the catalogue mandates, and the build refused it before anyone could.
+**The one-line fix was not re-run, and the four mutation probes were not performed** — the
+owner stopped that run and closed the gate without it; the next full battery confirms the fix.
+
+### Isolation both ways, applied at design time
+
+`P2-TSK-003`'s gate found sibling isolation had silently become one-directional. This task did
+not wait to rediscover it: `ledger` forbids all four business siblings and `app`, and `party`,
+`identity`, `kyc` and `consent` each forbid `ledger`.
+For this module the edge matters more than for any before it: a ledger that depends on the
+modules that command it is the first step to accounting rules computed against someone else's
+model (`INV-LED-04`).
+
+Housekeeping recorded rather than absorbed: the `build-logic` lockfile Kotlin RC3→GA drift met a
+third time and reverted; `ledger/gradle.lockfile` byte-identical to `consent`'s; the
+verification metadata unchanged. Two comments that had said *"no business modules exist yet"*
+for five phases, and §Active Work, which still named `P2-TSK-001` as next, are corrected.
+
+### Previously
 
 **Phase 2 → Phase 3 transition** — **CONDUCTED** (2026-09-13).
 [`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)
@@ -6866,12 +6915,14 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-**None in progress.** Phase 0 and Phase 1 are both `COMPLETE`.
+**None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was the **Phase 1 → 2 transition** (2026-09-09) — planning and
-governance rather than implementation: the completion audit, the guard-machinery repair, the
-Phase 2 plan, ADR-0035…0038, the `INV-KYC`/`INV-CNS` groups and the Phase 2 backlog. The next
-work is `P2-TSK-001`, the broker adapter.
+The last work performed was `P3-TSK-001` (2026-09-13): the `ledger` module, its
+migrator-owned default-deny schema and its audit actions. The next work is `P3-TSK-002`,
+`LedgerAccount`.
+
+*(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
+Phase 2, found by re-reading the document the gate updates.)*
 
 *(This section had said "Phase 1 is `READY` but not started" since 2026-09-04 — pre-existing drift
 the re-run's criterion 9 check caught, corrected here rather than left because a review about
@@ -7110,18 +7161,18 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P3-TSK-001` — The `ledger` module, its schema, and the privilege floor.** Status `READY`;
-no dependencies, Phase 3's first task and M3.1's opener.
+**`P3-TSK-002` — `LedgerAccount`: typed, single-currency, and unchangeable once posted to.**
+Status `READY`; depends on `P3-TSK-001` (`COMPLETE`).
 
-A guarded `ledger` module on the documented direction, a schema owned by `finapp_migrator` with
-default-deny privileges and **no tables**, isolation tests both directions, the audit-action enum
-with its catalogue rows, and lockfile regeneration — the `P2-TSK-003` shape, at higher
-stakes. **The privilege floor is the deliverable**: everything Phase 3 will claim at
-`DB-PRIVILEGE` rank — immutable postings (`INV-LED-03`), unedited history (`INV-HIST-01`),
-the ledger as sole writer (`INV-LED-04`) — is only *available* at that rank because the
-migrator owns the objects and each table's grants arrive with the migration that creates it.
-Acceptance: the build is green with the module present, and the five existing sweeps are **proven
-by probe** to cover it. Risk: Low. Cx: S. DoD: `DOD-BUILD`, `DOD-ARCH`.
+The chart's row: the `LedgerAccount` aggregate with `AccountType`, `NormalBalance`,
+`AccountPurpose` and `OwnerKind` enums generating their own `CHECK` constraints, and `V002`
+creating `ledger.ledger_account` — with a **trigger freezing `account_type`,
+`normal_balance` and `currency` once a line references the account** (`INV-LED-06`:
+reclassifying a posted-to account retroactively changes the meaning of every historical
+report). Normal balance is derived from type **and stored**, because an invariant constrains
+something only if it is stored; `UPDATE` is column-narrowed to status, never classification;
+ten concurrent creates of the same owned account converge on one row. Risk: Medium. Cx: M.
+DoD: `DOD-FIN`, `DOD-DOMAIN`.
 
 ### Superseded: the transition itself
 
@@ -7154,6 +7205,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-13 | **`P3-TSK-001` complete — the `ledger` module and the privilege floor; Phase 3 is `IN_PROGRESS`.** A guarded module on the documented direction, a `ledger` schema owned by `finapp_migrator` with `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, **no tables**, and deliberately no `ALTER DEFAULT PRIVILEGES` — because the tables that matter most here are exactly the ones that must never receive `UPDATE` or `DELETE`, each table's grants arrive in the migration that creates it. That ownership is what makes `INV-LED-03`, `INV-HIST-01` and `INV-LED-04` enforceable at `DB-PRIVILEGE` at all, which is why it precedes the first table. Two audit actions under the deliberately-few licence: `ledger.JournalEntryPosted` (no reason) and `ledger.AdjustmentPosted` (**reason required**, `INV-REV-04`), both `NOT_YET_EMITTED` naming `P3-TSK-006` and `P3-TSK-017`. Isolation both directions applied at design time rather than rediscovered: `ledger` forbids every sibling and `app`, and all four siblings forbid `ledger`. Migrate → validate → re-migrate on a throwaway PostgreSQL confirmed owner, ACL and one history row. **The four planned mutation probes and the re-run after the catalogue fix were not performed** — the owner stopped that run and closed the gate without it; coverage is evidenced by the registry sweep having reached `LedgerAuditAction`. **The registry caught this task's own catalogue row** (`Yes` where the convention is `**Yes**`) on the one action whose reason is mandated. `ledger/gradle.lockfile` byte-identical to `consent`'s, verification metadata unchanged, the `build-logic` Kotlin drift reverted a third time; two five-phase-stale *"no business modules exist yet"* comments and a stale §Active Work corrected. 1027 hermetic tests, 584 database tests. Next: `P3-TSK-002`. |
 | 2026-09-13 | **Phase 2 → Phase 3 transition conducted — Phase 2 `COMPLETE` (confirmed), Phase 3 `READY`.** A **second, independent** pass over the phase its exit review had ruled complete hours earlier (the Phase 1 → 2 precedent: a gate assessed only by whoever finished the work is not two checks). Sixteen completion categories **all `PASS`**; the mandatory multi-instance question answered **`PASS`** across all twenty-one hazards named, with every contended decision arbitrated by PostgreSQL and raced in a test using one connection per simulated instance; security `PASS` with five limits owned; 1025 hermetic / 584 database / 14 kafka / 147 architecture tests green on a fresh run. **The transition's own finding**: `DISTRIBUTED_EXECUTION.md` §3's component register had **no Phase 2 entries at all**, ending at `SessionRevocation` while the phase had introduced eleven pieces of shared state — and §3 is an **enforced exemption set**, not a record, so an absent row is a component whose next author finds no precedent and no recorded reason. Repaired with eleven rows and the note the audit earned: **Phase 2 introduced no coordination primitive of its own**, every row being one of four protocols Phase 0 already proved. Third occurrence of this decay class, now named: *a register maintained by discipline decays exactly where nobody is looking.* **Four ADRs taken, all irreversible once postings exist**: ADR-0039 (`READ COMMITTED`; postings are inserts and take no lock; balance-dependent decisions take `SELECT … FOR UPDATE` on the account row — **`SERIALIZABLE` rejected**, because a retry loop around a money-moving command is where a lost response becomes two effects), ADR-0040 (a **flat typed chart**, roll-up by attribute, no hierarchy to re-parent), ADR-0041 (the projection updates **in the posting's transaction** and **no decision may read it** — an async projector buys lag that `INV-BAL-05` then forces us to bound, monitor and exclude from every decision path), ADR-0042 (Customer Account / Ledger Account / Wallet / Operational Account are four things; ADR-0029's test one layer down). **No new invariant group**, unlike the last two transitions: Phase 3's properties were catalogued at initiation, because Phase 3 is what the catalogue was written for — and the plan states the exit review's lesson where it will be read, that the in-scope set is whatever the **catalogue** marks `Phase: 3`. Produced `PHASE_3_PLAN.md`, 24 backlog items across 8 epics and 8 milestones, extended Phase 3's exit criteria with the seven measurable ones the list omitted, and rewrote `LEDGER_MODEL.md` from a 28-line stub. **No application code was written**, which is the constraint a transition is performed under. Next: `P3-TSK-001`. |
 | 2026-09-13 | **`P2-DOC-001` complete — the exit review, and Phase 2 is `COMPLETE`.** [`reviews/PHASE_2_REVIEW.md`](reviews/PHASE_2_REVIEW.md): eight areas (7 `PASS`, 1 `NOT APPLICABLE` — area 2 walks a posting end to end and Phase 2 creates none, so it says so rather than reporting a pass), twelve universal criteria (**12 `PASS`**), the financial supplement recorded **not applicable** rather than skipped, six Phase 2-specific criteria (**6 `PASS`**), and the mandatory ten-instance question answered **`PASS`** with eight contended decisions each arbitrated by PostgreSQL and each raced in a test. **Three criteria were closed by the review rather than waived, and one was invisible until the status was flipped**: the battery failed naming `INV-HIST-02`, which is `Phase: 2 (screening)` in the catalogue and sits in neither of the phase's named groups — so **Phase 2 has eleven invariants, not ten**, and the plan, the transition, this document and the review's own draft all said ten. `P1-TSK-024`'s finding repeating: a phase's invariants are what the catalogue says, not what its plan remembers creating. The property was never unprotected; what was missing was the record that its test has teeth. Row landed, demonstration performed, battery green — and had the flip come after the final battery instead of before it, Phase 2 would have been recorded `COMPLETE` on a build about to fail. Criterion 3 wanted `INV-KYC-06`'s mutation-register row — deferred *in writing* by `P2-TST-001` to this review, so landing it was declared scope — and it was **performed rather than inferred**: the audit write dropped from `DocumentAccess.read` is caught by exactly the intended assertion, content persisted in the clear by the `information_schema` sweep (the `P0-TSK-038` finding, applied to the set's last row). Criterion 8 found **four drifts**, two of them in `PHASE_2_PLAN.md` §11 by hand-diffing plan against implementation: the milestone table still promised an event reaching a consumer **"exactly once per fact"** — the guarantee `P2-TSK-001`'s design refused, because an adapter claiming exactly-once invites consumers to skip their inbox, and the correction had landed everywhere except the plan — and it named M2.6 *"Phase review"* with one item, so the plan **specified its own observability in §10 then omitted it from the only milestone that could deliver it**. The other two came from the review's own ADR acceptance and are one mechanism: the **ADR index keeps a second copy of every status** and **`DECISIONS.md` indexed every phase's decisions except Phase 2's**. All four corrected; deriving the index from the ADR files is carried to the transition. **The flip is itself the guarded act and was verified rather than asserted**: recording a phase `COMPLETE` arms `MutationDemonstrationTest` for every one of its invariants and `PlannedMetersExistTest` for its meter table, so the order was land the row → flip → re-run the full battery. **And one of this review's own numbers was wrong first**: the mutation total was drafted as "95" from memory and counted as **135** across the twenty-one tasks that performed them — `P1-DOC-001`'s finding arriving inside the review that cites it. Three mutations survived across the phase, each producing a finding; a fourth survived **correctly**. ADR-0035…0038 moved to `Accepted` on the precedent that criterion 10 is a precondition of the gate rather than a reward for passing it. A counting discrepancy between this document's M2.3 block ("3 of 3") and `BACKLOG.md`'s epic grouping (four items) is recorded rather than silently resolved. **Phase 2 delivered**: 2 modules, 11 tables, 13 migrations, 13 endpoints, 9 auditable actions, 10 new invariants and **11 in scope** (82 platform-wide), 4 ADRs, 23 of 23 backlog items, 1025 hermetic / 584 database / 14 kafka tests, and no money. **Next: the Phase 2 → Phase 3 transition.** |
 | 2026-09-13 | **`P2-TSK-020` complete - the six planned meters, eagerly registered, and M2.6 is 1 of 2.** `PHASE_2_PLAN.md` §10's table is real on a freshly started instance with nothing configured. **The survey found three of six already built - and two of those behind a condition**: `finapp.kyc.check` and `finapp.kyc.provider.latency` were registered only by `@ConditionalOnProperty("finapp.kyc.provider.url")` beans, so the exact context the guards boot published neither - the `P1-TSK-029` defect wearing a condition, closed by one definition (`KycMeters`) that the conditional owners build through and the unconditional `KycMetrics` registers a second time at startup (registration is idempotent; the single definition is what makes the doubling drift-proof). **`finapp.kyc.case` counts at the store seam**: a `MeteredKycCaseStore` decorator over the one `kycCaseStore` bean, because every door - the endpoint, the consumer, KYB registration, both decision paths - goes through it; `opened` on `created` (a converged retry is never throughput), `approved`/`rejected` on a WON terminal move (one decision, one increment, however many deciders raced), tag values derived from the machine so a new terminal state registers itself. **`finapp.consent.grant`/`.withdrawal` by purpose** in `ConsentService`, eager per purpose, incremented after the commit and only for the recorded act - a refused grant increments nothing, because no act occurred. `ALLOWED_TAG_KEYS` widened with `purpose` - the designed edit-forces-decision path, bounded by the closed `ConsentPurpose` enum; the `P1-TSK-029` refusal of `stage` does not transfer, because the plan's own table names these meters "by purpose" and no naming carries that without the tag. **The acceptance is performed ahead of the flip**: a pinned test in `PlannedMetersExistTest` holds Phase 2's §10 table against the plain context now - the derived guard keys on `COMPLETE` phases deliberately, so the pinned copy holds the six until the flip and is a harmless second reading after it. Dashboard row added (five panels), every query resolving against a live scrape; per-purpose eagerness held by the series nothing in any suite ever increments (`finapp.consent.withdrawal{purpose=screening}`). **Seven mutations, all caught by the intended assertion** - converged open counted, decorator un-wired, unconditional registration removed, non-terminal move counted, refused grant counted, dashboard series renamed, per-purpose registration incomplete; the harness itself yielded a finding, matching method names where Gradle prints `@DisplayName`s, and the verdicts were read from the failure lines rather than trusted. 1025 hermetic tests, 584 database tests, 14 kafka tests. Next: P2-DOC-001, the phase review - the phase's one remaining item. |

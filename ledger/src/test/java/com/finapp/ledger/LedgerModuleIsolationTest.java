@@ -1,4 +1,4 @@
-package com.finapp.kyc;
+package com.finapp.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -11,51 +11,51 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The structural guarantees the {@code kyc} module exists to provide (P2-TSK-003).
+ * The structural guarantees the {@code ledger} module exists to provide (P3-TSK-001).
  *
  * <p>Assertions about the <strong>build</strong>, not about behaviour — the
  * {@code PartyModuleIsolationTest} idiom, and the moment they fail is the moment the damage is
  * cheap to undo.
  *
- * <p><strong>Why {@code kyc} must not see its business siblings.</strong> {@code INV-KYC-05}
- * makes the verification decision this module's alone, with {@code party}'s customer status a
- * projection updated <em>in reaction</em> to it — through events and the composition root, never
- * through a compile-time edge. A dependency on {@code party} here is the first step toward the
- * decision being computed against (or worse, written into) the projection; one on
- * {@code identity} is the first step toward collapsing KYC into login
- * ({@code CLAUDE.md} §Domain Distinctions); and one on {@code consent} would entangle the
- * decision with its gate — the gate consults consent, cases do not.
+ * <p><strong>Why {@code ledger} must not see any business sibling.</strong> The ledger is
+ * commanded and does not react ({@code MODULE_ARCHITECTURE.md} §4): transfers, payments and every
+ * later money-moving module request postings through its command API, and the ledger decides
+ * whether and how they are written ({@code INV-LED-04}). A compile-time edge from the ledger toward
+ * any of them is the first step toward accounting rules being computed against another module's
+ * model - a second authority over what a posting means. The siblings forbid {@code ledger} in
+ * turn, so the isolation holds in both directions rather than only this one (the
+ * {@code P2-TSK-003} finding).
  */
 @Tag("architecture")
-@DisplayName("kyc module isolation (P2-TSK-003)")
-class KycModuleIsolationTest {
+@DisplayName("ledger module isolation (P3-TSK-001)")
+class LedgerModuleIsolationTest {
 
     @Test
-    @DisplayName("kyc sees no sibling business module and not the composition root")
+    @DisplayName("ledger sees no sibling business module and not the composition root")
     void seesNoSiblingAndNoCompositionRoot() {
-        for (String forbidden : List.of("party", "identity", "consent", "ledger", "app")) {
+        for (String forbidden : List.of("party", "identity", "kyc", "consent", "app")) {
             assertThat(classpathEntries())
-                    .as("kyc must not depend on %s", forbidden)
+                    .as("ledger must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));
         }
     }
 
     @Test
-    @DisplayName("kyc does depend on platform, so the guard above is not vacuous")
+    @DisplayName("ledger does depend on platform, so the guard above is not vacuous")
     void dependsOnPlatform() {
-        // Without this, the assertion above passes over a classpath that contains nothing at
-        // all. It also pins the documented direction: kyc -> platform -> sharedkernel.
+        // Without this, the assertion above passes over a classpath that contains nothing at all.
+        // It also pins the documented direction: ledger -> platform -> sharedkernel.
         for (String required : List.of("platform", "sharedkernel")) {
             assertThat(classpathEntries())
-                    .as("kyc must depend on %s", required)
+                    .as("ledger must depend on %s", required)
                     .anyMatch(entry -> isBuildOutputOf(entry, required));
         }
     }
 
     /**
      * True when a classpath entry is build output of the named Gradle module. Matches on path
-     * <em>elements</em> rather than substrings, for the reason
-     * {@code SharedKernelIsolationTest} records.
+     * <em>elements</em> rather than substrings, for the reason {@code SharedKernelIsolationTest}
+     * records.
      */
     private static boolean isBuildOutputOf(String classpathEntry, String module) {
         Path path = Path.of(classpathEntry);

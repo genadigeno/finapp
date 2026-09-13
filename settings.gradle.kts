@@ -37,8 +37,8 @@ dependencyResolutionManagement {
 // entity references, no framework leakage into sharedkernel — are ArchUnit
 // rules in P0-TSK-007.
 //
-// Business modules (identity, ledger, payments, ...) sit between app and
-// platform and belong to their own phases. None exist yet.
+// Business modules (party, identity, kyc, consent, ledger, ...) sit between app and
+// platform and belong to their own phases; each is declared below with the task that created it.
 // ---------------------------------------------------------------------------
 include("sharedkernel")
 include("platform")
@@ -56,5 +56,10 @@ include("identity")
 // `identity` either.
 include("kyc")
 include("consent")
+
+// The Phase 3 ledger module (P3-TSK-001), on the same reasoning - and with more at stake: the
+// ledger is the authoritative financial record and the sole writer of postings (INV-LED-04), so
+// its boundary and its schema owner exist before the first ledger table does.
+include("ledger")
 
 include("app")

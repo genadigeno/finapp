@@ -42,12 +42,12 @@ A Party can now be verified to the standard a regulator requires, with the evide
 the decision defensible — and nothing processes for a consent-gated purpose without a
 current, purpose-scoped basis.
 
-**Phase 3 is `READY`**: planned in full in `PHASE_3_PLAN.md`, with ADR-0039…0042 `Proposed`
+**Phase 3 is `IN_PROGRESS`** (started 2026-09-13): planned in full in `PHASE_3_PLAN.md`, with ADR-0039…0042 `Proposed`
 and 24 backlog items across eight milestones. **No new invariant group was needed** — unlike
 Phases 1 and 2, whose properties existed only as gate prose, Phase 3's were catalogued at project
 initiation, because Phase 3 is what the catalogue was written for; the platform stays at 82.
 
-The first task is `P3-TSK-001`, the `ledger` module and its schema — first because every
+The first task, `P3-TSK-001` — the `ledger` module and its schema — is complete; it came first because every
 `DB-PRIVILEGE` claim the phase makes is only *available* at that rank if the migrator owns the
 objects from the start.
 

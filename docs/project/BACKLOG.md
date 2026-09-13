@@ -3579,7 +3579,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 ## P3-EPIC-01 — The chart of accounts (M3.1)
 
-**P3-TSK-001 — The `ledger` module, its schema, and the privilege floor** — `READY`
+**P3-TSK-001 — The `ledger` module, its schema, and the privilege floor** — `COMPLETE` (2026-09-13)
 - **Objective**: a guarded `ledger` module exists with a schema owned by the migrator, so every
   later `DB-PRIVILEGE` claim in the phase is *available* to be made.
 - **Context**: Ledger (7). **Scope**: Gradle module on the documented direction; `V001` creating
@@ -3603,9 +3603,23 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   (a planted `double`, a cross-module dependency, an unclassified column).
 - **Accept**: `./gradlew build databaseTest` green with the module present; a planted `double` in
   `ledger` fails the floating-point rules; a cross-module dependency fails the isolation test.
+- **Gate evidence (2026-09-13)**: the full battery ran with the module present — 1027 hermetic
+  and 584 database tests — and its one failure was this task's own catalogue row:
+  `ledger.AdjustmentPosted` written `Yes` where the convention is `**Yes**`, caught by
+  `AuditableActionRegistryTest`. That failure is also the coverage evidence: the app-level sweep
+  reached `LedgerAuditAction` through the derived module set with no rule edited. Both
+  `LedgerModuleIsolationTest` tests passed; `databaseTest` applied `V001` and
+  `ColumnClassificationTest` passed over the new schema. Migrate → validate → re-migrate on a
+  throwaway PostgreSQL: one history row, owner `finapp_migrator`, ACL `finapp_app=U`, no
+  `PUBLIC` entry, zero tables. **Not performed, at the owner's direction**: the re-run after the
+  one-line `**Yes**` fix, and the four planned mutation probes (a planted `double`,
+  `ledger → party`, `party → ledger`, an unclassified column) — the owner stopped that run and
+  closed the gate without it; the next full battery confirms the fix.
+  `ledger/gradle.lockfile` byte-identical to `consent`'s; verification metadata unchanged;
+  `build-logic` Kotlin RC3→GA lockfile drift reverted a third time.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
 
-**P3-TSK-002 — `LedgerAccount`: typed, single-currency, and unchangeable once posted to** — `TODO`
+**P3-TSK-002 — `LedgerAccount`: typed, single-currency, and unchangeable once posted to** — `READY`
 - **Objective**: the chart's row exists and its classification cannot drift (`INV-LED-06`).
 - **Context**: Ledger. **Scope**: `LedgerAccount` aggregate; `AccountType`, `NormalBalance`,
   `AccountPurpose`, `OwnerKind` enums generating their own `CHECK` constraints; `V002` creating

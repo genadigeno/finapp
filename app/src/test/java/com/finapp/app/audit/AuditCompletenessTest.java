@@ -65,7 +65,8 @@ class AuditCompletenessTest {
      * about the future, and the future arriving is what removes it.
      *
      * What remains is the three outbox actions, which are recorded Phase 15 debt rather than
-     * unbuilt endpoints.
+     * unbuilt endpoints - and, since P3-TSK-001, the two ledger actions, declared with the
+     * module skeleton and waiting on the tasks that build posting and adjustment.
      */
     private static final Map<String, String> NOT_YET_EMITTED =
             Map.of(
@@ -76,7 +77,13 @@ class AuditCompletenessTest {
                     "Recorded debt: performed today as a manual UPDATE with no tooling. Phase 15.",
                     "outbox.EventDiscarded",
                     "Recorded debt: a relay decision visible only as a log line, which ADR-0010 is"
-                        + " explicit does not count as an audit trail. Phase 15.");
+                        + " explicit does not count as an audit trail. Phase 15.",
+                    "ledger.JournalEntryPosted",
+                    "P3-TSK-006: the posting command writes the entry, its lines, this record and"
+                        + " the outbox row in one transaction.",
+                    "ledger.AdjustmentPosted",
+                    "P3-TSK-017: POST /v1/ledger/adjustments, behind LEDGER_ADJUST, reason"
+                        + " required (INV-REV-04).");
 
     @Test
     @DisplayName("no registered action is silently unemitted")

@@ -44,8 +44,8 @@ dependencies {
     // sharedkernel transitively because platform exposes it via `api`. This is
     // the documented chain: app -> platform -> sharedkernel.
     //
-    // Business modules will sit between app and platform as they are created;
-    // none exist yet.
+    // Business modules sit between app and platform; each is declared below with the task that
+    // created it.
     implementation(project(":platform"))
 
     // The Phase 1 business modules (P1-TSK-003). app is the composition root and the only module
@@ -56,6 +56,7 @@ dependencies {
     implementation(project(":identity"))
     implementation(project(":kyc"))
     implementation(project(":consent"))
+    implementation(project(":ledger"))
 
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
