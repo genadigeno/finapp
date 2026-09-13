@@ -15,7 +15,8 @@ import java.util.UUID;
  * <p><strong>Deliberately three methods.</strong> No {@code create} for operational accounts (the
  * seed migration is their one writer, `P3-TSK-003`), no status move (`P3-TSK-014`'s close is the
  * first act that needs one and its design decides the conditional), no {@code findById}
- * (`P3-TSK-005`'s postings are its first caller) — a read with no caller is dead code carrying
+ * (`P3-TSK-006`'s command validates the account it posts to, and is its first caller —
+ * `P3-TSK-005`'s lines reference accounts by foreign key, no Java read needed) — a read with no caller is dead code carrying
  * confident javadoc, the {@code P1-TSK-013} finding.
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033

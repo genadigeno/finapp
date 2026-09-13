@@ -16,7 +16,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
@@ -193,43 +192,61 @@ class LedgerAccountDatabaseTest {
                     .isEqualTo(1);
             migrator.rollback();
 
-            // A stand-in ledger.journal_line with the one column the trigger probes.
-            // P3-TSK-005's real table supersedes this fixture, and that task's sweep must
-            // prove the trigger against it; the per-JVM container (P0-TSK-035) plus the DROP
-            // in finally keep this invisible to every other test.
-            try (Statement ddl = migrator.createStatement()) {
-                ddl.execute(
-                        "CREATE TABLE ledger.journal_line"
-                                + " (id uuid PRIMARY KEY, ledger_account_id uuid NOT NULL)");
-                migrator.commit();
-                try (PreparedStatement line =
-                        migrator.prepareStatement(
-                                "INSERT INTO ledger.journal_line VALUES (?, ?)")) {
-                    line.setObject(1, IDS.next());
-                    line.setObject(2, account.id().value());
-                    line.executeUpdate();
-                }
-                migrator.commit();
-
-                // The same coherent reclassification, now refused: a line references the
-                // account, and INV-LED-06 says the classification is permanent.
-                assertThatThrownBy(
-                                () ->
-                                        update(
-                                                migrator,
-                                                account.id().value(),
-                                                "account_type = 'REVENUE'"))
-                        .as("reclassifying a posted-to account must be refused (INV-LED-06)")
-                        .isInstanceOf(SQLException.class)
-                        .extracting(failure -> ((SQLException) failure).getSQLState())
-                        .isEqualTo(CHECK_VIOLATION);
-                migrator.rollback();
-            } finally {
-                try (Statement ddl = migrator.createStatement()) {
-                    ddl.execute("DROP TABLE IF EXISTS ledger.journal_line");
-                }
-                migrator.commit();
+            // The REAL posted line (P3-TSK-005) - this block proved the trigger against a
+            // stand-in table until that task created ledger.journal_line, exactly as the
+            // stand-in's comment promised. A balanced two-line entry on this one account
+            // (DEBIT and CREDIT of the same amount) is the smallest legal posting that
+            // references it.
+            try (Connection app = DatabaseRoles.application()) {
+                app.setAutoCommit(false);
+                new com.finapp.ledger.JdbcJournalEntryStore(IDS)
+                        .append(
+                                app,
+                                com.finapp.ledger.JournalEntry.balanced(
+                                        IDS,
+                                        CLOCK,
+                                        java.time.LocalDate.of(2026, 9, 13),
+                                        java.time.LocalDate.of(2026, 9, 13),
+                                        java.util.List.of(
+                                                new com.finapp.ledger.JournalLine(
+                                                        account.id(),
+                                                        com.finapp.ledger.Direction.DEBIT,
+                                                        com.finapp.sharedkernel.money.Money
+                                                                .ofMinorUnits(100, GBP)),
+                                                new com.finapp.ledger.JournalLine(
+                                                        account.id(),
+                                                        com.finapp.ledger.Direction.CREDIT,
+                                                        com.finapp.sharedkernel.money.Money
+                                                                .ofMinorUnits(100, GBP)))),
+                                new com.finapp.ledger.PostingAttribution(
+                                        com.finapp.ledger.JournalEntryType.POSTING,
+                                        "probe:freeze",
+                                        java.util.Optional.empty(),
+                                        "system",
+                                        com.finapp.sharedkernel.correlation.Correlation
+                                                .startingWith(
+                                                        com.finapp.sharedkernel.correlation
+                                                                .CorrelationId.generate(IDS))
+                                                .causing(
+                                                        com.finapp.sharedkernel.correlation
+                                                                .CausationId.generate(IDS)),
+                                        "probe:scope:" + account.id().value()));
+                app.commit();
             }
+
+            // The same coherent reclassification, now refused: a line references the
+            // account, and INV-LED-06 says the classification is permanent.
+            assertThatThrownBy(
+                            () ->
+                                    update(
+                                            migrator,
+                                            account.id().value(),
+                                            "account_type = 'REVENUE'"))
+                    .as("reclassifying a posted-to account must be refused (INV-LED-06)")
+                    .isInstanceOf(SQLException.class)
+                    .extracting(failure -> ((SQLException) failure).getSQLState())
+                    .isEqualTo(CHECK_VIOLATION);
+            migrator.rollback();
         }
     }
 

@@ -74,8 +74,23 @@ public final class JournalEntry {
     }
 
     /**
-     * The one way to an entry: validates {@code INV-LED-02} then {@code INV-LED-01} and yields
-     * an immutable value, or throws with nothing constructed.
+     * Reconstitutes from storage (`P3-TSK-005`). Applies no validation — the row was already
+     * valid, held by the schema's own triggers — and exists so a historical entry whose
+     * shapes a LATER rule would refuse still reads back ({@code INV-MON-05}'s reasoning,
+     * applied to the whole record).
+     */
+    public static JournalEntry rehydrate(
+            JournalEntryId id,
+            LocalDate postingDate,
+            LocalDate valueDate,
+            List<JournalLine> lines,
+            Instant createdAt) {
+        return new JournalEntry(id, postingDate, valueDate, List.copyOf(lines), createdAt);
+    }
+
+    /**
+     * The one way to a NEW entry: validates {@code INV-LED-02} then {@code INV-LED-01} and
+     * yields an immutable value, or throws with nothing constructed.
      */
     public static JournalEntry balanced(
             IdGenerator ids,

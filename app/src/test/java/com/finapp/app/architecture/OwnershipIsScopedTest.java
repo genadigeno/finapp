@@ -295,9 +295,25 @@ class OwnershipIsScopedTest {
                                     "An outbox row belongs to a flow, not to a party. Nobody can"
                                         + " own it, so there is no ownership question - and the"
                                         + " entry exists because the rule sweeps every module rather"
-                                        + " than a list of the ones that matter today. Phase 3's"
-                                        + " ledger identifiers will surface here on the day they are"
-                                        + " declared.")),
+                                        + " than a list of the ones that matter today. (This entry"
+                                        + " predicted that Phase 3's ledger identifiers would"
+                                        + " surface here on the day they were declared, and"
+                                        + " P3-TSK-005 is that day - the prediction held.)")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcJournalEntryStore.findById",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-005. A journal entry is the platform's own accounting"
+                                        + " record: its lines may touch many parties' accounts and"
+                                        + " the entry belongs to none of them, so there is no"
+                                        + " single owner to scope by and inventing one would type"
+                                        + " a sentence that is false. Disclosure control is the"
+                                        + " SURFACE's, and today there is no production caller:"
+                                        + " P3-TSK-016's reversal (a URL-named entry under"
+                                        + " LEDGER_ADJUST - the ADMINISTERED shape) and"
+                                        + " P3-TSK-018's statements (scoped by the caller's own"
+                                        + " account) must each come here and say so when they"
+                                        + " arrive.")),
                     Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revoke",
                             new Entry(

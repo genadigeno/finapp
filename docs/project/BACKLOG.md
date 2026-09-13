@@ -3740,7 +3740,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   removed. 1049 hermetic / 592 database tests.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
 
-**P3-TSK-005 — Postings persisted: balanced by constraint, immutable by privilege** — `READY`
+**P3-TSK-005 — Postings persisted: balanced by constraint, immutable by privilege** — `COMPLETE` (2026-09-13)
 - **Objective**: the database refuses what the domain refuses, and refuses to let anything edit
   it afterwards (`INV-LED-01`, `INV-LED-03`, `INV-HIST-01`).
 - **Context**: Ledger. **Scope**: `V004` creating `journal_entry` and `journal_line`; the
@@ -3761,9 +3761,33 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   `INSERT` refused; money round-trips at `BIGINT` extremes for every scale.
 - **Accept**: dropping the balance enforcement fails a test; granting `UPDATE` fails a test; a
   raw SQL unbalanced entry is impossible.
+- **Gate evidence (2026-09-13)**: **the named design problem chosen and argued**: two
+  `CONSTRAINT TRIGGER`s, `DEFERRABLE INITIALLY DEFERRED`, firing at COMMIT — a `CHECK`
+  cannot see sibling rows, cannot be deferred, and SQL `ASSERTION` is unimplemented; sum
+  columns fail multi-currency and need `UPDATE` on an insert-only table. **Two triggers**,
+  because a zero-line entry balances vacuously and the line trigger never fires for it —
+  `P3-TSK-004`'s finding at the schema, proven by direct SQL. The balance trigger also
+  refuses mixed scales per currency, probed with the one shape only that clause catches:
+  equal raw sums at different scales. Immutability is **two layers**: no `UPDATE`/`DELETE`
+  grant (the `P0-TST-007` sweep over every column of both tables), and an unconditional
+  append-only trigger binding the migrator too — stronger than asked, the freeze-trigger
+  precedent. `INV-MON-05` proven at `BIGINT` extremes for scales 0/2/3 **and at an
+  off-default stored scale by raw SQL**, so a rehydrate that re-derived scale is caught
+  (the `P0-TSK-038` finding one layer up). Ten concurrent postings to one account all
+  succeed (ADR-0039: inserts contend on nothing; the account FK's `FOR KEY SHARE` is
+  share-compatible). **Three findings on the way**: the driver ROUNDS nanoseconds to the
+  column's microseconds rather than truncating (caught by an assertion expecting
+  truncation, off by exactly one microsecond); `OwnershipIsScopedTest` refused `findById`
+  until classified — the day the `OutboxRelay` entry predicted — landing `NOT_OWNED` with
+  the surfaces that must reclassify named; and `PostingAttribution` carries the actor
+  **id** rather than a typed `Actor`, because the column holds an id and a typed copy
+  would be a guess on read-back. The two self-armed guards went live: the classification
+  freeze re-proven against the real `journal_line` (stand-in dropped), the seam count now
+  querying a real table. **Eight mutations, all caught by the intended assertion**. 1057
+  hermetic / 600 database tests.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
 
-**P3-TSK-006 — The posting command: idempotent, atomic, audited, announced** — `TODO`
+**P3-TSK-006 — The posting command: idempotent, atomic, audited, announced** — `READY`
 - **Objective**: one command, one financial effect, whatever the caller does (`INV-IDEM-01`).
 - **Context**: Ledger. **Scope**: `PostingService` — entry, lines, audit record and outbox row in
   **one transaction**; the Phase 0 idempotency kernel at the financial boundary;

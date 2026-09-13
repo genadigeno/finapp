@@ -358,6 +358,30 @@ adding "just the user agent", which is why the ceiling is set before anything po
 (`P3-TSK-005`), which is where the plan's *"balances and postings are RESTRICTED-FINANCIAL"*
 sentence lands.
 
+### `ledger.journal_entry` and `ledger.journal_line` — *added by `P3-TSK-005`*
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `journal_entry` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `journal_entry` | `posting_date` | `CONFIDENTIAL` | Dates financial activity — the `kyc_case.opened_at` reasoning, on the record every later phase posts through |
+| `journal_entry` | `value_date` | `CONFIDENTIAL` | As `posting_date` |
+| `journal_entry` | `entry_type` | `INTERNAL` | An enumeration of three values |
+| `journal_entry` | `reference` | `RESTRICTED-FINANCIAL` | The originating economic event — from Phase 4 a transfer or payment identifier, which is `audit_record.target_id`'s reasoning at its ceiling |
+| `journal_entry` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — `audit_record.reason`'s reasoning verbatim: content constrained by no type, handled at the ceiling |
+| `journal_entry` | `actor_id` | `RESTRICTED-PII` | `audit_record.actor_id`'s reasoning: a person's identity-provider subject once real actors post |
+| `journal_entry` | `correlation_id` | `INTERNAL` | Platform-minted since ADR-0034 |
+| `journal_entry` | `causation_id` | `INTERNAL` | As above |
+| `journal_entry` | `idempotency_scope` | `INTERNAL` | As `idempotency_record.scope` |
+| `journal_entry` | `created_at` | `CONFIDENTIAL` | System time of a posting still dates financial activity |
+| `journal_line` | `id` | `INTERNAL` | A generated identifier |
+| `journal_line` | `entry_id` | `INTERNAL` | An identifier of a thing |
+| `journal_line` | `ledger_account_id` | `INTERNAL` | The `kyc_case.customer_id` reasoning: it must appear in the queries and audit trails that make a posting investigable; what it resolves to carries its own levels |
+| `journal_line` | `direction` | `INTERNAL` | An enumeration of two values |
+| `journal_line` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The amount.** The plan's own sentence: postings are `RESTRICTED-FINANCIAL` — the platform's first genuinely financial column, and the reason `toString`s, exception messages and event payloads upstream all refuse to carry it |
+| `journal_line` | `currency` | `INTERNAL` | An ISO 4217 code; the fact lives in the pairing with the amount, which carries the level |
+| `journal_line` | `scale` | `INTERNAL` | Precision metadata of the amount |
+| `journal_line` | `seq` | `INTERNAL` | Line order |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |
