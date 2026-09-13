@@ -3547,7 +3547,7 @@ capability map, and the task list below is the schedule.
   dashboard series renamed, per-purpose registration incomplete. 1025 hermetic tests, 584
   database tests, 14 kafka tests.
 
-**P2-DOC-001 — Phase 2 review record** — `READY`
+**P2-DOC-001 — Phase 2 review record** — `COMPLETE` (2026-09-13)
 - Context: process
 - Description: The `PHASE_GATES.md` §4 review: eight areas, twelve universal criteria, the six
   Phase 2-specific ones, with evidence — and the ADR-0035…0038 acceptance decision.
@@ -3556,6 +3556,7 @@ capability map, and the task list below is the schedule.
   (`P1-DOC-001`'s own finding); the phase flips `COMPLETE` only here, which since the
   transition's guard redesign is itself build-guarded.
 - Risk: Low. Cx: S. DoD: `DOD-DOC`
+- Gate evidence (2026-09-13): **The gate passes; Phase 2 is `COMPLETE`** ([`reviews/PHASE_2_REVIEW.md`](reviews/PHASE_2_REVIEW.md)). Eight areas (7 `PASS`, 1 `NOT APPLICABLE` — area 2 walks a posting end to end and the phase creates none), twelve universal criteria (**12 `PASS`**), the financial supplement recorded **not applicable** rather than skipped, six phase-specific criteria (**6 `PASS`**), and the ten-instance question answered **`PASS`**. **Two criteria were closed by the review rather than waived**: criterion 3's `INV-KYC-06` register row, deferred *in writing* by `P2-TST-001` to this review and **performed rather than inferred**, and criterion 8's two drifts in `PHASE_2_PLAN.md` §11 — a promised *"exactly once per fact"* delivery the architecture deliberately refuses, and an M2.6 that omitted the observability the same document specifies. **The flip is the guarded act**, so the order was land the row → flip → re-run the battery. ADR-0035…0038 → `Accepted`. Every number counted, and the review's own drafted mutation total was wrong (95 → **135**) until it was. 1025 hermetic / 584 database / 14 kafka. **Phase 2 closes at 23 of 23.**
 
 ---
 

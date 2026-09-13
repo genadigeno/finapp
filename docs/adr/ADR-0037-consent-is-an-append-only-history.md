@@ -1,6 +1,6 @@
 # ADR-0037 — Consent is an append-only history; the current basis is derived
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-09
 

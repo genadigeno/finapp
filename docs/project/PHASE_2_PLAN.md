@@ -215,12 +215,12 @@ underscores — checked here at planning time, which is the drift that plan's ta
 
 | Milestone | Contents | Acceptance |
 |---|---|---|
-| **M2.1 — Foundations settle** | Broker adapter + first consumer; `P1-TSK-033`; module skeletons and schemas | An outbox event reaches a real consumer through Kafka exactly once per fact; a person can change their password |
+| **M2.1 — Foundations settle** | Broker adapter + first consumer; `P1-TSK-033`; module skeletons and schemas | An outbox event reaches a real consumer through Kafka with **exactly one effect per fact**, and a person can change their password — *corrected by `P2-DOC-001` from “exactly once per fact”, the promise `P2-TSK-001`'s design refused: delivery is at-least-once (ADR-0005) and the crash test **demonstrates** the duplicate, which is what makes the consumer inbox able to absorb it. An adapter claiming exactly-once invites consumers to skip their inbox* |
 | **M2.2 — A case exists and checks run** | KycCase aggregate + lifecycle; documents; provider adapters; callbacks | A case opened over HTTP reaches `READY_FOR_DECISION` on clean simulated checks, with evidence retained verbatim |
 | **M2.3 — Decisions and review** | Review tasks; reviewer endpoints; immutable decision; customer projection | A hit case cannot terminate without a reviewer; a decision moves `customer.status` in one transaction |
 | **M2.4 — KYB and ownership** | KybCase; beneficial owners; owner verification | An organisation's case decides only when every owner's verification is terminal |
 | **M2.5 — Consent** | Texts, records, gate, endpoints | Withdrawal demonstrably blocks the dependent capability, across instances |
-| **M2.6 — Phase review** | `P2-DOC-001` | The exit gate assessed with evidence, and a verdict |
+| **M2.6 — Observability and the gate** | §10's meters (`P2-TSK-020`); `P2-DOC-001` | A freshly started instance publishes every §10 series; then the exit gate assessed with evidence, and a verdict — *contents corrected by `P2-DOC-001`: this table specified the observability in §10 and then omitted it from the only milestone that could deliver it* |
 
 ## 12. What Phase 2 must not implement
 

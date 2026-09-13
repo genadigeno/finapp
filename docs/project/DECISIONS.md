@@ -324,6 +324,53 @@ search our logs by a caller-chosen string — which is precisely the property th
 disclosure possible. &rarr;
 [ADR-0034](../adr/ADR-0034-the-platform-owns-the-correlation-identifier.md)
 
+### Verification decisions
+**The KYC context owns the verification decision; Party projects it.** A decision is the
+platform's own recorded act — immutable, attributable, reason-carrying, policy-pinned and
+evidence-referencing — and `party.customer.status` is a *projection* of it, moved in the
+decision's own transaction and never computed independently (`INV-KYC-05`). Two writable
+authorities for *"is this party verified?"* would be the shared-mutable-ownership defect
+`CLAUDE.md` forbids, on the field every later financial phase gates on. The mapping lives in
+`app` because `kyc` cannot see `party`: the projection is precisely the cross-context fact an
+orchestration exists to carry, and the module boundary is what keeps anything else from
+computing it. &rarr;
+[ADR-0035](../adr/ADR-0035-kyc-owns-the-verification-decision.md)
+
+**A provider verdict is evidence, never the decision** (`INV-KYC-01`). Providers time out,
+disagree and revise; the platform, not the vendor, answers to the regulator, so a decision that
+*is* a provider's JSON cannot be defended, reproduced or reviewed. Provider answers are
+normalised into our own vocabulary with the default branch `INDETERMINATE` and never success,
+and the raw payload is retained verbatim (`INV-HIST-02`). **A screening hit is resolved by a
+person, never by silence** (`INV-KYC-04`): a name match is a probability, silently cleared is a
+sanctions breach and silently rejected is a person refused service by string similarity. There
+is no edge from `IN_REVIEW` to a terminal state, and after three unknown answers the platform
+**stops asking machines** and routes the question to a person. &rarr;
+[ADR-0038](../adr/ADR-0038-provider-verdicts-are-evidence.md)
+
+### Evidence and document storage
+Verification evidence and document content are held **verbatim in PostgreSQL behind a port**,
+encrypted with AES-256-GCM under a key held outside the database, checksummed at capture and
+re-verified on every read. Object storage is deferred with a named trigger rather than adopted
+speculatively, and `DocumentStore` is the seam. The two questions are separated deliberately:
+**GCM answers *is this the ciphertext this key wrote*, and the checksum answers *are these the
+bytes received*** — proven by substituting a ciphertext the same key genuinely wrote, which
+only the checksum catches. Every read of content produces an audit record naming the actor,
+because the threat a permission wall cannot answer is the *legitimate* reader (`INV-KYC-06`).
+&rarr; [ADR-0036](../adr/ADR-0036-verification-evidence-and-document-storage.md)
+
+### Consent
+**Consent is an append-only history and the current basis is derived, never stored**
+(`INV-CNS-02`). *"Was there a basis on the day it happened?"* is answerable only from history,
+and an updated row has destroyed the evidence the question needs — so grants and withdrawals
+are immutable facts, ordered by a server-assigned sequence rather than by any instance's clock,
+and the derivation re-judges every read. **Absence and withdrawal are one answer to every
+caller** (`INV-CNS-01`), and the gate reads authoritative state per decision with no cache
+anywhere, so a withdrawal committed on one instance refuses on every other at its very next
+decision (`INV-CNS-03`). A grant is bound to the version of the text it was given against
+(`INV-CNS-04`): recording a grant against words the person may never have seen would write a
+consent that consents to nothing. &rarr;
+[ADR-0037](../adr/ADR-0037-consent-is-an-append-only-history.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

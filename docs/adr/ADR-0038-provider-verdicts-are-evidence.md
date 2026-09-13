@@ -1,6 +1,6 @@
 # ADR-0038 — A provider verdict is evidence; the decision is ours, and review is a case
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-09
 

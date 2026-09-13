@@ -1,6 +1,6 @@
 # ADR-0035 — The KYC context owns the verification decision; Party projects it
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-09
 

@@ -1,6 +1,6 @@
 # ADR-0036 — Verification evidence verbatim in PostgreSQL; object storage deferred
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-09-09
 

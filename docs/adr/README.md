@@ -52,10 +52,10 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0032](ADR-0032-credential-storage-and-rotation.md) | Credentials store a derivation and the parameters that produced it | Accepted | 1 | Security |
 | [0033](ADR-0033-explicit-sql-and-no-object-relational-mapper.md) | Explicit SQL, and no object-relational mapper | Accepted | 1 | Data |
 | [0034](ADR-0034-the-platform-owns-the-correlation-identifier.md) | The platform owns the correlation identifier | Accepted | 1 | Security |
-| [0035](ADR-0035-kyc-owns-the-verification-decision.md) | The KYC context owns the verification decision; Party projects it | Proposed | 2 | Domain |
-| [0036](ADR-0036-verification-evidence-and-document-storage.md) | Verification evidence verbatim in PostgreSQL; object storage deferred | Proposed | 2 | Data |
-| [0037](ADR-0037-consent-is-an-append-only-history.md) | Consent is an append-only history; the current basis is derived | Proposed | 2 | Domain |
-| [0038](ADR-0038-provider-verdicts-are-evidence.md) | A provider verdict is evidence; the decision is ours | Proposed | 2 | Security |
+| [0035](ADR-0035-kyc-owns-the-verification-decision.md) | The KYC context owns the verification decision; Party projects it | Accepted | 2 | Domain |
+| [0036](ADR-0036-verification-evidence-and-document-storage.md) | Verification evidence verbatim in PostgreSQL; object storage deferred | Accepted | 2 | Data |
+| [0037](ADR-0037-consent-is-an-append-only-history.md) | Consent is an append-only history; the current basis is derived | Accepted | 2 | Domain |
+| [0038](ADR-0038-provider-verdicts-are-evidence.md) | A provider verdict is evidence; the decision is ours | Accepted | 2 | Security |
 
 ## Anticipated ADRs
 
