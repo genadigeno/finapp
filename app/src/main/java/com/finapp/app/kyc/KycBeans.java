@@ -38,9 +38,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Configuration(proxyBeanMethods = false)
 public class KycBeans {
 
+    /**
+     * The case store, metered (`P2-TSK-020`): {@code finapp.kyc.case} counts at this seam
+     * because every door — the endpoint, the consumer, KYB registration, both decision paths —
+     * goes through this one bean, and a door added later is counted without anyone remembering.
+     */
     @Bean
-    KycCaseStore<Connection> kycCaseStore() {
-        return new JdbcKycCaseStore();
+    KycCaseStore<Connection> kycCaseStore(
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new MeteredKycCaseStore(new JdbcKycCaseStore(), meterRegistry);
     }
 
     @Bean

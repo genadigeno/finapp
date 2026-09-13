@@ -75,7 +75,9 @@ class DashboardQueriesResolveTest {
                     "sum", "min", "max", "avg", "group", "stddev", "stdvar", "count",
                     "count_values", "bottomk", "topk", "quantile",
                     // Aggregation modifiers and label names used in this dashboard.
-                    "by", "on", "without", "ignoring", "outcome", "le");
+                    "by", "on", "without", "ignoring", "outcome", "le",
+                    // The consent counters' tag key (P2-TSK-020) - a label, not a series.
+                    "purpose");
 
     @LocalServerPort private int port;
 

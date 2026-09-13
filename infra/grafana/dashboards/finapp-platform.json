@@ -304,6 +304,125 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "KYC and consent — verification flow",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Case throughput",
+      "description": "finapp.kyc.case by outcome (PHASE_2_PLAN.md §10): opened at creation, approved/rejected at decision, counted at the store seam so every door - the endpoint, the consumer, KYB registration and both decision paths - moves it. The straight-through rate is derivable as approved over opened. Per-instance counters: aggregate with sum(rate(...)).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 31 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_kyc_case_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Check outcomes",
+      "description": "finapp.kyc.check as normalised by us, never a provider verdict (INV-KYC-01). A rising indeterminate is a provider degrading - which is exactly the moment this series must already exist, and why it is registered eagerly and unconditionally (P2-TSK-020).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 31 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_kyc_check_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Review queue",
+      "description": "Checks awaiting a person (PHASE_2_PLAN.md §10: the queue nobody watches is the queue that ages). A fleet-wide gauge read from the database, so every instance reports the same figure: max(), NEVER sum() - summing ten replicas reports ten times the truth.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 31 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_kyc_review_queue)", "legendFormat": "waiting" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Provider latency",
+      "description": "Verification provider round-trip time, refusals included - the port is total, so a timeout or a 5xx is a timed result, never an exception (ADR-0008). The MEAN, for the session-lifetime panel's reason: a Timer publishes no histogram buckets without publishPercentileHistogram(), whose cardinality this signal does not earn.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 38 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(finapp_kyc_provider_latency_seconds_sum[5m])) / sum(rate(finapp_kyc_provider_latency_seconds_count[5m]))", "legendFormat": "mean" },
+        { "refId": "B", "expr": "sum(rate(finapp_kyc_provider_latency_seconds_count[5m]))", "legendFormat": "calls/s" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Consent grants and withdrawals",
+      "description": "finapp.consent.grant and finapp.consent.withdrawal by purpose (PHASE_2_PLAN.md §10): a withdrawal spike is a trust event worth seeing, which is why it is its own meter rather than an outcome tag buried in the grant rate. The purpose tag is bounded by the closed ConsentPurpose enum (MetricNames.ALLOWED_TAG_KEYS records the decision).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 38 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (purpose) (rate(finapp_consent_grant_total[5m]))", "legendFormat": "{{purpose}} granted" },
+        { "refId": "B", "expr": "sum by (purpose) (rate(finapp_consent_withdrawal_total[5m]))", "legendFormat": "{{purpose}} withdrawn" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

@@ -58,6 +58,18 @@ final class KycMetrics {
         this.connections = connections;
         this.clock = clock;
 
+        // The provider-fed series, registered UNCONDITIONALLY here (P2-TSK-020). Their
+        // incrementing owners - CheckOutcomeTrail and VerificationRunService - exist only where
+        // `finapp.kyc.provider.url` is configured, and a plan-named series that vanishes with a
+        // property is the P1-TSK-029 defect wearing a condition: on an instance without
+        // providers, a zero rate is the healthy signal and absence looks like a quiet system.
+        // Built through KycMeters, the same definition the owners use, so the two registrations
+        // cannot drift apart; registration is idempotent, so sharing is safe.
+        for (com.finapp.kyc.CheckOutcome outcome : com.finapp.kyc.CheckOutcome.values()) {
+            KycMeters.check(registry, outcome.name().toLowerCase(java.util.Locale.ROOT));
+        }
+        KycMeters.providerLatency(registry);
+
         Gauge.builder(REVIEW_QUEUE, this, self -> self.reading().valueOrNaN())
                 .description(
                         "Review tasks awaiting a person (OPEN). Read from the database, so every"

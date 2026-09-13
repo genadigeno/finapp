@@ -75,7 +75,14 @@ public final class MetricNames {
                     // Which module owns the meter, where one meter serves several.
                     "module",
                     // The kind of thing acted on - a type name, never an instance identifier.
-                    "type");
+                    "type",
+                    // Which consent purpose (P2-TSK-020). Bounded by the closed public
+                    // ConsentPurpose enum - a category of processing shared by everyone, which
+                    // can never name a person or a resource (P2-TSK-018's reasoning for the one
+                    // /v1/me path variable). Added deliberately, which is this list's job: the
+                    // plan's own table says "counter by purpose", and unlike P1-TSK-029's
+                    // refused `stage` there is no naming that carries the signal without it.
+                    "purpose");
 
     /** Substrings that must never appear in a tag KEY, because of what they imply about values. */
     public static final Set<String> FORBIDDEN_TAG_KEY_FRAGMENTS =

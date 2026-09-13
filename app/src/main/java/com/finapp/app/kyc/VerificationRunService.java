@@ -94,11 +94,12 @@ public class VerificationRunService {
                         Objects.requireNonNull(kycTransactions, "kycTransactions must not be null"),
                         Objects.requireNonNull(dataSource, "dataSource must not be null"));
 
+        // Built through KycMeters (P2-TSK-020), the one definition this provider-conditional
+        // bean shares with the unconditional registrar in KycMetrics - the series must exist on
+        // an instance with no provider configured, or a plan-named meter vanishes with a
+        // property.
         Objects.requireNonNull(meterRegistry, "meterRegistry must not be null");
-        this.providerLatency =
-                Timer.builder("finapp.kyc.provider.latency")
-                        .description("Verification provider round-trip time, refusals included")
-                        .register(meterRegistry);
+        this.providerLatency = com.finapp.app.telemetry.KycMeters.providerLatency(meterRegistry);
     }
 
     /**

@@ -57,6 +57,21 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 public class ConsentService {
 
+    /** {@code finapp.consent.grant} — grants recorded, by purpose (`PHASE_2_PLAN.md` §10). */
+    static final String GRANT_COUNTER = "finapp.consent.grant";
+
+    /**
+     * {@code finapp.consent.withdrawal} — withdrawals recorded, by purpose.
+     *
+     * <p>A separate meter rather than a third {@code outcome} tag value, for the lockout
+     * counter's reason: the two answer different questions, and <em>a withdrawal spike is a
+     * trust event worth seeing</em> (§10's own words) — folding it into the grant counter would
+     * bury the second signal inside the first's noise. The {@code purpose} tag is bounded by
+     * the closed {@code ConsentPurpose} enum; {@code MetricNames.ALLOWED_TAG_KEYS} records the
+     * widening decision.
+     */
+    static final String WITHDRAWAL_COUNTER = "finapp.consent.withdrawal";
+
     private final IdentityStore<Connection> identities;
     private final ConsentStore<Connection> consents;
     private final AuditWriter<Connection> auditWriter;
@@ -65,6 +80,15 @@ public class ConsentService {
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
 
+    /**
+     * Registered at CONSTRUCTION, one per purpose, never on first increment (`P1-TSK-029`'s
+     * rule): a freshly started instance publishes every series at zero, so a dashboard's
+     * withdrawal panel has something to evaluate before the first act ever happens.
+     */
+    private final java.util.Map<ConsentPurpose, io.micrometer.core.instrument.Counter> granted;
+
+    private final java.util.Map<ConsentPurpose, io.micrometer.core.instrument.Counter> withdrawn;
+
     public ConsentService(
             IdentityStore<Connection> identityStore,
             ConsentStore<Connection> consentStore,
@@ -72,7 +96,8 @@ public class ConsentService {
             IdGenerator idGenerator,
             Clock clock,
             TransactionTemplate consentTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            io.micrometer.core.instrument.MeterRegistry meters) {
         this.identities = Objects.requireNonNull(identityStore, "identityStore must not be null");
         this.consents = Objects.requireNonNull(consentStore, "consentStore must not be null");
         this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
@@ -81,6 +106,14 @@ public class ConsentService {
         this.transactions =
                 Objects.requireNonNull(consentTransactions, "consentTransactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        Objects.requireNonNull(meters, "meters must not be null");
+        this.granted = new java.util.EnumMap<>(ConsentPurpose.class);
+        this.withdrawn = new java.util.EnumMap<>(ConsentPurpose.class);
+        for (ConsentPurpose purpose : ConsentPurpose.values()) {
+            String tag = purpose.name().toLowerCase(java.util.Locale.ROOT);
+            granted.put(purpose, meters.counter(GRANT_COUNTER, "purpose", tag));
+            withdrawn.put(purpose, meters.counter(WITHDRAWAL_COUNTER, "purpose", tag));
+        }
     }
 
     /** How a grant attempt ended. The refusals write nothing: no act occurred to record. */
@@ -106,7 +139,7 @@ public class ConsentService {
         Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(purpose, "purpose must not be null");
 
-        return inOneTransaction(
+        GrantResult result = inOneTransaction(
                 unitOfWork -> {
                     Optional<UUID> party = resolve(unitOfWork, current);
                     if (party.isEmpty()) {
@@ -125,6 +158,13 @@ public class ConsentService {
                         }
                     };
                 });
+        if (result instanceof GrantResult.Granted) {
+            // After the commit, and only for the recorded act: a refusal increments nothing
+            // because no act occurred (the audit rule, applied to the meter), and counting
+            // inside the transaction would count a grant a rollback then unwrote.
+            granted.get(purpose).increment();
+        }
+        return result;
     }
 
     /**
@@ -135,7 +175,7 @@ public class ConsentService {
         Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(purpose, "purpose must not be null");
 
-        return inOneTransaction(
+        boolean recorded = inOneTransaction(
                 unitOfWork -> {
                     Optional<UUID> party = resolve(unitOfWork, current);
                     if (party.isEmpty()) {
@@ -155,6 +195,10 @@ public class ConsentService {
                     audit(unitOfWork, ConsentAuditAction.CONSENT_WITHDRAWN, record);
                     return true;
                 });
+        if (recorded) {
+            withdrawn.get(purpose).increment();
+        }
+        return recorded;
     }
 
     /**

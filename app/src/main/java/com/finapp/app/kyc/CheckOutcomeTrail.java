@@ -56,17 +56,16 @@ public class CheckOutcomeTrail {
         // Eager, one per outcome (P1-TSK-029): a counter that starts existing when the thing it
         // counts happens is a delayed notification, not monitoring - and a rising
         // `indeterminate` is a provider degrading, which is exactly the moment the series must
-        // already exist. Registration is idempotent, so both doors sharing this class share
-        // the same series.
+        // already exist. Built through KycMeters (P2-TSK-020), the one definition this bean
+        // shares with the unconditional registrar in KycMetrics: this trail exists only where a
+        // provider endpoint is configured, and the series must not depend on that.
         Objects.requireNonNull(meterRegistry, "meterRegistry must not be null");
         this.outcomes = new EnumMap<>(CheckOutcome.class);
         for (CheckOutcome outcome : CheckOutcome.values()) {
             outcomes.put(
                     outcome,
-                    Counter.builder("finapp.kyc.check")
-                            .tag("outcome", outcome.name().toLowerCase(Locale.ROOT))
-                            .description("Verification check outcomes, as normalised by us")
-                            .register(meterRegistry));
+                    com.finapp.app.telemetry.KycMeters.check(
+                            meterRegistry, outcome.name().toLowerCase(Locale.ROOT)));
         }
     }
 

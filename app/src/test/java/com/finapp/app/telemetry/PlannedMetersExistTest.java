@@ -112,6 +112,39 @@ class PlannedMetersExistTest {
                                         .isTrue());
     }
 
+    /**
+     * `P2-TSK-020`'s acceptance, performed ahead of the flip: every meter Phase 2's plan names
+     * is registered in this context — which boots with <strong>nothing</strong> configured, no
+     * database and no provider endpoint, so it is exactly the "freshly started instance" the
+     * criterion names.
+     *
+     * <p>Pinned to {@code PHASE_2_PLAN.md} deliberately, where the guard above derives: the
+     * derived rule keys on phases recorded {@code COMPLETE} — an <em>exit</em> criterion, so a
+     * guard red for weeks at every phase start is one somebody turns off — and this task's job
+     * is precisely to make the flip a non-event for that rule. Between now and the flip, this
+     * is the only thing holding the six series; after it, a harmless second reading of the same
+     * table. The two conditions this proves that no per-class test can: the provider-fed series
+     * exist <strong>without</strong> {@code finapp.kyc.provider.url} (the unconditional
+     * registration in {@code KycMetrics}), and the case counter's decorator is actually the
+     * wired bean.
+     */
+    @Test
+    @DisplayName("Phase 2's planned meters are already published, ahead of the phase flip")
+    void phase2PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        for (String line : read(repositoryFile("docs/project/PHASE_2_PLAN.md"))) {
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(planned)
+                .as("the Phase 2 plan's §10 table must parse, or this checks nothing")
+                .hasSizeGreaterThanOrEqualTo(6);
+
+        assertThat(registeredMeters()).containsAll(planned);
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

@@ -3515,7 +3515,7 @@ capability map, and the task list below is the schedule.
 
 ## P2-EPIC-07 — Observability and the gate (M2.6)
 
-**P2-TSK-020 — The six planned meters, eagerly registered** — `READY`
+**P2-TSK-020 — The six planned meters, eagerly registered** — `COMPLETE` (2026-09-13)
 - Context: kyc / consent / platform
 - Description: `PHASE_2_PLAN.md` §10's table, registered at construction (`P1-TSK-029`'s rule),
   plus a dashboard row with queries that resolve (`DashboardQueriesResolveTest` extends).
@@ -3523,8 +3523,31 @@ capability map, and the task list below is the schedule.
 - Accept: a freshly started instance publishes every §10 series; `PlannedMetersExistTest` will
   hold them from the day the phase completes.
 - Risk: Low. Cx: S. DoD: `DOD-OBS`
+- Gate evidence (2026-09-13): **The survey found three of the six already built — and two of
+  those behind a condition.** `finapp.kyc.check` and `finapp.kyc.provider.latency` were
+  registered only by `@ConditionalOnProperty("finapp.kyc.provider.url")` beans, so the exact
+  context the guards boot — nothing configured — published neither: the `P1-TSK-029` defect
+  wearing a condition. Closed by one definition (`KycMeters`) built through by the conditional
+  owners AND registered unconditionally by `KycMetrics` at startup (registration is
+  idempotent). **`finapp.kyc.case` counts at the store seam**: a `MeteredKycCaseStore`
+  decorator over the one `kycCaseStore` bean, because every door — the endpoint, the consumer,
+  KYB registration, both decision paths — goes through it; `opened` on `created`,
+  `approved`/`rejected` on a WON terminal move, tag values derived from the machine.
+  **`finapp.consent.grant`/`.withdrawal` by purpose**, eager per purpose in `ConsentService`,
+  incremented after the commit and only for the recorded act; `ALLOWED_TAG_KEYS` widened with
+  `purpose` — the designed edit-forces-decision path, bounded by the closed `ConsentPurpose`
+  enum, and unlike the refused `stage` there is no naming that carries the plan's own table
+  without it. The acceptance is performed ahead of the flip: a pinned test in
+  `PlannedMetersExistTest` holds Phase 2's §10 table against the plain context now, so the
+  flip is a non-event for the derived guard. Dashboard row added, every query resolving
+  against a live scrape; the per-purpose eagerness is held by the series nothing in any suite
+  ever increments (`finapp.consent.withdrawal{purpose=screening}`). **Seven mutations, all
+  caught by the intended assertion** — converged open counted, decorator un-wired,
+  unconditional registration removed, non-terminal move counted, refused grant counted,
+  dashboard series renamed, per-purpose registration incomplete. 1025 hermetic tests, 584
+  database tests, 14 kafka tests.
 
-**P2-DOC-001 — Phase 2 review record** — `TODO`
+**P2-DOC-001 — Phase 2 review record** — `READY`
 - Context: process
 - Description: The `PHASE_GATES.md` §4 review: eight areas, twelve universal criteria, the six
   Phase 2-specific ones, with evidence — and the ADR-0035…0038 acceptance decision.

@@ -75,7 +75,8 @@ class ConsentBeans {
             IdGenerator idGenerator,
             Clock clock,
             TransactionTemplate consentTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         return new ConsentService(
                 identityStore,
                 consentStore,
@@ -83,6 +84,7 @@ class ConsentBeans {
                 idGenerator,
                 clock,
                 consentTransactions,
-                dataSource);
+                dataSource,
+                meterRegistry);
     }
 }

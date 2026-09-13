@@ -58,6 +58,9 @@ class ConsentEndpointDatabaseTest {
 
     @LocalServerPort private int port;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.micrometer.core.instrument.MeterRegistry meters;
+
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
 
@@ -68,6 +71,8 @@ class ConsentEndpointDatabaseTest {
     @DisplayName("grant, withdraw and re-grant over HTTP, each act audited against the person")
     void theLifecycleOverHttpWithTheTrailNamingThePerson() throws Exception {
         Person ada = givenAPerson();
+        double grantsBefore = consentCounter("finapp.consent.grant", "kyc_processing");
+        double withdrawalsBefore = consentCounter("finapp.consent.withdrawal", "kyc_processing");
 
         assertThat(
                         post(
@@ -103,6 +108,21 @@ class ConsentEndpointDatabaseTest {
         // Each record's target is a consent record that really exists for this party - the row
         // and its trail committed together, so neither can name the other falsely.
         assertThat(auditTargetsExistAsRecords(ada)).isTrue();
+
+        // The meters move with the acts and only with the acts (P2-TSK-020): two grants, one
+        // withdrawal, each under its purpose - deltas, because the registry is shared across
+        // this class's tests.
+        assertThat(consentCounter("finapp.consent.grant", "kyc_processing"))
+                .isEqualTo(grantsBefore + 2.0d);
+        assertThat(consentCounter("finapp.consent.withdrawal", "kyc_processing"))
+                .isEqualTo(withdrawalsBefore + 1.0d);
+
+        // And the series NOTHING in any suite ever increments exists anyway - eager, per
+        // purpose (P1-TSK-029). The plan-level guard checks meter names, and a registration
+        // that quietly became lazy or per-acted-purpose would keep every name alive while this
+        // series vanished; meters.get throws on an absent series, which is the assertion.
+        assertThat(consentCounter("finapp.consent.withdrawal", "screening"))
+                .isGreaterThanOrEqualTo(0.0d);
     }
 
     /**
@@ -146,6 +166,7 @@ class ConsentEndpointDatabaseTest {
 
         seedTextVersion(ConsentPurpose.SCREENING, 2, true);
         seedTextVersion(ConsentPurpose.KYC_PROCESSING, 2, false);
+        double screeningGrantsBefore = consentCounter("finapp.consent.grant", "screening");
         try {
             HttpResponse<String> stale =
                     post(
@@ -158,6 +179,9 @@ class ConsentEndpointDatabaseTest {
             assertThat(auditCount(ada, "consent.ConsentGranted"))
                     .as("no act occurred, so there is nothing to record")
                     .isZero();
+            assertThat(consentCounter("finapp.consent.grant", "screening"))
+                    .as("a refused grant increments nothing: no act occurred (P2-TSK-020)")
+                    .isEqualTo(screeningGrantsBefore);
 
             // Against the current version, the same person grants - and the response's row says
             // which version is current, so the remedy the 409 names is drivable.
@@ -168,6 +192,9 @@ class ConsentEndpointDatabaseTest {
                             "{\"purpose\":\"SCREENING\",\"textVersion\":2}");
             assertThat(current.statusCode()).isEqualTo(201);
             assertThat(current.body()).contains("\"granted\":true");
+            assertThat(consentCounter("finapp.consent.grant", "screening"))
+                    .as("the recorded act is what moves the meter")
+                    .isEqualTo(screeningGrantsBefore + 1.0d);
 
             // A stale version whose successors never demanded re-consent stays grantable: those
             // are the words the person was shown, and every later version recorded that they
@@ -464,6 +491,11 @@ class ConsentEndpointDatabaseTest {
      * idiom: version {@code >= 2}, the marker body, cleanup in {@code finally}, because text
      * versions are shared state every consent test reads).
      */
+    /** The live value of one consent counter's series - tests assert deltas against it. */
+    private double consentCounter(String name, String purpose) {
+        return meters.get(name).tag("purpose", purpose).counter().count();
+    }
+
     private static void seedTextVersion(
             ConsentPurpose purpose, int version, boolean requiresReconsent) throws SQLException {
         try (Connection migrator = DatabaseRoles.migrator();

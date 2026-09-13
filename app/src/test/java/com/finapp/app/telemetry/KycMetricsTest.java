@@ -49,6 +49,31 @@ class KycMetricsTest {
         assertThat(gauge(registry)).isEqualTo(4.0d);
     }
 
+    @Test
+    @DisplayName("the provider-fed series are registered here, unconditionally (P2-TSK-020)")
+    void theProviderFedSeriesAreRegisteredUnconditionally() {
+        // Their incrementing owners exist only where a provider endpoint is configured, and a
+        // plan-named series that vanishes with a property is the P1-TSK-029 defect wearing a
+        // condition. This bean is unconditional, so registering them here is what makes a
+        // provider-less instance publish a healthy zero rather than an absence that looks like
+        // a quiet system.
+        MeterRegistry registry = new SimpleMeterRegistry();
+        new KycMetrics(new FixedQueue(0), () -> null, CLOCK, registry);
+
+        for (com.finapp.kyc.CheckOutcome outcome : com.finapp.kyc.CheckOutcome.values()) {
+            assertThat(
+                            registry.get(KycMeters.CHECK)
+                                    .tag(
+                                            "outcome",
+                                            outcome.name().toLowerCase(java.util.Locale.ROOT))
+                                    .counter()
+                                    .count())
+                    .as("finapp.kyc.check{outcome=%s} exists at zero", outcome)
+                    .isZero();
+        }
+        assertThat(registry.get(KycMeters.PROVIDER_LATENCY).timer().count()).isZero();
+    }
+
     // -----------------------------------------------------------------
 
     private static double gauge(MeterRegistry registry) {

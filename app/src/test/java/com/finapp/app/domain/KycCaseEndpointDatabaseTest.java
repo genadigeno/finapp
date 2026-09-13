@@ -60,6 +60,9 @@ class KycCaseEndpointDatabaseTest {
 
     @LocalServerPort private int port;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.micrometer.core.instrument.MeterRegistry meters;
+
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
 
@@ -73,6 +76,8 @@ class KycCaseEndpointDatabaseTest {
     void aConsentedPersonReachesAnOpenCase() throws Exception {
         Person ada = givenAPerson();
         assertThat(post("/me/consents", ada.session(), GRANT).statusCode()).isEqualTo(201);
+        double openedBefore =
+                meters.get("finapp.kyc.case").tag("outcome", "opened").counter().count();
 
         HttpResponse<String> first = post("/me/kyc", ada.session(), null);
         assertThat(first.statusCode()).isEqualTo(201);
@@ -98,6 +103,13 @@ class KycCaseEndpointDatabaseTest {
         assertThat(announcementCount(ada))
                 .as("one kyc.KycCaseOpened announcement - the converged POST announces nothing")
                 .isEqualTo(1);
+
+        // The throughput meter agrees with the records (P2-TSK-020): the creation moved it by
+        // one and the converged retry by nothing - through the real wired bean, which is the
+        // half the hermetic MeteredKycCaseStoreTest cannot see. A delta, because the registry
+        // is shared across this class's tests.
+        assertThat(meters.get("finapp.kyc.case").tag("outcome", "opened").counter().count())
+                .isEqualTo(openedBefore + 1.0d);
 
         assertThat(get("/me/kyc", ada.session()).body()).isEqualTo("{\"status\":\"OPEN\"}");
     }
