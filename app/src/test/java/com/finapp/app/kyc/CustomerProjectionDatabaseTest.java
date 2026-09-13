@@ -486,6 +486,12 @@ class CustomerProjectionDatabaseTest {
         }
 
         @Override
+        public java.util.Optional<com.finapp.party.PartyId> partyOfCustomer(
+                Connection unitOfWork, com.finapp.party.CustomerId customerId) {
+            return real.partyOfCustomer(unitOfWork, customerId);
+        }
+
+        @Override
         public java.util.Optional<com.finapp.party.Customer> organisationRegisteredBy(
                 Connection unitOfWork, com.finapp.party.PartyId registrantPartyId) {
             return real.organisationRegisteredBy(unitOfWork, registrantPartyId);

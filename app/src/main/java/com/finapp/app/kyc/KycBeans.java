@@ -454,15 +454,58 @@ public class KycBeans {
                 dataSource);
     }
 
+    /**
+     * The case-opening door's consent question (`P2-TSK-019`), carried across two boundaries
+     * this module may not cross itself: the basis is the <strong>party's</strong> fact, so the
+     * adapter resolves customer → party through {@code party} and asks the gate for
+     * {@code KYC_PROCESSING} — on the caller's unit of work, so the decision and the open it
+     * authorises are one snapshot ({@code INV-CNS-03}).
+     *
+     * <p>Throws on an unresolvable customer rather than answering {@code false} — the
+     * {@code CaseKindResolver} reasoning: the event commits in the customer's own transaction,
+     * so absence is a broken invariant, and a quiet {@code false} would file a defect under
+     * "person has not consented yet", where nobody would ever look.
+     */
+    @Bean
+    com.finapp.kyc.CaseOpeningConsent<Connection> caseOpeningConsent(
+            PartyStore<Connection> partyStore,
+            com.finapp.consent.ConsentGate<Connection> consentGate) {
+        return (unitOfWork, customerId) -> {
+            com.finapp.party.PartyId party =
+                    partyStore
+                            .partyOfCustomer(
+                                    unitOfWork, com.finapp.party.CustomerId.of(customerId))
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "party.CustomerOpened names customer "
+                                                            + customerId
+                                                            + " but no customer row exists; the"
+                                                            + " event commits with the row, so"
+                                                            + " this is a broken invariant"));
+            return consentGate.permits(
+                    unitOfWork,
+                    party.value(),
+                    com.finapp.consent.ConsentPurpose.KYC_PROCESSING);
+        };
+    }
+
     @Bean
     CustomerOpenedOpensCase customerOpenedOpensCase(
             KycCaseStore<Connection> kycCaseStore,
             com.finapp.kyc.CaseKindResolver<Connection> caseKindResolver,
+            com.finapp.kyc.CaseOpeningConsent<Connection> caseOpeningConsent,
             IdGenerator idGenerator,
             Clock clock,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter) {
         return new CustomerOpenedOpensCase(
-                kycCaseStore, caseKindResolver, idGenerator, clock, auditWriter, outboxWriter);
+                kycCaseStore,
+                caseKindResolver,
+                caseOpeningConsent,
+                idGenerator,
+                clock,
+                auditWriter,
+                outboxWriter);
     }
 }

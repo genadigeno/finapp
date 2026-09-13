@@ -39,6 +39,14 @@ class CustomerOpenedOpensCaseTest {
     private static final CaseKindResolver<Connection> PERSON_KIND =
             (unitOfWork, customerId) -> KycCaseKind.KYC;
 
+    /** The consent gate the app wires over consent; here every party holds a basis. */
+    private static final CaseOpeningConsent<Connection> CONSENTED =
+            (unitOfWork, customerId) -> true;
+
+    /** And its refusal: absence, withdrawal and a lapsed grant are one false (P2-TSK-019). */
+    private static final CaseOpeningConsent<Connection> NO_BASIS =
+            (unitOfWork, customerId) -> false;
+
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), ZoneOffset.UTC);
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
@@ -51,7 +59,7 @@ class CustomerOpenedOpensCaseTest {
     void aCreatedCaseIsAuditedAndAnnounced() {
         ScriptedStore store = new ScriptedStore(true);
         CustomerOpenedOpensCase handler =
-                new CustomerOpenedOpensCase(store, PERSON_KIND, IDS, CLOCK, audit, outbox);
+                new CustomerOpenedOpensCase(store, PERSON_KIND, CONSENTED, IDS, CLOCK, audit, outbox);
         UUID customerId = IDS.next();
         EventId consumed = EventId.next(IDS);
         ReceivedEvent event = customerOpened(consumed, customerId);
@@ -99,13 +107,36 @@ class CustomerOpenedOpensCaseTest {
         // case exists.
         ScriptedStore store = new ScriptedStore(false);
         CustomerOpenedOpensCase handler =
-                new CustomerOpenedOpensCase(store, PERSON_KIND, IDS, CLOCK, audit, outbox);
+                new CustomerOpenedOpensCase(store, PERSON_KIND, CONSENTED, IDS, CLOCK, audit, outbox);
         EventId consumed = EventId.next(IDS);
 
         try (CorrelationContext.Scope scope = scopeFor(consumed)) {
             handler.handle(null, customerOpened(consumed, IDS.next()));
         }
 
+        assertThat(audit.records).isEmpty();
+        assertThat(outbox.envelopes).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a refused opening writes nothing: no case, no record, no announcement")
+    void aRefusedOpeningWritesNothing() {
+        // The gate at the eager door (P2-TSK-019, INV-CNS-01): a party with no current basis -
+        // absence, withdrawal or a lapsed grant, indistinguishably - means the platform may not
+        // open the case, and the consumer's answer is a quiet skip. The store must not even be
+        // ASKED: an open attempted and converged away would still have been an attempt to
+        // process without a basis, and the assertion that catches the gate being consulted
+        // after the fact is the store staying untouched.
+        ScriptedStore store = new ScriptedStore(true);
+        CustomerOpenedOpensCase handler =
+                new CustomerOpenedOpensCase(store, PERSON_KIND, NO_BASIS, IDS, CLOCK, audit, outbox);
+        EventId consumed = EventId.next(IDS);
+
+        try (CorrelationContext.Scope scope = scopeFor(consumed)) {
+            handler.handle(null, customerOpened(consumed, IDS.next()));
+        }
+
+        assertThat(store.created).as("the store was never asked to open").isNull();
         assertThat(audit.records).isEmpty();
         assertThat(outbox.envelopes).isEmpty();
     }

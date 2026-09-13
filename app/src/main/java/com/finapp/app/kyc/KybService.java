@@ -129,6 +129,19 @@ public class KybService {
                                                     // transaction just wrote the ORGANISATION
                                                     // party - so the resolver port is not
                                                     // consulted twice for one fact.
+                                                    //
+                                                    // DELIBERATELY OUTSIDE THE CONSENT GATE
+                                                    // (P2-TSK-019): the declared gated
+                                                    // capability is opening a PERSON's KYC
+                                                    // case under KYC_PROCESSING, whose text
+                                                    // covers "my identity data" - an
+                                                    // organisation cannot consent, and no
+                                                    // Phase 2 artefact declares KYB opening
+                                                    // gated. A lawful-basis regime for
+                                                    // organisational verification is a later
+                                                    // phase's decision, recorded here rather
+                                                    // than smuggled in by a gate whose text
+                                                    // does not cover it.
                                                     cases.openOrConverge(
                                                             unitOfWork,
                                                             KycCase.open(

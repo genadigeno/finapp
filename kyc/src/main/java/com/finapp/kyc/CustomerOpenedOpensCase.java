@@ -52,6 +52,23 @@ import java.util.Optional;
  * justification in {@code SECURITY_ARCHITECTURE.md} §Who is acting. What ties the record to the
  * person is the <strong>correlation</strong> — the producing flow's, entered by the shell — and
  * the target, which names the customer.
+ *
+ * <h2>The open is consent-gated, and a refusal is a skip, never a stall (`P2-TSK-019`)</h2>
+ *
+ * <p>Opening a case is the first consent-gated capability ({@code INV-CNS-01}), and this
+ * consumer is one of its doors — a gate with an ungated second door is not a gate. A freshly
+ * registered person <em>cannot</em> hold a grant yet (a grant needs a session, a session needs
+ * the registration this event announces), so in the ordinary flow this consumer now
+ * <strong>skips</strong>: the case opens when the consented person acts
+ * ({@code POST /v1/me/kyc}, `P2-TSK-006`), or eagerly here when the party already holds a basis
+ * — a re-onboarded party's grant survives, because consent is the party's fact and outlives any
+ * one customer relationship.
+ *
+ * <p>The refusal is <strong>acknowledged, not thrown</strong>: it is the platform's own correct
+ * decision, and stalling the partition over it would be the poison-record treatment applied to
+ * a non-defect. It is logged with the flow's correlation and writes nothing — no case, no audit
+ * record, no announcement — because nothing happened, and the trail of why is the registration's
+ * own records plus the absence of a case.
  */
 public final class CustomerOpenedOpensCase implements InboxEventHandler {
 
@@ -64,8 +81,12 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
 
     private static final int EVENT_VERSION = 1;
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(CustomerOpenedOpensCase.class);
+
     private final KycCaseStore<Connection> cases;
     private final CaseKindResolver<Connection> kinds;
+    private final CaseOpeningConsent<Connection> consent;
     private final IdGenerator ids;
     private final Clock clock;
     private final AuditWriter<Connection> auditWriter;
@@ -74,12 +95,14 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
     public CustomerOpenedOpensCase(
             KycCaseStore<Connection> cases,
             CaseKindResolver<Connection> kinds,
+            CaseOpeningConsent<Connection> consent,
             IdGenerator ids,
             Clock clock,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter) {
         this.cases = Objects.requireNonNull(cases, "cases must not be null");
         this.kinds = Objects.requireNonNull(kinds, "kinds must not be null");
+        this.consent = Objects.requireNonNull(consent, "consent must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
@@ -105,6 +128,20 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
     @SuppressWarnings("try") // the actor scope is used for its close side effect
     public void handle(Connection unitOfWork, ReceivedEvent event) {
         try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
+            // The gate, before anything else (P2-TSK-019, INV-CNS-01): opening a case is
+            // consent-gated, and this door asks like every other. The read shares this unit
+            // of work, so the decision and the open it authorises are one snapshot - and a
+            // withdrawal committed anywhere refuses the very next delivery on any instance
+            // (INV-CNS-03). The refusal is a quiet domain outcome: acknowledged, logged,
+            // nothing written - the case opens when the consented person acts.
+            if (!consent.permitsOpening(unitOfWork, event.aggregateId())) {
+                log.info(
+                        "A customer's case was not opened: no current consent basis for the"
+                                + " party behind customer {}. The case opens when the person"
+                                + " grants and acts (INV-CNS-01).",
+                        event.aggregateId());
+                return;
+            }
             // The kind is party's fact (an ORGANISATION opens a KYB case), asked through a
             // port on the same unit of work (P2-TSK-015) - the payload stays unread, and the
             // metadata-only stance holds.

@@ -1,5 +1,6 @@
 package com.finapp.app.consent;
 
+import com.finapp.consent.ConsentGate;
 import com.finapp.consent.ConsentStore;
 import com.finapp.consent.JdbcConsentStore;
 import com.finapp.identity.IdentityStore;
@@ -30,6 +31,17 @@ class ConsentBeans {
     @Bean
     ConsentStore<Connection> consentStore() {
         return new JdbcConsentStore();
+    }
+
+    /**
+     * The enforcement gate (`P2-TSK-019`): one authoritative read per decision, no state of its
+     * own. Its first consumer is the case-opening door, wired in {@code KycBeans} through
+     * {@code kyc}'s {@code CaseOpeningConsent} port; `P2-TSK-006`'s endpoint injects this same
+     * bean and maps {@code require}'s refusal to its client answer.
+     */
+    @Bean
+    ConsentGate<Connection> consentGate(ConsentStore<Connection> consentStore) {
+        return new ConsentGate<>(consentStore);
     }
 
     /**

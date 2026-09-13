@@ -102,6 +102,17 @@ public interface PartyStore<T> {
     Optional<PartyKind> kindOfCustomer(T unitOfWork, CustomerId customerId);
 
     /**
+     * The Party behind a customer (`P2-TSK-019`).
+     *
+     * <p>The consent-gate resolution: a lawful basis is the <strong>party's</strong> fact — it
+     * outlives any one customer relationship — and the case-opening consumer holds only the
+     * consumed event's customer, so the composition root asks this on the way to the gate.
+     * The identifier's provenance is {@link #kindOfCustomer}'s exactly: the consumed
+     * {@code party.CustomerOpened} event's aggregate, minted by registration, never a request's.
+     */
+    Optional<PartyId> partyOfCustomer(T unitOfWork, CustomerId customerId);
+
+    /**
      * Changes the display name, and reports what it replaced.
      *
      * <p><strong>One statement, and that is what makes the audit record true.</strong> A read

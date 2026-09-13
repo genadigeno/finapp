@@ -423,6 +423,17 @@ class OwnershipIsScopedTest {
                                         + " whose caller is the platform acting on its own"
                                         + " event, disclosing only PERSON-or-ORGANISATION.")),
                     Map.entry(
+                            "com.finapp.party.JdbcPartyStore.partyOfCustomer",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P2-TSK-019. The consent-gate resolution behind the same"
+                                        + " consumer, with kindOfCustomer's provenance"
+                                        + " verbatim: the CustomerId is the consumed event's"
+                                        + " aggregate, minted by registration and appearing in"
+                                        + " no request. It discloses only the party behind a"
+                                        + " customer, to the platform, on its own event - the"
+                                        + " honest weaker label again.")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcDocumentStore.findByChecksum",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

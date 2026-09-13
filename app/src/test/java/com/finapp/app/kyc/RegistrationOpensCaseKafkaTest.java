@@ -38,13 +38,23 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /**
- * The acceptance criterion of `P2-TSK-007`, end to end: <strong>registration alone yields
- * exactly one open case, through the real broker</strong>.
+ * The case-opening consumer through the real broker — `P2-TSK-007`'s chain, under
+ * `P2-TSK-019`'s gate.
  *
  * <p>The application is booted whole, with the relay <em>and</em> the consumer enabled — the two
  * background workers every other test suite deliberately disables — so the chain under test is
  * the deployed one: HTTP registration → outbox → relay schedule → Kafka → consumer loop → inbox
- * → case row, with no call from the test anywhere in the middle.
+ * → gate → case row, with no call from the test anywhere in the middle.
+ *
+ * <h2>`P2-TSK-007`'s headline changed when the gate arrived, and the change is the point</h2>
+ *
+ * <p>It read <em>"registration alone yields exactly one open case"</em>. Opening a case is now
+ * consent-gated ({@code INV-CNS-01}), and a freshly registered person cannot yet hold a grant —
+ * so registration alone yields <strong>no</strong> case, consumed and acknowledged, and that
+ * refusal is the milestone's acceptance working at the eager door. A party <em>with</em> a basis
+ * yields exactly one case, audited and announced, exactly as before. Every other property the
+ * suite held — the inbox absorbing duplicates, distinct events converging silently, the race
+ * against the direct open — keeps its test, on consented fixtures.
  */
 @Tag("kafka")
 @SpringBootTest(
@@ -60,7 +70,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 // stray relay warning, and one alphabetical reordering away from racing a sibling test's own
 // relay assertions. A context with workers does not get to outlive the class that wanted them.
 @org.springframework.test.annotation.DirtiesContext
-@DisplayName("a registration opens a case through the real broker (P2-TSK-007)")
+@DisplayName("a consented registration opens a case through the real broker (P2-TSK-007/-019)")
 class RegistrationOpensCaseKafkaTest {
 
     private static final IdGenerator IDS = new IdGenerator(Clock.systemUTC(), new SecureRandom());
@@ -73,20 +83,45 @@ class RegistrationOpensCaseKafkaTest {
     private final HttpClient http = HttpClient.newHttpClient();
     private final KycCaseStore<Connection> cases = new JdbcKycCaseStore();
 
+    /**
+     * The gate at the eager door, end to end — and the consented open landing after it.
+     *
+     * <p>The first half drives the WHOLE deployed chain: registration over HTTP, the relay, the
+     * broker, the consumer — and asserts the event was <strong>consumed</strong> (inbox row
+     * written, acknowledged, nothing stalled) with <strong>no case, no audit record and no
+     * announcement</strong>, because the person has not granted. The second half grants for the
+     * party and redelivers a distinct event — the consumer's answer for a now-consented party —
+     * and exactly one case lands, audited and announced.
+     */
     @Test
-    @DisplayName("registration alone yields exactly one open case, audited and announced")
-    void registrationOpensExactlyOneCase() throws Exception {
+    @DisplayName("registration alone opens nothing; the same party consented opens exactly one")
+    void theGateHoldsTheEagerDoorAndAConsentedOpenLands() throws Exception {
         UUID customerId = registerSomebody();
+        EventId registrationEvent = customerOpenedEventOf(customerId).eventId();
 
+        await(() -> inboxHandled(registrationEvent));
+
+        assertThat(caseCountFor(customerId))
+                .as("no basis, no case: the gate at the eager door (INV-CNS-01), and the event"
+                        + " is acknowledged rather than stalled - a refusal is a domain outcome,"
+                        + " not a poison record")
+                .isZero();
+        assertThat(auditCount(customerId)).as("nothing happened, so nothing is recorded").isZero();
+
+        // The person grants - and a later distinct delivery opens the case. This is also the
+        // recovery shape: the eager skip is not a dead end, because "ensure my case exists"
+        // converges from whichever door asks next.
+        grantConsentFor(partyOf(customerId));
+        try (KafkaEventPublisher publisher = directPublisher()) {
+            publisher.publish(craftedCustomerOpened(EventId.next(IDS), customerId));
+        }
         await(() -> caseCountFor(customerId) >= 1);
 
         assertThat(caseCountFor(customerId)).isEqualTo(1);
         KycCase kycCase = openCaseFor(customerId);
         assertThat(kycCase.status().name()).isEqualTo("OPEN");
-
         assertThat(auditCount(customerId))
-                .as("kyc.CaseOpened, emitted for the first time - against the customer, by the"
-                        + " platform, in the registration's own flow")
+                .as("kyc.CaseOpened - against the customer, by the platform")
                 .isEqualTo(1);
         assertThat(announcementCount(kycCase))
                 .as("and the fact is announced: kyc.KycCaseOpened on the outbox, in the same"
@@ -97,7 +132,11 @@ class RegistrationOpensCaseKafkaTest {
     @Test
     @DisplayName("the same event delivered again dies in the inbox: still one case")
     void aDuplicateDeliveryIsOneCase() throws Exception {
-        UUID customerId = registerSomebody();
+        UUID customerId = givenAConsentedCustomer();
+        PendingEvent event = craftedCustomerOpened(EventId.next(IDS), customerId);
+        try (KafkaEventPublisher publisher = directPublisher()) {
+            publisher.publish(event);
+        }
         await(() -> caseCountFor(customerId) >= 1);
 
         double duplicatesBefore = duplicateCount();
@@ -105,7 +144,7 @@ class RegistrationOpensCaseKafkaTest {
             // The SAME event, byte for byte and eventId for eventId, straight to the broker -
             // at-least-once delivery doing what it is allowed to do (P2-TSK-001 demonstrated
             // the relay really produces this).
-            publisher.publish(customerOpenedEventOf(customerId));
+            publisher.publish(event);
         }
         await(() -> duplicateCount() > duplicatesBefore);
 
@@ -125,7 +164,10 @@ class RegistrationOpensCaseKafkaTest {
         // which is exactly what the consumer racing POST /v1/me/kyc will produce. The handler
         // must open nothing, record nothing and announce nothing - a converged open that
         // audited itself would put two opening records on one case (INV-KYC-03's ambiguity).
-        UUID customerId = registerSomebody();
+        UUID customerId = givenAConsentedCustomer();
+        try (KafkaEventPublisher publisher = directPublisher()) {
+            publisher.publish(craftedCustomerOpened(EventId.next(IDS), customerId));
+        }
         await(() -> caseCountFor(customerId) >= 1);
         KycCase kycCase = openCaseFor(customerId);
         EventId secondEvent = EventId.next(IDS);
@@ -147,15 +189,14 @@ class RegistrationOpensCaseKafkaTest {
     @Test
     @DisplayName("the event racing the direct open path converges on one case")
     void theEventRacingTheOpenPathIsOneCase() throws Exception {
-        // A customer created by fixture SQL rather than by registration, so no registration
-        // event exists and only this test's two racing paths can open the case: the consumer
-        // (fed directly through the broker) and the direct openOrConverge - the mechanism
-        // POST /v1/me/kyc will use. The rows themselves must exist since P2-TSK-015: the
-        // consumer resolves the case KIND from the customer's party, and an event naming a
-        // customer with no row is a broken invariant it refuses loudly - stalling the
-        // partition by the block-don't-skip design, which is exactly what a bare random
-        // UUID here did to every test scheduled after this one.
-        UUID customerId = givenAnUnregisteredCustomer();
+        // A consented customer created by fixture SQL rather than by registration, so no
+        // registration event exists and only this test's two racing paths can open the case:
+        // the consumer (fed directly through the broker) and the direct openOrConverge - the
+        // mechanism POST /v1/me/kyc will use. The rows themselves must exist since P2-TSK-015:
+        // the consumer resolves the case KIND (and now the consent basis, P2-TSK-019) from the
+        // customer's rows, and an event naming a customer with no row is a broken invariant it
+        // refuses loudly - stalling the partition by the block-don't-skip design.
+        UUID customerId = givenAConsentedCustomer();
         EventId eventId = EventId.next(IDS);
         try (KafkaEventPublisher publisher = directPublisher()) {
             publisher.publish(craftedCustomerOpened(eventId, customerId));
@@ -207,6 +248,34 @@ class RegistrationOpensCaseKafkaTest {
                 assertThat(row.next()).as("the registration created a customer").isTrue();
                 return row.getObject(1, UUID.class);
             }
+        }
+    }
+
+    private static UUID partyOf(UUID customerId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select =
+                        app.prepareStatement(
+                                "SELECT party_id FROM party.customer WHERE id = ?")) {
+            select.setObject(1, customerId);
+            try (ResultSet row = select.executeQuery()) {
+                assertThat(row.next()).as("the customer has a party").isTrue();
+                return row.getObject(1, UUID.class);
+            }
+        }
+    }
+
+    /** A current KYC_PROCESSING grant for the party — what the gate reads (P2-TSK-019). */
+    private static void grantConsentFor(UUID partyId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement insert =
+                        app.prepareStatement(
+                                "INSERT INTO consent.consent_record"
+                                        + " (id, party_id, purpose, action, text_version,"
+                                        + " recorded_at) VALUES (?, ?, 'KYC_PROCESSING',"
+                                        + " 'GRANT', 1, now())")) {
+            insert.setObject(1, IDS.next());
+            insert.setObject(2, partyId);
+            insert.executeUpdate();
         }
     }
 
@@ -335,12 +404,13 @@ class RegistrationOpensCaseKafkaTest {
     }
 
     /**
-     * A PERSON party and a PENDING customer inserted directly - rows without a registration,
-     * so nothing rides the outbox and no third opener exists. In production a
-     * {@code party.CustomerOpened} commits in the same transaction as the customer row, so
-     * the consumer's kind resolution always finds it; the fixture keeps that invariant true.
+     * A PERSON party, a PENDING customer and a current KYC_PROCESSING grant, inserted directly
+     * - rows without a registration, so nothing rides the outbox and no third opener exists.
+     * In production a {@code party.CustomerOpened} commits in the same transaction as the
+     * customer row, so the consumer's resolutions always find their rows; the fixture keeps
+     * that invariant true, and the grant is what lets the gated open proceed (P2-TSK-019).
      */
-    private static UUID givenAnUnregisteredCustomer() throws SQLException {
+    private static UUID givenAConsentedCustomer() throws SQLException {
         UUID party = IDS.next();
         UUID customer = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
@@ -361,6 +431,7 @@ class RegistrationOpensCaseKafkaTest {
                 insert.executeUpdate();
             }
         }
+        grantConsentFor(party);
         return customer;
     }
 

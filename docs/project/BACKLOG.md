@@ -3386,7 +3386,7 @@ capability map, and the task list below is the schedule.
   answering with our 500), a withdrawal recorded as a GRANT. 1016 hermetic tests, 573
   database tests, 14 kafka tests. **M2.5: 2 of 4.**
 
-**P2-TSK-019 — The consent gate, and the first capability behind it** — `READY`
+**P2-TSK-019 — The consent gate, and the first capability behind it** — `COMPLETE` (2026-09-13)
 - Context: consent / kyc / app
 - Description: The gate (`ConsentGate.require(party, purpose)`) reading authoritative state per
   decision, and its first consumer: opening a KYC case requires a current `KYC_PROCESSING`
@@ -3402,8 +3402,43 @@ capability map, and the task list below is the schedule.
   race; the cache detector.
 - Accept: `P2-TST-002`'s demonstration is possible and performed.
 - Risk: Medium. Cx: M. DoD: `DOD-SEC`
+- **Outcome:** `ConsentGate` in `consent` — `permits` and `require`, both one authoritative
+  read per decision over `hasCurrentBasis`, no state of its own, the refusal causes
+  indistinguishable on purpose (`ConsentNotGrantedException` names the purpose and nothing
+  more; no error code yet, deliberately — codes are declared by the surface that shapes them,
+  `P2-TSK-006`'s). **The design's crux was that the gated capability had two doors**: the
+  eager registration consumer (`P2-TSK-007`) opens a case for a person who CANNOT yet hold a
+  grant — a grant needs a session, a session needs the registration the event announces — and
+  a gate with an ungated second door is not a gate. So the consumer asks through a `kyc` port
+  (`CaseOpeningConsent`, the `CaseKindResolver` shape — `kyc` cannot see `consent`) that
+  `app` implements over `PartyStore.partyOfCustomer` (new read, `ADMINISTERED` with
+  `kindOfCustomer`'s provenance verbatim) and the gate, and **skips when refused**:
+  acknowledged, logged with correlation, nothing written — no case, no audit record, no
+  announcement, the store not even asked. A refusal is the platform's own correct decision,
+  never a poison record. **`P2-TSK-007`'s headline changed and the change is recorded**:
+  registration alone now opens nothing — that refusal is the milestone's acceptance working
+  at the eager door — and a party WITH a basis opens exactly one, eagerly; the case otherwise
+  opens when the consented person acts (`P2-TSK-006`, now unblocked). The kafka suite was
+  restructured on consented fixtures keeping every prior property (dedupe, silent
+  convergence, the race), and its first test drives the whole deployed chain twice: consumed
+  with nothing written, then granted and opened. **The KYB registration's in-transaction open
+  is deliberately OUTSIDE the gate**, recorded in `KybService`: the declared capability is a
+  PERSON's KYC case under `KYC_PROCESSING`, whose text covers "my identity data" — an
+  organisation cannot consent, and a lawful-basis regime for organisational verification is a
+  later phase's decision, not one to smuggle in under a text that does not cover it.
+  **M2.5's demonstration is performed**: withdrawal committed on one connection refuses the
+  gate on another's very next decision (`P0-TST-009` convention) — `P2-TST-002` records the
+  register row and the cached-read mutation against exactly that test.
+  `NoProcessLocalConsentStateTest` closes the cache shape ADR-0024's patterns cannot see
+  (`ConsentRecord`/`ConsentText` retention; the Boolean-cache limit stated, and covered
+  behaviourally — the memoizing-gate mutation was caught by the race, not the detector).
+  **Five mutations, all caught** — the consumer opening without asking (hermetically: the
+  store stays untouched), the gate permitting everything, `require` swallowing, the adapter
+  asking about the customer where the party belongs (caught through the real broker), and
+  the gate memoizing per (party, purpose). 1019 hermetic tests, 576 database tests, 14 kafka
+  tests. **M2.5: 3 of 4.**
 
-**P2-TST-002 — Consent withdrawal blocks the capability, across instances** — `TODO`
+**P2-TST-002 — Consent withdrawal blocks the capability, across instances** — `READY`
 - Context: consent / test
 - Description: The gate bullet demonstrated: withdraw on one simulated instance, the gated
   capability refused on another, with the register row recorded.

@@ -136,6 +136,26 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
     }
 
     @Override
+    public Optional<PartyId> partyOfCustomer(Connection unitOfWork, CustomerId customerId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT party_id FROM party.customer WHERE id = ?")) {
+            select.setObject(1, customerId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next()
+                        ? Optional.of(PartyId.of(rows.getObject("party_id", UUID.class)))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new PartyStorageException(
+                    DatabaseFailure.describe(
+                            "Could not read the party behind customer " + customerId, e));
+        }
+    }
+
+    @Override
     public Optional<PartyKind> kindOfCustomer(Connection unitOfWork, CustomerId customerId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(customerId, "customerId must not be null");
