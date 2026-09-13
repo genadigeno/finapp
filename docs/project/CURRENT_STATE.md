@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-13 (`P2-TST-002`)
+Last updated: 2026-09-13 (`P2-TSK-006`)
 
 ---
 
@@ -59,6 +59,11 @@ class, again).
 
 ## Current Milestone
 
+**M2.6 — Observability and the gate.** `P2-TSK-020`, `P2-DOC-001`; **0 of 2, opens with
+`P2-TSK-020` (`READY`)** — the six planned meters, eagerly registered, then the phase review
+that alone can flip Phase 2 `COMPLETE` (since the transition's guard redesign, the flip is the
+guarded act). Every implementation milestone — M2.1 through M2.5 — is closed.
+
 **M2.5 — Consent.** `P2-TSK-017` … `P2-TSK-019` plus `P2-TST-002`; **CLOSED
 2026-09-13, 4 of 4.** The milestone's stated acceptance — *withdrawal demonstrably blocks the
 dependent capability, across instances* — **holds at the capability, demonstrated rather than
@@ -93,15 +98,15 @@ sweep holding the pair together in both directions. **The demonstration obligati
 rather than owed to the exit review. **Next: M2.4, KYB and beneficial ownership**, opening with
 `P2-TSK-015`.
 
-**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011`; **6 of 7**
-(2026-09-10) — the case aggregate, the first production consumer, the document store, the
-check machine, screening and the callback door done; the milestone's one remaining member,
-`P2-TSK-006`, was blocked on the consent gate and is **unblocked as of `P2-TSK-019`** (2026-09-13);
-M2.3 had opened with `P2-TSK-012` rather than wait for it.
-Acceptance: a case opened over HTTP reaches `READY_FOR_DECISION` on clean simulated checks,
-with evidence retained verbatim — real for all five check types as of `P2-TSK-010`, a
-non-clean case routes to a person, and a check a crash stranded mid-call now completes by
-the provider's own callback.
+**M2.2 — A case exists and checks run.** `P2-TSK-005` … `P2-TSK-011` plus `P2-TSK-006`;
+**CLOSED 2026-09-13, 7 of 7** — the case aggregate, the first production consumer, the
+document store, the check machine, screening, the callback door, and finally the customer's
+own door: `P2-TSK-006` waited on the consent gate from the day the milestone opened and
+landed the day after the gate did, while M2.3–M2.5 proceeded rather than wait. Acceptance: a
+case opened over HTTP reaches `READY_FOR_DECISION` on clean simulated checks, with evidence
+retained verbatim — real for all five check types as of `P2-TSK-010`, a non-clean case routes
+to a person, a check a crash stranded mid-call completes by the provider's own callback, and
+the person's own `POST /v1/me/kyc` now opens (or converges on) the case, consent-gated.
 
 **M2.1 — Foundations settle.** `P2-TSK-001` … `P2-TSK-004` plus the inherited `P1-TSK-033`;
 **CLOSED 2026-09-09, 5 of 5.** The stated acceptance — an outbox event reaches a real consumer
@@ -260,12 +265,87 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-TST-002` completed 2026-09-13 — the demonstration performed and
-the `INV-CNS` register rows recorded; **M2.5 CLOSES, 4 of 4**. **Next: `P2-TSK-006`
-(`READY`)** — `POST /v1/me/kyc` and `GET /v1/me/kyc`, blocked on the consent gate since
-M2.2 opened and unblocked by it; landing it closes M2.2 at 7 of 7.
+**None in progress.** `P2-TSK-006` completed 2026-09-13 — the person's own case endpoints,
+and the gate's refusal earned its error code; **M2.2 CLOSES, 7 of 7 — every implementation
+milestone of the phase is closed**. **Next: `P2-TSK-020` (`READY`)** — the six planned Phase 2
+meters, eagerly registered; M2.6 opens with it, leaving only the phase review after it.
 
 ### Just completed
+
+**`P2-TSK-006` — `POST /v1/me/kyc` and `GET /v1/me/kyc`** — `COMPLETE` (2026-09-13).
+**M2.2 closes, 7 of 7 — and with it every implementation milestone of the phase.** The
+customer's half of onboarding: the caller ensures their own case exists and reads its status,
+no identifier anywhere in either request — and opening is the first consent-gated capability
+over HTTP, so the gate's refusal earned its error code here.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A registered, consented person reaches an open case | `KycCaseEndpointDatabaseTest`: grant over HTTP → POST → 201 `{"status":"OPEN"}`, one case row, audited **as the person** (actor the identity, proven not `system`), announced once |
+| A second POST is the same case | 201 again, same body; still one case, one record, one announcement — creation is distinguished by the records, never the answer |
+| Consent-absent refusal | `409 consent.ConsentRequired`, nothing written — the exception rolls the transaction back, so the refusal writes nothing *structurally* |
+| The hit-invisibility assertion | A case in `IN_REVIEW` and a case in `CHECKS_IN_PROGRESS` answer **byte-identically** (`{"status":"IN_PROGRESS"}`), with no review vocabulary anywhere |
+
+### The gate's refusal earned its code, and the mapping is global on purpose
+
+`consent.ConsentRequired` (409, actionable: grant and retry) joins the catalogue as the third
+consent code — **one code for three causes, deliberately**: no history, a latest withdrawal
+and a grant lapsed by a re-consent-demanding version are indistinguishable to every caller
+(`INV-CNS-01`), so the code names the remedy and never the cause — proven at the surface as
+an **equality between the causes**: the never-granted person's refusal and the withdrawn
+person's are byte-identical with only the correlation identifier excluded. The mapping lives
+in `ApiErrorHandler` (the `IdempotencyConflictException` shape) rather than in the
+controller, so every later consent-gated surface answers with the same code for free.
+
+### Two extractions, each earned by a second caller arriving — neither invented for one
+
+The tipping-off shaping moved out of `KybController` into `CustomerFacingCaseStatus`: one
+definition of a security-control mapping, because a control copied per controller is one that
+drifts in exactly one of its copies — and the exhaustive `switch` makes a new case status a
+compile failure until somebody decides which side of the disclosure line it sits on. And the
+record-and-announce block moved out of `CustomerOpenedOpensCase` into `CaseOpeningTrail` (the
+`CheckOutcomeTrail` rule, `P2-TSK-011`) — with one deliberate difference from that precedent:
+the **actor stays the door's own**. A check outcome is the platform's act through every door;
+a case opening is not — the consumer door is the platform's policy act (its enumerated
+`enterSystem()` site unchanged) while the endpoint door is the **person's own act** under the
+interceptor's proven scope, and the mutation wrapping this door's record in `enterSystem()`
+is caught by the actor assertion.
+
+### The contract classifier caught a real breaking change
+
+A second handler method named `view` had springdoc rename the KYB surface's **published**
+`GET /v1/me/kyb` operationId to `view_1` — a breaking rename of an existing operation, on an
+endpoint this task never touched. Flagged `BREAKING`, and **withdrawn rather than accepted**:
+the new method is `viewCase`, KYB keeps `view`, and the accepted baseline is 75 added lines,
+zero removed, all `COMPATIBLE`.
+
+### What a decided customer's POST means, stated rather than discovered
+
+`openOrConverge` converges only while a case is open; a decision frees the one-open-case
+slot (`P2-TSK-005`'s demonstrated freed slot), so a decided customer's POST opens a
+**successor** case — changed-circumstances re-verification is a new case by design
+(`INV-LIFE-04`), gated by consent exactly like the first, and the read then answers for the
+latest. Tested, not implied. The GET is deliberately **not** consent-gated: reading the
+status of one's own case is a mirror of processing, and the processing is what consent
+governs.
+
+### Three small findings on the way
+
+The status-move fixture met the **container clock drift** (`P1-TSK-031`'s shape, met again):
+a case's `opened_at` is the service's JVM clock and the fixture's `now()` the container's,
+which runs behind — the constraint that refused it was right, and the fixture pins
+`GREATEST(now(), opened_at)`. `KycCaseStore.Opening`'s javadoc claimed *"`POST /v1/me/kyc`
+answers 'created' versus 'you already had one'"* — and the built endpoint deliberately does
+not (201 both ways; the records distinguish) — corrected before it shipped as the next
+member of the phase's recurring javadoc class. And the trail's first version null-checked
+the unit of work, breaking the hermetic consumer fixture that drives the door with fakes and
+no connection: the unit of work is the caller's, unchecked deliberately.
+
+**Six mutations, all caught by the intended assertion** — the gate call dropped, the
+converged path recording too, the shaping leaking `IN_REVIEW`, the platform recorded as the
+opener, the refusal mapping removed, the announcement dropped.
+**1019 hermetic tests, 584 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P2-TST-002` — Consent withdrawal blocks the capability, across instances** — `COMPLETE`
 (2026-09-13). **M2.5 closes.** The four `INV-CNS` register rows landed, and the acceptance was
@@ -6724,25 +6804,25 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P2-TSK-006` — `POST /v1/me/kyc` and `GET /v1/me/kyc`.** Status `READY`; its deps,
-`P2-TSK-005` and `P2-TSK-019`, are both complete — the consent gate it waited for since M2.2
-opened is the one `P2-TSK-019` built.
+**`P2-TSK-020` — The six planned meters, eagerly registered.** Status `READY`; its deps — the
+flows the meters measure (`P2-TSK-013`, `P2-TSK-018`) — are both complete, and M2.6 opens
+with it.
 
-The caller opens (or converges on) their own case and reads its status — `SESSION_DERIVED`,
-no identifier anywhere in the request. *"Ensure my case exists"* semantics, so it converges
-with the auto-open consumer rather than racing it; **opening is the first consent-gated
-capability**, so the endpoint is where `ConsentGate.require`'s refusal becomes a client
-answer and earns its error code. Status shaping is the security half: a screening hit must be
-indistinguishable from ordinary processing in the customer-facing status (`IN_PROGRESS`
-covers both — tipping-off, `INV-IDN-07`'s reasoning), and the response carries no screening
-vocabulary at all. Invariants: `INV-CNS-01` (gate), `INV-KYC-05`. **Landing it closes M2.2 at
-7 of 7.** Risk: Medium. Cx: S. DoD: `DOD-SEC`.
+`PHASE_2_PLAN.md` §10's table, registered **at construction** (`P1-TSK-029`'s rule: a counter
+that starts existing when the thing it counts happens is a delayed notification, not
+monitoring — a freshly started instance must publish every series), plus a dashboard row
+whose queries resolve against the live registry (`DashboardQueriesResolveTest` extends).
+`PlannedMetersExistTest` already derives its checked set from phases recorded `COMPLETE`, so
+these meters come under its guard the day the phase review flips Phase 2 — which is why they
+must land before it. Landing this leaves `P2-DOC-001`, the phase review, as the phase's one
+remaining item. Risk: Low. Cx: S. DoD: `DOD-OBS`.
 
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
+| 2026-09-13 | **`P2-TSK-006` complete - the person's own case endpoints, and M2.2 closes (7 of 7) - every implementation milestone of the phase is closed.** `POST /v1/me/kyc` ensures the caller's case exists and `GET /v1/me/kyc` reads its status - the `/v1/me` shape, no identifier anywhere in either request, no request body at all (so the credential-sink pinned set is untouched). **Opening is the first consent-gated capability over HTTP, and the gate's refusal earned its code here**: `409 consent.ConsentRequired`, one code for three causes deliberately (`INV-CNS-01` - the code names the remedy, never the cause), mapped once in `ApiErrorHandler` so every later gated surface answers alike; proven at the surface as an equality between the causes - a never-granted person's refusal and a withdrawn person's are byte-identical with only the correlation identifier excluded - and a refused POST writes nothing STRUCTURALLY, because the exception rolls the transaction back. The chain is resolve -> gate -> `openOrConverge` -> (created only) record-and-announce, in one transaction; the created path is audited **as the person** (this door is their own act, where the consumer door is the platform's - the mutation wrapping it in `enterSystem()` is caught) and announced once, the converged path silent (`INV-KYC-03`), answering the creation's own 201 either way (the convergence idiom). **Two extractions, each earned by the second caller arriving**: the tipping-off shaping into `CustomerFacingCaseStatus` - one definition of a security-control mapping, and a case in review and a case in checks answer byte-identically with no review vocabulary, mutation-proven - and the record-and-announce block into `CaseOpeningTrail` (the `CheckOutcomeTrail` rule, with the actor deliberately the door's own). `findLatestFor` on the read so `REJECTED` is never a 404; a decided customer's POST opens a successor case (the freed slot, `INV-LIFE-04`), gated like the first; the GET is deliberately ungated - reading one's own status is a mirror of processing, and processing is what consent governs. **The contract classifier caught a real breaking change**: a second handler named `view` renamed the KYB surface's published operationId to `view_1` - withdrawn by renaming the method rather than accepted; baseline 75 added lines, zero removed, all COMPATIBLE. The status-move fixture met the container clock drift (`P1-TSK-031`'s shape, again; `GREATEST(now(), opened_at)`), and `KycCaseStore.Opening`'s javadoc - which claimed the POST answers created-versus-converged when the endpoint deliberately does not - was corrected before shipping as the next member of the recurring javadoc class. **Six mutations, all caught by the intended assertion** - the gate call dropped, the converged path recording too, the shaping leaking `IN_REVIEW`, the platform as the opener, the refusal mapping removed, the announcement dropped. 1019 hermetic tests, 584 database tests, 14 kafka tests. Next: P2-TSK-020, M2.6 opens. |
 | 2026-09-13 | **`P2-TST-002` complete - the demonstration performed, and M2.5 closes.** The four `INV-CNS-01`...`04` rows landed in `MUTATION_TESTING.md` §2 with the item's own §4 row, each naming its tests by `Class#method`; the guard's teeth re-proven per §5 (one method reference corrupted, `everyNamedMethodExists` failed naming exactly it, restored from a backup COPY and verified byte-identical - never `git checkout --`, never a PowerShell round-trip). **Performing the acceptance rather than recording it changed the test twice.** The demonstration shared ONE `ConsentGate` across both simulated instances, so it caught the cached-read mutation by ACCIDENT - `SimulatedInstance`'s own rule is never to share the thing whose sharing hides the defect, and for a process-local cache that thing is the gate. Giving each instance its own gate then made the test FAIL, exposing the second finding: it had been resting on autocommit, so B's withdrawal had never been a committed fact and the commit boundary was asserted nowhere. It now straddles the commit - the invariant's own wording, *from the transaction that records a withdrawal*: uncommitted, A still permits (refusing there would be reading dirty); committed, A's very next decision refuses. **And reading the item's own words found the demonstration aimed one level below the bullet it serves**: it proved the GATE flipped and left the CAPABILITY to a composition argument over two green tests - the `P1-TSK-027` shape - so `ConsentWithdrawalBlocksTheCapabilityDatabaseTest` now drives the real consumer with the real stores, gate and writers and asserts it opens NOTHING after a withdrawal committed on another instance (no case, no audit record, no announcement), with a positive control so a capability that could never open anything cannot pass. **Three demonstrations performed, and two bound the claim rather than confirming it**: the gate's cached read is caught by the race AND the capability test; the same cache hidden in `JdbcConsentStore` is caught by the race and **survives the field detector** (a `Map<String, Boolean>` names no consent type), so the behavioural test is load-bearing there and the detector is the second control rather than a duplicate; and a refusal-only cache **survives** the race - correctly, since `INV-CNS-03` says nothing about a stale refusal - and is caught at the other door by the kafka test. Neither test covers a cache alone, and §3 records it. 1019 hermetic tests, 577 database tests, 14 kafka tests. **M2.5 CLOSES: 4 of 4.** Next: P2-TSK-006, unblocked by the gate, whose landing closes M2.2 at 7 of 7. |
 | 2026-09-13 | **`P2-TSK-019` complete - the consent gate, and INV-CNS-01 becomes a mechanism.** `ConsentGate` in `consent`: `permits` and `require`, one authoritative read per decision over `hasCurrentBasis`, no state of its own, the three refusal causes - absence, withdrawal, a grant lapsed by a re-consent-demanding version - one indistinguishable answer (`ConsentNotGrantedException` names the purpose and nothing more; the error code is deliberately `P2-TSK-006`'s, declared by the surface that shapes it). **The design's crux: the gated capability had two doors.** The eager registration consumer opens a case for a person who CANNOT yet hold a grant - a grant needs a session, a session needs the registration the event announces - and a gate with an ungated second door is not a gate. The consumer now asks through a `kyc` port (`CaseOpeningConsent`, the `CaseKindResolver` shape) that `app` implements over the new `PartyStore.partyOfCustomer` (`ADMINISTERED`, `kindOfCustomer`'s provenance verbatim) and the gate - and **skips when refused**: acknowledged, logged with correlation, nothing written, the store not even asked, because a refusal is the platform's own correct decision and must not get the poison-record treatment. **`P2-TSK-007`'s headline changed and the change is recorded**: registration alone opens nothing - that refusal is the milestone's acceptance working at the eager door - and the same party consented opens exactly one; the kafka suite restructured on consented fixtures keeping every prior property, its first test driving the deployed chain twice (consumed with nothing written, then granted and opened). **The KYB door is deliberately outside the gate**, recorded at the call site: the declared capability is a PERSON's KYC case under `KYC_PROCESSING`, and an organisation cannot consent. **M2.5's demonstration is performed**: withdrawal on one connection refuses the gate on another's very next decision (`P0-TST-009`) - `P2-TST-002` records the register row and re-performs the cached-read probe. `NoProcessLocalConsentStateTest` closes the cache shape ADR-0024's patterns cannot see, with its Boolean-cache limit stated and covered behaviourally. **Five mutations, all caught** - the consumer opening without asking (hermetic: the store untouched), the gate permitting everything, `require` swallowing, the adapter asking about the customer where the party belongs (caught through the real broker), the gate memoizing per (party, purpose) - caught by the cross-instance race. 1019 hermetic tests, 576 database tests, 14 kafka tests. **M2.5: 3 of 4; `P2-TSK-006` unblocked.** Next: P2-TST-002. |
 | 2026-09-13 | **`P2-TSK-018` complete - the consent endpoints, and the store meets HTTP.** `POST /v1/me/consents`, `DELETE /v1/me/consents/{purpose}`, `GET /v1/me/consents` - the `/v1/me` shape carrying the consent lifecycle, with the `ConsentStore` beans arriving as the P1-TSK-007 unconsumed-wiring licence expires on schedule, and both consent audit actions getting their first emitters (leaving `NOT_YET_EMITTED` holding exactly the three Phase-15 outbox actions). **The one path variable is not an identifier**: `{purpose}` is a closed enum naming a category of processing shared by everyone - it cannot name a resource, a person, or anything of anybody else's - and mechanically the question never reaches `OwnershipIsScopedTest`, whose detector keys on `EntityId` subtypes while the consent store takes a raw `UUID` (verified against the detector rather than assumed). **The grant carries the version the person was SHOWN**, because a server-side grant-against-current would record consent to words the platform merely hopes the person saw; the refusal is the derivation's own clause applied before the fact exists (`ConsentStore.assessGrant`, one statement, one snapshot): refused exactly when a later version records `requires_reconsent` - recording it would write a "consent" that consents to nothing while the client walks away believing a basis exists - and a stale version whose successors never demanded re-consent stays grantable, the backlog's conditional honoured rather than over-tightened. Two codes catalogued (`consent.ReconsentRequired` 409 actionable, `consent.UnknownTextVersion` 422 with the composite FK as defence in depth), and **deliberately no withdrawal code**: there is no withdrawal failure for one to name. **Withdrawal is unrefusable and proven as the property**: no client-supplied version (the record pins the current one server-side - `INV-CNS-04`'s unconditional half), no prior grant required, both plausible refusal causes driven - each answers 204, appends a real fact, and is audited, because each is an act. The acceptance held end to end: grant → withdraw → re-grant over HTTP with one audit record per act naming the **person** (never the platform - consent is the most personal act on the platform), each record's target a consent record proven to exist, the summary naming purpose and pinned version and never the words. **Absence vs withdrawal proven byte-identical over HTTP** as an equality between the causes; the query publishes `granted` and nothing that could distinguish them, plus the current text itself - `consent_text.body`'s first publication, the one its PUBLIC classification was made for. No events deliberately (the gate reads authoritative state per decision, `INV-CNS-03`, so a consent event would be transport with no consumer); no `Idempotency-Key` (retries append new facts that converge, asserted). The contract gained two paths and two schemas, 178 added lines and zero removed; the completion battery caught `ConsentGrantRequest` missing from the credential-sink pinned set - the set is every schema reachable from a request body - and the entry records its reason. **Eight mutations, all caught** - grant audit dropped, withdrawal audit dropped, stale-version refusal dropped, withdrawal made conditional on a prior basis (a 204 silently writing nothing), the audit written as the platform, the GET derivation inverted, the unknown-version refusal dropped (the FK answering with our 500), a withdrawal recorded as a GRANT - one re-planted after `-Werror` refused its unreferenced try-resource, because a mutation must compile to prove anything. 1016 hermetic tests, 573 database tests, 14 kafka tests. **M2.5: 2 of 4.** Next: P2-TSK-019, the consent gate. |

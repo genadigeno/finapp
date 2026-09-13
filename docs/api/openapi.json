@@ -472,6 +472,41 @@
           }
         }
       },
+      "consent.ConsentRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "consent.ConsentRequired"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/consent.ConsentRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] No current consent basis exists for this purpose; grant consent and retry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "consent.ReconsentRequired": {
         "content": {
           "application/problem+json": {
@@ -1061,6 +1096,14 @@
             },
             "type": "array"
           },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "KycCaseResponse": {
+        "properties": {
           "status": {
             "type": "string"
           }
@@ -1886,6 +1929,38 @@
         },
         "responses": {
           "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/kyc": {
+      "get": {
+        "operationId": "viewCase",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KycCaseResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "open",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KycCaseResponse"
+                }
+              }
+            },
             "description": "Created"
           }
         }

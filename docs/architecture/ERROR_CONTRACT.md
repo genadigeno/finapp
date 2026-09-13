@@ -164,15 +164,21 @@ another party that cannot be declared.
 |---|---|---|
 | `consent.ReconsentRequired` | 409 | The consent text has changed and requires re-consent; grant against the current version. |
 | `consent.UnknownTextVersion` | 422 | No consent text with this version exists for this purpose. |
+| `consent.ConsentRequired` | 409 | No current consent basis exists for this purpose; grant consent and retry. |
 
-**Both codes concern the grant, and there is deliberately no withdrawal code** (`P2-TSK-018`): a
-withdrawal must not be refusable by anything but authentication, so there is no withdrawal
-failure for a code to name. The two grant refusals are distinct because they demand different
-client behaviour — `consent.ReconsentRequired` is actionable (fetch `GET /v1/me/consents`,
-present the current words, grant against the current version), while
+**Two codes concern the grant, one is the gate's, and there is deliberately no withdrawal code**
+(`P2-TSK-018`): a withdrawal must not be refusable by anything but authentication, so there is no
+withdrawal failure for a code to name. The two grant refusals are distinct because they demand
+different client behaviour — `consent.ReconsentRequired` is actionable (fetch
+`GET /v1/me/consents`, present the current words, grant against the current version), while
 `consent.UnknownTextVersion` is a client defect to fix, since no amount of re-presenting text
-produces a version that was never published. No enumeration concern applies to either: consent
-texts are the platform's most public artefact — the words shown to every customer.
+produces a version that was never published. `consent.ConsentRequired` is the enforcement gate's
+refusal (`INV-CNS-01`, declared by the first gated surface — `POST /v1/me/kyc`, `P2-TSK-006`):
+**one code for three causes, on purpose** — no history, a latest withdrawal, and a grant lapsed
+by a re-consent-demanding version are indistinguishable to every caller, so the code names the
+remedy and never the cause. No enumeration concern applies to any of the three: consent texts
+are the platform's most public artefact — the words shown to every customer — and the purposes
+are a closed enum shared by everyone.
 
 ## 3a. Rejection at the boundary
 

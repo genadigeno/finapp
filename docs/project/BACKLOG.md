@@ -2786,7 +2786,7 @@ capability map, and the task list below is the schedule.
   the index made total, convergence removed, the conditional transition made unconditional.
 - Risk: Medium. Cx: M. DoD: `DOD-KERNEL`
 
-**P2-TSK-006 — `POST /v1/me/kyc` and `GET /v1/me/kyc`** — `READY`
+**P2-TSK-006 — `POST /v1/me/kyc` and `GET /v1/me/kyc`** — `COMPLETE` (2026-09-13)
 - Context: kyc / api
 - Description: The caller opens (or converges on) their case and reads its status —
   `SESSION_DERIVED`, no identifier anywhere in the request (the `/v1/me` shape).
@@ -2802,6 +2802,34 @@ capability map, and the task list below is the schedule.
 - Tests: over HTTP; ownership by construction (no parameter); the hit-invisibility assertion;
   consent-absent refusal.
 - Accept: a registered, consented person reaches an open case; a second POST is the same case.
+- **Gate evidence (2026-09-13)**: the acceptance end to end over HTTP
+  (`KycCaseEndpointDatabaseTest`): a consented person's POST is 201 with an open case,
+  audited **as the person** — this door is their own act, where the consumer door records
+  the platform — and announced once; the second POST is 201, the same case, one record, one
+  announcement, because creation is distinguished by the records and never the answer (the
+  convergence idiom, and `KycCaseStore.Opening`'s javadoc corrected where it claimed
+  otherwise). **The gate's refusal earned its code here**: `409 consent.ConsentRequired`,
+  one code for three causes deliberately, mapped once in `ApiErrorHandler` so every later
+  gated surface answers alike — and **absence and withdrawal are one refusal,
+  byte-identical** with only the correlation identifier excluded (`INV-CNS-01` at the
+  surface); a refused POST writes nothing structurally, because the exception rolls the
+  transaction back. **Two extractions, each earned by the second caller arriving**: the
+  tipping-off shaping into `CustomerFacingCaseStatus` (one definition of a security-control
+  mapping; a case in review and a case in checks answer byte-identically with no review
+  vocabulary, mutation-proven) and the record-and-announce block into `CaseOpeningTrail`
+  (the `CheckOutcomeTrail` rule — with the actor deliberately the DOOR's own, because the
+  consumer is the platform's policy act and the endpoint is the person's). `findLatestFor`
+  on the read, so `REJECTED` is never a 404; a decided customer's POST opens a successor
+  case (the freed slot, `INV-LIFE-04`), gated like the first. **The contract classifier
+  caught a real breaking change**: a second handler named `view` renamed the KYB surface's
+  published operationId to `view_1` — withdrawn by renaming the method rather than
+  accepted; the baseline is 75 added lines, zero removed, all COMPATIBLE. The status-move
+  fixture met the container clock drift (`P1-TSK-031`'s shape, again) and pins
+  `GREATEST(now(), opened_at)`. **Six mutations, all caught by the intended assertion** —
+  the gate call dropped, the converged path recording too, the shaping leaking `IN_REVIEW`,
+  the platform recorded as the opener, the refusal mapping removed, the announcement
+  dropped. 1019 hermetic tests, 584 database tests, 14 kafka tests. **M2.2 CLOSES: 7 of
+  7** — every implementation milestone of the phase is closed.
 - Risk: Medium. Cx: S. DoD: `DOD-SEC`
 
 **P2-TSK-007 — The first production consumer: a registration opens a case** — `COMPLETE` (2026-09-09)
@@ -3487,7 +3515,7 @@ capability map, and the task list below is the schedule.
 
 ## P2-EPIC-07 — Observability and the gate (M2.6)
 
-**P2-TSK-020 — The six planned meters, eagerly registered** — `TODO`
+**P2-TSK-020 — The six planned meters, eagerly registered** — `READY`
 - Context: kyc / consent / platform
 - Description: `PHASE_2_PLAN.md` §10's table, registered at construction (`P1-TSK-029`'s rule),
   plus a dashboard row with queries that resolve (`DashboardQueriesResolveTest` extends).

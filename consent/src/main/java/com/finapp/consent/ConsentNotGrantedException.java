@@ -11,9 +11,10 @@ import java.util.Objects;
  * exists to withhold. The remedy is the same either way: the person grants against the current
  * text.
  *
- * <p>No error code yet, deliberately: codes are declared by the surface that shapes them
- * (`P1-TSK-003`'s deliberately-few licence), and this task has no HTTP surface —
- * `P2-TSK-006`'s endpoint maps this to its client refusal.
+ * <p>The client refusal is {@code ConsentErrorCode.CONSENT_REQUIRED} — declared by the first
+ * surface that shaped it ({@code POST /v1/me/kyc}, `P2-TSK-006`, honouring this class's own
+ * deferral) and mapped once in the application's error handler, so every later gated surface
+ * answers with the same code.
  */
 public class ConsentNotGrantedException extends RuntimeException {
 

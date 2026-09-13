@@ -5,7 +5,6 @@ import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.identity.Session;
 import com.finapp.kyc.BeneficialOwnerStore;
 import com.finapp.kyc.ControlRole;
-import com.finapp.kyc.KycCaseStatus;
 import com.finapp.kyc.KycErrorCode;
 import com.finapp.party.PartyId;
 import com.finapp.platform.api.ApiException;
@@ -192,24 +191,12 @@ public class KybController {
     public record KybCaseResponse(String status, List<OwnerView> owners) {
 
         static KybCaseResponse of(KybService.KybFile file) {
+            // The customer-facing vocabulary is one shared definition (CustomerFacingCaseStatus)
+            // since the person's own KYC view arrived (P2-TSK-006): a security-control mapping
+            // copied per controller is one that drifts in exactly one of its copies.
             return new KybCaseResponse(
-                    shaped(file.kybCase().status()),
+                    CustomerFacingCaseStatus.of(file.kybCase().status()),
                     file.owners().stream().map(OwnerView::of).toList());
-        }
-
-        /**
-         * The customer-facing status vocabulary. {@code IN_PROGRESS} covers checks <em>and</em>
-         * review, deliberately: which of the two a case is in is exactly what tipping-off
-         * forbids disclosing.
-         */
-        private static String shaped(KycCaseStatus status) {
-            return switch (status) {
-                case OPEN -> "OPEN";
-                case CHECKS_IN_PROGRESS, IN_REVIEW -> "IN_PROGRESS";
-                case READY_FOR_DECISION -> "PENDING_DECISION";
-                case APPROVED -> "APPROVED";
-                case REJECTED -> "REJECTED";
-            };
         }
     }
 

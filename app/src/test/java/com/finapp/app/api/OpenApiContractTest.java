@@ -301,7 +301,10 @@ class OpenApiContractTest {
                         // everyone - not a resource identifier, so there is still nothing here
                         // an attacker can point at a victim.
                         ApiVersion.CURRENT_PREFIX + "/me/consents",
-                        ApiVersion.CURRENT_PREFIX + "/me/consents/{purpose}");
+                        ApiVersion.CURRENT_PREFIX + "/me/consents/{purpose}",
+                        // P2-TSK-006. The person's own case: ensure-exists and the shaped view,
+                        // no identifier anywhere in either request.
+                        ApiVersion.CURRENT_PREFIX + "/me/kyc");
     }
 
     @Test

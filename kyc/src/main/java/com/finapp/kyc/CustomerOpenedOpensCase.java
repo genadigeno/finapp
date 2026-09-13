@@ -1,24 +1,16 @@
 package com.finapp.kyc;
 
-import com.finapp.platform.audit.AuditId;
-import com.finapp.platform.audit.AuditOutcome;
-import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.ReceivedEvent;
-import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
-import com.finapp.sharedkernel.event.EventEnvelope;
-import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
-import java.time.Instant;
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * The platform's first production consumer (`P2-TSK-007`): a registration opens a KYC case.
@@ -32,10 +24,10 @@ import java.util.Optional;
  * <h2>Created announces; converged is silent</h2>
  *
  * <p>{@code openOrConverge} makes a duplicate delivery, a redelivery, and a race against the
- * customer's own {@code POST /v1/me/kyc} (when it exists) all land on the same answer: one case.
+ * customer's own {@code POST /v1/me/kyc} (`P2-TSK-006`) all land on the same answer: one case.
  * Only the call that actually <em>created</em> the case writes the {@code kyc.CaseOpened} audit
  * record and publishes {@code kyc.KycCaseOpened} — the fact happened once, so it is recorded and
- * announced once, by whoever won.
+ * announced once, by whoever won ({@link CaseOpeningTrail}, one definition for both doors).
  *
  * <h2>Everything commits together</h2>
  *
@@ -77,10 +69,6 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
 
     private static final String EVENT_TYPE = "party.CustomerOpened";
 
-    private static final String PRODUCER = "kyc";
-
-    private static final int EVENT_VERSION = 1;
-
     private static final org.slf4j.Logger log =
             org.slf4j.LoggerFactory.getLogger(CustomerOpenedOpensCase.class);
 
@@ -89,8 +77,7 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
     private final CaseOpeningConsent<Connection> consent;
     private final IdGenerator ids;
     private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-    private final OutboxWriter<Connection> outboxWriter;
+    private final CaseOpeningTrail trail;
 
     public CustomerOpenedOpensCase(
             KycCaseStore<Connection> cases,
@@ -105,8 +92,14 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
         this.consent = Objects.requireNonNull(consent, "consent must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outboxWriter = Objects.requireNonNull(outboxWriter, "outboxWriter must not be null");
+        // The record-and-announce definition is shared with the endpoint door (P2-TSK-006);
+        // constructed here rather than injected so this handler's proven wiring stays put.
+        this.trail =
+                new CaseOpeningTrail(
+                        ids,
+                        clock,
+                        Objects.requireNonNull(auditWriter, "auditWriter must not be null"),
+                        Objects.requireNonNull(outboxWriter, "outboxWriter must not be null"));
     }
 
     @Override
@@ -157,58 +150,21 @@ public final class CustomerOpenedOpensCase implements InboxEventHandler {
                 return;
             }
             KycCase kycCase = opening.kycCase();
-            audit(unitOfWork, kycCase);
-            announce(unitOfWork, kycCase);
+            // The consumed event is this opening's cause, and the shell put exactly that into
+            // scope - inheriting the PARENT's causation instead would flatten the causal tree
+            // (Correlation.causing's documented trap). The endpoint door's cause is the request;
+            // each door knows its own, which is why the trail takes it as a parameter.
+            trail.record(
+                    unitOfWork,
+                    kycCase,
+                    currentCorrelation()
+                            .cause()
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "a consumed event always has a cause in"
+                                                            + " scope; the shell entered it")));
         }
-    }
-
-    private void audit(Connection unitOfWork, KycCase kycCase) {
-        auditWriter.append(
-                unitOfWork,
-                new AuditRecord(
-                        AuditId.next(ids),
-                        SecurityContext.require(),
-                        Instant.now(clock),
-                        KycAuditAction.KYC_CASE_OPENED,
-                        "Customer",
-                        kycCase.customerId().toString(),
-                        Optional.empty(),
-                        AuditOutcome.SUCCEEDED,
-                        currentCorrelation().correlationId(),
-                        Optional.of(
-                                "case=" + kycCase.id() + " policyVersion=" + kycCase.policyVersion())));
-    }
-
-    private void announce(Connection unitOfWork, KycCase kycCase) {
-        Correlation correlation = currentCorrelation();
-        outboxWriter.write(
-                unitOfWork,
-                new EventEnvelope(
-                        EventId.next(ids),
-                        "kyc.KycCaseOpened",
-                        EVENT_VERSION,
-                        EventEnvelope.CURRENT_SCHEMA_VERSION,
-                        kycCase.id(),
-                        "KycCase",
-                        kycCase.openedAt(),
-                        PRODUCER,
-                        correlation.correlationId(),
-                        // The consumed event is this one's cause, and the shell put exactly that
-                        // into scope - inheriting the PARENT's causation instead would flatten
-                        // the causal tree (Correlation.causing's documented trap).
-                        correlation
-                                .cause()
-                                .orElseThrow(
-                                        () ->
-                                                new IllegalStateException(
-                                                        "a consumed event always has a cause in"
-                                                                + " scope; the shell entered it"))),
-                EventPayload.of()
-                        .with("caseId", kycCase.id().value().toString())
-                        .with("customerId", kycCase.customerId().toString())
-                        .with("policyVersion", kycCase.policyVersion().value())
-                        .toBytes(),
-                EventPayload.MEDIA_TYPE);
     }
 
     private static Correlation currentCorrelation() {

@@ -433,6 +433,39 @@ public class KycBeans {
                 dataSource);
     }
 
+    /**
+     * The person's own case surface (`P2-TSK-006`): ensure-exists and the shaped view. Wired
+     * over the same resolver and gate as the consumer door, so the two doors of the gated
+     * capability share every definition — the kind, the basis question, and (through
+     * {@code CaseOpeningTrail}) the record and the announcement.
+     */
+    @Bean
+    KycCaseService kycCaseService(
+            IdentityStore<Connection> identityStore,
+            PartyStore<Connection> partyStore,
+            KycCaseStore<Connection> kycCaseStore,
+            com.finapp.kyc.CaseKindResolver<Connection> caseKindResolver,
+            com.finapp.consent.ConsentGate<Connection> consentGate,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionTemplate kycTransactions,
+            DataSource dataSource) {
+        return new KycCaseService(
+                identityStore,
+                partyStore,
+                kycCaseStore,
+                caseKindResolver,
+                consentGate,
+                auditWriter,
+                outboxWriter,
+                idGenerator,
+                clock,
+                kycTransactions,
+                dataSource);
+    }
+
     @Bean
     DocumentUploadService documentUploadService(
             IdentityStore<Connection> identityStore,

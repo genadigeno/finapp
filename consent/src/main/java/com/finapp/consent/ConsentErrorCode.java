@@ -11,9 +11,10 @@ import com.finapp.platform.api.ErrorCode;
  *
  * <p><strong>There is no withdrawal code, and that is the module's sharpest absence</strong>: a
  * withdrawal must not be refusable by anything but authentication (`P2-TSK-018`), so there is no
- * withdrawal failure for a code to name. Both codes here concern the <em>grant</em>, whose one
- * domain rule is {@code INV-CNS-04}'s: a grant is a statement about a specific version of
- * specific words.
+ * withdrawal failure for a code to name. Two codes concern the <em>grant</em>, whose one domain
+ * rule is {@code INV-CNS-04}'s — a grant is a statement about a specific version of specific
+ * words — and the third is the <em>gate's</em> ({@code INV-CNS-01}), declared by the first
+ * surface that shaped its refusal (`P2-TSK-006`, honouring `P2-TSK-019`'s deliberate deferral).
  */
 public enum ConsentErrorCode implements ErrorCode {
 
@@ -52,7 +53,28 @@ public enum ConsentErrorCode implements ErrorCode {
     UNKNOWN_TEXT_VERSION(
             "consent.UnknownTextVersion",
             422,
-            "No consent text with this version exists for this purpose.");
+            "No consent text with this version exists for this purpose."),
+
+    /**
+     * A consent-gated capability was invoked with no current basis for the purpose it requires
+     * ({@code INV-CNS-01}, the gate's refusal — `P2-TSK-006`).
+     *
+     * <p>A {@code 409} and a distinct code because it is <strong>actionable</strong>
+     * ({@code P1-TSK-018}'s test): the remedy is to grant consent for the purpose and retry —
+     * the request was well-formed, and it is the world's state that refuses it, which is the
+     * same shape as {@code consent.ReconsentRequired} and {@code kyc.NoOpenCase}. Deliberately
+     * not a {@code 403}: {@code api.Forbidden} means "you hold no role", which a client cannot
+     * fix, while this one the person can.
+     *
+     * <p><strong>One code for three causes, on purpose</strong>: no history, a latest
+     * withdrawal, and a grant lapsed by a re-consent-demanding version are one refusal,
+     * indistinguishable to every caller ({@code INV-CNS-01}) — the code names the remedy, never
+     * the cause, because the cause is exactly what the derivation exists to withhold.
+     */
+    CONSENT_REQUIRED(
+            "consent.ConsentRequired",
+            409,
+            "No current consent basis exists for this purpose; grant consent and retry.");
 
     private final String code;
     private final int status;

@@ -20,9 +20,11 @@ public interface KycCaseStore<T> {
      * The result of asking for a customer's case to exist: the case, and whether this call
      * created it.
      *
-     * <p>Both callers-to-come need the distinction — {@code POST /v1/me/kyc} answers
-     * "created" versus "you already had one", and the registration consumer counts effects —
-     * while neither treats convergence as an error, which is the point.
+     * <p>Both doors need the distinction for their <em>records</em>, never for their answer:
+     * only the creating call audits and announces ({@code CaseOpeningTrail}), while the
+     * endpoint answers the creation's own {@code 201} either way (`P2-TSK-006`'s convergence
+     * idiom) and the consumer acknowledges either way. Neither treats convergence as an error,
+     * which is the point.
      */
     record Opening(KycCase kycCase, boolean created) {}
 

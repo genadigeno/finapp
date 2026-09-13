@@ -1,5 +1,7 @@
 package com.finapp.app.api;
 
+import com.finapp.consent.ConsentErrorCode;
+import com.finapp.consent.ConsentNotGrantedException;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.ErrorCode;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -195,6 +197,38 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
                         request.getRequestURI(),
                         "An identical request is still being processed. Retry it shortly with the"
                                 + " same " + IdempotencyKeyHeader.NAME + "."));
+    }
+
+    /**
+     * A consent-gated capability was invoked with no current basis for the purpose it requires
+     * ({@code INV-CNS-01}).
+     *
+     * <p>The mapping lives here rather than in a controller so every consent-gated surface —
+     * this phase's {@code POST /v1/me/kyc} and whatever later phases gate — answers with one
+     * code (`P2-TSK-006`, the surface that declared it). The detail is <strong>actionable and
+     * cause-blind</strong>: which of the three causes refused — no history, a withdrawal, a
+     * grant lapsed by a re-consent-demanding version — is exactly what {@code INV-CNS-01} keeps
+     * indistinguishable, and the exception deliberately cannot say. Naming the purpose
+     * discloses nothing: purposes are a closed enum shared by everyone, published by
+     * {@code GET /v1/me/consents} to every caller.
+     */
+    @ExceptionHandler(ConsentNotGrantedException.class)
+    public ResponseEntity<ProblemDetailBody> handleConsentNotGranted(
+            ConsentNotGrantedException exception, HttpServletRequest request) {
+
+        // Warn, not error: a gate refusing is the control working, and the log may name the
+        // purpose because it goes to the log and not to a stranger.
+        LOGGER.warn(
+                "Consent-gated capability refused on {}: no current basis for {}",
+                request.getRequestURI(),
+                exception.purpose());
+        return render(
+                ProblemDetail.of(
+                        ConsentErrorCode.CONSENT_REQUIRED,
+                        request.getRequestURI(),
+                        "Grant consent for purpose " + exception.purpose()
+                                + " (POST /v1/me/consents, against the current text version)"
+                                + " and retry."));
     }
 
     /**
