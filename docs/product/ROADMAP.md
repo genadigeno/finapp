@@ -34,13 +34,28 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-09-09).** **Phase 0 and Phase 1 are `COMPLETE`** — Phase 1 closed by
-the re-run exit review (`P1-DOC-002`): 34 of 34 backlog items, all eighteen exit criteria, 17
-published endpoints, 864 hermetic and 465 database tests. **Phase 2 is `READY`**: planned in full
-in `PHASE_2_PLAN.md`, with ADR-0035…0038 `Proposed`, the `INV-KYC`/`INV-CNS` invariant groups
-(the platform now catalogues 82), and 24 backlog items at task granularity across six milestones.
-The first task is `P2-TSK-001`, the broker adapter — the outbox has held published-nothing events
-since 2026-09-06, and Phase 2 holds the first consumers.
+**Current position (2026-09-13).** **Phases 0, 1 and 2 are `COMPLETE`.** Phase 2 closed on its
+exit review (`P2-DOC-001`) and was confirmed by the Phase 2 → 3 transition's independent
+audit: 23 of 23 backlog items, all twelve universal and six phase-specific criteria, 13
+endpoints, 11 tables, 9 auditable actions, and 1025 hermetic / 584 database / 14 kafka tests.
+A Party can now be verified to the standard a regulator requires, with the evidence retained and
+the decision defensible — and nothing processes for a consent-gated purpose without a
+current, purpose-scoped basis.
+
+**Phase 3 is `READY`**: planned in full in `PHASE_3_PLAN.md`, with ADR-0039…0042 `Proposed`
+and 24 backlog items across eight milestones. **No new invariant group was needed** — unlike
+Phases 1 and 2, whose properties existed only as gate prose, Phase 3's were catalogued at project
+initiation, because Phase 3 is what the catalogue was written for; the platform stays at 82.
+
+The first task is `P3-TSK-001`, the `ledger` module and its schema — first because every
+`DB-PRIVILEGE` claim the phase makes is only *available* at that rank if the migrator owns the
+objects from the start.
+
+**Phase 3 is where money arrives**, and three things change with it: the financial supplement
+F1–F8 binds for the first time, `DB-PRIVILEGE` finally carries `INV-LED-03` and
+`INV-HIST-01` (the mechanism has existed since `P0-TSK-022` with nothing to protect), and
+mistakes become permanent — `INV-HIST-01` forbids editing financial history, so a posting
+written wrongly is corrected by a compensating entry and the wrong one stays visible for ever.
 
 ---
 

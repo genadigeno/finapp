@@ -165,6 +165,26 @@ The strictest gate in the programme.
 - Posting is idempotent under concurrent identical keys.
 - No module other than Ledger can write a posting (enforced by boundary test).
 
+*Extended by the Phase 2 → 3 transition (2026-09-13), which found the list covered the ledger
+and said nothing measurable about the account product, the authority to post, or the phase's own
+observability — the three things a reader would check first:*
+
+- A ledger account's type, normal balance and currency cannot be changed once a line references
+  it (`INV-LED-06`), refused at the **database**, not only by the domain.
+- A customer account can be opened only by a customer the KYC decision made `ACTIVE`, and
+  closing it ends the agreement while leaving every posting intact (`INV-HIST-01`).
+- Posting authority is a named permission with a passing negative test; a manual adjustment
+  carries a reason code and is audited with its actor (`INV-REV-04`).
+- Every balance-affecting decision (a hold, an overdraft refusal) is proven to derive its number
+  **inside the account lock** rather than from the projection (`INV-BAL-05`, ADR-0041).
+- The projection-drift and trial-balance metrics exist, are published by a freshly started
+  instance, and report **absent rather than zero** when unreadable.
+- A statement's opening balance, lines and closing balance reconcile (`INV-ACC-02`'s drill-down,
+  early).
+- `LEDGER_MODEL.md` describes the implemented model, and every `Phase: 3` invariant in
+  `FINANCIAL_INVARIANTS.md` — **read from the catalogue, not from the phase plan** — has
+  a mutation-register row.
+
 ### Phase 4 — Internal Transfers
 - Transfer state machine rejects every invalid transition.
 - Duplicate submission with the same idempotency key produces exactly one financial effect,

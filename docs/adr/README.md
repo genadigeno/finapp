@@ -56,6 +56,10 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0036](ADR-0036-verification-evidence-and-document-storage.md) | Verification evidence verbatim in PostgreSQL; object storage deferred | Accepted | 2 | Data |
 | [0037](ADR-0037-consent-is-an-append-only-history.md) | Consent is an append-only history; the current basis is derived | Accepted | 2 | Domain |
 | [0038](ADR-0038-provider-verdicts-are-evidence.md) | A provider verdict is evidence; the decision is ours | Accepted | 2 | Security |
+| [0039](ADR-0039-posting-concurrency-and-isolation.md) | `READ COMMITTED`; postings are inserts; balance-dependent decisions take the account lock | Proposed | 3 | Data |
+| [0040](ADR-0040-chart-of-accounts-structure.md) | A flat account with a typed classification, not a tree | Proposed | 3 | Domain |
+| [0041](ADR-0041-balance-projection-placement.md) | The balance projection is transactional, ledger-owned, and never backs a decision | Proposed | 3 | Data |
+| [0042](ADR-0042-account-model-four-distinct-concepts.md) | Customer Account, Ledger Account, Wallet and Operational Account are four things | Proposed | 3 | Domain |
 
 ## Anticipated ADRs
 

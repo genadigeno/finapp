@@ -3560,23 +3560,380 @@ capability map, and the task list below is the schedule.
 
 ---
 
-# Phases 3–4 — Epics and Capabilities
+---
 
-Status: `PLANNED` — features and tasks elaborated at each phase's entry gate.
+# Phase 3 — Accounts and Financial Ledger
 
-## Phase 3 — Accounts and Financial Ledger
+Status: `READY` — entry gate passed 2026-09-13
+([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)).
+Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md); decisions in ADR-0039…0042.
 
-| Epic | Capabilities |
-|------|-------------|
-| P3-EPIC-01 Chart of accounts | Account types; normal balance; hierarchy; multi-currency structure |
-| P3-EPIC-02 Ledger accounts | Ledger account lifecycle; operational vs customer accounts; suspense accounts |
-| P3-EPIC-03 Journal posting | Balanced entry validation; immutable persistence; idempotent posting command; atomic outbox publication |
-| P3-EPIC-04 Reversal and adjustment | Reversal referencing original; adjustment with reason codes and four-eyes |
-| P3-EPIC-05 Balance derivation | Balance projection; recomputation from postings; continuous verification |
-| P3-EPIC-06 Holds | Hold placement against available balance; release; expiry |
-| P3-EPIC-07 Customer accounts and wallets | Account product lifecycle; wallet as stored value; account status effects |
-| P3-EPIC-08 Statements | Period statements derived from postings |
-| P3-EPIC-09 Ledger integrity operations | Trial balance job; imbalance alerting; projection rebuild |
+**The strictest gate in the programme**, and the first phase the financial supplement (F1–F8)
+binds. Every task below carries `DOD-FIN` where it can affect money, balances or accounting —
+which is most of them.
+
+**Field conventions.** Each task states its bounded context, scope and out-of-scope,
+dependencies, the domain/persistence/API/event changes it makes, the `INV-*` it must protect,
+its distributed-system concerns under ≥10 instances, security, audit, reconciliation, tests,
+acceptance criteria and DoD profile. A task that states "n/a" for a field has considered it.
+
+## P3-EPIC-01 — The chart of accounts (M3.1)
+
+**P3-TSK-001 — The `ledger` module, its schema, and the privilege floor** — `READY`
+- **Objective**: a guarded `ledger` module exists with a schema owned by the migrator, so every
+  later `DB-PRIVILEGE` claim in the phase is *available* to be made.
+- **Context**: Ledger (7). **Scope**: Gradle module on the documented direction; `V001` creating
+  the schema with `REVOKE ALL FROM PUBLIC` and `USAGE` only to `finapp_app`; isolation tests both
+  directions; `LedgerAuditAction` enum with its catalogue rows; lockfile regeneration.
+- **Out of scope**: any table, any aggregate, any bean.
+- **Deps**: none (Phase 2 complete).
+- **Domain**: `LedgerAuditAction` only — declared under the deliberately-few licence: an action
+  whose *design* is fixed (`ledger.JournalEntryPosted`, `ledger.AdjustmentPosted`), never one a
+  later task will shape.
+- **Persistence**: schema only, no tables.
+- **API / Events**: none.
+- **Invariants**: none directly — this task makes `INV-LED-03`, `INV-HIST-01` and `INV-LED-04`
+  *enforceable* at `DB-PRIVILEGE` by putting the objects under the migrator. That is the whole
+  point of doing it first (`P2-TSK-003`'s recorded reasoning).
+- **Distributed**: n/a — no state.
+- **Security**: default-deny grants. **Audit**: actions catalogued, `NOT_YET_EMITTED` with owning
+  tasks. **Reconciliation**: n/a.
+- **Tests**: module isolation both directions; migration applies to an empty database, validates
+  and re-applies idempotently; the five existing sweeps proven to cover the new module by probe
+  (a planted `double`, a cross-module dependency, an unclassified column).
+- **Accept**: `./gradlew build databaseTest` green with the module present; a planted `double` in
+  `ledger` fails the floating-point rules; a cross-module dependency fails the isolation test.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
+
+**P3-TSK-002 — `LedgerAccount`: typed, single-currency, and unchangeable once posted to** — `TODO`
+- **Objective**: the chart's row exists and its classification cannot drift (`INV-LED-06`).
+- **Context**: Ledger. **Scope**: `LedgerAccount` aggregate; `AccountType`, `NormalBalance`,
+  `AccountPurpose`, `OwnerKind` enums generating their own `CHECK` constraints; `V002` creating
+  `ledger.ledger_account`; the **trigger** freezing `account_type`, `normal_balance` and
+  `currency` once a line references the account.
+- **Out of scope**: journal entries; any balance; any API.
+- **Deps**: P3-TSK-001.
+- **Domain**: normal balance **derived from type and stored**, because `INV-LED-06` constrains
+  something only if it is stored.
+- **Persistence**: `ledger_account`; `UNIQUE (owner_ref, purpose, currency)` where owned;
+  `UPDATE` column-narrowed to status fields (the `V004` narrowing) — never type, normal balance
+  or currency.
+- **API / Events**: none.
+- **Invariants**: `INV-LED-06`, `INV-MON-02` (currency `NOT NULL`).
+- **Distributed**: account creation races on the unique index; converge or refuse, decided by
+  whether two callers asking for "the customer's GBP wallet account" mean the same thing (they
+  do — converge, the `openOrConverge` idiom).
+- **Security**: no endpoint yet. **Audit**: none — creating a chart row is not yet an act anybody
+  performs. **Reconciliation**: n/a.
+- **Tests**: every enum value round-trips; the migration/enum reconciliation (`P2-TSK-004`'s
+  latest-constraint derivation); the freeze trigger proven by attempting each forbidden `UPDATE`
+  **after** a line exists; ten concurrent creates produce one row.
+- **Accept**: reclassifying a posted-to account is refused by the database; a `CHECK` rejects an
+  unknown type; the enum and the constraint cannot drift.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
+
+**P3-TSK-003 — The operational chart, seeded by migration** — `TODO`
+- **Objective**: the platform's own accounts exist before anything can post, because a double
+  entry needs both sides.
+- **Context**: Ledger. **Scope**: `V003` seeding operational accounts per supported currency —
+  `SETTLEMENT_CLEARING`, `FEE_REVENUE`, `FX_POSITION`, `ROUNDING_RESIDUAL`, `SUSPENSE_UNMATCHED`;
+  a `ChartOfAccounts` lookup resolving purpose+currency → account.
+- **Out of scope**: posting to any of them.
+- **Deps**: P3-TSK-002.
+- **Rationale**: seeded by **migration**, not by application startup — a reviewed, immutable
+  channel (ADR-0011), the `consent_text` precedent. An operational account created at run time is
+  one whose existence depends on which instance started first.
+- **Invariants**: `INV-BAL-03` (the residual account must exist before any allocation posts),
+  `INV-REC-05` (suspense exists before Phase 8 needs it).
+- **Distributed**: none — migrations are serialised by Flyway's own lock.
+- **Tests**: every purpose resolves for every supported currency; the seed is idempotent on
+  re-apply; `FX_POSITION` and `SUSPENSE_UNMATCHED` exist and **nothing posts to them in Phase 3**,
+  asserted so the seam stays a seam.
+- **Accept**: `ChartOfAccounts.resolve(purpose, currency)` answers for every combination; a
+  missing seed fails the build.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-FIN`
+
+## P3-EPIC-02 — Postings that cannot be wrong (M3.2)
+
+**P3-TSK-004 — `JournalEntry` and `JournalLine`: the balance rule at the domain** — `TODO`
+- **Objective**: an unbalanced entry cannot be **constructed** (`INV-LED-01`, `INV-LED-02`).
+- **Context**: Ledger. **Scope**: the two aggregates; `Direction` enum; balancing validated per
+  currency at construction; ≥2 lines; posting date and value date as **required inputs**, never
+  clock reads.
+- **Out of scope**: persistence; the command; reversal.
+- **Deps**: P3-TSK-002.
+- **Domain**: `Money` unchanged (integer minor units, explicit currency, stored scale). Amounts
+  are **positive**; `Direction` carries the sign, so "unbalanced" is two sums that must be equal
+  rather than a subtraction that happens to be non-zero.
+- **Invariants**: `INV-LED-01`, `INV-LED-02`, `INV-MON-01`…`06`, `DOMAIN_MODEL.md` §Time.
+- **Distributed**: n/a — immutable values.
+- **Tests**: balanced and unbalanced across JPY(0)/USD(2)/BHD(3); a multi-currency entry must
+  balance **in each currency**; single-line refused; a posting date derived from the clock is
+  impossible because the constructor demands one.
+- **Accept**: every unbalanced shape throws; property test over generated line sets.
+- **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
+
+**P3-TSK-005 — Postings persisted: balanced by constraint, immutable by privilege** — `TODO`
+- **Objective**: the database refuses what the domain refuses, and refuses to let anything edit
+  it afterwards (`INV-LED-01`, `INV-LED-03`, `INV-HIST-01`).
+- **Context**: Ledger. **Scope**: `V004` creating `journal_entry` and `journal_line`; the
+  entry-level balance enforcement; `SELECT, INSERT` grants and **no `UPDATE`, no `DELETE`**;
+  `NOT NULL` attribution columns (`INV-LED-05`).
+- **Out of scope**: the command; idempotency; events.
+- **Deps**: P3-TSK-004.
+- **The one real design problem**: a `CHECK` cannot see sibling rows, so entry-level balance must
+  be a **constraint trigger** or a deferred constraint. The task must choose, state why, and
+  **prove it against a direct `INSERT` that never passes through the domain** — because that is
+  the writer the constraint exists for.
+- **Invariants**: `INV-LED-01`, `INV-LED-02`, `INV-LED-03`, `INV-LED-05`, `INV-HIST-01`,
+  `INV-MON-05`.
+- **Distributed**: inserts only; no lost update to have (ADR-0039).
+- **Security**: grants are the enforcement. **Audit**: n/a (the command audits).
+- **Tests**: **the `P0-TST-007` column sweep** — `UPDATE` denied on *every* column of both tables,
+  the list derived from `information_schema`, plus `DELETE` and `TRUNCATE`; a direct unbalanced
+  `INSERT` refused; money round-trips at `BIGINT` extremes for every scale.
+- **Accept**: dropping the balance enforcement fails a test; granting `UPDATE` fails a test; a
+  raw SQL unbalanced entry is impossible.
+- **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
+
+**P3-TSK-006 — The posting command: idempotent, atomic, audited, announced** — `TODO`
+- **Objective**: one command, one financial effect, whatever the caller does (`INV-IDEM-01`).
+- **Context**: Ledger. **Scope**: `PostingService` — entry, lines, audit record and outbox row in
+  **one transaction**; the Phase 0 idempotency kernel at the financial boundary;
+  `ledger.JournalEntryPosted` published via the outbox.
+- **Out of scope**: the projection (P3-TSK-009); any HTTP surface.
+- **Deps**: P3-TSK-005.
+- **Events**: `ledger.JournalEntryPosted` — identifiers and enumerated names only, **never
+  amounts** (`INV-AUD-02`).
+- **Invariants**: `INV-IDEM-01`, `INV-IDEM-03`, `INV-EVT-01`, `INV-LED-04`, `INV-AUD-01`.
+- **Distributed**: ten concurrent identical keys → one effect, counted in the database rather
+  than inferred from a return value; a different request on a known key → refused; a stale
+  `IN_PROGRESS` claim reclaimed by the **server's** clock.
+- **Security**: `LEDGER_POST` is internal; no public caller. **Audit**: `ledger.JournalEntryPosted`
+  with actor, correlation, outcome.
+- **Tests**: ten-way race, one effect; crash between commit and publication → republished, same
+  `eventId`; injected failure at the last write → nothing at all; a rolled-back posting leaves no
+  outbox row.
+- **Accept**: the F3 supplement criterion met; duplicate delivery proven to produce no second
+  effect.
+- **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-EVENT`
+
+**P3-TSK-007 — `LEDGER_POST` and `LEDGER_ADJUST` permissions, and the ledger role** — `TODO`
+- **Objective**: posting authority is a privileged capability rather than an ambient one.
+- **Context**: Identity (authorization) + Ledger. **Scope**: two permissions, one role
+  (`LEDGER_OPERATOR`), the migration widening the role constraint (`P2-TSK-004`'s
+  latest-constraint derivation).
+- **Out of scope**: the adjustment endpoint (P3-TSK-017).
+- **Deps**: P3-TSK-001.
+- **Invariants**: `INV-AUD-03` (a negative test per privileged action).
+- **Security**: the grants are **disjoint** from `ADMINISTRATOR` and `KYC_REVIEWER`, asserted as
+  its own property; the self-elevation limit is restated rather than re-argued.
+- **Tests**: cross-population — a ledger operator refused by administrative and KYC surfaces and
+  vice versa; the role granting everything fails the build.
+- **Accept**: negative authorization test per new permission.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-SEC`
+
+## P3-EPIC-03 — Balances that are explainable (M3.3)
+
+**P3-TSK-008 — Balance derived from postings** — `TODO`
+- **Objective**: the authoritative number, computed from the rows (`INV-BAL-01`, `INV-BAL-02`).
+- **Context**: Ledger. **Scope**: `BalanceDerivation` aggregating lines by direction and normal
+  balance, per account per currency, with an "as of" (posting date or entry sequence).
+- **Out of scope**: the projection; any endpoint.
+- **Deps**: P3-TSK-005.
+- **Invariants**: `INV-BAL-01`, `INV-BAL-02`, `INV-MON-04` (no cross-currency arithmetic).
+- **Distributed**: a read; sees committed postings only, which is correct.
+- **Tests**: replay from zero reproduces the balance for every account type and both normal
+  balances; an account with no postings is zero **in its own currency**, never a bare `0`.
+- **Accept**: derivation is the definition the projection is checked against.
+- **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
+
+**P3-TSK-009 — The transactional projection** — `TODO`
+- **Objective**: fast balance reads that can never be behind (ADR-0041).
+- **Context**: Ledger. **Scope**: `V005` creating `ledger.account_balance` with `posted_minor`,
+  `holds_minor`, `last_entry_seq`; updated **in the posting transaction**; owned and written only
+  by `ledger`.
+- **Out of scope**: holds populating `holds_minor` (P3-TSK-015).
+- **Deps**: P3-TSK-006, P3-TSK-008.
+- **Invariants**: `INV-BAL-01`, `INV-BAL-05` — and the rule that **no decision reads it**, which
+  is a design constraint this task must make structurally visible rather than documented.
+- **Distributed**: each posting contends on its accounts' projection rows — the accepted cost,
+  recorded in ADR-0041 with the operational-account mitigation.
+- **Tests**: projection equals derivation after every posting; ten concurrent postings to one
+  account leave the projection equal to the derivation; a rolled-back posting leaves the
+  projection unchanged.
+- **Accept**: projection and derivation agree under sustained concurrent posting.
+- **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
+
+**P3-TSK-010 — The verification job and the drift metric** — `TODO`
+- **Objective**: the comparison, not anybody's confidence, is the evidence (`INV-BAL-02`).
+- **Context**: Ledger. **Scope**: a job recomputing every balance from postings and comparing to
+  the projection; `finapp.ledger.projection.drift` gauge; alerting threshold of **zero**.
+- **Deps**: P3-TSK-009.
+- **Distributed**: no leader — idempotent per run, or lease-protected; a new
+  `DISTRIBUTED_EXECUTION.md` §3 exemption is a **decision**, not a ride on the relay's.
+- **Tests**: an injected drift is detected and reported; the job is safe to run while postings
+  continue; the gauge reports **NaN when unreadable, never zero** (`P1-TSK-029`'s rule).
+- **Accept**: drift is detectable, alertable and zero.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-OBS`
+
+**P3-TST-001 — `INV-BAL-02` under sustained concurrent posting** — `TODO`
+- **Objective**: the F2 supplement criterion, demonstrated rather than asserted.
+- **Scope**: ten instances posting continuously to one account while the verification job runs;
+  replay-from-zero equals projection throughout; a projection rebuild **while postings continue**.
+- **Deps**: P3-TSK-010.
+- **Accept**: the register row lands with the mutation that breaks it (the projection updated
+  outside the posting transaction) proven caught.
+- **Risk**: High. **Cx**: M. **DoD**: `DOD-TEST`
+
+## P3-EPIC-04 — The customer account product (M3.4)
+
+**P3-TSK-011 — The `accounts` module and schema** — `TODO`
+- Objective/shape as P3-TSK-001, for `accounts`. **Deps**: P3-TSK-001.
+- **Boundary**: `accounts` may see `ledger`; `ledger` may **not** see `accounts` (ADR-0042),
+  asserted in both directions.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
+
+**P3-TSK-012 — `CustomerAccount`: the product, gated on verification** — `TODO`
+- **Objective**: a verified customer may hold an account; an unverified one may not.
+- **Context**: Accounts. **Scope**: the aggregate and its machine
+  (`PENDING → ACTIVE → {SUSPENDED ⇄ ACTIVE} → CLOSED`); `V001` creating
+  `accounts.customer_account`; opening requires `party.customer.status = ACTIVE` — **Phase 2's
+  projection as the gate**, its first consumer.
+- **Out of scope**: the API; closing (P3-TSK-014).
+- **Deps**: P3-TSK-011, P3-TSK-002.
+- **Invariants**: `INV-LIFE-01`, `INV-LIFE-02`, `INV-LIFE-04`, `INV-KYC-05` (consuming the
+  projection, never recomputing it).
+- **Distributed**: one account per customer per product type, DB-enforced; ten concurrent opens
+  produce one.
+- **Security**: ownership is the `/v1/me` shape when the API lands.
+- **Tests**: every invalid transition refused **by the aggregate**, derived from the machine; a
+  `PENDING` or `REJECTED` customer cannot open an account; opening creates the ledger account(s)
+  in the **same transaction**.
+- **Accept**: a KYC-approved customer opens an account; a rejected one is refused.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
+
+**P3-TSK-013 — `POST /v1/me/accounts`, `GET /v1/me/accounts`, `GET …/balance`** — `TODO`
+- **Context**: Accounts + app. **Scope**: the three endpoints, ownership by absence
+  (`SESSION_DERIVED`); the balance response states **which number it is** (settled, holds,
+  available) and that it is a projection.
+- **Deps**: P3-TSK-012, P3-TSK-009.
+- **API**: `@RequiresSession`; `@RequiresIdempotencyKey` on the open.
+- **Invariants**: `INV-AUD-03`, `INV-BAL-04` (available is presented as `settled − holds`).
+- **Tests**: two customers reach exactly their own accounts; no request shape yields a 500; the
+  OpenAPI diff reviewed and accepted.
+- **Accept**: end to end over HTTP — verified customer opens, reads a balance, sees it change
+  after a posting.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-FIN`
+
+**P3-TSK-014 — Closing an account, without closing its history** — `TODO`
+- **Objective**: `CLOSED` ends the agreement and **not** the accounting history (`INV-HIST-01`).
+- **Scope**: close with a zero-balance precondition; the ledger account stops accepting postings
+  and keeps every row.
+- **Deps**: P3-TSK-013.
+- **Tests**: closing with a non-zero balance refused; posting to a closed account refused under
+  the account lock; history intact and readable afterwards.
+- **Risk**: Medium. **Cx**: S. **DoD**: `DOD-FIN`
+
+## P3-EPIC-05 — Holds and available balance (M3.5)
+
+**P3-TSK-015 — `Hold`: place and release against available balance** — `TODO`
+- **Objective**: `INV-BAL-04` — a hold cannot make available balance negative.
+- **Context**: Ledger. **Scope**: the aggregate; `V006` creating `ledger.hold`; place/release
+  taking `SELECT … FOR UPDATE` on the **account row**, deriving from postings inside the lock
+  (ADR-0039), then acting; `holds_minor` maintained in the same transaction.
+- **Deps**: P3-TSK-009.
+- **Invariants**: `INV-BAL-04`, `INV-CON-01`, `INV-BAL-05` (the decision does **not** read the
+  projection).
+- **Distributed**: **the phase's sharpest contention point.** Ten instances placing holds against
+  one account: the sum of accepted holds never exceeds available balance. The test must observe
+  the losers **blocked** in `pg_stat_activity` (the `P0-TST-004`/`P2-TSK-015` idiom), not merely
+  observe the outcome — an outcome-only test passes against both the right and the wrong
+  mechanism.
+- **Tests**: release restores availability **exactly**; a released hold cannot be released twice;
+  holds survive a crash mid-placement as all-or-nothing.
+- **Accept**: the ten-way race respects available balance; the lock is proven load-bearing by
+  removing it.
+- **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`
+
+**P3-TST-002 — `INV-CON-01` and `INV-BAL-04` under contention** — `TODO`
+- **Scope**: the register rows for both, with the mutations that break them (the lock removed;
+  the availability check moved outside it; the hold read from the projection).
+- **Deps**: P3-TSK-015. **Risk**: High. **Cx**: M. **DoD**: `DOD-TEST`
+
+## P3-EPIC-06 — Correction without mutation (M3.6)
+
+**P3-TSK-016 — Reversal: a new effect referencing the original** — `TODO`
+- **Objective**: `INV-REV-01`, `INV-REV-02`.
+- **Scope**: reversal entry with directions swapped and a reference to the original; bounded by
+  the original accounting for previous partial reversals; the original **byte-identical**
+  afterwards, asserted.
+- **Deps**: P3-TSK-006.
+- **Distributed**: concurrent partial reversals cannot over-reverse — the bound is a predicate in
+  the statement, not a read-then-act.
+- **Tests**: over-reversal refused; concurrent partial reversals sum correctly; the original row
+  compared byte for byte before and after.
+- **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
+
+**P3-TSK-017 — `POST /v1/ledger/adjustments`: reason, permission, audit** — `TODO`
+- **Objective**: `INV-REV-04` — the highest-risk financial action in any platform.
+- **Scope**: the endpoint behind `LEDGER_ADJUST`; reason code required and bounded in three
+  reconciled places; audited with actor and correlation.
+- **Deps**: P3-TSK-007, P3-TSK-016.
+- **Out of scope**: **four-eyes** — recorded debt (`INV-AUD-04`, ADR-0010). The task must record
+  the remainder rather than imply a threshold check is four-eyes.
+- **Tests**: negative authorization; missing reason 422; every adjustment audited.
+- **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-SEC`
+
+## P3-EPIC-07 — Statements and the trial balance (M3.7)
+
+**P3-TSK-018 — Statements derived from postings** — `TODO`
+- **Scope**: `GET /v1/me/accounts/{id}/statement` for a period, derived from postings, with
+  opening and closing balances that reconcile to the lines between them (`INV-ACC-02`'s
+  drill-down shape, three phases early).
+- **Deps**: P3-TSK-013. **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-FIN`
+
+**P3-TSK-019 — The trial-balance job: zero per currency, or an incident** — `TODO`
+- **Objective**: `INV-ACC-01`, the primary continuous correctness signal.
+- **Scope**: a job asserting total debits = total credits per currency across all postings;
+  `finapp.ledger.trial.balance` gauge per currency; alerting; **it never self-corrects** — a
+  ledger that repairs itself has destroyed the evidence.
+- **Deps**: P3-TSK-006.
+- **Tests**: an injected imbalance (via a direct `INSERT` bypassing the domain) is detected and
+  alerted; the job is safe under concurrent posting; the gauge is NaN when unreadable.
+- **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-OBS`
+
+**P3-TST-003 — The financial supplement F1–F8, demonstrated** — `TODO`
+- **Scope**: each of F1–F8 assessed with a named test, and the register rows for every
+  `Phase: 3` invariant — **the set read from `FINANCIAL_INVARIANTS.md`, not from
+  `PHASE_3_PLAN.md` §6** (the Phase 2 → 3 transition's finding: `INV-HIST-02` belonged to Phase 2
+  while sitting outside both of its named groups, and only the status flip revealed it).
+- **Deps**: everything above. **Risk**: High. **Cx**: M. **DoD**: `DOD-TEST`
+
+## P3-EPIC-08 — Observability and the gate (M3.8)
+
+**P3-TSK-020 — The six planned meters, eagerly registered** — `TODO`
+- **Scope**: `PHASE_3_PLAN.md` §15's table, registered at construction and **unconditionally** —
+  `P2-TSK-020`'s finding that a plan-named meter behind a property condition is the same defect
+  wearing a condition; plus a dashboard row whose queries resolve.
+- **Deps**: the flows they measure. **Risk**: Low. **Cx**: S. **DoD**: `DOD-OBS`
+
+**P3-DOC-001 — Phase 3 review record** — `TODO`
+- **Scope**: the `PHASE_GATES.md` §4 review: eight areas, twelve universal criteria, **the
+  financial supplement F1–F8 — which binds for the first time and is not "not applicable" here**,
+  and the nine Phase 3-specific criteria, each with evidence; numbers counted, never quoted; the
+  ADR-0039…0042 acceptance decision.
+- **Deps**: everything above.
+- **Accept**: area 2 — *walk one real posting end to end* — **has a subject for the first time in
+  the programme**, and must be walked: economic event → domain operation → financial transaction
+  → journal entry → lines → balances.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-DOC`
+
+---
+
+# Phase 4 — Epics and Capabilities
+
+Status: `PLANNED` — features and tasks elaborated at Phase 4's entry gate.
 
 ## Phase 4 — Internal Transfers
 

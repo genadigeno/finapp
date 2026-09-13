@@ -371,6 +371,52 @@ decision (`INV-CNS-03`). A grant is bound to the version of the text it was give
 consent that consents to nothing. &rarr;
 [ADR-0037](../adr/ADR-0037-consent-is-an-append-only-history.md)
 
+### Posting concurrency
+**`READ COMMITTED`, because postings are inserts.** A journal entry is appended; nothing is
+updated; there is no row whose previous value must be read, so there is no lost update to have.
+**`SERIALIZABLE` was rejected and that is the decision worth reading**: it would put a retry loop
+around every money-moving command, and a retry loop around a money-moving command is exactly
+where *"the database committed but the response was lost"* becomes two effects. The operations
+that genuinely need mutual exclusion — a hold, an overdraft check, anything that reads a
+balance and acts on it — are a small enumerable set, and each takes
+`SELECT … FOR UPDATE` on the **account row**, stating the requirement at the site that has
+it. A balance is never read-then-written; `balance = balance + amount` is the row whose
+concurrent update is lost, which is why `INV-BAL-01` forbids it. &rarr;
+[ADR-0039](../adr/ADR-0039-posting-concurrency-and-isolation.md)
+
+### Chart of accounts
+**A flat account with a typed classification, not a tree.** Roll-up is a `GROUP BY` over
+attributes — type, purpose, a nullable `gl_code` for Phase 14 — rather than a walk over
+ancestry. A hierarchy buys roll-up by ancestry and costs three things: recursive queries on the
+reporting path, a second source of truth about classification free to disagree with the account's
+own type, and re-parenting, which is reclassification and which `INV-LED-06` forbids once
+postings exist — so the tree would be a structure that must never be edited. **One currency
+per account, always**: a multi-currency account is a product concept, and at the ledger it is *n*
+accounts. &rarr; [ADR-0040](../adr/ADR-0040-chart-of-accounts-structure.md)
+
+### Balance projection
+**Transactional, ledger-owned, and never the authority.** ADR-0009 settled that a balance is
+derived; this settles where the derived copy lives and — the part that matters — **what
+may read it**. It is updated in the posting's own transaction, so it is never *behind*; and
+**no financial decision reads it**: a hold or an overdraft check derives its number from the
+postings inside the account lock. An asynchronous projector is the standard answer and buys a lag
+that `INV-BAL-05` then forces us to bound, monitor and exclude from every decision path —
+three mechanisms and a metric to avoid one `UPDATE` in a transaction that is already open. The
+cost is stated rather than hidden: every posting contends on its accounts' projection rows, and
+the operational-account hot row has a recorded mitigation. &rarr;
+[ADR-0041](../adr/ADR-0041-balance-projection-placement.md)
+
+### The account model
+**Customer Account, Ledger Account, Wallet and Operational Account are four things**, and the
+boundary between the product and the accounting is the important one: a Customer Account is an
+agreement with a lifecycle and **carries no balance**, while a Ledger Account is an accounting
+position with a type, a normal balance and one currency. ADR-0029's test applied one layer down
+— the four cases a collapsed model cannot represent are a product in two currencies, the
+platform's own money (every customer credit is a platform liability, and a model with only
+customer accounts cannot post anything), a closed product whose accounting history must survive
+it, and a statement. `accounts` and `wallet` stay one module with a recorded split trigger.
+&rarr; [ADR-0042](../adr/ADR-0042-account-model-four-distinct-concepts.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

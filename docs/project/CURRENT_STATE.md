@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-13 (`P2-DOC-001`)
+Last updated: 2026-09-13 (Phase 2 → 3 transition)
 
 ---
 
@@ -72,8 +72,32 @@ attributed to whatever touched the tree first.
 
 **What the phase delivered**: a Party verified to the standard a regulator requires, with the
 evidence retained and the decision defensible — 2 new modules, 11 tables, 13 migrations, 13
-endpoints, 9 auditable actions, 10 new invariants (**82** platform-wide), 4 ADRs, 1025 hermetic
-/ 584 database / 14 kafka tests, and **no money anywhere in it, by design**.
+endpoints, 9 auditable actions, 10 new invariants (**82** platform-wide, **11 in scope**), 4
+ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in it, by design**.
+
+**Phase 3 — Accounts and Financial Ledger**
+Status: **`READY`** — entry gate passed 2026-09-13, all twelve criteria
+([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)). Not started.
+
+Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
+of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
+against available balance, reversal without mutation, and a trial balance asserted continuously.
+**The strictest gate in the programme**, and the first phase the financial supplement F1–F8
+binds. Decisions in ADR-0039…0042 (`Proposed`); 24 backlog items across 8 milestones.
+
+**`DB-PRIVILEGE` finally carries `INV-LED-03` and `INV-HIST-01`** — the mechanism has existed
+since `P0-TSK-022` and has had nothing to protect until now, and ADR-0033's rejection of an ORM
+was decided on exactly this ground.
+
+**The transition took four decisions Phase 3 cannot start without**, all irreversible once
+postings exist: `READ COMMITTED` with postings as inserts and balance-dependent decisions taking
+the account lock (ADR-0039 — `SERIALIZABLE` rejected, because it would put a retry loop
+around every money-moving command); a **flat typed chart** with roll-up by attribute rather than
+a hierarchy (ADR-0040); a projection updated **in the posting's own transaction** that **no
+decision may read** (ADR-0041); and Customer Account / Ledger Account / Wallet / Operational
+Account kept as four things (ADR-0042). **No new invariant group was needed** — unlike the
+last two transitions, Phase 3's properties were catalogued at project initiation, because
+Phase 3 is what the catalogue was written for.
 
 Planned in [`PHASE_2_PLAN.md`](PHASE_2_PLAN.md): a Party verified to the standard a regulator
 requires, with evidence retained and the decision defensible — KYC/KYB cases, screening with
@@ -92,6 +116,14 @@ because the probe that found this passed against a build that had not run (the `
 class, again).
 
 ## Current Milestone
+
+**M3.1 — The chart exists.** `P3-TSK-001` … `P3-TSK-003`; **0 of 3, opens with
+`P3-TSK-001` (`READY`)** — the `ledger` module, its schema and the privilege floor, then the
+`LedgerAccount` aggregate whose classification cannot drift, then the operational chart seeded by
+migration. Acceptance: a ledger account is created with a type, normal balance and currency, and
+its classification cannot be changed once posted to.
+
+### Phase 2 milestones — all closed
 
 **M2.6 — Observability and the gate.** `P2-TSK-020`, `P2-DOC-001`; **CLOSED 2026-09-13,
 2 of 2** — the six planned meters, every one published by a freshly started instance with
@@ -300,15 +332,88 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P2-DOC-001` completed 2026-09-13 — the exit review, which **passed
-the gate: Phase 2 is `COMPLETE`**. **Next: the Phase 2 → Phase 3 transition**, which is a
-separate act and deliberately not the review's: it audits the completed phase against Phase 3's
-entry gate, plans the ledger, and takes the three **High**-risk decisions Phase 3 cannot start
-without — isolation level and locking for concurrent postings, the chart-of-accounts
-structure, and balance-projection placement. No task in any phase is `READY`; the transition is
-the next piece of work.
+**None in progress.** The Phase 2 → 3 transition was conducted 2026-09-13: Phase 2
+**`COMPLETE`** (confirmed), Phase 3 **`READY`**. **Next: `P3-TSK-001` (`READY`)** — the
+`ledger` module, its schema and the privilege floor.
+
+It is first for a reason worth stating: every `DB-PRIVILEGE` claim Phase 3 will make —
+immutable postings, unedited history, the ledger as sole writer — is only *available* at that
+rank because the migrator owns the objects and each table's grants arrive with the migration that
+creates it. A schema created casually later, under the wrong owner, forecloses the strongest
+enforcement the catalogue knows, in the phase whose product is financial correctness
+(`P2-TSK-003`'s recorded reasoning, at higher stakes).
 
 ### Just completed
+
+**Phase 2 → Phase 3 transition** — **CONDUCTED** (2026-09-13).
+[`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)
+
+| Part | Outcome |
+|---|---|
+| Phase 2 completion audit, 16 categories | **16 `PASS`** |
+| Multi-instance audit | **`PASS`** — every contended decision arbitrated by PostgreSQL and raced in a test |
+| Architecture audit | No drift in the architecture; **one decay in the governance record**, repaired |
+| Security and privacy audit | `PASS`, with five limits stated and owned |
+| Testing audit | 1025 hermetic / 584 database / 14 kafka / 147 architecture, green on a fresh run |
+| Phase 2 verdict | **`COMPLETE`** (confirming `P2-DOC-001`) |
+| Phase 3 entry gate | **All twelve criteria hold → `READY`** |
+
+### The transition's own finding: an enforced exemption set with no Phase 2 entries
+
+`DISTRIBUTED_EXECUTION.md` §3's component register ended at `SessionRevocation` — Phase 1 —
+while Phase 2 introduced **eleven** pieces of shared state. That matters more than an incomplete
+table, because §3 is **an enforced exemption set**: ADR-0024's build rules permit process-local
+state only where this register names it, so an absent row is a component whose next author finds
+no precedent to extend and no recorded reason why none is needed.
+
+Repaired, with the note the audit actually earned: **Phase 2 introduced no coordination
+primitive of its own.** Every one of the eleven is one of four protocols Phase 0 already proved
+— a unique index as arbiter, a conditional `UPDATE` whose row count is the outcome, a
+privilege that makes a write impossible, and lock-then-look where a snapshot cannot be trusted.
+**Third occurrence of this class** (`P0-TSK-032`'s review, then four more at the last
+transition), and the pattern is now explicit enough to name: *a register maintained by discipline
+decays at exactly the boundaries where nobody is looking — which is why the ones with build
+guards behind them have not.*
+
+### Four decisions taken, because Phase 3 cannot start without them
+
+Each is irreversible once postings exist, which is the whole reason a transition takes them
+before the first one is written. Two are worth reading twice because the obvious answer is the
+wrong one.
+
+**`SERIALIZABLE` was rejected** (ADR-0039), which reads as the less safe choice and is not: it
+would put a retry loop around every money-moving command, and that is exactly where *"the
+database committed but the response was lost"* becomes two effects. Postings are **inserts**, so
+under `READ COMMITTED` there is no lost update to have; the operations that genuinely need mutual
+exclusion — a hold, an overdraft check — are a small enumerable set, and they take
+`SELECT … FOR UPDATE` on the **account row**, stating the requirement at the site that has
+it.
+
+**The balance projection may not back a hold** (ADR-0041). An asynchronous projector is the
+standard answer and buys a lag that `INV-BAL-05` then forces us to bound, monitor and exclude
+from every decision path — three mechanisms and a metric to avoid one `UPDATE` in an
+already-open transaction. So the projection updates **in the posting's own transaction** and
+serves display only; a decision derives from the postings inside the lock. The cost is stated
+rather than hidden: postings contend on their accounts' projection rows, and the
+operational-account hot row has a recorded mitigation.
+
+The other two: a **flat, typed chart** with roll-up by attribute rather than a hierarchy
+(ADR-0040 — a tree buys roll-up by ancestry and costs recursive queries on the reporting
+path, a second disagreeable source of classification, and re-parenting that `INV-LED-06` forbids
+anyway), and **four account concepts kept apart** (ADR-0042, ADR-0029's test applied one layer
+down: four cases a collapsed model cannot represent).
+
+### No new invariant group, and that is the difference from the last two transitions
+
+Phase 0 → 1 created `INV-IDN` and Phase 1 → 2 created `INV-KYC`/`INV-CNS`, both because
+those phases' properties existed only as gate prose. **Phase 3 needs none**: `INV-LED`,
+`INV-BAL`, `INV-REV`, `INV-CON-01`, `INV-ACC-01` and `INV-HIST-01` were catalogued at project
+initiation, because Phase 3 is what the catalogue was written for. The platform stays at **82
+invariants**. What Phase 3 inherits instead is the exit review's finding, stated in the plan
+where it will be read: **the in-scope set is whatever `FINANCIAL_INVARIANTS.md` marks
+`Phase: 3`**, never what the plan remembers creating.
+
+### Previously
 
 **`P2-DOC-001` — the Phase 2 exit review** — `COMPLETE` (2026-09-13). **The gate passes
 and Phase 2 is `COMPLETE`** ([`reviews/PHASE_2_REVIEW.md`](reviews/PHASE_2_REVIEW.md)).
@@ -7005,7 +7110,28 @@ Resolved during initiation:
 
 ## Next Task
 
-**The Phase 2 → Phase 3 transition.** Not a backlog task: a transition is its own act,
+**`P3-TSK-001` — The `ledger` module, its schema, and the privilege floor.** Status `READY`;
+no dependencies, Phase 3's first task and M3.1's opener.
+
+A guarded `ledger` module on the documented direction, a schema owned by `finapp_migrator` with
+default-deny privileges and **no tables**, isolation tests both directions, the audit-action enum
+with its catalogue rows, and lockfile regeneration — the `P2-TSK-003` shape, at higher
+stakes. **The privilege floor is the deliverable**: everything Phase 3 will claim at
+`DB-PRIVILEGE` rank — immutable postings (`INV-LED-03`), unedited history (`INV-HIST-01`),
+the ledger as sole writer (`INV-LED-04`) — is only *available* at that rank because the
+migrator owns the objects and each table's grants arrive with the migration that creates it.
+Acceptance: the build is green with the module present, and the five existing sweeps are **proven
+by probe** to cover it. Risk: Low. Cx: S. DoD: `DOD-BUILD`, `DOD-ARCH`.
+
+### Superseded: the transition itself
+
+*(This section named the Phase 2 → 3 transition until it was conducted on 2026-09-13.)*
+
+**Phase 3 is where money arrives.** The financial supplement F1–F8 binds for the first time;
+`INV-LED-*`, `INV-BAL-*` and `INV-CON-01` become live; and mistakes become permanent, because
+`INV-HIST-01` forbids editing financial history — a posting written wrongly is corrected by a
+compensating entry and the wrong one stays visible for ever. The cost of a design error here is
+not rework; it is a permanent record of the error. Not a backlog task: a transition is its own act,
 performed under the constraint that **no application code is written**, and it is what makes
 Phase 3 `READY` rather than merely planned.
 
@@ -7028,6 +7154,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-13 | **Phase 2 → Phase 3 transition conducted — Phase 2 `COMPLETE` (confirmed), Phase 3 `READY`.** A **second, independent** pass over the phase its exit review had ruled complete hours earlier (the Phase 1 → 2 precedent: a gate assessed only by whoever finished the work is not two checks). Sixteen completion categories **all `PASS`**; the mandatory multi-instance question answered **`PASS`** across all twenty-one hazards named, with every contended decision arbitrated by PostgreSQL and raced in a test using one connection per simulated instance; security `PASS` with five limits owned; 1025 hermetic / 584 database / 14 kafka / 147 architecture tests green on a fresh run. **The transition's own finding**: `DISTRIBUTED_EXECUTION.md` §3's component register had **no Phase 2 entries at all**, ending at `SessionRevocation` while the phase had introduced eleven pieces of shared state — and §3 is an **enforced exemption set**, not a record, so an absent row is a component whose next author finds no precedent and no recorded reason. Repaired with eleven rows and the note the audit earned: **Phase 2 introduced no coordination primitive of its own**, every row being one of four protocols Phase 0 already proved. Third occurrence of this decay class, now named: *a register maintained by discipline decays exactly where nobody is looking.* **Four ADRs taken, all irreversible once postings exist**: ADR-0039 (`READ COMMITTED`; postings are inserts and take no lock; balance-dependent decisions take `SELECT … FOR UPDATE` on the account row — **`SERIALIZABLE` rejected**, because a retry loop around a money-moving command is where a lost response becomes two effects), ADR-0040 (a **flat typed chart**, roll-up by attribute, no hierarchy to re-parent), ADR-0041 (the projection updates **in the posting's transaction** and **no decision may read it** — an async projector buys lag that `INV-BAL-05` then forces us to bound, monitor and exclude from every decision path), ADR-0042 (Customer Account / Ledger Account / Wallet / Operational Account are four things; ADR-0029's test one layer down). **No new invariant group**, unlike the last two transitions: Phase 3's properties were catalogued at initiation, because Phase 3 is what the catalogue was written for — and the plan states the exit review's lesson where it will be read, that the in-scope set is whatever the **catalogue** marks `Phase: 3`. Produced `PHASE_3_PLAN.md`, 24 backlog items across 8 epics and 8 milestones, extended Phase 3's exit criteria with the seven measurable ones the list omitted, and rewrote `LEDGER_MODEL.md` from a 28-line stub. **No application code was written**, which is the constraint a transition is performed under. Next: `P3-TSK-001`. |
 | 2026-09-13 | **`P2-DOC-001` complete — the exit review, and Phase 2 is `COMPLETE`.** [`reviews/PHASE_2_REVIEW.md`](reviews/PHASE_2_REVIEW.md): eight areas (7 `PASS`, 1 `NOT APPLICABLE` — area 2 walks a posting end to end and Phase 2 creates none, so it says so rather than reporting a pass), twelve universal criteria (**12 `PASS`**), the financial supplement recorded **not applicable** rather than skipped, six Phase 2-specific criteria (**6 `PASS`**), and the mandatory ten-instance question answered **`PASS`** with eight contended decisions each arbitrated by PostgreSQL and each raced in a test. **Three criteria were closed by the review rather than waived, and one was invisible until the status was flipped**: the battery failed naming `INV-HIST-02`, which is `Phase: 2 (screening)` in the catalogue and sits in neither of the phase's named groups — so **Phase 2 has eleven invariants, not ten**, and the plan, the transition, this document and the review's own draft all said ten. `P1-TSK-024`'s finding repeating: a phase's invariants are what the catalogue says, not what its plan remembers creating. The property was never unprotected; what was missing was the record that its test has teeth. Row landed, demonstration performed, battery green — and had the flip come after the final battery instead of before it, Phase 2 would have been recorded `COMPLETE` on a build about to fail. Criterion 3 wanted `INV-KYC-06`'s mutation-register row — deferred *in writing* by `P2-TST-001` to this review, so landing it was declared scope — and it was **performed rather than inferred**: the audit write dropped from `DocumentAccess.read` is caught by exactly the intended assertion, content persisted in the clear by the `information_schema` sweep (the `P0-TSK-038` finding, applied to the set's last row). Criterion 8 found **four drifts**, two of them in `PHASE_2_PLAN.md` §11 by hand-diffing plan against implementation: the milestone table still promised an event reaching a consumer **"exactly once per fact"** — the guarantee `P2-TSK-001`'s design refused, because an adapter claiming exactly-once invites consumers to skip their inbox, and the correction had landed everywhere except the plan — and it named M2.6 *"Phase review"* with one item, so the plan **specified its own observability in §10 then omitted it from the only milestone that could deliver it**. The other two came from the review's own ADR acceptance and are one mechanism: the **ADR index keeps a second copy of every status** and **`DECISIONS.md` indexed every phase's decisions except Phase 2's**. All four corrected; deriving the index from the ADR files is carried to the transition. **The flip is itself the guarded act and was verified rather than asserted**: recording a phase `COMPLETE` arms `MutationDemonstrationTest` for every one of its invariants and `PlannedMetersExistTest` for its meter table, so the order was land the row → flip → re-run the full battery. **And one of this review's own numbers was wrong first**: the mutation total was drafted as "95" from memory and counted as **135** across the twenty-one tasks that performed them — `P1-DOC-001`'s finding arriving inside the review that cites it. Three mutations survived across the phase, each producing a finding; a fourth survived **correctly**. ADR-0035…0038 moved to `Accepted` on the precedent that criterion 10 is a precondition of the gate rather than a reward for passing it. A counting discrepancy between this document's M2.3 block ("3 of 3") and `BACKLOG.md`'s epic grouping (four items) is recorded rather than silently resolved. **Phase 2 delivered**: 2 modules, 11 tables, 13 migrations, 13 endpoints, 9 auditable actions, 10 new invariants and **11 in scope** (82 platform-wide), 4 ADRs, 23 of 23 backlog items, 1025 hermetic / 584 database / 14 kafka tests, and no money. **Next: the Phase 2 → Phase 3 transition.** |
 | 2026-09-13 | **`P2-TSK-020` complete - the six planned meters, eagerly registered, and M2.6 is 1 of 2.** `PHASE_2_PLAN.md` §10's table is real on a freshly started instance with nothing configured. **The survey found three of six already built - and two of those behind a condition**: `finapp.kyc.check` and `finapp.kyc.provider.latency` were registered only by `@ConditionalOnProperty("finapp.kyc.provider.url")` beans, so the exact context the guards boot published neither - the `P1-TSK-029` defect wearing a condition, closed by one definition (`KycMeters`) that the conditional owners build through and the unconditional `KycMetrics` registers a second time at startup (registration is idempotent; the single definition is what makes the doubling drift-proof). **`finapp.kyc.case` counts at the store seam**: a `MeteredKycCaseStore` decorator over the one `kycCaseStore` bean, because every door - the endpoint, the consumer, KYB registration, both decision paths - goes through it; `opened` on `created` (a converged retry is never throughput), `approved`/`rejected` on a WON terminal move (one decision, one increment, however many deciders raced), tag values derived from the machine so a new terminal state registers itself. **`finapp.consent.grant`/`.withdrawal` by purpose** in `ConsentService`, eager per purpose, incremented after the commit and only for the recorded act - a refused grant increments nothing, because no act occurred. `ALLOWED_TAG_KEYS` widened with `purpose` - the designed edit-forces-decision path, bounded by the closed `ConsentPurpose` enum; the `P1-TSK-029` refusal of `stage` does not transfer, because the plan's own table names these meters "by purpose" and no naming carries that without the tag. **The acceptance is performed ahead of the flip**: a pinned test in `PlannedMetersExistTest` holds Phase 2's §10 table against the plain context now - the derived guard keys on `COMPLETE` phases deliberately, so the pinned copy holds the six until the flip and is a harmless second reading after it. Dashboard row added (five panels), every query resolving against a live scrape; per-purpose eagerness held by the series nothing in any suite ever increments (`finapp.consent.withdrawal{purpose=screening}`). **Seven mutations, all caught by the intended assertion** - converged open counted, decorator un-wired, unconditional registration removed, non-terminal move counted, refused grant counted, dashboard series renamed, per-purpose registration incomplete; the harness itself yielded a finding, matching method names where Gradle prints `@DisplayName`s, and the verdicts were read from the failure lines rather than trusted. 1025 hermetic tests, 584 database tests, 14 kafka tests. Next: P2-DOC-001, the phase review - the phase's one remaining item. |
 | 2026-09-13 | **`P2-TSK-006` complete - the person's own case endpoints, and M2.2 closes (7 of 7) - every implementation milestone of the phase is closed.** `POST /v1/me/kyc` ensures the caller's case exists and `GET /v1/me/kyc` reads its status - the `/v1/me` shape, no identifier anywhere in either request, no request body at all (so the credential-sink pinned set is untouched). **Opening is the first consent-gated capability over HTTP, and the gate's refusal earned its code here**: `409 consent.ConsentRequired`, one code for three causes deliberately (`INV-CNS-01` - the code names the remedy, never the cause), mapped once in `ApiErrorHandler` so every later gated surface answers alike; proven at the surface as an equality between the causes - a never-granted person's refusal and a withdrawn person's are byte-identical with only the correlation identifier excluded - and a refused POST writes nothing STRUCTURALLY, because the exception rolls the transaction back. The chain is resolve -> gate -> `openOrConverge` -> (created only) record-and-announce, in one transaction; the created path is audited **as the person** (this door is their own act, where the consumer door is the platform's - the mutation wrapping it in `enterSystem()` is caught) and announced once, the converged path silent (`INV-KYC-03`), answering the creation's own 201 either way (the convergence idiom). **Two extractions, each earned by the second caller arriving**: the tipping-off shaping into `CustomerFacingCaseStatus` - one definition of a security-control mapping, and a case in review and a case in checks answer byte-identically with no review vocabulary, mutation-proven - and the record-and-announce block into `CaseOpeningTrail` (the `CheckOutcomeTrail` rule, with the actor deliberately the door's own). `findLatestFor` on the read so `REJECTED` is never a 404; a decided customer's POST opens a successor case (the freed slot, `INV-LIFE-04`), gated like the first; the GET is deliberately ungated - reading one's own status is a mirror of processing, and processing is what consent governs. **The contract classifier caught a real breaking change**: a second handler named `view` renamed the KYB surface's published operationId to `view_1` - withdrawn by renaming the method rather than accepted; baseline 75 added lines, zero removed, all COMPATIBLE. The status-move fixture met the container clock drift (`P1-TSK-031`'s shape, again; `GREATEST(now(), opened_at)`), and `KycCaseStore.Opening`'s javadoc - which claimed the POST answers created-versus-converged when the endpoint deliberately does not - was corrected before shipping as the next member of the recurring javadoc class. **Six mutations, all caught by the intended assertion** - the gate call dropped, the converged path recording too, the shaping leaking `IN_REVIEW`, the platform as the opener, the refusal mapping removed, the announcement dropped. 1019 hermetic tests, 584 database tests, 14 kafka tests. Next: P2-TSK-020, M2.6 opens. |
