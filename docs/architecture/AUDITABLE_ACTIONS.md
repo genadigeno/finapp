@@ -235,7 +235,8 @@ system would not have moved is the one act whose justification is its only evide
 legitimacy. **Four-eyes is not implied by the flag** — it is recorded debt (`INV-AUD-04`).
 `ledger.JournalEntryPosted` shares its code with the event the same posting publishes, as
 `identity.AuthenticationSucceeded` does: one fact, named once, in two registries. Emitted by
-`P3-TSK-006` and `P3-TSK-017` respectively.
+`P3-TSK-006` (built — the posting command emits it in the posting's own transaction) and
+`P3-TSK-017` respectively.
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure
@@ -254,9 +255,9 @@ every action against production code: each is **emitted**, or **declared not to 
 that will emit it. So *"deliberately not built yet"* and *"somebody removed the audit call"* stop
 being indistinguishable, and an action that silently **stops** being emitted fails the build.
 
-Five actions are currently declared unemitted: the three `outbox.*` actions above, and the two
-`ledger.*` actions, which wait on the tasks that build posting (`P3-TSK-006`) and adjustment
-(`P3-TSK-017`).
+Four actions are currently declared unemitted: the three `outbox.*` actions above, and
+`ledger.AdjustmentPosted`, which waits on the adjustment endpoint (`P3-TSK-017`).
+`ledger.JournalEntryPosted` left the list at `P3-TSK-006`, when the posting command was built.
 `identity.IdentitySuspended` left the list at `P1-TSK-028` and `party.ProfileChanged` at
 `P1-TSK-030`, each when the endpoint that emits it was built - which is the list working in the
 direction it is rarely exercised in, since an entry is a claim about the future and the future

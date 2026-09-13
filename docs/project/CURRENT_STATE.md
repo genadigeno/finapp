@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-13 (`P3-TSK-005`)
+Last updated: 2026-09-13 (`P3-TSK-006`)
 
 ---
 
@@ -78,7 +78,7 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **5 of 24** backlog items; M3.1 closed the same day.
+same day with `P3-TSK-001`. **6 of 24** backlog items; M3.1 closed the same day.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -119,7 +119,7 @@ class, again).
 ## Current Milestone
 
 **M3.2 — A posting is possible and cannot be wrong.** `P3-TSK-004` … `P3-TSK-007`;
-**2 of 4 — next `P3-TSK-006` (`READY`)** — the entry and line
+**3 of 4 — next `P3-TSK-007` (`READY`)** — the entry and line
 aggregates whose unbalanced shapes cannot be constructed, then persistence
 balanced-by-constraint and immutable-by-privilege, then the idempotent posting command,
 then the posting permissions.
@@ -343,10 +343,66 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-005` is `COMPLETE`; M3.2 is 2 of 4. **Next: `P3-TSK-006`
-(`READY`)** — the posting command: idempotent, atomic, audited, announced.
+**None in progress.** `P3-TSK-006` is `COMPLETE`; M3.2 is 3 of 4. **Next: `P3-TSK-007`
+(`READY`)** — the `LEDGER_POST`/`LEDGER_ADJUST` permissions and the ledger role.
 
 ### Just completed
+
+**`P3-TSK-006` — The posting command: idempotent, atomic, audited, announced** —
+`COMPLETE` (2026-09-13). **M3.2 is 3 of 4.** One command, one financial effect, whatever
+the caller does — and the one write path `INV-LED-04` permits now exists.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Ten-way race, one effect | One executed, nine replayed with the same entry id, one row **counted in the table** — never inferred from a return value |
+| Crash between commit and publication → republished, same `eventId` | The outbox row commits with the entry (asserted, with the flow's correlation); redelivery-with-the-same-`eventId` over that table is `P0-TST-005`'s proven property, cited in the assertion rather than re-proven |
+| Injected failure at the last write → nothing at all | The failing outbox writer leaves no entry **and no claim** — the retry re-attempts rather than replaying a failure that never committed |
+| A rolled-back posting leaves no outbox row | Asserted (`INV-EVT-01`'s second half) |
+
+### The command joins the caller's transaction, and that is Phase 4's seam
+
+*The transfer state transition and the ledger posting commit together* only works if
+`PostingService.post(unitOfWork, command)` joins a transaction rather than opening one —
+so "the ledger owns the posting transaction" (`MODULE_ARCHITECTURE.md`) means the ledger
+decides the posting's **write set** (entry, lines, audit record, outbox row, idempotency
+record — together or not at all), while the boundary is the caller's.
+
+### Validate, then claim, then effect
+
+`JournalEntry.balanced` runs before the idempotency claim, so an unbalanced request never
+consumes its key; the minted-and-discarded entry id on a replay costs nothing (ADR-0013's
+recorded stance). The fingerprint covers the money and its meaning — type, dates,
+reference, per-line account/direction/amount/currency/scale — and deliberately excludes
+actor and correlation, because a retry arrives on a new request with a new correlation
+and must still replay. The stored response carries the entry id, so every caller learns
+which entry exists, however many times it asked.
+
+### The audit action is emitted at last, and the event carries no amount
+
+`ledger.JournalEntryPosted` leaves `NOT_YET_EMITTED` — written with actor (from
+`SecurityContext.require()`, never defaulted), correlation (flow-root cause resolved the
+`OrganisationRegistration` way), and a change summary of identifiers and counts. The
+event's payload is the enumerated entry type and nothing else: a consumer needing the
+amount reads the posting (`INV-AUD-02`).
+
+### The command's validation question, answered one rank stronger
+
+What must the command check about the accounts it posts to? For currency: nothing — the
+domain deliberately cannot see the mismatch (a line holds an identifier), so **`V005`
+binds a line's currency to its account's by composite FK** (the kyc `V008` kind-binding
+precedent), refusing a USD line on a JPY account for every writer before the first real
+posting exists. For status: **a recorded remainder with its owner** — every reachable
+account is `ACTIVE` (no store writes status yet), and *posting to a closed account
+refused under the account lock* is `P3-TSK-014`'s own design, because a lock-free status
+read here would be the check that passes every test and loses the race to close.
+
+**Six mutations, all caught by the intended assertion** — the audit write dropped, the
+outbox write dropped, the fingerprint made constant, the key silently made per-call (the
+`P2-TSK-002` dedupe-key-per-delivery shape, here making every retry a second posting),
+the actor defaulted to the platform, the composite FK dropped.
+**1058 hermetic tests, 608 database tests.**
+
+### Previously
 
 **`P3-TSK-005` — Postings persisted: balanced by constraint, immutable by privilege** —
 `COMPLETE` (2026-09-13). **M3.2 is 2 of 4.** The database refuses what the domain refuses —
@@ -7186,9 +7242,8 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-005` (2026-09-13): the journal tables, balanced by
-deferred constraint trigger and immutable at the privilege level. The next work is
-`P3-TSK-006`, the posting command.
+The last work performed was `P3-TSK-006` (2026-09-13): the posting command over the Phase
+0 idempotency kernel. The next work is `P3-TSK-007`, the posting permissions.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -7430,19 +7485,16 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P3-TSK-006` — The posting command: idempotent, atomic, audited, announced.** Status
-`READY`; depends on `P3-TSK-005` (`COMPLETE`). High-risk.
+**`P3-TSK-007` — `LEDGER_POST` and `LEDGER_ADJUST` permissions, and the ledger role.**
+Status `READY`; depends on `P3-TSK-001` (`COMPLETE`). M3.2's closer.
 
-One command, one financial effect, whatever the caller does (`INV-IDEM-01`):
-`PostingService` writing the entry, its lines, the audit record
-(`ledger.JournalEntryPosted`, leaving `NOT_YET_EMITTED`) and the outbox row in **one
-transaction**, with the Phase 0 idempotency kernel at the financial boundary. Ten
-concurrent identical keys → one effect counted in the database; a different request on a
-known key → refused (`INV-IDEM-03`); a stale `IN_PROGRESS` claim reclaimed by the
-**server's** clock; a crash between commit and publication → republished with the same
-`eventId`; an injected failure at the last write → nothing at all. The event carries
-identifiers and enumerated names only, **never amounts** (`INV-AUD-02`). Risk: High. Cx:
-M. DoD: `DOD-FIN`.
+Posting authority becomes a privileged capability rather than an ambient one: two
+permissions, one role (`LEDGER_OPERATOR`), and the migration widening the role constraint
+(`P2-TSK-004`'s latest-constraint derivation — the applied migration is history, the
+constraint moves by replacement). The grants are **disjoint** from `ADMINISTRATOR` and
+`KYC_REVIEWER`, asserted as its own property; cross-population negatives both ways
+(`INV-AUD-03`); the role-granting-everything mutation caught. The adjustment endpoint
+stays `P3-TSK-017`'s. Risk: Low. Cx: S. DoD: `DOD-SEC`.
 
 ### Superseded: the transition itself
 
@@ -7475,6 +7527,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-13 | **`P3-TSK-006` complete — the posting command, and the one write path `INV-LED-04` permits exists.** `PostingService` over the unmodified Phase 0 kernel: validate → claim → effect, joining the **caller's** transaction (Phase 4's transfer-and-posting atomicity depends on joining; "the ledger owns the posting transaction" means the write set). One call commits entry, lines, audit record (`ledger.JournalEntryPosted` leaves `NOT_YET_EMITTED`), outbox row and idempotency record together or not at all. An unbalanced request never consumes its key; a replay returns the original entry id; the fingerprint covers the money and excludes actor/correlation so a retried request on a new correlation still replays. The event carries enumerated names only — a consumer needing the amount reads the posting. **The validation question answered one rank stronger**: `V005`'s composite FK binds line currency to account currency for every writer (the domain deliberately cannot see it); account status is a recorded remainder owned by `P3-TSK-014`, whose lock is the only honest home for the refusal. Proven with the real executor and writers: retry replays, ten-way race one-effect-counted, `INV-IDEM-03` conflict, injected last-write failure leaving no entry **and no claim**, rollback leaving no outbox row, unestablished actor refused. **Six mutations, all caught by the intended assertion** — including the key-made-per-call shape that turns every retry into a second posting. 1058 hermetic tests, 608 database tests. Next: `P3-TSK-007`. |
 | 2026-09-13 | **`P3-TSK-005` complete — the journal persisted, balanced by constraint, immutable by privilege.** `V004`: `journal_entry` and `journal_line`, attribution `NOT NULL` (`INV-LED-05`), the `MoneyColumns` generated monetary shape pinned verbatim, and the grants the phase exists for — `SELECT, INSERT` and nothing else, so `INV-LED-03`/`INV-HIST-01` hold at `DB-PRIVILEGE`. **The named design problem answered**: entry-level balance is two `CONSTRAINT TRIGGER`s, deferred to COMMIT (a `CHECK` cannot see siblings or defer; `ASSERTION` unimplemented; sum columns fail multi-currency) — two because a zero-line entry balances vacuously and only an entry-anchored trigger can refuse it, `P3-TSK-004`'s finding at the schema. Proven against raw SQL: statements succeed, COMMIT throws naming the invariant. Immutability is two layers — the per-column sweep, and an unconditional append-only trigger binding even the migrator. `INV-MON-05` at `BIGINT` extremes and at an off-default stored scale planted by raw SQL, closing the scale-re-derivation hole by mutation. Ten concurrent postings to one account all succeed (ADR-0039). Findings: the driver rounds nanos to the column's micros (assertion corrected to the column's own claim); `OwnershipIsScopedTest` refused `findById` on the day the `OutboxRelay` entry predicted (`NOT_OWNED`, arriving surfaces named); `PostingAttribution` carries the actor id, never a typed guess. The freeze trigger re-proven against the real `journal_line`; the seam count live. **Eight mutations, all caught by the intended assertion.** 1057 hermetic tests, 600 database tests. Next: `P3-TSK-006`. |
 | 2026-09-13 | **`P3-TSK-004` complete — the balance rule at the domain, and M3.2 opens.** `JournalEntry` and `JournalLine`: one factory validating `INV-LED-02` then `INV-LED-01`, so an unbalanced entry has no code path on which to exist. Direction carries the sign and amounts are strictly positive, making "unbalanced" two sums that must be equal — the property the schema can inherit (`P3-TSK-005`). Sums fold through `Money.plus`: cross-currency addition impossible, mixed scales within a currency refused rather than normalised (the cross-sides mix surfaces as unbalanced under `Money`'s scale-including equality — 1.50 and 1.500 are different stored facts), and the fold's zero identity is scale-aware, mutation-proven. The empty entry balances vacuously, which is exactly why `INV-LED-02` is a separate first check — its mutation is caught by the empty-entry half. Posting and value dates are required inputs (no overload exists for a clock-derived accounting date); no amount reaches any rendering or exception message (`INV-AUD-02`, needle-asserted). The property sweep: 2000 trials over JPY/USD/BHD, repaired-to-balance seeds all construct and re-verify against an independent `BigDecimal` check, every one-minor-unit perturbation throws, coverage asserted. **Six mutations, all caught by the intended assertion.** 1049 hermetic tests, 592 database tests. Next: `P3-TSK-005`. |
 | 2026-09-13 | **`P3-TSK-003` complete — the operational chart, and M3.1 closes (3 of 3).** The platform's own accounts exist before anything can post: `V003` seeds five operational purposes × three currencies, and `ChartOfAccounts.resolve` answers for every combination or throws naming the gap — never an empty `Optional`, because the caller that could handle absence does not exist. **The task's one open design question answered explicitly**: no document defined the supported currencies, so `SupportedCurrencies` (EUR, GBP, USD — jurisdiction-neutral, three so the per-currency structure is exercised) is the single definition, seed-reconciled in both directions and grown only by a reviewed seed migration. Seed ids are hand-minted UUIDv7 literals (v4 would fail rehydrate; deterministic ids are a runbook feature), timestamps literals never `now()`, and the type decisions (clearing ASSET, fees REVENUE, FX ASSET, residual EXPENSE, suspense LIABILITY) recorded in the migration and pinned by test — the pin being what catches a **coherent** flip that satisfies every schema CHECK. The seam test is self-arming: zero lines reference `FX_POSITION`/`SUSPENSE_UNMATCHED`, `to_regclass`-guarded, live the day `P3-TSK-005` creates the table. **Eight mutations: seven caught, one survived correctly** (`findOperational` losing `owner_ref IS NULL` — the CHECK chain makes the excluded rows unstorable; recorded defence in depth). 1040 hermetic tests, 592 database tests. Next: `P3-TSK-004`, M3.2 opens. |

@@ -109,19 +109,37 @@ class JournalEntryMigrationTest {
     }
 
     @Test
+    @DisplayName("V005 binds a line's currency to its account's, for every writer")
+    void theCurrencyBindingIsWired() {
+        // The kyc V008 kind-binding precedent: a USD line on a JPY account corrupts every
+        // later balance derivation, and the rows are unfixable history - so the FK carries
+        // the agreement at DB-CONSTRAINT rather than a service check binding only the command.
+        assertThat(migration("db/migration/ledger/V005__bind_line_currency_to_account.sql"))
+                .contains("UNIQUE (id, currency)")
+                .contains("FOREIGN KEY (ledger_account_id, currency)")
+                .contains("REFERENCES ledger.ledger_account (id, currency)");
+    }
+
+    @Test
     @DisplayName("the guard can actually read the migration")
     void theGuardIsNotVacuous() {
         assertThat(migration())
                 .contains("CREATE TABLE ledger.journal_entry")
                 .contains("CREATE TABLE ledger.journal_line");
+        assertThat(migration("db/migration/ledger/V005__bind_line_currency_to_account.sql"))
+                .contains("ALTER TABLE ledger.journal_line");
     }
 
     private static String migration() {
+        return migration(MIGRATION);
+    }
+
+    private static String migration(String resource) {
         try (InputStream migration =
-                JournalEntryMigrationTest.class.getClassLoader().getResourceAsStream(MIGRATION)) {
+                JournalEntryMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
             if (migration == null) {
                 throw new IllegalStateException(
-                        "Migration not on the test classpath: " + MIGRATION);
+                        "Migration not on the test classpath: " + resource);
             }
             return new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

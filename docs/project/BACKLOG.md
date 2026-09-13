@@ -3787,7 +3787,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   hermetic / 600 database tests.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
 
-**P3-TSK-006 — The posting command: idempotent, atomic, audited, announced** — `READY`
+**P3-TSK-006 — The posting command: idempotent, atomic, audited, announced** — `COMPLETE` (2026-09-13)
 - **Objective**: one command, one financial effect, whatever the caller does (`INV-IDEM-01`).
 - **Context**: Ledger. **Scope**: `PostingService` — entry, lines, audit record and outbox row in
   **one transaction**; the Phase 0 idempotency kernel at the financial boundary;
@@ -3805,11 +3805,36 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Tests**: ten-way race, one effect; crash between commit and publication → republished, same
   `eventId`; injected failure at the last write → nothing at all; a rolled-back posting leaves no
   outbox row.
+- **Gate evidence (2026-09-13)**: `PostingService` joins the **caller's** transaction —
+  Phase 4's transfer-and-posting-commit-together depends on joining, and "the ledger owns
+  the posting transaction" means the write set, not the boundary. Validate → claim →
+  effect: an unbalanced request never consumes its key; a replay returns the original
+  entry id from the stored response. `ledger.JournalEntryPosted` **leaves
+  `NOT_YET_EMITTED`** — audit record and outbox row in the posting's own transaction, the
+  event carrying enumerated names only, never an amount. The retry, the ten-way race
+  (one executed, nine replayed, one row **counted in the table**), the `INV-IDEM-03`
+  conflict, the injected last-write failure (nothing at all — no entry, and **no claim**,
+  so a retry re-attempts rather than replaying a failure that never committed) and the
+  rolled-back posting (no outbox row) all proven against the real executor and writers;
+  republish-on-crash with the same `eventId` is the relay's proven property of the table
+  the row lands in (`P0-TST-005`), cited in the assertion rather than re-proven. **The
+  command's own validation question answered one rank stronger**: `V005` binds a line's
+  currency to its account's by composite FK (the kyc `V008` precedent), refusing a USD
+  line on a JPY account for every writer — the domain deliberately cannot see it, since
+  a line holds an identifier. **Account status is a recorded remainder with its owner**:
+  every reachable account is `ACTIVE` (no store writes status), and posting-to-closed
+  refused *under the account lock* is `P3-TSK-014`'s own race to close — a lock-free
+  status read here would be the check that passes every test and loses the race. Actor
+  from `SecurityContext.require()` (never defaulted), correlation with the flow-root
+  cause resolved the `OrganisationRegistration` way. **Six mutations, all caught by the
+  intended assertion** — audit dropped, outbox dropped, fingerprint made constant, the
+  key silently made per-call (the `P2-TSK-002` dedupe-key-per-delivery shape), the actor
+  defaulted, the composite FK dropped. 1058 hermetic / 608 database tests.
 - **Accept**: the F3 supplement criterion met; duplicate delivery proven to produce no second
   effect.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-EVENT`
 
-**P3-TSK-007 — `LEDGER_POST` and `LEDGER_ADJUST` permissions, and the ledger role** — `TODO`
+**P3-TSK-007 — `LEDGER_POST` and `LEDGER_ADJUST` permissions, and the ledger role** — `READY`
 - **Objective**: posting authority is a privileged capability rather than an ambient one.
 - **Context**: Identity (authorization) + Ledger. **Scope**: two permissions, one role
   (`LEDGER_OPERATOR`), the migration widening the role constraint (`P2-TSK-004`'s
