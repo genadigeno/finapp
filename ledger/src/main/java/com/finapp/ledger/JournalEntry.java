@@ -143,8 +143,13 @@ public final class JournalEntry {
      * replaced rather than added to on the first line, and every later addition is
      * line-to-line, where a scale mismatch is a genuine refusal rather than an artefact of the
      * zero's own scale.
+     *
+     * <p>Package-private since `P3-TSK-008`: the balance derivation folds an account's whole
+     * line history through exactly this identity treatment, and a second copy of a monetary
+     * subtlety is the copy that drifts. The caller guarantees the currency matches — this
+     * adoption branch deliberately bypasses {@link Money#plus}'s currency check for a zero.
      */
-    private static Money sum(Money accumulated, Money amount) {
+    static Money sum(Money accumulated, Money amount) {
         return accumulated.isZero() && accumulated.scale() != amount.scale()
                 ? amount
                 : accumulated.plus(amount);

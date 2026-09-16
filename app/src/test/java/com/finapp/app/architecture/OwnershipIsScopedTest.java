@@ -315,6 +315,30 @@ class OwnershipIsScopedTest {
                                         + " account) must each come here and say so when they"
                                         + " arrive.")),
                     Map.entry(
+                            "com.finapp.ledger.JdbcBalanceDerivation.derive",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-008. The derivation is the ledger's own definition"
+                                        + " of a settled balance, computed over the platform's"
+                                        + " accounting rows - a ledger account may be the"
+                                        + " platform's (operational, no owner exists) or a"
+                                        + " customer's, so ownership is a property of the"
+                                        + " SURFACE that discloses the number, not of the"
+                                        + " computation. No production caller yet: P3-TSK-009's"
+                                        + " projection check and P3-TSK-015's hold decision run"
+                                        + " as the platform, and P3-TSK-018's balance endpoint"
+                                        + " (the caller's own account, SESSION_DERIVED shape)"
+                                        + " must come here and say so when it arrives.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcBalanceDerivation.linesInRange",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-008. The private helper holding derive's line"
+                                        + " statements - the detector locates the helper where"
+                                        + " the statement actually is (the P1-TSK-021"
+                                        + " revokeAll finding), and its classification is"
+                                        + " derive's own, one entry up.")),
+                    Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revoke",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

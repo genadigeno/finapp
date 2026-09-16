@@ -3873,7 +3873,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 ## P3-EPIC-03 — Balances that are explainable (M3.3)
 
-**P3-TSK-008 — Balance derived from postings** — `READY`
+**P3-TSK-008 — Balance derived from postings** — `COMPLETE` (2026-09-16)
 - **Objective**: the authoritative number, computed from the rows (`INV-BAL-01`, `INV-BAL-02`).
 - **Context**: Ledger. **Scope**: `BalanceDerivation` aggregating lines by direction and normal
   balance, per account per currency, with an "as of" (posting date or entry sequence).
@@ -3884,13 +3884,36 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Tests**: replay from zero reproduces the balance for every account type and both normal
   balances; an account with no postings is zero **in its own currency**, never a bare `0`.
 - **Accept**: derivation is the definition the projection is checked against.
+- **Gate evidence (2026-09-16)**: `BalanceDerivation.settle` is the one statement of
+  the sign convention — where `Direction` finally meets `NormalBalance`, as the
+  former's javadoc promised since `P3-TSK-004` — and **the sums fold through `Money`,
+  never through a SQL `SUM`**: an aggregate computed in SQL is a second implementation
+  of monetary arithmetic outside the kernel, which would silently rescale
+  (`INV-MON-03`) and silently widen past `long` (`INV-MON-06`); folding through the
+  kernel makes those refusals structural. Replay verified against **independent
+  `BigDecimal` arithmetic over raw SQL rows** for every reachable type (`EQUITY` has
+  no purpose and so no account; the hermetic sweep covers all five via `values()`).
+  A mixed-scale history — reachable only by the raw-SQL writer, planted per
+  `P3-TSK-005` — **refuses loudly**, naming account, currency and fact and never a
+  sum (`INV-AUD-02`); a one-sided persisted-scale history settles via the scale-aware
+  zero identity (`JournalEntry.sum`, package-private for its second caller). Negative
+  is a legal state, not an error. The `throughEntry` cut compares **in SQL only**
+  (`java.util.UUID.compareTo` disagrees with PostgreSQL's byte order), and its
+  mint-vs-commit caveat is stated in `AsOf`'s javadoc where `P3-TSK-009` will read
+  it. An uncommitted posting is invisible to another connection's derivation —
+  committed rows only, one statement, one snapshot. No migration (`V004` indexed this
+  read by name), no bean (nothing consumes it until `P3-TSK-009`/`-010`), no
+  endpoint. **Six mutations, all caught by the intended assertion.** 1062
+  hermetic / 616 database tests.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
 
-**P3-TSK-009 — The transactional projection** — `TODO`
+**P3-TSK-009 — The transactional projection** — `READY`
 - **Objective**: fast balance reads that can never be behind (ADR-0041).
-- **Context**: Ledger. **Scope**: `V005` creating `ledger.account_balance` with `posted_minor`,
-  `holds_minor`, `last_entry_seq`; updated **in the posting transaction**; owned and written only
-  by `ledger`.
+- **Context**: Ledger. **Scope**: a migration creating `ledger.account_balance` with
+  `posted_minor`, `holds_minor`, `last_entry_seq`; updated **in the posting transaction**; owned
+  and written only by `ledger`. (The row said `V005`, which `P3-TSK-006`'s currency binding had
+  already taken — the next free number is `V006`; corrected at `P3-TSK-008`'s gate rather than
+  propagated.)
 - **Out of scope**: holds populating `holds_minor` (P3-TSK-015).
 - **Deps**: P3-TSK-006, P3-TSK-008.
 - **Invariants**: `INV-BAL-01`, `INV-BAL-05` — and the rule that **no decision reads it**, which
