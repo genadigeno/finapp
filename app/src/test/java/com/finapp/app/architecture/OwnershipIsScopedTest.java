@@ -339,6 +339,28 @@ class OwnershipIsScopedTest {
                                         + " revokeAll finding), and its classification is"
                                         + " derive's own, one entry up.")),
                     Map.entry(
+                            "com.finapp.ledger.JdbcBalanceProjection.upsert",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-009. The projection updater, reached only from"
+                                        + " PostingService's already-authorised effect: the"
+                                        + " account ids come from the validated entry's own"
+                                        + " lines, never from a request, and the row it moves"
+                                        + " is the ledger's derived bookkeeping of the posting"
+                                        + " it rides (INV-BAL-01). No read exists to scope -"
+                                        + " BalanceProjectionTest pins the port to one void"
+                                        + " method (INV-BAL-05).")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcBalanceProjection.normalBalanceOf",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-009. The private helper reading the account's"
+                                        + " frozen classification for upsert's sign"
+                                        + " convention - the detector locates the helper"
+                                        + " where the statement actually is (the P1-TSK-021"
+                                        + " revokeAll finding), and its classification is"
+                                        + " upsert's own, one entry up.")),
+                    Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revoke",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

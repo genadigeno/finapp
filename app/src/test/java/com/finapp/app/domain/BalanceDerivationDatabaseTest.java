@@ -10,6 +10,7 @@ import com.finapp.ledger.BalanceDerivation;
 import com.finapp.ledger.DerivedBalance;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcBalanceDerivation;
+import com.finapp.ledger.JdbcBalanceProjection;
 import com.finapp.ledger.JdbcJournalEntryStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.JournalLine;
@@ -304,6 +305,7 @@ class BalanceDerivationDatabaseTest {
                 new JdbcJournalEntryStore(IDS),
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
+                new JdbcBalanceProjection(),
                 IDS,
                 CLOCK);
     }

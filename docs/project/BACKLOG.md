@@ -3907,7 +3907,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   hermetic / 616 database tests.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
 
-**P3-TSK-009 — The transactional projection** — `READY`
+**P3-TSK-009 — The transactional projection** — `COMPLETE` (2026-09-16)
 - **Objective**: fast balance reads that can never be behind (ADR-0041).
 - **Context**: Ledger. **Scope**: a migration creating `ledger.account_balance` with
   `posted_minor`, `holds_minor`, `last_entry_seq`; updated **in the posting transaction**; owned
@@ -3923,10 +3923,41 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Tests**: projection equals derivation after every posting; ten concurrent postings to one
   account leave the projection equal to the derivation; a rolled-back posting leaves the
   projection unchanged.
+- **Gate evidence (2026-09-16)**: `V006` creates the table with **`scale` added to ADR-0041's
+  sketch** (a persisted amount without its scale is uninterpretable — `INV-MON-05`, and an
+  accumulating row is exactly where silent cross-scale addition would hide), the currency
+  bound to the account's by composite FK (the `V005` mechanism), and grants of
+  `SELECT, INSERT` plus `UPDATE` **column-narrowed** to the accumulating columns — identity
+  unwritable, no `DELETE`, proven per column with the positive control. The apply joins
+  `PostingService`'s effect as its **last** write, so the contended row lock (ADR-0041's
+  accepted cost) is held for the shortest window; a replay never re-enters the effect, a
+  rollback takes the projection change with it, and an injected refusal commits **nothing at
+  all**. **The delta folds through the kernel** — `JournalEntry.sum` per side, signed by
+  `BalanceDerivation.settle`, the convention still stated once — and the accumulation is one
+  guarded SQL addition, admissible where a history-wide `SUM` was not because cross-scale is
+  refused by the scale-match condition and `bigint` overflow **raises** (`INV-MON-06`). Not
+  read-modify-write: the increment re-reads under the row's own lock, first postings converge
+  through `ON CONFLICT`, and multi-account entries lock rows in one fixed order (no deadlock).
+  **"No decision reads it" is structural**: no read exists anywhere — the port declares one
+  `void` method, pinned hermetically by `BalanceProjectionTest`, with the arriving readers
+  (`P3-TSK-010`, `P3-TSK-018`) named as the decisions that must come and say what kind of
+  number they return. **The watermark answers `AsOf`'s mint-vs-commit caveat by not being an
+  entry id**: `last_entry_seq` counts entries applied to the row, serialised by the row's
+  lock, and "current?" is seq = `COUNT(DISTINCT entry_id)` — in-flight entries tolerated by
+  the count, never by a time window (plan §14.6). **A scale-divergent posting is refused
+  wholly**, a deliberate strengthening: previously postable and balance-poisoning, now
+  refused at posting time with an amount-free message (`INV-AUD-02`); the raw-SQL writer
+  still bypasses the projection, which is exactly the drift `P3-TSK-010` exists to detect.
+  Proven over rows: equality with the derivation after sequential, both-directions-in-one-
+  entry (seq +1, not +2), replayed, ten-way-concurrent (fresh account, first-insert race
+  included, 5500 counted in the table) and rolled-back postings. **Six mutations, all caught
+  by the intended assertion** — the apply dropped, the sign inverted, the accumulation made
+  an overwrite, the watermark frozen, the scale guard dropped, the refusal swallowed.
+  1064 hermetic / 621 database tests.
 - **Accept**: projection and derivation agree under sustained concurrent posting.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
 
-**P3-TSK-010 — The verification job and the drift metric** — `TODO`
+**P3-TSK-010 — The verification job and the drift metric** — `READY`
 - **Objective**: the comparison, not anybody's confidence, is the evidence (`INV-BAL-02`).
 - **Context**: Ledger. **Scope**: a job recomputing every balance from postings and comparing to
   the projection; `finapp.ledger.projection.drift` gauge; alerting threshold of **zero**.

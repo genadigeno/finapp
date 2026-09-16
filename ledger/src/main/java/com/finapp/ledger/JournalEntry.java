@@ -145,9 +145,11 @@ public final class JournalEntry {
      * zero's own scale.
      *
      * <p>Package-private since `P3-TSK-008`: the balance derivation folds an account's whole
-     * line history through exactly this identity treatment, and a second copy of a monetary
-     * subtlety is the copy that drifts. The caller guarantees the currency matches — this
-     * adoption branch deliberately bypasses {@link Money#plus}'s currency check for a zero.
+     * line history — and, since `P3-TSK-009`, the projection updater folds an entry's
+     * per-account sides — through exactly this identity treatment, and a second copy of a
+     * monetary subtlety is the copy that drifts. The caller guarantees the currency matches —
+     * this adoption branch deliberately bypasses {@link Money#plus}'s currency check for a
+     * zero.
      */
     static Money sum(Money accumulated, Money amount) {
         return accumulated.isZero() && accumulated.scale() != amount.scale()

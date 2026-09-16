@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.Direction;
+import com.finapp.ledger.JdbcBalanceProjection;
 import com.finapp.ledger.JdbcJournalEntryStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.JournalLine;
@@ -86,6 +87,7 @@ class PostingServiceDatabaseTest {
                 new JdbcJournalEntryStore(IDS),
                 new JdbcAuditWriter(),
                 outbox,
+                new JdbcBalanceProjection(),
                 IDS,
                 CLOCK);
     }

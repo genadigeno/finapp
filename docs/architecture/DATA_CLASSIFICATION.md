@@ -382,6 +382,22 @@ sentence lands.
 | `journal_line` | `scale` | `INTERNAL` | Precision metadata of the amount |
 | `journal_line` | `seq` | `INTERNAL` | Line order |
 
+### `ledger.account_balance` — *added by `P3-TSK-009`*
+
+The balance projection (ADR-0041): derived from the journal in the posting's own transaction,
+never authoritative, and read by no financial decision (`INV-BAL-05`). A derived copy of a
+`RESTRICTED-FINANCIAL` fact carries the fact's own ceiling — projection is not laundering.
+
+| Table | Column | Level | Why this level |
+|---|---|---|---|
+| `account_balance` | `ledger_account_id` | `INTERNAL` | `journal_line.ledger_account_id`'s reasoning |
+| `account_balance` | `currency` | `INTERNAL` | As `journal_line.currency` |
+| `account_balance` | `posted_minor` | `RESTRICTED-FINANCIAL` | **A balance.** `journal_line.amount_minor`'s reasoning summed: an account's whole position, which is more disclosive than any one amount, not less |
+| `account_balance` | `holds_minor` | `RESTRICTED-FINANCIAL` | As `posted_minor` — the other half of available balance (`INV-BAL-04`) |
+| `account_balance` | `scale` | `INTERNAL` | Precision metadata of the amounts |
+| `account_balance` | `last_entry_seq` | `INTERNAL` | An applied-entry count — activity volume, the `journal_entry.created_at` question at most, and it dates nothing |
+| `account_balance` | `updated_at` | `CONFIDENTIAL` | System time of the last posting still dates financial activity — `journal_entry.created_at`'s reasoning |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |

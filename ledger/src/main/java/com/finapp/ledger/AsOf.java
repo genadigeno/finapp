@@ -9,9 +9,8 @@ import java.util.Objects;
  * <p>Two of the three cuts answer different questions and neither substitutes for the other:
  * {@link PostingDate} is the <em>accounting</em> question — what did this account hold at the
  * end of a period's day, whatever order the rows were written in — while {@link ThroughEntry}
- * is the <em>replay</em> question: everything up to and including one entry, which is the cut a
- * projection check needs ({@code P3-TSK-009} records a last-entry watermark and compares
- * against exactly this).
+ * is the <em>replay</em> question: everything up to and including one entry, for a
+ * point-in-time replay over rows already committed.
  *
  * <p><strong>The entry cut orders by the entry's UUIDv7 identifier, and the comparison lives in
  * SQL only.</strong> Entry ids sort by <em>mint</em> time (ADR-0013), and PostgreSQL compares
@@ -20,9 +19,11 @@ import java.util.Objects;
  * written. The caveat the cut carries is stated rather than glossed: ids order by mint and
  * commits can interleave, so under live concurrent posting an entry with a smaller id can
  * commit <em>after</em> a derivation ran. That makes an id cut a replay boundary over rows
- * already committed, not a linearisation point — and how the projection's watermark stays
- * honest against it is {@code P3-TSK-009}'s own design question, named here where it will be
- * read.
+ * already committed, not a linearisation point — which is why the projection's watermark
+ * ({@code P3-TSK-009}) is deliberately <em>not</em> an entry id: {@code last_entry_seq}
+ * counts the entries applied to one row, serialised by that row's own lock, so it carries no
+ * ordering semantics for this caveat to break, and the projection check compares against
+ * {@link #latest()} under the row's lock rather than through this cut.
  */
 public sealed interface AsOf {
 

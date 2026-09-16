@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-16 (`P3-TSK-008`)
+Last updated: 2026-09-16 (`P3-TSK-009`)
 
 ---
 
@@ -78,7 +78,7 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **8 of 24** backlog items; M3.1 and M3.2 are closed.
+same day with `P3-TSK-001`. **9 of 24** backlog items; M3.1 and M3.2 are closed.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -119,8 +119,8 @@ class, again).
 ## Current Milestone
 
 **M3.3 — A balance is explainable.** `P3-TSK-008` … `P3-TSK-010`;
-**1 of 3 — next `P3-TSK-009` (`READY`)** — the derivation from postings landed;
-the transactional projection and the verification job remain.
+**2 of 3 — next `P3-TSK-010` (`READY`)** — the derivation and the transactional
+projection landed; the verification job remains.
 Acceptance: a balance recomputed from zero equals the projection, under sustained
 concurrent posting.
 
@@ -351,11 +351,89 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-008` is `COMPLETE`; M3.3 is 1 of 3. **Next:
-`P3-TSK-009` (`READY`)** — the transactional projection, checked against the
-derivation that now defines it.
+**None in progress.** `P3-TSK-009` is `COMPLETE`; M3.3 is 2 of 3. **Next:
+`P3-TSK-010` (`READY`)** — the verification job, running the comparison this task
+just made cheap.
 
 ### Just completed
+
+**`P3-TSK-009` — The transactional projection** — `COMPLETE` (2026-09-16).
+**M3.3 is 2 of 3.** `ledger.account_balance` exists and is never *behind*: updated
+in the posting's own transaction, so it is current or absent along with the fact
+(ADR-0041) — and `INV-BAL-05`'s rule that **no decision reads it** is structural
+rather than documented, because no read exists to call.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Projection and derivation agree under sustained concurrent posting | `BalanceProjectionDatabaseTest`: ten instances, own connections, one **fresh** account so the race covers the first row's `ON CONFLICT` convergence as well as the increment — afterwards the projection equals the derivation, the watermark equals the applied-entry count, and no increment is lost (100+…+1000 = 5500, counted in the table) |
+| Updated in the posting transaction | The apply is `PostingService.postOnce`'s **last** write — entry, audit, outbox, projection, one unit of work; a rolled-back posting leaves the projection unchanged, a replayed command applies nothing, and a refused posting commits nothing at all |
+| Owned and written only by `ledger` | The table's grants (`SELECT, INSERT`, `UPDATE` column-narrowed to the accumulating columns, no `DELETE`), and the one write seam is the `BalanceProjection` port inside `ledger` |
+
+### "No decision reads it", made structural
+
+The port declares exactly one method and it returns `void`: nothing in Java can read
+the projection, because no read exists. `BalanceProjectionTest` pins that shape
+hermetically, so a read added in a hurry is a build failure until somebody decides —
+the arriving readers are named (`P3-TSK-010`'s comparison, `P3-TSK-018`'s display
+query), and each must say what kind of number it returns (ADR-0041's consequence).
+
+### The delta folds through the kernel; the accumulation is one guarded SQL addition
+
+Per account, the entry's sides fold through `JournalEntry.sum` and are signed by
+`BalanceDerivation.settle` — the sign convention still stated once. The row's
+`posted_minor + delta` then happens in SQL, admissible where `P3-TSK-008`'s
+history-wide `SUM` was not because both failure modes that argument names are
+structurally closed at this one addition: cross-scale accumulation is refused by the
+update's scale-match condition, and `bigint` overflow **raises** in PostgreSQL
+rather than wrapping (`INV-MON-06`). **Not read-modify-write**: the increment
+re-reads under the row's own exclusive lock (the `P1-TSK-011` counter shape), so ten
+concurrent postings serialise and compose; multi-account entries lock projection
+rows in one fixed order, so no two postings can deadlock. The lock is taken **last**
+in the transaction, deliberately — ADR-0041's accepted contention, held for the
+shortest window the transaction allows.
+
+### The watermark answers `AsOf`'s caveat by not being an entry id
+
+Entry ids order by mint while commits interleave, so an id watermark would make
+"everything through entry X" a set no later observer can reconstruct — false drift,
+or masked drift. `last_entry_seq` is the **ordinal of the last entry applied to this
+row**, serialised by the row's own lock, with no ordering semantics to be wrong
+about: "is this projection current?" is `last_entry_seq = COUNT(DISTINCT entry_id)`
+over the account's lines, and the comparison tolerates in-flight entries by the
+count, never by a time window (`PHASE_3_PLAN` §14.6). The answer now sits in
+`AsOf`'s javadoc where the question was recorded.
+
+### A scale-divergent posting is refused wholly — a deliberate strengthening
+
+An entry at a persisted scale diverging from the account's history was previously
+postable and merely made the balance underivable later. With the projection in the
+write path it is refused **at posting time** (`UnderivableBalanceException`, naming
+the fact and never a sum — `INV-AUD-02`), and nothing commits: no entry, no claim,
+no projection change. A posting the projection cannot follow must not commit beside
+a projection now permanently behind. The raw-SQL writer still bypasses the
+projection entirely — which is exactly the drift `P3-TSK-010`'s comparison exists
+to detect, stated rather than papered over.
+
+### What deliberately did not arrive
+
+Holds stay zero (`holds_minor` written 0, constrained non-negative — `P3-TSK-015`
+populates it); no verification job or drift metric (`P3-TSK-010`); no read path, no
+endpoint (`P3-TSK-018`), no bean, no new audit action (projection maintenance is the
+platform's derived bookkeeping of the already-audited posting — the `P2-TSK-014`
+licence). `V006` gains `scale` over ADR-0041's sketch, because a persisted amount
+without its scale is uninterpretable (`INV-MON-05`), and the row's currency is bound
+to the account's by composite FK (the `V005` mechanism). `OwnershipIsScopedTest`
+demanded classification for both new SQL-bearing methods and got honest `NOT_OWNED`
+entries — the detector locating the private helper again, the `P1-TSK-021` finding
+holding shape.
+
+**Six mutations, all caught by the intended assertion** — the apply dropped from the
+effect, the sign inverted, the accumulation made an overwrite, the watermark frozen,
+the scale guard dropped, and the refusal swallowed (the posting committing beside a
+projection that had not followed it). **1064 hermetic tests,
+621 database tests.**
+
+### Previously
 
 **`P3-TSK-008` — Balance derived from postings** — `COMPLETE` (2026-09-16).
 **M3.3 opens, 1 of 3.** The phase's defining question answered: the authoritative
@@ -7375,8 +7453,8 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-008` (2026-09-16): the balance derived from
-postings. The next work is `P3-TSK-009`, the transactional projection.
+The last work performed was `P3-TSK-009` (2026-09-16): the transactional
+projection. The next work is `P3-TSK-010`, the verification job and drift metric.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -7618,20 +7696,22 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P3-TSK-009` — The transactional projection.** Status `READY`; depends on
-`P3-TSK-006` and `P3-TSK-008` (both `COMPLETE`).
+**`P3-TSK-010` — The verification job and the drift metric.** Status `READY`;
+depends on `P3-TSK-009` (`COMPLETE`).
 
-Fast balance reads that can never be behind (ADR-0041): a migration creating
-`ledger.account_balance` (`posted_minor`, `holds_minor`, `last_entry_seq`), updated
-**in the posting's own transaction**, owned and written only by `ledger` — and the
-rule that **no decision reads it** (`INV-BAL-05`) made structurally visible rather
-than documented. Each posting contends on its accounts' projection rows, the accepted
-cost ADR-0041 records with the operational-account mitigation. The projection must
-equal `P3-TSK-008`'s derivation after every posting, including ten concurrent
-postings to one account; a rolled-back posting leaves it unchanged — and its
-last-entry watermark must confront `AsOf`'s recorded mint-vs-commit caveat. Holds
-populating `holds_minor` stay out of scope (`P3-TSK-015`). Risk: High. Cx: M.
-DoD: `DOD-FIN`.
+The comparison, not anybody's confidence, is the evidence (`INV-BAL-02`,
+ADR-0041's rule 2): a job recomputing every balance from postings through
+`P3-TSK-008`'s derivation and comparing it to the projection — the comparison
+`P3-TSK-009` made cheap, tolerating in-flight entries by `last_entry_seq` and
+never by a time window (`PHASE_3_PLAN` §14.6). The `finapp.ledger.projection.drift`
+gauge with an alerting threshold of **zero**; NaN when unreadable, never zero
+(`P1-TSK-029`'s rule). Distributed: no leader — idempotent per run or
+lease-protected, and a new `DISTRIBUTED_EXECUTION.md` §3 exemption is a
+**decision**, not a ride on the relay's. The job must be safe to run while
+postings continue, and an injected drift must be detected and reported. This is
+also the first consumer of the projection's read — the arrival
+`BalanceProjectionTest`'s pin exists to force a decision from. Risk: Medium.
+Cx: M. DoD: `DOD-FIN`, `DOD-OBS`.
 
 ### Superseded: the transition itself
 
@@ -7664,6 +7744,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | **`P3-TSK-009` complete — the transactional projection, and M3.3 is 2 of 3.** `ledger.account_balance` (`V006`), updated in the posting's own transaction as `PostingService`'s **last** write, so it is current or absent along with the fact (ADR-0041 rule 1) — a replay applies nothing, a rollback takes the change with it, and an injected refusal commits nothing at all. **`INV-BAL-05` made structural**: no read exists anywhere — the `BalanceProjection` port declares one `void` method, pinned hermetically, with the arriving readers (`P3-TSK-010`'s comparison, `P3-TSK-018`'s display query) named as the decisions that must come and say what kind of number they return. **The delta folds through the kernel** (`JournalEntry.sum` per side, signed by `BalanceDerivation.settle` — the convention still stated once); the accumulation is one guarded SQL addition, admissible where a history-wide `SUM` was not because cross-scale is refused by the scale-match condition and `bigint` overflow raises (`INV-MON-06`). Not read-modify-write: the increment re-reads under the row's own lock (`P1-TSK-011`'s counter shape), first postings converge through `ON CONFLICT`, and multi-account entries lock rows in one fixed order so no two postings deadlock. **The watermark answers `AsOf`'s mint-vs-commit caveat by not being an entry id**: `last_entry_seq` counts entries applied to the row, serialised by the row's lock — "current?" is seq = `COUNT(DISTINCT entry_id)`, in-flight entries tolerated by the count and never by a time window (plan §14.6); the answer sits in `AsOf`'s javadoc where the question was recorded. **A scale-divergent posting is refused wholly**, a deliberate strengthening: previously postable and balance-poisoning, now refused at posting time with an amount-free message; the raw-SQL writer still bypasses the projection, which is exactly the drift `P3-TSK-010` exists to detect. `V006` gains `scale` over ADR-0041's sketch (`INV-MON-05`), binds the row's currency to the account's by composite FK (the `V005` mechanism), and column-narrows `UPDATE` to the accumulating columns — identity unwritable per column, no `DELETE`. Proven over rows: projection equals derivation after sequential, both-directions-in-one-entry (seq +1, not +2), replayed, ten-way-concurrent (fresh account, first-insert race included, 5500 counted in the table) and rolled-back postings. **Six mutations, all caught by the intended assertion** — the apply dropped, the sign inverted, the accumulation made an overwrite, the watermark frozen, the scale guard dropped, the refusal swallowed. 1064 hermetic tests, 621 database tests. Next: `P3-TSK-010`. |
 | 2026-09-16 | **`P3-TSK-008` complete — the balance derived from postings, and M3.3 opens (1 of 3).** The phase's defining question: the authoritative settled number computed from the rows and nothing else (`INV-BAL-01`), reproducible from zero (`INV-BAL-02`), signed by the account's normal balance — `BalanceDerivation.settle` being the one statement of the sign convention, where `Direction` finally meets `NormalBalance` as `P3-TSK-004`'s javadoc promised. **The sums fold through `Money`, never a SQL `SUM`**: an aggregate in SQL is a second implementation of monetary arithmetic outside the kernel — silent cross-scale addition (`INV-MON-03`) and silent widening past `long` (`INV-MON-06`) — so folding through the kernel makes the refusals structural, and the replay is verified against **independent `BigDecimal` arithmetic over raw SQL rows** (the definition must not certify the kernel with the kernel). Every reachable type covered over rows (`EQUITY` has no purpose, so no account; all five types swept hermetically via `values()`); negative is a legal state; an empty account is zero **in its own currency and scale** (JPY@0, GBP@2). A **mixed-scale history refuses loudly** as `UnderivableBalanceException` — account, currency and fact, never a sum (`INV-AUD-02`), the kernel's amount-rendering diagnostics translated — while a one-sided persisted-scale history **settles** via the scale-aware zero identity, `JournalEntry.sum` going package-private for its second caller. `AsOf`'s entry cut compares in SQL only (`UUID.compareTo` disagrees with PostgreSQL's byte order) and carries the mint-vs-commit caveat where `P3-TSK-009` will read it; an uncommitted posting is proven invisible (one statement, one snapshot, committed rows only). No migration (`V004` indexed this read by name), no bean, no endpoint, no audit action; `OwnershipIsScopedTest` refused `derive` until classified `NOT_OWNED` with the arriving surfaces named. **Six mutations, all caught by the intended assertion.** 1062 hermetic tests, 616 database tests. Next: `P3-TSK-009`. |
 | 2026-09-14 | **`P3-TSK-007` complete — the posting permissions, and M3.2 closes (4 of 4).** Two permissions (`LEDGER_POST`, `LEDGER_ADJUST`) naming exactly the two actions the registry has declared since `P3-TSK-001`, one role (`LEDGER_OPERATOR`) holding both — the asymmetry is the design: permission vocabulary precise because splitting a permission later re-audits every check site (`P3-TSK-017` checks `LEDGER_ADJUST` specifically), the role coarse because a role exists when a distinct trust decision does and Phase 3 has one ledger-operating population. **`PostingService` deliberately carries neither**: ADR-0031 puts permission at the boundary, and the in-process command runs under the flow's actor — a Phase 4 transfer runs as the customer, who holds no ledger permission; both permissions ship with probes and no production caller, the `KYC_REVIEW` precedent stated rather than smuggled. `V014` performed the `V013` ceremony and the latest-constraint reconciliation covered it with **no test edit** — the machinery built for this day doing its job. Disjointness generalised to pairwise over `values()` (a fourth role is covered automatically) and to three populations over HTTP, each refused by both others' surfaces (`INV-AUD-03` from every direction); a ledger operator granted through the real roles endpoint refused by both administrative endpoints; the contract's one added request-enum value reviewed past its blanket `BREAKING` label. **Six mutations, all caught by the intended assertion** — the acceptance one twice, hermetically and over HTTP. 1059 hermetic tests, 609 database tests. Next: `P3-TSK-008`, M3.3 opens. |
 | 2026-09-13 | **`P3-TSK-006` complete — the posting command, and the one write path `INV-LED-04` permits exists.** `PostingService` over the unmodified Phase 0 kernel: validate → claim → effect, joining the **caller's** transaction (Phase 4's transfer-and-posting atomicity depends on joining; "the ledger owns the posting transaction" means the write set). One call commits entry, lines, audit record (`ledger.JournalEntryPosted` leaves `NOT_YET_EMITTED`), outbox row and idempotency record together or not at all. An unbalanced request never consumes its key; a replay returns the original entry id; the fingerprint covers the money and excludes actor/correlation so a retried request on a new correlation still replays. The event carries enumerated names only — a consumer needing the amount reads the posting. **The validation question answered one rank stronger**: `V005`'s composite FK binds line currency to account currency for every writer (the domain deliberately cannot see it); account status is a recorded remainder owned by `P3-TSK-014`, whose lock is the only honest home for the refusal. Proven with the real executor and writers: retry replays, ten-way race one-effect-counted, `INV-IDEM-03` conflict, injected last-write failure leaving no entry **and no claim**, rollback leaving no outbox row, unestablished actor refused. **Six mutations, all caught by the intended assertion** — including the key-made-per-call shape that turns every retry into a second posting. 1058 hermetic tests, 608 database tests. Next: `P3-TSK-007`. |

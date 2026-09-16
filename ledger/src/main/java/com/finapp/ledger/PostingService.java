@@ -33,7 +33,8 @@ import java.util.UUID;
  *
  * <h2>Everything commits together, on the caller's transaction</h2>
  *
- * <p>The entry, its lines, the audit record, the outbox row and the idempotency record all go
+ * <p>The entry, its lines, the audit record, the outbox row, the balance projection update
+ * (`P3-TSK-009`) and the idempotency record all go
  * on {@code unitOfWork} — Phase 4's stated benefit is that a transfer's state transition and
  * its posting commit together, which only works if this command <em>joins</em> a transaction
  * rather than opening one. "The ledger owns the posting transaction"
@@ -57,7 +58,7 @@ import java.util.UUID;
  * takes; a lock-free status read here would be the check that passes every test and loses the
  * race. Line-currency-versus-account-currency needs no check at all: {@code V005} binds it at
  * {@code DB-CONSTRAINT} for every writer. The adjustment variant, its permission and its
- * reason are `P3-TSK-017`'s; the projection update joins this transaction at `P3-TSK-009`.
+ * reason are `P3-TSK-017`'s.
  */
 public final class PostingService {
 
@@ -78,6 +79,7 @@ public final class PostingService {
     private final JournalEntryStore<Connection> journal;
     private final AuditWriter<Connection> audit;
     private final OutboxWriter<Connection> outbox;
+    private final BalanceProjection<Connection> projection;
     private final IdGenerator ids;
     private final Clock clock;
 
@@ -86,12 +88,14 @@ public final class PostingService {
             JournalEntryStore<Connection> journal,
             AuditWriter<Connection> audit,
             OutboxWriter<Connection> outbox,
+            BalanceProjection<Connection> projection,
             IdGenerator ids,
             Clock clock) {
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
         this.journal = Objects.requireNonNull(journal, "journal must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
         this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
+        this.projection = Objects.requireNonNull(projection, "projection must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
@@ -207,6 +211,13 @@ public final class PostingService {
                 // the posting (INV-AUD-02, plan section 10).
                 EventPayload.of().with("entryType", attribution.entryType().name()).toBytes(),
                 EventPayload.MEDIA_TYPE);
+
+        // The projection, LAST (P3-TSK-009, ADR-0041): its UPDATE takes the account's
+        // projection row lock and holds it to commit - the contended lock ADR-0041 accepts -
+        // so it is taken after every other write, keeping the window other postings to the
+        // same account block as short as this transaction allows. A replay never re-enters
+        // this method, so a replay never double-applies.
+        projection.apply(unitOfWork, entry);
 
         return CommandResult.succeeded(
                 StoredResponse.of(
