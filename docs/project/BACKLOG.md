@@ -4005,18 +4005,47 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Accept**: drift is detectable, alertable and zero.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-OBS`
 
-**P3-TST-001 — `INV-BAL-02` under sustained concurrent posting** — `READY`
+**P3-TST-001 — `INV-BAL-02` under sustained concurrent posting** — `COMPLETE` (2026-09-16)
 - **Objective**: the F2 supplement criterion, demonstrated rather than asserted.
 - **Scope**: ten instances posting continuously to one account while the verification job runs;
   replay-from-zero equals projection throughout; a projection rebuild **while postings continue**.
 - **Deps**: P3-TSK-010.
+- **Gate evidence (2026-09-16)**: `SustainedConcurrentPostingDatabaseTest`, and the composition
+  is the deliverable — the pieces were proven alone (`P3-TSK-009`'s ten-way race,
+  `P3-TSK-010`'s deterministic in-flight interleave), and the `P1-TSK-027` lesson is that two
+  green halves compose only when something drives them together. **Overlap by construction,
+  never timing luck** (`P0-TST-004`'s rule): the storm is ended by the VERIFIER, which sweeps
+  until both floors are met — ≥25 verdicts completed and ≥200 entries committed (raised from a
+  first draft whose 10/30 floors were satisfied in ~300ms on a warm container: a gust, not a
+  storm) — so "the job ran while postings continued" is a property of the loop's exit condition.
+  Every mid-storm verdict `CLEAN` or `IN_FLIGHT`, **never `DRIFTING`** — that is
+  "replay-from-zero equals the projection *throughout*", stated through the delivered
+  verification machinery; afterwards the verdict is `CLEAN` and the row equals the posters' own
+  committed tally, **tracked outside the kernel** (the independent no-lost-increment check).
+  **The rebuild half records the operator procedure that is safe under live posting**:
+  lock-then-look as the migrator — `SELECT … FOR UPDATE` on the projection row, then recompute
+  and overwrite in a FRESH statement — because a single `UPDATE` with recomputing subqueries
+  re-evaluates them against its ORIGINAL snapshot when blocked (`P2-TSK-015`'s write-skew
+  finding) and would lose exactly the posting it blocked on. The row is corrupted before each
+  of three mid-storm rebuilds, so each provably rewrites rather than no-ops, with committed
+  entries required between rounds so each runs against live traffic; the storm ends `CLEAN`
+  with the tally exact. **The named mutation performed and recorded**: the projection updated
+  outside the posting transaction (upserts rerouted onto a private autocommit connection) —
+  **five tests fail across both suites, the two intended among them**: the rolled-back posting
+  deterministically, and the sustained storm's drift-free-throughout sweep. The `INV-BAL-02`
+  row landed in `MUTATION_TESTING.md` §2 with the item's §4 row, and the register guard's teeth
+  re-proven per §5: one method reference corrupted (backup copy, never `git checkout --`),
+  `every method the register names exists` failed naming it, restore byte-identical, green.
+  **With this the M3.3 acceptance holds and the milestone closes** — a balance recomputed from
+  zero equals the projection, under sustained concurrent posting. 1069 hermetic /
+  626 database tests.
 - **Accept**: the register row lands with the mutation that breaks it (the projection updated
   outside the posting transaction) proven caught.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-TEST`
 
 ## P3-EPIC-04 — The customer account product (M3.4)
 
-**P3-TSK-011 — The `accounts` module and schema** — `TODO`
+**P3-TSK-011 — The `accounts` module and schema** — `READY`
 - Objective/shape as P3-TSK-001, for `accounts`. **Deps**: P3-TSK-001.
 - **Boundary**: `accounts` may see `ledger`; `ledger` may **not** see `accounts` (ADR-0042),
   asserted in both directions.
