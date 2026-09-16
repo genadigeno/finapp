@@ -2,21 +2,22 @@ package com.finapp.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.sharedkernel.money.Money;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The structural half of {@code INV-BAL-05} (`P3-TSK-009`, ADR-0041): <strong>no decision can
- * read the projection, because no read exists.</strong> The port declares exactly one method
- * and it returns nothing, so the projection's numbers cannot leave the write path through
- * Java at all. A reader is a decision somebody must come and take — the verification job's
- * comparison (`P3-TSK-010`) and the display query (`P3-TSK-018`), each saying what kind of
- * number it returns — and until then this test is what fails the build on a read added in a
- * hurry.
+ * The structural half of {@code INV-BAL-05} (`P3-TSK-009`, ADR-0041): <strong>no reader of
+ * the projection hands a balance out.</strong> The write seam declares exactly one method and
+ * it returns nothing; the first reader arrived with `P3-TSK-010` and said what it returns —
+ * {@code ProjectionVerification} yields <strong>verdicts and counts, never {@link Money} or a
+ * {@link DerivedBalance}</strong>, so nothing read from the projection can become a
+ * decision's input. The display query (`P3-TSK-018`) must come here and say the same; until
+ * then this test is what fails the build on a read added in a hurry.
  */
-@DisplayName("the balance projection exposes no read (INV-BAL-05, P3-TSK-009)")
+@DisplayName("the balance projection hands no balance out (INV-BAL-05, P3-TSK-009/-010)")
 class BalanceProjectionTest {
 
     @Test
@@ -41,6 +42,21 @@ class BalanceProjectionTest {
                         .as("public method %s must not carry a projection value out",
                                 method.getName())
                         .isEqualTo(void.class);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the verifier - the first reader - returns verdicts and counts, never money")
+    void theVerifierHandsNoBalanceOut() {
+        // P3-TSK-010's read arrived and said what kind of number it returns. What it must
+        // never return is the thing a decision could consume: a settled amount. Verdicts and
+        // tallies cannot back a hold; a Money could.
+        for (Method method : ProjectionVerification.class.getDeclaredMethods()) {
+            if (Modifier.isPublic(method.getModifiers())) {
+                assertThat(method.getReturnType())
+                        .as("public method %s must not hand a balance out", method.getName())
+                        .isNotIn(Money.class, DerivedBalance.class);
             }
         }
     }

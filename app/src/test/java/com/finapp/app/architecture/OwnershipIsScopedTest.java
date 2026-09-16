@@ -351,6 +351,33 @@ class OwnershipIsScopedTest {
                                         + " BalanceProjectionTest pins the port to one void"
                                         + " method (INV-BAL-05).")),
                     Map.entry(
+                            "com.finapp.ledger.ProjectionVerification.seqOf",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-010. The verification job's read of the"
+                                        + " projection watermark - platform bookkeeping over"
+                                        + " the ledger's own rows, account ids enumerated"
+                                        + " from the tables themselves, never a request. The"
+                                        + " verdict it feeds carries no balance out"
+                                        + " (BalanceProjectionTest pins it), so there is"
+                                        + " nothing here a caller could disclose.")),
+                    Map.entry(
+                            "com.finapp.ledger.ProjectionVerification.entriesOn",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-010. The applied-entry count over journal lines"
+                                        + " - seqOf's sibling, same classification, same"
+                                        + " reasoning, one entry up.")),
+                    Map.entry(
+                            "com.finapp.ledger.ProjectionVerification.rowOf",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-010. The private helper reading the projection"
+                                        + " row for the comparison - the detector locates"
+                                        + " the helper where the statement actually is (the"
+                                        + " P1-TSK-021 revokeAll finding); its"
+                                        + " classification is seqOf's, two entries up.")),
+                    Map.entry(
                             "com.finapp.ledger.JdbcBalanceProjection.normalBalanceOf",
                             new Entry(
                                     Scope.NOT_OWNED,

@@ -150,6 +150,13 @@ class NoFloatingPointMoneyRulesTest {
                     // ToDoubleFunction Micrometer's Gauge imposes.
                     "com.finapp.app.telemetry.KycMetrics",
                     "com.finapp.app.telemetry.KycMetrics$Cached",
+                    // P3-TSK-010. The SAME case again: a count of DRIFTING projection rows -
+                    // a `long` from ProjectionVerification.Report all the way to the registry
+                    // boundary - published through the ToDoubleFunction Micrometer's Gauge
+                    // imposes. The comparison itself folds through Money and never leaves
+                    // the ledger module; only the tally reaches this class.
+                    "com.finapp.app.telemetry.LedgerMetrics",
+                    "com.finapp.app.telemetry.LedgerMetrics$Cached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

@@ -3957,7 +3957,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Accept**: projection and derivation agree under sustained concurrent posting.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
 
-**P3-TSK-010 — The verification job and the drift metric** — `READY`
+**P3-TSK-010 — The verification job and the drift metric** — `COMPLETE` (2026-09-16)
 - **Objective**: the comparison, not anybody's confidence, is the evidence (`INV-BAL-02`).
 - **Context**: Ledger. **Scope**: a job recomputing every balance from postings and comparing to
   the projection; `finapp.ledger.projection.drift` gauge; alerting threshold of **zero**.
@@ -3966,10 +3966,46 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   `DISTRIBUTED_EXECUTION.md` §3 exemption is a **decision**, not a ride on the relay's.
 - **Tests**: an injected drift is detected and reported; the job is safe to run while postings
   continue; the gauge reports **NaN when unreadable, never zero** (`P1-TSK-029`'s rule).
+- **Gate evidence (2026-09-16)**: `ProjectionVerification` in `ledger` — every account with
+  lines or a projection row recomputed through the `P3-TSK-008` derivation and compared, with
+  the verdict per account `CLEAN | DRIFTING | IN_FLIGHT`. **"Safe while postings continue" is
+  the seq-bracketed read**: the row's watermark read before and after the derivation, and a
+  mid-comparison commit — every domain entry commits atomically with its seq bump — yields
+  `IN_FLIGHT`, tolerated by the watermark and never by a time window (plan §14.6), settled by
+  the next run; **no lock is taken anywhere**, because the verifier must never contend with
+  the write path it audits. Proven **deterministically**: a derivation decorator commits a
+  concurrent posting mid-comparison (the `P1-TSK-012` idiom — no sleeps, no timing luck), the
+  verdict is `IN_FLIGHT` never false drift, and the next run is `CLEAN`. **Drift is**: a row
+  absent while lines exist (the raw-SQL bypass `P3-TSK-009` recorded, now detected and proven
+  with planted entries), `seq ≠ COUNT(DISTINCT entry_id)`, settled numbers differing under
+  scale-including equality, or an underivable history with a standing claim — unverifiable is
+  not clean. Injected corruptions through the app role's own narrow `UPDATE` grant (the
+  closest stand-in for the writer nobody wrote) each detected, with positive controls.
+  **Never repaired** — the §14.12 rule: a self-correcting ledger destroys the evidence.
+  `finapp.ledger.projection.drift` registered **eagerly** in `LedgerMetrics` (the
+  `IdentityMetrics` shape verbatim: connection-source seam, cached reading at a 30s floor —
+  six times the siblings', because this read walks every posted account — **NaN when
+  unreadable, never zero**, which bites hardest here since zero means *verified clean*); a
+  non-zero reading WARN-logs the drifting account ids, bounded and amount-free
+  (`INV-AUD-02`). **The scheduling question answered by needing no schedule**: the scrape
+  drives the sweep through the cache floor — the `OutboxBacklog` shape — so nothing schedules
+  ambiently, no leader, no lease, and no new `DISTRIBUTED_EXECUTION.md` §3 entry to argue;
+  every instance verifies independently and publishes the same fleet-wide figure (`max()`,
+  never `sum()`). **The first reader of the projection arrived and said what it returns**:
+  verdicts and counts, never `Money` — `BalanceProjectionTest` now pins the verifier's public
+  surface alongside the write port, so `INV-BAL-05` survives the read's arrival.
+  `LedgerMetrics`/`$Cached` joined the floating-point exemption set as the same
+  Micrometer-gauge case a fourth time; `OwnershipIsScopedTest` demanded the three SQL-bearing
+  helpers and got honest `NOT_OWNED` entries. The dashboard row is M3.8's with the rest of
+  the §15 meters; the zero threshold is recorded in the meter description. **Six mutations,
+  all caught by the intended assertion** — the settled comparison dropped, the seq-vs-count
+  check dropped, the absent row made clean, the in-flight bracket dropped (false drift under
+  concurrency), the underivable refusal swallowed, the gauge's NaN made zero.
+  1069 hermetic / 624 database tests.
 - **Accept**: drift is detectable, alertable and zero.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-OBS`
 
-**P3-TST-001 — `INV-BAL-02` under sustained concurrent posting** — `TODO`
+**P3-TST-001 — `INV-BAL-02` under sustained concurrent posting** — `READY`
 - **Objective**: the F2 supplement criterion, demonstrated rather than asserted.
 - **Scope**: ten instances posting continuously to one account while the verification job runs;
   replay-from-zero equals projection throughout; a projection rebuild **while postings continue**.

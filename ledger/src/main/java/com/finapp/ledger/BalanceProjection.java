@@ -10,11 +10,12 @@ package com.finapp.ledger;
  * <p>{@code INV-BAL-05} says no financial decision is made from a projection, and ADR-0041
  * sharpens it: a hold, an overdraft check, any refusal-or-permit on funds derives from the
  * postings inside the account lock (ADR-0039). This port makes that structural rather than
- * documented — nothing in Java <em>can</em> read the projection, because no read exists. The
- * readers arrive with their own designs and must say what kind of number they return: the
- * verification job's comparison ({@code P3-TSK-010}) and the display query
- * ({@code P3-TSK-018}). {@code BalanceProjectionTest} pins this interface to the single
- * {@code void} method, so adding a read is a build failure until somebody decides.
+ * documented — no read exists on the write seam, and each arriving reader must say what kind
+ * of number it returns. The first arrived with {@code P3-TSK-010}:
+ * {@link ProjectionVerification}, which returns <strong>verdicts and counts, never a
+ * balance</strong> — pinned alongside this interface's single {@code void} method by
+ * {@code BalanceProjectionTest}. The display query ({@code P3-TSK-018}) is still to come and
+ * must do the same.
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */

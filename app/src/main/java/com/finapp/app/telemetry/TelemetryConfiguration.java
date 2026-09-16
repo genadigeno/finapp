@@ -86,6 +86,24 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The balance-projection drift, as a gauge (`P3-TSK-010`, ADR-0041 rule 2).
+     *
+     * <p>The verification job's whole schedule is this gauge's cache floor: a scrape past the
+     * floor recomputes every balance from postings and compares — read-only, idempotent, no
+     * leader, no ambient schedule, so no {@code DISTRIBUTED_EXECUTION.md} §3 question arises.
+     * Same {@code DataSource} reasoning as its siblings: it verifies what the application can
+     * actually see, through the pool the writes go through.
+     */
+    @Bean
+    LedgerMetrics ledgerMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
+        com.finapp.ledger.ProjectionVerification verification =
+                new com.finapp.ledger.ProjectionVerification(
+                        new com.finapp.ledger.JdbcBalanceDerivation());
+        return new LedgerMetrics(
+                verification::verify, dataSource::getConnection, clock, registry);
+    }
+
+    /**
      * Wraps the auto-configured connection pool so acquiring a connection is visible in a trace.
      *
      * <p><strong>A {@code BeanPostProcessor} because a {@code @Bean} cannot do this.</strong>
