@@ -62,4 +62,12 @@ include("consent")
 // its boundary and its schema owner exist before the first ledger table does.
 include("ledger")
 
+// The Phase 3 accounts module (P3-TSK-011): the customer account and wallet PRODUCT - agreement,
+// status, lifecycle - and never its money (ADR-0042). Declared after `ledger` because it is the
+// platform's first business module that depends on a business sibling: accounts -> ledger, for
+// balance queries and posting requests. The direction is one-way by construction - with this edge
+// declared, `ledger -> accounts` is a Gradle dependency cycle and the build refuses it outright,
+// which is stronger than the isolation tests that also assert it.
+include("accounts")
+
 include("app")

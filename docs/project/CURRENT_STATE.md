@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-16 (`P3-TST-001`)
+Last updated: 2026-09-17 (`P3-TSK-011`)
 
 ---
 
@@ -78,8 +78,8 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **11 of 24** backlog items; M3.1, M3.2 and M3.3 are
-closed.
+same day with `P3-TSK-001`. **12 of 24** backlog items; M3.1, M3.2 and M3.3 are
+closed; M3.4 is open at 1 of 4.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -119,12 +119,15 @@ class, again).
 
 ## Current Milestone
 
-**M3.4 — The product exists.** `P3-TSK-011` … `P3-TSK-013`;
-**0 of 3 — next `P3-TSK-011` (`READY`)** — the `accounts` module and schema,
-then the Customer Account lifecycle and its HTTP surface, gated on
-`customer.status = ACTIVE`.
+**M3.4 — The product exists.** `P3-TSK-011` … `P3-TSK-014`;
+**1 of 4 — next `P3-TSK-012` (`READY`)** — the module and schema exist; next
+the Customer Account lifecycle, then its HTTP surface gated on
+`customer.status = ACTIVE`, then closing without closing its history.
 Acceptance: a verified customer opens an account, sees its balance, and closes
 it — end to end over HTTP.
+*(This block read `P3-TSK-011 … P3-TSK-013; 0 of 3` until `P3-TSK-011`'s gate:
+the epic holds four tasks and the acceptance's own "closes it" is
+`P3-TSK-014` — the M2.3-style counting drift, corrected rather than left.)*
 
 **M3.3 — A balance is explainable.** `P3-TSK-008` … `P3-TSK-010` plus
 `P3-TST-001`; **CLOSED 2026-09-16, 4 of 4** — the derivation that defines the
@@ -363,11 +366,70 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TST-001` is `COMPLETE`; **M3.3 closes at 4 of 4**.
-**Next: `P3-TSK-011` (`READY`)** — the `accounts` module and schema, opening
-M3.4.
+**None in progress.** `P3-TSK-011` is `COMPLETE`; **M3.4 opens at 1 of 4**.
+**Next: `P3-TSK-012` (`READY`)** — `CustomerAccount`, the product gated on
+verification.
 
 ### Just completed
+
+**`P3-TSK-011` — The `accounts` module and schema** — `COMPLETE` (2026-09-17).
+**M3.4 opens: the P3-TSK-001 shape applied to `accounts`**, and the one thing
+genuinely new in the third run of this play is the platform's first
+business-sibling compile-time edge — declared so that its direction is a
+property of the build graph rather than of anyone's discipline.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| `build databaseTest` green with the module present | 1071 hermetic, 626 database, 14 kafka tests |
+| A planted `double` in `accounts` fails the floating-point rules | Caught naming exactly `accounts.Planted.amount is double (INV-MON-01)` — the derived module set reached the new module with no rule edited |
+| A cross-module dependency fails the isolation test | Both directions: `accounts → party` caught by the new test; `party → accounts` caught by party's — the failure naming the transitively-arriving `ledger` first (list order; any edge to `accounts` drags its defining `ledger` dependency along, so the plant is caught unconditionally — recorded rather than glossed) |
+| The ADR-0042 asymmetry, both directions | The positive half pinned (`accounts` must see `ledger`, `platform`, `sharedkernel`); the negative half both tested (`ledger` forbids `accounts`, and so do all four other siblings — the P2-TSK-003 decay closed at design time again) **and structural: a planted `ledger → accounts` edge fails Gradle configuration as a circular dependency**, demonstrated |
+
+### The privilege floor is the deliverable, and it was proven live
+
+`V001`: `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, **no
+`ALTER DEFAULT PRIVILEGES`** — the first table this schema will hold is exactly
+one whose `UPDATE` must be column-narrowed to `(status, status_changed_at)`
+(plan §8), so each table's grants arrive with the migration that creates it.
+Throwaway PostgreSQL: migrate → validate → re-migrate idempotent, owner
+`finapp_migrator`, ACL exactly `{finapp_migrator=UC, finapp_app=U}`, no
+`PUBLIC` entry, zero tables, `USAGE` and **not** `CREATE` for the app role.
+The history holds Flyway's own schema-creation marker plus one versioned row —
+checked against `ledger`'s identical shape rather than assumed.
+
+### One deliberate deviation from the shape, and it follows the licence
+
+**No `AccountsAuditAction` enum.** `P3-TSK-001` declared `LedgerAuditAction`
+because the plan names both its actions outright; for `accounts` the plan names
+`AccountOpened`/`AccountClosed` as **events** (§10) and no audit action at all,
+so under the deliberately-few licence the lifecycle actions arrive with the
+aggregate whose design fixes their meaning — the `kyc.CaseOpened`/`P2-TSK-005`
+precedent, recorded in `package-info.java` where the next reader will look.
+
+### The documented procedure was stale at its last step
+
+`DATA_MIGRATIONS.md` §"Adding a schema-owning module" step 5 instructed adding
+the module to a CI sequence that `P1-TSK-003` deliberately removed — CI runs
+`flywayMigrate`/`flywayValidate` unqualified, so a new schema-owning module is
+covered with no edit. Found by **following** the procedure, corrected with
+provenance: a checklist whose last step sends the reader to edit a list that no
+longer exists is the drift class this repository keeps meeting, arriving inside
+its own how-to.
+
+### Housekeeping recorded rather than absorbed
+
+`accounts/gradle.lockfile` identical to `ledger`'s but for its header line;
+`gradle/verification-metadata.xml` unchanged (the new module adds no artefact
+the build did not already trust); the `build-logic` Kotlin RC3→GA lockfile
+drift met and reverted a **fourth** time; and this document's own M3.4 block
+counted three tasks where the epic holds four — corrected, with the note where
+the count is used. The `P1-TSK-026` cmd trap (bare `gradlew.bat`) voided one
+run and was caught by the absent build marker.
+
+**Five probes, all caught by the intended guard, every restore byte-identical.**
+**1071 hermetic tests, 626 database tests.**
+
+### Previously
 
 **`P3-TST-001` — `INV-BAL-02` under sustained concurrent posting** — `COMPLETE`
 (2026-09-16). **M3.3 closes: the acceptance holds by demonstration.** The pieces
@@ -7586,9 +7648,9 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TST-001` (2026-09-16): the sustained-concurrency
-demonstration that closed M3.3. The next work is `P3-TSK-011`, the `accounts`
-module and schema, opening M3.4.
+The last work performed was `P3-TSK-011` (2026-09-17): the `accounts` module
+and schema, opening M3.4. The next work is `P3-TSK-012`, the `CustomerAccount`
+aggregate gated on `customer.status = ACTIVE`.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -7874,6 +7936,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P3-TSK-011` complete — the `accounts` module and schema, and M3.4 opens (1 of 4).** The P3-TSK-001 shape applied to `accounts`: a guarded module, `V001` creating the schema with the default-deny privilege floor (owner `finapp_migrator`, `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, **no `ALTER DEFAULT PRIVILEGES`** — the first table here is exactly one whose `UPDATE` must be column-narrowed, plan §8), zero tables, migrate → validate → re-migrate idempotent on a throwaway PostgreSQL with the ACL proven exactly `finapp_app=U` and no `PUBLIC` entry. **What is genuinely new in the third run of this play is the platform's first business-sibling compile-time edge**: `accounts → ledger`, declared with the module rather than with its first consumer (P3-TSK-012, one task away), because the ADR-0042 asymmetry is the deliverable — with the edge in the build graph, `ledger → accounts` is a Gradle dependency cycle, **demonstrated** (the planted reverse edge fails configuration outright), while `AccountsModuleIsolationTest` pins the positive half (ledger/platform/sharedkernel required, the documented direction) and forbids every other sibling; all five existing sibling isolation tests gained `accounts` in their forbidden lists, the P2-TSK-003 one-directional-decay lesson applied at design time a third time. **One deliberate deviation from the shape's letter, following its licence**: no `AccountsAuditAction` enum — the plan names `AccountOpened`/`AccountClosed` as events (§10) and no accounts audit action outright, so the lifecycle actions arrive with the aggregate whose design fixes their meaning (the `kyc.CaseOpened`/P2-TSK-005 precedent), recorded in `package-info.java`. **Five probes, all caught by the intended guard, restores byte-identical**: a planted `double` caught naming `accounts.Planted.amount` (the derived sweep reached the module with no rule edited); `accounts → party` caught by the new test; `party → accounts` caught by party's — the failure naming the transitively-arriving `ledger` first, since any edge to `accounts` drags its defining dependency along (recorded); the reverse-edge cycle; and an unclassified column migrated into `accounts` caught by `ColumnClassificationTest` against a from-scratch database. **Two findings**: `DATA_MIGRATIONS.md`'s adding-a-schema-owning-module procedure was stale at its last step — it instructed editing a CI list `P1-TSK-003` removed, found by following it, corrected with provenance; and this document's M3.4 block counted three tasks where the epic holds four and the milestone's own acceptance requires `P3-TSK-014` — corrected where the count is used. Housekeeping: `accounts/gradle.lockfile` identical to `ledger`'s but for its header, verification metadata unchanged, the `build-logic` Kotlin RC3→GA drift reverted a fourth time. 1071 hermetic tests, 626 database tests. Next: `P3-TSK-012`. |
 | 2026-09-16 | **`P3-TST-001` complete — `INV-BAL-02` under sustained concurrent posting, and M3.3 closes (4 of 4).** The composition is the deliverable: the pieces were proven alone (`P3-TSK-009`'s ten-way race, `P3-TSK-010`'s deterministic in-flight interleave), and the `P1-TSK-027` lesson is that two green halves compose only when something drives them together. `SustainedConcurrentPostingDatabaseTest`: ten instances posting continuously to one account **while the verification job runs**, with **overlap by construction, never timing luck** (`P0-TST-004`) — the storm is ended by the VERIFIER, which sweeps until ≥25 verdicts complete and ≥200 entries commit (raised from a first draft whose 10/30 floors were met in ~300ms on a warm container: a gust, not a storm). Every mid-storm verdict `CLEAN` or `IN_FLIGHT`, **never `DRIFTING`** — "replay-from-zero equals the projection *throughout*", stated through the delivered machinery — and afterwards `CLEAN`, with the row equal to the posters' own committed tally, tracked outside the kernel. **The rebuild half records the operator procedure that is safe under live posting**: lock-then-look as the migrator, because a blocked `UPDATE` re-evaluates recomputing subqueries against its ORIGINAL snapshot (`P2-TSK-015`'s write-skew finding) and would lose exactly the posting it blocked on; the row is corrupted before each of three mid-storm rebuilds so each provably rewrites, and the storm ends `CLEAN` with the tally exact. **The named mutation performed and recorded**: the projection updated outside the posting transaction (upserts rerouted onto a private autocommit connection — the async-projector defect in its smallest form) fails **five tests across both suites, the two intended among them**: the rolled-back posting deterministically, and the sustained drift-free-throughout sweep. `MUTATION_TESTING.md` §2 gains the `INV-BAL-02` row, §4 the item's row, and the register guard's teeth re-proven per §5 (one reference corrupted, the guard failed naming it, restore byte-identical). **M3.3's acceptance holds and the milestone closes**; M3.4 opens next. 1069 hermetic tests, 626 database tests. Next: `P3-TSK-011`. |
 | 2026-09-16 | **`P3-TSK-010` complete — the verification job and the drift metric; M3.3's numbered tasks are done and the milestone waits on `P3-TST-001`'s demonstration.** `ProjectionVerification` in `ledger`: every account with lines or a projection row recomputed through the `P3-TSK-008` derivation and compared to `ledger.account_balance`, per-account verdict `CLEAN | DRIFTING | IN_FLIGHT` — **the comparison, not anybody's confidence, is the evidence** (`INV-BAL-02`, ADR-0041 rule 2). **"Safe while postings continue" is the seq-bracketed read**: the watermark read before and after the derivation, a mid-comparison commit (atomic with its seq bump, `P3-TSK-009`) yielding `IN_FLIGHT` — tolerated by the watermark, never by a time window (plan §14.6) — and **no lock taken anywhere**, because the verifier must never contend with the write path it audits. Proven deterministically: a derivation decorator commits a concurrent posting mid-comparison (the `P1-TSK-012` idiom), the verdict is `IN_FLIGHT` never false drift, the next run `CLEAN`. **Drift is**: a row absent while lines exist — the raw-SQL bypass `P3-TSK-009` recorded, now detected and proven with planted entries — the watermark disagreeing with `COUNT(DISTINCT entry_id)`, settled numbers differing under scale-including equality, or an underivable history with a standing claim (unverifiable is not clean). Injected corruptions through the app role's own narrow `UPDATE` grant each detected, with positive controls. **Reported, never repaired** (plan §14.12: a self-correcting ledger destroys the evidence); a non-zero reading WARN-logs bounded, amount-free account ids. `finapp.ledger.projection.drift` registered **eagerly** in `LedgerMetrics` — the `IdentityMetrics` shape verbatim, 30s cache floor (six times the siblings': this read walks every posted account), **NaN when unreadable, never zero**, which bites hardest here because zero means *verified clean*. **The scheduling question answered by needing no schedule**: the scrape drives the sweep through the cache floor (the `OutboxBacklog` shape) — no leader, no lease, nothing ambient, no new `DISTRIBUTED_EXECUTION.md` §3 entry; every instance publishes the same fleet-wide figure (`max()`, never `sum()`). **The first reader of the projection arrived and said what it returns**: verdicts and counts, never `Money` — `BalanceProjectionTest` pins the verifier's surface beside the write port, so `INV-BAL-05` survives the read's arrival. `LedgerMetrics`/`$Cached` joined the floating-point exemption set (the same Micrometer-gauge case, fourth time); three `NOT_OWNED` ownership entries. Dashboard row deferred to M3.8 with the rest of §15. **Six mutations, all caught by the intended assertion** — settled comparison dropped, seq-vs-count dropped, absent row made clean, in-flight bracket dropped, underivable swallowed, NaN made zero. 1069 hermetic tests, 624 database tests. Next: `P3-TST-001`. |
 | 2026-09-16 | **`P3-TSK-009` complete — the transactional projection, and M3.3 is 2 of 3.** `ledger.account_balance` (`V006`), updated in the posting's own transaction as `PostingService`'s **last** write, so it is current or absent along with the fact (ADR-0041 rule 1) — a replay applies nothing, a rollback takes the change with it, and an injected refusal commits nothing at all. **`INV-BAL-05` made structural**: no read exists anywhere — the `BalanceProjection` port declares one `void` method, pinned hermetically, with the arriving readers (`P3-TSK-010`'s comparison, `P3-TSK-018`'s display query) named as the decisions that must come and say what kind of number they return. **The delta folds through the kernel** (`JournalEntry.sum` per side, signed by `BalanceDerivation.settle` — the convention still stated once); the accumulation is one guarded SQL addition, admissible where a history-wide `SUM` was not because cross-scale is refused by the scale-match condition and `bigint` overflow raises (`INV-MON-06`). Not read-modify-write: the increment re-reads under the row's own lock (`P1-TSK-011`'s counter shape), first postings converge through `ON CONFLICT`, and multi-account entries lock rows in one fixed order so no two postings deadlock. **The watermark answers `AsOf`'s mint-vs-commit caveat by not being an entry id**: `last_entry_seq` counts entries applied to the row, serialised by the row's lock — "current?" is seq = `COUNT(DISTINCT entry_id)`, in-flight entries tolerated by the count and never by a time window (plan §14.6); the answer sits in `AsOf`'s javadoc where the question was recorded. **A scale-divergent posting is refused wholly**, a deliberate strengthening: previously postable and balance-poisoning, now refused at posting time with an amount-free message; the raw-SQL writer still bypasses the projection, which is exactly the drift `P3-TSK-010` exists to detect. `V006` gains `scale` over ADR-0041's sketch (`INV-MON-05`), binds the row's currency to the account's by composite FK (the `V005` mechanism), and column-narrows `UPDATE` to the accumulating columns — identity unwritable per column, no `DELETE`. Proven over rows: projection equals derivation after sequential, both-directions-in-one-entry (seq +1, not +2), replayed, ten-way-concurrent (fresh account, first-insert race included, 5500 counted in the table) and rolled-back postings. **Six mutations, all caught by the intended assertion** — the apply dropped, the sign inverted, the accumulation made an overwrite, the watermark frozen, the scale guard dropped, the refusal swallowed. 1064 hermetic tests, 621 database tests. Next: `P3-TSK-010`. |

@@ -36,7 +36,11 @@ platform/src/main/resources/db/migration/platform/V001__initialise_platform_sche
 3. Configure `schemas`, `defaultSchema` and `locations` for that module's schema.
 4. Copy the correctness settings verbatim: `cleanDisabled`, `validateOnMigrate`,
    `outOfOrder = false`, `baselineOnMigrate = false`.
-5. Add the module's `flywayMigrate` / `flywayValidate` to the CI sequence.
+5. CI needs **no edit**: the workflow runs `flywayMigrate` / `flywayValidate` unqualified, so
+   Gradle runs them in every project that has the task. *(This step said "add the module to the
+   CI sequence" until `P3-TSK-011` followed it and found it stale — `P1-TSK-003` had removed
+   that hand-maintained list in favour of the unqualified invocation, and the procedure kept
+   instructing an edit to a list that no longer exists.)*
 
 ---
 

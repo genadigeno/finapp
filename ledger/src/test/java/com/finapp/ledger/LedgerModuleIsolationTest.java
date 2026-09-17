@@ -25,6 +25,12 @@ import org.junit.jupiter.api.Test;
  * model - a second authority over what a posting means. The siblings forbid {@code ledger} in
  * turn, so the isolation holds in both directions rather than only this one (the
  * {@code P2-TSK-003} finding).
+ *
+ * <p><strong>{@code accounts} is the sharpest entry in the list</strong> (P3-TSK-011, ADR-0042):
+ * it is the one sibling that legitimately depends on {@code ledger}, so this direction is the
+ * only one a test still guards - the reverse edge is already a Gradle dependency cycle. The
+ * accounting must never be shaped by the product built over it: the ledger knows
+ * {@code owner_kind} and an opaque {@code owner_ref}, not what a Customer Account is.
  */
 @Tag("architecture")
 @DisplayName("ledger module isolation (P3-TSK-001)")
@@ -33,7 +39,7 @@ class LedgerModuleIsolationTest {
     @Test
     @DisplayName("ledger sees no sibling business module and not the composition root")
     void seesNoSiblingAndNoCompositionRoot() {
-        for (String forbidden : List.of("party", "identity", "kyc", "consent", "app")) {
+        for (String forbidden : List.of("party", "identity", "kyc", "consent", "accounts", "app")) {
             assertThat(classpathEntries())
                     .as("ledger must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));

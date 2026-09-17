@@ -4045,13 +4045,42 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 ## P3-EPIC-04 — The customer account product (M3.4)
 
-**P3-TSK-011 — The `accounts` module and schema** — `READY`
+**P3-TSK-011 — The `accounts` module and schema** — `COMPLETE` (2026-09-17)
 - Objective/shape as P3-TSK-001, for `accounts`. **Deps**: P3-TSK-001.
 - **Boundary**: `accounts` may see `ledger`; `ledger` may **not** see `accounts` (ADR-0042),
   asserted in both directions.
+- **Gate evidence (2026-09-17)**: the full battery green with the module present — 1071 hermetic,
+  626 database, 14 kafka tests. The P3-TSK-001 shape delivered whole: guarded module, `V001`
+  privilege floor (owner `finapp_migrator`, ACL exactly `finapp_app=U`, no `PUBLIC`, zero
+  tables, **no `ALTER DEFAULT PRIVILEGES`** — the first table here is exactly one whose `UPDATE`
+  must be column-narrowed, plan §8), migrate → validate → re-migrate idempotent on a throwaway
+  PostgreSQL. **The ADR-0042 asymmetry is structural, not only tested**: `accounts → ledger` is
+  declared with the module (its first consumer is P3-TSK-012, one task away), so
+  `ledger → accounts` is a Gradle dependency cycle — demonstrated: the planted reverse edge
+  fails configuration with "Circular dependency" — while `AccountsModuleIsolationTest` pins the
+  positive half (ledger/platform/sharedkernel required) and all five sibling isolation tests
+  gained `accounts` in their forbidden lists (the P2-TSK-003 one-directional-decay lesson,
+  applied at design time). **One deliberate deviation from P3-TSK-001's letter**: no
+  `AccountsAuditAction` enum — the plan names `accounts.AccountOpened`/`AccountClosed` as
+  *events* (§10) and no audit action outright, so under the deliberately-few licence the
+  lifecycle actions arrive with the aggregate whose design fixes their meaning (the
+  `kyc.CaseOpened`/P2-TSK-005 precedent), recorded in `package-info.java`. **Five probes, all
+  caught by the intended guard, restores byte-identical**: a planted `double` fails
+  `NoFloatingPointMoneyRulesTest` naming `accounts.Planted.amount` (the derived sweep reached
+  the module with no rule edited); `accounts → party` fails the new isolation test;
+  `party → accounts` fails party's (failure naming the transitively-arriving `ledger` first —
+  list order; the plant is caught unconditionally, recorded); the reverse-edge cycle above; an
+  unclassified column migrated into `accounts` fails `ColumnClassificationTest` naming
+  `probe_unclassified.customer_email` against a from-scratch database. **Two findings**:
+  `DATA_MIGRATIONS.md` §"Adding a schema-owning module" step 5 instructed editing a CI list
+  `P1-TSK-003` removed — the procedure was stale at its last step, found by following it,
+  corrected with provenance; and `CURRENT_STATE.md`'s M3.4 block counted 3 tasks where the
+  epic holds 4 and the milestone acceptance requires `P3-TSK-014` — corrected. Housekeeping:
+  `accounts/gradle.lockfile` identical to `ledger`'s but for its header; verification metadata
+  unchanged; the `build-logic` Kotlin RC3→GA lockfile drift met and reverted a **fourth** time.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
 
-**P3-TSK-012 — `CustomerAccount`: the product, gated on verification** — `TODO`
+**P3-TSK-012 — `CustomerAccount`: the product, gated on verification** — `READY`
 - **Objective**: a verified customer may hold an account; an unverified one may not.
 - **Context**: Accounts. **Scope**: the aggregate and its machine
   (`PENDING → ACTIVE → {SUSPENDED ⇄ ACTIVE} → CLOSED`); `V001` creating

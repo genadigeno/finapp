@@ -57,6 +57,7 @@ dependencies {
     implementation(project(":kyc"))
     implementation(project(":consent"))
     implementation(project(":ledger"))
+    implementation(project(":accounts"))
 
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
