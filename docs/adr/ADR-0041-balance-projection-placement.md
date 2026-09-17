@@ -1,6 +1,6 @@
 # ADR-0041 — The balance projection lives in the ledger schema, is rebuildable, and is never the authority
 
-Status: Proposed
+Status: Accepted (2026-09-17, P3-DOC-001)
 Date: 2026-09-13
 Phase: 3
 Context: Ledger

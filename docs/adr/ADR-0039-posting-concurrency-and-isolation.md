@@ -1,6 +1,6 @@
 # ADR-0039 — Posting concurrency: `READ COMMITTED` with the balance derived, never locked
 
-Status: Proposed
+Status: Accepted (2026-09-17, P3-DOC-001)
 Date: 2026-09-13
 Phase: 3
 Context: Ledger

@@ -1,6 +1,6 @@
 # ADR-0042 — Customer Account, Ledger Account, Wallet and Operational Account are four things
 
-Status: Proposed
+Status: Accepted (2026-09-17, P3-DOC-001)
 Date: 2026-09-13
 Phase: 3
 Context: Accounts, Wallet, Ledger

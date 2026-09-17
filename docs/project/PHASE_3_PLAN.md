@@ -1,9 +1,10 @@
 # Phase 3 Plan — Accounts and Financial Ledger
 
-**Status:** `IN_PROGRESS` — entry gate passed 2026-09-13; started the same day with `P3-TSK-001`
+**Status:** `COMPLETE` (2026-09-17, [`reviews/PHASE_3_REVIEW.md`](reviews/PHASE_3_REVIEW.md)) —
+entry gate passed 2026-09-13; started the same day with `P3-TSK-001`
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md))
 **Decisions:** ADR-0039 (posting concurrency), ADR-0040 (chart of accounts), ADR-0041 (balance
-projection), ADR-0042 (account model) — all `Proposed`, accepted at the exit review
+projection), ADR-0042 (account model) — all `Accepted` at the exit review
 **Gate:** [`PHASE_GATES.md`](PHASE_GATES.md) §5 Phase 3 — *"the strictest gate in the
 programme"*, plus the financial supplement F1–F8, which binds for the **first time**
 
@@ -293,8 +294,8 @@ Key constraints and indexes:
 | `DELETE /v1/me/accounts/{id}` | session, ownership | Ends the agreement; zero-balance precondition; the history survives *(this row was missing until `P3-TSK-014` — the M3.4 milestone line says "open/query/close over HTTP" while this table omitted the close, the recurring plan-drift class)* |
 | `GET /v1/me/accounts/{id}/statement` | session, ownership | Period statement derived from postings |
 | `POST /v1/ledger/adjustments` | session, `LEDGER_ADJUST` | Manual adjusting entry; reason required; audited |
-| `GET /v1/ledger/accounts/{id}` | session, `LEDGER_READ` | Operational view |
-| `GET /v1/ledger/trial-balance` | session, `LEDGER_READ` | Per currency, as of |
+| `GET /v1/ledger/accounts/{id}` | session, `LEDGER_READ` | Operational view — **declared, never built, owned by no task** (the `P3-DOC-001` area-7 finding: `LEDGER_READ` exists in no enum and no criterion names either row; the trial-balance *capability* shipped as the continuous job and gauge instead). Owner: the Phase 3 → 4 transition — schedule them or strike the declaration |
+| `GET /v1/ledger/trial-balance` | session, `LEDGER_READ` | Per currency, as of — same finding, same owner as the row above |
 
 **Posting is an internal API, not a public one.** No external caller may post an arbitrary
 journal entry (`DELIVERY_PLAN.md` §Phase 3.7). The only public write is the adjustment, and it

@@ -43,7 +43,9 @@ the first activity of its entry gate.
 
 # Phase 0 — Domain and Architecture Foundation
 
-Status: `IN_PROGRESS`
+Status: `COMPLETE` (2026-09-04) *(this header read `IN_PROGRESS` until `P3-DOC-001`'s review —
+the backlog carries a second copy of each phase's status, and three of four were stale; the
+same second-copy decay as the ADR index, corrected as a review finding)*
 
 ## P0-EPIC-01 — Build and Repository Foundation
 
@@ -2597,7 +2599,9 @@ repository exists to prevent.
 
 # Phase 2 — KYC/KYB and Consent
 
-Status: `READY` — entry gate passed 2026-09-09 by the Phase 1 → 2 transition
+Status: `COMPLETE` (2026-09-13, [`reviews/PHASE_2_REVIEW.md`](reviews/PHASE_2_REVIEW.md))
+*(read `READY` until `P3-DOC-001` — the stale-second-copy finding)*. Entry gate passed
+2026-09-09 by the Phase 1 → 2 transition
 ([`reviews/PHASE_1_TO_2_TRANSITION.md`](reviews/PHASE_1_TO_2_TRANSITION.md)).
 Elaborated to task granularity by the same transition.
 
@@ -3564,9 +3568,11 @@ capability map, and the task list below is the schedule.
 
 # Phase 3 — Accounts and Financial Ledger
 
-Status: `READY` — entry gate passed 2026-09-13
+Status: `COMPLETE` (2026-09-17, [`reviews/PHASE_3_REVIEW.md`](reviews/PHASE_3_REVIEW.md)) —
+**25 of 25** *(this header read `READY` throughout the phase's execution — the
+stale-second-copy finding of `P3-DOC-001`'s area 7)*. Entry gate passed 2026-09-13
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)).
-Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md); decisions in ADR-0039…0042.
+Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md); decisions in ADR-0039…0042 (`Accepted`).
 
 **The strictest gate in the programme**, and the first phase the financial supplement (F1–F8)
 binds. Every task below carries `DOD-FIN` where it can affect money, balances or accounting —
@@ -4670,15 +4676,33 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   nothing written, and a second person approves the same proposal as the positive control;
   the register row stands and the battery survives the status flip.
 
-**P3-DOC-001 — Phase 3 review record** — `READY`
+**P3-DOC-001 — Phase 3 review record** — `COMPLETE` (2026-09-17)
 - **Scope**: the `PHASE_GATES.md` §4 review: eight areas, twelve universal criteria, **the
   financial supplement F1–F8 — which binds for the first time and is not "not applicable" here**,
   and the nine Phase 3-specific criteria, each with evidence; numbers counted, never quoted; the
-  ADR-0039…0042 acceptance decision.
+  ADR-0039…0042 acceptance decision. *(The gate in fact lists **sixteen** Phase 3-specific
+  criteria — 9 original + 7 transition-extension; "nine" predates the extension and is the
+  review's area-7 finding 5. All sixteen were assessed.)*
 - **Deps**: everything above.
-- **Accept**: area 2 — *walk one real posting end to end* — **has a subject for the first time in
-  the programme**, and must be walked: economic event → domain operation → financial transaction
-  → journal entry → lines → balances.
+- **Done**: [`reviews/PHASE_3_REVIEW.md`](reviews/PHASE_3_REVIEW.md) — 8 areas `PASS`, 12
+  universal `PASS`, F1–F8 all **Met** (re-assessed at the gate, not inherited), 16
+  phase-specific `PASS`, the ten-instances answer `PASS` over nine contended decisions;
+  ADR-0039…0042 → `Accepted` in the files and the index. Conducted in the `P2-DOC-001` order —
+  assess → land corrections → **flip the status (the guarded act)** → re-run the full battery —
+  and the post-flip battery is green with nothing surfaced, because `P3-TST-003` predicted and
+  `P3-TSK-021` pre-paid the one failure the flip would have produced. Six area-7 findings:
+  the plan's unbuilt `LEDGER_READ` surface (owner: the Phase 3 → 4 transition), two stale
+  `LEDGER_MODEL.md` adjustment spots (corrected — the doc's own front matter assigned them
+  here), three stale backlog phase headers (corrected), `CURRENT_STATE.md`'s §Next Task stale
+  at `P3-TSK-011` across eleven tasks (replaced), this item's "nine" (recorded), the ADR
+  second-copy decay (both copies flipped). Counted: 138 mutations across 22 items + 3
+  guard-teeth re-proofs, 1 survivor correctly and 0 wrongly; 19 of 19 register rows;
+  **1121 hermetic / 683 database / 14 kafka** after the flip.
+- **Accept**: met — area 2 **has a subject for the first time in the programme and it is
+  walked**: an operator's correction as the economic event → propose/approve as the domain
+  operation → the approval's transaction → the `ADJUSTMENT` journal entry with the approver
+  as actor → balanced per-currency lines → projection, derivation, statement and trial
+  balance, each step naming its code and its test.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-DOC`
 
 ---

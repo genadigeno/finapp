@@ -4,9 +4,11 @@ The ledger is the **authoritative financial record**. Every balance, statement, 
 reconciliation in this platform is derived from it, and nothing else is financial truth
 (`CLAUDE.md` rule 12, `INV-EVT-02`).
 
-*Decided by the Phase 2 → 3 transition (2026-09-13) in ADR-0039…0042. Phase 3 implements it;
-`P3-DOC-001` updates this document with what was built, and any difference between the two is a
-finding rather than an edit.*
+*Decided by the Phase 2 → 3 transition (2026-09-13) in ADR-0039…0042; implemented by Phase 3
+and updated by `P3-DOC-001` (2026-09-17) against what was built. Two spots had gone stale on the
+adjustment — `P3-TSK-021` replaced the one-person write with two authenticated acts after they
+were written — and were corrected as review findings rather than silent edits
+([`reviews/PHASE_3_REVIEW.md`](../project/reviews/PHASE_3_REVIEW.md) area 7).*
 
 ---
 
@@ -22,7 +24,7 @@ finding rather than an edit.*
 | **Debit / Credit** | A `Direction` on a line | "Money in" / "money out". Which of those a debit means depends on the account's normal balance |
 | **Posting** | The act of writing a balanced entry durably | A balance update |
 | **Reversal** | A *new* entry with directions swapped, referencing the original | An edit, a delete, or a negation in place |
-| **Adjustment** | A manual entry carrying a reason and an authorised actor | A correction anybody may make |
+| **Adjustment** | A manual entry proposed with a reason by one authorised person and posted by a second who approves it (`INV-AUD-04`) | A correction any one person may make alone |
 | **Suspense** | An account where unmatched value is parked, aged and reported | A resting place. `INV-REC-05` requires it be temporary |
 | **Currency** | Explicit on every account, line and balance | Ever implied, defaulted, or converted silently |
 
@@ -96,10 +98,13 @@ command, which is where "the database committed but the response was lost" becom
 - a **reversal** references the original, swaps directions, and is bounded by what remains
   un-reversed (`INV-REV-01`, `INV-REV-02`). The original is byte-identical afterwards — asserted,
   not assumed;
-- an **adjustment** is a manual entry with a reason code and an authorised actor
-  (`INV-REV-04`), and above a threshold requires a second approver (`INV-AUD-04`) — **recorded
-  debt: the approver column does not exist yet**, and the reason and permission are what Phase 3
-  builds;
+- an **adjustment** is **two authenticated acts** (`P3-TSK-021`): an initiator *proposes* —
+  reason required (`INV-REV-04`), nothing posts — and a **second** `LEDGER_ADJUST` holder
+  *approves*, which posts the entry in the approval's own transaction. Approver ≠ initiator
+  holds at `DB-CONSTRAINT` (`INV-AUD-04`), and there is no approver column on the entry because
+  there are two acts, each with one actor, paired on the proposal row. Four-eyes applies to
+  **every** adjustment — a threshold is a versioned per-currency policy artefact with nothing to
+  calibrate it yet, recorded as a future seam on the proposal row;
 - a **rounding residual** is posted to a designated account, never absorbed (`INV-BAL-03`).
   Absorbed residual is money creation or destruction, at scale.
 

@@ -1,6 +1,6 @@
 # ADR-0040 — Chart of accounts: a flat account with a typed classification, not a tree
 
-Status: Proposed
+Status: Accepted (2026-09-17, P3-DOC-001)
 Date: 2026-09-13
 Phase: 3
 Context: Ledger, Accounting/GL
