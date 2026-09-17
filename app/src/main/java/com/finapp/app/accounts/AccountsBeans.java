@@ -12,7 +12,9 @@ import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.JdbcBalanceDisplay;
 import com.finapp.ledger.JdbcHoldStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
+import com.finapp.ledger.JdbcStatementDerivation;
 import com.finapp.ledger.LedgerAccountStore;
+import com.finapp.ledger.StatementDerivation;
 import com.finapp.party.PartyStore;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
@@ -56,6 +58,17 @@ class AccountsBeans {
     @Bean
     BalanceDerivation<Connection> balanceDerivation() {
         return new JdbcBalanceDerivation();
+    }
+
+    /**
+     * `P3-TSK-018`'s statement: derived from postings through the DERIVATION — never the
+     * display projection — because a statement is evidence-shaped and its figures must
+     * reconcile to the journal lines that compose them ({@code INV-ACC-02}).
+     */
+    @Bean
+    StatementDerivation<Connection> statementDerivation(
+            BalanceDerivation<Connection> balanceDerivation) {
+        return new JdbcStatementDerivation(balanceDerivation);
     }
 
     /**
@@ -128,6 +141,7 @@ class AccountsBeans {
             AccountClosing accountClosing,
             CustomerAccountStore<Connection> customerAccountStore,
             BalanceDisplay<Connection> balanceDisplay,
+            StatementDerivation<Connection> statementDerivation,
             IdentityStore<Connection> identityStore,
             PartyStore<Connection> partyStore,
             IdempotentExecutor idempotentExecutor,
@@ -138,6 +152,7 @@ class AccountsBeans {
                 accountClosing,
                 customerAccountStore,
                 balanceDisplay,
+                statementDerivation,
                 identityStore,
                 partyStore,
                 idempotentExecutor,

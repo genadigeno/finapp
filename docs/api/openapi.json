@@ -1785,6 +1785,75 @@
         },
         "type": "object"
       },
+      "StatementLineView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StatementResponse": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/StatementSection"
+            },
+            "type": "array"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StatementSection": {
+        "properties": {
+          "closing": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/StatementLineView"
+            },
+            "type": "array"
+          },
+          "opening": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "SuspensionRequest": {
         "properties": {
           "reason": {
@@ -2249,6 +2318,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BalanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/accounts/{id}/statement": {
+      "get": {
+        "operationId": "readStatement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementResponse"
                 }
               }
             },

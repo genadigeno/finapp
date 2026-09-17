@@ -16,8 +16,11 @@ import org.junit.jupiter.api.Test;
  * {@link DerivedBalance}</strong>, so nothing read from the projection can become a
  * decision's input. `P3-TSK-015`'s hold adjustment joined as a second <em>write</em> - the
  * availability decision derives from postings and hold rows before it runs, never from the
- * row it maintains. The display query (`P3-TSK-018`) must come here and say the same; until
- * then this test is what fails the build on a read added in a hurry.
+ * row it maintains. The display query arrived with `P3-TSK-013` (`JdbcBalanceDisplay` -
+ * its own SQL over the table, never through this port; this doc had named it `P3-TSK-018`,
+ * the recorded one-task plan drift), and `P3-TSK-018`'s statement reads postings, never the
+ * projection - so the port still exposes no read, and this test is what fails the build on
+ * one added in a hurry.
  */
 @DisplayName("the balance projection hands no balance out (INV-BAL-05, P3-TSK-009/-010)")
 class BalanceProjectionTest {

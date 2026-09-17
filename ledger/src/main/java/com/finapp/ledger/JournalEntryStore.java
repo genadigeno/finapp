@@ -32,9 +32,11 @@ public interface JournalEntryStore<T> {
     /**
      * One entry with its lines (ordered by {@code seq}) and attribution.
      *
-     * <p>Arriving callers: `P3-TSK-016` reads the original a reversal references, and
-     * `P3-TSK-018`'s statements read ranges; this task's own round-trip claim
-     * ({@code INV-MON-05} at {@code BIGINT} extremes) rides the same rehydrate path.
+     * <p>Arriving callers: `P3-TSK-016` reads the original a reversal references; this
+     * task's own round-trip claim ({@code INV-MON-05} at {@code BIGINT} extremes) rides the
+     * same rehydrate path. (`P3-TSK-018`'s statements were expected here too and arrived
+     * through their own range reader instead — {@code JdbcStatementDerivation}, since a
+     * statement wants an account's lines across entries, not one entry whole.)
      */
     Optional<PostedEntry> findById(T unitOfWork, JournalEntryId entryId);
 

@@ -355,8 +355,10 @@ class OwnershipIsScopedTest {
                                         + " original a commanding flow names - no HTTP surface"
                                         + " exists), so the URL-named arrival remains"
                                         + " P3-TSK-017's adjustment (the ADMINISTERED shape),"
-                                        + " and P3-TSK-018's statements (scoped by the caller's"
-                                        + " own account) must still come here and say so.")),
+                                        + " and P3-TSK-018's statements arrived through their own"
+                                        + " reader (JdbcStatementDerivation - scoped one level"
+                                        + " up by the caller's own product, see its entry), so"
+                                        + " this method still has no URL-named caller.")),
                     Map.entry(
                             "com.finapp.ledger.JdbcBalanceDerivation.derive",
                             new Entry(
@@ -367,11 +369,15 @@ class OwnershipIsScopedTest {
                                         + " platform's (operational, no owner exists) or a"
                                         + " customer's, so ownership is a property of the"
                                         + " SURFACE that discloses the number, not of the"
-                                        + " computation. No production caller yet: P3-TSK-009's"
-                                        + " projection check and P3-TSK-015's hold decision run"
-                                        + " as the platform, and P3-TSK-018's balance endpoint"
-                                        + " (the caller's own account, SESSION_DERIVED shape)"
-                                        + " must come here and say so when it arrives.")),
+                                        + " computation. Platform callers run as the platform"
+                                        + " (the projection check, the hold decision, the"
+                                        + " close's zero-check); the one customer surface is"
+                                        + " P3-TSK-018's statement, which arrived and said so:"
+                                        + " it reaches here only through the caller's own"
+                                        + " product (findOwnedBy, ownership in the statement)."
+                                        + " (The entry named P3-TSK-018 as 'the balance"
+                                        + " endpoint' - that surface was P3-TSK-013's display,"
+                                        + " the recorded one-task plan drift, corrected here.)")),
                     Map.entry(
                             "com.finapp.ledger.JdbcBalanceDerivation.linesInRange",
                             new Entry(
@@ -381,6 +387,21 @@ class OwnershipIsScopedTest {
                                         + " the statement actually is (the P1-TSK-021"
                                         + " revokeAll finding), and its classification is"
                                         + " derive's own, one entry up.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcStatementDerivation.periodLines",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-018. The statement's period-line read - the"
+                                        + " derivation's reasoning verbatim: the rows are the"
+                                        + " platform's accounting record and ownership is the"
+                                        + " disclosing SURFACE's. The one production caller is"
+                                        + " the /v1/me statement endpoint, whose account id is"
+                                        + " resolved through CustomerAccountStore.findOwnedBy"
+                                        + " (customer_id = ? in the statement) before this"
+                                        + " reader is ever asked - the AUTHORITATIVE_ID shape,"
+                                        + " labelled NOT_OWNED honestly because the ledger row"
+                                        + " itself has no owner column to scope by and the"
+                                        + " provenance lives in another module's store.")),
                     Map.entry(
                             "com.finapp.ledger.JdbcBalanceProjection.upsert",
                             new Entry(

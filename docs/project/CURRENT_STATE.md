@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P3-TSK-017`)
+Last updated: 2026-09-17 (`P3-TSK-018`)
 
 ---
 
@@ -78,8 +78,8 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **19 of 24** backlog items; M3.1 through **M3.6** are
-closed.
+same day with `P3-TSK-001`. **20 of 24** backlog items; M3.1 through **M3.6** are
+closed; M3.7 is 1 of 2.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -120,10 +120,12 @@ class, again).
 ## Current Milestone
 
 **M3.7 — Statements and the trial balance.** `P3-TSK-018` plus `P3-TSK-019`;
-**0 of 2 — next `P3-TSK-018` (`READY`)** — the period statement derived from
-postings with opening and closing balances that reconcile to the lines
-between them (`INV-ACC-02`'s drill-down shape, three phases early), and then
-the trial-balance job: zero per currency, or an incident (`INV-ACC-01`).
+**1 of 2 — next `P3-TSK-019` (`READY`)** — the period statement is real:
+derived from postings, opening and closing reconciling to the lines between
+them **by construction** (`INV-ACC-02`'s drill-down shape, three phases
+early), the closing held to an independent recomputation over raw rows.
+What remains is the trial-balance job: zero per currency, or an incident
+(`INV-ACC-01`).
 
 **M3.6 — Correction without mutation.** `P3-TSK-016` plus `P3-TSK-017`;
 **CLOSED 2026-09-17, 2 of 2** — a mistake is corrected by a new entry, never
@@ -403,11 +405,71 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-017` is `COMPLETE`; **M3.6 closes at 2 of 2**.
-**Next: `P3-TSK-018` (`READY`)** — statements derived from postings, opening
-M3.7.
+**None in progress.** `P3-TSK-018` is `COMPLETE`; **M3.7 is 1 of 2**.
+**Next: `P3-TSK-019` (`READY`)** — the trial-balance job: zero per currency,
+or an incident.
 
 ### Just completed
+
+**`P3-TSK-018` — `GET /v1/me/accounts/{id}/statement`: the period statement,
+derived from postings** — `COMPLETE` (2026-09-17). **M3.7 opens: every figure
+a customer is shown traces to journal lines** (`INV-ACC-02`'s drill-down
+shape, three phases early).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Derived from postings, reconciling to the lines | `StatementEndpointDatabaseTest`: opening `"10.00"` from the pre-period history, the period's two lines (both boundary days inclusive), closing `"11.50"` — **and the closing held to an independent `BigDecimal` recomputation over raw SQL rows**, never certified through `Money` |
+| Ownership | The `/v1/me` shape: `Session → Identity → live Customer → findOwnedBy` (`customer_id = ?` in the statement); not-yours, unknown and malformed one 404, **asserted as an equality between the causes** |
+| The caller's own mistakes are theirs | Inverted period and malformed date are specific 422s naming the parameter and never echoing the value; a missing parameter is the framework's 4xx; no shape our 500 |
+
+### The closing is computed, and that is the design's crux
+
+Under `READ COMMITTED` the opening read (`derive` at
+`AsOf.postingDate(from − 1)`) and the period-lines read are two snapshots —
+so a third read ("derive as of `to`") could disagree with the lines. The two
+ranges are **disjoint predicates**, so no interleaved commit can land in
+both or between them, and `closing = opening + settle(debits, credits)`
+holds **structurally under any concurrency** rather than by scheduling luck.
+The derivation is composed, never copied (`JournalEntry.sum`'s scale-aware
+identity, the one statement of the sign convention); no lock is taken
+anywhere, because a statement must never contend with the write path it
+reports on. No migration: `journal_line_by_account` already serves the read.
+
+### What the statement discloses, and what it never does
+
+Per line: the entry id (the drill-down key), posting and value dates, type,
+direction, amount as a decimal string, and the caller's own `reference`.
+**Never the counterparty account, never the `reason`** — free text written
+by a person is `RESTRICTED-PII` audit material, and both exclusions are
+asserted (an adjustment appears as its `ADJUSTMENT` line with its amount,
+and its justification appears nowhere). `kind: "DERIVED"` says which numbers
+these are — the symmetric answer to the balance endpoint's `"PROJECTION"`.
+Deliberately not audited (a person's own read of their own account — the
+`SessionQueries` stance); a `CLOSED` product's statement stays readable
+(`INV-HIST-01`). Contract +36/−0; the three `BREAKING` labels are
+`required = true` on the brand-new operation's own parameters, the
+classifier erring safe, reviewed.
+
+### Three stale records settled at their sources
+
+The `BalanceProjection`/`BalanceProjectionTest` javadocs and the ownership
+register's `derive` entry had named `P3-TSK-018` as "the display query"/"the
+balance endpoint" — that surface was `P3-TSK-013`'s, the one-task plan drift
+recorded then and corrected nowhere. Corrected where each lived;
+`JdbcStatementDerivation.periodLines` joined the ownership register with the
+disclosing surface's provenance named, and `JournalEntryStore.findById`'s
+javadoc stops predicting a statement caller that arrived through its own
+range reader instead.
+
+**Seven mutations, all caught by the intended assertion, restores
+byte-identical** — the period's upper bound made exclusive, the opening
+derivation dropped, the period net dropped, the sides swapped, the reason
+leaked into the reference, the inverted-period refusal dropped (the port's
+refusal surfacing as our 500, caught by the 422 assertion), the account
+predicate neutralised (caught deterministically: balanced entries make the
+leaked net exactly zero). **1102 hermetic tests, 672 database tests.**
+
+### Previously
 
 **`P3-TSK-017` — `POST /v1/ledger/adjustments`: reason, permission, audit** —
 `COMPLETE` (2026-09-17). **M3.6 closes: the platform's highest-risk financial
@@ -8085,9 +8147,9 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-017` (2026-09-17): the adjustment
-endpoint — reason, permission, audit — closing M3.6. The next work is
-`P3-TSK-018`, statements derived from postings, opening M3.7.
+The last work performed was `P3-TSK-018` (2026-09-17): the period statement
+derived from postings, opening M3.7. The next work is `P3-TSK-019`, the
+trial-balance job.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8373,6 +8435,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P3-TSK-018` complete — the period statement, and M3.7 opens (1 of 2).** `GET /v1/me/accounts/{id}/statement?from=&to=`: `StatementDerivation`/`JdbcStatementDerivation` in `ledger` — opening = `BalanceDerivation.derive` at `AsOf.postingDate(from − 1)` (the definition composed, never copied), the period's lines in one statement/one snapshot (`posting_date BETWEEN`, both boundaries inclusive, ordered `posting_date, entry.id, seq`, folded through `JournalEntry.sum`), and **the closing computed as `opening + settle(debits, credits)` rather than derived a third time** — the crux: under `READ COMMITTED` the two reads are two snapshots, but their ranges are **disjoint predicates**, so `opening + lines = closing` holds structurally under any concurrency (`INV-ACC-02`'s drill-down shape three phases early, the closing additionally held to an independent `BigDecimal` recomputation over raw rows). No lock anywhere; no migration; underivable histories refuse amount-free through the derivation's own regime. The surface is the `/v1/me` shape (ownership `Session → Customer → findOwnedBy`, one 404 as an equality between causes; period parameters specific 422s naming the parameter, never echoing the value; a `CLOSED` product's statement stays readable — `INV-HIST-01`). Per line: entry id, dates, type, direction, decimal-string amount, reference — **never the counterparty account, never the `reason`** (`RESTRICTED-PII` audit material), both asserted. `kind: \"DERIVED\"`; deliberately not audited (a person's own read); no events, no key, no meters (M3.8's). Contract +36/−0, the three `BREAKING` labels `required = true` on the brand-new operation's parameters — the classifier erring safe, reviewed. **Three stale `P3-TSK-018` records settled at their sources** (the display query was `P3-TSK-013`'s — the recorded one-task drift, corrected where it lived; the ownership register's `derive`/`findById` prose records what actually arrived; `periodLines` joined the register). **Seven mutations, all caught by the intended assertion, restores byte-identical** — upper bound exclusive, opening dropped, net dropped, sides swapped, reason leaked, boundary refusal dropped (the port's IAE as our 500, caught by the 422 assertion), account predicate neutralised (caught deterministically: balanced entries make the leaked net exactly zero). 1102 hermetic tests, 672 database tests. Next: `P3-TSK-019`. |
 | 2026-09-17 | **`P3-TSK-017` complete — the adjustment endpoint, and M3.6 closes (2 of 2).** `POST /v1/ledger/adjustments`: `AdjustmentService` (`PostingService`'s discipline, scope `ledger.adjust`, validate-then-claim, through `PostingEffect` — which now **derives the audit action from the entry's kind**, so an `ADJUSTMENT` records `ledger.AdjustmentPosted` **with its reason** and the regime cannot be skipped); `@RequiresPermission(LEDGER_ADJUST)` at **the permission's first real check site** (`P3-TSK-007`'s promise kept) plus `@RequiresIdempotencyKey`. **The first request body to carry amounts**: decimal strings parsed exactly (an inexact amount is the caller's 422 naming line and field, never a rounding — `INV-MON-03`); the reason bounded in three reconciled places (DTO/`V004`/`AuditRecord`, held by `AdjustmentRequestTest`). **The fingerprint binds the actor AND the reason** (ADR-0004, `INV-IDEM-03`): a stranger's replay 409s, and so does the same key with a different justification; the unbalanced 422 never consumes its key — proven at HTTP by the same key then carrying the corrected request to 201. Three codes catalogued (`ledger.UnbalancedAdjustment`, `ledger.UnknownAccount` — the store translating the line FK's `23503`, the V007 pattern — `ledger.AccountNotPostable`); contract +68/−0, `BREAKING` labels the classifier erring safe on a brand-new path, reviewed; nine body shapes none our 500; **four-eyes recorded, not implied** (`INV-AUD-04` stays ADR-0010's debt, no threshold check exists). One planned mutation cut on analysis and recorded: claim-before-validate is behaviourally invisible in the caller-transaction model. **Seven mutations, all caught by the intended assertion, restores byte-identical.** 1102 hermetic tests, 668 database tests. Next: `P3-TSK-018`, M3.7 opens. |
 | 2026-09-17 | **`P3-TSK-016` complete — reversal, a new effect referencing the original, and M3.6 opens (1 of 2).** `V009`: `reverses_entry_id` with the implication `CHECK` (a reversal references, nothing else may), no self-reference, a chain-refusing entry trigger (reversal-of-reversal refused for every writer), and **the bound at `DB-CONSTRAINT` rank**: a `BEFORE INSERT` line trigger summing prior reversal lines per `(account, direction)` pair against the original's opposite side, scale-guarded, `23514` with a stable marker translated to the named `OverReversalException`. **The backlog's \"predicate in the statement\" corrected on the record**: insert-vs-insert predicates re-evaluate against the statement snapshot (the `P2-TSK-015` write-skew), and the row-lock arbiters are unavailable by the phase's own privilege design — the serializer is `pg_advisory_xact_lock(2, hashtext(original))` **inside the trigger** (namespace 2, registered), so every writer queues, raw SQL included. Both interleavings proven: the loser observed Lock-waiting, resuming and refusing; ten concurrent partials of 400 against 1000 accept exactly two, counted in the table. The domain half (`ReversalBound`, hermetic) refuses before any claim; each layer suffices alone, proven with both removed (`P1-TSK-018`'s form). **The original byte-identical afterwards** — PostgreSQL's own row renderings compared. `PostingEffect` extracted, earned by its second caller; `ledger.reverse` scope, replay one-entry; **no new audit action or event type, decided on the record** (the act is a journal entry posted; `entryType` is data, `reverses_entry_id` the join); no reason field (the regime is the adjustment's); `Direction.opposite()` with its promised first caller. **Seven mutations, all caught by the intended assertion, restores byte-identical.** 1100 hermetic tests, 660 database tests. Next: `P3-TSK-017`. |
 | 2026-09-17 | **`P3-TST-002` complete — the `INV-CON-01`/`INV-BAL-04` register rows, and M3.5 closes (2 of 2).** `MUTATION_TESTING.md` §2 gains `INV-CON-01` (third row — the holds context joins the Phase 1 pair) and `INV-BAL-04`, plus the item's §4 row — each naming its tests by `Class#method` with the observed result, all `Recorded` form honestly since every mutation edits production code. **The audit found one of the three named mutations unperformed**: `P3-TSK-015` performed the availability check *dropped*, and the item names it *moved outside the lock* — a different and sharper defect (the `P2-TSK-015` write-skew shape: still locks, still checks, still loses the race — the mutation that passes every sequential test). Performed by this item: the derivation and standing-holds fold hoisted above `lockForUpdate` — **caught by both intended assertions, in the way that vindicates the test's two halves**: the blocked-observation precondition stays green (the lock is still taken) and the outcome half fails (the loser resumes, judges its pre-lock snapshot, wrongly accepts 600+600 in 1000), with the ten-way admitting more than available — the removed lock is caught by the coordination half, the moved check by the outcome half, which is why the test carries both. `INV-BAL-05`'s row **deferred in writing to the exit review** (the `P2-TST-001` handling of `INV-KYC-06`), its corrupted-`holds_minor` demonstration already performed and recorded inside the `INV-BAL-04` row. Guard teeth re-proven per §5: one method reference corrupted, `everyNamedMethodExists` failed naming exactly it, restored byte-identical, all nine checks green. No production code shipped. 1090 hermetic tests, 653 database tests, 14 kafka tests. Next: `P3-TSK-016`, M3.6 opens. |

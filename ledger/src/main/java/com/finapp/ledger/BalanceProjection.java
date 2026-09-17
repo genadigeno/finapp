@@ -14,8 +14,11 @@ package com.finapp.ledger;
  * of number it returns. The first arrived with {@code P3-TSK-010}:
  * {@link ProjectionVerification}, which returns <strong>verdicts and counts, never a
  * balance</strong> — pinned alongside this interface's single {@code void} method by
- * {@code BalanceProjectionTest}. The display query ({@code P3-TSK-018}) is still to come and
- * must do the same.
+ * {@code BalanceProjectionTest}. The display query arrived with {@code P3-TSK-013}
+ * ({@code JdbcBalanceDisplay}, its own SQL over the table, display only — this doc had named
+ * it {@code P3-TSK-018}, the recorded one-task plan drift); the statement
+ * ({@code P3-TSK-018}) deliberately reads <strong>postings, never this projection</strong>,
+ * so the port still exposes no read.
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */

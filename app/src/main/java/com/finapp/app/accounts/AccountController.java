@@ -5,6 +5,7 @@ import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.identity.Session;
 import com.finapp.ledger.BalanceDisplay;
+import com.finapp.ledger.StatementDerivation;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -13,6 +14,8 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -113,6 +117,37 @@ public class AccountController {
                 .orElseThrow(AccountController::accountNotFound);
     }
 
+    /**
+     * The statement of the caller's account for {@code [from, to]}, derived from postings
+     * (`P3-TSK-018`, {@code INV-ACC-02}'s drill-down shape): the opening balance, every line,
+     * and a closing that reconciles to them <strong>by construction</strong> — see
+     * {@link StatementDerivation}.
+     *
+     * <p>The period parameters are the caller's own correctable values, so their refusals are
+     * specific 422s naming the parameter — unlike the account identifier, whose unknown,
+     * not-yours and malformed shapes stay one 404, because a date discloses nothing about
+     * anybody else's resources while an identifier answer would.
+     */
+    @GetMapping("/{id}/statement")
+    public StatementResponse readStatement(
+            @PathVariable("id") String id,
+            @RequestParam("from") String from,
+            @RequestParam("to") String to,
+            HttpServletRequest request) {
+        LocalDate fromDate = parsedDate(from, "from");
+        LocalDate toDate = parsedDate(to, "to");
+        if (fromDate.isAfter(toDate)) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "A statement was requested for a period that starts after it ends",
+                    "'from' must not be after 'to'.");
+        }
+        return accounts
+                .statement(current(request), parsedOrAbsent(id), fromDate, toDate)
+                .map(owned -> render(owned, fromDate, toDate))
+                .orElseThrow(AccountController::accountNotFound);
+    }
+
     // -----------------------------------------------------------------
 
     /** One balance line: the three numbers, each named, each a decimal string. */
@@ -142,6 +177,79 @@ public class AccountController {
 
     private static String decimal(Money amount) {
         return amount.toBigDecimal().toPlainString();
+    }
+
+    /**
+     * One statement line: the account's own side of one journal entry. {@code entryId} is
+     * the drill-down key ({@code INV-ACC-02}); {@code reference} is the caller's own economic
+     * event. Deliberately absent: any counterparty account, and any {@code reason} — free
+     * text written by a person is audit material, never statement material
+     * ({@code RESTRICTED-PII}).
+     */
+    public record StatementLineView(
+            String entryId,
+            String postingDate,
+            String valueDate,
+            String entryType,
+            String direction,
+            String amount,
+            String reference) {}
+
+    /** One currency's statement: opening, the lines, and the closing they reconcile to. */
+    public record StatementSection(
+            String currency, String opening, String closing, List<StatementLineView> lines) {}
+
+    /**
+     * The statement response. {@code kind} is always {@code "DERIVED"}: these are settled
+     * numbers derived from postings — the authoritative record, never the display projection
+     * — which is what makes the statement evidence-shaped.
+     */
+    public record StatementResponse(
+            String accountId, String kind, String from, String to,
+            List<StatementSection> sections) {}
+
+    private static StatementResponse render(
+            AccountService.Statement owned, LocalDate from, LocalDate to) {
+        return new StatementResponse(
+                owned.account().id().value().toString(),
+                "DERIVED",
+                from.toString(),
+                to.toString(),
+                owned.perCurrency().stream().map(AccountController::render).toList());
+    }
+
+    private static StatementSection render(StatementDerivation.AccountStatement statement) {
+        return new StatementSection(
+                statement.opening().currency().code(),
+                decimal(statement.opening()),
+                decimal(statement.closing()),
+                statement.lines().stream().map(AccountController::render).toList());
+    }
+
+    private static StatementLineView render(StatementDerivation.StatementLine line) {
+        return new StatementLineView(
+                line.entry().value().toString(),
+                line.postingDate().toString(),
+                line.valueDate().toString(),
+                line.entryType().name(),
+                line.direction().name(),
+                decimal(line.amount()),
+                line.reference());
+    }
+
+    /**
+     * A period parameter is the caller's own correctable value: refused as a 422 naming the
+     * parameter, never echoing the value ({@code P0-TSK-025}'s detail rule).
+     */
+    private static LocalDate parsedDate(String raw, String parameter) {
+        try {
+            return LocalDate.parse(raw);
+        } catch (DateTimeParseException malformed) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "A statement period parameter was not an ISO-8601 date",
+                    "'" + parameter + "' must be an ISO-8601 date (YYYY-MM-DD).");
+        }
     }
 
     /**

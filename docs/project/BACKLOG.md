@@ -4424,13 +4424,60 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 ## P3-EPIC-07 — Statements and the trial balance (M3.7)
 
-**P3-TSK-018 — Statements derived from postings** — `READY`
+**P3-TSK-018 — Statements derived from postings** — `COMPLETE` (2026-09-17)
 - **Scope**: `GET /v1/me/accounts/{id}/statement` for a period, derived from postings, with
   opening and closing balances that reconcile to the lines between them (`INV-ACC-02`'s
   drill-down shape, three phases early).
-- **Deps**: P3-TSK-013. **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-FIN`
+- **Deps**: P3-TSK-013.
+- **Gate evidence (2026-09-17)**: full battery green — 1102 hermetic, 672 database,
+  14 kafka tests — **and M3.7 opens with it.** `StatementDerivation`/`JdbcStatementDerivation`
+  in `ledger`: opening = `BalanceDerivation.derive` at `AsOf.postingDate(from − 1)` — the
+  definition composed, never copied — the period's lines in one statement/one snapshot
+  (`journal_line JOIN journal_entry` on `posting_date BETWEEN`, both boundaries inclusive,
+  ordered `posting_date, entry.id, seq`), folded through `JournalEntry.sum`, and
+  **the closing computed as `opening + settle(debits, credits)` rather than derived a third
+  time** — the design's crux: under `READ COMMITTED` the opening read and the lines read are
+  two snapshots, but their ranges are **disjoint predicates** (`≤ from−1` vs `[from, to]`),
+  so no interleaved commit can land in both or between them and
+  `opening + lines = closing` holds **structurally** under any concurrency, never by
+  scheduling luck. No lock anywhere (a statement must never contend with the write path);
+  no migration (the `journal_line_by_account` index serves the read); underivable histories
+  refuse through the derivation's own amount-free regime. The surface: the `/v1/me` shape —
+  ownership resolved `Session → Identity → live Customer → findOwnedBy` (`customer_id = ?`
+  in the statement), unknown/not-yours/malformed one 404 **asserted as an equality between
+  the causes**; the period parameters are the caller's own correctable values, so their
+  refusals are specific 422s naming the parameter and never echoing the value; a `CLOSED`
+  product's statement stays readable (`INV-HIST-01` — the agreement ended, the accounting
+  did not). Response `kind: "DERIVED"` (the symmetric answer to the balance endpoint's
+  `"PROJECTION"`), amounts as decimal strings; per line: entry id (the drill-down key),
+  posting/value dates, type, direction, amount, reference — and **deliberately no
+  counterparty account and no `reason`** (free text written by a person,
+  `RESTRICTED-PII` — audit material, never statement material), both asserted.
+  **The closing held to an independent `BigDecimal` recomputation over raw SQL rows**
+  (`P3-TSK-008`'s discipline: never certify the kernel with the kernel). Deliberately not
+  audited — a person's own read of their own account (the `SessionQueries`/balance-read
+  stance, recorded in the javadoc); no events, no key (a GET), no meters (M3.8's).
+  Contract: 36 added lines, **zero removed**; the three `BREAKING` labels are
+  `required = true` on the brand-new operation's own parameters — the classifier erring safe
+  (the `P1-TSK-006` precedent), reviewed and accepted; `operationId` a real name
+  (`readStatement`). **Three stale `P3-TSK-018` records settled at their sources**: the
+  `BalanceProjection`/`BalanceProjectionTest` javadocs and the ownership register's `derive`
+  entry had named this task as "the display query"/"the balance endpoint" — that surface was
+  `P3-TSK-013`'s, the recorded one-task plan drift, now corrected where it lived; the
+  register's `derive` and `findById` entries record what actually arrived, and
+  `JdbcStatementDerivation.periodLines` joined the register (`NOT_OWNED`, the disclosing
+  surface's provenance named). **Seven mutations, all caught by the intended assertion,
+  restores byte-identical** — the period's upper bound made exclusive, the opening
+  derivation dropped, the period net dropped from the closing, the period sides swapped
+  (sign inverted), the reason leaked into the line's reference, the inverted-period refusal
+  dropped at the boundary (the port's IAE surfacing as our 500 — caught by the 422
+  assertion, proving the boundary owes the answer), the account predicate neutralised
+  (every account's lines in one statement — caught deterministically, because balanced
+  entries make the leaked period net exactly zero and the closing collapses to the opening).
+- **Accept**: met — see gate evidence.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-FIN`
 
-**P3-TSK-019 — The trial-balance job: zero per currency, or an incident** — `TODO`
+**P3-TSK-019 — The trial-balance job: zero per currency, or an incident** — `READY`
 - **Objective**: `INV-ACC-01`, the primary continuous correctness signal.
 - **Scope**: a job asserting total debits = total credits per currency across all postings;
   `finapp.ledger.trial.balance` gauge per currency; alerting; **it never self-corrects** — a

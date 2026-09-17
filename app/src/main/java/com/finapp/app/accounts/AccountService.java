@@ -9,6 +9,7 @@ import com.finapp.accounts.ProductType;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.ledger.BalanceDisplay;
+import com.finapp.ledger.StatementDerivation;
 import com.finapp.party.Customer;
 import com.finapp.party.PartyId;
 import com.finapp.party.PartyStore;
@@ -19,6 +20,7 @@ import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -55,6 +57,7 @@ public final class AccountService {
     private final AccountClosing closing;
     private final CustomerAccountStore<Connection> accounts;
     private final BalanceDisplay<Connection> balances;
+    private final StatementDerivation<Connection> statements;
     private final IdentityStore<Connection> identities;
     private final PartyStore<Connection> parties;
     private final IdempotentExecutor executor;
@@ -66,6 +69,7 @@ public final class AccountService {
             AccountClosing closing,
             CustomerAccountStore<Connection> accounts,
             BalanceDisplay<Connection> balances,
+            StatementDerivation<Connection> statements,
             IdentityStore<Connection> identities,
             PartyStore<Connection> parties,
             IdempotentExecutor executor,
@@ -75,6 +79,7 @@ public final class AccountService {
         this.closing = Objects.requireNonNull(closing, "closing must not be null");
         this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
         this.balances = Objects.requireNonNull(balances, "balances must not be null");
+        this.statements = Objects.requireNonNull(statements, "statements must not be null");
         this.identities = Objects.requireNonNull(identities, "identities must not be null");
         this.parties = Objects.requireNonNull(parties, "parties must not be null");
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
@@ -194,6 +199,49 @@ public final class AccountService {
     /** An owned account and its per-currency displayed balances. */
     public record Balances(
             CustomerAccount account, List<BalanceDisplay.DisplayedBalance> perCurrency) {}
+
+    /**
+     * The statement of the caller's account {@code accountId} for {@code [from, to]} — or
+     * empty, one answer for not-yours, does-not-exist and a caller with no live customer
+     * alike (the balance read's own shape). The figures are <strong>derived from
+     * postings</strong>, never the projection — {@link StatementDerivation}'s argument — and
+     * the read stays available for a {@code CLOSED} product, because the agreement ended and
+     * the accounting history did not (`P3-TSK-014`, {@code INV-HIST-01}).
+     *
+     * <p>Deliberately not audited: a person's own read of their own account is not a
+     * privileged action (the {@code SessionQueries} stance, the balance read's precedent).
+     * The insider read-audit regime belongs to the operator surfaces (`LEDGER_READ`, later
+     * tasks).
+     */
+    public Optional<Statement> statement(
+            Session current, CustomerAccountId accountId, LocalDate from, LocalDate to) {
+        Objects.requireNonNull(current, "current must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(to, "to must not be null");
+        return inOneTransaction(
+                unitOfWork ->
+                        liveCustomerOf(unitOfWork, current)
+                                .flatMap(
+                                        customer ->
+                                                accounts.findOwnedBy(
+                                                        unitOfWork,
+                                                        accountId,
+                                                        customer.id().value()))
+                                .map(
+                                        account ->
+                                                new Statement(
+                                                        account,
+                                                        statements.statementsFor(
+                                                                unitOfWork,
+                                                                account.id().value(),
+                                                                from,
+                                                                to))));
+    }
+
+    /** An owned account and its per-currency derived statements. */
+    public record Statement(
+            CustomerAccount account, List<StatementDerivation.AccountStatement> perCurrency) {}
 
     /**
      * Ends the caller's agreement {@code accountId} — or converges on one already ended, which
