@@ -23,10 +23,13 @@
  *
  * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema
  * ({@code P4-TSK-001}), the {@link com.finapp.transfers.Transfer} aggregate with its ADR-0044
- * machine ({@code P4-TSK-003}), the schema that inherits it ({@code P4-TSK-004}), and the
+ * machine ({@code P4-TSK-003}), the schema that inherits it ({@code P4-TSK-004}), the
  * execution command with its stores, ports and seams ({@code P4-TSK-005}) — one transfer judged
- * and committed with its money in one local transaction. The HTTP surface is
- * {@code P4-TSK-008}'s; the reversal {@code P4-TSK-009}'s (with its own audit action — the
- * deliberately-few licence continues); the seam hardening {@code P4-TSK-010}'s.
+ * and committed with its money in one local transaction — and the
+ * {@link com.finapp.transfers.Beneficiary} with its one-live-per-(party, destination) schema
+ * and port-validated creation ({@code P4-TSK-006}). The HTTP surfaces are {@code P4-TSK-007}'s
+ * (beneficiaries, with the step-up point and both beneficiary audit actions) and
+ * {@code P4-TSK-008}'s (transfers); the reversal {@code P4-TSK-009}'s (with its own audit
+ * action — the deliberately-few licence continues); the seam hardening {@code P4-TSK-010}'s.
  */
 package com.finapp.transfers;

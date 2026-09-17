@@ -241,6 +241,17 @@ class OwnershipIsScopedTest {
                                         + " unknown and malformed are one empty answer and one"
                                         + " 404.")),
                     Map.entry(
+                            "com.finapp.transfers.JdbcBeneficiaryStore.remove",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "DELETE /v1/beneficiaries/{id} (P4-TSK-007's surface; the"
+                                        + " store lands with P4-TSK-006) - the identifier will"
+                                        + " come from the path, and party_id = ? in the"
+                                        + " statement is the ownership check: a beneficiary"
+                                        + " belongs to the Party, and the conditional's row"
+                                        + " count folds not-yours and already-removed into one"
+                                        + " indistinguishable false.")),
+                    Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revokeAll",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -949,6 +960,9 @@ class OwnershipIsScopedTest {
                     "com.finapp.identity.JdbcContactChannelStore.findOwned",
                     "com.finapp.app.domain.RecoveryAbuseDatabaseTest"
                             + ".aChannelIsNotReadableByAnotherIdentity",
+                    "com.finapp.transfers.JdbcBeneficiaryStore.remove",
+                    "com.finapp.app.transfers.BeneficiaryDatabaseTest"
+                            + ".removalConvergesAndIsOwnershipScoped",
                     "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
                     "com.finapp.app.domain.AccountEndpointDatabaseTest"
                             + ".ownershipIsExactlyTheCallers",
@@ -967,19 +981,23 @@ class OwnershipIsScopedTest {
     /**
      * Predicates that establish <em>whose</em> row this is.
      *
-     * <p>Three, each a real proof rather than a convenience. {@code identity_id = ?} names the owner
+     * <p>Four, each a real proof rather than a convenience. {@code identity_id = ?} names the owner
      * directly. {@code token_hash = ?} is the session lookup: a session token is a bearer credential,
      * so presenting it <strong>is</strong> the proof of ownership — which is why the interceptor may
      * touch the row it just authenticated without a second check. {@code customer_id = ?} is the
      * {@code kyc} schema's owner column (`P2-TSK-005`): a case belongs to the customer under
      * verification, and every read that hands out a case identifier is scoped by it — the entry
      * this set's own javadoc predicted would need writing down, written down.
+     * {@code party_id = ?} is the {@code transfers.beneficiary} owner column (`P4-TSK-006`): a
+     * saved destination belongs to the <em>Party</em> — it outlives any one customer relationship
+     * (the plan §5 ownership line, the consent-record precedent) — and the party reaching the
+     * statement is session-derived by the surface (`P4-TSK-007`), never a request's claim.
      */
     /** What a {@link Scope#BEARER_SCOPED} statement must carry. */
     private static final String BEARER_PREDICATE = "token_hash = ?";
 
     private static final Set<String> OWNERSHIP_PREDICATES =
-            Set.of(OWNER_PREDICATE, "token_hash = ?", "customer_id = ?");
+            Set.of(OWNER_PREDICATE, "token_hash = ?", "customer_id = ?", "party_id = ?");
 
     private record Entry(Scope scope, String authoritativeRead, String reason) {
         Entry(Scope scope, String reason) {

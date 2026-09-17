@@ -4972,7 +4972,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   outcomes; the in-lock proof by the performed moved-outside mutation.
 - **Risk**: **High**. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
 
-**P4-TSK-006 — The `Beneficiary` aggregate and schema: `V003`** — `READY`
+**P4-TSK-006 — The `Beneficiary` aggregate and schema: `V003`** — `COMPLETE` (2026-09-18)
 - **Scope**: `Beneficiary` (owning party id, display name, destination account reference,
   `ACTIVE → REMOVED`, terminal) and `transfers.beneficiary`: partial unique one-live per
   (party, destination account); removal a conditional `UPDATE` whose row count converges
@@ -4981,14 +4981,47 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   customer-owned product (validated through the resolution port); it is deliberately **not**
   re-validated on every later transfer — the transfer's own postability check owns that.
 - **Deps**: `P4-TSK-001`.
-- **Accept**: ten concurrent creates of one destination produce one live row, nine
-  converged; a removed beneficiary's slot is re-creatable (`INV-LIFE-04`'s freed-slot
-  asymmetry, stated and tested); raw SQL cannot resurrect a `REMOVED` row.
+- **Gate evidence (2026-09-18)**: **every acceptance clause demonstrated and counted in the
+  table.** Ten concurrent creates of one destination (own connection each): exactly one
+  created, nine converged **onto the winner's row id**, one row counted — the partial unique
+  index arbitrating behind the savepoint converge (a pre-flight `SELECT` recorded as not a
+  substitute). The freed slot demonstrated (`INV-LIFE-04`'s asymmetry, the
+  `customer_account` kind): remove, save again, a **new** aggregate through the freed slot,
+  two rows counted with the `REMOVED` one surviving as evidence. Raw SQL cannot resurrect,
+  as the **migrator**: `V003`'s every-writer trigger (the ledger `V008` shape) refuses the
+  resurrection and — the probe that isolates the frozen half — **an edit smuggled inside the
+  legal removal edge**, since a status-preserving edit is refused by the edge check too and
+  a probe two controls catch proves neither. Removal converges (retry `false`, the first
+  instant untouched) and carries `party_id = ?` in the statement — a stranger's attempt and
+  already-removed are one indistinguishable `false` (the one-404 shape prepared at the
+  port). The coherence pair (`status ⇔ removed_at`) held at three ranks: constructor
+  (rehydrate refuses corrupt rows), `CHECK`, and the aggregate's machine. Creation validated
+  through `TransferParticipants.destination` — **existence only, deliberately**: postability
+  goes stale by design and the transfer's own judgement owns it (plan §7's accepted race);
+  a retry with a different display name **converges onto the existing name, recorded**:
+  renaming is remove-and-recreate. `OwnershipIsScopedTest`'s predicate vocabulary gained
+  **`party_id = ?`** (a beneficiary belongs to the Party — it outlives any one customer
+  relationship, the consent precedent) and demanded the negative test by name before
+  passing. `BeneficiaryMigrationTest` reconciles the status `CHECK`, the one-live predicate
+  and the trigger edges from the enum; 7 columns classified at their ceiling
+  (`display_name` `RESTRICTED-PII` — a person names people). **Eight mutations, all caught
+  by the intended assertion, restores byte-identical** — the index dropped (the drain
+  over-accepts, `Expected size: 1 but was: 10`), the trigger's edge check removed
+  (resurrection accepted), the frozen check removed (**caught by exactly the smuggled-edge
+  probe**), the coherence `CHECK` dropped, the ownership predicate dropped (**caught twice**:
+  the stranger's removal returns `true`, and the build rule), the aggregate's machine check
+  removed, the index made total (**caught twice**: the freed slot refused, and the hermetic
+  reconciliation), the constructor coherence dropped. **Verified by targeted tiers —
+  `:transfers:test` (27 hermetic), the beneficiary + classification database tests, and the
+  ownership guard — the full battery deliberately skipped this task on the owner's
+  instruction**; no fleet-wide tier counts are claimed.
+- **Accept**: met — the ten-way create counted in the table; the freed slot re-creatable;
+  raw SQL refused by the every-writer trigger.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOMAIN`
 - **Out of scope**: external destinations (Phase 5+), beneficiary sharing, per-beneficiary
   limits (Phase 13).
 
-**P4-TSK-007 — The beneficiary endpoints, and the step-up point** — `TODO`
+**P4-TSK-007 — The beneficiary endpoints, and the step-up point** — `READY`
 - **Scope**: `POST /v1/beneficiaries` — **`MULTI_FACTOR` required when a factor is
   enrolled**, the conditional-assurance domain check (`P1-TSK-033`'s pattern; a static
   annotation would lock out password-only customers), because creating a destination is

@@ -487,6 +487,21 @@ and its record (ADR-0044); the money itself is the ledger posting `journal_entry
 | `transfer_event` | `actor_id` | `RESTRICTED-PII` | As `initiated_by` |
 | `transfer_event` | `occurred_at` | `CONFIDENTIAL` | As `initiated_at` |
 
+### `transfers.beneficiary` — *added by `P4-TSK-006`*
+
+**A person's saved address book.** The row is a convenience, never a trust decision — and its
+one free-text column is the reason the section exists: a person names people.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `beneficiary` | `id` | `INTERNAL` | An aggregate identifier |
+| `beneficiary` | `party_id` | `CONFIDENTIAL` | The `consent_record.party_id` reasoning: the pairing is the fact — this person saves destinations, and paired with `destination_account_id` it discloses a relationship between two people. What it resolves to stays `RESTRICTED-PII` as ever |
+| `beneficiary` | `display_name` | `RESTRICTED-PII` | **Free text a person writes about a person** — "Mum", a full name, a nickname that identifies. The `party.display_name` reasoning at one remove, and the plan (§8) classifies it in as many words |
+| `beneficiary` | `destination_account_id` | `INTERNAL` | An identifier of a thing (`transfer.destination_account_id`'s reasoning); the relationship fact lives in the pairing and is carried by `party_id`'s level — the `consent_record.purpose` idiom |
+| `beneficiary` | `status` | `INTERNAL` | An enumeration of two values, both the person's own acts — no administrative state, unlike `customer_account.status` |
+| `beneficiary` | `created_at` | `CONFIDENTIAL` | Dates a person's act of saving a destination — `consent_record.recorded_at`'s reasoning |
+| `beneficiary` | `removed_at` | `CONFIDENTIAL` | As `created_at` |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |
