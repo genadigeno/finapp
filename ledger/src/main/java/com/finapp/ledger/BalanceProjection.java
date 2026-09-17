@@ -34,4 +34,19 @@ public interface BalanceProjection<T> {
      *     fails wholly rather than committing beside a projection that could not follow it
      */
     void apply(T unitOfWork, JournalEntry entry);
+
+    /**
+     * Applies a hold delta to the row's {@code holds_minor} — positive when a hold is placed,
+     * negative when one is released — in the deciding transaction (`P3-TSK-015`).
+     *
+     * <p>Still a write and only a write: the availability <em>decision</em> derived from
+     * postings and {@code ledger.hold} rows before this is called, and this keeps the
+     * display's copy in step ({@code INV-BAL-04}'s presentation). The row must exist — a
+     * hold can only be accepted against settled money, and settled money implies postings,
+     * which implies the row — so an absent row here is loud, never converged.
+     *
+     * @throws UnderivableBalanceException if the row is absent or persisted at a different
+     *     scale ({@code INV-MON-03}); the placing or releasing flow fails wholly
+     */
+    void adjustHolds(T unitOfWork, LedgerAccountId account, com.finapp.sharedkernel.money.Money delta, java.time.Instant at);
 }

@@ -4229,7 +4229,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 ## P3-EPIC-05 — Holds and available balance (M3.5)
 
-**P3-TSK-015 — `Hold`: place and release against available balance** — `READY`
+**P3-TSK-015 — `Hold`: place and release against available balance** — `COMPLETE` (2026-09-17)
 - **Objective**: `INV-BAL-04` — a hold cannot make available balance negative.
 - **Context**: Ledger. **Scope**: the aggregate; `V006` creating `ledger.hold`; place/release
   taking `SELECT … FOR UPDATE` on the **account row**, deriving from postings inside the lock
@@ -4244,11 +4244,49 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   mechanism.
 - **Tests**: release restores availability **exactly**; a released hold cannot be released twice;
   holds survive a crash mid-placement as all-or-nothing.
+- **Gate evidence (2026-09-17)**: full battery green — 1090 hermetic, 653 database, 14 kafka
+  tests. The `Hold` aggregate (`ACTIVE → RELEASED`, `RELEASED` terminal, amount strictly
+  positive), `V008` (`ledger.hold`: `MoneyColumns` shape pinned, currency bound to the
+  account's by composite FK, status/release-instant coherence, a `BEFORE UPDATE` trigger
+  making `RELEASED` terminal for **every** writer, grants `SELECT, INSERT` +
+  `UPDATE (status, released_at)` — the migration is **V008, not the "`V006`" this item
+  named**: numbering drift from planning time, recorded), and `HoldService` — the
+  `PostingService` position, no HTTP surface (plan §9 declares none) and no key of its own
+  (a hold joins its commanding flow's transaction and replays with that flow's key).
+  **The protocol is `P3-TSK-014`'s lock-mode analysis reused**: place and release take
+  `SELECT … FOR UPDATE` on the account row — the mode that conflicts with every in-flight
+  posting's `FOR KEY SHARE` and with every sibling placer — then derive from postings
+  (`BalanceDerivation`) and standing holds (`ACTIVE` rows folded through `Money.plus`, never
+  a SQL `SUM`) in fresh statements. **The ten-way race**: ten instances placing 1000 against
+  3000 available — exactly three accepted, seven refused, counted in the table, with
+  `holds_minor` equal to the fold of the active rows; the deterministic interleaving observes
+  the loser **Lock-waiting in `pg_stat_activity`**, resuming onto the winner's committed hold
+  and refusing. The boundary is exact: a hold of exactly available is accepted, one minor
+  unit more refused (`HoldExceedsAvailableBalanceException` — account and currency, **no
+  amount**, `INV-AUD-02`; no account may permit overdraw — `INV-BAL-04`'s permission clause
+  has no subject). Release converges (row count gates the decrement, the record and the
+  event) and restores availability **exactly** — the full amount is placeable again.
+  **`INV-BAL-05` is behaviourally catchable here**, closing the `P3-TSK-014`-class honest
+  limit: a `holds_minor` corrupted through the app role's own grant changes **no decision**,
+  and the projection-read mutation is caught by exactly that test. The close gained its
+  standing-holds check (a hold on a settled-zero account no longer strands — refused as
+  `AccountNotEmpty` under the same lock); the display's `available = settled − holds`
+  became load-bearing (`P3-TSK-013`'s recorded limit, closed). Plan §8's "partial unique
+  where active" corrected with provenance — uniqueness needs a subject and the commanding
+  reference is Phase 4's; the index is partial and deliberately not unique. **Recorded
+  remainders**: hold expiry is a rail/product rule (Phase 5's authorization lifecycle);
+  capture is release-plus-posting in the capturing flow (Phase 4/5); `holds_minor` joining
+  the verification job's comparison is M3.8's observability pass; `finapp.ledger.hold.active`
+  is §15/M3.8's. **Eight mutations, all caught by the intended assertion, restores
+  byte-identical** — the account `FOR UPDATE` dropped (the blocked-observation precondition),
+  the availability check dropped, the decision reading `holds_minor` instead of the rows,
+  the release decrement dropped, the converged release acting again, the audit dropped, the
+  event dropped, the freeze trigger dropped from `V008`.
 - **Accept**: the ten-way race respects available balance; the lock is proven load-bearing by
-  removing it.
+  removing it. **Met** — see gate evidence.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`
 
-**P3-TST-002 — `INV-CON-01` and `INV-BAL-04` under contention** — `TODO`
+**P3-TST-002 — `INV-CON-01` and `INV-BAL-04` under contention** — `READY`
 - **Scope**: the register rows for both, with the mutations that break them (the lock removed;
   the availability check moved outside it; the hold read from the projection).
 - **Deps**: P3-TSK-015. **Risk**: High. **Cx**: M. **DoD**: `DOD-TEST`

@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P3-TSK-014`)
+Last updated: 2026-09-17 (`P3-TSK-015`)
 
 ---
 
@@ -78,8 +78,8 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **15 of 24** backlog items; M3.1 through **M3.4** are
-closed.
+same day with `P3-TSK-001`. **16 of 24** backlog items; M3.1 through **M3.4** are
+closed; M3.5 is 1 of 2.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -120,9 +120,14 @@ class, again).
 ## Current Milestone
 
 **M3.5 — Holds and available balance.** `P3-TSK-015` plus `P3-TST-002`;
-**0 of 2 — next `P3-TSK-015` (`READY`)** — the phase's sharpest contention
-point: a hold cannot make available balance negative (`INV-BAL-04`), decided
-from postings inside the account lock, never from the projection.
+**1 of 2 — next `P3-TST-002` (`READY`)** — the phase's sharpest contention
+point, and the contention is decided: a hold cannot make available balance
+negative (`INV-BAL-04`), decided from postings and standing hold rows inside
+the account row's `FOR UPDATE`, never from the projection — ten instances
+placing against one account accept exactly what was available, with the loser
+observed Lock-waiting. What remains is `P3-TST-002`: the `INV-CON-01` and
+`INV-BAL-04` register rows, with the mutations this task performed recorded
+as their demonstrations.
 
 **M3.4 — The product exists.** `P3-TSK-011` … `P3-TSK-014`;
 **CLOSED 2026-09-17, 4 of 4** — the module and its privilege floor, the gated
@@ -374,11 +379,82 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-014` is `COMPLETE`; **M3.4 closes at 4 of 4**.
-**Next: `P3-TSK-015` (`READY`)** — holds against available balance, opening
-M3.5.
+**None in progress.** `P3-TSK-015` is `COMPLETE`; **M3.5 is 1 of 2**.
+**Next: `P3-TST-002` (`READY`)** — the `INV-CON-01`/`INV-BAL-04` register
+rows, closing M3.5.
 
 ### Just completed
+
+**`P3-TSK-015` — `Hold`: place and release against available balance** — `COMPLETE`
+(2026-09-17). **M3.5 opens at 1 of 2 — the phase's sharpest contention point,
+decided by the account row's lock.** `INV-BAL-04` is real: a hold cannot make
+available balance negative, and no account may permit it (the invariant's
+permission clause has no subject — recorded, not smuggled in as a flag).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The ten-way race respects available balance | `HoldDatabaseTest`: ten instances placing 1000 against 3000 — exactly three accepted, seven refused, **counted in the table**, `holds_minor` equal to the fold of the active rows |
+| The lock proven load-bearing by removing it | The `FOR UPDATE` dropped (M1) fails the deterministic interleaving's **blocked-observation precondition** — the loser must be seen Lock-waiting in `pg_stat_activity` before the winner commits, the `P0-TST-004`/`P2-TSK-015` idiom |
+| Release restores availability exactly | The full amount is placeable again; a retried release **converges** — the conditional's row count gates the decrement, the record and the event, so nothing is written twice |
+| Crash mid-placement is all-or-nothing | The rollback leaves no hold row, no projection change, no record, no event |
+
+### The protocol is P3-TSK-014's lock-mode analysis, reused
+
+Place and release take `SELECT ... FOR UPDATE` on the **account row** (ADR-0039)
+— the mode that conflicts with every in-flight posting's `FOR KEY SHARE` and
+with every sibling placer — then derive **from authoritative rows in fresh
+statements**: settled through `BalanceDerivation` (the definition), standing
+holds through the `ACTIVE` rows of the new `ledger.hold`, folded through
+`Money.plus` and never a SQL `SUM` (`P3-TSK-008`'s argument). The boundary is
+exact: a hold of exactly available is accepted — `INV-BAL-04` forbids
+*negative*, and zero is not negative — one minor unit more is refused naming
+account and currency, **never an amount** (`INV-AUD-02`).
+
+### INV-BAL-05 became behaviourally catchable, closing its own honest-limit class
+
+`P3-TSK-014` recorded that swapping its derivation for the projection is
+invisible because the projection is transactional. For holds the swap **is**
+catchable: corrupt `holds_minor` through the app role's own narrow grant, and
+a decision reading the projection refuses a hold the authoritative rows
+accept. The test plants exactly that corruption, the decision is unmoved, and
+the projection-read mutation is caught by it — the drift the verification job
+exists to detect can no longer have the decision as its victim.
+
+### What else arrived with the aggregate
+
+`V008` carries the representable halves at `DB-CONSTRAINT` rank: amount
+strictly positive, status/release-instant coherence, currency bound to the
+account's by composite FK (the `V005` mechanism), and a trigger making
+`RELEASED` **terminal for every writer** — with `V006`'s `holds_minor >= 0`
+CHECK backing the release decrement. `ledger.HoldPlaced`/`ledger.HoldReleased`
+joined both registries (no reason — the posting's argument; emitted by the
+acting call only, so a converged release records nothing). The **close gained
+its standing-holds check**: postings are not gated by holds, so settled can
+reach zero while a reservation stands, and `P3-TSK-014`'s close — built when
+holds were structurally zero — would have closed the product over it; refused
+now as `AccountNotEmpty` under the same lock, from the hold rows. The
+display's `available = settled - holds` became load-bearing (`P3-TSK-013`'s
+recorded limit, closed by test). Plan §8's *"partial unique where active"*
+corrected with provenance: uniqueness needs a subject, and the
+one-active-per-commanding-reference dimension is Phase 4's — the index is
+partial and deliberately not unique.
+
+### Recorded remainders, each with an owner
+
+Hold expiry (a rail/product rule — Phase 5's authorization lifecycle);
+capture (release-plus-posting in the capturing flow — Phase 4/5);
+`holds_minor` joining the verification job's comparison and the
+`finapp.ledger.hold.active` gauge (M3.8's observability pass); the
+`INV-CON-01`/`INV-BAL-04` register rows (`P3-TST-002`, next).
+
+**Eight mutations, all caught by the intended assertion, restores
+byte-identical** — the account `FOR UPDATE` dropped, the availability check
+dropped, the decision reading `holds_minor` instead of the rows, the release
+decrement dropped, the converged release acting again, the audit dropped, the
+event dropped, the freeze trigger dropped. **1090 hermetic tests, 653
+database tests.**
+
+### Previously
 
 **`P3-TSK-014` — Closing an account, without closing its history** — `COMPLETE`
 (2026-09-17). **M3.4 closes: the milestone acceptance holds end to end over
@@ -7837,10 +7913,10 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-014` (2026-09-17): the close that ends the
-agreement and not the history, closing M3.4. The next work is `P3-TSK-015`,
-holds against available balance — the phase's sharpest contention point,
-opening M3.5.
+The last work performed was `P3-TSK-015` (2026-09-17): holds against
+available balance, opening M3.5 — the phase's sharpest contention point,
+decided by the account row's lock. The next work is `P3-TST-002`, the
+`INV-CON-01`/`INV-BAL-04` register rows, closing M3.5.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8126,6 +8202,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P3-TSK-015` complete — holds against available balance, and M3.5 opens (1 of 2).** `INV-BAL-04` is real: the `Hold` aggregate (`ACTIVE -> RELEASED`, terminal, amount strictly positive), `V008` (`ledger.hold` — `MoneyColumns` shape pinned, currency bound to the account by composite FK, coherence CHECKs, a trigger making `RELEASED` terminal for **every** writer, grants `SELECT, INSERT` + `UPDATE (status, released_at)`; the item's "`V006`" was planning-time numbering drift, recorded), and `HoldService` — the `PostingService` position: no HTTP surface (plan §9 declares none), no key of its own (a hold joins its commanding flow's transaction and replays with that flow's key). **The protocol is `P3-TSK-014`'s lock-mode analysis reused**: place and release take `SELECT ... FOR UPDATE` on the account row — the mode that conflicts with every in-flight posting's `FOR KEY SHARE` and every sibling placer — then derive from postings and the `ACTIVE` hold rows folded through `Money.plus` (never a SQL `SUM`) in fresh statements. Ten instances placing 1000 against 3000: exactly three accepted, seven refused, counted in the table, `holds_minor` equal to the fold; the deterministic interleaving observes the loser **Lock-waiting in `pg_stat_activity`**. The boundary exact (exactly available accepted; one minor unit more refused, amount-free — `INV-AUD-02`); release converges with the row count gating decrement, record and event, and restores availability **exactly**; a crash mid-placement is all-or-nothing. **`INV-BAL-05` became behaviourally catchable**: a `holds_minor` corrupted through the app role's own grant changes no decision, and the projection-read mutation is caught by exactly that test — closing the honest-limit class `P3-TSK-014` recorded. The close gained its standing-holds check (settled can reach zero while a reservation stands; refused as `AccountNotEmpty` under the same lock); the display's `available = settled - holds` became load-bearing (`P3-TSK-013`'s limit, closed). Remainders with owners: expiry (Phase 5), capture (Phase 4/5), `holds_minor` in the verification job + the hold gauge (M3.8), the register rows (`P3-TST-002`, next). **Eight mutations, all caught by the intended assertion, restores byte-identical.** 1090 hermetic tests, 653 database tests. Next: `P3-TST-002`. |
 | 2026-09-17 | **`P3-TSK-014` complete — closing an account without closing its history, and M3.4 CLOSES (4 of 4).** The milestone acceptance holds end to end over HTTP: open 201 → balance → a real posting moves it → emptied → `DELETE` 204 → the list shows `CLOSED` → the closed account's balance still readable → a repeated `DELETE` converges. **The race is closed by lock-mode analysis**: every in-flight posting holds `FOR KEY SHARE` (the `journal_line` FK, and `V007`'s trigger read takes it explicitly — a bare read passes while a close sits uncommitted and loses, exactly as `P3-TSK-006` warned), a plain status `UPDATE`'s `FOR NO KEY UPDATE` does NOT conflict with it, so the closer takes `SELECT … FOR UPDATE` then looks (`P2-TSK-015`) — both interleavings proven deterministically with the loser observed Lock-waiting in `pg_stat_activity`, and the two lock mutations each caught by their own interleaving. `V007` is the DB-CONSTRAINT-rank half — a `BEFORE INSERT` trigger on `journal_line` refusing any non-`ACTIVE` account for every writer, proven by raw SQL from scratch, translated to the named `LedgerAccountNotPostableException` for Phase 4's domain outcome. The zero-balance check **derives from postings inside the lock** (`INV-BAL-05`; the projection swap is behaviourally invisible — held by design and review, recorded). The deferred store methods arrived with their first caller as promised (`lockOwnedBy`/`moveStatus`, classified on arrival); `ACCOUNT_CLOSED` arrived with its design — no reason, the withdrawal argument — emitted by the closing call only; ten concurrent closes produce one transition, one record, one event, nine converged, and the freed slot admits a successor (`INV-LIFE-04`). The refusal is `accounts.AccountNotEmpty` (409), naming no amount anywhere (`INV-AUD-02`). The plan's §9 table lacked the close endpoint row its own milestone line requires — corrected with provenance. **Seven mutations, all caught by the intended assertion, restores byte-identical.** 1079 hermetic tests, 645 database tests. Next: `P3-TSK-015`, M3.5 opens. |
 | 2026-09-17 | **`P3-TSK-013` complete — the account endpoints; M3.4 is 3 of 4.** The product meets HTTP: `POST /v1/me/accounts` (session + idempotency key), `GET /v1/me/accounts`, `GET …/{id}/balance` — and the acceptance holds end to end over real HTTP: open 201, listed, balance `\"0.00\"`, a real posting, then settled/available `\"12.50\"` with holds `\"0.00\"`, nothing polled because the projection is transactional (ADR-0041). **The platform's first published amounts are decimal strings** under `kind: \"PROJECTION\"` with the three numbers named (`INV-BAL-04`'s presentation; `INV-MON-01`'s reasoning carried past our own boundary); `BalanceDisplay` is `ledger`'s second declared projection reader — display only, lock-free, never a decision's input (`INV-BAL-05`). **Ownership**: open and list take no identifier; the balance's `{id}` resolves through `findOwnedBy` with `customer_id = ?` in the statement — unknown, not-yours and malformed one 404 as an equality between the causes — and the ownership guard's own machinery met the second module: its OWNER_SCOPED check hardcoded `identity_id = ?` under a one-module javadoc, widened to the documented predicate set, with `revokeOwned`'s stale \"the only\" corrected alongside. **Idempotency at two layers**: the executor replays the original 201 byte-for-byte, a reused key with a different request conflicts (the fingerprint binds the party — ADR-0004's owning principal), keyless is the interceptor's 422, converge beneath. The generated contract caught `open_1` and a raw `list` before the baseline was born (both renamed); diff 222 added / 0 removed, BREAKING labels reviewed per precedent. Two codes catalogued and mapped globally. One honest limit recorded: the available formula is mutation-untestable while holds are structurally zero — `P3-TSK-015` owns it. **Eight mutation runs, all caught, restores byte-identical** — ownership predicate (twice), `@RequiresSession` (twice), constant fingerprint, absent-row throw, key requirement removed, malformed-id fold removed. 1079 hermetic tests, 639 database tests. Next: `P3-TSK-014`. |
 | 2026-09-17 | **`P3-TSK-012` complete — `CustomerAccount`, gated on verification; M3.4 is 2 of 4.** The product agreement exists and **Phase 2's projection meets its first consumer**: opening requires `party.customer.status = ACTIVE`, read per decision from authoritative state inside the opening's own unit of work through the `AccountHolderVerification` port (the `CaseKindResolver` shape), and **the account's `customer_id` is that read's answer, never a caller's**. One transaction: the agreement, its `CUSTOMER_WALLET` ledger account (`LIABILITY`/`CREDIT` asserted — customer money is the platform's debt), the audit record naming the person (`accounts.AccountOpened`, declared with the aggregate per `P3-TSK-011`'s decision, emitted by the creating call only) and the announcement — proven by the rolled-back open leaving none of the four. The machine (`PENDING → ACTIVE → {SUSPENDED ⇄ ACTIVE} → CLOSED`) lives on the enum with the schema artefacts generated from it (`V002`'s status/product CHECKs, the one-live-per-customer-per-product partial index from `sqlTerminalValueList()`); open creates `ACTIVE` directly — `PENDING` has no producer, the `STRONG` precedent — and the aggregate's one `moveTo` refuses every invalid pair, swept from the cross-product. Ten instances with their own connections and scopes produce one of everything with nine converged behind the savepoint; a customer closed on another connection is refused on this one's very next open; the open-vs-customer-close race is accepted and stated (the `P2-TSK-008` class) with the cross-module lock rejected as boundary-breaking. The product is **currency-less** (ADR-0042 — it references its ledger accounts, one per currency); the initial currency must be postable (`SupportedCurrencies`). **The plan's wallet-aggregate contradiction resolved on the record**: product type on `CustomerAccount`, ADR-0042's premature-boundary argument one level down, provenance note in plan §4. The container clock drift met by this task's own grant sweep (`P1-TSK-031`; the constraint was right). Grants per column with a positive control. **Eight mutation runs, all caught by the intended assertion** — gate dropped, filter widened, ledger creation dropped, converged path acting again, index dropped (caught twice), transition check removed, grant table-wide. 1079 hermetic tests, 633 database tests. Next: `P3-TSK-013`. |

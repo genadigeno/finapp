@@ -225,10 +225,16 @@ is the lawful basis the gate queries (`INV-CNS-01`), the audit record is the tra
 |---|---|---|
 | `ledger.JournalEntryPosted` | No | A balanced journal entry was posted to the ledger; the record names the entry, never an amount. |
 | `ledger.AdjustmentPosted` | **Yes** | A person posted a manual adjusting entry; the reason and the authorising actor are recorded. |
+| `ledger.HoldPlaced` | No | A hold was placed against an account's available balance; the record names the hold and the account, never an amount. |
+| `ledger.HoldReleased` | No | A standing hold was released, restoring available balance; the record names the hold and the account, never an amount. |
 
-Declared with the module skeleton (`P3-TSK-001`) under the deliberately-few licence: both are
-named outright by `PHASE_3_PLAN.md` §11, so their design is fixed, while holds, reversals and
-account creation are left to the tasks whose designs will shape them. A posting needs no reason
+The posting and adjustment pair were declared with the module skeleton (`P3-TSK-001`) under
+the deliberately-few licence — named outright by `PHASE_3_PLAN.md` §11, so their design was
+fixed — while holds, reversals and account creation were left to the tasks whose designs would
+shape them. **The hold pair arrived exactly that way** (`P3-TSK-015`): no reason, on the
+posting's own argument — a hold is commanded by a platform flow whose records carry the why —
+each code shared with the event the same act publishes, emitted only by the acting call
+(`HoldService`), so a converged release records nothing (`INV-KYC-03`'s discipline). A posting needs no reason
 because it is commanded by a flow whose own records carry the why; an adjustment requires one
 because `INV-REV-04` says so in as many words, and because a human choosing to move value the
 system would not have moved is the one act whose justification is its only evidence of

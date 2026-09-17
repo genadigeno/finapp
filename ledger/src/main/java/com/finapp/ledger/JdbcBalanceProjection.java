@@ -88,6 +88,48 @@ public final class JdbcBalanceProjection implements BalanceProjection<Connection
         }
     }
 
+    @Override
+    public void adjustHolds(
+            Connection unitOfWork,
+            LedgerAccountId account,
+            Money delta,
+            java.time.Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(account, "account must not be null");
+        Objects.requireNonNull(delta, "delta must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+        try (PreparedStatement adjust =
+                unitOfWork.prepareStatement(
+                        // The guarded atomic addition, posted_minor's idiom: re-reads under
+                        // the row's own lock, scale/currency-matched so a cross-scale
+                        // adjustment is refused wholly (INV-MON-03), and V006's
+                        // holds_minor >= 0 CHECK raises on any over-release.
+                        "UPDATE " + BALANCE_TABLE + " SET"
+                                + " holds_minor = holds_minor + ?,"
+                                + " updated_at = ?"
+                                + " WHERE ledger_account_id = ?"
+                                + " AND scale = ? AND currency = ?")) {
+            adjust.setLong(1, delta.minorUnits());
+            adjust.setTimestamp(2, java.sql.Timestamp.from(at));
+            adjust.setObject(3, account.value());
+            adjust.setInt(4, delta.scale());
+            adjust.setString(5, delta.currency().code());
+            if (adjust.executeUpdate() == 0) {
+                // Loud, never converged: a hold is only ever accepted against settled money,
+                // so the row exists at the entry's scale - absence or a scale mismatch is a
+                // broken invariant. Amount-free (INV-AUD-02).
+                throw new UnderivableBalanceException(
+                        account,
+                        "its projection row is absent or persisted at a different scale, so"
+                                + " a hold adjustment cannot follow it (INV-MON-03)");
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe(
+                            "adjusting the holds of account " + account, failure));
+        }
+    }
+
     private static NormalBalance normalBalanceOf(Connection unitOfWork, LedgerAccountId account)
             throws SQLException {
         // Safe as a separate read for the derivation's own reason: the classification is

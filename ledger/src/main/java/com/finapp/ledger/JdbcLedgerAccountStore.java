@@ -183,6 +183,30 @@ public final class JdbcLedgerAccountStore implements LedgerAccountStore<Connecti
     }
 
     @Override
+    public Optional<LedgerAccount> lockForUpdate(
+            Connection unitOfWork, LedgerAccountId accountId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // FOR UPDATE: the mode that conflicts with the FOR KEY SHARE every
+                        // in-flight posting holds, and with every sibling balance-affecting
+                        // decision on this account (ADR-0039; lockOwnedForUpdate's reasoning).
+                        "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ? FOR UPDATE")) {
+            read.setObject(1, accountId.value());
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("locking account " + accountId, failure));
+        }
+    }
+
+    @Override
     public boolean moveStatus(
             Connection unitOfWork,
             LedgerAccountId accountId,

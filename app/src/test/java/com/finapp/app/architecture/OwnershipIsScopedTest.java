@@ -430,6 +430,60 @@ class OwnershipIsScopedTest {
                                         + " revokeAll finding), and its classification is"
                                         + " upsert's own, one entry up.")),
                     Map.entry(
+                            "com.finapp.ledger.JdbcLedgerAccountStore.lockForUpdate",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-015. The balance-affecting decision's serialization"
+                                        + " point (ADR-0039): HoldService locks the account row"
+                                        + " here, and a ledger account may be the platform's or"
+                                        + " a customer's - the ledger knows only an opaque"
+                                        + " owner_ref (ADR-0042), so ownership is the commanding"
+                                        + " SURFACE's, and today the callers are platform flows"
+                                        + " and tests. Phase 4's transfers arrive with their own"
+                                        + " owner-scoped resolution and must come here and say"
+                                        + " so.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcHoldStore.findById",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-015. A hold is the ledger's own reservation row -"
+                                        + " the JdbcJournalEntryStore.findById stance: no single"
+                                        + " owner exists to scope by, disclosure control belongs"
+                                        + " to the surface, and no HTTP surface exists (plan"
+                                        + " section 9 declares none). The Phase 4 flow that"
+                                        + " first names a hold from a request must come here"
+                                        + " and say so.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcHoldStore.findActiveFor",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-015. The availability decision's second input -"
+                                        + " the standing holds of one account, read under the"
+                                        + " account row's lock by HoldService and by the close's"
+                                        + " emptiness check. The account id comes from the"
+                                        + " locked read, never a request.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcHoldStore.moveToReleased",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-015. The conditional release whose row count is"
+                                        + " the outcome - the hold id reaches it through"
+                                        + " HoldService.release, which locked the account row"
+                                        + " first; the AND status = 'ACTIVE' is the machine's"
+                                        + " edge, not an ownership check (the accounts"
+                                        + " moveStatus reasoning).")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcBalanceProjection.adjustHolds",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-015. The projection's second write seam: the"
+                                        + " holds_minor consequence of an already-decided"
+                                        + " placement or release, on the deciding transaction."
+                                        + " The account id comes from the decision's own locked"
+                                        + " read; no read exists to scope"
+                                        + " (BalanceProjectionTest pins the port to void"
+                                        + " writes).")),
+                    Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revoke",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

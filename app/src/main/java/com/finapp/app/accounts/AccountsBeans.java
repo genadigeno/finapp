@@ -10,6 +10,7 @@ import com.finapp.ledger.BalanceDerivation;
 import com.finapp.ledger.BalanceDisplay;
 import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.JdbcBalanceDisplay;
+import com.finapp.ledger.JdbcHoldStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.party.PartyStore;
@@ -74,6 +75,9 @@ class AccountsBeans {
                 customerAccountStore,
                 ledgerAccountStore,
                 balanceDerivation,
+                // The close judges standing reservations from the authoritative hold rows
+                // (P3-TSK-015); the store is stateless, so a direct instance is the wiring.
+                new JdbcHoldStore(),
                 auditWriter,
                 outboxWriter,
                 ids,

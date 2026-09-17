@@ -14,23 +14,29 @@ import org.junit.jupiter.api.Test;
  * it returns nothing; the first reader arrived with `P3-TSK-010` and said what it returns —
  * {@code ProjectionVerification} yields <strong>verdicts and counts, never {@link Money} or a
  * {@link DerivedBalance}</strong>, so nothing read from the projection can become a
- * decision's input. The display query (`P3-TSK-018`) must come here and say the same; until
+ * decision's input. `P3-TSK-015`'s hold adjustment joined as a second <em>write</em> - the
+ * availability decision derives from postings and hold rows before it runs, never from the
+ * row it maintains. The display query (`P3-TSK-018`) must come here and say the same; until
  * then this test is what fails the build on a read added in a hurry.
  */
 @DisplayName("the balance projection hands no balance out (INV-BAL-05, P3-TSK-009/-010)")
 class BalanceProjectionTest {
 
     @Test
-    @DisplayName("the port declares exactly one method, and it returns nothing")
-    void thePortDeclaresExactlyOneVoidMethod() {
+    @DisplayName("the port declares exactly the two write methods, and both return nothing")
+    void thePortDeclaresOnlyVoidWrites() {
+        // P3-TSK-015 added the hold adjustment - a second WRITE, said so here as the class
+        // doc demands: still no read exists, and a third method is a read until proven
+        // otherwise.
         Method[] declared = BalanceProjection.class.getDeclaredMethods();
         assertThat(declared)
-                .as("a second method on the projection port is a read until proven otherwise")
-                .hasSize(1);
-        assertThat(declared[0].getName()).isEqualTo("apply");
-        assertThat(declared[0].getReturnType())
-                .as("the one method carries nothing out")
-                .isEqualTo(void.class);
+                .extracting(Method::getName)
+                .containsExactlyInAnyOrder("apply", "adjustHolds");
+        for (Method method : declared) {
+            assertThat(method.getReturnType())
+                    .as("port method %s carries nothing out", method.getName())
+                    .isEqualTo(void.class);
+        }
     }
 
     @Test

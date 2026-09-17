@@ -398,6 +398,23 @@ never authoritative, and read by no financial decision (`INV-BAL-05`). A derived
 | `account_balance` | `last_entry_seq` | `INTERNAL` | An applied-entry count — activity volume, the `journal_entry.created_at` question at most, and it dates nothing |
 | `account_balance` | `updated_at` | `CONFIDENTIAL` | System time of the last posting still dates financial activity — `journal_entry.created_at`'s reasoning |
 
+### `ledger.hold` — *added by `P3-TSK-015`*
+
+Reservations against available balance (`INV-BAL-04`). A hold's existence discloses a pending
+movement before any posting exists — which is why its status carries the amounts' own ceiling
+rather than a lifecycle word's usual `INTERNAL`.
+
+| Table | Column | Level | Why this level |
+|---|---|---|---|
+| `hold` | `id` | `INTERNAL` | A platform-minted UUIDv7; names nothing by itself |
+| `hold` | `ledger_account_id` | `INTERNAL` | `journal_line.ledger_account_id`'s reasoning |
+| `hold` | `amount_minor` | `RESTRICTED-FINANCIAL` | A reserved amount — `journal_line.amount_minor`'s reasoning, before the movement it anticipates even exists |
+| `hold` | `currency` | `INTERNAL` | As `journal_line.currency` |
+| `hold` | `scale` | `INTERNAL` | Precision metadata of the amount |
+| `hold` | `status` | `RESTRICTED-FINANCIAL` | Whether value is reserved right now — half of available balance (`INV-BAL-04`), and a pending movement's existence is a financial fact, not lifecycle metadata |
+| `hold` | `placed_at` | `CONFIDENTIAL` | Dates financial activity — `journal_entry.created_at`'s reasoning |
+| `hold` | `released_at` | `CONFIDENTIAL` | Same: when a reservation ended dates the movement or its abandonment |
+
 ### `accounts.customer_account` — *added by `P3-TSK-012`*
 
 **No amount column exists here, by design** — the product carries no balance (ADR-0042); the

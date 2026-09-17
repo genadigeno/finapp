@@ -82,6 +82,16 @@ public interface LedgerAccountStore<T> {
     java.util.List<LedgerAccount> lockOwnedForUpdate(T unitOfWork, UUID ownerRef);
 
     /**
+     * One account, read {@code FOR UPDATE} by its own identifier — the balance-affecting
+     * decision's serialization point (`P3-TSK-015`, ADR-0039): a hold locks here, then
+     * derives from postings and standing holds in fresh statements, then acts. Same lock
+     * mode, same reasoning as {@link #lockOwnedForUpdate} — {@code FOR UPDATE} is the mode
+     * that conflicts with every in-flight posting's {@code FOR KEY SHARE} and with every
+     * sibling decision on the same account.
+     */
+    Optional<LedgerAccount> lockForUpdate(T unitOfWork, LedgerAccountId accountId);
+
+    /**
      * Moves an account {@code from} one status {@code to} another — the conditional whose row
      * count is the outcome, arriving with its first caller exactly as this interface's javadoc
      * deferred it (`P3-TSK-014`'s close). The machine's edge is in the statement

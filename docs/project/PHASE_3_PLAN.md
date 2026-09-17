@@ -275,7 +275,7 @@ Key constraints and indexes:
   is a modelling error rather than a credit.
 - `ledger_account`: `UNIQUE (owner_ref, purpose, currency)` where owned; trigger freezing type,
   normal balance and currency once a line references the account.
-- `hold`: partial unique where active; `CHECK` on amount.
+- `hold`: partial index where active serving the availability read; `CHECK`s on amount positivity and status/release coherence; a trigger making `RELEASED` terminal for every writer. *(This row said "partial unique where active" until `P3-TSK-015`: uniqueness needs a subject, and the one-active-per-commanding-reference dimension arrives with Phase 4's flows — several active holds per account is the normal case, and a reference column nothing populates is the recorded anti-pattern. The index stays partial and deliberately not unique, with the provenance in `V008`.)*
 - Every monetary column uses `MoneyColumns`' three-column shape (ADR-0003), unchanged.
 - Every new column classified at its ceiling before the migration lands
   (`ColumnClassificationTest`) — balances and postings are **`RESTRICTED-FINANCIAL`**.

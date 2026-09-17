@@ -18,6 +18,7 @@ import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.JdbcBalanceProjection;
+import com.finapp.ledger.JdbcHoldStore;
 import com.finapp.ledger.JdbcJournalEntryStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.JournalLine;
@@ -106,6 +107,7 @@ class AccountClosingDatabaseTest {
                 accounts,
                 ledgerAccounts,
                 new JdbcBalanceDerivation(),
+                new JdbcHoldStore(),
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
@@ -355,6 +357,62 @@ class AccountClosingDatabaseTest {
             app.commit();
             assertThat(successor.created()).isTrue();
             assertThat(successor.account().id()).isNotEqualTo(holder.accountId());
+        }
+    }
+
+    @Test
+    @DisplayName("a standing hold blocks the close, and its release frees it (P3-TSK-015)")
+    void aStandingHoldBlocksTheClose() throws Exception {
+        // Postings are not gated by holds, so settled can reach zero while a reservation
+        // stands - closing then would strand it. The agreement is not empty while value is
+        // reserved; judged from the authoritative hold rows under the same lock.
+        Holder holder = holderWithOpenAccount();
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enter(holder.actor());
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            credit(app, holder, 800);
+            com.finapp.ledger.Hold hold =
+                    new com.finapp.ledger.HoldService(
+                                    ledgerAccounts,
+                                    new JdbcBalanceDerivation(),
+                                    new JdbcHoldStore(),
+                                    new JdbcBalanceProjection(),
+                                    new JdbcAuditWriter(),
+                                    new JdbcOutboxWriter(),
+                                    IDS,
+                                    CLOCK)
+                            .place(
+                                    app,
+                                    walletOf(app, holder).id(),
+                                    Money.ofMinorUnits(800, USD));
+            debitAll(app, holder, 800); // settled back to zero - the hold still stands
+            app.commit();
+
+            assertThatThrownBy(
+                            () -> closing().close(app, holder.customer(), holder.account()))
+                    .isInstanceOf(AccountNotEmptyException.class);
+            app.rollback();
+            assertThat(productStatusOf(app, holder.account()))
+                    .isEqualTo(CustomerAccountStatus.ACTIVE.name());
+
+            new com.finapp.ledger.HoldService(
+                            ledgerAccounts,
+                            new JdbcBalanceDerivation(),
+                            new JdbcHoldStore(),
+                            new JdbcBalanceProjection(),
+                            new JdbcAuditWriter(),
+                            new JdbcOutboxWriter(),
+                            IDS,
+                            CLOCK)
+                    .release(app, hold.id())
+                    .orElseThrow();
+            app.commit();
+
+            AccountClosing.Closure closure =
+                    closing().close(app, holder.customer(), holder.account()).orElseThrow();
+            app.commit();
+            assertThat(closure.closed()).isTrue();
         }
     }
 

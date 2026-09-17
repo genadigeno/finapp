@@ -3,6 +3,8 @@ package com.finapp.accounts;
 import com.finapp.ledger.AsOf;
 import com.finapp.ledger.BalanceDerivation;
 import com.finapp.ledger.DerivedBalance;
+import com.finapp.ledger.Hold;
+import com.finapp.ledger.HoldStore;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.LedgerAccountStore;
@@ -46,6 +48,11 @@ import java.util.UUID;
  * converged with <strong>nothing written</strong>: one act, one record, one event
  * ({@code INV-KYC-03}'s discipline, the opening's own rule mirrored).
  *
+ * <p><strong>Empty means empty of reservations too</strong> (`P3-TSK-015`): a standing hold
+ * is value still reserved under the agreement, so the close refuses while one exists -
+ * judged from the authoritative hold rows under the same lock, and released holds free the
+ * close exactly as postings freed the balance.
+ *
  * <p><strong>What closing never touches</strong>: a journal row. The history stays exactly as
  * posted — readable, immutable at {@code DB-PRIVILEGE} since `P3-TSK-005` — and the ledger
  * account row itself survives with its classification frozen; what changes is that `V007`
@@ -67,6 +74,7 @@ public final class AccountClosing {
     private final CustomerAccountStore<Connection> accounts;
     private final LedgerAccountStore<Connection> ledgerAccounts;
     private final BalanceDerivation<Connection> derivation;
+    private final HoldStore<Connection> holds;
     private final AuditWriter<Connection> audit;
     private final OutboxWriter<Connection> outbox;
     private final IdGenerator ids;
@@ -76,6 +84,7 @@ public final class AccountClosing {
             CustomerAccountStore<Connection> accounts,
             LedgerAccountStore<Connection> ledgerAccounts,
             BalanceDerivation<Connection> derivation,
+            HoldStore<Connection> holds,
             AuditWriter<Connection> audit,
             OutboxWriter<Connection> outbox,
             IdGenerator ids,
@@ -84,6 +93,7 @@ public final class AccountClosing {
         this.ledgerAccounts =
                 Objects.requireNonNull(ledgerAccounts, "ledgerAccounts must not be null");
         this.derivation = Objects.requireNonNull(derivation, "derivation must not be null");
+        this.holds = Objects.requireNonNull(holds, "holds must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
         this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
@@ -97,7 +107,8 @@ public final class AccountClosing {
      *
      * @return empty when no such account belongs to {@code customerId} — one answer for
      *     not-yours, does-not-exist and malformed alike, the surface's {@code 404}
-     * @throws AccountNotEmptyException when any of the product's balances is non-zero
+     * @throws AccountNotEmptyException when any of the product's balances is non-zero, or
+     *     any reservation still stands against one of its accounts (`P3-TSK-015`)
      * @throws IllegalCustomerAccountTransitionException for an agreement the machine does not
      *     let end from its current state ({@code SUSPENDED} — no producer this phase)
      */
@@ -138,6 +149,15 @@ public final class AccountClosing {
             DerivedBalance balance =
                     derivation.derive(unitOfWork, ledgerAccount.id(), AsOf.latest());
             if (!balance.settled().isZero()) {
+                throw new AccountNotEmptyException(accountId, ledgerAccount.currency());
+            }
+            // A standing hold is value still reserved under the agreement (P3-TSK-015):
+            // postings are not gated by holds, so settled can reach zero while a
+            // reservation stands, and closing then would strand it - the agreement is not
+            // empty while any reservation is. Judged under the same lock, from the
+            // authoritative hold rows (INV-BAL-05's discipline; never holds_minor).
+            List<Hold> standing = holds.findActiveFor(unitOfWork, ledgerAccount.id());
+            if (!standing.isEmpty()) {
                 throw new AccountNotEmptyException(accountId, ledgerAccount.currency());
             }
         }
