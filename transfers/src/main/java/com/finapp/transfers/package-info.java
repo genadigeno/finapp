@@ -21,13 +21,12 @@
  * {@code P4-TSK-005}): the module that owns the product and the module that moves the money must
  * not become one dependency ball, and a compile-time edge would be its first step.
  *
- * <p><strong>Nothing is implemented yet.</strong> This module is the skeleton created by
- * {@code P4-TSK-001}: the boundary and the migrator-owned schema exist so that the first transfer
- * table lands inside an enforced boundary and under the right owner - the column-narrowed grants
- * and the every-writer transition trigger {@code PHASE_4_PLAN.md} §8 plans are only available that
- * way. {@code Transfer} is {@code P4-TSK-003}; the schema tables are {@code P4-TSK-004}; and there
- * is deliberately <strong>no {@code TransfersAuditAction} enum</strong> - the audit actions arrive
- * with the aggregates and commands whose designs fix their meaning ({@code P2-TSK-005}'s
- * precedent, exercised for {@code accounts} by {@code P3-TSK-011}), not with this skeleton.
+ * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema
+ * ({@code P4-TSK-001}), and the {@link com.finapp.transfers.Transfer} aggregate with its ADR-0044
+ * machine ({@code P4-TSK-003}) - hermetic only. The schema tables are {@code P4-TSK-004}; the
+ * execution command, stores and ports are {@code P4-TSK-005}; and there is still deliberately
+ * <strong>no {@code TransfersAuditAction} enum</strong> - the audit actions arrive with the
+ * commands whose designs fix their meaning ({@code P2-TSK-005}'s precedent, exercised for
+ * {@code accounts} by {@code P3-TSK-011}), not before them.
  */
 package com.finapp.transfers;

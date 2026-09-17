@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P4-TSK-002` — the ADR governance registers, build-reconciled)
+Last updated: 2026-09-17 (`P4-TSK-003` — the `Transfer` aggregate and its lifecycle)
 
 ---
 
@@ -161,10 +161,13 @@ class, again).
 
 ## Current Milestone
 
-**M4.2 — The movement exists.** `P4-TSK-003` … `P4-TSK-005`; **0 of 3 — next
-`P4-TSK-003` (`READY`)** — the `Transfer` aggregate and its ADR-0044 lifecycle, the schema
-that inherits the machine, and the phase's High-risk task: the execution command in one
-transaction under the source-account lock, with conservation counted under a ten-way drain.
+**M4.2 — The movement exists.** `P4-TSK-003` … `P4-TSK-005`; **1 of 3 — next
+`P4-TSK-004` (`READY`)** — the `Transfer` aggregate and its ADR-0044 lifecycle are
+**delivered** (the machine pinned, the coherence in one constructor every path shares);
+what remains is the schema that inherits the machine (`V002`, the generated `CHECK`s and
+the every-writer transition trigger), then the phase's High-risk task: the execution
+command in one transaction under the source-account lock, with conservation counted under
+a ten-way drain.
 
 ### M4.1 — Foundations — CLOSED
 
@@ -484,11 +487,79 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P4-TSK-002` is `COMPLETE`; **M4.1 closes at 2 of 2,
-and M4.2 opens. Next: `P4-TSK-003` (`READY`)** — the `Transfer` aggregate
-and its lifecycle.
+**None in progress.** `P4-TSK-003` is `COMPLETE`; **M4.2 is 1 of 3. Next:
+`P4-TSK-004` (`READY`)** — the transfer schema, `V002`.
 
 ### Just completed
+
+**`P4-TSK-003` — The `Transfer` aggregate and its lifecycle** — `COMPLETE`
+(2026-09-17). **M4.2 opens at 1 of 3: ADR-0044 is code**, and the module
+created two tasks ago holds its first domain type — hermetic only, no
+store, no schema, no service, by scope.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every invalid transition rejected by the aggregate, swept from the cross-product | The sweep derived from `values()` with per-outcome transition doors, expectation read from `permittedTransitions()` — a state or edge added later is swept without anyone remembering (`INV-LIFE-01/-02`) |
+| Both terminals swept separately | From `FAILED` and from `REVERSED`, every transition door throws (`INV-LIFE-04`) |
+| `COMPLETED`'s single outgoing edge as a machine property | The machine **pinned exactly** — `containsExactly(REVERSED)` — because a sweep that trusts the machine cannot notice the machine changing; plus the property that **nothing transitions TO `INITIATED`**: no state permits it and no method targets it, birth being the only door |
+
+### One constructor holds every invariant, and every path shares it
+
+Birth (`initiate`), the three per-outcome transitions — `complete(entry)`,
+`fail(reason)`, `reverse(entry, actor, clock)`, each routed through the
+same machine check (`INV-LIFE-02`'s one door, split only because each
+carries a distinct payload) — and `rehydrate`, so a corrupt row (a
+`FAILED` without its reason, a `COMPLETED` without its entry) is refused
+on read-back as defence in depth ahead of `V002`'s `CHECK`s. Coherence
+both directions per rule: reason ⇔ `FAILED`; entry ⇔ money moved
+(`REVERSED` **keeps** the original entry — the reversal is more evidence,
+not less); the reversal triple ⇔ `REVERSED`, all three or none, because a
+reversal without its actor or instant is an unattributable correction.
+**Only `reverse` reads the clock**: the reversal is the only transition
+that stamps the row — there is deliberately no `statusChangedAt`, since
+the reversal columns are the narrowed `UPDATE` grant's whole vocabulary
+(plan §8) and transition instants are the history table's evidence
+(`P4-TSK-004`).
+
+### The pair rule: the one interpretive decision, resolved on the record
+
+The backlog's flat *"source ≠ destination"* tensions with `SELF_TRANSFER`
+as a **committed** failure reason (`P4-TSK-005`'s scope commits sibling
+refusals; ADR-0044's own doctrine forbids an enum value with no producer)
+— a committed `FAILED(SELF_TRANSFER)` row necessarily stores the equal
+pair. Resolved as **coherence with the machine, exactly like the reason**:
+the equal pair is legal in exactly two shapes — `INITIATED` (the caller's
+unjudged input; judging is the execution's act) and `FAILED(SELF_TRANSFER)`
+(the committed record of refusing exactly that mistake, which conversely
+*requires* the equal pair — a self-transfer refusal naming two different
+accounts is incoherent). Money-moved states and every other reason require
+inequality — an equal-pair completed transfer would mean the balanced
+no-op entry plan §14.6 exists to prevent. Consequence the constructor
+enforces for free: an equal-pair `INITIATED` transfer has exactly one
+legal exit, `fail(SELF_TRANSFER)` — proven by driving both wrong exits.
+
+### Typed where the boundary permits, raw where it forbids
+
+`sourceAccount`/`destinationAccount` are ledger's `LedgerAccountId` and
+the entry ids `JournalEntryId` — **the `transfers → ledger` edge's first
+use**, and the identity-chain material §12's reconciliation will walk.
+`customerId` and the actors are raw `UUID`, because `party`/`identity` own
+the typed ids and this module cannot see them (the
+`CustomerAccount.customerId` precedent, reasoning recorded verbatim).
+`INV-AUD-02` at the type: the positivity refusal names the fact and the
+currency, never the value, needle-asserted with the value planted to be
+findable. The module's `package-info` *"nothing implemented"* paragraph
+was updated by the task that made it stale — the recurring class, caught
+at design time.
+
+**Seven mutations, all caught by the intended assertion, restores
+byte-identical** — the machine check removed from `complete()`,
+`COMPLETED` made terminal, `FAILED` given an exit, the reason coherence
+dropped, the entry coherence dropped, the money-moved pair rule dropped,
+the amount leaked into the refusal message. **1133 hermetic tests, 683
+database tests, 14 kafka tests — the +6 the new test's own methods.**
+
+### Previously
 
 **`P4-TSK-002` — The ADR governance registers, build-reconciled** —
 `COMPLETE` (2026-09-17). **M4.1 closes: 2 of 2.** The twice-carried
@@ -8681,12 +8752,13 @@ Project initiation (2026-08-31):
 ## Active Work
 
 **None in progress.** Phases 0, 1, 2 and 3 are `COMPLETE`; Phase 4 is
-`IN_PROGRESS` at 2 of 14 (M4.1 `CLOSED`; M4.2 opens).
+`IN_PROGRESS` at 3 of 14 (M4.1 `CLOSED`; M4.2 at 1 of 3).
 
-The last work performed was **`P4-TSK-002`** (2026-09-17): the ADR
-governance registers build-reconciled — the second-copy decay twice found
-by hand is now a build failure that names its ADR. The next work is
-**`P4-TSK-003`** — the `Transfer` aggregate and its ADR-0044 lifecycle.
+The last work performed was **`P4-TSK-003`** (2026-09-17): the `Transfer`
+aggregate — ADR-0044's machine pinned on the enum, the coherence in one
+constructor every path shares, and the pair rule resolved on the record as
+coherence with the machine. The next work is **`P4-TSK-004`** — the
+transfer schema, `V002`, inheriting the machine as generated constraints.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8936,23 +9008,30 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P4-TSK-003` — The `Transfer` aggregate and its lifecycle.** Status
-`READY`; depends on `P4-TSK-001` (`COMPLETE`).
+**`P4-TSK-004` — The transfer schema: `V002`.** Status `READY`; depends on
+`P4-TSK-003` (`COMPLETE`).
 
-M4.2 opens with it: ADR-0044 made code. `Transfer` with
-`INITIATED → {COMPLETED, FAILED}`, `COMPLETED → REVERSED`,
-`FAILED`/`REVERSED` terminal; the machine on the enum
-(`permittedTransitions()`, `sqlValueList()`, `sqlTerminalValueList()` — the
-established generated-constraint ceremony); `FailureReason` enumerated
-(`INSUFFICIENT_FUNDS`, `SOURCE_NOT_POSTABLE`, `DESTINATION_NOT_POSTABLE`,
-`CURRENCY_MISMATCH`, `SELF_TRANSFER`); invariants in the constructor —
-positive amount, source ≠ destination, reason present exactly when
-`FAILED`, entry id present exactly when money moved. Hermetic only; no
-store, no schema (`P4-TSK-004`), no service (`P4-TSK-005`). Accept: every
-invalid transition rejected by the aggregate, swept from the cross-product
-of the machine (`INV-LIFE-01/-02`); both terminals swept separately
-(`INV-LIFE-04`); `COMPLETED`'s single outgoing edge asserted as a property
-of the machine. Risk: Medium. Cx: M. DoD: `DOD-DOMAIN`, `DOD-FIN`.
+The machine inherited by the schema, for every writer: `transfers.transfer`
+(UUIDv7 id; the owning customer id — the ownership predicate's column;
+source/destination ledger-account references; the `MoneyColumns` generated
+shape pinned verbatim; reference; status with the generated `CHECK`;
+`failure_reason NOT NULL ⇔ FAILED`; `journal_entry_id UNIQUE, NOT NULL ⇔
+status IN (COMPLETED, REVERSED)`; `reversal_entry_id NOT NULL ⇔ REVERSED`;
+actor and instants from the injected clock, never `DEFAULT now()`) and
+`transfers.transfer_event` (append-only history: seq, from/to, actor,
+instant). A transition trigger permits exactly the machine's edges for
+every writer (the `V010` shape); grants `SELECT, INSERT` plus `UPDATE`
+column-narrowed to the reversal columns; history `SELECT, INSERT` only.
+Every column classified at its ceiling. A migration-reconciliation test
+derives the `CHECK`s from the enum. Accept: raw SQL cannot store an
+unknown status, an illegal edge, a failed transfer without its reason, or
+a completed one without its entry — each refused from scratch; the
+per-column grant sweep with a positive control; classification guard
+green. Risk: Medium. Cx: M. DoD: `DOD-FIN`, `DOD-BUILD`.
+
+### Superseded: P4-TSK-003
+
+*(This section named `P4-TSK-003` until its gate on 2026-09-17.)*
 
 ### Superseded: P4-TSK-002
 
@@ -8998,6 +9077,7 @@ rather than left.)*
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P4-TSK-003` complete — the `Transfer` aggregate, and ADR-0044 is code; M4.2 opens (1 of 3).** The four-state machine on the enum (`INITIATED → {COMPLETED, FAILED}`, `COMPLETED → {REVERSED}`, both terminals empty), with the generated-constraint ceremony (`sqlValueList()`, `sqlTerminalValueList()` — whose consumer, `P4-TSK-004`'s migration reconciliation, is named rather than left as dead-code risk) and `FailureReason` enumerated with every value a **committed domain outcome** with a producer. **One constructor holds every invariant and every path shares it** — birth, the three per-outcome transitions (each through the same machine check: `INV-LIFE-02`'s one door, split only because each carries a distinct payload), and `rehydrate`, so a corrupt row is refused on read-back ahead of `V002`'s `CHECK`s. Coherence both directions per rule: reason ⇔ `FAILED`; entry ⇔ money moved (`REVERSED` keeps the original entry — the reversal is more evidence, not less); the reversal triple ⇔ `REVERSED`. **Only `reverse` reads the clock** — there is deliberately no `statusChangedAt`, because the reversal columns are the narrowed `UPDATE` grant's whole vocabulary and transition instants are the history table's evidence. **The one interpretive decision resolved on the record**: the backlog's flat "source ≠ destination" tensions with `SELF_TRANSFER` as a committed reason, so the pair rule is coherence with the machine — the equal pair legal only `INITIATED` (unjudged input) or as `FAILED(SELF_TRANSFER)` (the committed record of refusing exactly that mistake, which conversely requires the equal pair); an equal-pair `INITIATED` transfer has exactly one legal exit, enforced for free. **The machine is pinned, not only swept** — a sweep that trusts the machine cannot notice the machine changing — which is the `COMPLETED`-has-one-exit assertion, plus: nothing transitions TO `INITIATED` (no state permits it, no method targets it — birth is the only door). Typed ids where the boundary permits (`LedgerAccountId`, `JournalEntryId` — the `transfers → ledger` edge's first use), raw `UUID` where it forbids (the `CustomerAccount` precedent). `INV-AUD-02` needle-asserted on the positivity refusal. The module `package-info`'s "nothing implemented" paragraph updated by the task that made it stale. **Seven mutations, all caught by the intended assertion, restores byte-identical.** **1133 hermetic tests, 683 database tests, 14 kafka tests — the +6 the new test's own methods.** Next: `P4-TSK-004`. |
 | 2026-09-17 | **`P4-TSK-002` complete — the ADR governance registers build-reconciled, and M4.1 closes (2 of 2).** The twice-carried governance item paid as work: `AdrRegistersAreReconciledTest` holds every `docs/adr/ADR-*.md` file's `Status:` line and the README index's status column to each other, and the two sets to a **bijection** — every ADR file exactly one index row, every row a file its link resolves to (a row whose link points at nothing is the orphan case wearing a working number), `ADR-0001` as the non-vacuity anchor. Status agreement is compared on the leading token (the file form legitimately carries provenance — `Status: Accepted (2026-09-17, P3-DOC-001)` — the index column does not); both copies are held to the **closed vocabulary** the README's own rules declare, because an equality-only check is satisfied by a typo present in both; and every row-looking line inside `## Index` must **parse** — the `P1-TSK-024` fix-one-level-out lesson applied at design time, so a malformed row is a named failure rather than an ADR silently covered by nothing. A file with no readable `Status:` line is a failure, never a skip. The documents joined the declared `:app:test` inputs as a **file tree, not a list** (a new ADR file re-runs the guard without anyone remembering — the half of the defect a named-file list could never see), proven by the probe: the doc-only mutation re-ran the task rather than reporting `UP-TO-DATE`. **Five mutations, all caught by the intended assertion, restores byte-identical** — the index status of ADR-0043 flipped (fails naming the ADR with both values), ADR-0044's row deleted, an orphan ADR-0099 row (whose **first plant landed outside the `## Index` section and was rightly ignored** — the section bounding working, recorded), the file-side flip on ADR-0044, and a corrupted row form caught by the structural check naming the line with the bijection also firing — two controls, blind in different directions. Limits recorded rather than glossed: `DECISIONS.md` deliberately unreconciled (curated prose, not a status copy); the title/phase/concern columns out of scope; a future `Superseded by ADR-NNNN` line fails the parser **loudly**, forcing the format decision when it first has a subject. **1127 hermetic tests, 683 database tests, 14 kafka tests — the +4 the new test's own methods.** Next: `P4-TSK-003`, M4.2 opens. |
 | 2026-09-17 | **`P4-TSK-001` complete — the `transfers` module and the privilege floor; Phase 4 is `IN_PROGRESS`.** The established module shape, fourth performance: a guarded module on the documented direction, `V001` creating the `transfers` schema with the default-deny floor (owner `finapp_migrator`, `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, **no `ALTER DEFAULT PRIVILEGES`** — plan §8's column-narrowed grants and every-writer transition trigger are only available if each table's grants arrive with its migration), zero tables, migrate → validate → re-migrate idempotent on a throwaway `postgres:18.6` with the ACL proven exactly `{finapp_migrator=UC, finapp_app=U}` and no `PUBLIC` entry. **What is genuinely this phase's is the build graph**: `transfers → ledger` declared with the module (postings are COMMANDED through `PostingService`, never written — `INV-LED-04`, ADR-0043; first consumer `P4-TSK-003`), so the planted `ledger → transfers` edge fails Gradle configuration outright as a circular dependency — demonstrated — while **`transfers → accounts` is refused**: the product resolves through a port `app` implements (the `AccountHolderVerification` shape, `P4-TSK-005`), because the module that owns the product and the module that moves the money must not become one dependency ball. `TransfersModuleIsolationTest` pins both halves; all six sibling isolation tests gained `transfers` in their forbidden lists (the one-directional-decay lesson, fourth application at design time). **The task's finding: a module off `app`'s classpath is a module no rule protects.** The planted-`double` probe **survived its first run** — nothing had added `implementation(project(":transfers"))` to `app`, and `ProductionModules` derives the swept set from `app`'s classpath; the comment beside `app`'s business-module block predicts exactly this, and the probe turned the sentence into a demonstrated fact. With the edge added, the probe fails naming `transfers.Planted.amount is double (INV-MON-01)`. The module-creation checklist's untested step was the classpath edge, not the schema — `DATA_MIGRATIONS.md`'s five steps were followed end to end and none was stale this time. **Four probes, all caught by the intended guard, restores byte-identical.** The deliberate deviation repeated with its licence: no `TransfersAuditAction` enum (`package-info.java` records it — actions arrive with the designs that fix their meaning). No runtime state of any kind; `DISTRIBUTED_EXECUTION.md` §3 gains no row, and the absence is the design. Housekeeping: `transfers/gradle.lockfile` identical to `accounts`'s but for its header, verification metadata unchanged, no `build-logic` lockfile drift. **1123 hermetic tests, 683 database tests, 14 kafka tests, counted.** Next: `P4-TSK-002`. |
 | 2026-09-17 | **Phase 3 → Phase 4 transition conducted — Phase 3 `COMPLETE` (confirmed), Phase 4 `READY`.** A **second, independent** pass over the phase its exit review had ruled complete hours earlier (the standing precedent: a gate assessed only by whoever finished the work is not two checks). Sixteen completion categories **all `PASS`**; a **fourteen-property financial correctness audit all `PASS`**, each property against its database-rank mechanism (balance judged at COMMIT for every writer; immutability by privilege **plus** the migrator-binding trigger; double-release and double-reversal each refused by row-count conditionals and the in-trigger advisory bound; every balance replay-verified); the multi-instance question answered **`PASS`** with a fresh zero-occurrence single-instance sweep over Phase 3 code; atomicity/idempotency/persistence audits `PASS` — no atomicity assumed across a boundary that lacks it, nothing resting on JVM memory; reconciliation-readiness `PASS` — the whole chain walkable by stored identifier in both directions; **1121 hermetic / 683 database / 14 kafka green on a fresh post-transition run**. **The transition's own finding: `DISTRIBUTED_EXECUTION.md` §3 had no Phase 3 rows at all — the fourth occurrence of the register-decay class, one transition after the pattern was named** by the transition that repaired Phase 2's identical gap. Repaired with **ten rows plus the Phase 3 note** (one genuinely new coordination twist: `V009`'s advisory lock taken *inside a trigger*, binding raw SQL; two deliberate absences as design — postings and verifiers take no lock); the check is now a named transition-audit step. A second decay of the same class found in this document's own §Unresolved table: **questions 1–4 sat open for a full phase after ADR-0039…0042 closed them** — moved to Resolved with provenance. **Two ADRs taken, because Phase 4 cannot start without them**: ADR-0043 — the transfer and its posting commit in **one local transaction** (the seam `PostingService` was built with), a failed transfer is a *committed domain outcome*, compensation means the business reversal and nothing else, **no internal saga** (closing unresolved question 5, High, open since initiation — the rejected designs each manufacture the failure they exist to handle: a durable `INITIATED` needs a sweeper, a lease and a stranded state; an outbox-mediated posting puts a customer-visible `COMPLETED` ahead of the money); and ADR-0044 — the lifecycle **derived rather than copied**: four states (`INITIATED → {COMPLETED, FAILED}`, `COMPLETED → REVERSED`), every state earned by a producer, `VALIDATED`/`AUTHORIZED`/`PROCESSING`/`CANCELLED` each refused with its reason, `COMPLETED` stable-not-terminal as a recorded reading of `INV-LIFE-04`, and the events following the machine (terminal facts publish; `TransferInitiated` does not, since it would commit beside its own outcome — the delivery plan and module register corrected with provenance). **Rulings owed and delivered**: the `LEDGER_READ` declaration **struck** with provenance rather than scheduled; the twice-carried ADR-index item becomes **`P4-TSK-002`** (a build guard, as work, first in M4.1); the step-up trigger moved to **beneficiary creation** (a value threshold is a versioned policy artefact with nothing to calibrate it — the `P3-TSK-021` argument; the value trigger a recorded Phase 13 seam); the stuck-transfer detector recorded **subjectless** under ADR-0043; value-by-state meters refused (a financial figure outside the ledger's authority). **Phase 4 initialised without implementing it**: `PHASE_4_PLAN.md` (the transfer model with the Transfer/Payment/posting/settlement distinctions stated, twelve failure scenarios, four meters, eight milestones); the gate criteria **extended with ten measurable bullets** (conservation under the ten-way drain counted in the tables, the injected-failure atomicity probe, in-lock availability with the moved-outside mutation named, reversal byte-identity and refused seconds, step-up negative tests, compiler-required seams with in-lock contracts, identifier-to-identifier traceability, the catalogue-read register rule); **14 backlog items across M4.1–M4.8** with acceptance criteria, five in-scope invariants token-parsed from the catalogue (`INV-IDEM-01` transfers element, `INV-CON-02`, `INV-LIFE-01/-02/-04` — no new group for the second transition running, platform stays 82); the roadmap's frozen current-position rewritten. All twelve entry criteria hold. **No application code was written**, which is the constraint a transition is performed under. Next: `P4-TSK-001`. |

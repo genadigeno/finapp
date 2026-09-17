@@ -4812,7 +4812,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   row each fail; teeth by mutation, restored byte-identical.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-DOC`
 
-**P4-TSK-003 — The `Transfer` aggregate and its lifecycle** — `READY`
+**P4-TSK-003 — The `Transfer` aggregate and its lifecycle** — `COMPLETE` (2026-09-17)
 - **Scope**: ADR-0044 made code: `Transfer` with `INITIATED → {COMPLETED, FAILED}`,
   `COMPLETED → REVERSED`, `FAILED`/`REVERSED` terminal; the machine on the enum
   (`permittedTransitions()`, `sqlValueList()`, `sqlTerminalValueList()` — the established
@@ -4822,12 +4822,44 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   exactly when `FAILED`, entry id present exactly when money moved. Hermetic only; no store,
   no schema (next task), no service.
 - **Deps**: `P4-TSK-001`.
-- **Accept**: every invalid transition rejected by the aggregate, swept from the
+- **Gate evidence (2026-09-17)**: all three criteria by demonstration — the cross-product
+  sweep derived from `values()` with per-outcome transition doors (`INV-LIFE-01/-02`), both
+  terminals swept separately (`INV-LIFE-04`), and **the machine pinned exactly** — which IS
+  the `COMPLETED`-has-one-exit assertion, plus the property that **nothing transitions TO
+  `INITIATED`**: no state permits it and no method targets it, birth being the only door.
+  **One constructor holds every invariant and every path shares it** — birth, the three
+  per-outcome transitions (each routed through the same machine check), and `rehydrate`, so
+  a corrupt row is refused on read-back ahead of `V002`'s `CHECK`s. Coherence both
+  directions per rule: reason ⇔ `FAILED`; entry ⇔ money moved (`REVERSED` keeps the
+  original entry — the reversal is more evidence, not less); the reversal triple
+  (entry/actor/instant) ⇔ `REVERSED`. **The one interpretive decision, resolved on the
+  record**: the flat "source ≠ destination" of this item's own scope line tensions with
+  `SELF_TRANSFER` as a *committed* reason (`P4-TSK-005` commits sibling refusals; ADR-0044
+  forbids enum values with no producer), so the pair rule is **coherence with the machine,
+  exactly like the reason** — the equal pair is legal only `INITIATED` (unjudged input) or
+  as `FAILED(SELF_TRANSFER)` (the committed record of refusing exactly that mistake, which
+  conversely *requires* the equal pair); money-moved states and every other reason require
+  inequality, and an equal-pair `INITIATED` transfer has exactly one legal exit, enforced
+  for free by the constructor. **Typed where the boundary permits, raw where it forbids**:
+  `LedgerAccountId`/`JournalEntryId` through the `transfers → ledger` edge (its first use);
+  `customerId`/actors raw `UUID` (the `CustomerAccount` precedent — `party`/`identity` own
+  the typed ids). **Deliberately no `statusChangedAt`**: the reversal is the only
+  post-insert transition and its columns are the narrowed `UPDATE` grant's; transition
+  instants are the history table's evidence (`P4-TSK-004`). Only `reverse` reads the clock.
+  `INV-AUD-02` at the type: the positivity refusal names the fact and currency, never the
+  amount, needle-asserted. The module's `package-info` "nothing implemented" paragraph
+  updated with the task that made it stale. **Seven mutations, all caught by the intended
+  assertion, restores byte-identical** — the machine check removed from `complete()`,
+  `COMPLETED` made terminal, `FAILED` given an exit, the reason coherence dropped, the
+  entry coherence dropped, the money-moved pair rule dropped, the amount leaked into the
+  refusal message. **1133 hermetic, 683 database, 14 kafka tests** — the +6 the new test's
+  own methods.
+- **Accept**: met — every invalid transition rejected by the aggregate, swept from the
   cross-product of the machine (`INV-LIFE-01/-02`); both terminals swept separately
   (`INV-LIFE-04`); `COMPLETED`'s single outgoing edge asserted as a property of the machine.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
 
-**P4-TSK-004 — The transfer schema: `V002`** — `TODO`
+**P4-TSK-004 — The transfer schema: `V002`** — `READY`
 - **Scope**: `transfers.transfer` (UUIDv7 id; owning customer id — the ownership predicate's
   column; source/destination ledger-account references; the `MoneyColumns` generated shape
   pinned verbatim; reference; status with the generated `CHECK`; `failure_reason NOT NULL ⇔
