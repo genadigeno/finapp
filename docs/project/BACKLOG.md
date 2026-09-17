@@ -4778,7 +4778,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   module; both directions plus the cycle; the floor live).
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
 
-**P4-TSK-002 — The ADR governance registers, build-reconciled** — `READY`
+**P4-TSK-002 — The ADR governance registers, build-reconciled** — `COMPLETE` (2026-09-17)
 - **Scope**: the twice-carried governance item, finally paid as its own task rather than
   re-carried: a hermetic test reconciling, for every `docs/adr/ADR-*.md`, the file's
   `Status:` line against the README index's status column, and asserting every ADR file has
@@ -4788,11 +4788,31 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   copy, and a coverage check over prose is a false precision. The documents join the declared
   build inputs (the established mechanism).
 - **Deps**: `P4-TSK-001` (only for sequencing; no code dependency).
-- **Accept**: a mutated index status fails the build naming the ADR; a missing index row and
-  an orphan row each fail; teeth proven by mutation and restored byte-identical.
+- **Gate evidence (2026-09-17)**: `AdrRegistersAreReconciledTest`, four checks each owning
+  its defect — the bijection with every row's **link resolved to the file it names** and
+  `ADR-0001` as the non-vacuity anchor; status agreement compared on the leading token (the
+  file form legitimately carries provenance, `Status: Accepted (2026-09-17, P3-DOC-001)`);
+  the **closed vocabulary** on both copies, because an equality-only check is satisfied by a
+  typo present in both; and the outer structural check that every row-looking line inside
+  `## Index` parses — the `P1-TSK-024` fix-one-level-out lesson applied at design time. The
+  documents joined the declared build inputs as a **file tree, not a list** (a new ADR file
+  re-runs the guard without anyone remembering), proven by the probe: the doc-only mutation
+  re-ran the task rather than reporting `UP-TO-DATE`. **Five mutations, all caught by the
+  intended assertion, restores byte-identical**: the index status of ADR-0043 flipped →
+  fails naming the ADR with both values; ADR-0044's row deleted → the bijection; an orphan
+  ADR-0099 row → "unexpected: [0099]" — after the first plant landed **outside** the
+  `## Index` section and was rightly ignored, the section-bounding working; the file-side
+  flip on ADR-0044 → fails naming it; a corrupted row form → the structural check fails
+  **naming the line**, with the bijection also firing (two controls, blind in different
+  directions). One limit recorded rather than guessed at: a future `Superseded by ADR-NNNN`
+  status line fails the parser **loudly**, forcing the format decision at the moment it has
+  a subject — the direction to err in. **1127 hermetic, 683 database, 14 kafka tests** —
+  the +4 the new test's own methods. **M4.1 closes: 2 of 2.**
+- **Accept**: met — a mutated index status fails naming the ADR; a missing row and an orphan
+  row each fail; teeth by mutation, restored byte-identical.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-DOC`
 
-**P4-TSK-003 — The `Transfer` aggregate and its lifecycle** — `TODO`
+**P4-TSK-003 — The `Transfer` aggregate and its lifecycle** — `READY`
 - **Scope**: ADR-0044 made code: `Transfer` with `INITIATED → {COMPLETED, FAILED}`,
   `COMPLETED → REVERSED`, `FAILED`/`REVERSED` terminal; the machine on the enum
   (`permittedTransitions()`, `sqlValueList()`, `sqlTerminalValueList()` — the established

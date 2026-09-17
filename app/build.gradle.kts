@@ -411,4 +411,18 @@ tasks.withType<Test>().configureEach {
     inputs.files(rootProject.layout.projectDirectory.file("docs/project/TESTING.md"))
         .withPropertyName("testingConventions")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The sixteenth, and like the seventh a SET rather than a named file.
+    // AdrRegistersAreReconciledTest holds every ADR file's Status: line and the README index's
+    // status column to each other, and the two sets to a bijection — the second-copy decay
+    // P2-DOC-001 and P3-DOC-001 each found by hand becomes a build failure (P4-TSK-002). A file
+    // tree rather than a list because a NEW ADR file must re-run the guard without anyone
+    // remembering: an ADR added without its index row is exactly the half of the defect a
+    // named-file list could never see. ADR-0008 is also declared individually above for
+    // ProviderFailureCoverageTest; the overlap is harmless.
+    inputs.files(
+        rootProject.fileTree("docs/adr") { include("ADR-*.md", "README.md") }
+    )
+        .withPropertyName("adrRegisters")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
