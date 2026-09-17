@@ -203,6 +203,7 @@ reusing another's namespace would collide silently, and only under load.
 | Namespace | Owner | Key |
 |---|---|---|
 | `1` | `OutboxRelay` | `aggregateId.hashCode()` |
+| `2` | `V009`'s reversal-bound trigger (`P3-TSK-016`) | `hashtext(reverses_entry_id::text)` — taken **inside the trigger**, so every writer reversing one original serializes, raw SQL included; transaction-scoped, held to commit (`INV-REV-02`). Taken in the database rather than in Java deliberately: a Java-side lock would bind only the writers that ran our code |
 
 **Scheduling.** Every instance runs the poller. There is no leader and no designated primary,
 because every such arrangement is a single point of failure wearing a distributed costume.

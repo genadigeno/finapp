@@ -37,4 +37,15 @@ public interface JournalEntryStore<T> {
      * ({@code INV-MON-05} at {@code BIGINT} extremes) rides the same rehydrate path.
      */
     Optional<PostedEntry> findById(T unitOfWork, JournalEntryId entryId);
+
+    /**
+     * Every committed line of every {@code REVERSAL} referencing {@code original} — the
+     * domain half's read of what is already reversed (`P3-TSK-016`, {@code INV-REV-02}),
+     * folded by the caller through {@code Money} (never a SQL {@code SUM} — `P3-TSK-008`).
+     *
+     * <p>Deliberately lock-free: this read races a concurrent reversal, and the race's
+     * arbiter is `V009`'s trigger under the advisory lock on the original's identity, which
+     * every writer meets.
+     */
+    java.util.List<JournalLine> reversalLinesOf(T unitOfWork, JournalEntryId original);
 }

@@ -4319,7 +4319,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 ## P3-EPIC-06 — Correction without mutation (M3.6)
 
-**P3-TSK-016 — Reversal: a new effect referencing the original** — `READY`
+**P3-TSK-016 — Reversal: a new effect referencing the original** — `COMPLETE` (2026-09-17)
 - **Objective**: `INV-REV-01`, `INV-REV-02`.
 - **Scope**: reversal entry with directions swapped and a reference to the original; bounded by
   the original accounting for previous partial reversals; the original **byte-identical**
@@ -4329,9 +4329,51 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   the statement, not a read-then-act.
 - **Tests**: over-reversal refused; concurrent partial reversals sum correctly; the original row
   compared byte for byte before and after.
+- **Gate evidence (2026-09-17)**: full battery green — 1100 hermetic, 660 database, 14 kafka
+  tests. `V009`: `reverses_entry_id` with the implication `CHECK` (`(entry_type = 'REVERSAL')
+  = (reverses_entry_id IS NOT NULL)` — a reversal references, nothing else may), no
+  self-reference, a chain-refusing entry trigger (a reversal of a `REVERSAL` is refused for
+  every writer — a correction of a correction is a new posting or adjustment), and **the
+  bound at `DB-CONSTRAINT` rank**: a `BEFORE INSERT` line trigger summing prior reversal
+  lines per `(account, direction)` pair against the original's opposite side, scale-guarded,
+  refusing `23514` with a stable marker translated to the named `OverReversalException`.
+  **The item's "predicate in the statement" was corrected on the record**: for insert-vs-
+  insert a statement predicate re-evaluates against the statement snapshot and cannot see a
+  concurrent uncommitted sibling — exactly the `P2-TSK-015` write-skew — and the row-lock
+  arbiters are unavailable by the phase's own privilege design (no `UPDATE` on
+  `journal_entry`, so no `FOR UPDATE`; a mutable reversed-total row would be a second
+  authority for a number the immutable rows define). The serializer is
+  `pg_advisory_xact_lock(2, hashtext(original))` **taken inside the trigger** — namespace 2,
+  registered in `DISTRIBUTED_EXECUTION.md` — so every writer reversing one original queues,
+  raw SQL included. **Both interleavings proven**: the losing reversal observed Lock-waiting
+  in `pg_stat_activity`, resuming onto the winner's committed rows and refusing; ten
+  concurrent partials of 400 against 1000 accept exactly two, counted in the table. The
+  domain half (`ReversalBound`, hermetic — plan §12's "reversal arithmetic including partial
+  reversals") refuses deterministically before any idempotency claim; each layer suffices
+  alone, proven by removing **both** (the `P1-TSK-018` defence-in-depth form). **The
+  original is byte-identical afterwards**, captured as PostgreSQL's own row rendering
+  (`e::text` and every line) before the reversal and compared after — on top of the standing
+  `DB-PRIVILEGE` immutability. The effect was **extracted, earned by its second caller**
+  (`PostingEffect`: journal, audit, outbox, projection-last — `PostingService` delegates
+  unchanged); `ReversalService` has its own idempotency scope (`ledger.reverse`), replay
+  proven one-entry. **No new audit action or event type, decided on the record**: the act is
+  *a journal entry was posted* — `ledger.JournalEntryPosted` carries `entryType` as data and
+  the entry row carries `reverses_entry_id`, where an investigator joins it
+  (`AUDITABLE_ACTIONS.md` records the decision). No reason field: the reason regime is the
+  adjustment's (`INV-REV-04`, `P3-TSK-017`), which V004's implication was written to leave
+  free. `Direction.opposite()` arrived with its promised first caller. **Seven mutations,
+  all caught by the intended assertion, restores byte-identical** — the bound trigger's
+  refusal dropped (three tests fail, the raw-SQL refusal among them), the advisory
+  serializer removed (the blocked-observation precondition), domain check AND trigger both
+  dropped, `opposite()` made identity, the implication CHECK dropped, a replay re-entering
+  the effect, the attribution losing its reference. One harness self-check corrected on the
+  way: a wrap plant legitimately contains its original (the `P1-TSK-027` class), and the
+  survived-check now applies only to replacements.
+- **Accept**: met — see gate evidence; the original byte-identical and the ten-way bound
+  counted in the table.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
 
-**P3-TSK-017 — `POST /v1/ledger/adjustments`: reason, permission, audit** — `TODO`
+**P3-TSK-017 — `POST /v1/ledger/adjustments`: reason, permission, audit** — `READY`
 - **Objective**: `INV-REV-04` — the highest-risk financial action in any platform.
 - **Scope**: the endpoint behind `LEDGER_ADJUST`; reason code required and bounded in three
   reconciled places; audited with actor and correlation.

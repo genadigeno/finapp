@@ -222,6 +222,7 @@ class LedgerAccountDatabaseTest {
                                         com.finapp.ledger.JournalEntryType.POSTING,
                                         "probe:freeze",
                                         java.util.Optional.empty(),
+                                        java.util.Optional.empty(),
                                         "system",
                                         com.finapp.sharedkernel.correlation.Correlation
                                                 .startingWith(

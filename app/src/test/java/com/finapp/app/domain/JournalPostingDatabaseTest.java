@@ -11,6 +11,7 @@ import com.finapp.ledger.JdbcJournalEntryStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.JournalEntry;
 import com.finapp.ledger.JournalEntryStore;
+import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalEntryType;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
@@ -400,6 +401,11 @@ class JournalPostingDatabaseTest {
                 type,
                 "probe:economic-event",
                 Optional.ofNullable(reason),
+                // A REVERSAL references its original (INV-REV-01); this fixture's reversal
+                // rows are exercised through ReversalDatabaseTest, not here.
+                type == JournalEntryType.REVERSAL
+                        ? Optional.of(JournalEntryId.of(IDS.next()))
+                        : Optional.empty(),
                 "system",
                 Correlation.startingWith(CorrelationId.generate(IDS))
                         .causing(CausationId.generate(IDS)),

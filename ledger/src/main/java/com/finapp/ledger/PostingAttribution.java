@@ -18,6 +18,9 @@ import java.util.Optional;
  * @param reason required for an {@code ADJUSTMENT} ({@code INV-REV-04}), absent otherwise
  *     unless a later entry type decides it wants one; free prose written by a person, so it
  *     never appears in this record's {@code toString}
+ * @param reverses the original a {@code REVERSAL} compensates ({@code INV-REV-01}) — present
+ *     exactly when the type is {@code REVERSAL}, mirroring the schema's implication
+ *     {@code CHECK}
  * @param actorId who commanded the posting, by identifier — a person's identity id, or the
  *     platform's reserved {@code system}. The identifier alone, deliberately: the journal's
  *     column holds an id, and the actor's TYPE is the audit record of the same command's to
@@ -32,6 +35,7 @@ public record PostingAttribution(
         JournalEntryType entryType,
         String reference,
         Optional<String> reason,
+        Optional<JournalEntryId> reverses,
         String actorId,
         Correlation correlation,
         String idempotencyScope) {
@@ -40,6 +44,14 @@ public record PostingAttribution(
         Objects.requireNonNull(entryType, "entryType must not be null");
         Objects.requireNonNull(reference, "reference must not be null");
         Objects.requireNonNull(reason, "reason must not be null (use Optional.empty())");
+        Objects.requireNonNull(reverses, "reverses must not be null (use Optional.empty())");
+        if ((entryType == JournalEntryType.REVERSAL) != reverses.isPresent()) {
+            // The schema's implication CHECK, stated where a caller meets it first
+            // (INV-REV-01): a reversal references its original, and nothing else may.
+            throw new IllegalArgumentException(
+                    "a REVERSAL references the entry it compensates, and no other kind does"
+                            + " (INV-REV-01)");
+        }
         Objects.requireNonNull(actorId, "actorId must not be null");
         Objects.requireNonNull(correlation, "correlation must not be null");
         Objects.requireNonNull(idempotencyScope, "idempotencyScope must not be null");

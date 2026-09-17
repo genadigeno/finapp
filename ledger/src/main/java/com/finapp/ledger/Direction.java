@@ -13,14 +13,19 @@ package com.finapp.ledger;
  * {@link NormalBalance}. The two vocabularies meet at the balance derivation
  * (`P3-TSK-008`), never here.
  *
- * <p>Deliberately no {@code opposite()} yet: reversal (`P3-TSK-016`) is its first caller, and
- * a method with no caller is dead code carrying confident javadoc (the {@code P1-TSK-013}
- * finding). {@code sqlValueList()} arrived with its own first caller, `P3-TSK-005`'s
- * {@code CHECK}.
+ * <p>{@code opposite()} arrived with its promised first caller — reversal (`P3-TSK-016`), a
+ * new entry whose lines are the original's with directions swapped; {@code sqlValueList()}
+ * arrived with `P3-TSK-005`'s {@code CHECK}. Each waited for the caller whose design earned
+ * it (the {@code P1-TSK-013} finding).
  */
 public enum Direction {
     DEBIT,
     CREDIT;
+
+    /** The other side — {@code DEBIT.opposite()} is {@code CREDIT} and vice versa. */
+    public Direction opposite() {
+        return this == DEBIT ? CREDIT : DEBIT;
+    }
 
     /** The sides as a SQL literal list, for the {@code CHECK} constraint. */
     public static String sqlValueList() {

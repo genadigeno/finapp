@@ -372,6 +372,7 @@ sentence lands.
 | `journal_entry` | `correlation_id` | `INTERNAL` | Platform-minted since ADR-0034 |
 | `journal_entry` | `causation_id` | `INTERNAL` | As above |
 | `journal_entry` | `idempotency_scope` | `INTERNAL` | As `idempotency_record.scope` |
+| `journal_entry` | `reverses_entry_id` | `INTERNAL` | *(added by `P3-TSK-016`)* The original a `REVERSAL` compensates (`INV-REV-01`) — a platform-minted entry identifier, the `journal_line.ledger_account_id` reasoning: it must appear in the joins that make a correction investigable, and what it resolves to carries its own levels |
 | `journal_entry` | `created_at` | `CONFIDENTIAL` | System time of a posting still dates financial activity |
 | `journal_line` | `id` | `INTERNAL` | A generated identifier |
 | `journal_line` | `entry_id` | `INTERNAL` | An identifier of a thing |

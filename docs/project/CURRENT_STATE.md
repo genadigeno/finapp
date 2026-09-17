@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P3-TST-002`)
+Last updated: 2026-09-17 (`P3-TSK-016`)
 
 ---
 
@@ -78,8 +78,8 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **17 of 24** backlog items; M3.1 through **M3.5** are
-closed.
+same day with `P3-TSK-001`. **18 of 24** backlog items; M3.1 through **M3.5** are
+closed; M3.6 is 1 of 2.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -120,11 +120,15 @@ class, again).
 ## Current Milestone
 
 **M3.6 — Correction without mutation.** `P3-TSK-016` plus `P3-TSK-017`;
-**0 of 2 — next `P3-TSK-016` (`READY`)** — a mistake is corrected by a new
-entry, never an edit (`INV-HIST-01`): the reversal references the original,
-swaps directions, is bounded by what remains un-reversed (`INV-REV-01`,
-`INV-REV-02`) with the bound a predicate in the statement, and the original
-is byte-identical afterwards — asserted, not assumed.
+**1 of 2 — next `P3-TSK-017` (`READY`)** — a mistake is corrected by a new
+entry, never an edit (`INV-HIST-01`). The reversal is real: it references the
+original (`INV-REV-01`, the implication `CHECK`), swaps directions, is
+bounded by what remains un-reversed per `(account, direction)` pair
+(`INV-REV-02` — arbitrated for every writer by `V009`'s trigger under the
+advisory lock on the original's identity), and the original is
+**byte-identical afterwards** — asserted as PostgreSQL's own row renderings,
+not assumed. What remains is `P3-TSK-017`: the adjustment endpoint, reason
+required, behind `LEDGER_ADJUST`.
 
 **M3.5 — Holds and available balance.** `P3-TSK-015` plus `P3-TST-002`;
 **CLOSED 2026-09-17, 2 of 2** — the phase's sharpest contention point,
@@ -390,11 +394,63 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TST-002` is `COMPLETE`; **M3.5 closes at 2 of 2**.
-**Next: `P3-TSK-016` (`READY`)** — reversal, a new effect referencing the
-original, opening M3.6.
+**None in progress.** `P3-TSK-016` is `COMPLETE`; **M3.6 is 1 of 2**.
+**Next: `P3-TSK-017` (`READY`)** — the adjustment endpoint: reason,
+permission, audit, closing M3.6.
 
 ### Just completed
+
+**`P3-TSK-016` — Reversal: a new effect referencing the original** — `COMPLETE`
+(2026-09-17). **M3.6 opens: a mistake is corrected by a new entry, never an
+edit** (`INV-HIST-01`) — and the platform can now undo a posting without
+touching a single committed byte.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Over-reversal refused | `ReversalDatabaseTest`: partials 30 + 70 accepted, one more minor unit refused (`OverReversalException`, amount-free — `INV-AUD-02`) with nothing written; raw SQL refused by `V009`'s trigger (`23514`) — the writer the domain never sees |
+| Concurrent partial reversals sum correctly | Ten instances reversing 400 against 1000: **exactly two accepted, reversed total 800 counted in the table**; the deterministic interleaving observes the loser **Lock-waiting** on the advisory serializer, resuming onto the winner's committed rows and refusing |
+| The original byte-identical before and after | Captured as PostgreSQL's own renderings — `e::text` and every line by `seq` — before the reversal, compared equal after, on top of the standing `DB-PRIVILEGE` immutability |
+
+### The bound's arbiter, and the backlog sentence corrected on the record
+
+The item said *"a predicate in the statement"* — and for insert-vs-insert
+that predicate re-evaluates against the statement snapshot and cannot see a
+concurrent uncommitted sibling: exactly the `P2-TSK-015` write-skew. The
+row-lock arbiters are unavailable **by the phase's own privilege design** (no
+`UPDATE` on `journal_entry`, so no `FOR UPDATE` on the original; a mutable
+reversed-total row would be a second authority for a number the immutable
+rows already define). So `V009`'s `BEFORE INSERT` trigger takes
+`pg_advisory_xact_lock(2, hashtext(original))` — **namespace 2, registered**
+— and sums prior reversal lines per `(account, direction)` pair under it,
+scale-guarded, for **every** writer. The domain half (`ReversalBound`,
+hermetic) refuses deterministically before any idempotency claim; each layer
+suffices alone, proven by removing both (the `P1-TSK-018` defence-in-depth
+form, recorded rather than tidied away).
+
+### The effect extracted, earned by its second caller
+
+`PostingEffect` — journal append, audit, outbox, projection last — with
+`PostingService` delegating unchanged and `ReversalService` as the second
+caller (the `CheckOutcomeTrail` rule: a write set copied per command drifts
+in exactly one of its copies). Its own idempotency scope (`ledger.reverse`),
+replay proven one-entry. **No new audit action or event type, decided on the
+record**: the act is *a journal entry was posted* — `entryType` travels as
+data, `reverses_entry_id` is where an investigator joins the correction to
+its original, and a second vocabulary would name one fact twice. No reason
+field: the reason regime is the adjustment's (`INV-REV-04`, `P3-TSK-017`),
+which V004's implication CHECK was written to leave free. A reversal of a
+`REVERSAL` is refused — domain and schema — because a chain would make the
+bound's subject ambiguous; `Direction.opposite()` arrived with its promised
+first caller.
+
+**Seven mutations, all caught by the intended assertion, restores
+byte-identical** — the trigger's refusal dropped, the advisory serializer
+removed (the blocked-observation precondition), domain check and trigger both
+dropped, `opposite()` made identity, the implication CHECK dropped, a replay
+re-entering the effect, the attribution losing its reference. **1100 hermetic
+tests, 660 database tests.**
+
+### Previously
 
 **`P3-TST-002` — `INV-CON-01` and `INV-BAL-04` under contention** — `COMPLETE`
 (2026-09-17). **M3.5 closes: the contention point's register rows are landed
@@ -7967,9 +8023,10 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TST-002` (2026-09-17): the `INV-CON-01` and
-`INV-BAL-04` register rows, closing M3.5 at 2 of 2. The next work is
-`P3-TSK-016`, reversal — a new effect referencing the original, opening M3.6.
+The last work performed was `P3-TSK-016` (2026-09-17): reversal — a new
+effect referencing the original, opening M3.6. The next work is
+`P3-TSK-017`, the adjustment endpoint — reason, permission, audit — closing
+M3.6.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8255,6 +8312,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P3-TSK-016` complete — reversal, a new effect referencing the original, and M3.6 opens (1 of 2).** `V009`: `reverses_entry_id` with the implication `CHECK` (a reversal references, nothing else may), no self-reference, a chain-refusing entry trigger (reversal-of-reversal refused for every writer), and **the bound at `DB-CONSTRAINT` rank**: a `BEFORE INSERT` line trigger summing prior reversal lines per `(account, direction)` pair against the original's opposite side, scale-guarded, `23514` with a stable marker translated to the named `OverReversalException`. **The backlog's \"predicate in the statement\" corrected on the record**: insert-vs-insert predicates re-evaluate against the statement snapshot (the `P2-TSK-015` write-skew), and the row-lock arbiters are unavailable by the phase's own privilege design — the serializer is `pg_advisory_xact_lock(2, hashtext(original))` **inside the trigger** (namespace 2, registered), so every writer queues, raw SQL included. Both interleavings proven: the loser observed Lock-waiting, resuming and refusing; ten concurrent partials of 400 against 1000 accept exactly two, counted in the table. The domain half (`ReversalBound`, hermetic) refuses before any claim; each layer suffices alone, proven with both removed (`P1-TSK-018`'s form). **The original byte-identical afterwards** — PostgreSQL's own row renderings compared. `PostingEffect` extracted, earned by its second caller; `ledger.reverse` scope, replay one-entry; **no new audit action or event type, decided on the record** (the act is a journal entry posted; `entryType` is data, `reverses_entry_id` the join); no reason field (the regime is the adjustment's); `Direction.opposite()` with its promised first caller. **Seven mutations, all caught by the intended assertion, restores byte-identical.** 1100 hermetic tests, 660 database tests. Next: `P3-TSK-017`. |
 | 2026-09-17 | **`P3-TST-002` complete — the `INV-CON-01`/`INV-BAL-04` register rows, and M3.5 closes (2 of 2).** `MUTATION_TESTING.md` §2 gains `INV-CON-01` (third row — the holds context joins the Phase 1 pair) and `INV-BAL-04`, plus the item's §4 row — each naming its tests by `Class#method` with the observed result, all `Recorded` form honestly since every mutation edits production code. **The audit found one of the three named mutations unperformed**: `P3-TSK-015` performed the availability check *dropped*, and the item names it *moved outside the lock* — a different and sharper defect (the `P2-TSK-015` write-skew shape: still locks, still checks, still loses the race — the mutation that passes every sequential test). Performed by this item: the derivation and standing-holds fold hoisted above `lockForUpdate` — **caught by both intended assertions, in the way that vindicates the test's two halves**: the blocked-observation precondition stays green (the lock is still taken) and the outcome half fails (the loser resumes, judges its pre-lock snapshot, wrongly accepts 600+600 in 1000), with the ten-way admitting more than available — the removed lock is caught by the coordination half, the moved check by the outcome half, which is why the test carries both. `INV-BAL-05`'s row **deferred in writing to the exit review** (the `P2-TST-001` handling of `INV-KYC-06`), its corrupted-`holds_minor` demonstration already performed and recorded inside the `INV-BAL-04` row. Guard teeth re-proven per §5: one method reference corrupted, `everyNamedMethodExists` failed naming exactly it, restored byte-identical, all nine checks green. No production code shipped. 1090 hermetic tests, 653 database tests, 14 kafka tests. Next: `P3-TSK-016`, M3.6 opens. |
 | 2026-09-17 | **`P3-TSK-015` complete — holds against available balance, and M3.5 opens (1 of 2).** `INV-BAL-04` is real: the `Hold` aggregate (`ACTIVE -> RELEASED`, terminal, amount strictly positive), `V008` (`ledger.hold` — `MoneyColumns` shape pinned, currency bound to the account by composite FK, coherence CHECKs, a trigger making `RELEASED` terminal for **every** writer, grants `SELECT, INSERT` + `UPDATE (status, released_at)`; the item's "`V006`" was planning-time numbering drift, recorded), and `HoldService` — the `PostingService` position: no HTTP surface (plan §9 declares none), no key of its own (a hold joins its commanding flow's transaction and replays with that flow's key). **The protocol is `P3-TSK-014`'s lock-mode analysis reused**: place and release take `SELECT ... FOR UPDATE` on the account row — the mode that conflicts with every in-flight posting's `FOR KEY SHARE` and every sibling placer — then derive from postings and the `ACTIVE` hold rows folded through `Money.plus` (never a SQL `SUM`) in fresh statements. Ten instances placing 1000 against 3000: exactly three accepted, seven refused, counted in the table, `holds_minor` equal to the fold; the deterministic interleaving observes the loser **Lock-waiting in `pg_stat_activity`**. The boundary exact (exactly available accepted; one minor unit more refused, amount-free — `INV-AUD-02`); release converges with the row count gating decrement, record and event, and restores availability **exactly**; a crash mid-placement is all-or-nothing. **`INV-BAL-05` became behaviourally catchable**: a `holds_minor` corrupted through the app role's own grant changes no decision, and the projection-read mutation is caught by exactly that test — closing the honest-limit class `P3-TSK-014` recorded. The close gained its standing-holds check (settled can reach zero while a reservation stands; refused as `AccountNotEmpty` under the same lock); the display's `available = settled - holds` became load-bearing (`P3-TSK-013`'s limit, closed). Remainders with owners: expiry (Phase 5), capture (Phase 4/5), `holds_minor` in the verification job + the hold gauge (M3.8), the register rows (`P3-TST-002`, next). **Eight mutations, all caught by the intended assertion, restores byte-identical.** 1090 hermetic tests, 653 database tests. Next: `P3-TST-002`. |
 | 2026-09-17 | **`P3-TSK-014` complete — closing an account without closing its history, and M3.4 CLOSES (4 of 4).** The milestone acceptance holds end to end over HTTP: open 201 → balance → a real posting moves it → emptied → `DELETE` 204 → the list shows `CLOSED` → the closed account's balance still readable → a repeated `DELETE` converges. **The race is closed by lock-mode analysis**: every in-flight posting holds `FOR KEY SHARE` (the `journal_line` FK, and `V007`'s trigger read takes it explicitly — a bare read passes while a close sits uncommitted and loses, exactly as `P3-TSK-006` warned), a plain status `UPDATE`'s `FOR NO KEY UPDATE` does NOT conflict with it, so the closer takes `SELECT … FOR UPDATE` then looks (`P2-TSK-015`) — both interleavings proven deterministically with the loser observed Lock-waiting in `pg_stat_activity`, and the two lock mutations each caught by their own interleaving. `V007` is the DB-CONSTRAINT-rank half — a `BEFORE INSERT` trigger on `journal_line` refusing any non-`ACTIVE` account for every writer, proven by raw SQL from scratch, translated to the named `LedgerAccountNotPostableException` for Phase 4's domain outcome. The zero-balance check **derives from postings inside the lock** (`INV-BAL-05`; the projection swap is behaviourally invisible — held by design and review, recorded). The deferred store methods arrived with their first caller as promised (`lockOwnedBy`/`moveStatus`, classified on arrival); `ACCOUNT_CLOSED` arrived with its design — no reason, the withdrawal argument — emitted by the closing call only; ten concurrent closes produce one transition, one record, one event, nine converged, and the freed slot admits a successor (`INV-LIFE-04`). The refusal is `accounts.AccountNotEmpty` (409), naming no amount anywhere (`INV-AUD-02`). The plan's §9 table lacked the close endpoint row its own milestone line requires — corrected with provenance. **Seven mutations, all caught by the intended assertion, restores byte-identical.** 1079 hermetic tests, 645 database tests. Next: `P3-TSK-015`, M3.5 opens. |

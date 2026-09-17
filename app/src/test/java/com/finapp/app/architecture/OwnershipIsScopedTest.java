@@ -350,12 +350,13 @@ class OwnershipIsScopedTest {
                                         + " the entry belongs to none of them, so there is no"
                                         + " single owner to scope by and inventing one would type"
                                         + " a sentence that is false. Disclosure control is the"
-                                        + " SURFACE's, and today there is no production caller:"
-                                        + " P3-TSK-016's reversal (a URL-named entry under"
-                                        + " LEDGER_ADJUST - the ADMINISTERED shape) and"
-                                        + " P3-TSK-018's statements (scoped by the caller's own"
-                                        + " account) must each come here and say so when they"
-                                        + " arrive.")),
+                                        + " SURFACE's. P3-TSK-016's reversal arrived and said"
+                                        + " so: an IN-PROCESS caller (ReversalService reads the"
+                                        + " original a commanding flow names - no HTTP surface"
+                                        + " exists), so the URL-named arrival remains"
+                                        + " P3-TSK-017's adjustment (the ADMINISTERED shape),"
+                                        + " and P3-TSK-018's statements (scoped by the caller's"
+                                        + " own account) must still come here and say so.")),
                     Map.entry(
                             "com.finapp.ledger.JdbcBalanceDerivation.derive",
                             new Entry(
@@ -429,6 +430,18 @@ class OwnershipIsScopedTest {
                                         + " where the statement actually is (the P1-TSK-021"
                                         + " revokeAll finding), and its classification is"
                                         + " upsert's own, one entry up.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcJournalEntryStore.reversalLinesOf",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P3-TSK-016. The bound's domain-half read: every committed"
+                                        + " reversal line of one original, folded through"
+                                        + " Money by ReversalBound. The identifier comes from"
+                                        + " a commanding flow on an internal API (no HTTP"
+                                        + " surface exists), and the journal's no-single-owner"
+                                        + " stance is findById's, one entry down; the race the"
+                                        + " lock-free read admits is arbitrated by V009's"
+                                        + " trigger under the advisory lock.")),
                     Map.entry(
                             "com.finapp.ledger.JdbcLedgerAccountStore.lockForUpdate",
                             new Entry(

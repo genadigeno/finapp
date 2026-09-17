@@ -228,6 +228,13 @@ is the lawful basis the gate queries (`INV-CNS-01`), the audit record is the tra
 | `ledger.HoldPlaced` | No | A hold was placed against an account's available balance; the record names the hold and the account, never an amount. |
 | `ledger.HoldReleased` | No | A standing hold was released, restoring available balance; the record names the hold and the account, never an amount. |
 
+**A reversal is deliberately not its own action** (`P3-TSK-016`): the act is *a journal
+entry was posted*, and `ledger.JournalEntryPosted`'s record and event already carry the
+entry's kind (`entryType`) as data, with the reversal's own distinguishing fact — which
+original it compensates — on the entry row (`reverses_entry_id`, `INV-REV-01`) where an
+investigator joins it. A second action would name one fact twice, and the two names would
+drift.
+
 The posting and adjustment pair were declared with the module skeleton (`P3-TSK-001`) under
 the deliberately-few licence — named outright by `PHASE_3_PLAN.md` §11, so their design was
 fixed — while holds, reversals and account creation were left to the tasks whose designs would

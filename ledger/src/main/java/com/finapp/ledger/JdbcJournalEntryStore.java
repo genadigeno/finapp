@@ -49,20 +49,22 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                     unitOfWork.prepareStatement(
                             "INSERT INTO " + ENTRY_TABLE
                                     + " (id, posting_date, value_date, entry_type, reference,"
-                                    + " reason, actor_id, correlation_id, causation_id,"
-                                    + " idempotency_scope, created_at)"
-                                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                    + " reason, reverses_entry_id, actor_id, correlation_id,"
+                                    + " causation_id, idempotency_scope, created_at)"
+                                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
                 insert.setObject(1, entry.id().value());
                 insert.setObject(2, entry.postingDate());
                 insert.setObject(3, entry.valueDate());
                 insert.setString(4, attribution.entryType().name());
                 insert.setString(5, attribution.reference());
                 insert.setString(6, attribution.reason().orElse(null));
-                insert.setString(7, attribution.actorId());
-                insert.setString(8, attribution.correlation().correlationId().value());
-                insert.setString(9, attribution.correlation().cause().orElseThrow().value());
-                insert.setString(10, attribution.idempotencyScope());
-                insert.setTimestamp(11, Timestamp.from(entry.createdAt()));
+                insert.setObject(
+                        7, attribution.reverses().map(JournalEntryId::value).orElse(null));
+                insert.setString(8, attribution.actorId());
+                insert.setString(9, attribution.correlation().correlationId().value());
+                insert.setString(10, attribution.correlation().cause().orElseThrow().value());
+                insert.setString(11, attribution.idempotencyScope());
+                insert.setTimestamp(12, Timestamp.from(entry.createdAt()));
                 insert.executeUpdate();
             }
             try (PreparedStatement insert =
@@ -97,8 +99,55 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                         "a line of entry " + entry.id() + " names an account that is no longer"
                                 + " ACTIVE; the posting is refused (P3-TSK-014)");
             }
+            // V009's bound trigger (INV-REV-02) and reversal-of-reversal trigger, same
+            // pattern: the marker is matched, never the prose, and the composed message
+            // carries identifiers and never a row or an amount (INV-AUD-02).
+            if (failure.getMessage() != null
+                    && (failure.getMessage().contains("ledger_reversal_is_bounded")
+                            || failure.getMessage().contains("ledger_reversal_of_reversal"))) {
+                throw new OverReversalException(
+                        "entry " + entry.id() + " is refused: it would over-reverse its"
+                                + " original, mirror a pair the original does not have, or"
+                                + " reverse a reversal (INV-REV-01/02, P3-TSK-016)");
+            }
             throw new LedgerStorageException(
                     DatabaseFailure.describe("appending journal entry " + entry.id(), failure));
+        }
+    }
+
+    @Override
+    public List<JournalLine> reversalLinesOf(Connection unitOfWork, JournalEntryId original) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(original, "original must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        // The V009 partial index's own read: every reversal of one original.
+                        "SELECT line.ledger_account_id, line.direction, line.amount_minor,"
+                                + " line.currency, line.scale"
+                                + " FROM " + LINE_TABLE + " line"
+                                + " JOIN " + ENTRY_TABLE + " entry ON entry.id = line.entry_id"
+                                + " WHERE entry.reverses_entry_id = ?")) {
+            select.setObject(1, original.value());
+            try (ResultSet row = select.executeQuery()) {
+                List<JournalLine> lines = new ArrayList<>();
+                while (row.next()) {
+                    lines.add(
+                            new JournalLine(
+                                    LedgerAccountId.of(
+                                            row.getObject("ledger_account_id", UUID.class)),
+                                    Direction.valueOf(row.getString("direction")),
+                                    Money.ofPersisted(
+                                            row.getLong("amount_minor"),
+                                            com.finapp.sharedkernel.money.CurrencyCode.of(
+                                                    row.getString("currency").stripTrailing()),
+                                            row.getShort("scale"))));
+                }
+                return List.copyOf(lines);
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe(
+                            "reading the reversals of entry " + original, failure));
         }
     }
 
@@ -114,8 +163,8 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
             try (PreparedStatement select =
                     unitOfWork.prepareStatement(
                             "SELECT posting_date, value_date, entry_type, reference, reason,"
-                                    + " actor_id, correlation_id, causation_id,"
-                                    + " idempotency_scope, created_at"
+                                    + " reverses_entry_id, actor_id, correlation_id,"
+                                    + " causation_id, idempotency_scope, created_at"
                                     + " FROM " + ENTRY_TABLE + " WHERE id = ?")) {
                 select.setObject(1, entryId.value());
                 try (ResultSet row = select.executeQuery()) {
@@ -130,6 +179,10 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                                     JournalEntryType.valueOf(row.getString("entry_type")),
                                     row.getString("reference"),
                                     Optional.ofNullable(row.getString("reason")),
+                                    Optional.ofNullable(
+                                                    row.getObject(
+                                                            "reverses_entry_id", UUID.class))
+                                            .map(JournalEntryId::of),
                                     row.getString("actor_id"),
                                     Correlation.startingWith(
                                                     com.finapp.sharedkernel.correlation

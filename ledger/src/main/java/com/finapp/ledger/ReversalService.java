@@ -19,52 +19,46 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The posting command: one command, one financial effect, whatever the caller does
- * (`P3-TSK-006`, {@code INV-IDEM-01}) — and the one write path {@code INV-LED-04} permits.
+ * The reversal command: a <strong>new</strong> financial effect referencing the original
+ * (`P3-TSK-016`, {@code INV-REV-01}, {@code INV-REV-02}) — {@link PostingService}'s position
+ * and discipline, for the correction that must never be an edit.
  *
- * <h2>Everything commits together, on the caller's transaction</h2>
+ * <h2>Nothing here touches the original, structurally</h2>
  *
- * <p>The entry, its lines, the audit record, the outbox row, the balance projection update
- * (`P3-TSK-009`) and the idempotency record all go
- * on {@code unitOfWork} — Phase 4's stated benefit is that a transfer's state transition and
- * its posting commit together, which only works if this command <em>joins</em> a transaction
- * rather than opening one. "The ledger owns the posting transaction"
- * ({@code MODULE_ARCHITECTURE.md}) means the ledger decides what is in the posting's write
- * set; the boundary is the caller's.
+ * <p>The original is immutable at {@code DB-PRIVILEGE} (`P3-TSK-005`: no {@code UPDATE}, no
+ * {@code DELETE}, the append-only trigger binding even the migrator), and this service holds
+ * no path that could try — it reads the original, validates the compensating lines against
+ * it, and appends. The original is byte-identical afterwards, asserted by test rather than
+ * assumed.
  *
- * <h2>Validate, then claim, then effect</h2>
+ * <h2>The bound has two layers, blind in different directions</h2>
  *
- * <p>{@link JournalEntry#balanced} runs <em>before</em> the idempotency claim, so an
- * unbalanced request never consumes its key — the caller fixes the request and retries under
- * the same key. On a replay the freshly built entry is discarded and the <strong>original</strong>
- * entry's identifier comes back from the stored response; a minted-and-discarded identifier
- * costs nothing (ADR-0013's recorded stance).
+ * <p>{@link ReversalBound} refuses a bad command deterministically, before any idempotency
+ * claim is consumed — reading <em>committed</em> prior reversals, so it races a concurrent
+ * one. The race's arbiter is `V009`'s trigger, which takes an advisory transaction lock on
+ * the original's identity for <strong>every</strong> writer and re-judges under it; a racer
+ * this pre-check waves through is refused at the append and surfaces as the same named
+ * {@link OverReversalException}, translated by the store from the trigger's marker.
  *
- * <h2>What is deliberately absent</h2>
- *
- * <p><strong>Account status is not checked here, and that is a recorded remainder with an
- * owner.</strong> Every production-reachable account is {@code ACTIVE} — no store writes a
- * status yet — and *posting to a closed account refused under the account lock* is
- * `P3-TSK-014`'s own design, because the refusal is only real inside the lock that closing
- * takes; a lock-free status read here would be the check that passes every test and loses the
- * race. Line-currency-versus-account-currency needs no check at all: {@code V005} binds it at
- * {@code DB-CONSTRAINT} for every writer. The adjustment variant, its permission and its
- * reason are `P3-TSK-017`'s.
+ * <p>No HTTP surface (plan §9 declares none — the URL-named correction surface is
+ * `P3-TSK-017`'s adjustment, behind {@code LEDGER_ADJUST}); the callers are platform flows,
+ * Phase 5's refunds foremost, inside their own transaction under the flow's actor.
  */
-public final class PostingService {
+public final class ReversalService {
 
     /** The idempotency scope (ADR-0004): one command type, one scope. */
-    public static final String IDEMPOTENCY_SCOPE = "ledger.post";
+    public static final String IDEMPOTENCY_SCOPE = "ledger.reverse";
 
     /** {@code journal_entry.idempotency_scope} is CHECK-bounded; the pair must fit it. */
     private static final int MAX_SCOPE_AND_KEY_LENGTH = 200;
 
     private final IdempotentExecutor executor;
+    private final JournalEntryStore<Connection> journal;
     private final PostingEffect effect;
     private final IdGenerator ids;
     private final Clock clock;
 
-    public PostingService(
+    public ReversalService(
             IdempotentExecutor executor,
             JournalEntryStore<Connection> journal,
             AuditWriter<Connection> audit,
@@ -73,35 +67,59 @@ public final class PostingService {
             IdGenerator ids,
             Clock clock) {
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
-        // The write set is PostingEffect's (extracted by P3-TSK-016 when the reversal became
-        // its second caller); the constructor keeps taking the stores so wiring stays honest.
-        this.effect =
-                new PostingEffect(journal, audit, outbox, projection, ids, clock);
+        this.journal = Objects.requireNonNull(journal, "journal must not be null");
+        this.effect = new PostingEffect(journal, audit, outbox, projection, ids, clock);
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     /**
-     * Posts the command's entry at most once for its key, or replays the recorded outcome.
+     * Reverses the command's original at most once for its key, or replays the outcome.
      *
-     * @throws com.finapp.platform.idempotency.IdempotencyConflictException the key was used
-     *     for a materially different request ({@code INV-IDEM-03})
-     * @throws com.finapp.platform.idempotency.IdempotencyInProgressException the command is
-     *     running elsewhere and its outcome is genuinely unknown
+     * <p>Validate, then claim, then effect (`P3-TSK-006`'s order): a refused reversal never
+     * consumes its key, and a refusal thrown here rolls the caller's transaction back, so it
+     * writes nothing structurally.
+     *
+     * @throws OverReversalException the bound refuses ({@code INV-REV-02}), or a line
+     *     mirrors a pair the original does not have — from the pre-check deterministically,
+     *     or from the trigger's translation when a concurrent reversal won the race
+     * @throws IllegalArgumentException an unknown original, or an original that is itself a
+     *     {@code REVERSAL} — caller defects on an internal API, loud and amount-free
      * @throws UnbalancedJournalEntryException before any claim: the key is not consumed
      */
-    public PostingResult post(Connection unitOfWork, PostingCommand command) {
+    public PostingResult reverse(Connection unitOfWork, ReversalCommand command) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(command, "command must not be null");
 
-        // Validation first: an unbalanced request never consumes its key.
+        // Validation first: an unacceptable request never consumes its key. Balance is the
+        // aggregate's own gate - a reversal is a journal entry like any other (INV-LED-01).
         JournalEntry entry =
                 JournalEntry.balanced(
                         ids, clock, command.postingDate(), command.valueDate(),
                         command.lines());
 
-        // An unestablished actor is an error, never a default (ADR-0021): a posting nobody
-        // can be asked about is exactly what INV-LED-05 forbids.
+        JournalEntryStore.PostedEntry original =
+                journal.findById(unitOfWork, command.original())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "no journal entry " + command.original()
+                                                        + " to reverse"));
+        if (original.attribution().entryType() == JournalEntryType.REVERSAL) {
+            // A correction of a correction is a new posting or adjustment: a chain would
+            // make INV-REV-02's subject ambiguous. V009's entry trigger restates this for
+            // the writers the domain never sees.
+            throw new IllegalArgumentException(
+                    "entry " + command.original() + " is itself a REVERSAL and cannot be"
+                            + " reversed (P3-TSK-016)");
+        }
+        ReversalBound.validate(
+                command.original(),
+                original.entry().lines(),
+                journal.reversalLinesOf(unitOfWork, command.original()),
+                command.lines());
+
+        // An unestablished actor is an error, never a default (ADR-0021).
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
 
@@ -117,10 +135,10 @@ public final class PostingService {
         RequestFingerprint fingerprint = RequestFingerprint.sha256(canonicalForm(command));
         PostingAttribution attribution =
                 new PostingAttribution(
-                        JournalEntryType.POSTING,
+                        JournalEntryType.REVERSAL,
                         command.reference(),
                         Optional.empty(),
-                        Optional.empty(),
+                        Optional.of(command.original()),
                         actor.id(),
                         correlation,
                         scopeAndKey);
@@ -132,7 +150,7 @@ public final class PostingService {
                         fingerprint,
                         uow -> effect.record(uow, entry, attribution, actor, correlation));
 
-        JournalEntryId posted =
+        JournalEntryId reversal =
                 JournalEntryId.of(
                         UUID.fromString(
                                 new String(
@@ -140,43 +158,34 @@ public final class PostingService {
                                                 .orElseThrow(
                                                         () ->
                                                                 new IllegalStateException(
-                                                                        "a recorded posting"
+                                                                        "a recorded reversal"
                                                                             + " outcome always"
                                                                             + " carries the"
                                                                             + " entry id")),
                                         StandardCharsets.UTF_8)));
-        return new PostingResult(posted, outcome.replayed());
+        return new PostingResult(reversal, outcome.replayed());
     }
 
-    /**
-     * The flow's correlation, with the cause resolved: at a flow root the request is the cause
-     * (`P1-TSK-006`'s answer, the {@code OrganisationRegistration} idiom), and the journal's
-     * causation column is {@code NOT NULL}.
-     */
+    /** The flow's correlation with the cause resolved — the {@code PostingService} idiom. */
     private static Correlation resolvedCorrelation() {
         Correlation current =
                 CorrelationContext.current()
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
-                                                "a posting must run inside a correlation scope:"
-                                                    + " the entry, the audit record and the"
-                                                    + " event all carry the identifier"
-                                                    + " (INV-LED-05)"));
+                                                "a reversal must run inside a correlation"
+                                                        + " scope: the journal's causation"
+                                                        + " column is NOT NULL"));
         return current.cause().isPresent()
                 ? current
                 : current.causing(CausationId.of(current.correlationId().value()));
     }
 
-    /**
-     * The fingerprint's canonical form: the money and its meaning, nothing volatile. A retry
-     * that changed any line, date or the reference is a materially different request
-     * ({@code INV-IDEM-03}); the actor and correlation are deliberately excluded, because a
-     * retry arrives on a new request with a new correlation and must still replay.
-     */
-    private static byte[] canonicalForm(PostingCommand command) {
+    private static byte[] canonicalForm(ReversalCommand command) {
         StringBuilder canonical =
-                new StringBuilder("ledger.post|POSTING|")
+                new StringBuilder("ledger.reverse|REVERSAL|")
+                        .append(command.original().value())
+                        .append('|')
                         .append(command.postingDate())
                         .append('|')
                         .append(command.valueDate())
