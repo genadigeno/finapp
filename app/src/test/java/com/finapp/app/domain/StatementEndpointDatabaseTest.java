@@ -10,6 +10,7 @@ import com.finapp.identity.SessionPolicy;
 import com.finapp.identity.SessionStore;
 import com.finapp.identity.SessionToken;
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.AdjustmentCommand;
 import com.finapp.ledger.AdjustmentService;
 import com.finapp.ledger.Direction;
@@ -318,7 +319,7 @@ class StatementEndpointDatabaseTest {
                 new JdbcOutboxWriter(),
                 new JdbcBalanceProjection(),
                 IDS,
-                CLOCK);
+                CLOCK, PostingObserver.NONE);
     }
 
     private static AdjustmentService adjustmentService() {
@@ -329,7 +330,7 @@ class StatementEndpointDatabaseTest {
                 new JdbcOutboxWriter(),
                 new JdbcBalanceProjection(),
                 IDS,
-                CLOCK);
+                CLOCK, PostingObserver.NONE);
     }
 
     private void postCredit(UUID account, LocalDate postingDate, long minorUnits)

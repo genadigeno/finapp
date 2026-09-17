@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcBalanceProjection;
@@ -89,7 +90,7 @@ class PostingServiceDatabaseTest {
                 outbox,
                 new JdbcBalanceProjection(),
                 IDS,
-                CLOCK);
+                CLOCK, PostingObserver.NONE);
     }
 
     @Test

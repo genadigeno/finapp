@@ -6,6 +6,7 @@ import com.finapp.accounts.CustomerAccount;
 import com.finapp.accounts.CustomerAccountId;
 import com.finapp.accounts.CustomerAccountStore;
 import com.finapp.accounts.ProductType;
+import com.finapp.app.telemetry.AccountMetrics;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.ledger.BalanceDisplay;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import javax.sql.DataSource;
 import org.springframework.jdbc.datasource.DataSourceUtils;
@@ -63,6 +65,7 @@ public final class AccountService {
     private final IdempotentExecutor executor;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
+    private final AccountMetrics metrics;
 
     public AccountService(
             AccountOpening opening,
@@ -74,7 +77,8 @@ public final class AccountService {
             PartyStore<Connection> parties,
             IdempotentExecutor executor,
             TransactionTemplate transactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            AccountMetrics metrics) {
         this.opening = Objects.requireNonNull(opening, "opening must not be null");
         this.closing = Objects.requireNonNull(closing, "closing must not be null");
         this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
@@ -85,6 +89,7 @@ public final class AccountService {
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.metrics = Objects.requireNonNull(metrics, "metrics must not be null");
     }
 
     /** The rendered agreement — also the stored idempotent response, replayed verbatim. */
@@ -115,6 +120,9 @@ public final class AccountService {
 
         IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, idempotencyKey);
 
+        // Whether THIS call created the agreement: set only inside the executed effect, so
+        // a replayed key (the effect never runs) and a converged open both leave it false.
+        AtomicBoolean openedNow = new AtomicBoolean(false);
         byte[] body =
                 inOneTransaction(
                         unitOfWork -> {
@@ -133,16 +141,18 @@ public final class AccountService {
                                             unitOfWork,
                                             key,
                                             fingerprint,
-                                            uow ->
-                                                    com.finapp.platform.idempotency.CommandResult
-                                                            .succeeded(
-                                                                    render(
-                                                                            opening.open(
-                                                                                            uow,
-                                                                                            partyId,
-                                                                                            productType,
-                                                                                            currency)
-                                                                                    .account())));
+                                            uow -> {
+                                                CustomerAccountStore.Creation creation =
+                                                        opening.open(
+                                                                uow,
+                                                                partyId,
+                                                                productType,
+                                                                currency);
+                                                openedNow.set(creation.created());
+                                                return com.finapp.platform.idempotency
+                                                        .CommandResult.succeeded(
+                                                                render(creation.account()));
+                                            });
                             return outcome.body()
                                     .orElseThrow(
                                             () ->
@@ -150,6 +160,11 @@ public final class AccountService {
                                                             "a recorded opening outcome always"
                                                                     + " carries its body"));
                         });
+        // After the commit and only for the acting call (P3-TSK-020, the ConsentService
+        // discipline): an act that rolled back is an act that did not happen.
+        if (openedNow.get()) {
+            metrics.opened();
+        }
         return parse(body);
     }
 
@@ -251,15 +266,22 @@ public final class AccountService {
     public Optional<AccountClosing.Closure> close(Session current, CustomerAccountId accountId) {
         Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(accountId, "accountId must not be null");
-        return inOneTransaction(
-                unitOfWork ->
-                        liveCustomerOf(unitOfWork, current)
-                                .flatMap(
-                                        customer ->
-                                                closing.close(
-                                                        unitOfWork,
-                                                        customer.id().value(),
-                                                        accountId)));
+        Optional<AccountClosing.Closure> closure =
+                inOneTransaction(
+                        unitOfWork ->
+                                liveCustomerOf(unitOfWork, current)
+                                        .flatMap(
+                                                customer ->
+                                                        closing.close(
+                                                                unitOfWork,
+                                                                customer.id().value(),
+                                                                accountId)));
+        // After the commit and only for the winning transition (P3-TSK-020): the nine
+        // losers of a ten-way close converged and moved nothing.
+        if (closure.map(AccountClosing.Closure::closed).orElse(false)) {
+            metrics.closed();
+        }
+        return closure;
     }
 
     // -----------------------------------------------------------------

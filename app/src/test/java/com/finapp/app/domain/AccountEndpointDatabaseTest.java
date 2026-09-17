@@ -10,6 +10,7 @@ import com.finapp.identity.SessionPolicy;
 import com.finapp.identity.SessionStore;
 import com.finapp.identity.SessionToken;
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcBalanceProjection;
 import com.finapp.ledger.JdbcJournalEntryStore;
@@ -49,6 +50,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
@@ -76,6 +78,8 @@ class AccountEndpointDatabaseTest {
     private static final String OPEN_USD = "{\"productType\":\"WALLET\",\"currency\":\"USD\"}";
 
     @LocalServerPort private int port;
+
+    @org.springframework.beans.factory.annotation.Autowired private MeterRegistry registry;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
@@ -207,6 +211,7 @@ class AccountEndpointDatabaseTest {
     void theOpenIsIdempotentOverHttp() throws Exception {
         Person person = givenAPerson("ACTIVE");
         String sameKey = key();
+        double openedBefore = accountOutcome("opened");
 
         HttpResponse<String> first = post("/me/accounts", person.session(), OPEN_USD, sameKey);
         HttpResponse<String> retry = post("/me/accounts", person.session(), OPEN_USD, sameKey);
@@ -216,6 +221,9 @@ class AccountEndpointDatabaseTest {
         // rendering that happens to agree.
         assertThat(retry.body()).isEqualTo(first.body());
         assertThat(accountRowsFor(person.customer())).isEqualTo(1);
+        // finapp.accounts.account counts the ACTING call only, post-commit (P3-TSK-020):
+        // one open, one count, however many times the request arrived.
+        assertThat(accountOutcome("opened")).isEqualTo(openedBefore + 1);
 
         // The same key with a materially different request is a distinct conflict, never a
         // silent replay and never a second effect (INV-IDEM-03).
@@ -264,6 +272,7 @@ class AccountEndpointDatabaseTest {
     void closingEndToEnd() throws Exception {
         Person person = givenAPerson("ACTIVE");
         String accountId = field(post("/me/accounts", person.session(), OPEN_USD, key()).body(), "id");
+        double closedBefore = accountOutcome("closed");
 
         // Not-yours first, so the 404 is proven against a LIVE account.
         Person stranger = givenAPerson("ACTIVE");
@@ -284,6 +293,9 @@ class AccountEndpointDatabaseTest {
         // A retried DELETE whose first response was lost must not read as a failure.
         assertThat(delete("/me/accounts/" + accountId, person.session()).statusCode())
                 .isEqualTo(204);
+        // One transition, one count (P3-TSK-020): the converged retry is silent, like the
+        // nine losers of the ten-way close.
+        assertThat(accountOutcome("closed")).isEqualTo(closedBefore + 1);
 
         // A non-empty account refuses with the actionable code, naming no amount.
         Person funded = givenAPerson("ACTIVE");
@@ -377,7 +389,7 @@ class AccountEndpointDatabaseTest {
                 new JdbcOutboxWriter(),
                 new JdbcBalanceProjection(),
                 IDS,
-                CLOCK);
+                CLOCK, PostingObserver.NONE);
     }
 
     private static long accountRowsFor(UUID customerId) throws SQLException {
@@ -392,6 +404,10 @@ class AccountEndpointDatabaseTest {
                 return row.getLong(1);
             }
         }
+    }
+
+    private double accountOutcome(String outcome) {
+        return registry.get("finapp.accounts.account").tag("outcome", outcome).counter().count();
     }
 
     private static void execute(Connection connection, String sql, Object... arguments)

@@ -3,6 +3,7 @@ package com.finapp.app.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.BalanceDerivation;
 import com.finapp.ledger.Direction;
@@ -107,6 +108,37 @@ class ProjectionVerificationDatabaseTest {
     }
 
     @Test
+    @DisplayName("holds_minor disagreeing with the ACTIVE hold rows is drift - P3-TSK-015's"
+            + " owned remainder, landed by P3-TSK-020")
+    void aCorruptedHoldsMinorIsDetected() throws Exception {
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            LedgerAccount wallet = wallet(app);
+            post(app, entry(operational(app), Direction.DEBIT, wallet, Direction.CREDIT, 5000));
+            app.commit();
+
+            assertThat(verification.verdictOf(app, wallet.id())).isEqualTo(Verdict.CLEAN);
+
+            // No ACTIVE hold exists, so the only holds_minor the rows explain is zero. A
+            // phantom 900 is exactly the corruption HoldDatabaseTest proves the DECISION
+            // ignores - and what this comparison exists to surface (reported, never
+            // repaired). The row and its holds are read in ONE statement, so no bracket is
+            // needed and no interleaving can fake agreement. Uncommitted: the close rolls
+            // it back, and nothing leaks into sibling sweeps.
+            nudge(app, wallet.id(), "holds_minor", +900);
+            assertThat(verification.verdictOf(app, wallet.id()))
+                    .as("a holds_minor no ACTIVE row explains is drift")
+                    .isEqualTo(Verdict.DRIFTING);
+            nudge(app, wallet.id(), "holds_minor", -900);
+            assertThat(verification.verdictOf(app, wallet.id()))
+                    .as("the positive control: the detection was the corruption")
+                    .isEqualTo(Verdict.CLEAN);
+        }
+    }
+
+    @Test
     @DisplayName("the raw-SQL writer is detected, and the sweep reports it")
     void theRawSqlWriterIsDetectedAndTheSweepReportsIt() throws Exception {
         try (Connection app = DatabaseRoles.application();
@@ -201,7 +233,7 @@ class ProjectionVerificationDatabaseTest {
                 new JdbcOutboxWriter(),
                 new JdbcBalanceProjection(),
                 IDS,
-                CLOCK);
+                CLOCK, PostingObserver.NONE);
     }
 
     private void post(Connection app, PostingCommand command) {

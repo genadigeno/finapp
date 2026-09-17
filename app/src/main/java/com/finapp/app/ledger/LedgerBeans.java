@@ -46,7 +46,8 @@ public class LedgerBeans {
             OutboxWriter<Connection> outboxWriter,
             BalanceProjection<Connection> balanceProjection,
             com.finapp.sharedkernel.id.IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            com.finapp.ledger.PostingObserver postingObserver) {
         return new AdjustmentService(
                 idempotentExecutor,
                 journalEntryStore,
@@ -54,7 +55,8 @@ public class LedgerBeans {
                 outboxWriter,
                 balanceProjection,
                 ids,
-                clock);
+                clock,
+                postingObserver);
     }
 
     /**

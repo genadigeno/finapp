@@ -164,6 +164,11 @@ class NoFloatingPointMoneyRulesTest {
                     // own arithmetic is exact BigDecimal inside the ledger module; the only
                     // floating point is the registry boundary's.
                     "com.finapp.app.telemetry.LedgerMetrics$TrialCached",
+                    // P3-TSK-020. The SAME case a sixth time: the ACTIVE hold COUNT - a
+                    // `long` from HoldStore.countActive to the registry boundary - published
+                    // through the ToDoubleFunction Micrometer's Gauge imposes. A count,
+                    // never an amount (INV-AUD-02).
+                    "com.finapp.app.telemetry.LedgerMetrics$HoldCached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

@@ -3,6 +3,7 @@ package com.finapp.app.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcBalanceDerivation;
@@ -341,7 +342,7 @@ class SustainedConcurrentPostingDatabaseTest {
                 new JdbcOutboxWriter(),
                 new JdbcBalanceProjection(),
                 IDS,
-                CLOCK);
+                CLOCK, PostingObserver.NONE);
     }
 
     private void post(Connection app, PostingCommand command) {

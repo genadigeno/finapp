@@ -155,7 +155,10 @@ public final class ProjectionVerification {
             if (row.lastEntrySeq() != appliedEntries) {
                 return Verdict.DRIFTING;
             }
-            return derived.equals(row.settled()) ? Verdict.CLEAN : Verdict.DRIFTING;
+            if (!derived.equals(row.settled())) {
+                return Verdict.DRIFTING;
+            }
+            return holdsAgree(row) ? Verdict.CLEAN : Verdict.DRIFTING;
         } catch (SQLException failure) {
             throw new LedgerStorageException(
                     DatabaseFailure.describe(
@@ -207,28 +210,92 @@ public final class ProjectionVerification {
         }
     }
 
+    /**
+     * Whether {@code holds_minor} equals the fold of the {@code ACTIVE} hold rows —
+     * `P3-TSK-015`'s owned remainder, landed by `P3-TSK-020`.
+     *
+     * <p>The fold goes through the kernel ({@code JournalEntry.sum}), never a SQL
+     * {@code SUM} — `P3-TSK-008`'s argument, and the same one {@code HoldService} makes for
+     * the availability decision itself. A fold the kernel refuses (a hold at a scale the
+     * row's zero cannot adopt) makes the holds <em>unverifiable</em>, and unverifiable is
+     * not clean.
+     *
+     * <p><strong>No watermark protects this comparison, and none is needed</strong>: the
+     * row's {@code holds_minor} and its hold rows were read in one statement — one
+     * snapshot — and a hold transaction updates both atomically under the account lock
+     * (`P3-TSK-015`), so no interleaving can present a half-applied hold. (A hold row on an
+     * account with no projection row is unreachable through the service, whose placement
+     * writes {@code holds_minor} in the same transaction; a raw-SQL writer could fabricate
+     * one — the bypassed-projection honest limit — and it surfaces when the account gains
+     * its row.)
+     */
+    private static boolean holdsAgree(Row row) {
+        Money expected = Money.ofPersisted(0, CurrencyCode.of(row.currency()), row.scale());
+        try {
+            for (Money hold : row.activeHolds()) {
+                expected = JournalEntry.sum(expected, hold);
+            }
+        } catch (RuntimeException unverifiable) {
+            return false;
+        }
+        Money held =
+                Money.ofPersisted(row.holdsMinor(), CurrencyCode.of(row.currency()), row.scale());
+        return held.equals(expected);
+    }
+
     private static Optional<Row> rowOf(Connection unitOfWork, LedgerAccountId account)
             throws SQLException {
+        // The projection row AND its ACTIVE holds in one statement: one snapshot, which is
+        // what makes the holds comparison need no bracket (see holdsAgree).
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
-                        "SELECT posted_minor, scale, currency, last_entry_seq FROM "
-                                + BALANCE_TABLE + " WHERE ledger_account_id = ?")) {
+                        "SELECT b.posted_minor, b.holds_minor, b.scale, b.currency,"
+                                + " b.last_entry_seq,"
+                                + " h.amount_minor AS hold_minor, h.scale AS hold_scale,"
+                                + " h.currency AS hold_currency"
+                                + " FROM " + BALANCE_TABLE + " b"
+                                + " LEFT JOIN ledger.hold h"
+                                + " ON h.ledger_account_id = b.ledger_account_id"
+                                + " AND h.status = 'ACTIVE'"
+                                + " WHERE b.ledger_account_id = ?")) {
             select.setObject(1, account.value());
             try (ResultSet row = select.executeQuery()) {
-                if (!row.next()) {
-                    return Optional.empty();
+                Row projection = null;
+                List<Money> activeHolds = new ArrayList<>();
+                while (row.next()) {
+                    if (projection == null) {
+                        projection =
+                                new Row(
+                                        row.getLong("posted_minor"),
+                                        row.getLong("holds_minor"),
+                                        row.getShort("scale"),
+                                        row.getString("currency").stripTrailing(),
+                                        row.getLong("last_entry_seq"),
+                                        activeHolds);
+                    }
+                    long holdMinor = row.getLong("hold_minor");
+                    if (!row.wasNull()) {
+                        activeHolds.add(
+                                Money.ofPersisted(
+                                        holdMinor,
+                                        CurrencyCode.of(
+                                                row.getString("hold_currency")
+                                                        .stripTrailing()),
+                                        row.getShort("hold_scale")));
+                    }
                 }
-                return Optional.of(
-                        new Row(
-                                row.getLong("posted_minor"),
-                                row.getShort("scale"),
-                                row.getString("currency").stripTrailing(),
-                                row.getLong("last_entry_seq")));
+                return Optional.ofNullable(projection);
             }
         }
     }
 
-    private record Row(long postedMinor, short scale, String currency, long lastEntrySeq) {
+    private record Row(
+            long postedMinor,
+            long holdsMinor,
+            short scale,
+            String currency,
+            long lastEntrySeq,
+            List<Money> activeHolds) {
         Money settled() {
             // ofPersisted, exactly: the stored number at its stored scale (INV-MON-05), so
             // the comparison is under Money's scale-including equality.

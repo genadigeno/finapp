@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P3-TST-003`)
+Last updated: 2026-09-17 (`P3-TSK-020`)
 
 ---
 
@@ -78,7 +78,7 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **22 of 25** backlog items (`P3-TSK-021` created by
+same day with `P3-TSK-001`. **23 of 25** backlog items (`P3-TSK-021` created by
 `P3-TST-003`); M3.1 through **M3.7** are closed.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
@@ -120,14 +120,14 @@ class, again).
 ## Current Milestone
 
 **M3.8 — Observability and the gate.** `P3-TST-003`, `P3-TSK-020`,
-`P3-TSK-021`, `P3-DOC-001`; **1 of 4 — next `P3-TSK-020` (`READY`)** — the
-financial supplement F1–F8 is assessed with named tests and the register
-carries a row for every `Phase: 3` invariant the catalogue names **except
-`INV-AUD-04`, whose absence is the finding**: its mechanism is deliberately
-unbuilt, so `P3-TSK-021` (four-eyes on manual adjustments, created by
-`P3-TST-003`) must land the mechanism and its row before the exit review,
-or the battery fails at the status flip. Then the six planned meters and
-the dashboard row, then the review.
+`P3-TSK-021`, `P3-DOC-001`; **2 of 4 — next `P3-TSK-021` (`READY`)** — the
+financial supplement F1–F8 is assessed with named tests, the register
+carries a row for every `Phase: 3` invariant the catalogue names except
+`INV-AUD-04` (deliberately — its mechanism is unbuilt), and the six
+planned meters are published by a freshly started instance with the
+dashboard row resolving. **What remains: `P3-TSK-021`** — four-eyes on
+manual adjustments, whose mechanism and register row must land before the
+exit review or the battery fails at the status flip — then `P3-DOC-001`.
 
 **M3.7 — Statements and the trial balance.** `P3-TSK-018` plus `P3-TSK-019`;
 **CLOSED 2026-09-17, 2 of 2** — every figure a customer is shown traces to
@@ -421,11 +421,69 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TST-003` is `COMPLETE`; **M3.8 is 1 of 4**.
-**Next: `P3-TSK-020` (`READY`)** — the six planned meters, eagerly
-registered, and the dashboard row.
+**None in progress.** `P3-TSK-020` is `COMPLETE`; **M3.8 is 2 of 4**.
+**Next: `P3-TSK-021` (`READY`)** — four-eyes on manual adjustments,
+`INV-AUD-04`'s owed mechanism and register row, before the review.
 
 ### Just completed
+
+**`P3-TSK-020` — The six planned meters, eagerly registered** — `COMPLETE`
+(2026-09-17). **`PHASE_3_PLAN.md` §15 is real: a freshly started instance
+publishes every series** — the M3.8 acceptance's first half, held by a
+pinned guard rather than asserted.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every §15 meter registered eagerly and unconditionally | The **pinned Phase-3 guard** in `PlannedMetersExistTest` (the `P2-TSK-020` shape): the plan's own table held against the plain no-database context — exactly the "freshly started instance" the milestone names; the derived guard takes over at the flip. `finapp.ledger.posting{outcome}`, `finapp.ledger.posting.latency`, `finapp.ledger.trial.balance` (existing), `finapp.ledger.projection.drift` (existing), `finapp.ledger.hold.active`, `finapp.accounts.account{outcome}` |
+| The wired beans, not a test's registry | Proven through real HTTP: an adjustment lands posted +1; its replay lands replayed +1 with posted unchanged; an unbalanced refusal lands refused +1; every command timed — the test that catches a bean measuring nothing |
+| A dashboard row whose queries resolve | *Ledger and accounts — financial correctness*, six panels, resolved against a live scrape — the deferred drift and trial-balance panels land here; timer panels read `_count`/`_sum`/`_max`, never `_bucket` (the `P1-TSK-029` lesson) |
+
+### The write path's observer is a required parameter, deliberately
+
+`finapp.ledger.posting` counts **every journal-write command** — posting,
+reversal, adjustment — through a new `PostingObserver` port on the commands
+themselves, because the write path is one (`INV-LED-04`) and a count
+incremented per door is a count a new door silently loses (the
+`MeteredKycCaseStore` argument). The parameter is **required, with no
+defaulted overload**: a balanced path is the one a later author optimises
+away, so Phase 4's transfer wiring is forced by the compiler to decide.
+Latency comes from the **injected `Clock`** — `nanoTime()` is ambient time,
+and `P0-TSK-029` already rejected the tempting exception. A command counted
+`posted` may still be rolled back by the caller that owns the commit:
+recorded as the monitoring approximation it is, never financial truth. The
+account counters take the other discipline (`P2-TSK-020`): incremented
+**after the commit and only for the acting call** — a converged retry, a
+replayed key and the losers of a concurrent close are never throughput,
+mutation-proven in both directions.
+
+### P3-TSK-015's owned remainder landed with its owner
+
+`ProjectionVerification` now compares `holds_minor` against the fold of the
+`ACTIVE` hold rows **through the kernel** (`JournalEntry.sum`, never a SQL
+`SUM`), read in the **same statement** as the projection row — one
+snapshot, so no watermark is needed: a hold transaction updates
+`holds_minor` and its row atomically under the account lock, and a single
+statement cannot see half of that. An unverifiable fold is `DRIFTING`,
+because unverifiable is not clean. **The extension found its enabling fix
+in advance**: `HoldDatabaseTest`'s corruption test left its planted
+`holds_minor` corruption committed in the shared container — harmless
+until the comparison existed, permanent global drift after — so the test
+restores the row to the fold of what stands. `finapp.ledger.hold.active`
+reads through the new `HoldStore.countActive` (no `EntityId` parameter, so
+the ownership guard demands no entry), cached at the cheap-read floor, NaN
+never zero, `max()` never `sum()`.
+
+**Eight mutations, all caught by the intended assertion, restores
+byte-identical** — the observer un-wired, a replay counted as posted, a
+refusal not counted, the eager outcome series narrowed to one, the unknown
+hold reading made zero, the holds comparison dropped, the opened count made
+unconditional, the closed count on presence. `LedgerMetrics$HoldCached`
+joined the floating-point exemption set (the same Micrometer case, sixth
+time); the resolver's non-series vocabulary gained `currency`. **1107
+hermetic tests, 676 database tests, counted.**
+
+### Previously
+
 
 **`P3-TST-003` — The financial supplement F1–F8, demonstrated** —
 `COMPLETE` (2026-09-17). **The exit gate's evidence is prepared before the
@@ -8258,9 +8316,9 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TST-003` (2026-09-17): the financial
-supplement F1–F8 assessed and the Phase-3 register rows landed, opening
-M3.8. The next work is `P3-TSK-020`, the six planned meters.
+The last work performed was `P3-TSK-020` (2026-09-17): the six planned
+meters, eagerly registered, with the dashboard row. The next work is
+`P3-TSK-021`, four-eyes on manual adjustments.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8546,6 +8604,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P3-TSK-020` complete — the six planned meters, eagerly registered; M3.8 is 2 of 4.** `PHASE_3_PLAN.md` §15 is real and held by the **pinned Phase-3 guard** in `PlannedMetersExistTest` (the `P2-TSK-020` shape: the plan's table against the plain no-database context — the derived guard takes over at the flip). Four series arrived beside the two existing ones: `finapp.ledger.posting{outcome}` and `finapp.ledger.posting.latency` through a new **`PostingObserver` port, a required primary-constructor parameter on all three journal-write commands** — no defaulted overload, so Phase 4's transfer wiring is forced by the compiler to decide rather than silently lose its counts (the `MeteredKycCaseStore` argument made structural); latency from the injected `Clock`, never `nanoTime()`; `finapp.ledger.hold.active` via the new `HoldStore.countActive` (NaN never zero, `max()` never `sum()`); `finapp.accounts.account{opened|closed}` counted **post-commit and only for the acting call** — converged retries and replays never throughput, mutation-proven in both directions. The wiring proven through real HTTP (posted +1, replayed +1 with posted unchanged, refused +1, every command timed) — the test that catches a bean measuring nothing. **`P3-TSK-015`'s owned remainder landed with its owner**: `ProjectionVerification` compares `holds_minor` against the kernel fold of the `ACTIVE` hold rows, read in the same statement as the projection row — one snapshot, no watermark needed, because a hold transaction updates both atomically under the account lock; unverifiable is `DRIFTING`. The extension's enabling fix found in advance: `HoldDatabaseTest`'s committed `holds_minor` corruption would have become permanent global drift, so it restores. Dashboard row *Ledger and accounts — financial correctness* (six panels, the deferred drift and trial-balance panels included), every query resolving live; `currency` joined the resolver's non-series vocabulary; `_count`/`_sum`/`_max`, never `_bucket`. `LedgerMetrics$HoldCached` the same Micrometer exemption case a sixth time. **Eight mutations, all caught by the intended assertion, restores byte-identical.** 1107 hermetic tests, 676 database tests. Next: `P3-TSK-021`. |
 | 2026-09-17 | **`P3-TST-003` complete — the financial supplement F1–F8 demonstrated, and M3.8 opens (1 of 4).** The exit gate's evidence prepared before the review needs it: [`reviews/PHASE_3_FINANCIAL_SUPPLEMENT.md`](reviews/PHASE_3_FINANCIAL_SUPPLEMENT.md) assesses every F criterion **met** against named tests (F5 met with its Phase-3 vacuity stated — no external event produces a financial effect this phase, and the mechanism that will bind is the proven inbox), and `MUTATION_TESTING.md` §2 gains **fourteen rows plus two extension rows and a financial-boundary `INV-IDEM-01` row — seventeen, counted** — every named mutation one its owning task **performed** (the `P2-TST-001` audit posture: record, never invent), every named class and method held to the code by the register guard, all nine checks green. **Reading the set from the catalogue found nineteen `Phase: 3` invariants where the plan's §6 table lists seventeen** (`INV-REC-05`, `INV-AUD-04` — the drift the scope sentence predicted; the plan's own closing paragraph rules the catalogue wins). `INV-BAL-05`'s row landed earlier than `P3-TST-002`'s recorded deferral, deliberately: the scope demands every row, and the deferral postponed the record, not the work. **The headline finding is the row that cannot be written**: `INV-AUD-04`'s mechanism is deliberately unbuilt (`P3-TSK-017` recorded four-eyes as ADR-0010's debt, firing the debt row's own trigger), a row would be a false claim, and the battery **will fail naming it at the status flip** — known in advance this time, the `INV-HIST-02` lesson pre-applied. Register §3 records it; **`P3-TSK-021`** (four-eyes on manual adjustments) created to land the mechanism and its row before `P3-DOC-001`. §5 teeth re-proven, restore byte-identical. No production code shipped. 1105 hermetic tests, 674 database tests, 14 kafka tests. Next: `P3-TSK-020`. |
 | 2026-09-17 | **`P3-TSK-019` complete — the trial-balance job, and M3.7 CLOSES (2 of 2).** `TrialBalance` in `ledger`: one `SELECT ... GROUP BY currency, scale, direction`, the per-currency verdict as exact decimal arithmetic — `P3-TSK-008`'s two failure modes **structurally closed at the one statement** (`scale` a grouping key; `SUM(bigint)` is `numeric`), `Money` deliberately not used because a system-wide group sum can exceed `long` and the refusal would turn a large balanced ledger into a false incident. **No `IN_FLIGHT` verdict, by design**: a snapshot never contains half an entry and every committed entry balances at COMMIT — demonstrated by sweeps racing four live posters, zero every time. **The injection rides the deferral**: raw unbalanced rows in an open transaction (the constraint has not yet judged them — what a trigger-less writer's committed rows look like), three shapes flagged per currency (the scales probe, the cross-currency subsidy), then rollback — no trigger disabled, no cleanup risk. **Verdicts and currency codes leave, never an amount** (`INV-AUD-02`); no repair path, structurally (plan §14.12). Gauge `finapp.ledger.trial.balance{currency}` — 0 verified balanced / 1 out / **NaN unreadable, never zero** — eager per `SupportedCurrencies`, the scrape as the schedule (30s floor, no leader, no §3 question), `max()` never `sum()`; **`currency` joined `ALLOWED_TAG_KEYS` deliberately** (ISO 4217-bounded, the `purpose` precedent); `LedgerMetrics$TrialCached` the same Micrometer exemption case a fifth time; dashboard row deferred to M3.8 per `P3-TSK-010`'s recorded deferral. One process finding: the first battery invocation never ran — a zero-match `grep -c` broke the `&&` chain before gradle started; caught by the missing log, re-run for real (the build-never-ran class, in the chaining). **Six mutations, all caught by the intended assertion, restores byte-identical.** 1105 hermetic tests, 674 database tests. Next: `P3-TST-003`, M3.8 opens. |
 | 2026-09-17 | **`P3-TSK-018` complete — the period statement, and M3.7 opens (1 of 2).** `GET /v1/me/accounts/{id}/statement?from=&to=`: `StatementDerivation`/`JdbcStatementDerivation` in `ledger` — opening = `BalanceDerivation.derive` at `AsOf.postingDate(from − 1)` (the definition composed, never copied), the period's lines in one statement/one snapshot (`posting_date BETWEEN`, both boundaries inclusive, ordered `posting_date, entry.id, seq`, folded through `JournalEntry.sum`), and **the closing computed as `opening + settle(debits, credits)` rather than derived a third time** — the crux: under `READ COMMITTED` the two reads are two snapshots, but their ranges are **disjoint predicates**, so `opening + lines = closing` holds structurally under any concurrency (`INV-ACC-02`'s drill-down shape three phases early, the closing additionally held to an independent `BigDecimal` recomputation over raw rows). No lock anywhere; no migration; underivable histories refuse amount-free through the derivation's own regime. The surface is the `/v1/me` shape (ownership `Session → Customer → findOwnedBy`, one 404 as an equality between causes; period parameters specific 422s naming the parameter, never echoing the value; a `CLOSED` product's statement stays readable — `INV-HIST-01`). Per line: entry id, dates, type, direction, decimal-string amount, reference — **never the counterparty account, never the `reason`** (`RESTRICTED-PII` audit material), both asserted. `kind: \"DERIVED\"`; deliberately not audited (a person's own read); no events, no key, no meters (M3.8's). Contract +36/−0, the three `BREAKING` labels `required = true` on the brand-new operation's parameters — the classifier erring safe, reviewed. **Three stale `P3-TSK-018` records settled at their sources** (the display query was `P3-TSK-013`'s — the recorded one-task drift, corrected where it lived; the ownership register's `derive`/`findById` prose records what actually arrived; `periodLines` joined the register). **Seven mutations, all caught by the intended assertion, restores byte-identical** — upper bound exclusive, opening dropped, net dropped, sides swapped, reason leaked, boundary refusal dropped (the port's IAE as our 500, caught by the 422 assertion), account predicate neutralised (caught deterministically: balanced entries make the leaked net exactly zero). 1102 hermetic tests, 672 database tests. Next: `P3-TSK-019`. |

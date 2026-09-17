@@ -36,6 +36,13 @@ public interface HoldStore<T> {
     List<Hold> findActiveFor(T unitOfWork, LedgerAccountId account);
 
     /**
+     * How many holds are {@code ACTIVE}, system-wide — {@code finapp.ledger.hold.active}'s
+     * read (`P3-TSK-020`, the caller this method arrives with). A count, never an amount:
+     * what leaves the ledger for telemetry is identifiers and counts ({@code INV-AUD-02}).
+     */
+    long countActive(T unitOfWork);
+
+    /**
      * {@code ACTIVE → RELEASED}, conditionally; {@code true} means this call ended it.
      *
      * <p>{@code false} is a fact, not an error: the hold was already released, and the caller

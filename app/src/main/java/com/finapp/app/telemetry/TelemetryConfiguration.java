@@ -102,12 +102,35 @@ class TelemetryConfiguration {
         // P3-TSK-019: the trial balance rides the same scrape-is-the-schedule stance - one
         // read-only sweep per cache floor, no leader, no ambient schedule, no §3 question.
         com.finapp.ledger.TrialBalance trialBalance = new com.finapp.ledger.TrialBalance();
+        // P3-TSK-020: the hold count - constructed here like its siblings, because the
+        // hold store has no bean until something beyond the gauge consumes one.
+        com.finapp.ledger.HoldStore<java.sql.Connection> holdStore =
+                new com.finapp.ledger.JdbcHoldStore();
         return new LedgerMetrics(
                 verification::verify,
                 trialBalance::sweep,
+                // P3-TSK-020: the hold gauge joins, at the cheap-read floor.
+                holdStore::countActive,
                 dataSource::getConnection,
                 clock,
                 registry);
+    }
+
+    /**
+     * The write path's observer (`P3-TSK-020`): counters and the latency timer behind the
+     * {@code ledger} module's {@link com.finapp.ledger.PostingObserver} port — published as
+     * the port, so wiring that constructs a journal-write command autowires it and the
+     * Micrometer class stays package-private here.
+     */
+    @Bean
+    com.finapp.ledger.PostingObserver postingObserver(MeterRegistry registry) {
+        return new LedgerWriteMeters(registry);
+    }
+
+    /** The account lifecycle counters (`P3-TSK-020`), eager for the same reason. */
+    @Bean
+    AccountMetrics accountMetrics(MeterRegistry registry) {
+        return new AccountMetrics(registry);
     }
 
     /**

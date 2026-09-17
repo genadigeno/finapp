@@ -40,6 +40,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -63,6 +64,7 @@ class AdjustmentEndpointDatabaseTest {
 
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
+    @Autowired private MeterRegistry registry;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
@@ -156,6 +158,50 @@ class AdjustmentEndpointDatabaseTest {
         HttpResponse<String> corrected =
                 post(body(wallet, "5.00", "corrected probe"), operator.token(), key);
         assertThat(corrected.statusCode()).isEqualTo(201);
+    }
+
+    @Test
+    @DisplayName("the write path feeds finapp.ledger.posting - posted, replayed, refused -"
+            + " through the WIRED observer, so a bean measuring nothing cannot hide"
+            + " (P3-TSK-020)")
+    void theWritePathFeedsThePostingMeter() throws Exception {
+        Operator operator = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+        double posted = postingOutcome("posted");
+        double replayed = postingOutcome("replayed");
+        double refused = postingOutcome("refused");
+        double timed = registry.get("finapp.ledger.posting.latency").timer().count();
+
+        String key = "adj-" + IDS.next();
+        assertThat(post(body(wallet, "5.00", "meter probe INC-1"), operator.token(), key)
+                        .statusCode())
+                .isEqualTo(201);
+        assertThat(postingOutcome("posted")).isEqualTo(posted + 1);
+
+        assertThat(post(body(wallet, "5.00", "meter probe INC-1"), operator.token(), key)
+                        .statusCode())
+                .isEqualTo(201);
+        assertThat(postingOutcome("replayed"))
+                .as("a replay is never posted throughput (P2-TSK-020's discipline)")
+                .isEqualTo(replayed + 1);
+        assertThat(postingOutcome("posted")).isEqualTo(posted + 1);
+
+        String unbalanced =
+                "{\"postingDate\":\"2026-09-17\",\"valueDate\":\"2026-09-17\","
+                        + "\"reference\":\"adj-probe\",\"reason\":\"meter refusal probe\","
+                        + "\"lines\":[" + line(clearing(), "DEBIT", "5.00") + ","
+                        + line(wallet, "CREDIT", "4.00") + "]}";
+        assertThat(post(unbalanced, operator.token(), "adj-" + IDS.next()).statusCode())
+                .isEqualTo(422);
+        assertThat(postingOutcome("refused")).isEqualTo(refused + 1);
+
+        // Every command is timed, whatever its outcome - the latency a caller experienced.
+        assertThat((double) registry.get("finapp.ledger.posting.latency").timer().count())
+                .isEqualTo(timed + 3);
+    }
+
+    private double postingOutcome(String outcome) {
+        return registry.get("finapp.ledger.posting").tag("outcome", outcome).counter().count();
     }
 
     @Test

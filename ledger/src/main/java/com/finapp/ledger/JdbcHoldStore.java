@@ -94,6 +94,21 @@ public final class JdbcHoldStore implements HoldStore<Connection> {
     }
 
     @Override
+    public long countActive(Connection unitOfWork) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        try (PreparedStatement count =
+                        unitOfWork.prepareStatement(
+                                "SELECT COUNT(*) FROM " + TABLE + " WHERE status = 'ACTIVE'");
+                ResultSet row = count.executeQuery()) {
+            row.next();
+            return row.getLong(1);
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("counting the active holds", failure));
+        }
+    }
+
+    @Override
     public boolean moveToReleased(Connection unitOfWork, HoldId id, Instant at) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");

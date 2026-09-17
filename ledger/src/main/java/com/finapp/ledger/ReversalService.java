@@ -14,6 +14,8 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -57,6 +59,7 @@ public final class ReversalService {
     private final PostingEffect effect;
     private final IdGenerator ids;
     private final Clock clock;
+    private final PostingObserver observer;
 
     public ReversalService(
             IdempotentExecutor executor,
@@ -65,12 +68,14 @@ public final class ReversalService {
             OutboxWriter<Connection> outbox,
             BalanceProjection<Connection> projection,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            PostingObserver observer) {
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
         this.journal = Objects.requireNonNull(journal, "journal must not be null");
         this.effect = new PostingEffect(journal, audit, outbox, projection, ids, clock);
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.observer = Objects.requireNonNull(observer, "observer must not be null");
     }
 
     /**
@@ -88,6 +93,26 @@ public final class ReversalService {
      * @throws UnbalancedJournalEntryException before any claim: the key is not consumed
      */
     public PostingResult reverse(Connection unitOfWork, ReversalCommand command) {
+        // Observed whatever the outcome (P3-TSK-020): a reversal is a journal-write
+        // command like any other, and the write path's meter counts them all.
+        Instant started = clock.instant();
+        try {
+            PostingResult result = doReverse(unitOfWork, command);
+            observer.observe(
+                    result.replayed()
+                            ? PostingObserver.Outcome.REPLAYED
+                            : PostingObserver.Outcome.POSTED,
+                    Duration.between(started, clock.instant()));
+            return result;
+        } catch (RuntimeException refusal) {
+            observer.observe(
+                    PostingObserver.Outcome.REFUSED,
+                    Duration.between(started, clock.instant()));
+            throw refusal;
+        }
+    }
+
+    private PostingResult doReverse(Connection unitOfWork, ReversalCommand command) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(command, "command must not be null");
 

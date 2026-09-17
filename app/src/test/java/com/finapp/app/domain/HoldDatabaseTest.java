@@ -10,6 +10,7 @@ import com.finapp.accounts.JdbcCustomerAccountStore;
 import com.finapp.accounts.ProductType;
 import com.finapp.app.accounts.VerifiedAccountHolder;
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.BalanceDisplay.DisplayedBalance;
 import com.finapp.ledger.Hold;
@@ -364,6 +365,17 @@ class HoldDatabaseTest {
                     holdService().place(app, wallet.account().id(), Money.ofMinorUnits(1000, USD));
             app.commit();
             assertThat(placed.status()).isEqualTo(HoldStatus.ACTIVE);
+
+            // P3-TSK-020: the verification job now compares holds_minor against the ACTIVE
+            // rows, so the planted corruption must not stay committed in the shared
+            // container - restored to the fold of what actually stands (the one 1000 hold
+            // above), or every later suite's global sweep inherits this account's drift.
+            execute(
+                    app,
+                    "UPDATE ledger.account_balance SET holds_minor = 1000 WHERE"
+                            + " ledger_account_id = ?",
+                    wallet.account().id().value());
+            app.commit();
         }
     }
 
@@ -460,7 +472,7 @@ class HoldDatabaseTest {
                                 new JdbcOutboxWriter(),
                                 new JdbcBalanceProjection(),
                                 IDS,
-                                CLOCK)
+                                CLOCK, PostingObserver.NONE)
                         .post(
                                 app,
                                 new PostingCommand(

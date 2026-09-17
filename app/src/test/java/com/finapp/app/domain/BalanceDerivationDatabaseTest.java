@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.AsOf;
 import com.finapp.ledger.BalanceDerivation;
@@ -307,7 +308,7 @@ class BalanceDerivationDatabaseTest {
                 new JdbcOutboxWriter(),
                 new JdbcBalanceProjection(),
                 IDS,
-                CLOCK);
+                CLOCK, PostingObserver.NONE);
     }
 
     private PostingResult post(Connection app, PostingCommand command) {

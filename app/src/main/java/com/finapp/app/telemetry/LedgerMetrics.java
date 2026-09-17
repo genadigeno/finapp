@@ -24,7 +24,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Publishes how many accounts' projections disagree with the derivation (`P3-TSK-010`,
  * ADR-0041 rule 2, {@code INV-BAL-02}) — and, since `P3-TSK-019`, whether the trial balance
- * is zero per currency ({@code INV-ACC-01}). <strong>Zero at all times; the alerting
+ * is zero per currency ({@code INV-ACC-01}) — and, since `P3-TSK-020`, how many holds are
+ * {@code ACTIVE} ({@code finapp.ledger.hold.active}, a count never an amount). <strong>Zero at all times; the alerting
  * threshold is zero</strong> — one drifting account or one imbalanced currency is an
  * incident, because everything above the journal is trusted on the strength of these
  * comparisons.
@@ -64,12 +65,21 @@ final class LedgerMetrics {
      */
     static final String TRIAL_BALANCE = "finapp.ledger.trial.balance";
 
+    /** {@code finapp.ledger.hold.active} — how many holds are {@code ACTIVE}, fleet-wide. */
+    static final String HOLD_ACTIVE = "finapp.ledger.hold.active";
+
     /**
      * Six times the sibling gauges' floor, because this reading walks every posted account
      * and folds its history — the honest cost of recomputation-as-evidence, paid at a pace
      * that cannot become load on the database it is auditing.
      */
     static final Duration MIN_REFRESH = Duration.ofSeconds(30);
+
+    /**
+     * The cheap-read floor, the sibling gauges' own ({@code IdentityMetrics},
+     * {@code KycMetrics}): the hold count is one {@code COUNT(*)}, not a journal fold.
+     */
+    static final Duration HOLD_REFRESH = Duration.ofSeconds(5);
 
     private static final Logger log = LoggerFactory.getLogger(LedgerMetrics.class);
 
@@ -91,14 +101,23 @@ final class LedgerMetrics {
         TrialBalance.Report sweep(Connection connection);
     }
 
+    /** The hold-count seam ({@code HoldStore.countActive}) — the same reason again. */
+    @FunctionalInterface
+    interface Holds {
+        long countActive(Connection connection);
+    }
+
     private final Verification verification;
     private final Trial trial;
+    private final Holds holds;
     private final Connections connections;
     private final Clock clock;
     private final MeterRegistry registry;
     private final AtomicReference<Cached> cached = new AtomicReference<>(Cached.empty());
     private final AtomicReference<TrialCached> trialCached =
             new AtomicReference<>(TrialCached.empty());
+    private final AtomicReference<HoldCached> holdCached =
+            new AtomicReference<>(HoldCached.empty());
 
     /** The currencies whose series exist, so a discovered one registers exactly once. */
     private final Set<String> trialSeries = ConcurrentHashMap.newKeySet();
@@ -106,11 +125,13 @@ final class LedgerMetrics {
     LedgerMetrics(
             Verification verification,
             Trial trial,
+            Holds holds,
             Connections connections,
             Clock clock,
             MeterRegistry registry) {
         this.verification = verification;
         this.trial = trial;
+        this.holds = holds;
         this.connections = connections;
         this.clock = clock;
         this.registry = registry;
@@ -129,6 +150,14 @@ final class LedgerMetrics {
                                 + " non-zero value. Fleet-wide from every instance: aggregate"
                                 + " with max(), never sum()")
                 // No baseUnit (the P0-TSK-029 finding: Micrometer appends it to the name).
+                .strongReference(true)
+                .register(registry);
+
+        Gauge.builder(HOLD_ACTIVE, this, self -> self.holdReading().valueOrNaN())
+                .description(
+                        "Holds currently ACTIVE, system-wide (P3-TSK-020). A count, never"
+                                + " an amount. NaN when unreadable, never zero. Fleet-wide"
+                                + " from every instance: aggregate with max(), never sum()")
                 .strongReference(true)
                 .register(registry);
     }
@@ -181,6 +210,25 @@ final class LedgerMetrics {
             fresh = new TrialCached(clock.instant(), Map.of(), true);
         }
         trialCached.set(fresh);
+        return fresh;
+    }
+
+    private HoldCached holdReading() {
+        HoldCached current = holdCached.get();
+        if (!current.isStaleAt(clock.instant())) {
+            return current;
+        }
+        HoldCached fresh;
+        try (Connection connection = connections.open()) {
+            fresh = new HoldCached(clock.instant(), holds.countActive(connection));
+        } catch (Exception unreadable) {
+            log.warn(
+                    "Could not count the active holds; the gauge reports absent rather than"
+                            + " zero: {}",
+                    unreadable.getClass().getSimpleName());
+            fresh = new HoldCached(clock.instant(), HoldCached.UNKNOWN);
+        }
+        holdCached.set(fresh);
         return fresh;
     }
 
@@ -248,6 +296,28 @@ final class LedgerMetrics {
                 return Double.NaN;
             }
             return outByCurrency.containsKey(currency) ? 1.0d : 0.0d;
+        }
+    }
+
+    /**
+     * One hold count and when it was taken — the {@link Cached} stance verbatim:
+     * non-authoritative, per instance, no §3 row.
+     */
+    private record HoldCached(Instant takenAt, long value) {
+
+        /** Not a count. A negative sentinel cannot collide with one, which zero could. */
+        static final long UNKNOWN = -1L;
+
+        static HoldCached empty() {
+            return new HoldCached(Instant.MIN, UNKNOWN);
+        }
+
+        boolean isStaleAt(Instant now) {
+            return takenAt.isBefore(now.minus(HOLD_REFRESH));
+        }
+
+        double valueOrNaN() {
+            return value == UNKNOWN ? Double.NaN : (double) value;
         }
     }
 

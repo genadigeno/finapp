@@ -76,6 +76,8 @@ class DashboardQueriesResolveTest {
                     "count_values", "bottomk", "topk", "quantile",
                     // Aggregation modifiers and label names used in this dashboard.
                     "by", "on", "without", "ignoring", "outcome", "le",
+                    // P3-TSK-020: the trial-balance panel groups by currency.
+                    "currency",
                     // The consent counters' tag key (P2-TSK-020) - a label, not a series.
                     "purpose");
 

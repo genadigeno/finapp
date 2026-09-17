@@ -146,7 +146,8 @@ class AccountsBeans {
             PartyStore<Connection> partyStore,
             IdempotentExecutor idempotentExecutor,
             TransactionTemplate accountTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.app.telemetry.AccountMetrics accountMetrics) {
         return new AccountService(
                 accountOpening,
                 accountClosing,
@@ -157,6 +158,7 @@ class AccountsBeans {
                 partyStore,
                 idempotentExecutor,
                 accountTransactions,
-                dataSource);
+                dataSource,
+                accountMetrics);
     }
 }

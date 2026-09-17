@@ -14,6 +14,8 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -63,6 +65,7 @@ public final class PostingService {
     private final PostingEffect effect;
     private final IdGenerator ids;
     private final Clock clock;
+    private final PostingObserver observer;
 
     public PostingService(
             IdempotentExecutor executor,
@@ -71,7 +74,8 @@ public final class PostingService {
             OutboxWriter<Connection> outbox,
             BalanceProjection<Connection> projection,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            PostingObserver observer) {
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
         // The write set is PostingEffect's (extracted by P3-TSK-016 when the reversal became
         // its second caller); the constructor keeps taking the stores so wiring stays honest.
@@ -79,6 +83,7 @@ public final class PostingService {
                 new PostingEffect(journal, audit, outbox, projection, ids, clock);
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.observer = Objects.requireNonNull(observer, "observer must not be null");
     }
 
     /**
@@ -91,6 +96,29 @@ public final class PostingService {
      * @throws UnbalancedJournalEntryException before any claim: the key is not consumed
      */
     public PostingResult post(Connection unitOfWork, PostingCommand command) {
+        // Observed whatever the outcome (P3-TSK-020): the elapsed time comes from the
+        // injected clock, never nanoTime() - ambient time is a build failure, and the
+        // P0-TSK-029 precedent already rejected the tempting exception.
+        Instant started = clock.instant();
+        try {
+            PostingResult result = doPost(unitOfWork, command);
+            observer.observe(
+                    result.replayed()
+                            ? PostingObserver.Outcome.REPLAYED
+                            : PostingObserver.Outcome.POSTED,
+                    Duration.between(started, clock.instant()));
+            return result;
+        } catch (RuntimeException refusal) {
+            // A caller's refusal and an infrastructure failure alike: both are the
+            // command not posting, which is what a failure rate is for.
+            observer.observe(
+                    PostingObserver.Outcome.REFUSED,
+                    Duration.between(started, clock.instant()));
+            throw refusal;
+        }
+    }
+
+    private PostingResult doPost(Connection unitOfWork, PostingCommand command) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(command, "command must not be null");
 

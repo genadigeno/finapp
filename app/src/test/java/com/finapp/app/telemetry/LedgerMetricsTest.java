@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
  * "verified clean", so a comforting zero would silence the one alert the gauge exists to
  * fire.
  */
-@DisplayName("the projection-drift and trial-balance gauges (P3-TSK-010, P3-TSK-019)")
+@DisplayName("the projection-drift, trial-balance and hold gauges (P3-TSK-010/-019/-020)")
 class LedgerMetricsTest {
 
     private static final Clock CLOCK =
@@ -36,7 +36,7 @@ class LedgerMetricsTest {
     @DisplayName("an unverifiable projection reports absent, never zero")
     void anUnverifiableProjectionReportsAbsent() {
         MeterRegistry registry = new SimpleMeterRegistry();
-        new LedgerMetrics(counting(3).verification, balancedTrial(), unreachable(), CLOCK, registry);
+        new LedgerMetrics(counting(3).verification, balancedTrial(), noHolds(), unreachable(), CLOCK, registry);
 
         // Zero means "verified clean". Publishing it when nothing could be verified would
         // keep the drift alert silent through the exact outage it exists for (P1-TSK-029).
@@ -49,7 +49,7 @@ class LedgerMetricsTest {
         // The positive control, without which the NaN assertion passes against a gauge
         // that is never wrong and never useful.
         MeterRegistry registry = new SimpleMeterRegistry();
-        new LedgerMetrics(counting(3).verification, balancedTrial(), reachable(), CLOCK, registry);
+        new LedgerMetrics(counting(3).verification, balancedTrial(), noHolds(), reachable(), CLOCK, registry);
 
         assertThat(gauge(registry)).isEqualTo(3.0d);
     }
@@ -62,7 +62,7 @@ class LedgerMetricsTest {
         // observation causing the incident.
         MeterRegistry registry = new SimpleMeterRegistry();
         Counting counting = counting(0);
-        new LedgerMetrics(counting.verification, balancedTrial(), reachable(), CLOCK, registry);
+        new LedgerMetrics(counting.verification, balancedTrial(), noHolds(), reachable(), CLOCK, registry);
 
         for (int scrape = 0; scrape < 20; scrape++) {
             assertThat(gauge(registry)).isEqualTo(0.0d);
@@ -78,7 +78,7 @@ class LedgerMetricsTest {
         MeterRegistry registry = new SimpleMeterRegistry();
         Counting counting = counting(0);
         MovingClock clock = new MovingClock(CLOCK.instant());
-        new LedgerMetrics(counting.verification, balancedTrial(), reachable(), clock, registry);
+        new LedgerMetrics(counting.verification, balancedTrial(), noHolds(), reachable(), clock, registry);
 
         assertThat(gauge(registry)).isEqualTo(0.0d);
         clock.advance(LedgerMetrics.MIN_REFRESH.plusSeconds(1));
@@ -93,7 +93,7 @@ class LedgerMetricsTest {
         // P1-TSK-029: a freshly started instance publishes every series, or the
         // zero-threshold alert has nothing to evaluate at exactly the moment it is needed.
         MeterRegistry registry = new SimpleMeterRegistry();
-        new LedgerMetrics(counting(0).verification, balancedTrial(), reachable(), CLOCK, registry);
+        new LedgerMetrics(counting(0).verification, balancedTrial(), noHolds(), reachable(), CLOCK, registry);
 
         for (String currency : List.of("EUR", "GBP", "USD")) {
             assertThat(trialGauge(registry, currency))
@@ -110,6 +110,7 @@ class LedgerMetricsTest {
                 counting(0).verification,
                 connection ->
                         new TrialBalance.Report(3, List.of(CurrencyCode.of("GBP"))),
+                noHolds(),
                 reachable(),
                 CLOCK,
                 registry);
@@ -127,11 +128,31 @@ class LedgerMetricsTest {
         // could be swept would silence the one alert the gauge exists to fire - the same
         // rule as the drift gauge, biting the same way.
         MeterRegistry registry = new SimpleMeterRegistry();
-        new LedgerMetrics(counting(0).verification, balancedTrial(), unreachable(), CLOCK, registry);
+        new LedgerMetrics(counting(0).verification, balancedTrial(), noHolds(), unreachable(), CLOCK, registry);
 
         for (String currency : List.of("EUR", "GBP", "USD")) {
             assertThat(trialGauge(registry, currency)).isNaN();
         }
+    }
+
+    @Test
+    @DisplayName("the hold gauge reads the active count, and unreadable is absent never zero")
+    void theHoldGaugeReadsTheCountAndUnreadableIsAbsent() {
+        // Two registries, one claim each: the count is the count (the positive control),
+        // and an unreadable count is NaN - zero would say "no reservations stand" at the
+        // moment nothing can be known (P1-TSK-029, the sibling gauges' rule).
+        MeterRegistry counted = new SimpleMeterRegistry();
+        new LedgerMetrics(
+                counting(0).verification, balancedTrial(), connection -> 7L, reachable(),
+                CLOCK, counted);
+        assertThat(holdGauge(counted)).isEqualTo(7.0d);
+
+        MeterRegistry unreadable = new SimpleMeterRegistry();
+        new LedgerMetrics(
+                counting(0).verification, balancedTrial(), noHolds(), unreachable(),
+                CLOCK, unreadable);
+        assertThat(holdGauge(unreadable)).as("absent is alertable; a comforting zero is not")
+                .isNaN();
     }
 
     // -----------------------------------------------------------------
@@ -149,6 +170,15 @@ class LedgerMetricsTest {
     /** Every currency balanced - the healthy state, and most tests' background. */
     private static LedgerMetrics.Trial balancedTrial() {
         return connection -> new TrialBalance.Report(3, List.of());
+    }
+
+    /** No reservation stands - the healthy background for the sibling gauges' tests. */
+    private static LedgerMetrics.Holds noHolds() {
+        return connection -> 0L;
+    }
+
+    private static double holdGauge(MeterRegistry registry) {
+        return registry.get(LedgerMetrics.HOLD_ACTIVE).gauge().value();
     }
 
     private static LedgerMetrics.Connections reachable() {

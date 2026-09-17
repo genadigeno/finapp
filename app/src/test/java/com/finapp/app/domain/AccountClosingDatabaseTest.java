@@ -15,6 +15,7 @@ import com.finapp.accounts.JdbcCustomerAccountStore;
 import com.finapp.accounts.ProductType;
 import com.finapp.app.accounts.VerifiedAccountHolder;
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.JdbcBalanceProjection;
@@ -126,7 +127,7 @@ class AccountClosingDatabaseTest {
                 new JdbcOutboxWriter(),
                 new JdbcBalanceProjection(),
                 IDS,
-                CLOCK);
+                CLOCK, PostingObserver.NONE);
     }
 
     @Test

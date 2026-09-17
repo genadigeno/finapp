@@ -14,6 +14,8 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,6 +51,7 @@ public final class AdjustmentService {
     private final PostingEffect effect;
     private final IdGenerator ids;
     private final Clock clock;
+    private final PostingObserver observer;
 
     public AdjustmentService(
             IdempotentExecutor executor,
@@ -57,11 +60,13 @@ public final class AdjustmentService {
             OutboxWriter<Connection> outbox,
             BalanceProjection<Connection> projection,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            PostingObserver observer) {
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
         this.effect = new PostingEffect(journal, audit, outbox, projection, ids, clock);
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.observer = Objects.requireNonNull(observer, "observer must not be null");
     }
 
     /**
@@ -76,6 +81,26 @@ public final class AdjustmentService {
      * @throws LedgerAccountNotPostableException an account stopped accepting postings
      */
     public PostingResult adjust(Connection unitOfWork, AdjustmentCommand command) {
+        // Observed whatever the outcome (P3-TSK-020): the adjustment is the write path's
+        // only production traffic until Phase 4, so this is the meter's live producer.
+        Instant started = clock.instant();
+        try {
+            PostingResult result = doAdjust(unitOfWork, command);
+            observer.observe(
+                    result.replayed()
+                            ? PostingObserver.Outcome.REPLAYED
+                            : PostingObserver.Outcome.POSTED,
+                    Duration.between(started, clock.instant()));
+            return result;
+        } catch (RuntimeException refusal) {
+            observer.observe(
+                    PostingObserver.Outcome.REFUSED,
+                    Duration.between(started, clock.instant()));
+            throw refusal;
+        }
+    }
+
+    private PostingResult doAdjust(Connection unitOfWork, AdjustmentCommand command) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(command, "command must not be null");
 

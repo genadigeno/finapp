@@ -4569,13 +4569,48 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 ## P3-EPIC-08 — Observability and the gate (M3.8)
 
-**P3-TSK-020 — The six planned meters, eagerly registered** — `READY`
+**P3-TSK-020 — The six planned meters, eagerly registered** — `COMPLETE` (2026-09-17)
 - **Scope**: `PHASE_3_PLAN.md` §15's table, registered at construction and **unconditionally** —
   `P2-TSK-020`'s finding that a plan-named meter behind a property condition is the same defect
   wearing a condition; plus a dashboard row whose queries resolve.
 - **Deps**: the flows they measure. **Risk**: Low. **Cx**: S. **DoD**: `DOD-OBS`
+- **Gate evidence (2026-09-17)**: all six §15 series published by a freshly started instance,
+  held by the **pinned Phase-3 guard** in `PlannedMetersExistTest` (the `P2-TSK-020` shape: the
+  plan's own table against the plain no-database context; the derived guard takes over at the
+  flip). Two series existed (`trial.balance`, `projection.drift`); four arrived:
+  `finapp.ledger.posting{outcome}` and `finapp.ledger.posting.latency` through a new
+  **`PostingObserver` port** — a **required** primary-constructor parameter on all three
+  journal-write commands, no defaulted overload, so Phase 4's transfer wiring is forced by the
+  compiler to decide rather than silently lose its counts (the `MeteredKycCaseStore` argument
+  made structural); `finapp.ledger.hold.active` (fleet-wide `COUNT` via the new
+  `HoldStore.countActive`, NaN never zero, `max()` never `sum()`); and
+  `finapp.accounts.account{opened|closed}` counted **after the commit and only for the acting
+  call** (`Creation.created()`/`Closure.closed()` — a converged retry and a replay are never
+  throughput). The observer wiring is proven **through real HTTP**, not a test's own registry:
+  posted +1, a replay +1 replayed with posted unchanged, an unbalanced refusal +1 refused,
+  every command timed. **`P3-TSK-015`'s owned remainder landed with its owner**:
+  `ProjectionVerification` now compares `holds_minor` against the fold of the `ACTIVE` hold
+  rows **through the kernel** (`JournalEntry.sum`, never a SQL `SUM`), read in the **same
+  statement** as the projection row — one snapshot, so no watermark is needed: a hold
+  transaction updates both atomically under the account lock, and a single statement cannot
+  see half of that; an unverifiable fold is `DRIFTING`, because unverifiable is not clean. The
+  extension found its own enabling fix in advance: `HoldDatabaseTest`'s corruption test left
+  `holds_minor` corrupted **committed** in the shared container — harmless before, permanent
+  global drift after — so it restores now. Dashboard row *Ledger and accounts — financial
+  correctness* (six panels; the deferred drift and trial-balance panels land here), every
+  query resolving against a live scrape — the trial panel's `by (currency)` grouping label
+  joined the resolver's non-series vocabulary, the designed edit-forces-decision path. Timer
+  panels read `_count`/`_sum`/`_max`, never `_bucket` (the `P1-TSK-029` lesson);
+  `LedgerMetrics$HoldCached` joined the floating-point exemption set (the same Micrometer
+  case, sixth time). **Eight mutations, all caught by the intended assertion, restores
+  byte-identical** — the observer un-wired, a replay counted as posted, a refusal not
+  counted, the eager outcome series narrowed, the unknown hold reading made zero, the holds
+  comparison dropped, the opened count made unconditional, the closed count on presence.
+  **1107 hermetic tests, 676 database tests, counted.**
+- **Accept**: met — a freshly started instance publishes every series, proven by the pinned
+  guard rather than asserted.
 
-**P3-TSK-021 — Four-eyes on manual adjustments** — `TODO`
+**P3-TSK-021 — Four-eyes on manual adjustments** — `READY`
 - **Scope**: `INV-AUD-04`'s Phase 3 element, found owed by `P3-TST-003`: the catalogue marks
   the invariant `Phase: 3`, the manual adjustment exists (`P3-TSK-017`), and the mechanism is
   deliberately unbuilt — no defined threshold, no second approver, four-eyes recorded as

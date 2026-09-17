@@ -145,6 +145,33 @@ class PlannedMetersExistTest {
         assertThat(registeredMeters()).containsAll(planned);
     }
 
+    /**
+     * `P3-TSK-020`'s acceptance, performed ahead of the flip — the same shape one phase on:
+     * every meter Phase 3's plan §15 names is registered in this context, which boots with
+     * nothing configured and no reachable database, so it is exactly the "freshly started
+     * instance" the milestone acceptance names. Between now and the flip this is the only
+     * thing holding the six series; after it, a harmless second reading of the same table.
+     * What this proves that no per-class test can: the write-path observer, the hold gauge,
+     * the trial-balance series and the account counters are all the WIRED beans' eager
+     * registrations, not a test's own.
+     */
+    @Test
+    @DisplayName("Phase 3's planned meters are already published, ahead of the phase flip")
+    void phase3PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        for (String line : read(repositoryFile("docs/project/PHASE_3_PLAN.md"))) {
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(planned)
+                .as("the Phase 3 plan's §15 table must parse, or this checks nothing")
+                .hasSizeGreaterThanOrEqualTo(6);
+
+        assertThat(registeredMeters()).containsAll(planned);
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

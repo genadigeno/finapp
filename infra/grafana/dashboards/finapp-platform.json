@@ -423,6 +423,145 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "Ledger and accounts \u2014 financial correctness",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Trial balance by currency",
+      "description": "INV-ACC-01 as a series (P3-TSK-019): 0 verified balanced, 1 out of balance, NaN unverifiable. Zero, or an incident - alert on any non-zero value. Fleet-wide from every instance: max(), NEVER sum().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 46 },
+      "targets": [
+        { "refId": "A", "expr": "max by (currency) (finapp_ledger_trial_balance)", "legendFormat": "{{currency}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Projection drift",
+      "description": "Accounts where recomputation from postings disagrees with ledger.account_balance (INV-BAL-02, P3-TSK-010) - including a holds_minor no ACTIVE hold row explains (P3-TSK-020). Zero at all times; alert on any non-zero value. Fleet-wide: max(), NEVER sum().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 46 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_ledger_projection_drift)", "legendFormat": "drifting accounts" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Active holds",
+      "description": "Holds currently ACTIVE, system-wide (P3-TSK-020): hold utilisation, a count never an amount. NaN means the count could not be read - absent is alertable, a comforting zero is not. Fleet-wide: max(), NEVER sum().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 46 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_ledger_hold_active)", "legendFormat": "active" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Journal-write commands by outcome",
+      "description": "finapp.ledger.posting (P3-TSK-020): posting, reversal and adjustment commands through the ledger's one write path. posted ran and appended; replayed returned a recorded outcome; refused threw - the failure rate an operator watches when Phase 4 makes this the hot path.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 53 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_ledger_posting_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Posting latency",
+      "description": "finapp.ledger.posting.latency: the duration a caller experiences on the write path, every outcome. No histogram buckets are published (the P1-TSK-029 lesson) - these are max and the rate-derived mean.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 53 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_ledger_posting_latency_seconds_max)", "legendFormat": "max" },
+        { "refId": "B", "expr": "sum(rate(finapp_ledger_posting_latency_seconds_sum[5m])) / sum(rate(finapp_ledger_posting_latency_seconds_count[5m]))", "legendFormat": "mean" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Account lifecycle",
+      "description": "finapp.accounts.account (P3-TSK-020): customer accounts opened and closed. Only the acting call counts - a converged retry, a replayed key and the losers of a concurrent close are never throughput (P2-TSK-020's discipline).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 53 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_accounts_account_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }
