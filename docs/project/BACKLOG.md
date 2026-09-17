@@ -4080,12 +4080,14 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   unchanged; the `build-logic` Kotlin RC3→GA lockfile drift met and reverted a **fourth** time.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
 
-**P3-TSK-012 — `CustomerAccount`: the product, gated on verification** — `READY`
+**P3-TSK-012 — `CustomerAccount`: the product, gated on verification** — `COMPLETE` (2026-09-17)
 - **Objective**: a verified customer may hold an account; an unverified one may not.
 - **Context**: Accounts. **Scope**: the aggregate and its machine
-  (`PENDING → ACTIVE → {SUSPENDED ⇄ ACTIVE} → CLOSED`); `V001` creating
-  `accounts.customer_account`; opening requires `party.customer.status = ACTIVE` — **Phase 2's
-  projection as the gate**, its first consumer.
+  (`PENDING → ACTIVE → {SUSPENDED ⇄ ACTIVE} → CLOSED`); `V002` creating
+  `accounts.customer_account` *(written `V001` before `P3-TSK-011` landed `V001` as the
+  schema init — the ledger numbering shape)*; opening requires
+  `party.customer.status = ACTIVE` — **Phase 2's projection as the gate**, its first
+  consumer.
 - **Out of scope**: the API; closing (P3-TSK-014).
 - **Deps**: P3-TSK-011, P3-TSK-002.
 - **Invariants**: `INV-LIFE-01`, `INV-LIFE-02`, `INV-LIFE-04`, `INV-KYC-05` (consuming the
@@ -4097,9 +4099,40 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   `PENDING` or `REJECTED` customer cannot open an account; opening creates the ledger account(s)
   in the **same transaction**.
 - **Accept**: a KYC-approved customer opens an account; a rejected one is refused.
+- **Gate evidence (2026-09-17)**: full battery green — 1079 hermetic, 633 database, 14 kafka
+  tests. The acceptance end to end against a live PostgreSQL: an `ACTIVE` customer's open
+  commits the agreement (`ACTIVE` from birth — the gate is opening's only precondition, so
+  `PENDING` has no producer, the `STRONG`-assurance precedent), the `CUSTOMER_WALLET` ledger
+  account (**`LIABILITY`/`CREDIT`, asserted** — a wallet typed `ASSET` would state that
+  customer money is the platform's own), the audit record naming the person and the one
+  announcement, in **one transaction** — proven by the rolled-back open leaving none of the
+  four. A `PENDING` and a `REJECTED` customer are one uniform refusal writing nothing
+  (`REJECTED` via the freed one-live slot, so the causes are structurally indistinguishable).
+  **The gate consumes the projection per decision** (`INV-KYC-05`): the port resolves the
+  customer from `findLiveCustomerFor` filtered to `ACTIVE` inside the opening's own unit of
+  work — the customer identifier is never a caller's — and a customer closed on another
+  connection is refused on this one's very next open. **Ten instances, ten connections, own
+  scopes**: one agreement, one ledger account, one record, one event, nine converged —
+  counted in the tables; the partial unique index arbitrates and the savepoint keeps the
+  losers' transactions alive. The one open-vs-customer-close race is **accepted and stated**
+  (the `P2-TSK-008` class) with the cross-module lock rejected as boundary-breaking coupling.
+  **The wallet-aggregate tension in the plan resolved on the record**: product type on
+  `CustomerAccount` (`WALLET`, the phase's one product over the one customer-owned purpose),
+  ADR-0042's premature-boundary argument applied one level down, provenance note in plan §4.
+  `AccountsAuditAction` arrives **with the aggregate** per `P3-TSK-011`'s recorded decision —
+  `ACCOUNT_OPENED` only, emitted by the creating call; `ACCOUNT_CLOSED` stays `P3-TSK-014`'s.
+  Grants proven per column with a positive control (`UPDATE` on exactly
+  `status, status_changed_at`; identity columns and `DELETE` refused at the privilege).
+  The container clock drift met once more (`P1-TSK-031` — a fixture `now()` against a
+  JVM-clock `opened_at`; the constraint was right, the fixture corrected to the
+  `LedgerAccountDatabaseTest` idiom). **Eight mutation runs, all caught by the intended
+  assertion, restores byte-identical**: the gate call dropped, the eligibility filter widened
+  past `ACTIVE`, the ledger creation dropped, the converged path acting again, the one-live
+  index dropped (caught **twice** — the hermetic reconciliation and the ten-way race), the
+  transition check removed, the `UPDATE` grant made table-wide.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
 
-**P3-TSK-013 — `POST /v1/me/accounts`, `GET /v1/me/accounts`, `GET …/balance`** — `TODO`
+**P3-TSK-013 — `POST /v1/me/accounts`, `GET /v1/me/accounts`, `GET …/balance`** — `READY`
 - **Context**: Accounts + app. **Scope**: the three endpoints, ownership by absence
   (`SESSION_DERIVED`); the balance response states **which number it is** (settled, holds,
   available) and that it is a projection.

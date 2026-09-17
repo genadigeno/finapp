@@ -88,9 +88,17 @@ A Customer Account **carries no balance**. It references its ledger accounts.
 
 ### Wallet — the stored-value product
 
-A Customer Account whose product type is stored value. Same module, separate aggregate, own
-table (ADR-0042's recorded split trigger). Phase 3 models it and gives it no funding rails —
-top-up and withdrawal need Phase 4's transfers or Phase 5's payments.
+A Customer Account whose product type is stored value — `ProductType.WALLET`, the phase's one
+product, backed by the one customer-owned ledger purpose (`CUSTOMER_WALLET`). Phase 3 gives it
+no funding rails — top-up and withdrawal need Phase 4's transfers or Phase 5's payments.
+
+*(This paragraph also said "separate aggregate, own table" until `P3-TSK-012`, which recorded
+the contradiction rather than silently picking a side: the backlog's own uniqueness rule — one
+live account per customer per <strong>product type</strong> — puts the type on `CustomerAccount`,
+no Phase 3 task builds a second aggregate, and ADR-0042's argument against a premature wallet
+module — one aggregate, no independent lifecycle, no independent state — applies verbatim one
+level down. The separate aggregate arrives with the independent lifecycle that is the ADR's own
+recorded split trigger.)*
 
 ### Ledger Account — the accounting position
 

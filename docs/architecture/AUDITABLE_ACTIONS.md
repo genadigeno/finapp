@@ -238,6 +238,22 @@ legitimacy. **Four-eyes is not implied by the flag** — it is recorded debt (`I
 `P3-TSK-006` (built — the posting command emits it in the posting's own transaction) and
 `P3-TSK-017` respectively.
 
+### `accounts` — `AccountsAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `accounts.AccountOpened` | No | A customer account product was opened; the record names the account, the product type and the customer, never a balance. |
+
+Declared with the aggregate whose design fixes its meaning (`P3-TSK-012`) rather than with the
+module skeleton — `P3-TSK-011`'s recorded decision, the `kyc.CaseOpened`/`P2-TSK-005`
+precedent. No reason: opening is a person's own act on their own relationship (the consent-action
+reasoning, §4), and a mandatory justification would produce a column of *"wanted an account"*.
+The code matches the event type the same opening publishes — one fact, named once, in two
+registries — and is emitted by `AccountOpening` in the opening transaction, by the
+<strong>creating</strong> call only: a converged retry is not a second act.
+`accounts.AccountClosed` is deliberately absent — whether closing is its own audited act and
+what its record carries is `P3-TSK-014`'s design; suspension has no producer at all this phase.
+
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure
 in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today

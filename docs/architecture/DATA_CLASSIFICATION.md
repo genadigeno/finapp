@@ -398,6 +398,20 @@ never authoritative, and read by no financial decision (`INV-BAL-05`). A derived
 | `account_balance` | `last_entry_seq` | `INTERNAL` | An applied-entry count — activity volume, the `journal_entry.created_at` question at most, and it dates nothing |
 | `account_balance` | `updated_at` | `CONFIDENTIAL` | System time of the last posting still dates financial activity — `journal_entry.created_at`'s reasoning |
 
+### `accounts.customer_account` — *added by `P3-TSK-012`*
+
+**No amount column exists here, by design** — the product carries no balance (ADR-0042); the
+money is `ledger`'s and classified there.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `customer_account` | `id` | `INTERNAL` | An aggregate identifier. Generated — and the value the ledger stores as its opaque `owner_ref`, whose row already records that what it *resolves to* is this module's to classify |
+| `customer_account` | `customer_id` | `INTERNAL` | The `kyc_case.customer_id` reasoning: an identifier of a thing, not a fact about it — it must appear in the audit records that make an opening investigable |
+| `customer_account` | `product_type` | `INTERNAL` | An enumeration member |
+| `customer_account` | `status` | `CONFIDENTIAL` | `SUSPENDED` is an administrative freeze against a person's product — `customer.status`'s reasoning, and `ledger_account.status`'s one register over. The ceiling rule: classified for what the column will mean, not what Phase 3 writes into it |
+| `customer_account` | `opened_at` | `CONFIDENTIAL` | Dates a product opening — `ledger_account.created_at`'s reasoning verbatim |
+| `customer_account` | `status_changed_at` | `CONFIDENTIAL` | Dates a freeze or a closure, which is more disclosive than the status alone |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |
