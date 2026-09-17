@@ -262,6 +262,9 @@ class OpenApiContractTest {
                         // P3-TSK-014: DELETE lives on the account path itself.
                         ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}/balance",
+                        // P3-TSK-017: the ledger's one public surface - the adjustment,
+                        // behind LEDGER_ADJUST, reason required (INV-REV-04).
+                        ApiVersion.CURRENT_PREFIX + "/ledger/adjustments",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

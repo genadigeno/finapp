@@ -310,7 +310,14 @@ class CredentialReachesNoEmittedSinkTest {
                         // schema REACHABLE from a request body. What the opening creates is
                         // classified in accounts.customer_account's register rows, not in
                         // this vocabulary.
-                        "AccountOpenRequest");
+                        "AccountOpenRequest",
+                        // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
+                        // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
+                        // rendered by any toString) and lines of account/direction/amount/
+                        // currency - the first request body to carry amounts, as exact
+                        // decimal strings (INV-MON-01 past the boundary, inbound). No secret;
+                        // here because the set is every schema REACHABLE from a request body.
+                        "AdjustmentRequest");
     }
 
     @Test

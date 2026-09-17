@@ -258,6 +258,54 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * The adjustment's lines do not balance per currency (`P3-TSK-017`, {@code INV-LED-01}) —
+     * the caller's own {@code 422}, decided before any idempotency claim is consumed, so the
+     * operator fixes the request and retries under the same key.
+     */
+    @ExceptionHandler(com.finapp.ledger.UnbalancedJournalEntryException.class)
+    public ResponseEntity<ProblemDetailBody> handleUnbalancedAdjustment(
+            com.finapp.ledger.UnbalancedJournalEntryException exception,
+            HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        com.finapp.ledger.LedgerErrorCode.UNBALANCED_ADJUSTMENT,
+                        request.getRequestURI(),
+                        "Debits must equal credits per currency, at one scale per currency."));
+    }
+
+    /**
+     * A line names an account the chart does not have, or a currency foreign to it
+     * (`P3-TSK-017`) — the store's translation of the schema's own {@code 23503}.
+     */
+    @ExceptionHandler(com.finapp.ledger.UnknownPostingAccountException.class)
+    public ResponseEntity<ProblemDetailBody> handleUnknownPostingAccount(
+            com.finapp.ledger.UnknownPostingAccountException exception,
+            HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        com.finapp.ledger.LedgerErrorCode.UNKNOWN_ACCOUNT,
+                        request.getRequestURI(),
+                        "Name an existing ledger account in its own currency."));
+    }
+
+    /**
+     * The account stopped accepting postings (`P3-TSK-014`'s rule meeting `P3-TSK-017`'s
+     * surface): a {@code 409}, actionable in the {@code P1-TSK-018} sense — adjust a
+     * different account, not this one again.
+     */
+    @ExceptionHandler(com.finapp.ledger.LedgerAccountNotPostableException.class)
+    public ResponseEntity<ProblemDetailBody> handleAccountNotPostable(
+            com.finapp.ledger.LedgerAccountNotPostableException exception,
+            HttpServletRequest request) {
+        LOGGER.warn("A posting named a non-ACTIVE account on {}", request.getRequestURI());
+        return render(
+                ProblemDetail.of(
+                        com.finapp.ledger.LedgerErrorCode.ACCOUNT_NOT_POSTABLE,
+                        request.getRequestURI(),
+                        "The account no longer accepts postings."));
+    }
+
+    /**
      * The account still holds value, so the agreement cannot end (`P3-TSK-014`).
      *
      * <p>The detail names no amount and no currency ({@code INV-AUD-02}): which balance

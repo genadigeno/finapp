@@ -26,13 +26,15 @@ import java.util.Optional;
  * `P3-TSK-016` when the reversal became its second caller, the {@code CheckOutcomeTrail}
  * rule: a write set copied per command is one that drifts in exactly one of its copies).
  *
- * <p><strong>One fact, one vocabulary</strong>: whatever kind of entry this records — a
- * posting, a reversal, an adjustment — the act is <em>a journal entry was posted</em>, so
- * the audit action and the event type stay {@code ledger.JournalEntryPosted} and the kind
- * travels as data ({@code entryType} in the payload and the change summary). A separate
- * reversal vocabulary would name the same fact twice; the reversal's own distinguishing
- * fact — which original it compensates — is the entry row's {@code reverses_entry_id}
- * ({@code INV-REV-01}), where an investigator joins it.
+ * <p><strong>One event vocabulary; the audit action follows the act's own regime.</strong>
+ * The event type stays {@code ledger.JournalEntryPosted} for every kind — the kind travels
+ * as data ({@code entryType}), and a separate event per kind would name one fact twice. The
+ * <em>audit</em> action is derived from the kind, because {@code INV-REV-04} gives the
+ * adjustment its own regime: an {@code ADJUSTMENT} records {@code ledger.AdjustmentPosted}
+ * <strong>with its reason</strong> (`P3-TSK-017`), while postings and reversals record
+ * {@code ledger.JournalEntryPosted} with none — a posting is commanded by a flow whose own
+ * records carry the why, and a reversal's distinguishing fact is the entry row's
+ * {@code reverses_entry_id} ({@code INV-REV-01}), where an investigator joins it.
  *
  * <p>Package-private deliberately: the callers are the ledger's own commands
  * ({@link PostingService}, {@link ReversalService}, and `P3-TSK-017`'s adjustment), which is
@@ -78,6 +80,14 @@ final class PostingEffect {
             Correlation correlation) {
         journal.append(unitOfWork, entry, attribution);
 
+        // INV-REV-04's regime, derived from the kind: the adjustment's record carries its
+        // reason and its own registered action; AuditRecord itself refuses an ADJUSTMENT_POSTED
+        // without one, so the pair cannot drift.
+        LedgerAuditAction action =
+                attribution.entryType() == JournalEntryType.ADJUSTMENT
+                        ? LedgerAuditAction.ADJUSTMENT_POSTED
+                        : LedgerAuditAction.JOURNAL_ENTRY_POSTED;
+
         Instant now = Instant.now(clock);
         audit.append(
                 unitOfWork,
@@ -85,10 +95,10 @@ final class PostingEffect {
                         AuditId.next(ids),
                         actor,
                         now,
-                        LedgerAuditAction.JOURNAL_ENTRY_POSTED,
+                        action,
                         TARGET_TYPE,
                         entry.id().value().toString(),
-                        Optional.empty(),
+                        attribution.reason(),
                         AuditOutcome.SUCCEEDED,
                         correlation.correlationId(),
                         // Identifiers and counts - never an amount (INV-AUD-02).

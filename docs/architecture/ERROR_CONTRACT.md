@@ -204,6 +204,28 @@ endpoint they already own, and a refusal that quoted the number would put a
 (`INV-AUD-02`). A `SUSPENDED` agreement asked to close answers the generic `api.Conflict`:
 suspension has no producer this phase, and unreachable surfaces do not earn vocabulary.
 
+### `ledger` — `LedgerErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `ledger.UnbalancedAdjustment` | 422 | The adjustment's debits and credits must be equal per currency, at one scale. |
+| `ledger.UnknownAccount` | 422 | A line names an unknown ledger account, or a currency foreign to it. |
+| `ledger.AccountNotPostable` | 409 | The account no longer accepts postings. |
+
+The ledger's one public surface is the adjustment (`P3-TSK-017` — plan §9: posting is an
+internal API), so its vocabulary is the adjustment's refusals. **No title or detail ever names
+an amount** (`INV-AUD-02`): which numbers were involved is the caller's own request.
+`ledger.UnbalancedAdjustment` and `ledger.UnknownAccount` are 422s — values the caller chose
+and must correct (`P1-TSK-026`'s reasoning), decided **before any idempotency claim is
+consumed**, so the operator fixes the request and retries under the same key.
+`ledger.UnknownAccount` is one code for two causes (an unknown account, a currency foreign to
+it) because the remedy is one and an operator holding `LEDGER_ADJUST` reads the chart anyway —
+no oracle is opened. `ledger.AccountNotPostable` (409) is `P3-TSK-014`'s rule meeting this
+surface: actionable in the `P1-TSK-018` sense — adjust a different account, not this one
+again. A missing reason is the ordinary `api.ValidationFailed`, because the boundary's bean
+validation owns required-field refusals; the reason's **bound** lives in three reconciled
+places (the DTO, `V004`'s `CHECK`, `AuditRecord`).
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

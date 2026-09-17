@@ -4373,7 +4373,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   counted in the table.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`
 
-**P3-TSK-017 — `POST /v1/ledger/adjustments`: reason, permission, audit** — `READY`
+**P3-TSK-017 — `POST /v1/ledger/adjustments`: reason, permission, audit** — `COMPLETE` (2026-09-17)
 - **Objective**: `INV-REV-04` — the highest-risk financial action in any platform.
 - **Scope**: the endpoint behind `LEDGER_ADJUST`; reason code required and bounded in three
   reconciled places; audited with actor and correlation.
@@ -4381,11 +4381,50 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Out of scope**: **four-eyes** — recorded debt (`INV-AUD-04`, ADR-0010). The task must record
   the remainder rather than imply a threshold check is four-eyes.
 - **Tests**: negative authorization; missing reason 422; every adjustment audited.
+- **Gate evidence (2026-09-17)**: full battery green — 1102 hermetic, 668 database, 14 kafka
+  tests — **and M3.6 closes with it.** `AdjustmentService` in `ledger` (`PostingService`'s
+  discipline, scope `ledger.adjust`, validate-then-claim, through the extracted
+  `PostingEffect` — which now **derives the audit action from the entry's kind**:
+  `ADJUSTMENT` records `ledger.AdjustmentPosted` **with its reason**, everything else stays
+  `JOURNAL_ENTRY_POSTED`; the event vocabulary stays one, plan §10's own list, and both
+  ledger actions leave `NOT_YET_EMITTED`). The boundary: `@RequiresPermission(LEDGER_ADJUST)`
+  — **the permission's first real check site, exactly as `P3-TSK-007` recorded** — plus
+  `@RequiresIdempotencyKey` (money-moving; `P0-TSK-017`'s header meeting the money it was
+  built for). **The first request body ever to carry amounts**: decimal strings parsed
+  **exactly** (`Money.of` — an inexact amount is the caller's 422 naming the line and field,
+  never a rounding, `INV-MON-03`); the reason bounded in **three reconciled places** (DTO
+  `@Size(max = AuditRecord.MAX_REASON_LENGTH)`, `V004`'s `CHECK`, `AuditRecord`).
+  **The fingerprint binds the actor AND the reason** (ADR-0004; `INV-IDEM-03`): a second
+  operator replaying a logged key gets a 409, and so does the same key with a different
+  justification — a reason is what makes an adjustment defensible, so two requests differing
+  only there never silently collapse into one record. Three codes catalogued
+  (`ledger.UnbalancedAdjustment` 422, `ledger.UnknownAccount` 422 — the store translating
+  the line FK's `23503`, the V007 pattern, via `UnknownPostingAccountException` —
+  `ledger.AccountNotPostable` 409), mapped globally. Proven over real HTTP: the operator's
+  201 with the `ADJUSTMENT` row, its stored reason, the `ledger.AdjustmentPosted` record
+  naming the **person** and carrying the reason, the event, the projection moved; the
+  no-role 403 with nothing written (`INV-AUD-03` with test 1 as the positive control);
+  missing reason 422; **unbalanced 422 whose key then carries the corrected request**
+  (validate-before-claim, visible at HTTP); replay = same entry, one record; unknown account
+  422; keyless 422; nine body shapes, none our 500. Contract: 68 added lines, **zero
+  removed**; `BREAKING` labels the classifier erring safe on a brand-new path (the
+  `P1-TSK-006` precedent), reviewed and accepted; `operationId` a real name
+  (`postAdjustment`). **Four-eyes recorded, not implied**: no threshold check exists, and
+  the controller javadoc says so in as many words. **Seven mutations, all caught by the
+  intended assertion, restores byte-identical** — the permission removed, the reason's
+  `@NotBlank` dropped (the 422 becomes a 500), the action derivation dropped (an adjustment
+  recorded as a plain posting), the actor dropped from the fingerprint, the unbalanced
+  mapping removed, the key requirement removed, the reason dropped from the fingerprint.
+  One planned mutation was cut on analysis rather than performed and recorded as such:
+  claim-before-validate is behaviourally invisible in the caller-transaction model, because
+  the refusal's rollback takes the claim with it either way — the ordering is architectural
+  discipline, not a testable boundary here.
+- **Accept**: met — see gate evidence.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-SEC`
 
 ## P3-EPIC-07 — Statements and the trial balance (M3.7)
 
-**P3-TSK-018 — Statements derived from postings** — `TODO`
+**P3-TSK-018 — Statements derived from postings** — `READY`
 - **Scope**: `GET /v1/me/accounts/{id}/statement` for a period, derived from postings, with
   opening and closing balances that reconcile to the lines between them (`INV-ACC-02`'s
   drill-down shape, three phases early).

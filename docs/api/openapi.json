@@ -927,6 +927,111 @@
           }
         }
       },
+      "ledger.AccountNotPostable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.AccountNotPostable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.AccountNotPostable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The account no longer accepts postings.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "ledger.UnbalancedAdjustment": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.UnbalancedAdjustment"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.UnbalancedAdjustment"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The adjustment's debits and credits must be equal per currency, at one scale.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "ledger.UnknownAccount": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.UnknownAccount"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.UnknownAccount"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A line names an unknown ledger account, or a currency foreign to it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "party.RegistrationRefused": {
         "content": {
           "application/problem+json": {
@@ -995,6 +1100,51 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AdjustmentRequest": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/Line"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "postingDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reference": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "valueDate": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lines",
+          "postingDate",
+          "reason",
+          "reference",
+          "valueDate"
+        ],
+        "type": "object"
+      },
+      "AdjustmentView": {
+        "properties": {
+          "entryId": {
             "type": "string"
           }
         },
@@ -1283,6 +1433,37 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "Line": {
+        "properties": {
+          "accountId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "amount": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "minLength": 1,
+            "pattern": "[A-Z]{3}",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "DEBIT",
+              "CREDIT"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "amount",
+          "currency",
+          "direction"
+        ],
         "type": "object"
       },
       "MfaConfirmationRequest": {
@@ -1891,6 +2072,43 @@
         "responses": {
           "204": {
             "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/ledger/adjustments": {
+      "post": {
+        "operationId": "postAdjustment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustmentView"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }

@@ -247,9 +247,11 @@ because `INV-REV-04` says so in as many words, and because a human choosing to m
 system would not have moved is the one act whose justification is its only evidence of
 legitimacy. **Four-eyes is not implied by the flag** — it is recorded debt (`INV-AUD-04`).
 `ledger.JournalEntryPosted` shares its code with the event the same posting publishes, as
-`identity.AuthenticationSucceeded` does: one fact, named once, in two registries. Emitted by
-`P3-TSK-006` (built — the posting command emits it in the posting's own transaction) and
-`P3-TSK-017` respectively.
+`identity.AuthenticationSucceeded` does: one fact, named once, in two registries. Both are
+emitted — `ledger.JournalEntryPosted` by `P3-TSK-006`'s posting command (and by the reversal,
+whose kind travels as data), `ledger.AdjustmentPosted` by `P3-TSK-017`'s adjustment command,
+each in its own transaction, with `PostingEffect` deriving the action from the entry's kind
+so the adjustment's reason regime cannot be skipped by a careless caller.
 
 ### `accounts` — `AccountsAuditAction`
 

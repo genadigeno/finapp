@@ -99,6 +99,16 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                         "a line of entry " + entry.id() + " names an account that is no longer"
                                 + " ACTIVE; the posting is refused (P3-TSK-014)");
             }
+            // The line FK and V005's composite currency binding (23503): a line named an
+            // account the chart does not have, or a currency foreign to it - translated so
+            // a boundary can answer the caller's 422 rather than our 500 (P3-TSK-017). The
+            // SQLState is matched, never prose; entry-level FKs (reverses_entry_id) carry
+            // their own earlier validation, so a 23503 on append is the lines'.
+            if ("23503".equals(failure.getSQLState())) {
+                throw new UnknownPostingAccountException(
+                        "a line of entry " + entry.id() + " names an unknown ledger account,"
+                                + " or a currency foreign to it (INV-MON-02, P3-TSK-017)");
+            }
             // V009's bound trigger (INV-REV-02) and reversal-of-reversal trigger, same
             // pattern: the marker is matched, never the prose, and the composed message
             // carries identifiers and never a row or an amount (INV-AUD-02).

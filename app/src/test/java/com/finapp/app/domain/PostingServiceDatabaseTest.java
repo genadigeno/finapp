@@ -380,9 +380,13 @@ class PostingServiceDatabaseTest {
                                     new JournalLine(jpy.id(), Direction.CREDIT,
                                             Money.ofMinorUnits(500, USD))));
             assertThatThrownBy(() -> service().post(app, command))
-                    .isInstanceOf(LedgerStorageException.class)
-                    // SQLState 23503 (foreign_key_violation), kept by DatabaseFailure.
-                    .hasMessageContaining("23503");
+                    // The 23503 surfaced as a generic storage failure until P3-TSK-017's
+                    // boundary needed the caller's 422: the store now translates it to the
+                    // named domain refusal (the V007 pattern), superseding this test's
+                    // original LedgerStorageException expectation - the stopgap-superseded
+                    // precedent. The refusal is amount-free and still the schema's own.
+                    .isInstanceOf(com.finapp.ledger.UnknownPostingAccountException.class)
+                    .hasMessageNotContaining("500");
             app.rollback();
         }
     }
