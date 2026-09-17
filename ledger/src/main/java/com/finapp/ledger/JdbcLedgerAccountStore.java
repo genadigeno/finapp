@@ -157,6 +157,31 @@ public final class JdbcLedgerAccountStore implements LedgerAccountStore<Connecti
     }
 
     @Override
+    public java.util.List<LedgerAccount> findAllOwned(Connection unitOfWork, UUID ownerRef) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(ownerRef, "ownerRef must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // lockOwnedForUpdate's read minus the lock: resolution, not decision
+                        // (P4-TSK-005). Same fixed order, for deterministic answers.
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE owner_ref = ? ORDER BY id")) {
+            read.setObject(1, ownerRef);
+            try (ResultSet rows = read.executeQuery()) {
+                java.util.List<LedgerAccount> accounts = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    accounts.add(rehydrate(rows));
+                }
+                return java.util.List.copyOf(accounts);
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe(
+                            "reading the accounts of owner " + ownerRef, failure));
+        }
+    }
+
+    @Override
     public java.util.List<LedgerAccount> lockOwnedForUpdate(Connection unitOfWork, UUID ownerRef) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(ownerRef, "ownerRef must not be null");

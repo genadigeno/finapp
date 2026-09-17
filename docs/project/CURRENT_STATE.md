@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P4-TSK-004` — the transfer schema, `V002`)
+Last updated: 2026-09-17 (`P4-TSK-005` — the execution command; M4.2 closes)
 
 ---
 
@@ -161,12 +161,21 @@ class, again).
 
 ## Current Milestone
 
-**M4.2 — The movement exists.** `P4-TSK-003` … `P4-TSK-005`; **2 of 3 — next
-`P4-TSK-005` (`READY`)** — the `Transfer` aggregate and the schema that inherits its
-machine are both **delivered** (the machine pinned in code and generated into `V002`'s
-`CHECK`s and every-writer trigger); what remains is the phase's High-risk task: the
-execution command in one transaction under the source-account lock, with conservation
-counted under a ten-way drain.
+**M4.3 — Beneficiaries.** `P4-TSK-006`, `P4-TSK-007`; **0 of 2 — next `P4-TSK-006`
+(`READY`)** — the `Beneficiary` aggregate and `V003`, then the endpoints with the
+conditional `MULTI_FACTOR` step-up at creation (the transition's structural ruling).
+
+### M4.2 — The movement exists — CLOSED
+
+**M4.2 — The movement exists.** `P4-TSK-003` … `P4-TSK-005`; **CLOSED 2026-09-17, 3 of 3**
+— the machine pinned in code, generated into `V002`'s `CHECK`s and every-writer trigger,
+and driven by the execution command in **one local transaction** under the source-account
+lock. The milestone's stated acceptance — *ten instances draining one account: exactly the
+affordable transfers succeed, total value conserved, counted in the table* — **holds by
+demonstration**: ten instances draining 1000-affordable in 300s accept exactly **3
+`COMPLETED` with 7 `FAILED(INSUFFICIENT_FUNDS)`**, the source settled at 100 and never
+negative, the pair summing to the funded 1000 to the minor unit (`INV-CON-02`), counted in
+the tables and never inferred from return values.
 
 ### M4.1 — Foundations — CLOSED
 
@@ -486,11 +495,83 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P4-TSK-004` is `COMPLETE`; **M4.2 is 2 of 3. Next:
-`P4-TSK-005` (`READY`)** — the execution command, the phase's High-risk
-task.
+**None in progress.** `P4-TSK-005` is `COMPLETE`; **M4.2 closes at 3 of 3,
+and M4.3 opens. Next: `P4-TSK-006` (`READY`)** — the `Beneficiary`
+aggregate and `V003`.
 
 ### Just completed
+
+**`P4-TSK-005` — The execution command: one transaction, the lock, the
+outcome** — `COMPLETE` (2026-09-17). **M4.2 closes: the movement exists.**
+The phase's High-risk task: one transfer judged and committed with its
+money in one local transaction (ADR-0043) — claim → resolve → judge →
+source lock → availability in-lock → seams → post → outcome, all on the
+caller's connection.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The ten-way drain, counted in the tables | Ten instances (own connection, scope and flow each) draining 1000-affordable in 300s: exactly **3 `COMPLETED`, 7 `FAILED(INSUFFICIENT_FUNDS)`**, source settled 100 and never negative, destination 900, **the pair summing to the funded 1000 to the minor unit** (`INV-CON-02`) |
+| An injected failure at the last write leaves *nothing* | A throwing outbox decorator: no row, no entry, no history, no audit — **and no claim: the same key then executes afresh** rather than replaying a failure that never committed (`P3-TSK-006`'s property as ADR-0043's demonstration) |
+| A retry replays the stored outcome, success and failure both | The `FAILED` refusal commits, so its claim survives and its retry learns it — `CommandResult.failed`, the Phase 0 executor's own documented rejected-transfer case, meeting its intended caller three phases later. Same key + different amount → `IdempotencyConflictException` (`INV-IDEM-03`; the fingerprint binds the actor and the money's meaning) |
+| The availability decision proven inside the lock | **The named mutation performed and caught**: hoisted outside the lock — still locks, still checks, still loses the race (the `P3-TST-002` shape) — the drain fails with the textbook over-acceptance, `expected: 3 but was: 10` |
+
+### Two additions to proven ledger code, each earned by its second caller
+
+**`AvailableBalance`** — the extraction of `HoldService`'s
+derive-plus-standing-holds computation, whose second caller has now
+arrived (the `PostingEffect` precedent): "what can this account spend?"
+has one answer however many commands ask. `HoldService` delegates with its
+constructor unchanged, `HoldDatabaseTest` the behavioural equivalence
+proof; the **in-lock contract is the first line of the javadoc**, because
+called without the lock it is exactly the check that passes every
+sequential test and loses the race. **`LedgerAccountStore.findAllOwned`**
+— the lock-free sibling of `lockOwnedForUpdate`'s read, because no
+currency-blind product→wallet resolution existed and a
+`CURRENCY_MISMATCH` refusal must still commit carrying the real accounts.
+
+### The refusals, each a committed outcome with its committed shape
+
+`SELF_TRANSFER` first — **the precedence is forced by the aggregate's pair
+rule**, any other reason with an equal pair being a shape the constructor
+refuses: the coherence design teaching the execution. `CURRENCY_MISMATCH`
+carries both real wallets (currency-blind resolution's purpose).
+`DESTINATION_NOT_POSTABLE` twice over: seen at resolution, and **the
+mid-flight `V007` path proven sequentially and deterministically** — a
+resolution decorator lies about postability, the posting trigger refuses,
+and the **savepoint** turns the aborted transaction state into a committed
+`FAILED`, named with certainty because the source was verified under our
+own lock. Boundary mistakes (unknown source, somebody else's source — one
+indistinguishable refusal, `INV-IDN-07` at a port) throw with nothing
+written, the rollback taking the claim with it. The destination is
+resolved **through the ledger alone** (product and ledger status close
+together, `P3-TSK-014` — recorded as today-exact), so no unowned
+`accounts` read exists and the counterparty-disclosure question never
+arises.
+
+### What else the task settled
+
+`transfers.TransferExecuted` arrives with the command whose design fixes
+it (no reason — the `FAILED` case's "why" is the enumerated reason on the
+row; registry and completeness guards green); terminal events only, with
+identifiers and enum names and never an amount; posting and value dates
+are today by the injected clock, the explicit `DOMAIN_MODEL.md` §Time
+decision, revisited by scheduled transfers; the posting's own idempotency
+key is `transfer:<id>` (the `ledger.adjust.approve` precedent), so a
+replayed transfer never re-enters the posting; the seams
+(`TransferLimitCheck`, `TransferRiskDecision`) are **required parameters
+with no defaulted overload**, consulted in-lock, implemented by
+`PermitAllUntilPhase13` until `P4-TSK-010` hardens them. The
+container-clock trap met again on schedule (`GREATEST()`, `P1-TSK-031`).
+**Seven mutations, all caught by the intended assertion, restores
+byte-identical.** Verified by targeted tiers plus the full architecture
+tier (`OwnershipIsScopedTest` demanded no entries — the store API takes
+aggregates, never bare identifiers, verified against the detector); **the
+full battery deliberately skipped on the owner's instruction; no
+fleet-wide counts claimed.** Process note: the Gradle daemon was
+externally stopped mid-run twice; both runs were repeated and read from
+fresh executions.
+
+### Previously
 
 **`P4-TSK-004` — The transfer schema: `V002`** — `COMPLETE` (2026-09-17).
 **M4.2 is 2 of 3: the machine the aggregate holds in Java now binds every
@@ -8807,14 +8888,13 @@ Project initiation (2026-08-31):
 ## Active Work
 
 **None in progress.** Phases 0, 1, 2 and 3 are `COMPLETE`; Phase 4 is
-`IN_PROGRESS` at 4 of 14 (M4.1 `CLOSED`; M4.2 at 2 of 3).
+`IN_PROGRESS` at 5 of 14 (M4.1 and M4.2 `CLOSED`; M4.3 opens).
 
-The last work performed was **`P4-TSK-004`** (2026-09-17): the transfer
-schema — the machine generated into `V002`'s `CHECK`s and the every-writer
-trigger, the grants forcing insert-carries-outcome, verified by targeted
-tiers with the full battery skipped on the owner's instruction. The next
-work is **`P4-TSK-005`** — the execution command, the phase's High-risk
-task.
+The last work performed was **`P4-TSK-005`** (2026-09-17): the execution
+command — **the movement exists**: one transfer judged and committed with
+its money in one local transaction, the ten-way drain conserving value to
+the minor unit, counted in the tables. The next work is **`P4-TSK-006`** —
+the `Beneficiary` aggregate and `V003`.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -9064,32 +9144,21 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P4-TSK-005` — The execution command: one transaction, the lock, the
-outcome.** Status `READY`; depends on `P4-TSK-004` (`COMPLETE`). **The
-phase's High-risk task.**
+**`P4-TSK-006` — The `Beneficiary` aggregate and schema: `V003`.** Status
+`READY`; depends on `P4-TSK-004` (`COMPLETE`).
 
-`TransferExecution`: claim (scope `transfer.execute`, fingerprint binding
-actor + source + destination + amount + currency + reference —
-`INV-IDEM-03`'s subjects) → resolve and validate (ownership via the
-caller's live customer; both accounts `ACTIVE` products; same currency;
-not self) → `SELECT … FOR UPDATE` on the **source account row**
-(ADR-0039's set, third member) → availability = settled (through
-`BalanceDerivation`) − active holds, **inside the lock, in fresh
-statements** (`INV-BAL-04/-05`, the `P3-TSK-015` protocol reused) → the
-seams consulted (ports arrive `P4-TSK-010`; until then the parameters
-exist with the documented default-permit implementations) → post through
-`PostingService` (one `POSTING` entry: debit source wallet, credit
-destination wallet; the transfer id in the entry's reference) → transfer
-row + history + `transfers.TransferExecuted` audit + terminal event, one
-commit. Insufficient funds and sibling refusals commit `FAILED` with the
-reason, no posting and no hold on the money; boundary mistakes remain 4xx
-with nothing written. Accept: ten instances draining 1000-affordable from
-one account accept exactly the affordable transfers with the rest
-`FAILED(INSUFFICIENT_FUNDS)`, the source never negative, **total value
-over both accounts conserved — counted in the tables** (`INV-CON-02`); an
-injected failure at the last write leaves *nothing* (ADR-0043's
-demonstration); a retry replays the stored outcome, success and failure
-both. Risk: **High**. Cx: L. DoD: `DOD-FIN`, `DOD-DOMAIN`.
+M4.3 opens with it: the saved destination — `Beneficiary` (owning party
+id, display name, destination account reference, `ACTIVE`/`REMOVED` with
+`REMOVED` terminal) and `V003` (one live row per (party, destination) by
+partial unique index; grants column-narrowed to the removal columns;
+every column classified — a display name is `RESTRICTED-PII`, a person
+names people). Per the backlog's own scope; the endpoints and the
+step-up point are `P4-TSK-007`'s. Risk: Low–Medium per the backlog. DoD:
+`DOD-DOMAIN`, `DOD-BUILD`.
+
+### Superseded: P4-TSK-005
+
+*(This section named `P4-TSK-005` until its gate on 2026-09-17.)*
 
 ### Superseded: P4-TSK-004
 
@@ -9143,6 +9212,7 @@ rather than left.)*
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P4-TSK-005` complete — the execution command, and the movement exists; M4.2 CLOSES (3 of 3).** The phase's High-risk task: one transfer judged and committed with its money in **one local transaction** (ADR-0043) — claim (scope `transfer.execute`, the fingerprint binding actor + source + destination + amount + currency + scale + reference) → resolve (`TransferParticipants`, the port `app` implements: source through the caller's **live customer** with one indistinguishable empty answer; the destination **through the ledger alone**, product and ledger status closing together — recorded as today-exact) → judge (**precedence forced by the aggregate's pair rule**: `SELF_TRANSFER` first, then the postability pair, then `CURRENCY_MISMATCH` carrying both real wallets — resolution is deliberately currency-blind, the row being unconstructible otherwise) → the **source account row's `FOR UPDATE`** (ADR-0039's set, third member) → availability in-lock through the **extracted `AvailableBalance`** (from `HoldService`, whose second caller arrived — the `PostingEffect` precedent; delegation proven equivalent by `HoldDatabaseTest`; the in-lock contract the first line of its javadoc) → the seams in-lock (`TransferLimitCheck`/`TransferRiskDecision`, **required parameters, no defaulted overload**, `PermitAllUntilPhase13` until `P4-TSK-010`) → one `POSTING` entry (debit source wallet, credit destination wallet, the transfer id in the entry's reference, `transfer:<id>` as the posting's own key) **behind a savepoint**, so `V007`'s mid-flight destination refusal becomes a committed `FAILED(DESTINATION_NOT_POSTABLE)` rather than a lost transaction — proven sequentially and deterministically with a lying resolution decorator → row + history + `transfers.TransferExecuted` + terminal event, one commit. **Every acceptance clause counted in the tables**: the ten-way drain accepts exactly 3 with 7 `FAILED(INSUFFICIENT_FUNDS)`, source never negative, **the pair summing to the funded 1000 to the minor unit** (`INV-CON-02`); the injected last-write failure leaves *nothing including the claim* — the same key then executes afresh (ADR-0043's demonstration); the retry replays **success and failure both** (`CommandResult.failed` — the Phase 0 executor's documented rejected-transfer case meeting its intended caller three phases later); the changed request conflicts (`INV-IDEM-03`). **The named moved-outside-the-lock mutation performed and caught** — the drain's textbook over-acceptance, `expected: 3 but was: 10` (the `P3-TST-002` shape). **Seven mutations, all caught by the intended assertion, restores byte-identical.** `LedgerAccountStore.findAllOwned` added (the lock-free sibling read, earned by its caller); the container-clock trap met again (`GREATEST()`, `P1-TSK-031`); the Gradle daemon externally stopped mid-run twice, both runs repeated and read fresh. **Verified by targeted tiers plus the full architecture tier; the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Next: `P4-TSK-006`, M4.3 opens. |
 | 2026-09-17 | **`P4-TSK-004` complete — the transfer schema, and the machine binds every writer; M4.2 is 2 of 3.** `V002`: `transfers.transfer` with the aggregate's coherence at `DB-CONSTRAINT` rank — reason ⇔ `FAILED`, entry ⇔ money moved (`UNIQUE`: one transfer per posted entry, whichever instance wrote it), the reversal triple together ⇔ `REVERSED`, `amount_minor > 0`, and the pair rule **stricter at rest than the aggregate, deliberately**: `INITIATED` is never durably observed, so the one legal equal pair at rest is the committed `SELF_TRANSFER` refusal. **The trigger is the `V010` shape, both halves**: everything outside the reversal columns frozen for every writer (the migrator's own update refused), and exactly the machine's edges permitted — the conditions **generated from `permittedTransitions()`** and reconciled by `TransferMigrationTest` alongside the status/reason `CHECK`s and the `MoneyColumns` fragment verbatim, with terminal states asserted absent as edge sources. **The grants force insert-carries-outcome**: `UPDATE` narrowed to the four reversal columns means a `FAILED` outcome cannot arrive by `UPDATE`, so the reversal is the only update the table will ever see; history append-only at the privilege with server-assigned order, FK-anchored, its edge validity deliberately unconstrained (evidence records what a defective writer actually did — the authoritative row's trigger is the control). Every raw-SQL accept demonstrated from scratch with the two coherent shapes as positive controls; the per-column sweep **derived from `information_schema`** minus the granted four; the reversal `UPDATE` as the app role through exactly the granted columns proving trigger edge, `CHECK`s and grant sufficient in one act. 22 columns classified at their ceiling (`reference` `RESTRICTED-PII`; `failure_reason` `CONFIDENTIAL`). **Eight mutations, all caught by the intended assertion, restores byte-identical** — two hermetic (status list narrowed, money fragment edited), six from scratch (edge check removed, frozen check silenced, reason/entry/pair `CHECK`s dropped, grant widened). **Verified by targeted tiers; the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Next: `P4-TSK-005`, the phase's High-risk task. |
 | 2026-09-17 | **`P4-TSK-003` complete — the `Transfer` aggregate, and ADR-0044 is code; M4.2 opens (1 of 3).** The four-state machine on the enum (`INITIATED → {COMPLETED, FAILED}`, `COMPLETED → {REVERSED}`, both terminals empty), with the generated-constraint ceremony (`sqlValueList()`, `sqlTerminalValueList()` — whose consumer, `P4-TSK-004`'s migration reconciliation, is named rather than left as dead-code risk) and `FailureReason` enumerated with every value a **committed domain outcome** with a producer. **One constructor holds every invariant and every path shares it** — birth, the three per-outcome transitions (each through the same machine check: `INV-LIFE-02`'s one door, split only because each carries a distinct payload), and `rehydrate`, so a corrupt row is refused on read-back ahead of `V002`'s `CHECK`s. Coherence both directions per rule: reason ⇔ `FAILED`; entry ⇔ money moved (`REVERSED` keeps the original entry — the reversal is more evidence, not less); the reversal triple ⇔ `REVERSED`. **Only `reverse` reads the clock** — there is deliberately no `statusChangedAt`, because the reversal columns are the narrowed `UPDATE` grant's whole vocabulary and transition instants are the history table's evidence. **The one interpretive decision resolved on the record**: the backlog's flat "source ≠ destination" tensions with `SELF_TRANSFER` as a committed reason, so the pair rule is coherence with the machine — the equal pair legal only `INITIATED` (unjudged input) or as `FAILED(SELF_TRANSFER)` (the committed record of refusing exactly that mistake, which conversely requires the equal pair); an equal-pair `INITIATED` transfer has exactly one legal exit, enforced for free. **The machine is pinned, not only swept** — a sweep that trusts the machine cannot notice the machine changing — which is the `COMPLETED`-has-one-exit assertion, plus: nothing transitions TO `INITIATED` (no state permits it, no method targets it — birth is the only door). Typed ids where the boundary permits (`LedgerAccountId`, `JournalEntryId` — the `transfers → ledger` edge's first use), raw `UUID` where it forbids (the `CustomerAccount` precedent). `INV-AUD-02` needle-asserted on the positivity refusal. The module `package-info`'s "nothing implemented" paragraph updated by the task that made it stale. **Seven mutations, all caught by the intended assertion, restores byte-identical.** **1133 hermetic tests, 683 database tests, 14 kafka tests — the +6 the new test's own methods.** Next: `P4-TSK-004`. |
 | 2026-09-17 | **`P4-TSK-002` complete — the ADR governance registers build-reconciled, and M4.1 closes (2 of 2).** The twice-carried governance item paid as work: `AdrRegistersAreReconciledTest` holds every `docs/adr/ADR-*.md` file's `Status:` line and the README index's status column to each other, and the two sets to a **bijection** — every ADR file exactly one index row, every row a file its link resolves to (a row whose link points at nothing is the orphan case wearing a working number), `ADR-0001` as the non-vacuity anchor. Status agreement is compared on the leading token (the file form legitimately carries provenance — `Status: Accepted (2026-09-17, P3-DOC-001)` — the index column does not); both copies are held to the **closed vocabulary** the README's own rules declare, because an equality-only check is satisfied by a typo present in both; and every row-looking line inside `## Index` must **parse** — the `P1-TSK-024` fix-one-level-out lesson applied at design time, so a malformed row is a named failure rather than an ADR silently covered by nothing. A file with no readable `Status:` line is a failure, never a skip. The documents joined the declared `:app:test` inputs as a **file tree, not a list** (a new ADR file re-runs the guard without anyone remembering — the half of the defect a named-file list could never see), proven by the probe: the doc-only mutation re-ran the task rather than reporting `UP-TO-DATE`. **Five mutations, all caught by the intended assertion, restores byte-identical** — the index status of ADR-0043 flipped (fails naming the ADR with both values), ADR-0044's row deleted, an orphan ADR-0099 row (whose **first plant landed outside the `## Index` section and was rightly ignored** — the section bounding working, recorded), the file-side flip on ADR-0044, and a corrupted row form caught by the structural check naming the line with the bijection also firing — two controls, blind in different directions. Limits recorded rather than glossed: `DECISIONS.md` deliberately unreconciled (curated prose, not a status copy); the title/phase/concern columns out of scope; a future `Superseded by ADR-NNNN` line fails the parser **loudly**, forcing the format decision when it first has a subject. **1127 hermetic tests, 683 database tests, 14 kafka tests — the +4 the new test's own methods.** Next: `P4-TSK-003`, M4.2 opens. |

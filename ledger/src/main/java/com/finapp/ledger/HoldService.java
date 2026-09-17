@@ -68,7 +68,7 @@ public final class HoldService {
     public record Release(Hold hold, boolean released) {}
 
     private final LedgerAccountStore<Connection> accounts;
-    private final BalanceDerivation<Connection> derivation;
+    private final AvailableBalance<Connection> available;
     private final HoldStore<Connection> holds;
     private final BalanceProjection<Connection> projection;
     private final AuditWriter<Connection> audit;
@@ -86,7 +86,12 @@ public final class HoldService {
             IdGenerator ids,
             Clock clock) {
         this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
-        this.derivation = Objects.requireNonNull(derivation, "derivation must not be null");
+        // The availability computation is AvailableBalance's (extracted by P4-TSK-005 when the
+        // transfer became its second caller); the constructor keeps taking the derivation and
+        // the hold store so wiring stays honest.
+        this.available =
+                new AvailableBalance<>(
+                        Objects.requireNonNull(derivation, "derivation must not be null"), holds);
         this.holds = Objects.requireNonNull(holds, "holds must not be null");
         this.projection = Objects.requireNonNull(projection, "projection must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
@@ -138,10 +143,10 @@ public final class HoldService {
         }
 
         // Look, under the lock: both inputs from authoritative rows in fresh statements
-        // whose snapshots postdate the lock grant (INV-BAL-05 - never holds_minor).
-        Money settled = derivation.derive(unitOfWork, accountId, AsOf.latest()).settled();
-        Money standing = standingHolds(unitOfWork, accountId, settled);
-        if (settled.minus(standing).minus(amount).isNegative()) {
+        // whose snapshots postdate the lock grant (INV-BAL-05 - never holds_minor). The
+        // computation lives in AvailableBalance since its second caller arrived (P4-TSK-005),
+        // so "what can this account spend?" has one answer however many commands ask.
+        if (available.underLock(unitOfWork, accountId).minus(amount).isNegative()) {
             throw new HoldExceedsAvailableBalanceException(accountId, account.currency());
         }
 
@@ -202,21 +207,6 @@ public final class HoldService {
         record(unitOfWork, actor, correlation, released, LedgerAuditAction.HOLD_RELEASED,
                 RELEASED_EVENT_TYPE, now);
         return Optional.of(new Release(released, true));
-    }
-
-    /**
-     * The standing reservations, folded through {@link Money#plus} — a SQL {@code SUM} would
-     * be a second implementation of monetary arithmetic outside the kernel (`P3-TSK-008`).
-     * The empty fold's zero adopts the settled number's scale, the scale-aware zero identity
-     * (`P3-TSK-004`'s recorded property).
-     */
-    private Money standingHolds(
-            Connection unitOfWork, LedgerAccountId accountId, Money settled) {
-        Money sum = Money.ofPersisted(0, settled.currency(), settled.scale());
-        for (Hold standing : holds.findActiveFor(unitOfWork, accountId)) {
-            sum = sum.plus(standing.amount());
-        }
-        return sum;
     }
 
     private void record(

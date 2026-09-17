@@ -66,6 +66,18 @@ public interface LedgerAccountStore<T> {
             T unitOfWork, AccountPurpose purpose, CurrencyCode currency);
 
     /**
+     * Every ledger account owned by {@code ownerRef} — the lock-free sibling of
+     * {@link #lockOwnedForUpdate}, arrived with its first caller (`P4-TSK-005`): the transfer's
+     * participant resolution, which must answer "which wallet does this product hold, in which
+     * currency, in what status?" <em>currency-blind</em> — {@link #findOwned} demands a currency
+     * and a currency-mismatched transfer still needs the real accounts for its committed
+     * {@code FAILED} row. No lock, deliberately: resolution is not the serialization point (the
+     * source lock in the execution is), and a destination is never locked at all (ADR-0041's
+     * recorded stance — credits need no availability answer).
+     */
+    java.util.List<LedgerAccount> findAllOwned(T unitOfWork, UUID ownerRef);
+
+    /**
      * Every ledger account owned by {@code ownerRef}, read {@code FOR UPDATE} in a fixed order
      * (`P3-TSK-014`).
      *

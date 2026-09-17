@@ -286,6 +286,22 @@ pressure applied where none may exist; the control is the zero-balance precondit
 the closing call only — a converged repeat is not a second act. Suspension still has no
 producer this phase.
 
+### `transfers` — `TransfersAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `transfers.TransferExecuted` | No | A transfer execution was judged: COMPLETED with its posting or FAILED with its enumerated reason; the record names the transfer, the accounts and the outcome, never an amount. |
+
+Declared with the command whose design fixes its meaning (`P4-TSK-005`) rather than with the
+module skeleton — `P4-TSK-001`'s recorded decision, the `accounts`/`P3-TSK-011` precedent one
+phase over. **One record per execution, whatever the judgement**: a `FAILED` transfer is a
+committed domain outcome (ADR-0043/0044), and its "why" is the enumerated `FailureReason` on
+the row itself, so no free-prose reason is demanded — executing a transfer is a person's own
+act with their own money (the `accounts.AccountOpened` reasoning). Emitted by
+`TransferExecution` in the execution transaction, by the executing call only: a replayed retry
+is not a second act. The reversal's action, with its **required** reason and its privileged
+actor, is `P4-TSK-009`'s design and deliberately not declared here.
+
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure
 in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today

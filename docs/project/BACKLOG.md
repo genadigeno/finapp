@@ -4908,7 +4908,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   positive control; classification guard green.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-BUILD`
 
-**P4-TSK-005 — The execution command: one transaction, the lock, the outcome** — `READY`
+**P4-TSK-005 — The execution command: one transaction, the lock, the outcome** — `COMPLETE` (2026-09-17)
 - **Scope**: `TransferExecution` (the phase's High-risk task): claim (scope
   `transfer.execute`, fingerprint binding actor + source + destination + amount + currency +
   reference — `INV-IDEM-03`'s subjects) → resolve and validate (ownership via the caller's
@@ -4923,16 +4923,56 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   commit. Insufficient funds and sibling refusals commit `FAILED` with the reason, **no
   posting and no hold on the money**; boundary mistakes remain 4xx with nothing written.
 - **Deps**: `P4-TSK-004`.
-- **Accept**: ten instances draining 1000-affordable from one account accept exactly the
-  affordable transfers with the rest `FAILED(INSUFFICIENT_FUNDS)`, the source never
-  negative, **total value over both accounts conserved — counted in the tables**
-  (`INV-CON-02`); an injected failure at the last write leaves *nothing* (ADR-0043's
-  demonstration); a retry replays the stored outcome, success and failure both; the
-  availability decision proven inside the lock (the moved-outside mutation, the `P3-TST-002`
-  shape, performed and caught).
+- **Gate evidence (2026-09-17)**: **every acceptance clause demonstrated and counted in the
+  tables.** The ten-way drain (own connection, scope and flow per instance): exactly **3
+  `COMPLETED`, 7 `FAILED(INSUFFICIENT_FUNDS)`**, the source settled at 100 and never
+  negative, destination at 900, **the pair summing to the funded 1000 to the minor unit**
+  (`INV-CON-02`); the injected failure at the last write (a throwing outbox decorator)
+  leaves *nothing* — no row, no entry, no history, **no claim: the same key then executes
+  afresh rather than replaying a failure that never committed** (`P3-TSK-006`'s property as
+  ADR-0043's demonstration); the retry replays **success and failure both** — the `FAILED`
+  refusal commits, so its claim survives and its retry learns it (`CommandResult.failed`,
+  the executor's own documented rejected-transfer case); same key + different amount →
+  `IdempotencyConflictException` (`INV-IDEM-03`, fingerprint binding actor + source +
+  destination + amount + currency + scale + reference). **The named mutation performed and
+  caught**: the availability decision hoisted outside the lock — still locks, still checks,
+  still loses the race (the `P3-TST-002` shape) — fails the drain with the textbook
+  over-acceptance, `expected: 3 but was: 10`. **Seven mutations total, all caught by the
+  intended assertion, restores byte-identical** (check dropped; claim made per-call;
+  fingerprint constant; event, audit and history each dropped). **The sibling refusals each
+  commit their reason**, `SELF_TRANSFER` with the equal pair stored, `CURRENCY_MISMATCH`
+  carrying the real accounts (resolution is deliberately **currency-blind** — the row would
+  otherwise be unconstructible), destination-closed at resolution, and **the mid-flight
+  `V007` path sequentially and deterministically** (a resolution decorator lies, the posting
+  trigger refuses, and the **savepoint** turns the aborted transaction state into a
+  committed `FAILED(DESTINATION_NOT_POSTABLE)` — named with certainty because the source
+  was verified under our own lock); boundary mistakes (unknown source, somebody else's
+  source — one indistinguishable refusal) throw with nothing written. **Two additions to
+  proven `ledger` code, each earned by its arriving second caller** (the `PostingEffect`
+  precedent): `AvailableBalance` extracted from `HoldService` (which now delegates,
+  constructor unchanged, `HoldDatabaseTest` the behavioural equivalence proof) with the
+  **in-lock contract as the first line of its javadoc**; and
+  `LedgerAccountStore.findAllOwned` — the lock-free sibling of `lockOwnedForUpdate`'s read,
+  because no currency-blind product→wallet resolution existed. The reason precedence is
+  **forced by the aggregate's pair rule** (`SELF_TRANSFER` first) — the constructor teaching
+  the execution, recorded. `TransferParticipants` resolves the destination **through the
+  ledger alone** (product and ledger status close together, `P3-TSK-014` — recorded as
+  today-exact), so no unowned `accounts` read exists and the counterparty-disclosure
+  question never arises. `transfers.TransferExecuted` arrives with the command whose design
+  fixes it (catalogued; registry and completeness guards green); terminal events only
+  (`transfers.TransferCompleted`/`TransferFailed`, identifiers and enums, never an amount).
+  The container-clock trap met again on schedule and fixed with the `GREATEST()` idiom
+  (`P1-TSK-031`). **Verified by targeted tiers plus the full architecture tier** —
+  `OwnershipIsScopedTest` demanded no entries (the store API takes aggregates, never bare
+  identifiers, verified against the detector) — **the full battery deliberately skipped on
+  the owner's instruction; no fleet-wide counts claimed.** Process note: the Gradle daemon
+  was externally stopped mid-run twice ("stop command received"); both runs were repeated
+  and the results read from fresh executions, never from the interrupted ones.
+- **Accept**: met — the drain counted; the injected failure leaving nothing; replay of both
+  outcomes; the in-lock proof by the performed moved-outside mutation.
 - **Risk**: **High**. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
 
-**P4-TSK-006 — The `Beneficiary` aggregate and schema: `V003`** — `TODO`
+**P4-TSK-006 — The `Beneficiary` aggregate and schema: `V003`** — `READY`
 - **Scope**: `Beneficiary` (owning party id, display name, destination account reference,
   `ACTIVE → REMOVED`, terminal) and `transfers.beneficiary`: partial unique one-live per
   (party, destination account); removal a conditional `UPDATE` whose row count converges

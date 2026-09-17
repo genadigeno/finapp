@@ -22,11 +22,11 @@
  * not become one dependency ball, and a compile-time edge would be its first step.
  *
  * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema
- * ({@code P4-TSK-001}), and the {@link com.finapp.transfers.Transfer} aggregate with its ADR-0044
- * machine ({@code P4-TSK-003}) - hermetic only. The schema tables are {@code P4-TSK-004}; the
- * execution command, stores and ports are {@code P4-TSK-005}; and there is still deliberately
- * <strong>no {@code TransfersAuditAction} enum</strong> - the audit actions arrive with the
- * commands whose designs fix their meaning ({@code P2-TSK-005}'s precedent, exercised for
- * {@code accounts} by {@code P3-TSK-011}), not before them.
+ * ({@code P4-TSK-001}), the {@link com.finapp.transfers.Transfer} aggregate with its ADR-0044
+ * machine ({@code P4-TSK-003}), the schema that inherits it ({@code P4-TSK-004}), and the
+ * execution command with its stores, ports and seams ({@code P4-TSK-005}) — one transfer judged
+ * and committed with its money in one local transaction. The HTTP surface is
+ * {@code P4-TSK-008}'s; the reversal {@code P4-TSK-009}'s (with its own audit action — the
+ * deliberately-few licence continues); the seam hardening {@code P4-TSK-010}'s.
  */
 package com.finapp.transfers;
