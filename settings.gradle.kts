@@ -70,4 +70,14 @@ include("ledger")
 // which is stronger than the isolation tests that also assert it.
 include("accounts")
 
+// The Phase 4 transfers module (P4-TSK-001): the first customer-visible money MOVEMENT - the
+// Transfer and Beneficiary aggregates and their lifecycles - and never the postings themselves.
+// Declared after `ledger` for the same structural reason as `accounts`: transfers -> ledger is the
+// module's one permitted sibling edge (postings are COMMANDED through PostingService, never
+// written - INV-LED-04, ADR-0043), so with this edge in the build graph `ledger -> transfers` is a
+// Gradle dependency cycle and the build refuses it outright. `transfers -> accounts` is refused
+// (TransfersModuleIsolationTest): the product resolves through a port `app` implements, because
+// the module that moves money must not compile against the module that owns the product.
+include("transfers")
+
 include("app")

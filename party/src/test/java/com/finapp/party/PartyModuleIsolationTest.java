@@ -37,7 +37,7 @@ class PartyModuleIsolationTest {
         // dependency direction had been inverted. `kyc` matters especially in this direction:
         // INV-KYC-05 makes customer status a PROJECTION of the KYC decision, updated in reaction
         // to it - a compile-time edge from party onto kyc is the first step toward computing it.
-        for (String forbidden : List.of("identity", "kyc", "consent", "ledger", "accounts", "app")) {
+        for (String forbidden : List.of("identity", "kyc", "consent", "ledger", "accounts", "transfers", "app")) {
             assertThat(classpathEntries())
                     .as("party must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));

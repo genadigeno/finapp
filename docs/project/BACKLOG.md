@@ -4733,7 +4733,7 @@ asynchronous execution path). Operational query is the ordinary status/list surf
 Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4.8 The gate
 (`P4-DOC-001`). Acceptance per milestone in `PHASE_4_PLAN.md` §16.
 
-**P4-TSK-001 — The `transfers` module and schema** — `READY`
+**P4-TSK-001 — The `transfers` module and schema** — `COMPLETE` (2026-09-17)
 - **Scope**: the `P3-TSK-011` shape, fourth performance: a guarded module on the documented
   direction with the build-graph edge ADR-0042's discipline decides — `transfers → ledger`
   declared (postings are commanded, never written), `transfers → accounts` **refused** (the
@@ -4746,12 +4746,39 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   throwaway PostgreSQL; ACL checked exactly. No audit-action enum yet (the deliberately-few
   licence: the actions arrive with the aggregates whose designs fix their meaning).
 - **Deps**: none (Phase 3 `COMPLETE`).
-- **Accept**: `build databaseTest` green with the module present; a planted `double` fails
-  the floating-point rules naming the new module; both isolation directions and the cycle
-  demonstrated; the schema floor proven live.
+- **Gate evidence (2026-09-17)**: the full battery green with the module present —
+  **1123 hermetic, 683 database, 14 kafka tests** (the two new tests are
+  `TransfersModuleIsolationTest`'s pair). The shape delivered whole: guarded module, `V001`
+  privilege floor proven live on a throwaway `postgres:18.6` (owner `finapp_migrator`, ACL
+  exactly `{finapp_migrator=UC, finapp_app=U}`, no `PUBLIC` entry, `USAGE` and **not**
+  `CREATE` for the app role, zero application tables, migrate → validate → re-migrate
+  idempotent — two history rows: Flyway's schema-creation marker plus `V001`, the
+  `ledger`/`accounts` shape checked rather than assumed). **The ADR-0043 asymmetry is
+  structural**: `transfers → ledger` declared with the module (first consumer `P4-TSK-003`),
+  so the planted `ledger → transfers` edge fails Gradle configuration —
+  `:ledger:compileJava → :transfers:compileJava → :ledger:compileJava` — while
+  `TransfersModuleIsolationTest` pins the positive half and all six sibling isolation tests
+  gained `transfers` in their forbidden lists (the one-directional-decay lesson, fourth
+  application at design time). **Four probes, all caught by the intended guard, restores
+  byte-identical** — and the first probe **survived before it was caught, which is the
+  task's finding**: the planted `double` passed cleanly until `app` gained
+  `implementation(project(":transfers"))`, exactly as the comment beside `app`'s
+  business-module block predicts — `ProductionModules` derives the swept set from `app`'s
+  classpath, so a module not on it is a module **no rule protects**, and the module-creation
+  checklist's untested step was the classpath edge, not the schema. With the edge added the
+  probe fails naming `transfers.Planted.amount is double (INV-MON-01)`; `transfers → party`
+  fails the new isolation test; `accounts → transfers` fails `AccountsModuleIsolationTest`.
+  The deliberate deviation repeated with its licence: **no `TransfersAuditAction` enum**,
+  recorded in `package-info.java` (the `P3-TSK-011`/`P2-TSK-005` precedent).
+  `DATA_MIGRATIONS.md` §"Adding a schema-owning module" followed end to end — all five
+  steps, none stale this time. Housekeeping: `transfers/gradle.lockfile` identical to
+  `accounts`'s but for its header line; `gradle/verification-metadata.xml` unchanged (no new
+  artefact); no `build-logic` lockfile drift this run.
+- **Accept**: met — all four criteria demonstrated (battery; the planted `double` naming the
+  module; both directions plus the cycle; the floor live).
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
 
-**P4-TSK-002 — The ADR governance registers, build-reconciled** — `TODO`
+**P4-TSK-002 — The ADR governance registers, build-reconciled** — `READY`
 - **Scope**: the twice-carried governance item, finally paid as its own task rather than
   re-carried: a hermetic test reconciling, for every `docs/adr/ADR-*.md`, the file's
   `Status:` line against the README index's status column, and asserting every ADR file has

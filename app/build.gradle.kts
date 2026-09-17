@@ -58,6 +58,11 @@ dependencies {
     implementation(project(":consent"))
     implementation(project(":ledger"))
     implementation(project(":accounts"))
+    // The Phase 4 transfers module (P4-TSK-001). Its absence here was caught exactly as the
+    // comment above predicts: the planted-double probe SURVIVED until this line existed, because
+    // ProductionModules derives the swept set from app's classpath and a module not on it is a
+    // module no rule protects.
+    implementation(project(":transfers"))
 
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
