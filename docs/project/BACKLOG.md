@@ -4534,20 +4534,59 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Accept**: met — see gate evidence.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-OBS`
 
-**P3-TST-003 — The financial supplement F1–F8, demonstrated** — `READY`
+**P3-TST-003 — The financial supplement F1–F8, demonstrated** — `COMPLETE` (2026-09-17)
 - **Scope**: each of F1–F8 assessed with a named test, and the register rows for every
   `Phase: 3` invariant — **the set read from `FINANCIAL_INVARIANTS.md`, not from
   `PHASE_3_PLAN.md` §6** (the Phase 2 → 3 transition's finding: `INV-HIST-02` belonged to Phase 2
   while sitting outside both of its named groups, and only the status flip revealed it).
 - **Deps**: everything above. **Risk**: High. **Cx**: M. **DoD**: `DOD-TEST`
+- **Gate evidence (2026-09-17)**: reading the set from the catalogue found **nineteen**
+  `Phase: 3` invariants where the plan's §6 table lists seventeen — `INV-REC-05` and
+  `INV-AUD-04` sit outside it, the exact drift the scope sentence predicted; the plan's own
+  closing paragraph already rules the catalogue wins, so the finding is recorded rather than
+  the table edited. **The audit found every recordable demonstration already performed by its
+  owning task's sweep** (the `P2-TST-001` posture: record, not re-perform): fourteen new
+  `MUTATION_TESTING.md` §2 rows landed plus two extension rows (`INV-BAL-03`'s posting half;
+  a fourth `INV-CON-01` row for the account-lifecycle context) and a second `INV-IDEM-01` row
+  for the financial boundary — every named class and method held to the code by the register
+  guard from the moment they landed, and all nine `MutationDemonstrationTest` checks green.
+  `INV-BAL-05`'s row landed here, earlier than `P3-TST-002`'s recorded deferral, because this
+  item's scope demands every row and what the deferral postponed was the record, not the work.
+  **The sixteenth row cannot be written and that is the headline finding**: `INV-AUD-04` is
+  `Phase: 3` in the catalogue and its mechanism is deliberately unbuilt (`P3-TSK-017` recorded
+  four-eyes as ADR-0010's debt; the debt row's trigger fired there) — a row naming the
+  adjustment suite's tests would be a false claim, and the build **will fail naming it the
+  moment Phase 3 flips `COMPLETE`**, known in advance this time (the `INV-HIST-02` lesson
+  pre-applied). Recorded in the register's §3; the mechanism and its row are `P3-TSK-021`'s,
+  created by this item and scheduled before the review. The F1–F8 assessment is
+  `docs/project/reviews/PHASE_3_FINANCIAL_SUPPLEMENT.md` — every criterion met (F5 met with
+  its Phase-3 vacuity stated: no external event produces a financial effect this phase, and
+  the mechanism that will bind is the proven inbox), every named `Class#method` also named by
+  a §2 row so the register guard holds the supplement's references too, verified by script.
+  §5 teeth re-proof performed: one method reference corrupted, `everyNamedMethodExists`
+  failed naming exactly it, restored byte-identical. No production code shipped.
+- **Accept**: met — see gate evidence.
 
 ## P3-EPIC-08 — Observability and the gate (M3.8)
 
-**P3-TSK-020 — The six planned meters, eagerly registered** — `TODO`
+**P3-TSK-020 — The six planned meters, eagerly registered** — `READY`
 - **Scope**: `PHASE_3_PLAN.md` §15's table, registered at construction and **unconditionally** —
   `P2-TSK-020`'s finding that a plan-named meter behind a property condition is the same defect
   wearing a condition; plus a dashboard row whose queries resolve.
 - **Deps**: the flows they measure. **Risk**: Low. **Cx**: S. **DoD**: `DOD-OBS`
+
+**P3-TSK-021 — Four-eyes on manual adjustments** — `TODO`
+- **Scope**: `INV-AUD-04`'s Phase 3 element, found owed by `P3-TST-003`: the catalogue marks
+  the invariant `Phase: 3`, the manual adjustment exists (`P3-TSK-017`), and the mechanism is
+  deliberately unbuilt — no defined threshold, no second approver, four-eyes recorded as
+  ADR-0010's debt whose trigger ("the first action requiring a second approver") has fired.
+  Define the threshold, model the second approver (approver ≠ initiator at `DB-CONSTRAINT`
+  where representable), refuse self-approval with a negative test, and land the
+  `MUTATION_TESTING.md` §2 row — **without which the battery fails at the status flip**,
+  because `MutationDemonstrationTest` derives its demanded set from the catalogue. The
+  alternative outcome — a superseding decision narrowing the catalogue's phase marking — is a
+  decision for this task to argue, not assume.
+- **Deps**: `P3-TSK-017`. **Risk**: High. **Cx**: M. **DoD**: `DOD-SEC`, `DOD-FIN`
 
 **P3-DOC-001 — Phase 3 review record** — `TODO`
 - **Scope**: the `PHASE_GATES.md` §4 review: eight areas, twelve universal criteria, **the

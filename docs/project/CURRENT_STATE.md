@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P3-TSK-019`)
+Last updated: 2026-09-17 (`P3-TST-003`)
 
 ---
 
@@ -78,8 +78,8 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **21 of 24** backlog items; M3.1 through **M3.7** are
-closed.
+same day with `P3-TSK-001`. **22 of 25** backlog items (`P3-TSK-021` created by
+`P3-TST-003`); M3.1 through **M3.7** are closed.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -120,10 +120,14 @@ class, again).
 ## Current Milestone
 
 **M3.8 — Observability and the gate.** `P3-TST-003`, `P3-TSK-020`,
-`P3-DOC-001`; **0 of 3 — next `P3-TST-003` (`READY`)** — the financial
-supplement F1–F8 assessed with named tests and the register rows for every
-`Phase: 3` invariant (the set read from the catalogue, never the plan), then
-the six planned meters and the dashboard row, then the exit review.
+`P3-TSK-021`, `P3-DOC-001`; **1 of 4 — next `P3-TSK-020` (`READY`)** — the
+financial supplement F1–F8 is assessed with named tests and the register
+carries a row for every `Phase: 3` invariant the catalogue names **except
+`INV-AUD-04`, whose absence is the finding**: its mechanism is deliberately
+unbuilt, so `P3-TSK-021` (four-eyes on manual adjustments, created by
+`P3-TST-003`) must land the mechanism and its row before the exit review,
+or the battery fails at the status flip. Then the six planned meters and
+the dashboard row, then the review.
 
 **M3.7 — Statements and the trial balance.** `P3-TSK-018` plus `P3-TSK-019`;
 **CLOSED 2026-09-17, 2 of 2** — every figure a customer is shown traces to
@@ -417,11 +421,39 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-019` is `COMPLETE`; **M3.7 closes at 2 of 2**.
-**Next: `P3-TST-003` (`READY`)** — the financial supplement F1–F8
-demonstrated, opening M3.8.
+**None in progress.** `P3-TST-003` is `COMPLETE`; **M3.8 is 1 of 4**.
+**Next: `P3-TSK-020` (`READY`)** — the six planned meters, eagerly
+registered, and the dashboard row.
 
 ### Just completed
+
+**`P3-TST-003` — The financial supplement F1–F8, demonstrated** —
+`COMPLETE` (2026-09-17). **The exit gate's evidence is prepared before the
+review needs it** — the `P2-TST-001` posture, applied to the strictest gate
+in the programme.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Each of F1–F8 assessed with a named test | [`reviews/PHASE_3_FINANCIAL_SUPPLEMENT.md`](reviews/PHASE_3_FINANCIAL_SUPPLEMENT.md): every criterion **met** against named tests — F5 met with its Phase-3 vacuity stated rather than glossed (no external event produces a financial effect this phase; the inbox mechanism that will bind is the Phase 0/2-proven one) — and every `Class#method` the table names is also named by a `MUTATION_TESTING.md` §2 row, so the register guard holds the supplement's references to the code on every build (verified by script) |
+| The register rows, the set read from the catalogue | **Nineteen `Phase: 3` invariants, where the plan's §6 table lists seventeen** — `INV-REC-05` and `INV-AUD-04` sit outside it, the exact drift the scope sentence predicted. Fourteen new §2 rows plus two extension rows (`INV-BAL-03`'s posting half; a fourth `INV-CON-01` row for the account-lifecycle context) and a second `INV-IDEM-01` row for the financial boundary; all nine `MutationDemonstrationTest` checks green over them |
+| Demonstrations real, not asserted | **The audit found every recordable demonstration already performed by its owning task's sweep** — the rows record, they do not invent; `INV-BAL-05`'s row lands here, earlier than `P3-TST-002`'s recorded deferral, because this item's scope demands every row and what the deferral postponed was the record, not the work. §5 teeth re-proven: one method reference corrupted, the guard failed naming exactly it, restored byte-identical |
+
+### The sixteenth row cannot be written, and that is the headline finding
+
+`INV-AUD-04` is `Phase: 3` in the catalogue, the manual adjustment exists,
+and its mechanism is **deliberately unbuilt** — no defined threshold, no
+second approver, four-eyes recorded as ADR-0010's debt by `P3-TSK-017`,
+whose act fired the debt row's own trigger. A row naming the adjustment
+suite's tests would be a **false claim**, and the register's doctrine is
+that a false row is worse than a missing one. The consequence is mechanical
+and known **in advance** this time (the `INV-HIST-02` lesson pre-applied):
+`MutationDemonstrationTest` derives its demanded set from the catalogue, so
+the battery **fails naming `INV-AUD-04` the moment Phase 3 flips
+`COMPLETE`**. Recorded in the register's §3; the mechanism and its row are
+**`P3-TSK-021`**'s (four-eyes on manual adjustments, created by this item),
+scheduled before `P3-DOC-001`. **No production code shipped.**
+
+### Previously
 
 **`P3-TSK-019` — The trial-balance job: zero per currency, or an incident** —
 `COMPLETE` (2026-09-17). **M3.7 closes: `INV-ACC-01` is a continuously
@@ -8226,9 +8258,9 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-019` (2026-09-17): the trial-balance
-job, closing M3.7. The next work is `P3-TST-003`, the financial supplement
-F1–F8 demonstrated, opening M3.8.
+The last work performed was `P3-TST-003` (2026-09-17): the financial
+supplement F1–F8 assessed and the Phase-3 register rows landed, opening
+M3.8. The next work is `P3-TSK-020`, the six planned meters.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8514,6 +8546,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P3-TST-003` complete — the financial supplement F1–F8 demonstrated, and M3.8 opens (1 of 4).** The exit gate's evidence prepared before the review needs it: [`reviews/PHASE_3_FINANCIAL_SUPPLEMENT.md`](reviews/PHASE_3_FINANCIAL_SUPPLEMENT.md) assesses every F criterion **met** against named tests (F5 met with its Phase-3 vacuity stated — no external event produces a financial effect this phase, and the mechanism that will bind is the proven inbox), and `MUTATION_TESTING.md` §2 gains **fourteen rows plus two extension rows and a financial-boundary `INV-IDEM-01` row — seventeen, counted** — every named mutation one its owning task **performed** (the `P2-TST-001` audit posture: record, never invent), every named class and method held to the code by the register guard, all nine checks green. **Reading the set from the catalogue found nineteen `Phase: 3` invariants where the plan's §6 table lists seventeen** (`INV-REC-05`, `INV-AUD-04` — the drift the scope sentence predicted; the plan's own closing paragraph rules the catalogue wins). `INV-BAL-05`'s row landed earlier than `P3-TST-002`'s recorded deferral, deliberately: the scope demands every row, and the deferral postponed the record, not the work. **The headline finding is the row that cannot be written**: `INV-AUD-04`'s mechanism is deliberately unbuilt (`P3-TSK-017` recorded four-eyes as ADR-0010's debt, firing the debt row's own trigger), a row would be a false claim, and the battery **will fail naming it at the status flip** — known in advance this time, the `INV-HIST-02` lesson pre-applied. Register §3 records it; **`P3-TSK-021`** (four-eyes on manual adjustments) created to land the mechanism and its row before `P3-DOC-001`. §5 teeth re-proven, restore byte-identical. No production code shipped. 1105 hermetic tests, 674 database tests, 14 kafka tests. Next: `P3-TSK-020`. |
 | 2026-09-17 | **`P3-TSK-019` complete — the trial-balance job, and M3.7 CLOSES (2 of 2).** `TrialBalance` in `ledger`: one `SELECT ... GROUP BY currency, scale, direction`, the per-currency verdict as exact decimal arithmetic — `P3-TSK-008`'s two failure modes **structurally closed at the one statement** (`scale` a grouping key; `SUM(bigint)` is `numeric`), `Money` deliberately not used because a system-wide group sum can exceed `long` and the refusal would turn a large balanced ledger into a false incident. **No `IN_FLIGHT` verdict, by design**: a snapshot never contains half an entry and every committed entry balances at COMMIT — demonstrated by sweeps racing four live posters, zero every time. **The injection rides the deferral**: raw unbalanced rows in an open transaction (the constraint has not yet judged them — what a trigger-less writer's committed rows look like), three shapes flagged per currency (the scales probe, the cross-currency subsidy), then rollback — no trigger disabled, no cleanup risk. **Verdicts and currency codes leave, never an amount** (`INV-AUD-02`); no repair path, structurally (plan §14.12). Gauge `finapp.ledger.trial.balance{currency}` — 0 verified balanced / 1 out / **NaN unreadable, never zero** — eager per `SupportedCurrencies`, the scrape as the schedule (30s floor, no leader, no §3 question), `max()` never `sum()`; **`currency` joined `ALLOWED_TAG_KEYS` deliberately** (ISO 4217-bounded, the `purpose` precedent); `LedgerMetrics$TrialCached` the same Micrometer exemption case a fifth time; dashboard row deferred to M3.8 per `P3-TSK-010`'s recorded deferral. One process finding: the first battery invocation never ran — a zero-match `grep -c` broke the `&&` chain before gradle started; caught by the missing log, re-run for real (the build-never-ran class, in the chaining). **Six mutations, all caught by the intended assertion, restores byte-identical.** 1105 hermetic tests, 674 database tests. Next: `P3-TST-003`, M3.8 opens. |
 | 2026-09-17 | **`P3-TSK-018` complete — the period statement, and M3.7 opens (1 of 2).** `GET /v1/me/accounts/{id}/statement?from=&to=`: `StatementDerivation`/`JdbcStatementDerivation` in `ledger` — opening = `BalanceDerivation.derive` at `AsOf.postingDate(from − 1)` (the definition composed, never copied), the period's lines in one statement/one snapshot (`posting_date BETWEEN`, both boundaries inclusive, ordered `posting_date, entry.id, seq`, folded through `JournalEntry.sum`), and **the closing computed as `opening + settle(debits, credits)` rather than derived a third time** — the crux: under `READ COMMITTED` the two reads are two snapshots, but their ranges are **disjoint predicates**, so `opening + lines = closing` holds structurally under any concurrency (`INV-ACC-02`'s drill-down shape three phases early, the closing additionally held to an independent `BigDecimal` recomputation over raw rows). No lock anywhere; no migration; underivable histories refuse amount-free through the derivation's own regime. The surface is the `/v1/me` shape (ownership `Session → Customer → findOwnedBy`, one 404 as an equality between causes; period parameters specific 422s naming the parameter, never echoing the value; a `CLOSED` product's statement stays readable — `INV-HIST-01`). Per line: entry id, dates, type, direction, decimal-string amount, reference — **never the counterparty account, never the `reason`** (`RESTRICTED-PII` audit material), both asserted. `kind: \"DERIVED\"`; deliberately not audited (a person's own read); no events, no key, no meters (M3.8's). Contract +36/−0, the three `BREAKING` labels `required = true` on the brand-new operation's parameters — the classifier erring safe, reviewed. **Three stale `P3-TSK-018` records settled at their sources** (the display query was `P3-TSK-013`'s — the recorded one-task drift, corrected where it lived; the ownership register's `derive`/`findById` prose records what actually arrived; `periodLines` joined the register). **Seven mutations, all caught by the intended assertion, restores byte-identical** — upper bound exclusive, opening dropped, net dropped, sides swapped, reason leaked, boundary refusal dropped (the port's IAE as our 500, caught by the 422 assertion), account predicate neutralised (caught deterministically: balanced entries make the leaked net exactly zero). 1102 hermetic tests, 672 database tests. Next: `P3-TSK-019`. |
 | 2026-09-17 | **`P3-TSK-017` complete — the adjustment endpoint, and M3.6 closes (2 of 2).** `POST /v1/ledger/adjustments`: `AdjustmentService` (`PostingService`'s discipline, scope `ledger.adjust`, validate-then-claim, through `PostingEffect` — which now **derives the audit action from the entry's kind**, so an `ADJUSTMENT` records `ledger.AdjustmentPosted` **with its reason** and the regime cannot be skipped); `@RequiresPermission(LEDGER_ADJUST)` at **the permission's first real check site** (`P3-TSK-007`'s promise kept) plus `@RequiresIdempotencyKey`. **The first request body to carry amounts**: decimal strings parsed exactly (an inexact amount is the caller's 422 naming line and field, never a rounding — `INV-MON-03`); the reason bounded in three reconciled places (DTO/`V004`/`AuditRecord`, held by `AdjustmentRequestTest`). **The fingerprint binds the actor AND the reason** (ADR-0004, `INV-IDEM-03`): a stranger's replay 409s, and so does the same key with a different justification; the unbalanced 422 never consumes its key — proven at HTTP by the same key then carrying the corrected request to 201. Three codes catalogued (`ledger.UnbalancedAdjustment`, `ledger.UnknownAccount` — the store translating the line FK's `23503`, the V007 pattern — `ledger.AccountNotPostable`); contract +68/−0, `BREAKING` labels the classifier erring safe on a brand-new path, reviewed; nine body shapes none our 500; **four-eyes recorded, not implied** (`INV-AUD-04` stays ADR-0010's debt, no threshold check exists). One planned mutation cut on analysis and recorded: claim-before-validate is behaviourally invisible in the caller-transaction model. **Seven mutations, all caught by the intended assertion, restores byte-identical.** 1102 hermetic tests, 668 database tests. Next: `P3-TSK-018`, M3.7 opens. |
