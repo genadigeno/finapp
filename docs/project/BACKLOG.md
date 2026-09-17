@@ -4859,7 +4859,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   (`INV-LIFE-04`); `COMPLETED`'s single outgoing edge asserted as a property of the machine.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
 
-**P4-TSK-004 — The transfer schema: `V002`** — `READY`
+**P4-TSK-004 — The transfer schema: `V002`** — `COMPLETE` (2026-09-17)
 - **Scope**: `transfers.transfer` (UUIDv7 id; owning customer id — the ownership predicate's
   column; source/destination ledger-account references; the `MoneyColumns` generated shape
   pinned verbatim; reference; status with the generated `CHECK`; `failure_reason NOT NULL ⇔
@@ -4871,12 +4871,44 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   columns; history `SELECT, INSERT` only. Every column classified at its ceiling. A
   migration-reconciliation test derives the `CHECK`s from the enum.
 - **Deps**: `P4-TSK-003`.
-- **Accept**: raw SQL cannot store an unknown status, an illegal edge, a failed transfer
-  without its reason, or a completed one without its entry — each refused from scratch;
-  the per-column grant sweep with a positive control; classification guard green.
+- **Gate evidence (2026-09-17)**: every raw-SQL accept demonstrated from scratch through the
+  per-JVM harness — unknown status and unknown reason; a reasonless `FAILED` and a reason on
+  `COMPLETED`; an entryless `COMPLETED` and an entry on `FAILED`; the incomplete reversal
+  triple; the pair rule both ways (a completed self-transfer, and `SELF_TRANSFER` naming two
+  different accounts); a zero amount — each `23514` with the two coherent shapes as positive
+  controls. **The trigger is the `V010` shape, both halves**: everything outside the reversal
+  columns frozen for every writer (the migrator's own `amount_minor` update refused), and
+  exactly the machine's edges permitted — `COMPLETED → FAILED`, the idle same-status touch
+  and any exit from a terminal all refused, with the reversal `UPDATE` succeeding **as the
+  app role through exactly the granted columns** (trigger edge, coherence `CHECK`s and
+  narrowed grant proven sufficient in one act). The per-column `UPDATE` sweep is **derived
+  from `information_schema`** (the `P0-TST-007` idiom) minus the four reversal columns;
+  `DELETE` denied on both tables; the history's `id` probed with `DEFAULT` (the `P2-TSK-017`
+  identity-column lesson). `journal_entry_id UNIQUE` (one transfer per posted entry,
+  whichever instance wrote it); history FK-anchored with the enum vocabulary. **Stricter at
+  rest than the aggregate, recorded**: an equal-pair `INITIATED` is refused by the pair
+  `CHECK` — `INITIATED` is never durably observed, so the one legal equal pair at rest is the
+  committed `SELF_TRANSFER` refusal. The `INITIATED`-source trigger edges are present because
+  the machine has them and simultaneously dead at rest (frozen reason/entry columns) — the
+  layers agreeing, recorded. History edge-validity deliberately unconstrained: evidence must
+  record what a defective writer actually did. `TransferMigrationTest` reconciles four
+  generated artefacts — status `CHECK` (three columns), reason `CHECK`, the `MoneyColumns`
+  fragment verbatim, and **the trigger's edge conditions from `permittedTransitions()`**,
+  with terminal states asserted absent as edge sources. 22 columns classified at their
+  ceiling (`reference` `RESTRICTED-PII` — free text a person writes; `failure_reason`
+  `CONFIDENTIAL` — `INSUFFICIENT_FUNDS` is a fact about a person's finances). **Eight
+  mutations, all caught by the intended assertion, restores byte-identical** — status list
+  narrowed and the money fragment edited (reconciliation, hermetic); the trigger's edge check
+  removed, the frozen check silenced, the reason/entry/pair `CHECK`s dropped, the grant
+  widened table-wide (each against a from-scratch database). **Verified by targeted tiers —
+  `:transfers:test` and the schema + classification database tests — the full battery
+  deliberately skipped this task on the owner's instruction**; no fleet-wide tier counts are
+  claimed.
+- **Accept**: met — each raw-SQL refusal from scratch; the derived per-column sweep with its
+  positive control; classification guard green.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-BUILD`
 
-**P4-TSK-005 — The execution command: one transaction, the lock, the outcome** — `TODO`
+**P4-TSK-005 — The execution command: one transaction, the lock, the outcome** — `READY`
 - **Scope**: `TransferExecution` (the phase's High-risk task): claim (scope
   `transfer.execute`, fingerprint binding actor + source + destination + amount + currency +
   reference — `INV-IDEM-03`'s subjects) → resolve and validate (ownership via the caller's

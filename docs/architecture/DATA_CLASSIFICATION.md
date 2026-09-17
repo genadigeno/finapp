@@ -457,6 +457,36 @@ money is `ledger`'s and classified there.
 | `customer_account` | `opened_at` | `CONFIDENTIAL` | Dates a product opening — `ledger_account.created_at`'s reasoning verbatim |
 | `customer_account` | `status_changed_at` | `CONFIDENTIAL` | Dates a freeze or a closure, which is more disclosive than the status alone |
 
+### `transfers.transfer` and `transfers.transfer_event` — *added by `P4-TSK-004`*
+
+**The first customer-commanded amounts outside the ledger schema.** The row is the judgement
+and its record (ADR-0044); the money itself is the ledger posting `journal_entry_id` names.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `transfer` | `id` | `INTERNAL` | An aggregate identifier — and the value that travels in the journal entry's `reference`, whose row already classifies what it resolves to |
+| `transfer` | `customer_id` | `INTERNAL` | The `customer_account.customer_id` reasoning verbatim: an identifier of a thing, not a fact about it |
+| `transfer` | `source_account_id` | `INTERNAL` | A ledger-account identifier by value; what it resolves to is `ledger_account`'s to classify |
+| `transfer` | `destination_account_id` | `INTERNAL` | As `source_account_id` |
+| `transfer` | `amount_minor` | `RESTRICTED-FINANCIAL` | A customer's commanded amount — `journal_line.amount_minor`'s reasoning verbatim |
+| `transfer` | `currency` | `RESTRICTED-FINANCIAL` | Meaningless without the amount and meaning-giving with it — `journal_line.currency`'s reasoning |
+| `transfer` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape (`INV-MON-05`) |
+| `transfer` | `reference` | `RESTRICTED-PII` | **Free text written by a person** — a memo names people ("rent for John") — `journal_entry.reason`'s reasoning verbatim: content constrained by no type, handled at the ceiling |
+| `transfer` | `status` | `CONFIDENTIAL` | What happened to a person's money movement; with `REVERSED` it discloses an operator acted against the account |
+| `transfer` | `failure_reason` | `CONFIDENTIAL` | `INSUFFICIENT_FUNDS` is a fact about a person's finances, not an enumeration technicality — the ceiling rule |
+| `transfer` | `journal_entry_id` | `INTERNAL` | An identifier joining movement to evidence; the evidence classifies itself |
+| `transfer` | `reversal_entry_id` | `INTERNAL` | As `journal_entry_id` |
+| `transfer` | `reversed_by` | `RESTRICTED-PII` | The operator who reversed — `audit_record.actor_id`'s reasoning: from Phase 1 an identity of a person |
+| `transfer` | `reversed_at` | `CONFIDENTIAL` | Dates an operator's correction against a person's account |
+| `transfer` | `initiated_by` | `RESTRICTED-PII` | The commanding identity — as `reversed_by` |
+| `transfer` | `initiated_at` | `CONFIDENTIAL` | Dates a person's financial act — `customer_account.opened_at`'s reasoning |
+| `transfer_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `transfer_event` | `transfer_id` | `INTERNAL` | An identifier of a thing |
+| `transfer_event` | `from_status` | `CONFIDENTIAL` | `transfer.status`'s reasoning — history is the same facts, older |
+| `transfer_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `transfer_event` | `actor_id` | `RESTRICTED-PII` | As `initiated_by` |
+| `transfer_event` | `occurred_at` | `CONFIDENTIAL` | As `initiated_at` |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |
