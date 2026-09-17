@@ -26,6 +26,37 @@ public enum TransfersAuditAction implements AuditableAction {
             "A transfer execution was judged: COMPLETED with its posting or FAILED with its"
                     + " enumerated reason; the record names the transfer, the accounts and the"
                     + " outcome, never an amount.",
+            false),
+
+    /**
+     * A destination was saved (`P4-TSK-007`). The record is the trail creating a destination
+     * leaves — the act where an account takeover monetises, which is why the surface demands
+     * the second factor of an enrolled identity — naming the beneficiary and the destination
+     * account by identifier, <strong>never the display name</strong> ({@code RESTRICTED-PII},
+     * {@code INV-AUD-02}).
+     *
+     * <p>No reason required: saving a destination is a person's own act (the
+     * {@code consent.ConsentGranted} reasoning). Emitted by the creating call only — a
+     * converged retry saved nothing and records nothing.
+     */
+    BENEFICIARY_ADDED(
+            "transfers.BeneficiaryAdded",
+            "A party saved a transfer destination; the record names the beneficiary and the"
+                    + " destination account by identifier, never the display name.",
+            false),
+
+    /**
+     * A saved destination was removed (`P4-TSK-007`). The row survives as evidence
+     * (`P4-TSK-006`); this record names who ended it and when.
+     *
+     * <p>No reason required: removing one's own convenience needs no justification (the
+     * {@code consent.ConsentWithdrawn} reasoning). Emitted by the winning removal only — a
+     * converged retry and a stranger's attempt moved nothing and record nothing.
+     */
+    BENEFICIARY_REMOVED(
+            "transfers.BeneficiaryRemoved",
+            "A party removed a saved transfer destination; the removed row survives as"
+                    + " evidence.",
             false);
 
     private final String code;

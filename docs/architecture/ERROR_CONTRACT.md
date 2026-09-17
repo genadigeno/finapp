@@ -204,6 +204,25 @@ endpoint they already own, and a refusal that quoted the number would put a
 (`INV-AUD-02`). A `SUSPENDED` agreement asked to close answers the generic `api.Conflict`:
 suspension has no producer this phase, and unreachable surfaces do not earn vocabulary.
 
+### `transfers` — `TransfersErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `transfers.UnknownDestination` | 422 | The destination does not resolve to a platform account that can receive funds. |
+
+**One code for unknown and malformed alike, on purpose** (`P4-TSK-007`): a beneficiary's
+destination identifier names a **third party's** product, so the refusal is byte-identical
+across its causes (malformed-equals-absent, the `kyc.OwnerNotEligible` shape) — a split would
+make the creation endpoint an oracle over which identifiers are well-formed-but-unknown. What
+the code discloses is bounded to "no product with a customer wallet answers to this
+identifier", behind an unguessable UUIDv7 — exactly what a transfer naming the same destination
+would disclose through its own judgement. **There is deliberately no beneficiary not-found
+code**: an unknown, not-yours or malformed beneficiary identifier on the removal endpoint is
+`api.NotFound`, byte-identical across its causes (the `P1-TSK-016` reasoning), while the
+caller's own already-removed row converges on `204`. The step-up refusal is **not** a transfers
+code: it is `identity.AssuranceRequired`, the assurance vocabulary's own (`P1-TSK-018`),
+because "step up and retry" is the identity concern however many surfaces demand it.
+
 ### `ledger` — `LedgerErrorCode`
 
 | Code | Status | Meaning |

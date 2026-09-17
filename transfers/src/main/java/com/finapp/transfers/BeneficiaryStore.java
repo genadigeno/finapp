@@ -43,6 +43,21 @@ public interface BeneficiaryStore<T> {
     Optional<Beneficiary> findLive(T unitOfWork, UUID partyId, UUID destinationAccountId);
 
     /**
+     * The identified beneficiary in <em>any</em> status, if it is the caller's —
+     * {@code party_id = ?} in the statement (ADR-0031). What the removal surface uses to tell
+     * "already removed, converge on 204" from "not yours or never existed, one 404"
+     * (`P4-TSK-007`) after {@link #remove} answered {@code false}.
+     */
+    Optional<Beneficiary> findOwned(T unitOfWork, BeneficiaryId beneficiary, UUID partyId);
+
+    /**
+     * The party's live beneficiaries, oldest first — `P4-TSK-007`'s listing, the read
+     * {@code V003}'s {@code beneficiary_by_party} index was named for. Live only: a removed
+     * destination is evidence, not an address-book entry.
+     */
+    java.util.List<Beneficiary> listLiveFor(T unitOfWork, UUID partyId);
+
+    /**
      * Move the identified beneficiary {@code ACTIVE → REMOVED}, if it is the caller's and still
      * live. {@code party_id = ?} is the ownership check, in the statement (ADR-0031); the row
      * count converges retries and refuses strangers with one indistinguishable {@code false}.

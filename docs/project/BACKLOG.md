@@ -5021,7 +5021,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
 - **Out of scope**: external destinations (Phase 5+), beneficiary sharing, per-beneficiary
   limits (Phase 13).
 
-**P4-TSK-007 — The beneficiary endpoints, and the step-up point** — `READY`
+**P4-TSK-007 — The beneficiary endpoints, and the step-up point** — `COMPLETE` (2026-09-18)
 - **Scope**: `POST /v1/beneficiaries` — **`MULTI_FACTOR` required when a factor is
   enrolled**, the conditional-assurance domain check (`P1-TSK-033`'s pattern; a static
   annotation would lock out password-only customers), because creating a destination is
@@ -5031,13 +5031,52 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   converging 204). Audit: `transfers.BeneficiaryAdded` / `BeneficiaryRemoved`, actor the
   person. Contract diff reviewed; no body shape a 500.
 - **Deps**: `P4-TSK-006`.
-- **Accept**: an enrolled identity on a `PASSWORD` session is refused with the actionable
-  step-up code and **nothing written**, and succeeds at `MULTI_FACTOR` (the positive
-  control); an unenrolled identity creates at `PASSWORD`; a stranger's beneficiary id is a
-  404 on `DELETE`; both audit actions emitted and leaving `NOT_YET_EMITTED`.
+- **Gate evidence (2026-09-18)**: **every acceptance clause driven over real HTTP with the
+  whole flow, nothing seeded where the flow could be driven.** The step-up: register →
+  log in → enrol → confirm, then the enrolled identity on its `PASSWORD` session is refused
+  **403 `identity.AssuranceRequired`** (actionable — step up and retry, `P1-TSK-018`'s
+  earning test) with **nothing written** (zero rows counted for the party); the positive
+  control proves the factor over `/v1/authentications/mfa` and creates at `MULTI_FACTOR` —
+  audited as the **person** (`actor_id` the identity, target the beneficiary,
+  `destination=` in the summary and the `RESTRICTED-PII` display name asserted absent). An
+  unenrolled identity creates at `PASSWORD`; the retry — carrying a **different display
+  name** — converges 201 onto the same row and the existing name (`P4-TSK-006`'s recorded
+  consequence proven at the surface), one row, **one** `BeneficiaryAdded` record. A
+  stranger's id, an unknown id and a malformed id are **one 404 asserted as an equality
+  between the causes** (normalised only for the correlation id and the caller's own echoed
+  `instance` path), the stranger's target untouched; the owner's `DELETE` converges 204
+  with **one** `BeneficiaryRemoved` record. Unknown and malformed destinations are **one
+  byte-identical 422 `transfers.UnknownDestination`** (the module's first error code —
+  malformed-equals-absent for a third party's identifier) with nothing written. The list
+  shows only the caller's live rows. Ten body shapes none our 500 — including the control
+  character travelling as a **JSON escape** (a raw control byte is the parser's 400 and
+  never reaches the rule under test), refused 422 naming `displayName` and never the value.
+  The contract baseline: **135 added lines, zero removed**; the five `BREAKING` labels are
+  the classifier erring safe on the brand-new path's own `required` members — the
+  `P1-TSK-006` precedent, reviewed and accepted. Both audit actions catalogued and
+  **emitted on arrival** — `NOT_YET_EMITTED` untouched, still holding exactly the three
+  Phase-15 `outbox.*` actions. `OwnershipIsScopedTest` gained `findOwned` (`OWNER_SCOPED` —
+  the read that tells own-already-removed from the one 404) and its negative test by name;
+  `BeneficiaryCreateRequest` joined the credential-sink pinned set with its claim. **Eight
+  mutations, all caught by the intended assertion, restores byte-identical** — the step-up
+  check removed (`expected: 403 but was: 201`), the creation audit dropped, the converged
+  retry audited too (`Expected size: 1 but was: 2`), the removal audit dropped, the 404
+  fold broken (the stranger got 204), the destination validation dropped (201 for a
+  destination that does not exist), the list's ownership predicate dropped (the bulk
+  disclosure), the domain name-rule mapping removed (`expected: 422 but was: 500`). **One
+  planned mutation cut on analysis and recorded**: the step-up refusal moved after the
+  write is behaviourally invisible — the `ApiException` rolls the transaction back either
+  way, so nothing-written is structural (the `P3-TSK-017` claim-before-validate shape).
+  **Verified by targeted tiers — the full `:app:test` hermetic tier (registry,
+  completeness, error-code, contract, ownership and endpoint-rule guards all green) plus
+  the endpoint and store database suites — the full battery deliberately skipped on the
+  owner's instruction**; no fleet-wide tier counts are claimed.
+- **Accept**: met — the enrolled/`PASSWORD` refusal with nothing written and the
+  `MULTI_FACTOR` success; the unenrolled `PASSWORD` create; the stranger's one 404; both
+  actions emitted.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`
 
-**P4-TSK-008 — `POST /v1/transfers`, status and list** — `TODO`
+**P4-TSK-008 — `POST /v1/transfers`, status and list** — `READY`
 - **Scope**: the transfer surface: `POST /v1/transfers` (session +
   `@RequiresIdempotencyKey`; body: source account id, exactly one of destination account id
   or beneficiary id, amount as a decimal string parsed exactly, currency, reference) →

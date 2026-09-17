@@ -291,16 +291,23 @@ producer this phase.
 | Code | Reason required | What it is |
 |---|---|---|
 | `transfers.TransferExecuted` | No | A transfer execution was judged: COMPLETED with its posting or FAILED with its enumerated reason; the record names the transfer, the accounts and the outcome, never an amount. |
+| `transfers.BeneficiaryAdded` | No | A party saved a transfer destination; the record names the beneficiary and the destination account by identifier, never the display name. |
+| `transfers.BeneficiaryRemoved` | No | A party removed a saved transfer destination; the removed row survives as evidence. |
 
-Declared with the command whose design fixes its meaning (`P4-TSK-005`) rather than with the
-module skeleton — `P4-TSK-001`'s recorded decision, the `accounts`/`P3-TSK-011` precedent one
-phase over. **One record per execution, whatever the judgement**: a `FAILED` transfer is a
-committed domain outcome (ADR-0043/0044), and its "why" is the enumerated `FailureReason` on
-the row itself, so no free-prose reason is demanded — executing a transfer is a person's own
-act with their own money (the `accounts.AccountOpened` reasoning). Emitted by
+Declared with the command whose design fixes its meaning (`P4-TSK-005`, `P4-TSK-007`) rather
+than with the module skeleton — `P4-TSK-001`'s recorded decision, the `accounts`/`P3-TSK-011`
+precedent one phase over. **One record per execution, whatever the judgement**: a `FAILED`
+transfer is a committed domain outcome (ADR-0043/0044), and its "why" is the enumerated
+`FailureReason` on the row itself, so no free-prose reason is demanded — executing a transfer
+is a person's own act with their own money (the `accounts.AccountOpened` reasoning). Emitted by
 `TransferExecution` in the execution transaction, by the executing call only: a replayed retry
-is not a second act. The reversal's action, with its **required** reason and its privileged
-actor, is `P4-TSK-009`'s design and deliberately not declared here.
+is not a second act. **The beneficiary pair are a person's own acts** (`P4-TSK-007`) — no
+reason, the consent pair's reasoning — emitted by the acting call only (a converged create or
+removal moved nothing and records nothing), with the display name (`RESTRICTED-PII`) never in
+target or summary: `transfers.BeneficiaryAdded` is the trail creating a destination leaves,
+which is the act where an account takeover monetises and the reason the surface demands the
+enrolled identity's second factor. The reversal's action, with its **required** reason and its
+privileged actor, is `P4-TSK-009`'s design and deliberately not declared here.
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure

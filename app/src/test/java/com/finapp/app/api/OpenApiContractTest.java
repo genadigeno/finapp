@@ -265,6 +265,10 @@ class OpenApiContractTest {
                         // P3-TSK-018: the period statement, derived from postings - the
                         // drill-down shape (INV-ACC-02), opening + lines = closing.
                         ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}/statement",
+                        // P4-TSK-007: saved destinations - the create is the step-up point
+                        // (MULTI_FACTOR when a factor is enrolled, decided in the domain).
+                        ApiVersion.CURRENT_PREFIX + "/beneficiaries",
+                        ApiVersion.CURRENT_PREFIX + "/beneficiaries/{id}",
                         // P3-TSK-017: the ledger's one public surface - the adjustment,
                         // behind LEDGER_ADJUST, reason required (INV-REV-04).
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments",

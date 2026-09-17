@@ -311,6 +311,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // classified in accounts.customer_account's register rows, not in
                         // this vocabulary.
                         "AccountOpenRequest",
+                        // P4-TSK-007. Carries a display name (RESTRICTED-PII at the register,
+                        // never a secret) and a destination account identifier - here because
+                        // the set is every schema REACHABLE from a request body. What creating
+                        // a beneficiary stores is classified in transfers.beneficiary's
+                        // register rows, not in this vocabulary.
+                        "BeneficiaryCreateRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/

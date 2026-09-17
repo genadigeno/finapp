@@ -245,12 +245,23 @@ class OwnershipIsScopedTest {
                             new Entry(
                                     Scope.OWNER_SCOPED,
                                     "DELETE /v1/beneficiaries/{id} (P4-TSK-007's surface; the"
-                                        + " store lands with P4-TSK-006) - the identifier will"
-                                        + " come from the path, and party_id = ? in the"
+                                        + " store landed with P4-TSK-006) - the identifier"
+                                        + " comes from the path, and party_id = ? in the"
                                         + " statement is the ownership check: a beneficiary"
                                         + " belongs to the Party, and the conditional's row"
                                         + " count folds not-yours and already-removed into one"
                                         + " indistinguishable false.")),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcBeneficiaryStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "DELETE /v1/beneficiaries/{id}'s second half (P4-TSK-007):"
+                                        + " after the conditional removal matched nothing, this"
+                                        + " any-status read - party_id = ? in the statement -"
+                                        + " is what tells the caller's own already-removed row"
+                                        + " (converge, 204) from unknown and not-yours (one"
+                                        + " 404). Without the predicate a stranger's DELETE of"
+                                        + " a live row would answer 204 and read as theirs.")),
                     Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revokeAll",
                             new Entry(
@@ -963,6 +974,9 @@ class OwnershipIsScopedTest {
                     "com.finapp.transfers.JdbcBeneficiaryStore.remove",
                     "com.finapp.app.transfers.BeneficiaryDatabaseTest"
                             + ".removalConvergesAndIsOwnershipScoped",
+                    "com.finapp.transfers.JdbcBeneficiaryStore.findOwned",
+                    "com.finapp.app.transfers.BeneficiaryEndpointDatabaseTest"
+                            + ".aStrangersBeneficiaryIdIsOne404OnDelete",
                     "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
                     "com.finapp.app.domain.AccountEndpointDatabaseTest"
                             + ".ownershipIsExactlyTheCallers",

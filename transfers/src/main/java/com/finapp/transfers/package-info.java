@@ -27,9 +27,10 @@
  * execution command with its stores, ports and seams ({@code P4-TSK-005}) — one transfer judged
  * and committed with its money in one local transaction — and the
  * {@link com.finapp.transfers.Beneficiary} with its one-live-per-(party, destination) schema
- * and port-validated creation ({@code P4-TSK-006}). The HTTP surfaces are {@code P4-TSK-007}'s
- * (beneficiaries, with the step-up point and both beneficiary audit actions) and
- * {@code P4-TSK-008}'s (transfers); the reversal {@code P4-TSK-009}'s (with its own audit
- * action — the deliberately-few licence continues); the seam hardening {@code P4-TSK-010}'s.
+ * and port-validated creation ({@code P4-TSK-006}) — carried over HTTP with the conditional
+ * step-up, both beneficiary audit actions and the module's first error code
+ * ({@code P4-TSK-007}). The transfer surface is {@code P4-TSK-008}'s; the reversal
+ * {@code P4-TSK-009}'s (with its own audit action — the deliberately-few licence continues);
+ * the seam hardening {@code P4-TSK-010}'s.
  */
 package com.finapp.transfers;

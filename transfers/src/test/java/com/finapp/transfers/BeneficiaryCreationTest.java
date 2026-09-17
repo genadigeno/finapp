@@ -113,6 +113,17 @@ class BeneficiaryCreationTest {
         }
 
         @Override
+        public Optional<Beneficiary> findOwned(
+                Object unitOfWork, BeneficiaryId beneficiary, UUID partyId) {
+            throw new UnsupportedOperationException("not this command's question");
+        }
+
+        @Override
+        public java.util.List<Beneficiary> listLiveFor(Object unitOfWork, UUID partyId) {
+            throw new UnsupportedOperationException("not this command's question");
+        }
+
+        @Override
         public boolean remove(
                 Object unitOfWork, BeneficiaryId beneficiary, UUID partyId, Instant at) {
             throw new UnsupportedOperationException("not this command's question");

@@ -119,6 +119,56 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore<Connection> 
     }
 
     @Override
+    public Optional<Beneficiary> findOwned(
+            Connection unitOfWork, BeneficiaryId beneficiary, UUID partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(beneficiary, "beneficiary must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // party_id = ? IS the ownership check, in the statement (ADR-0031).
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE id = ? AND party_id = ?")) {
+            read.setObject(1, beneficiary.value());
+            read.setObject(2, partyId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
+        } catch (SQLException failure) {
+            throw new TransfersStorageException(
+                    DatabaseFailure.describe("reading an owned beneficiary", failure));
+        }
+    }
+
+    @Override
+    public java.util.List<Beneficiary> listLiveFor(Connection unitOfWork, UUID partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE party_id = ? AND status NOT IN ("
+                                + BeneficiaryStatus.sqlTerminalValueList()
+                                + ") ORDER BY created_at, id")) {
+            read.setObject(1, partyId);
+            try (ResultSet rows = read.executeQuery()) {
+                java.util.List<Beneficiary> live = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    live.add(rehydrate(rows));
+                }
+                return java.util.List.copyOf(live);
+            }
+        } catch (SQLException failure) {
+            throw new TransfersStorageException(
+                    DatabaseFailure.describe(
+                            "listing the beneficiaries of party " + partyId, failure));
+        }
+    }
+
+    @Override
     public boolean remove(
             Connection unitOfWork, BeneficiaryId beneficiary, UUID partyId, Instant at) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

@@ -1136,6 +1136,41 @@
             "$ref": "#/components/headers/X-Correlation-Id"
           }
         }
+      },
+      "transfers.UnknownDestination": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "transfers.UnknownDestination"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/transfers.UnknownDestination"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The destination does not resolve to a platform account that can receive funds.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
       }
     },
     "schemas": {
@@ -1282,6 +1317,41 @@
             "type": "array"
           },
           "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BeneficiaryCreateRequest": {
+        "properties": {
+          "destinationAccountId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "destinationAccountId",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "BeneficiaryView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "destinationAccountId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
             "type": "string"
           }
         },
@@ -2100,6 +2170,71 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/beneficiaries": {
+      "get": {
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BeneficiaryView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeneficiaryCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeneficiaryView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/beneficiaries/{id}": {
+      "delete": {
+        "operationId": "remove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
           }
         }
       }
