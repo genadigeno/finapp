@@ -4286,14 +4286,40 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   removing it. **Met** — see gate evidence.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`
 
-**P3-TST-002 — `INV-CON-01` and `INV-BAL-04` under contention** — `READY`
+**P3-TST-002 — `INV-CON-01` and `INV-BAL-04` under contention** — `COMPLETE` (2026-09-17)
 - **Scope**: the register rows for both, with the mutations that break them (the lock removed;
   the availability check moved outside it; the hold read from the projection).
 - **Deps**: P3-TSK-015. **Risk**: High. **Cx**: M. **DoD**: `DOD-TEST`
+- **Gate evidence (2026-09-17)**: the `INV-CON-01` and `INV-BAL-04` rows landed in
+  `MUTATION_TESTING.md` §2 with the item's own §4 row, each naming its tests by
+  `Class#method` and the observed result — all `Recorded` form honestly, since every
+  mutation edits production code. **The audit found one of the three named mutations had
+  not been performed**: `P3-TSK-015`'s sweep performed the availability check *dropped*,
+  and the item names the check *moved outside the lock* — a different defect, the
+  `P2-TSK-015` write-skew shape wearing hold clothes: the code still locks, still checks,
+  and still loses the race, which is exactly the mutation that passes every sequential
+  test. **Performed by this item** (the derivation and the standing-holds fold hoisted
+  above `lockForUpdate`, judged after the grant): **caught by both intended assertions** —
+  the deterministic interleaving's blocked-observation precondition stays green (the lock
+  is still taken) and its **outcome half** fails (the loser resumes, judges its pre-lock
+  snapshot and wrongly accepts — two holds of 600 in 1000), and the ten-way race admits
+  more than was available. Restore byte-identical. The lock-removed and projection-read
+  demonstrations recorded from `P3-TSK-015`'s sweep log (M1: the blocked-observation
+  precondition fails; M3: the corrupted-`holds_minor` test — which is what makes
+  `INV-BAL-05` behaviourally catchable, its own row **deferred in writing to the exit
+  review**, the `P2-TST-001` handling of `INV-KYC-06`). Register guard teeth re-proven per
+  §5: one method reference corrupted (backup copy, never `git checkout --`),
+  `everyNamedMethodExists` failed naming exactly
+  `HoldDatabaseTest#theLosingPlacerIsObservedBlockedThenRefusedX`, restored and verified
+  byte-identical, green again — all nine guard checks green over the new rows. **M3.5
+  closes at 2 of 2**: its acceptance — *a hold cannot exceed available balance under a
+  ten-way race; release restores availability exactly* — held by `P3-TSK-015`'s
+  demonstration and now recorded where the exit review will look. No production code
+  shipped. Full battery green: 1090 hermetic, 653 database, 14 kafka tests.
 
 ## P3-EPIC-06 — Correction without mutation (M3.6)
 
-**P3-TSK-016 — Reversal: a new effect referencing the original** — `TODO`
+**P3-TSK-016 — Reversal: a new effect referencing the original** — `READY`
 - **Objective**: `INV-REV-01`, `INV-REV-02`.
 - **Scope**: reversal entry with directions swapped and a reference to the original; bounded by
   the original accounting for previous partial reversals; the original **byte-identical**

@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P3-TSK-015`)
+Last updated: 2026-09-17 (`P3-TST-002`)
 
 ---
 
@@ -78,8 +78,8 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **16 of 24** backlog items; M3.1 through **M3.4** are
-closed; M3.5 is 1 of 2.
+same day with `P3-TSK-001`. **17 of 24** backlog items; M3.1 through **M3.5** are
+closed.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -119,15 +119,26 @@ class, again).
 
 ## Current Milestone
 
+**M3.6 — Correction without mutation.** `P3-TSK-016` plus `P3-TSK-017`;
+**0 of 2 — next `P3-TSK-016` (`READY`)** — a mistake is corrected by a new
+entry, never an edit (`INV-HIST-01`): the reversal references the original,
+swaps directions, is bounded by what remains un-reversed (`INV-REV-01`,
+`INV-REV-02`) with the bound a predicate in the statement, and the original
+is byte-identical afterwards — asserted, not assumed.
+
 **M3.5 — Holds and available balance.** `P3-TSK-015` plus `P3-TST-002`;
-**1 of 2 — next `P3-TST-002` (`READY`)** — the phase's sharpest contention
-point, and the contention is decided: a hold cannot make available balance
-negative (`INV-BAL-04`), decided from postings and standing hold rows inside
-the account row's `FOR UPDATE`, never from the projection — ten instances
-placing against one account accept exactly what was available, with the loser
-observed Lock-waiting. What remains is `P3-TST-002`: the `INV-CON-01` and
-`INV-BAL-04` register rows, with the mutations this task performed recorded
-as their demonstrations.
+**CLOSED 2026-09-17, 2 of 2** — the phase's sharpest contention point,
+decided by the account row's `FOR UPDATE`: a hold cannot make available
+balance negative (`INV-BAL-04`), judged from postings and standing hold rows
+inside the lock, never from the projection (`INV-BAL-05`, behaviourally
+proven). The milestone's stated acceptance — *a hold cannot exceed available
+balance under a ten-way race; release restores availability exactly* — holds
+by demonstration: ten instances placing 1000 against 3000 accept exactly
+three, counted in the table, the loser observed Lock-waiting in
+`pg_stat_activity`; and the register rows recording that the tests fail when
+the lock is removed, when the check moves outside it, and when the decision
+reads the projection are landed where the exit review will look
+(`P3-TST-002`).
 
 **M3.4 — The product exists.** `P3-TSK-011` … `P3-TSK-014`;
 **CLOSED 2026-09-17, 4 of 4** — the module and its privilege floor, the gated
@@ -379,11 +390,54 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-015` is `COMPLETE`; **M3.5 is 1 of 2**.
-**Next: `P3-TST-002` (`READY`)** — the `INV-CON-01`/`INV-BAL-04` register
-rows, closing M3.5.
+**None in progress.** `P3-TST-002` is `COMPLETE`; **M3.5 closes at 2 of 2**.
+**Next: `P3-TSK-016` (`READY`)** — reversal, a new effect referencing the
+original, opening M3.6.
 
 ### Just completed
+
+**`P3-TST-002` — `INV-CON-01` and `INV-BAL-04` under contention** — `COMPLETE`
+(2026-09-17). **M3.5 closes: the contention point's register rows are landed
+where the exit review will look**, before it needs them — the posture that
+keeps the review a check rather than a scramble.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The register rows for both invariants | `MUTATION_TESTING.md` §2 gains `INV-CON-01` (third row — the holds context joins the Phase 1 pair) and `INV-BAL-04`, plus the item's §4 row; each names its tests by `Class#method` with the observed result, all `Recorded` form honestly since every mutation edits production code |
+| The named mutations demonstrated | The lock removed and the projection read recorded from `P3-TSK-015`'s sweep; **the check moved outside the lock performed by this item**, because dropped and moved are different defects |
+| The rows held to the code | All nine `MutationDemonstrationTest` checks green over the new rows; teeth re-proven per §5 — one method reference corrupted, the guard failed naming exactly it, restored byte-identical |
+
+### The audit's finding: one named mutation had not been performed
+
+`P3-TSK-015`'s sweep performed the availability check **dropped**; this item
+names the check **moved outside the lock** — a different defect and the
+sharper one: the moved form still locks, still checks, and still loses the
+race (the `P2-TSK-015` write-skew shape wearing hold clothes), which is
+exactly the mutation that passes every sequential test. Performed here — the
+derivation and the standing-holds fold hoisted above `lockForUpdate`, judged
+after the grant — and **caught by both intended assertions in the way that
+vindicates the test's design**: the blocked-observation precondition stays
+green, because the lock is still taken, and the **outcome half** fails — the
+loser resumes, judges its pre-lock snapshot, and wrongly accepts two holds of
+600 in 1000 — while the ten-way race admits more than was available. A test
+asserting only the coordination would have passed the moved check; only the
+outcome half catches it; only the coordination half catches the removed lock.
+**The two halves catch different defects, which is why the test carries
+both.**
+
+### Deferred in writing, with the precedent named
+
+`INV-BAL-05`'s own row is the exit review's (the `P2-TST-001` handling of
+`INV-KYC-06`): its demonstration — the corrupted-`holds_minor` test that made
+the projection-as-decision-input behaviourally catchable — is already
+performed and recorded inside the `INV-BAL-04` row, so what the review lands
+is the record, not the work.
+
+**No production code shipped.** The performed mutation was restored
+byte-identical (asserted, in a `finally`); the deliverable is the register
+and this state. **1090 hermetic tests, 653 database tests, 14 kafka tests.**
+
+### Previously
 
 **`P3-TSK-015` — `Hold`: place and release against available balance** — `COMPLETE`
 (2026-09-17). **M3.5 opens at 1 of 2 — the phase's sharpest contention point,
@@ -7913,10 +7967,9 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-015` (2026-09-17): holds against
-available balance, opening M3.5 — the phase's sharpest contention point,
-decided by the account row's lock. The next work is `P3-TST-002`, the
-`INV-CON-01`/`INV-BAL-04` register rows, closing M3.5.
+The last work performed was `P3-TST-002` (2026-09-17): the `INV-CON-01` and
+`INV-BAL-04` register rows, closing M3.5 at 2 of 2. The next work is
+`P3-TSK-016`, reversal — a new effect referencing the original, opening M3.6.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8202,6 +8255,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P3-TST-002` complete — the `INV-CON-01`/`INV-BAL-04` register rows, and M3.5 closes (2 of 2).** `MUTATION_TESTING.md` §2 gains `INV-CON-01` (third row — the holds context joins the Phase 1 pair) and `INV-BAL-04`, plus the item's §4 row — each naming its tests by `Class#method` with the observed result, all `Recorded` form honestly since every mutation edits production code. **The audit found one of the three named mutations unperformed**: `P3-TSK-015` performed the availability check *dropped*, and the item names it *moved outside the lock* — a different and sharper defect (the `P2-TSK-015` write-skew shape: still locks, still checks, still loses the race — the mutation that passes every sequential test). Performed by this item: the derivation and standing-holds fold hoisted above `lockForUpdate` — **caught by both intended assertions, in the way that vindicates the test's two halves**: the blocked-observation precondition stays green (the lock is still taken) and the outcome half fails (the loser resumes, judges its pre-lock snapshot, wrongly accepts 600+600 in 1000), with the ten-way admitting more than available — the removed lock is caught by the coordination half, the moved check by the outcome half, which is why the test carries both. `INV-BAL-05`'s row **deferred in writing to the exit review** (the `P2-TST-001` handling of `INV-KYC-06`), its corrupted-`holds_minor` demonstration already performed and recorded inside the `INV-BAL-04` row. Guard teeth re-proven per §5: one method reference corrupted, `everyNamedMethodExists` failed naming exactly it, restored byte-identical, all nine checks green. No production code shipped. 1090 hermetic tests, 653 database tests, 14 kafka tests. Next: `P3-TSK-016`, M3.6 opens. |
 | 2026-09-17 | **`P3-TSK-015` complete — holds against available balance, and M3.5 opens (1 of 2).** `INV-BAL-04` is real: the `Hold` aggregate (`ACTIVE -> RELEASED`, terminal, amount strictly positive), `V008` (`ledger.hold` — `MoneyColumns` shape pinned, currency bound to the account by composite FK, coherence CHECKs, a trigger making `RELEASED` terminal for **every** writer, grants `SELECT, INSERT` + `UPDATE (status, released_at)`; the item's "`V006`" was planning-time numbering drift, recorded), and `HoldService` — the `PostingService` position: no HTTP surface (plan §9 declares none), no key of its own (a hold joins its commanding flow's transaction and replays with that flow's key). **The protocol is `P3-TSK-014`'s lock-mode analysis reused**: place and release take `SELECT ... FOR UPDATE` on the account row — the mode that conflicts with every in-flight posting's `FOR KEY SHARE` and every sibling placer — then derive from postings and the `ACTIVE` hold rows folded through `Money.plus` (never a SQL `SUM`) in fresh statements. Ten instances placing 1000 against 3000: exactly three accepted, seven refused, counted in the table, `holds_minor` equal to the fold; the deterministic interleaving observes the loser **Lock-waiting in `pg_stat_activity`**. The boundary exact (exactly available accepted; one minor unit more refused, amount-free — `INV-AUD-02`); release converges with the row count gating decrement, record and event, and restores availability **exactly**; a crash mid-placement is all-or-nothing. **`INV-BAL-05` became behaviourally catchable**: a `holds_minor` corrupted through the app role's own grant changes no decision, and the projection-read mutation is caught by exactly that test — closing the honest-limit class `P3-TSK-014` recorded. The close gained its standing-holds check (settled can reach zero while a reservation stands; refused as `AccountNotEmpty` under the same lock); the display's `available = settled - holds` became load-bearing (`P3-TSK-013`'s limit, closed). Remainders with owners: expiry (Phase 5), capture (Phase 4/5), `holds_minor` in the verification job + the hold gauge (M3.8), the register rows (`P3-TST-002`, next). **Eight mutations, all caught by the intended assertion, restores byte-identical.** 1090 hermetic tests, 653 database tests. Next: `P3-TST-002`. |
 | 2026-09-17 | **`P3-TSK-014` complete — closing an account without closing its history, and M3.4 CLOSES (4 of 4).** The milestone acceptance holds end to end over HTTP: open 201 → balance → a real posting moves it → emptied → `DELETE` 204 → the list shows `CLOSED` → the closed account's balance still readable → a repeated `DELETE` converges. **The race is closed by lock-mode analysis**: every in-flight posting holds `FOR KEY SHARE` (the `journal_line` FK, and `V007`'s trigger read takes it explicitly — a bare read passes while a close sits uncommitted and loses, exactly as `P3-TSK-006` warned), a plain status `UPDATE`'s `FOR NO KEY UPDATE` does NOT conflict with it, so the closer takes `SELECT … FOR UPDATE` then looks (`P2-TSK-015`) — both interleavings proven deterministically with the loser observed Lock-waiting in `pg_stat_activity`, and the two lock mutations each caught by their own interleaving. `V007` is the DB-CONSTRAINT-rank half — a `BEFORE INSERT` trigger on `journal_line` refusing any non-`ACTIVE` account for every writer, proven by raw SQL from scratch, translated to the named `LedgerAccountNotPostableException` for Phase 4's domain outcome. The zero-balance check **derives from postings inside the lock** (`INV-BAL-05`; the projection swap is behaviourally invisible — held by design and review, recorded). The deferred store methods arrived with their first caller as promised (`lockOwnedBy`/`moveStatus`, classified on arrival); `ACCOUNT_CLOSED` arrived with its design — no reason, the withdrawal argument — emitted by the closing call only; ten concurrent closes produce one transition, one record, one event, nine converged, and the freed slot admits a successor (`INV-LIFE-04`). The refusal is `accounts.AccountNotEmpty` (409), naming no amount anywhere (`INV-AUD-02`). The plan's §9 table lacked the close endpoint row its own milestone line requires — corrected with provenance. **Seven mutations, all caught by the intended assertion, restores byte-identical.** 1079 hermetic tests, 645 database tests. Next: `P3-TSK-015`, M3.5 opens. |
 | 2026-09-17 | **`P3-TSK-013` complete — the account endpoints; M3.4 is 3 of 4.** The product meets HTTP: `POST /v1/me/accounts` (session + idempotency key), `GET /v1/me/accounts`, `GET …/{id}/balance` — and the acceptance holds end to end over real HTTP: open 201, listed, balance `\"0.00\"`, a real posting, then settled/available `\"12.50\"` with holds `\"0.00\"`, nothing polled because the projection is transactional (ADR-0041). **The platform's first published amounts are decimal strings** under `kind: \"PROJECTION\"` with the three numbers named (`INV-BAL-04`'s presentation; `INV-MON-01`'s reasoning carried past our own boundary); `BalanceDisplay` is `ledger`'s second declared projection reader — display only, lock-free, never a decision's input (`INV-BAL-05`). **Ownership**: open and list take no identifier; the balance's `{id}` resolves through `findOwnedBy` with `customer_id = ?` in the statement — unknown, not-yours and malformed one 404 as an equality between the causes — and the ownership guard's own machinery met the second module: its OWNER_SCOPED check hardcoded `identity_id = ?` under a one-module javadoc, widened to the documented predicate set, with `revokeOwned`'s stale \"the only\" corrected alongside. **Idempotency at two layers**: the executor replays the original 201 byte-for-byte, a reused key with a different request conflicts (the fingerprint binds the party — ADR-0004's owning principal), keyless is the interceptor's 422, converge beneath. The generated contract caught `open_1` and a raw `list` before the baseline was born (both renamed); diff 222 added / 0 removed, BREAKING labels reviewed per precedent. Two codes catalogued and mapped globally. One honest limit recorded: the available formula is mutation-untestable while holds are structurally zero — `P3-TSK-015` owns it. **Eight mutation runs, all caught, restores byte-identical** — ownership predicate (twice), `@RequiresSession` (twice), constant fingerprint, absent-row throw, key requirement removed, malformed-id fold removed. 1079 hermetic tests, 639 database tests. Next: `P3-TSK-014`. |
