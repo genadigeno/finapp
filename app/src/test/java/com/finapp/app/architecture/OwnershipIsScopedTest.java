@@ -195,9 +195,20 @@ class OwnershipIsScopedTest {
                             "com.finapp.identity.JdbcSessionStore.revokeOwned",
                             new Entry(
                                     Scope.OWNER_SCOPED,
-                                    "DELETE /v1/sessions/{id} - the only production operation whose"
-                                        + " resource identifier comes from the request. The owner is"
-                                        + " the proven session's identity.")),
+                                    "DELETE /v1/sessions/{id} - a resource identifier from the"
+                                        + " request (this entry said 'the only' such operation"
+                                        + " until P3-TSK-013's balance read became the second)."
+                                        + " The owner is the proven session's identity.")),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/accounts/{id}/balance - the identifier comes from"
+                                        + " the path, and customer_id = ? in the statement is the"
+                                        + " ownership check (P3-TSK-013). The customer itself is"
+                                        + " session-derived (findLiveCustomerFor), so not-yours,"
+                                        + " unknown and malformed are one empty answer and one"
+                                        + " 404.")),
                     Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revokeAll",
                             new Entry(
@@ -772,9 +783,17 @@ class OwnershipIsScopedTest {
                             + ".revokeAllIsScopedToItsIdentity",
                     "com.finapp.identity.JdbcContactChannelStore.findOwned",
                     "com.finapp.app.domain.RecoveryAbuseDatabaseTest"
-                            + ".aChannelIsNotReadableByAnotherIdentity");
+                            + ".aChannelIsNotReadableByAnotherIdentity",
+                    "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
+                    "com.finapp.app.domain.AccountEndpointDatabaseTest"
+                            + ".ownershipIsExactlyTheCallers");
 
-    /** The owner column. One name, because one module owns every table this rule covers. */
+    /**
+     * The identity schema's owner column. (This said "one name, because one module owns every
+     * table this rule covers" until `P3-TSK-013` brought the second module: an OWNER_SCOPED
+     * statement is now held to {@link #OWNERSHIP_PREDICATES} — each member a documented proof —
+     * rather than to this one column.)
+     */
     private static final String OWNER_PREDICATE = "identity_id = ?";
 
     /**
@@ -823,7 +842,8 @@ class OwnershipIsScopedTest {
                     if (entry.scope() != Scope.OWNER_SCOPED) {
                         return;
                     }
-                    if (!statementOf(method).contains(OWNER_PREDICATE)) {
+                    String statement = statementOf(method);
+                    if (OWNERSHIP_PREDICATES.stream().noneMatch(statement::contains)) {
                         missing.add(method);
                     }
                 });
@@ -840,8 +860,9 @@ class OwnershipIsScopedTest {
         // which is worse than none because it is believed (P0-TST-008). Third occurrence of this
         // class in two tasks: right about the property, wrong about where to look.
         assertThat(missing)
-                .as("an OWNER_SCOPED method whose statement has lost `" + OWNER_PREDICATE + "` is"
-                        + " classified as safe and is not")
+                .as("an OWNER_SCOPED method whose statement has lost its ownership predicate"
+                        + " (one of " + OWNERSHIP_PREDICATES + ") is classified as safe and is"
+                        + " not")
                 .isEmpty();
     }
 

@@ -4132,7 +4132,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   transition check removed, the `UPDATE` grant made table-wide.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
 
-**P3-TSK-013 — `POST /v1/me/accounts`, `GET /v1/me/accounts`, `GET …/balance`** — `READY`
+**P3-TSK-013 — `POST /v1/me/accounts`, `GET /v1/me/accounts`, `GET …/balance`** — `COMPLETE` (2026-09-17)
 - **Context**: Accounts + app. **Scope**: the three endpoints, ownership by absence
   (`SESSION_DERIVED`); the balance response states **which number it is** (settled, holds,
   available) and that it is a projection.
@@ -4143,9 +4143,48 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   OpenAPI diff reviewed and accepted.
 - **Accept**: end to end over HTTP — verified customer opens, reads a balance, sees it change
   after a posting.
+- **Gate evidence (2026-09-17)**: full battery green — 1079 hermetic, 639 database, 14 kafka
+  tests. **The acceptance end to end over real HTTP**: register-shaped fixtures with a live
+  session, `POST` opens (201), the list shows it, the balance reads zero-at-currency
+  (`"0.00"` — a scaled amount, never a bare 0), a real `PostingService` credit lands, and the
+  next read shows settled and available moved with holds zero — nothing to wait for, because
+  the projection is transactional (ADR-0041). **The response names its numbers and its
+  nature**: `kind: "PROJECTION"`, per-currency `{settled, holds, available}` with
+  `available = settled − holds` (`INV-BAL-04`'s presentation), and **the platform's first
+  published amounts leave as decimal strings** — a JSON number is a `double` in every careless
+  client, and `INV-MON-01`'s reasoning does not stop at our own boundary. The display read is
+  `ledger`'s second declared projection reader (`BalanceDisplay`/`JdbcBalanceDisplay`),
+  lock-free and display-only (`INV-BAL-05` stated in type and prose); the plan's own API table
+  puts the balance read here while `P3-TSK-009/-010`'s javadoc had said `P3-TSK-018` — a
+  one-task drift, recorded. **Ownership**: open and list take no identifier at all; the
+  balance's `{id}` resolves through `findOwnedBy`, whose `customer_id = ?` is the check in the
+  statement — unknown, not-yours and malformed proven **one 404 as an equality between the
+  causes** (per-request members normalised). `OwnershipIsScopedTest` classified it
+  `OWNER_SCOPED` — and its own machinery met the second module: the OWNER_SCOPED predicate
+  check hardcoded `identity_id = ?` under a javadoc saying "one module owns every table this
+  rule covers", widened to the documented ownership-predicate set; the `revokeOwned` entry's
+  "the only operation whose resource identifier comes from the request" corrected the same
+  way. **Idempotency at two layers**: the executor replays the recorded 201 byte-for-byte
+  (`INV-IDEM-01`), a reused key with a different request is a 409 conflict (`INV-IDEM-03`, the
+  fingerprint binding the party as ADR-0004's owning principal), a keyless request is the
+  interceptor's 422, and `openOrConverge` remains the layer beneath. Two new codes catalogued
+  (`accounts.AccountOpeningRefused` 409 cause-blind, `accounts.UnsupportedCurrency` 422),
+  mapped globally; the no-500 sweep drives eight body shapes. **The generated contract caught
+  two published-name defects before the baseline was born**: `operationId: "open_1"` (a
+  method-name collision suffix) and a raw generic `list` — both renamed
+  (`openAccount`/`listAccounts`/`readBalance`), then the diff accepted: 222 added lines, zero
+  removed, the `BREAKING` labels the classifier erring safe on brand-new required
+  fields/enum/params (the recorded precedent). **One honest limit recorded**: the
+  `available = settled − holds` formula is mutation-untestable while holds are structurally
+  zero — owned by `P3-TSK-015`'s tests. **Eight mutation runs, all caught, restores
+  byte-identical**: the ownership predicate dropped (caught **twice** — behaviourally and by
+  the widened build rule), `@RequiresSession` removed (caught **twice** — the 401s and
+  `EveryEndpointDeclaresARuleTest`, the latter by the `--tests` filter's own construction),
+  the fingerprint made constant, the absent-projection-row zero made a throw,
+  `@RequiresIdempotencyKey` removed, the malformed-id fold into 404 removed.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-FIN`
 
-**P3-TSK-014 — Closing an account, without closing its history** — `TODO`
+**P3-TSK-014 — Closing an account, without closing its history** — `READY`
 - **Objective**: `CLOSED` ends the agreement and **not** the accounting history (`INV-HIST-01`).
 - **Scope**: close with a zero-balance precondition; the ledger account stops accepting postings
   and keeps every row.

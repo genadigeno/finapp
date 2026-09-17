@@ -113,6 +113,54 @@ public final class JdbcCustomerAccountStore implements CustomerAccountStore<Conn
         }
     }
 
+    @Override
+    public java.util.List<CustomerAccount> findAllFor(Connection unitOfWork, UUID customerId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE customer_id = ? ORDER BY opened_at, id")) {
+            read.setObject(1, customerId);
+            try (ResultSet rows = read.executeQuery()) {
+                java.util.List<CustomerAccount> accounts = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    accounts.add(rehydrate(rows));
+                }
+                return java.util.List.copyOf(accounts);
+            }
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(
+                    DatabaseFailure.describe(
+                            "listing the accounts of customer " + customerId, failure));
+        }
+    }
+
+    @Override
+    public Optional<CustomerAccount> findOwnedBy(
+            Connection unitOfWork, CustomerAccountId accountId, UUID customerId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // customer_id = ? IS the ownership check, in the statement (ADR-0031).
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE id = ? AND customer_id = ?")) {
+            read.setObject(1, accountId.value());
+            read.setObject(2, customerId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(
+                    DatabaseFailure.describe("reading an owned account", failure));
+        }
+    }
+
     private static CustomerAccount rehydrate(ResultSet row) throws SQLException {
         return CustomerAccount.rehydrate(
                 CustomerAccountId.of(row.getObject("id", UUID.class)),

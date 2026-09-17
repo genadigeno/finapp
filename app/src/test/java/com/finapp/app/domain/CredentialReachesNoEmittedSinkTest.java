@@ -304,7 +304,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // REACHABLE from a request body. The pairing the grant creates - who
                         // consented to what - is CONFIDENTIAL and lives in consent_record's
                         // classification, not in this vocabulary.
-                        "ConsentGrantRequest");
+                        "ConsentGrantRequest",
+                        // P3-TSK-013. Carries a product type (a closed enum) and an ISO
+                        // currency code - no secret and no PII; here because the set is every
+                        // schema REACHABLE from a request body. What the opening creates is
+                        // classified in accounts.customer_account's register rows, not in
+                        // this vocabulary.
+                        "AccountOpenRequest");
     }
 
     @Test

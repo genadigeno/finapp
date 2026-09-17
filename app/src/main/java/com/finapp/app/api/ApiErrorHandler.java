@@ -1,5 +1,8 @@
 package com.finapp.app.api;
 
+import com.finapp.accounts.AccountOpeningRefusedException;
+import com.finapp.accounts.AccountsErrorCode;
+import com.finapp.accounts.UnsupportedAccountCurrencyException;
 import com.finapp.consent.ConsentErrorCode;
 import com.finapp.consent.ConsentNotGrantedException;
 import com.finapp.platform.api.ApiException;
@@ -229,6 +232,40 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
                         "Grant consent for purpose " + exception.purpose()
                                 + " (POST /v1/me/consents, against the current text version)"
                                 + " and retry."));
+    }
+
+    /**
+     * The account-opening gate refused the caller (`P3-TSK-012`/`P3-TSK-013`).
+     *
+     * <p>The mapping lives here rather than in the controller for the consent precedent's
+     * reason: one code however many surfaces the product later grows. The detail is
+     * <strong>actionable and cause-blind</strong> — which of the causes refused (no customer,
+     * a pending verification, a terminal one) is what the gate keeps indistinguishable, and
+     * the exception deliberately cannot say.
+     */
+    @ExceptionHandler(AccountOpeningRefusedException.class)
+    public ResponseEntity<ProblemDetailBody> handleAccountOpeningRefused(
+            AccountOpeningRefusedException exception, HttpServletRequest request) {
+        // Warn, not error: the gate refusing is the control working.
+        LOGGER.warn("Account opening refused on {}", request.getRequestURI());
+        return render(
+                ProblemDetail.of(
+                        AccountsErrorCode.ACCOUNT_OPENING_REFUSED,
+                        request.getRequestURI(),
+                        "Complete verification and retry."));
+    }
+
+    /** The requested account currency is not one the platform operates in (`P3-TSK-013`). */
+    @ExceptionHandler(UnsupportedAccountCurrencyException.class)
+    public ResponseEntity<ProblemDetailBody> handleUnsupportedAccountCurrency(
+            UnsupportedAccountCurrencyException exception, HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        AccountsErrorCode.UNSUPPORTED_CURRENCY,
+                        request.getRequestURI(),
+                        // The caller's own chosen value, named so they can correct it; an ISO
+                        // code discloses nothing about anybody.
+                        exception.getMessage()));
     }
 
     /**

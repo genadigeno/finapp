@@ -180,6 +180,23 @@ remedy and never the cause. No enumeration concern applies to any of the three: 
 are the platform's most public artefact — the words shown to every customer — and the purposes
 are a closed enum shared by everyone.
 
+### `accounts` — `AccountsErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `accounts.AccountOpeningRefused` | 409 | The caller is not eligible to hold accounts; complete verification and retry. |
+| `accounts.UnsupportedCurrency` | 422 | The platform does not operate accounts in this currency. |
+
+**The opening refusal is cause-blind, on purpose** (`P3-TSK-012`/`P3-TSK-013`): no customer
+relationship, a verification still pending and a terminal one are one refusal — the
+`consent.ConsentRequired` shape, actionable (complete verification and retry) and never an
+oracle over why. **There is deliberately no accounts not-found code**: an unknown, not-yours or
+malformed account identifier on the balance endpoint is `api.NotFound`, byte-identical across
+its causes (the `P1-TSK-016` session reasoning — a distinct answer would confirm the identifier
+belongs to somebody). `accounts.UnsupportedCurrency` names its subject because the currency is a
+value the caller chose and must be able to correct, and the supported set is published by every
+account the platform opens.
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

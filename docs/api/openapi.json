@@ -17,6 +17,76 @@
       }
     },
     "responses": {
+      "accounts.AccountOpeningRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounts.AccountOpeningRefused"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounts.AccountOpeningRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The caller is not eligible to hold accounts; complete verification and retry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounts.UnsupportedCurrency": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounts.UnsupportedCurrency"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounts.UnsupportedCurrency"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The platform does not operate accounts in this currency.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "api.Conflict": {
         "content": {
           "application/problem+json": {
@@ -859,6 +929,42 @@
       }
     },
     "schemas": {
+      "AccountOpenRequest": {
+        "properties": {
+          "currency": {
+            "pattern": "[A-Z]{3}",
+            "type": "string"
+          },
+          "productType": {
+            "enum": [
+              "WALLET"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "productType"
+        ],
+        "type": "object"
+      },
+      "AccountView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "productType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AuthenticatedSession": {
         "properties": {
           "assurance": {
@@ -890,6 +996,40 @@
           "loginIdentifier",
           "password"
         ],
+        "type": "object"
+      },
+      "BalanceLine": {
+        "properties": {
+          "available": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "holds": {
+            "type": "string"
+          },
+          "settled": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BalanceResponse": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "balances": {
+            "items": {
+              "$ref": "#/components/schemas/BalanceLine"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "CaseFileResponse": {
@@ -1754,6 +1894,88 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/accounts": {
+      "get": {
+        "operationId": "listAccounts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccountView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "openAccount",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountOpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/accounts/{id}/balance": {
+      "get": {
+        "operationId": "readBalance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceResponse"
                 }
               }
             },

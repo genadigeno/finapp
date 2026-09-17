@@ -256,6 +256,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/registrations",
                         ApiVersion.CURRENT_PREFIX + "/authentications",
                         ApiVersion.CURRENT_PREFIX + "/sessions",
+                        // P3-TSK-013: the account product - open/list, and the balance read
+                        // whose response names its numbers and its nature (ADR-0041).
+                        ApiVersion.CURRENT_PREFIX + "/me/accounts",
+                        ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}/balance",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

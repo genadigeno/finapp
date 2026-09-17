@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P3-TSK-012`)
+Last updated: 2026-09-17 (`P3-TSK-013`)
 
 ---
 
@@ -78,8 +78,8 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **13 of 24** backlog items; M3.1, M3.2 and M3.3 are
-closed; M3.4 is open at 2 of 4.
+same day with `P3-TSK-001`. **14 of 24** backlog items; M3.1, M3.2 and M3.3 are
+closed; M3.4 is open at 3 of 4.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
 of accounts, balanced immutable postings, balances derived and reproducible from zero, holds
@@ -120,9 +120,9 @@ class, again).
 ## Current Milestone
 
 **M3.4 — The product exists.** `P3-TSK-011` … `P3-TSK-014`;
-**2 of 4 — next `P3-TSK-013` (`READY`)** — the module, the schema and the
-gated Customer Account exist; next its HTTP surface (`/v1/me/accounts` and the
-balance read), then closing without closing its history.
+**3 of 4 — next `P3-TSK-014` (`READY`)** — the module, the schema, the gated
+Customer Account and its HTTP surface exist; what remains is closing without
+closing its history, which is the milestone acceptance's last clause.
 Acceptance: a verified customer opens an account, sees its balance, and closes
 it — end to end over HTTP.
 *(This block read `P3-TSK-011 … P3-TSK-013; 0 of 3` until `P3-TSK-011`'s gate:
@@ -366,10 +366,70 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-012` is `COMPLETE`; **M3.4 is 2 of 4**.
-**Next: `P3-TSK-013` (`READY`)** — the account endpoints over `/v1/me`.
+**None in progress.** `P3-TSK-013` is `COMPLETE`; **M3.4 is 3 of 4**.
+**Next: `P3-TSK-014` (`READY`)** — closing an account without closing its
+history.
 
 ### Just completed
+
+**`P3-TSK-013` — the account endpoints** — `COMPLETE` (2026-09-17). The product
+meets HTTP: open, list, and a balance that **says which number it is** — and
+the milestone's acceptance now holds up to its last clause (closing, `P3-TSK-014`).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| End to end over HTTP: open, read, see it change after a posting | `AccountEndpointDatabaseTest`: `POST` 201 → listed → balance `"0.00"` (zero at the account's own scale, never a bare 0) → a real `PostingService` credit → settled and available `"12.50"`, holds `"0.00"` — nothing polled, because the projection is transactional (ADR-0041) |
+| Two customers reach exactly their own | Each list exactly its owner's; A's balance URL with B's id, an unknown id and a malformed id are **one 404, asserted as an equality between the causes** |
+| No request shape yields a 500 | Eight body shapes swept, all the caller's 4xx |
+| The OpenAPI diff reviewed and accepted | 222 added lines, zero removed; the `BREAKING` labels are the classifier erring safe on brand-new required fields/enum/params — and the generated document caught `operationId: "open_1"` and a raw generic `list` before the baseline was born, both renamed |
+
+### The first published amounts, and what they say
+
+`{settled, holds, available}` per currency, each a **decimal string** — a JSON
+number is a `double` in every careless client, and `INV-MON-01`'s reasoning
+does not stop at our own boundary — under `kind: "PROJECTION"`, because a
+response that just said "balance" would mean whichever number its reader
+assumed. `available = settled − holds` is `INV-BAL-04`'s presentation;
+`BalanceDisplay`/`JdbcBalanceDisplay` is `ledger`'s **second declared
+projection reader** (the `P3-TSK-010` stance honoured: display only, never a
+decision's input, no lock anywhere — the display must never contend with the
+write path it mirrors). *(The `P3-TSK-009/-010` javadocs had named `P3-TSK-018`
+as the display query while the plan's API table put the balance read here — a
+one-task drift, recorded.)* **One honest limit recorded**: the available
+formula is mutation-untestable while holds are structurally zero —
+`P3-TSK-015`'s tests own it.
+
+### The ownership guard met the second module, twice
+
+`findOwnedBy` (the balance's `{id}`, with `customer_id = ?` in the statement)
+was classified `OWNER_SCOPED` — and the guard's own predicate check hardcoded
+`identity_id = ?` under a javadoc saying *"one name, because one module owns
+every table this rule covers"*: true when written, false the moment a second
+module owned a table. Widened to the documented ownership-predicate set, and
+`revokeOwned`'s *"the only operation whose resource identifier comes from the
+request"* corrected the same way — the stale-singular class, caught by the
+guard demanding what its own vocabulary could not then accept.
+
+### Idempotency at two layers, and the replay is the original
+
+The executor stores the first 201's body and replays it **byte for byte**
+(`INV-IDEM-01` — a retry learns what its request did, not what the world looks
+like now); a reused key with a different request is a 409 conflict, the
+fingerprint binding the **party** (ADR-0004's owning principal), so a stranger
+replaying a logged key gets a conflict and never somebody else's account; a
+keyless request is the interceptor's 422; and `P3-TSK-012`'s converge remains
+the layer beneath. Two codes catalogued: `accounts.AccountOpeningRefused`
+(409, cause-blind, the `ConsentRequired` shape) and
+`accounts.UnsupportedCurrency` (422, names the caller's own correctable value).
+
+**Eight mutation runs, all caught, restores byte-identical** — the ownership
+predicate dropped (caught twice: behaviourally and by the widened build rule),
+`@RequiresSession` removed (caught twice: the 401s and
+`EveryEndpointDeclaresARuleTest`), the fingerprint made constant, the
+absent-row zero made a throw, `@RequiresIdempotencyKey` removed, the
+malformed-id fold removed. **1079 hermetic tests, 639 database tests.**
+
+### Previously
 
 **`P3-TSK-012` — `CustomerAccount`: the product, gated on verification** — `COMPLETE`
 (2026-09-17). **Phase 2's projection meets its first consumer**: a verified
@@ -7712,9 +7772,9 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-012` (2026-09-17): the `CustomerAccount`
-aggregate, gated on `customer.status = ACTIVE`. The next work is `P3-TSK-013`,
-the account endpoints over `/v1/me`.
+The last work performed was `P3-TSK-013` (2026-09-17): the account endpoints
+over `/v1/me`. The next work is `P3-TSK-014`, closing an account without
+closing its history — M3.4's last member.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8000,6 +8060,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P3-TSK-013` complete — the account endpoints; M3.4 is 3 of 4.** The product meets HTTP: `POST /v1/me/accounts` (session + idempotency key), `GET /v1/me/accounts`, `GET …/{id}/balance` — and the acceptance holds end to end over real HTTP: open 201, listed, balance `\"0.00\"`, a real posting, then settled/available `\"12.50\"` with holds `\"0.00\"`, nothing polled because the projection is transactional (ADR-0041). **The platform's first published amounts are decimal strings** under `kind: \"PROJECTION\"` with the three numbers named (`INV-BAL-04`'s presentation; `INV-MON-01`'s reasoning carried past our own boundary); `BalanceDisplay` is `ledger`'s second declared projection reader — display only, lock-free, never a decision's input (`INV-BAL-05`). **Ownership**: open and list take no identifier; the balance's `{id}` resolves through `findOwnedBy` with `customer_id = ?` in the statement — unknown, not-yours and malformed one 404 as an equality between the causes — and the ownership guard's own machinery met the second module: its OWNER_SCOPED check hardcoded `identity_id = ?` under a one-module javadoc, widened to the documented predicate set, with `revokeOwned`'s stale \"the only\" corrected alongside. **Idempotency at two layers**: the executor replays the original 201 byte-for-byte, a reused key with a different request conflicts (the fingerprint binds the party — ADR-0004's owning principal), keyless is the interceptor's 422, converge beneath. The generated contract caught `open_1` and a raw `list` before the baseline was born (both renamed); diff 222 added / 0 removed, BREAKING labels reviewed per precedent. Two codes catalogued and mapped globally. One honest limit recorded: the available formula is mutation-untestable while holds are structurally zero — `P3-TSK-015` owns it. **Eight mutation runs, all caught, restores byte-identical** — ownership predicate (twice), `@RequiresSession` (twice), constant fingerprint, absent-row throw, key requirement removed, malformed-id fold removed. 1079 hermetic tests, 639 database tests. Next: `P3-TSK-014`. |
 | 2026-09-17 | **`P3-TSK-012` complete — `CustomerAccount`, gated on verification; M3.4 is 2 of 4.** The product agreement exists and **Phase 2's projection meets its first consumer**: opening requires `party.customer.status = ACTIVE`, read per decision from authoritative state inside the opening's own unit of work through the `AccountHolderVerification` port (the `CaseKindResolver` shape), and **the account's `customer_id` is that read's answer, never a caller's**. One transaction: the agreement, its `CUSTOMER_WALLET` ledger account (`LIABILITY`/`CREDIT` asserted — customer money is the platform's debt), the audit record naming the person (`accounts.AccountOpened`, declared with the aggregate per `P3-TSK-011`'s decision, emitted by the creating call only) and the announcement — proven by the rolled-back open leaving none of the four. The machine (`PENDING → ACTIVE → {SUSPENDED ⇄ ACTIVE} → CLOSED`) lives on the enum with the schema artefacts generated from it (`V002`'s status/product CHECKs, the one-live-per-customer-per-product partial index from `sqlTerminalValueList()`); open creates `ACTIVE` directly — `PENDING` has no producer, the `STRONG` precedent — and the aggregate's one `moveTo` refuses every invalid pair, swept from the cross-product. Ten instances with their own connections and scopes produce one of everything with nine converged behind the savepoint; a customer closed on another connection is refused on this one's very next open; the open-vs-customer-close race is accepted and stated (the `P2-TSK-008` class) with the cross-module lock rejected as boundary-breaking. The product is **currency-less** (ADR-0042 — it references its ledger accounts, one per currency); the initial currency must be postable (`SupportedCurrencies`). **The plan's wallet-aggregate contradiction resolved on the record**: product type on `CustomerAccount`, ADR-0042's premature-boundary argument one level down, provenance note in plan §4. The container clock drift met by this task's own grant sweep (`P1-TSK-031`; the constraint was right). Grants per column with a positive control. **Eight mutation runs, all caught by the intended assertion** — gate dropped, filter widened, ledger creation dropped, converged path acting again, index dropped (caught twice), transition check removed, grant table-wide. 1079 hermetic tests, 633 database tests. Next: `P3-TSK-013`. |
 | 2026-09-17 | **`P3-TSK-011` complete — the `accounts` module and schema, and M3.4 opens (1 of 4).** The P3-TSK-001 shape applied to `accounts`: a guarded module, `V001` creating the schema with the default-deny privilege floor (owner `finapp_migrator`, `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, **no `ALTER DEFAULT PRIVILEGES`** — the first table here is exactly one whose `UPDATE` must be column-narrowed, plan §8), zero tables, migrate → validate → re-migrate idempotent on a throwaway PostgreSQL with the ACL proven exactly `finapp_app=U` and no `PUBLIC` entry. **What is genuinely new in the third run of this play is the platform's first business-sibling compile-time edge**: `accounts → ledger`, declared with the module rather than with its first consumer (P3-TSK-012, one task away), because the ADR-0042 asymmetry is the deliverable — with the edge in the build graph, `ledger → accounts` is a Gradle dependency cycle, **demonstrated** (the planted reverse edge fails configuration outright), while `AccountsModuleIsolationTest` pins the positive half (ledger/platform/sharedkernel required, the documented direction) and forbids every other sibling; all five existing sibling isolation tests gained `accounts` in their forbidden lists, the P2-TSK-003 one-directional-decay lesson applied at design time a third time. **One deliberate deviation from the shape's letter, following its licence**: no `AccountsAuditAction` enum — the plan names `AccountOpened`/`AccountClosed` as events (§10) and no accounts audit action outright, so the lifecycle actions arrive with the aggregate whose design fixes their meaning (the `kyc.CaseOpened`/P2-TSK-005 precedent), recorded in `package-info.java`. **Five probes, all caught by the intended guard, restores byte-identical**: a planted `double` caught naming `accounts.Planted.amount` (the derived sweep reached the module with no rule edited); `accounts → party` caught by the new test; `party → accounts` caught by party's — the failure naming the transitively-arriving `ledger` first, since any edge to `accounts` drags its defining dependency along (recorded); the reverse-edge cycle; and an unclassified column migrated into `accounts` caught by `ColumnClassificationTest` against a from-scratch database. **Two findings**: `DATA_MIGRATIONS.md`'s adding-a-schema-owning-module procedure was stale at its last step — it instructed editing a CI list `P1-TSK-003` removed, found by following it, corrected with provenance; and this document's M3.4 block counted three tasks where the epic holds four and the milestone's own acceptance requires `P3-TSK-014` — corrected where the count is used. Housekeeping: `accounts/gradle.lockfile` identical to `ledger`'s but for its header, verification metadata unchanged, the `build-logic` Kotlin RC3→GA drift reverted a fourth time. 1071 hermetic tests, 626 database tests. Next: `P3-TSK-012`. |
 | 2026-09-16 | **`P3-TST-001` complete — `INV-BAL-02` under sustained concurrent posting, and M3.3 closes (4 of 4).** The composition is the deliverable: the pieces were proven alone (`P3-TSK-009`'s ten-way race, `P3-TSK-010`'s deterministic in-flight interleave), and the `P1-TSK-027` lesson is that two green halves compose only when something drives them together. `SustainedConcurrentPostingDatabaseTest`: ten instances posting continuously to one account **while the verification job runs**, with **overlap by construction, never timing luck** (`P0-TST-004`) — the storm is ended by the VERIFIER, which sweeps until ≥25 verdicts complete and ≥200 entries commit (raised from a first draft whose 10/30 floors were met in ~300ms on a warm container: a gust, not a storm). Every mid-storm verdict `CLEAN` or `IN_FLIGHT`, **never `DRIFTING`** — "replay-from-zero equals the projection *throughout*", stated through the delivered machinery — and afterwards `CLEAN`, with the row equal to the posters' own committed tally, tracked outside the kernel. **The rebuild half records the operator procedure that is safe under live posting**: lock-then-look as the migrator, because a blocked `UPDATE` re-evaluates recomputing subqueries against its ORIGINAL snapshot (`P2-TSK-015`'s write-skew finding) and would lose exactly the posting it blocked on; the row is corrupted before each of three mid-storm rebuilds so each provably rewrites, and the storm ends `CLEAN` with the tally exact. **The named mutation performed and recorded**: the projection updated outside the posting transaction (upserts rerouted onto a private autocommit connection — the async-projector defect in its smallest form) fails **five tests across both suites, the two intended among them**: the rolled-back posting deterministically, and the sustained drift-free-throughout sweep. `MUTATION_TESTING.md` §2 gains the `INV-BAL-02` row, §4 the item's row, and the register guard's teeth re-proven per §5 (one reference corrupted, the guard failed naming it, restore byte-identical). **M3.3's acceptance holds and the milestone closes**; M3.4 opens next. 1069 hermetic tests, 626 database tests. Next: `P3-TSK-011`. |
