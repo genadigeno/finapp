@@ -5,10 +5,10 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A request to post a manual adjusting entry (`P3-TSK-017`, {@code INV-REV-04}) — a person
- * choosing to move value the system would not have moved by itself, which makes this the
- * highest-risk financial action on the platform and its justification the only evidence of
- * its legitimacy.
+ * A request to <em>propose</em> a manual adjusting entry (`P3-TSK-017`, {@code INV-REV-04};
+ * the proposal step since `P3-TSK-021`) — a person choosing to move value the system would
+ * not have moved by itself, which makes this the highest-risk financial action on the
+ * platform and its justification the only evidence of its legitimacy.
  *
  * <p><strong>The reason is required here, at the domain</strong>: a command record without
  * one is unconstructible, mirroring `V004`'s implication {@code CHECK} and
@@ -17,10 +17,10 @@ import java.util.Objects;
  * from the established contexts, never from fields; the authorising permission
  * ({@code LEDGER_ADJUST}) is the boundary's (ADR-0031).
  *
- * <p><strong>Four-eyes is not implied by anything here</strong> ({@code INV-AUD-04}): a
- * second-approver regime is recorded debt with the approver column unbuilt (ADR-0010), and
- * this command deliberately carries no threshold check — a threshold check pretending to be
- * four-eyes would read as the control and not be one.
+ * <p><strong>This command posts nothing</strong> ({@code INV-AUD-04}, `P3-TSK-021`): it
+ * records an {@link AdjustmentProposal}, and the journal entry is posted by a
+ * <em>second</em> person's approval — which is also why no approver appears here: an
+ * approver field on a request would be a name anyone can type, not an authorised act.
  *
  * @param idempotencyKey the caller's key ({@code INV-IDEM-01})
  * @param postingDate the accounting date — a domain input, never a clock read

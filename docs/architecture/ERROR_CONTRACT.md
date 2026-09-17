@@ -211,6 +211,8 @@ suspension has no producer this phase, and unreachable surfaces do not earn voca
 | `ledger.UnbalancedAdjustment` | 422 | The adjustment's debits and credits must be equal per currency, at one scale. |
 | `ledger.UnknownAccount` | 422 | A line names an unknown ledger account, or a currency foreign to it. |
 | `ledger.AccountNotPostable` | 409 | The account no longer accepts postings. |
+| `ledger.SelfApprovalRefused` | 409 | An adjustment requires a second approver distinct from its initiator. |
+| `ledger.ProposalNotOpen` | 409 | The adjustment proposal is already decided; a new adjustment is a new proposal. |
 
 The ledger's one public surface is the adjustment (`P3-TSK-017` — plan §9: posting is an
 internal API), so its vocabulary is the adjustment's refusals. **No title or detail ever names
@@ -222,7 +224,14 @@ consumed**, so the operator fixes the request and retries under the same key.
 it) because the remedy is one and an operator holding `LEDGER_ADJUST` reads the chart anyway —
 no oracle is opened. `ledger.AccountNotPostable` (409) is `P3-TSK-014`'s rule meeting this
 surface: actionable in the `P1-TSK-018` sense — adjust a different account, not this one
-again. A missing reason is the ordinary `api.ValidationFailed`, because the boundary's bean
+again. **The four-eyes pair arrived with `P3-TSK-021`**: `ledger.SelfApprovalRefused`
+(409) is `INV-AUD-04`'s named negative made actionable — the proposal is fine and still
+standing, so the remedy is a second authorised person, and nothing was written;
+`ledger.ProposalNotOpen` (409) is one code for both decision surfaces because the remedy is
+one — read the proposal's outcome, and raise a *new* proposal. The converging cases (the
+same approver's retry, a repeated rejection) never produce either code, and an unknown or
+malformed proposal identifier is the ordinary `api.NotFound`, one answer for both causes
+(`P1-TSK-016`). A missing reason is the ordinary `api.ValidationFailed`, because the boundary's bean
 validation owns required-field refusals; the reason's **bound** lives in three reconciled
 places (the DTO, `V004`'s `CHECK`, `AuditRecord`).
 

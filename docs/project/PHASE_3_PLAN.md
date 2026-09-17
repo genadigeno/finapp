@@ -171,9 +171,12 @@ referencing it (`INV-REV-01`); the original is byte-identical afterwards, assert
 bounded by the original, accounting for previous partial reversals (`INV-REV-02`).
 
 An **adjustment** is a manual entry requiring an elevated permission and a reason code
-(`INV-REV-04`). **Four-eyes is `INV-AUD-04`'s requirement and is recorded debt** (ADR-0010): the
-second-approver column does not exist. Phase 3 builds the reason and the permission and records
-the remainder with its owner — it does not pretend a threshold check is four-eyes.
+(`INV-REV-04`), and — since `P3-TSK-021` — **a second approver distinct from the initiator**
+(`INV-AUD-04`): the initiator proposes, nothing posts, and a different `LEDGER_ADJUST` holder
+approves, the entry posting in the approval's transaction. *(This paragraph recorded four-eyes
+as ADR-0010's debt until `P3-TSK-021` built it — corrected with provenance rather than
+silently; the "second-approver column" the debt anticipated was never added, because the
+mechanism is two acts with two audit records, not one record with two actors.)*
 
 ### Suspense
 
@@ -324,7 +327,9 @@ transactional with the posting, so an event announcing it would duplicate
   role→permission mapping is mutation-testable because a second role now exists.
 - **Adjustments require a reason code** (`INV-REV-04`), bounded and reconciled in three places
   the `P2-TSK-012` way.
-- **Four-eyes is not built and the absence is recorded**, not disguised (`INV-AUD-04`, ADR-0010).
+- **Four-eyes is built as two authenticated acts** (`INV-AUD-04`, `P3-TSK-021`): propose,
+  then a second person's approval posts the entry; approver ≠ initiator at `DOMAIN` and
+  `DB-CONSTRAINT`. *(This bullet recorded the absence until `P3-TSK-021`.)*
 - **Account data is ownership-scoped** — the `/v1/me` shape, `SESSION_DERIVED`, no identifier a
   caller could point at someone else's account; every new store method classified in
   `OwnershipIsScopedTest` or the build fails.
@@ -435,7 +440,7 @@ dashboard row whose queries resolve against a live registry.
 | **Settlement, reconciliation matching, break records** | Phase 8. `SUSPENSE` accounts exist and nothing posts to them |
 | **GL reporting, period close** | Phase 14. `gl_code` is nullable and unused |
 | **Interest accrual, fees** | Phase 6/11. `FEE_REVENUE` exists as a purpose with no producer |
-| **Four-eyes approval** | Recorded debt (`INV-AUD-04`, ADR-0010). The reason code and the permission are built; the second approver is not |
+| **Four-eyes approval** | Built by `P3-TSK-021` (`INV-AUD-04`): every manual adjustment requires a second approver distinct from the initiator — the threshold is deliberately “every adjustment”, with a de-minimis threshold recorded as a future versioned policy artefact (`INV-HIST-04`). *(This row read “recorded debt” until that task.)* |
 | **Pending balance semantics** | Phase 5 — nothing creates a non-final entry yet. `entry_type` is the seam |
 
 ## 18. Risks

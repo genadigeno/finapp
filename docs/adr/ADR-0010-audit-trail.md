@@ -100,6 +100,12 @@ how a posting, an adjustment or a break resolution is defended months later.
 
 - Phase 0: schema, writer, privilege enforcement, registry, immutability test.
 - Phase 1: real actor populated; authentication and authorization actions audited.
-- Phase 3/8/14: four-eyes actions record both initiator and approver.
+- Phase 3/8/14: four-eyes actions record both initiator and approver. *(Phase 3 kept the
+  promise by dissolving its anticipated mechanism rather than paying it — `P3-TSK-021`: a
+  four-eyes action is TWO acts, each with one actor — `ledger.AdjustmentProposed` names the
+  initiator with the justification, `ledger.AdjustmentPosted` names the approver — so no
+  record needs a second actor column, and the schema anticipated here was never added. The
+  pairing lives on the proposal row, one join away, which is where later phases' four-eyes
+  actions should look before adding columns.)*
 - Phase 15: completeness verification against the registry; retention and archival that
   preserves auditability.

@@ -268,6 +268,10 @@ class OpenApiContractTest {
                         // P3-TSK-017: the ledger's one public surface - the adjustment,
                         // behind LEDGER_ADJUST, reason required (INV-REV-04).
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments",
+                        // P3-TSK-021: the four-eyes lifecycle - the proposal read, the
+                        // second person's approval, and the rejection/withdrawal.
+                        ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}/approval",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

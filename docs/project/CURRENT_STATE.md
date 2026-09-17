@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P3-TSK-020`)
+Last updated: 2026-09-17 (`P3-TSK-021`)
 
 ---
 
@@ -78,7 +78,7 @@ ADRs, 1025 hermetic / 584 database / 14 kafka tests, and **no money anywhere in 
 **Phase 3 — Accounts and Financial Ledger**
 Status: **`IN_PROGRESS`** — entry gate passed 2026-09-13, all twelve criteria
 ([`reviews/PHASE_2_TO_3_TRANSITION.md`](reviews/PHASE_2_TO_3_TRANSITION.md)); started the
-same day with `P3-TSK-001`. **23 of 25** backlog items (`P3-TSK-021` created by
+same day with `P3-TSK-001`. **24 of 25** backlog items (`P3-TSK-021` created by
 `P3-TST-003`); M3.1 through **M3.7** are closed.
 
 Planned in [`PHASE_3_PLAN.md`](PHASE_3_PLAN.md): the authoritative financial record — a chart
@@ -120,14 +120,14 @@ class, again).
 ## Current Milestone
 
 **M3.8 — Observability and the gate.** `P3-TST-003`, `P3-TSK-020`,
-`P3-TSK-021`, `P3-DOC-001`; **2 of 4 — next `P3-TSK-021` (`READY`)** — the
+`P3-TSK-021`, `P3-DOC-001`; **3 of 4 — next `P3-DOC-001` (`READY`)** — the
 financial supplement F1–F8 is assessed with named tests, the register
-carries a row for every `Phase: 3` invariant the catalogue names except
-`INV-AUD-04` (deliberately — its mechanism is unbuilt), and the six
-planned meters are published by a freshly started instance with the
-dashboard row resolving. **What remains: `P3-TSK-021`** — four-eyes on
-manual adjustments, whose mechanism and register row must land before the
-exit review or the battery fails at the status flip — then `P3-DOC-001`.
+carries a row for **every** `Phase: 3` invariant the catalogue names —
+nineteen of nineteen, `INV-AUD-04`'s landed by `P3-TSK-021` with the
+four-eyes mechanism it could not honestly precede — and the six planned
+meters are published by a freshly started instance with the dashboard row
+resolving. **What remains: `P3-DOC-001`**, the exit review, whose battery
+now survives the status flip.
 
 **M3.7 — Statements and the trial balance.** `P3-TSK-018` plus `P3-TSK-019`;
 **CLOSED 2026-09-17, 2 of 2** — every figure a customer is shown traces to
@@ -421,11 +421,81 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-TSK-020` is `COMPLETE`; **M3.8 is 2 of 4**.
-**Next: `P3-TSK-021` (`READY`)** — four-eyes on manual adjustments,
-`INV-AUD-04`'s owed mechanism and register row, before the review.
+**None in progress.** `P3-TSK-021` is `COMPLETE`; **M3.8 is 3 of 4**.
+**Next: `P3-DOC-001` (`READY`)** — the Phase 3 exit review: eight areas,
+twelve universal criteria, the financial supplement F1–F8 binding for the
+first time, and area 2's posting walked end to end.
 
 ### Just completed
+
+**`P3-TSK-021` — Four-eyes on manual adjustments** — `COMPLETE`
+(2026-09-17). **M3.8 is 3 of 4: `INV-AUD-04`'s Phase 3 element exists, the
+register carries all nineteen `Phase: 3` rows, and the battery survives
+the status flip.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Approver ≠ initiator at `DB-CONSTRAINT` where representable | Twice over: `V010`'s `CHECK (status <> 'APPROVED' OR decided_by <> proposed_by)` — the invariant's own Enforce clause, plain because the table is new — and a **deferred constraint trigger** (the `V004` mechanism) refusing any `ADJUSTMENT` entry COMMIT without an approved proposal, raw SQL bound, history untouched (`INV-HIST-01`) |
+| Self-approval refused, with a negative test | `AdjustmentEndpointDatabaseTest.selfApprovalIsRefused`: 409 `ledger.SelfApprovalRefused`, **nothing written** — no entry, proposal still visibly `PROPOSED` — and a second person approves the very same proposal as the positive control; the aggregate refuses too (`INV-LIFE-02`), hermetically |
+| The threshold defined | **Every adjustment** — `INV-REV-04` permits thresholds, but a threshold is a per-currency amount policy (a versioned artefact, `INV-HIST-04`) with nothing to calibrate it and the `INV-MON-04` cross-currency trap beneath; unconditional is a strengthening, the de-minimis threshold a recorded future policy artefact whose seam is the proposal row |
+| The `MUTATION_TESTING.md` §2 row | Landed, with §3 rewritten as the resolution record — the row the register's own doctrine refused to let `P3-TST-003` write now names the self-approval rejection tests the catalogue's Verify line demands |
+
+### Four-eyes is two authenticated acts, never one request with two names
+
+An `approverId` field would be a name anyone can type, not an authorised
+act. So the adjustment became a lifecycle: `POST /v1/ledger/adjustments`
+now **proposes** (`ledger.adjustment_proposal` + lines, `PROPOSED →
+{APPROVED, REJECTED}`, both terminal) and posts **nothing** — the reviewed
+BREAKING contract change, because no client exists and a parallel
+one-person write kept for compatibility would keep the invariant violated.
+`GET …/{id}` shows an approver exactly what they would approve — and the
+payload is **frozen by trigger for every writer**, so approve-what-you-read
+is structural rather than procedural (TOCTOU closed at the schema).
+`POST …/{id}/approval` by a **different** `LEDGER_ADJUST` holder builds the
+entry from the stored rows and posts it through `PostingEffect` in the
+approval's own transaction. `DELETE …/{id}` rejects — or, for the
+initiator, **withdraws, deliberately**: removing an action needs no second
+person, because the invariant's clause governs the approval. One permission
+for both acts (`P2-TSK-004`'s rule: the trust decision is one; the control
+is person-distinctness; maker/checker is a recorded seam).
+
+### The approval carries no idempotency key, and the machine is why
+
+The one-way lifecycle **is** the idempotency (`INV-IDEM-01` through state,
+the `P2-TSK-008` natural-key argument): approval is lock-then-look
+(`FOR UPDATE` on the proposal row, the `P2-TSK-015` idiom) with the
+conditional decision as belt, so `PROPOSED → APPROVED` happens at most once
+ever — ten concurrent approvals produce **exactly one entry, counted in the
+table**, with every response converging on it — and the same approver's
+retry replays the recorded entry id. There is no request body to
+fingerprint. Propose keeps the full machinery (scope `ledger.adjust`,
+fingerprint binding actor + reason + lines), because a duplicated
+*proposal* is the duplicate-effect vector.
+
+### ADR-0010's "second actor column" debt dissolved rather than paid
+
+Two acts, two audit records, each with one actor:
+`ledger.AdjustmentProposed` (new, **reason required** — the justification
+enters the trail at the moment the initiator writes it) and
+`ledger.AdjustmentPosted` naming the **approver**, whose act the posting is
+(ADR-0021's honesty rule) — the entry's `actor_id` is the approver, and the
+initiator is one join away on the proposal row, reachable from the entry's
+`idempotency_scope` (`ledger.adjust.approve:<proposalId>`).
+`ledger.AdjustmentRejected` carries no reason: declining to move value
+needs no justification, and the record names who. A refused self-approval
+writes nothing, deliberately — the permission layer audits denials, and the
+proposal stays standing. The posting meter observes the **approval**
+(posted / converged-replayed / refused); a proposal moves no meter, because
+it writes no journal — the meter's own description stays true.
+
+**Seven mutations, all caught by the intended assertion, restores
+byte-identical** — the domain self-check dropped (`V010`'s CHECK turns the
+409 into our 500), the CHECK dropped, the deferred trigger dropped, the
+lock made a plain read, the freeze trigger dropped, the proposed-audit
+dropped, the entry's actor made the initiator. **1121 hermetic tests, 683
+database tests, counted.**
+
+### Previously
 
 **`P3-TSK-020` — The six planned meters, eagerly registered** — `COMPLETE`
 (2026-09-17). **`PHASE_3_PLAN.md` §15 is real: a freshly started instance
@@ -8316,9 +8386,9 @@ Project initiation (2026-08-31):
 
 **None in progress.** Phases 0, 1 and 2 are `COMPLETE`; Phase 3 is `IN_PROGRESS`.
 
-The last work performed was `P3-TSK-020` (2026-09-17): the six planned
-meters, eagerly registered, with the dashboard row. The next work is
-`P3-TSK-021`, four-eyes on manual adjustments.
+The last work performed was `P3-TSK-021` (2026-09-17): four-eyes on
+manual adjustments — `INV-AUD-04`'s mechanism and register row. The next
+work is `P3-DOC-001`, the Phase 3 exit review.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8497,7 +8567,7 @@ carries, what triggers paying it down, and the owning phase.
 | **Inbox retention sweep.** Records are never deleted | The sweep is a scheduled job with its own cluster-safety question, and `V007` deliberately adds no `expires_at` index until its predicate is written | Unbounded growth of a table whose only index is its primary key. **Not** a correctness risk in this direction: a record that is never swept deduplicates forever, and it is early expiry that admits a duplicate (`DATA_MIGRATIONS.md` §9) | Table size becoming operationally material, or the first consumer going live | Phase 15 (data retention and deletion) |
 | ~~**Inbox metrics.**~~ - **paid in full 2026-09-09** by `P2-TSK-002`, whose trigger this row named: *"the first live consumer"*. `finapp.inbox.consumption` by outcome (processed, duplicate, contended, failed), registered eagerly and fed from `ReceiverPollResult` by the consumer loops; asserted present at zero before any record has ever arrived | - | - | - | - |
 | **Audit retention and archival.** Records are never deleted, and the application role cannot delete them | ADR-0010 is explicit that deletion is not an option and that archival must preserve queryability - which is a Phase 15 deliverable, not a sweep | Unbounded growth of a table written on every privileged action. **Not** a correctness risk: the inability to delete is the invariant working, and archival must preserve the trail rather than trim it | Table size becoming operationally material | Phase 15 (retention and archival) |
-| **Four-eyes approver is not modelled.** `audit_record` records one actor | `INV-AUD-04` applies to manual adjustments, break resolutions, policy activations and period close - none of which exist yet. ADR-0010 schedules it for Phases 3, 8 and 14 | None today: there is no four-eyes action to under-record. When one arrives it needs a second actor column, which is an ordinary forward migration | The first action requiring a second approver | Phase 3 |
+| ~~**Four-eyes approver is not modelled.**~~ - **dissolved 2026-09-17** by `P3-TSK-021`, and *dissolved* is the accurate word: the anticipated "second actor column" was never added, because a four-eyes action is **two acts, each with one actor** - `ledger.AdjustmentProposed` names the initiator with the justification, `ledger.AdjustmentPosted` names the approver - and the pairing lives on `ledger.adjustment_proposal` (approver ≠ initiator at `DB-CONSTRAINT`, plus a deferred trigger refusing any unapproved `ADJUSTMENT` COMMIT). ADR-0010's follow-up now records that later phases' four-eyes actions should look at the proposal row's shape before adding columns | - | - | - | - |
 | **The three registered platform actions are not emitted.** `outbox.EventAbandoned`, `outbox.EventRetryAuthorised`, `outbox.EventDiscarded` | Two describe the manual procedure in `EVENT_ARCHITECTURE.md` §Handling an abandoned event, performed today with raw SQL; the third is a relay decision currently only logged. Wiring them is a change to `P0-TSK-020`'s relay and to tooling that does not exist | An abandoned event - consumers permanently not receiving a fact that happened - is recorded only in logs, which ADR-0010 is explicit do not count as an audit trail. This is exactly the gap the registry exists to make visible | Dead-letter tooling, or the relay taking an `AuditWriter` | Phase 15 (dead-letter handling), or sooner if the relay is revisited |
 | ~~**No ingress correlation filter.**~~ — **closed** by `P0-TSK-025`. `CorrelationFilter` establishes a scope per request at `HIGHEST_PRECEDENCE` and echoes the identifier in `X-Correlation-Id`; every response carries it, error or not. | — | — | — | — |
 | ~~**The ingress filter must wrap error handling.**~~ — **closed** by `P0-TSK-025`. The filter is ordered outside the dispatcher and its scope closes only after the whole chain, error handling included. | — | — | — | — |
@@ -8604,6 +8674,7 @@ nothing to protect until now.
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **`P3-TSK-021` complete — four-eyes on manual adjustments; M3.8 is 3 of 4 and the register is nineteen of nineteen.** `INV-AUD-04`'s Phase 3 element, built as **two authenticated acts, never one request with two names**: `POST /v1/ledger/adjustments` now *proposes* (`V010`: `ledger.adjustment_proposal` + lines, `PROPOSED → {APPROVED, REJECTED}` both terminal, payload frozen by trigger for every writer so approve-what-you-read is structural) and posts **nothing** — the reviewed BREAKING contract change (no client exists; a parallel one-person write kept for compatibility would keep the invariant violated); `GET …/{id}` shows an approver what they would approve; `POST …/{id}/approval` by a **different** `LEDGER_ADJUST` holder posts the entry through `PostingEffect` in the approval's own transaction; `DELETE …/{id}` rejects — or withdraws, deliberately, because removing an action needs no second person. **The threshold is defined as every adjustment**: `INV-REV-04` permits thresholds, but a threshold is a per-currency amount policy — a versioned artefact (`INV-HIST-04`) with nothing to calibrate it, and the `INV-MON-04` cross-currency trap beneath — so unconditional is the honest strengthening, with a de-minimis threshold recorded as a future policy artefact whose seam is the proposal row. **Approver ≠ initiator holds at three ranks**: the aggregate refuses self-approval (`INV-LIFE-02`), `V010`'s CHECK is the invariant's own Enforce clause at `DB-CONSTRAINT` (plain, the table being new), and a deferred constraint trigger (the `V004` mechanism) refuses any `ADJUSTMENT` COMMIT without an approved proposal — raw SQL bound, pre-four-eyes history untouched (`INV-HIST-01`), proven by a raw commit refused at 23514 naming the invariant with a forced-IMMEDIATE posting as the positive control. **One permission, deliberately** (`P2-TSK-004`'s rule: one trust decision; the control is person-distinctness; maker/checker a recorded seam). **Approval carries no idempotency key, deliberately**: the one-way machine is the idempotency (`INV-IDEM-01` through state) — lock-then-look on the proposal row (`P2-TSK-015`), ten concurrent approvals producing exactly one entry counted in the table with every response converging on it, the conditional decision as belt recorded as defence in depth. **ADR-0010's second-actor-column debt dissolved rather than paid**: two acts, two audit records, each one actor — `ledger.AdjustmentProposed` (new, reason required) names the initiator, `ledger.AdjustmentPosted` names the approver whose act the posting is (ADR-0021), the pairing on the proposal row one join from the entry's `idempotency_scope` (`ledger.adjust.approve:<proposalId>`); `ledger.AdjustmentRejected` needs no reason. A refused self-approval writes nothing, deliberately; the posting meter observes the approval and a proposal moves no meter, because it writes no journal. The `MUTATION_TESTING.md` §2 row landed with §3 rewritten as the resolution record; the plan's three four-eyes-debt statements, the supplement's closing item, `LedgerAuditAction`'s stale NOT_YET_EMITTED claim and the ownership register's predicted URL-named arrival all corrected with provenance; eighteen columns classified; the OpenAPI baseline regenerated (58 diffs, 5 BREAKING, each reviewed — the operationId rename and `ProposalView` are the deliberate break). **Seven mutations, all caught by the intended assertion, restores byte-identical** — the domain self-check dropped, the CHECK dropped, the deferred trigger dropped, the lock made a plain read, the freeze trigger dropped, the proposed-audit dropped, the entry's actor made the initiator. **1121 hermetic tests, 683 database tests, counted.** Next: `P3-DOC-001`, the exit review. |
 | 2026-09-17 | **`P3-TSK-020` complete — the six planned meters, eagerly registered; M3.8 is 2 of 4.** `PHASE_3_PLAN.md` §15 is real and held by the **pinned Phase-3 guard** in `PlannedMetersExistTest` (the `P2-TSK-020` shape: the plan's table against the plain no-database context — the derived guard takes over at the flip). Four series arrived beside the two existing ones: `finapp.ledger.posting{outcome}` and `finapp.ledger.posting.latency` through a new **`PostingObserver` port, a required primary-constructor parameter on all three journal-write commands** — no defaulted overload, so Phase 4's transfer wiring is forced by the compiler to decide rather than silently lose its counts (the `MeteredKycCaseStore` argument made structural); latency from the injected `Clock`, never `nanoTime()`; `finapp.ledger.hold.active` via the new `HoldStore.countActive` (NaN never zero, `max()` never `sum()`); `finapp.accounts.account{opened|closed}` counted **post-commit and only for the acting call** — converged retries and replays never throughput, mutation-proven in both directions. The wiring proven through real HTTP (posted +1, replayed +1 with posted unchanged, refused +1, every command timed) — the test that catches a bean measuring nothing. **`P3-TSK-015`'s owned remainder landed with its owner**: `ProjectionVerification` compares `holds_minor` against the kernel fold of the `ACTIVE` hold rows, read in the same statement as the projection row — one snapshot, no watermark needed, because a hold transaction updates both atomically under the account lock; unverifiable is `DRIFTING`. The extension's enabling fix found in advance: `HoldDatabaseTest`'s committed `holds_minor` corruption would have become permanent global drift, so it restores. Dashboard row *Ledger and accounts — financial correctness* (six panels, the deferred drift and trial-balance panels included), every query resolving live; `currency` joined the resolver's non-series vocabulary; `_count`/`_sum`/`_max`, never `_bucket`. `LedgerMetrics$HoldCached` the same Micrometer exemption case a sixth time. **Eight mutations, all caught by the intended assertion, restores byte-identical.** 1107 hermetic tests, 676 database tests. Next: `P3-TSK-021`. |
 | 2026-09-17 | **`P3-TST-003` complete — the financial supplement F1–F8 demonstrated, and M3.8 opens (1 of 4).** The exit gate's evidence prepared before the review needs it: [`reviews/PHASE_3_FINANCIAL_SUPPLEMENT.md`](reviews/PHASE_3_FINANCIAL_SUPPLEMENT.md) assesses every F criterion **met** against named tests (F5 met with its Phase-3 vacuity stated — no external event produces a financial effect this phase, and the mechanism that will bind is the proven inbox), and `MUTATION_TESTING.md` §2 gains **fourteen rows plus two extension rows and a financial-boundary `INV-IDEM-01` row — seventeen, counted** — every named mutation one its owning task **performed** (the `P2-TST-001` audit posture: record, never invent), every named class and method held to the code by the register guard, all nine checks green. **Reading the set from the catalogue found nineteen `Phase: 3` invariants where the plan's §6 table lists seventeen** (`INV-REC-05`, `INV-AUD-04` — the drift the scope sentence predicted; the plan's own closing paragraph rules the catalogue wins). `INV-BAL-05`'s row landed earlier than `P3-TST-002`'s recorded deferral, deliberately: the scope demands every row, and the deferral postponed the record, not the work. **The headline finding is the row that cannot be written**: `INV-AUD-04`'s mechanism is deliberately unbuilt (`P3-TSK-017` recorded four-eyes as ADR-0010's debt, firing the debt row's own trigger), a row would be a false claim, and the battery **will fail naming it at the status flip** — known in advance this time, the `INV-HIST-02` lesson pre-applied. Register §3 records it; **`P3-TSK-021`** (four-eyes on manual adjustments) created to land the mechanism and its row before `P3-DOC-001`. §5 teeth re-proven, restore byte-identical. No production code shipped. 1105 hermetic tests, 674 database tests, 14 kafka tests. Next: `P3-TSK-020`. |
 | 2026-09-17 | **`P3-TSK-019` complete — the trial-balance job, and M3.7 CLOSES (2 of 2).** `TrialBalance` in `ledger`: one `SELECT ... GROUP BY currency, scale, direction`, the per-currency verdict as exact decimal arithmetic — `P3-TSK-008`'s two failure modes **structurally closed at the one statement** (`scale` a grouping key; `SUM(bigint)` is `numeric`), `Money` deliberately not used because a system-wide group sum can exceed `long` and the refusal would turn a large balanced ledger into a false incident. **No `IN_FLIGHT` verdict, by design**: a snapshot never contains half an entry and every committed entry balances at COMMIT — demonstrated by sweeps racing four live posters, zero every time. **The injection rides the deferral**: raw unbalanced rows in an open transaction (the constraint has not yet judged them — what a trigger-less writer's committed rows look like), three shapes flagged per currency (the scales probe, the cross-currency subsidy), then rollback — no trigger disabled, no cleanup risk. **Verdicts and currency codes leave, never an amount** (`INV-AUD-02`); no repair path, structurally (plan §14.12). Gauge `finapp.ledger.trial.balance{currency}` — 0 verified balanced / 1 out / **NaN unreadable, never zero** — eager per `SupportedCurrencies`, the scrape as the schedule (30s floor, no leader, no §3 question), `max()` never `sum()`; **`currency` joined `ALLOWED_TAG_KEYS` deliberately** (ISO 4217-bounded, the `purpose` precedent); `LedgerMetrics$TrialCached` the same Micrometer exemption case a fifth time; dashboard row deferred to M3.8 per `P3-TSK-010`'s recorded deferral. One process finding: the first battery invocation never ran — a zero-match `grep -c` broke the `&&` chain before gradle started; caught by the missing log, re-run for real (the build-never-ran class, in the chaining). **Six mutations, all caught by the intended assertion, restores byte-identical.** 1105 hermetic tests, 674 database tests. Next: `P3-TST-003`, M3.8 opens. |

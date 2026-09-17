@@ -26,9 +26,11 @@ a renamed test fails the build rather than leaving this table pointing at nothin
 `Phase: 3` — nineteen, of which the plan's §6 table lists seventeen (`INV-REC-05` and
 `INV-AUD-04` sit outside it; the plan's own closing paragraph rules that the catalogue is the
 set, so this is the predicted drift recorded rather than a contradiction) — **except
-`INV-AUD-04`**, whose mechanism Phase 3 deliberately did not build: no threshold, no
-second-approver flow, four-eyes recorded as ADR-0010's debt by `P3-TSK-017`. A row would be a
-false claim. The build will fail naming it the moment Phase 3 flips `COMPLETE`, which is known
-in advance this time; **`P3-TSK-021`** owns the mechanism and its row, before `P3-DOC-001`.
-This is the supplement's one open item, and it is a criterion-3 concern rather than an F-row:
-no F criterion is failed by it, and the gate must not be passed around it.
+`INV-AUD-04`** at the time this assessment was written, whose mechanism Phase 3 had
+deliberately not built. **Resolved by `P3-TSK-021` exactly as scheduled**: the mechanism is
+two authenticated acts (a proposal that posts nothing; a second person's approval that posts
+the entry), approver ≠ initiator holds at `DOMAIN` and `DB-CONSTRAINT` (`V010`'s CHECK, plus
+a deferred trigger refusing any `ADJUSTMENT` COMMIT without an approved proposal, raw SQL
+included), and the §2 row landed with the catalogue's own Verify — self-approval rejection
+tests — before `P3-DOC-001`. The set is nineteen of nineteen, and the supplement has no open
+item.

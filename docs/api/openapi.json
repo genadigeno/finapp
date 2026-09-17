@@ -962,6 +962,76 @@
           }
         }
       },
+      "ledger.ProposalNotOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.ProposalNotOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.ProposalNotOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The adjustment proposal is already decided; a new adjustment is a new proposal.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "ledger.SelfApprovalRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.SelfApprovalRefused"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.SelfApprovalRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] An adjustment requires a second approver distinct from its initiator.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "ledger.UnbalancedAdjustment": {
         "content": {
           "application/problem+json": {
@@ -1466,6 +1536,23 @@
         ],
         "type": "object"
       },
+      "LineView": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MfaConfirmationRequest": {
         "properties": {
           "code": {
@@ -1631,6 +1718,61 @@
         "required": [
           "displayName"
         ],
+        "type": "object"
+      },
+      "ProposalDetailView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/LineView"
+            },
+            "type": "array"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProposalView": {
+        "properties": {
+          "proposalId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "PurposeBasisResponse": {
@@ -2147,7 +2289,7 @@
     },
     "/v1/ledger/adjustments": {
       "post": {
-        "operationId": "postAdjustment",
+        "operationId": "propose",
         "parameters": [
           {
             "in": "header",
@@ -2168,6 +2310,78 @@
           },
           "required": true
         },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/ledger/adjustments/{id}": {
+      "delete": {
+        "operationId": "reject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      },
+      "get": {
+        "operationId": "view_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalDetailView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/ledger/adjustments/{id}/approval": {
+      "post": {
+        "operationId": "approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "201": {
             "content": {

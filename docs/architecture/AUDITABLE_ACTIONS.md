@@ -225,6 +225,8 @@ is the lawful basis the gate queries (`INV-CNS-01`), the audit record is the tra
 |---|---|---|
 | `ledger.JournalEntryPosted` | No | A balanced journal entry was posted to the ledger; the record names the entry, never an amount. |
 | `ledger.AdjustmentPosted` | **Yes** | A person posted a manual adjusting entry; the reason and the authorising actor are recorded. |
+| `ledger.AdjustmentProposed` | **Yes** | A person proposed a manual adjustment for a second person's approval; the reason and the initiator are recorded. |
+| `ledger.AdjustmentRejected` | No | A standing adjustment proposal was rejected or withdrawn; the record names the proposal and who declined it. |
 | `ledger.HoldPlaced` | No | A hold was placed against an account's available balance; the record names the hold and the account, never an amount. |
 | `ledger.HoldReleased` | No | A standing hold was released, restoring available balance; the record names the hold and the account, never an amount. |
 
@@ -245,11 +247,21 @@ each code shared with the event the same act publishes, emitted only by the acti
 because it is commanded by a flow whose own records carry the why; an adjustment requires one
 because `INV-REV-04` says so in as many words, and because a human choosing to move value the
 system would not have moved is the one act whose justification is its only evidence of
-legitimacy. **Four-eyes is not implied by the flag** — it is recorded debt (`INV-AUD-04`).
+legitimacy. **Four-eyes is two acts and two records** (`INV-AUD-04`, `P3-TSK-021`):
+`ledger.AdjustmentProposed` names the initiator with the justification at the moment they
+wrote it, and `ledger.AdjustmentPosted` names the *approver* — a second person, enforced at
+the domain and at `DB-CONSTRAINT` (`V010`). No record carries two actors, because both
+people acted, each on their own record — which is how ADR-0010's anticipated "second actor
+column" dissolves rather than gets paid. `ledger.AdjustmentRejected` requires no reason:
+declining to move value is not the high-risk act the reason regime exists for, and a
+mandatory justification for saying no would produce a column of "no"; the record names who
+declined, which is the fact an investigator wants. *(This paragraph called four-eyes
+"recorded debt" until `P3-TSK-021` built it.)*
 `ledger.JournalEntryPosted` shares its code with the event the same posting publishes, as
 `identity.AuthenticationSucceeded` does: one fact, named once, in two registries. Both are
 emitted — `ledger.JournalEntryPosted` by `P3-TSK-006`'s posting command (and by the reversal,
-whose kind travels as data), `ledger.AdjustmentPosted` by `P3-TSK-017`'s adjustment command,
+whose kind travels as data), `ledger.AdjustmentPosted` by the approval of a proposal (`P3-TSK-017`, four-eyes since
+`P3-TSK-021`),
 each in its own transaction, with `PostingEffect` deriving the action from the entry's kind
 so the adjustment's reason regime cannot be skipped by a careless caller.
 
@@ -291,8 +303,11 @@ every action against production code: each is **emitted**, or **declared not to 
 that will emit it. So *"deliberately not built yet"* and *"somebody removed the audit call"* stop
 being indistinguishable, and an action that silently **stops** being emitted fails the build.
 
-Four actions are currently declared unemitted: the three `outbox.*` actions above, and
-`ledger.AdjustmentPosted`, which waits on the adjustment endpoint (`P3-TSK-017`).
+Three actions are currently declared unemitted: the three `outbox.*` actions above.
+`ledger.AdjustmentPosted` left the list at `P3-TSK-017`, when the adjustment endpoint was
+built *(this sentence still counted it as waiting until `P3-TSK-021` — the doc went stale
+when the code moved, corrected in passing)*; the four-eyes pair arrived emitted
+(`P3-TSK-021`).
 `ledger.JournalEntryPosted` left the list at `P3-TSK-006`, when the posting command was built.
 `identity.IdentitySuspended` left the list at `P1-TSK-028` and `party.ProfileChanged` at
 `P1-TSK-030`, each when the endpoint that emits it was built - which is the list working in the

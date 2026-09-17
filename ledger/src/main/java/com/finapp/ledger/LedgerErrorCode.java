@@ -49,7 +49,36 @@ public enum LedgerErrorCode implements ErrorCode {
     ACCOUNT_NOT_POSTABLE(
             "ledger.AccountNotPostable",
             409,
-            "The account no longer accepts postings.");
+            "The account no longer accepts postings."),
+
+    /**
+     * The initiator tried to approve their own proposal (`P3-TSK-021`,
+     * {@code INV-AUD-04}).
+     *
+     * <p>A {@code 409} and a distinct code because it is <strong>actionable</strong> in the
+     * {@code P1-TSK-018} sense: the proposal is fine and still standing — have a second
+     * authorised person approve it. Nothing was written.
+     */
+    SELF_APPROVAL_REFUSED(
+            "ledger.SelfApprovalRefused",
+            409,
+            "An adjustment requires a second approver distinct from its initiator."),
+
+    /**
+     * A decision named a proposal that is already decided (`P3-TSK-021`,
+     * {@code INV-LIFE-04}).
+     *
+     * <p>One code for both surfaces (approve and reject), because the remedy is one: read
+     * the proposal to learn its outcome, and raise a <em>new</em> proposal for a new
+     * adjustment. The converging cases — the same approver's retry, a repeated rejection —
+     * never reach this code; what it names is a genuinely different decision than the one
+     * recorded.
+     */
+    PROPOSAL_NOT_OPEN(
+            "ledger.ProposalNotOpen",
+            409,
+            "The adjustment proposal is already decided; a new adjustment is a new"
+                    + " proposal.");
 
     private final String code;
     private final int status;

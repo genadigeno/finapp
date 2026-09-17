@@ -13,6 +13,7 @@ import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.AdjustmentCommand;
 import com.finapp.ledger.AdjustmentService;
+import com.finapp.ledger.JdbcAdjustmentProposalStore;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcBalanceProjection;
 import com.finapp.ledger.JdbcJournalEntryStore;
@@ -27,6 +28,8 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.JdbcIdempotencyRecordStore;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
@@ -213,12 +216,16 @@ class StatementEndpointDatabaseTest {
         UUID account = UUID.fromString(accountId);
 
         String reason = "Correcting reconciliation break CASE-77 per operations review";
+        AdjustmentService adjustments = adjustmentService();
+        AdjustmentService.ProposalResult proposal;
         try (Connection app = DatabaseRoles.application();
-                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                SecurityContext.Scope initiator =
+                        SecurityContext.enter(
+                                new Actor("stmt-initiator", ActorType.EMPLOYEE));
                 CorrelationContext.Scope flow = flow()) {
             app.setAutoCommit(false);
-            adjustmentService()
-                    .adjust(
+            proposal =
+                    adjustments.propose(
                             app,
                             new AdjustmentCommand(
                                     UUID.randomUUID().toString(),
@@ -235,6 +242,15 @@ class StatementEndpointDatabaseTest {
                                                     wallet(account).id(),
                                                     Direction.CREDIT,
                                                     Money.ofMinorUnits(300, USD)))));
+            app.commit();
+        }
+        // Four-eyes (P3-TSK-021): the entry posts at a SECOND person's approval.
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope approver =
+                        SecurityContext.enter(new Actor("stmt-approver", ActorType.EMPLOYEE));
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            adjustments.approve(app, proposal.proposalId());
             app.commit();
         }
 
@@ -326,6 +342,7 @@ class StatementEndpointDatabaseTest {
         return new AdjustmentService(
                 executor(),
                 new JdbcJournalEntryStore(IDS),
+                new JdbcAdjustmentProposalStore(),
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 new JdbcBalanceProjection(),

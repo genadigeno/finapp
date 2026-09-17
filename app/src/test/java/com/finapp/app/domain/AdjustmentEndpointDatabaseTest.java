@@ -34,7 +34,13 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
@@ -46,13 +52,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /**
- * `POST /v1/ledger/adjustments` over real HTTP (`P3-TSK-017`, {@code INV-REV-04},
- * {@code INV-AUD-03}): the highest-risk financial action, behind its permission, with its
- * reason, audited against the person — and no request shape our {@code 500}.
+ * `/v1/ledger/adjustments` over real HTTP (`P3-TSK-017` the write, `P3-TSK-021` the
+ * four-eyes control; {@code INV-REV-04}, {@code INV-AUD-04}, {@code INV-AUD-03}): the
+ * highest-risk financial action as two authenticated acts — a proposal that posts nothing,
+ * and a <em>second</em> person's approval that posts the entry — with self-approval the
+ * invariant's own named negative, and no request shape our {@code 500}.
  */
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("the adjustment endpoint: reason, permission, audit (P3-TSK-017)")
+@DisplayName("the adjustment under four-eyes: propose, approve, refuse (P3-TSK-021)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 class AdjustmentEndpointDatabaseTest {
 
@@ -61,6 +69,8 @@ class AdjustmentEndpointDatabaseTest {
     private static final SecureRandom RANDOMNESS = new SecureRandom();
     private static final CurrencyCode USD = CurrencyCode.of("USD");
     private static final Pattern ENTRY_ID = Pattern.compile("\"entryId\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern PROPOSAL_ID =
+            Pattern.compile("\"proposalId\"\\s*:\\s*\"([^\"]+)\"");
 
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
@@ -71,53 +81,266 @@ class AdjustmentEndpointDatabaseTest {
     private final LedgerAccountStore<Connection> accounts = new JdbcLedgerAccountStore();
 
     @Test
-    @DisplayName("an operator posts a balanced adjustment: 201, ADJUSTMENT with its reason,"
-            + " audited against the person, announced, projected")
+    @DisplayName("an operator proposes and a SECOND operator approves: nothing posts before"
+            + " the approval, the entry names the approver, and both acts are audited"
+            + " (INV-AUD-04)")
     void anOperatorPostsAnAdjustment() throws Exception {
-        IdentityId operator = givenAnIdentity();
-        givenTheRole(operator, RoleName.LEDGER_OPERATOR);
-        String token = givenASessionFor(operator);
+        Operator initiator = givenAnOperator();
+        Operator approver = givenAnOperator();
         LedgerAccount wallet = givenAWallet();
 
-        HttpResponse<String> response =
-                post(body(wallet, "5.00", "correcting settlement break INC-2041"), token,
-                        "adj-" + IDS.next());
-        assertThat(response.statusCode()).isEqualTo(201);
-        UUID entry = entryIdOf(response);
+        // Act one: the proposal. NOTHING posts - the response carries no entry, because
+        // there is none to carry.
+        long entriesBefore = adjustmentEntryCount();
+        HttpResponse<String> proposed =
+                post(body(wallet, "5.00", "correcting settlement break INC-2041"),
+                        initiator.token(), "adj-" + IDS.next());
+        assertThat(proposed.statusCode()).isEqualTo(201);
+        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"");
+        assertThat(proposed.body()).doesNotContain("entryId");
+        UUID proposal = proposalIdOf(proposed);
+        assertThat(adjustmentEntryCount())
+                .as("a proposal posts nothing: the entry is the approval's")
+                .isEqualTo(entriesBefore);
+
+        try (Connection app = DatabaseRoles.application()) {
+            // The four-eyes trail's FIRST record: the initiator, with the justification,
+            // at the moment they wrote it (INV-REV-04).
+            assertThat(auditRowsFor(app, "ledger.AdjustmentProposed", proposal.toString()))
+                    .isEqualTo(1);
+            assertThat(auditColumnFor(app, "ledger.AdjustmentProposed", proposal.toString(),
+                            "actor_id"))
+                    .isEqualTo(initiator.identity().value().toString());
+            assertThat(auditColumnFor(app, "ledger.AdjustmentProposed", proposal.toString(),
+                            "reason"))
+                    .isEqualTo("correcting settlement break INC-2041");
+        }
+
+        // The approver reads what they would approve: the proposal in full, lines and
+        // reason included (the reviewer-sees-everything argument).
+        HttpResponse<String> read = get(proposal.toString(), approver.token());
+        assertThat(read.statusCode()).isEqualTo(200);
+        assertThat(read.body())
+                .contains("\"status\":\"PROPOSED\"")
+                .contains("correcting settlement break INC-2041")
+                .contains("\"amount\":\"5.00\"")
+                .contains("\"proposedBy\":\"" + initiator.identity().value() + "\"");
+
+        // Act two: a DIFFERENT person approves, and the entry posts in their transaction.
+        HttpResponse<String> approvedResponse = approve(proposal.toString(), approver.token());
+        assertThat(approvedResponse.statusCode()).isEqualTo(201);
+        UUID entry = entryIdOf(approvedResponse);
 
         try (Connection app = DatabaseRoles.application()) {
             assertThat(entryColumn(app, entry, "entry_type")).isEqualTo("ADJUSTMENT");
             assertThat(entryColumn(app, entry, "reason"))
                     .isEqualTo("correcting settlement break INC-2041");
+            // The entry's actor is the APPROVER: the posting is their act (ADR-0021's
+            // honesty rule); the initiator is one join away, on the proposal row - and the
+            // entry's idempotency_scope carries the proposal, the investigator's join.
             assertThat(entryColumn(app, entry, "actor_id"))
-                    .isEqualTo(operator.value().toString());
+                    .isEqualTo(approver.identity().value().toString());
+            assertThat(entryColumn(app, entry, "idempotency_scope"))
+                    .isEqualTo("ledger.adjust.approve:" + proposal);
 
-            // The registered action, with its reason, naming the PERSON (INV-REV-04,
-            // INV-AUD-01) - not JOURNAL_ENTRY_POSTED, because the adjustment's regime is
-            // its own.
-            assertThat(adjustmentAuditRowsFor(app, entry)).isEqualTo(1);
-            assertThat(auditReasonFor(app, entry))
-                    .isEqualTo("correcting settlement break INC-2041");
-            assertThat(auditActorFor(app, entry)).isEqualTo(operator.value().toString());
+            // The trail's SECOND record: ledger.AdjustmentPosted naming the approver, with
+            // the adjustment's reason - two acts, two records, two people (INV-AUD-04).
+            assertThat(auditRowsFor(app, "ledger.AdjustmentPosted", entry.toString()))
+                    .isEqualTo(1);
+            assertThat(auditColumnFor(app, "ledger.AdjustmentPosted", entry.toString(),
+                            "actor_id"))
+                    .isEqualTo(approver.identity().value().toString());
             assertThat(eventRowsFor(app, entry)).isEqualTo(1);
             assertThat(postedMinorOf(app, wallet)).isEqualTo(500);
+
+            // The proposal row closed onto the entry: APPROVED, by the approver, linked.
+            assertThat(proposalColumn(app, proposal, "status")).isEqualTo("APPROVED");
+            assertThat(proposalColumn(app, proposal, "decided_by"))
+                    .isEqualTo(approver.identity().value().toString());
+            assertThat(proposalColumn(app, proposal, "journal_entry_id"))
+                    .isEqualTo(entry.toString());
         }
     }
 
     @Test
-    @DisplayName("a session without the role is refused, and nothing is written"
-            + " (INV-AUD-03's negative)")
+    @DisplayName("the initiator cannot approve their own proposal: 409, and NOTHING is"
+            + " written - the invariant's named negative (INV-AUD-04)")
+    void selfApprovalIsRefused() throws Exception {
+        Operator initiator = givenAnOperator();
+        Operator secondPerson = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+
+        UUID proposal =
+                proposalIdOf(
+                        post(body(wallet, "5.00", "self-approval probe"), initiator.token(),
+                                "adj-" + IDS.next()));
+
+        long entriesBefore = adjustmentEntryCount();
+        HttpResponse<String> refused = approve(proposal.toString(), initiator.token());
+        assertThat(refused.statusCode()).isEqualTo(409);
+        assertThat(refused.body()).contains("ledger.SelfApprovalRefused");
+
+        try (Connection app = DatabaseRoles.application()) {
+            // Nothing was written: no entry, no posted-audit, and the proposal still
+            // stands - visibly PROPOSED, for a second person to decide.
+            assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore);
+            assertThat(proposalColumn(app, proposal, "status")).isEqualTo("PROPOSED");
+            assertThat(proposalColumn(app, proposal, "decided_by")).isNull();
+        }
+
+        // The positive control, so the refusal is not blanket: a second person approves
+        // the very same proposal.
+        assertThat(approve(proposal.toString(), secondPerson.token()).statusCode())
+                .isEqualTo(201);
+    }
+
+    @Test
+    @DisplayName("ten concurrent approvals produce exactly one entry, counted in the table -"
+            + " and every response converges on it (INV-CON-02's shape)")
+    void tenConcurrentApprovalsProduceOneEntry() throws Exception {
+        Operator initiator = givenAnOperator();
+        Operator approver = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+        UUID proposal =
+                proposalIdOf(
+                        post(body(wallet, "9.00", "concurrent approval probe"),
+                                initiator.token(), "adj-" + IDS.next()));
+
+        int racers = 10;
+        ExecutorService pool = Executors.newFixedThreadPool(racers);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<HttpResponse<String>>> outcomes = new ArrayList<>();
+            for (int i = 0; i < racers; i++) {
+                outcomes.add(
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return approve(proposal.toString(), approver.token());
+                                }));
+            }
+            start.countDown();
+
+            UUID entry = null;
+            for (Future<HttpResponse<String>> outcome : outcomes) {
+                HttpResponse<String> response = outcome.get();
+                // Every racer converges on the one recorded outcome (INV-IDEM-01 through
+                // state): the winner posted, the losers resumed onto the FOR UPDATE lock,
+                // saw APPROVED by themselves, and replayed the entry.
+                assertThat(response.statusCode()).isEqualTo(201);
+                UUID answered = entryIdOf(response);
+                if (entry == null) {
+                    entry = answered;
+                }
+                assertThat(answered).isEqualTo(entry);
+            }
+
+            try (Connection app = DatabaseRoles.application()) {
+                // One effect, counted in the table, never inferred from responses: one
+                // entry for the proposal's approval scope, one posted-audit, one event.
+                assertThat(entriesForScope(app, "ledger.adjust.approve:" + proposal))
+                        .isEqualTo(1);
+                assertThat(auditRowsFor(app, "ledger.AdjustmentPosted", entry.toString()))
+                        .isEqualTo(1);
+                assertThat(eventRowsFor(app, entry)).isEqualTo(1);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("the initiator withdraws their own proposal - and a decided proposal"
+            + " refuses every further decision (INV-LIFE-04)")
+    void aRejectionConvergesAndClosesTheProposal() throws Exception {
+        Operator initiator = givenAnOperator();
+        Operator approver = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+
+        // Withdrawal is the initiator's own act, deliberately: removing an action needs no
+        // second person - INV-AUD-04's clause governs the APPROVAL.
+        UUID withdrawn =
+                proposalIdOf(
+                        post(body(wallet, "3.00", "withdrawal probe"), initiator.token(),
+                                "adj-" + IDS.next()));
+        assertThat(reject(withdrawn.toString(), initiator.token()).statusCode())
+                .isEqualTo(204);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(proposalColumn(app, withdrawn, "status")).isEqualTo("REJECTED");
+            assertThat(proposalColumn(app, withdrawn, "decided_by"))
+                    .isEqualTo(initiator.identity().value().toString());
+            assertThat(auditRowsFor(app, "ledger.AdjustmentRejected", withdrawn.toString()))
+                    .isEqualTo(1);
+        }
+
+        // A repeated DELETE converges - and records no second act.
+        assertThat(reject(withdrawn.toString(), approver.token()).statusCode())
+                .isEqualTo(204);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(auditRowsFor(app, "ledger.AdjustmentRejected", withdrawn.toString()))
+                    .isEqualTo(1);
+        }
+
+        // A rejected proposal cannot be approved: terminal is terminal.
+        HttpResponse<String> lateApproval = approve(withdrawn.toString(), approver.token());
+        assertThat(lateApproval.statusCode()).isEqualTo(409);
+        assertThat(lateApproval.body()).contains("ledger.ProposalNotOpen");
+
+        // And an APPROVED one cannot be rejected: the correction is a reversal, never an
+        // un-decision.
+        UUID approved =
+                proposalIdOf(
+                        post(body(wallet, "3.00", "approved-then-rejected probe"),
+                                initiator.token(), "adj-" + IDS.next()));
+        assertThat(approve(approved.toString(), approver.token()).statusCode()).isEqualTo(201);
+        HttpResponse<String> lateRejection = reject(approved.toString(), approver.token());
+        assertThat(lateRejection.statusCode()).isEqualTo(409);
+        assertThat(lateRejection.body()).contains("ledger.ProposalNotOpen");
+    }
+
+    @Test
+    @DisplayName("unknown and malformed proposal identifiers are one 404, on every surface")
+    void anUnknownProposalIsOneNotFound() throws Exception {
+        Operator operator = givenAnOperator();
+        String unknown = IDS.next().toString();
+        String malformed = "not-a-proposal";
+
+        for (String id : new String[] {unknown, malformed}) {
+            assertThat(get(id, operator.token()).statusCode()).isEqualTo(404);
+            assertThat(reject(id, operator.token()).statusCode()).isEqualTo(404);
+        }
+        // The equality between the causes (P1-TSK-016): unknown and malformed answer
+        // byte-identically but for the correlation identifier, so neither is an oracle.
+        assertThat(withoutCorrelation(approve(unknown, operator.token()).body()))
+                .isEqualTo(withoutCorrelation(approve(malformed, operator.token()).body()));
+    }
+
+    @Test
+    @DisplayName("a session without the role is refused on every surface, and nothing is"
+            + " written (INV-AUD-03's negative)")
     void aSessionWithoutTheRoleIsRefused() throws Exception {
+        Operator operator = givenAnOperator();
         IdentityId person = givenAnIdentity();
         String token = givenASessionFor(person);
         LedgerAccount wallet = givenAWallet();
+        UUID proposal =
+                proposalIdOf(
+                        post(body(wallet, "5.00", "role refusal probe"), operator.token(),
+                                "adj-" + IDS.next()));
 
         long entriesBefore = adjustmentEntryCount();
-        HttpResponse<String> response =
-                post(body(wallet, "5.00", "attempted without the role"), token,
-                        "adj-" + IDS.next());
-        assertThat(response.statusCode()).isEqualTo(403);
-        assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore);
+        assertThat(post(body(wallet, "5.00", "attempted without the role"), token,
+                        "adj-" + IDS.next())
+                        .statusCode())
+                .isEqualTo(403);
+        assertThat(get(proposal.toString(), token).statusCode()).isEqualTo(403);
+        assertThat(approve(proposal.toString(), token).statusCode()).isEqualTo(403);
+        assertThat(reject(proposal.toString(), token).statusCode()).isEqualTo(403);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore);
+            assertThat(proposalColumn(app, proposal, "status")).isEqualTo("PROPOSED");
+        }
     }
 
     @Test
@@ -126,14 +349,14 @@ class AdjustmentEndpointDatabaseTest {
         Operator operator = givenAnOperator();
         LedgerAccount wallet = givenAWallet();
 
-        long entriesBefore = adjustmentEntryCount();
+        long proposalsBefore = proposalCount();
         String withoutReason =
                 "{\"postingDate\":\"2026-09-17\",\"valueDate\":\"2026-09-17\","
                         + "\"reference\":\"adj-probe\",\"lines\":" + lines(wallet, "5.00") + "}";
         HttpResponse<String> response = post(withoutReason, operator.token(), "adj-" + IDS.next());
         assertThat(response.statusCode()).isEqualTo(422);
         assertThat(response.body()).contains("api.ValidationFailed");
-        assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore);
+        assertThat(proposalCount()).isEqualTo(proposalsBefore);
     }
 
     @Test
@@ -161,41 +384,46 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("the write path feeds finapp.ledger.posting - posted, replayed, refused -"
-            + " through the WIRED observer, so a bean measuring nothing cannot hide"
-            + " (P3-TSK-020)")
+    @DisplayName("the write path feeds finapp.ledger.posting at the APPROVAL - posted,"
+            + " replayed, refused - and a proposal moves no meter, because it writes no"
+            + " journal (P3-TSK-020, P3-TSK-021)")
     void theWritePathFeedsThePostingMeter() throws Exception {
-        Operator operator = givenAnOperator();
+        Operator initiator = givenAnOperator();
+        Operator approver = givenAnOperator();
         LedgerAccount wallet = givenAWallet();
         double posted = postingOutcome("posted");
         double replayed = postingOutcome("replayed");
         double refused = postingOutcome("refused");
         double timed = registry.get("finapp.ledger.posting.latency").timer().count();
 
-        String key = "adj-" + IDS.next();
-        assertThat(post(body(wallet, "5.00", "meter probe INC-1"), operator.token(), key)
-                        .statusCode())
-                .isEqualTo(201);
+        UUID proposal =
+                proposalIdOf(
+                        post(body(wallet, "5.00", "meter probe INC-1"), initiator.token(),
+                                "adj-" + IDS.next()));
+        // A proposal is not a journal-write command: the meter's own description stays
+        // true, and nothing moved.
+        assertThat(postingOutcome("posted")).isEqualTo(posted);
+        assertThat(postingOutcome("refused")).isEqualTo(refused);
+
+        assertThat(approve(proposal.toString(), approver.token()).statusCode()).isEqualTo(201);
         assertThat(postingOutcome("posted")).isEqualTo(posted + 1);
 
-        assertThat(post(body(wallet, "5.00", "meter probe INC-1"), operator.token(), key)
-                        .statusCode())
-                .isEqualTo(201);
+        assertThat(approve(proposal.toString(), approver.token()).statusCode()).isEqualTo(201);
         assertThat(postingOutcome("replayed"))
-                .as("a replay is never posted throughput (P2-TSK-020's discipline)")
+                .as("a converged retry is never posted throughput (P2-TSK-020's discipline)")
                 .isEqualTo(replayed + 1);
         assertThat(postingOutcome("posted")).isEqualTo(posted + 1);
 
-        String unbalanced =
-                "{\"postingDate\":\"2026-09-17\",\"valueDate\":\"2026-09-17\","
-                        + "\"reference\":\"adj-probe\",\"reason\":\"meter refusal probe\","
-                        + "\"lines\":[" + line(clearing(), "DEBIT", "5.00") + ","
-                        + line(wallet, "CREDIT", "4.00") + "]}";
-        assertThat(post(unbalanced, operator.token(), "adj-" + IDS.next()).statusCode())
-                .isEqualTo(422);
+        // The refused probe is the invariant's own negative: a self-approval.
+        UUID selfProbe =
+                proposalIdOf(
+                        post(body(wallet, "5.00", "meter refusal probe"), initiator.token(),
+                                "adj-" + IDS.next()));
+        assertThat(approve(selfProbe.toString(), initiator.token()).statusCode())
+                .isEqualTo(409);
         assertThat(postingOutcome("refused")).isEqualTo(refused + 1);
 
-        // Every command is timed, whatever its outcome - the latency a caller experienced.
+        // Every journal-write command is timed, whatever its outcome.
         assertThat((double) registry.get("finapp.ledger.posting.latency").timer().count())
                 .isEqualTo(timed + 3);
     }
@@ -205,7 +433,8 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("a retried key replays the original; another operator's replay conflicts")
+    @DisplayName("a retried key replays the original proposal; another operator's replay"
+            + " conflicts")
     void aReplayIsTheOriginalAndAStrangersConflicts() throws Exception {
         Operator first = givenAnOperator();
         Operator second = givenAnOperator();
@@ -215,18 +444,19 @@ class AdjustmentEndpointDatabaseTest {
 
         HttpResponse<String> original = post(body, first.token(), key);
         assertThat(original.statusCode()).isEqualTo(201);
-        UUID entry = entryIdOf(original);
+        UUID proposal = proposalIdOf(original);
 
         HttpResponse<String> replay = post(body, first.token(), key);
         assertThat(replay.statusCode()).isEqualTo(201);
-        assertThat(entryIdOf(replay)).isEqualTo(entry);
+        assertThat(proposalIdOf(replay)).isEqualTo(proposal);
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(adjustmentAuditRowsFor(app, entry)).isEqualTo(1);
+            assertThat(auditRowsFor(app, "ledger.AdjustmentProposed", proposal.toString()))
+                    .isEqualTo(1);
         }
 
         // The fingerprint binds the ACTOR (ADR-0004's owning principal): a key is not a
         // secret, and a second operator replaying it must conflict, never inherit the
-        // first's adjustment.
+        // first's proposal.
         HttpResponse<String> stranger = post(body, second.token(), key);
         assertThat(stranger.statusCode()).isEqualTo(409);
 
@@ -239,11 +469,12 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("a line naming an unknown account is a 422, and nothing is written")
+    @DisplayName("a line naming an unknown account is a 422 at PROPOSAL time, and nothing"
+            + " is written")
     void anUnknownAccountIs422() throws Exception {
         Operator operator = givenAnOperator();
 
-        long entriesBefore = adjustmentEntryCount();
+        long proposalsBefore = proposalCount();
         String unknownAccount =
                 "{\"postingDate\":\"2026-09-17\",\"valueDate\":\"2026-09-17\","
                         + "\"reference\":\"adj-probe\",\"reason\":\"unknown account probe\","
@@ -253,11 +484,12 @@ class AdjustmentEndpointDatabaseTest {
         HttpResponse<String> response = post(unknownAccount, operator.token(), "adj-" + IDS.next());
         assertThat(response.statusCode()).isEqualTo(422);
         assertThat(response.body()).contains("ledger.UnknownAccount");
-        assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore);
+        assertThat(proposalCount()).isEqualTo(proposalsBefore);
     }
 
     @Test
-    @DisplayName("a keyless request is refused before the handler is entered")
+    @DisplayName("a keyless proposal is refused before the handler - and the approval"
+            + " deliberately needs no key: the machine is the idempotency")
     void aKeylessRequestIs422() throws Exception {
         Operator operator = givenAnOperator();
         LedgerAccount wallet = givenAWallet();
@@ -266,6 +498,8 @@ class AdjustmentEndpointDatabaseTest {
                 operator.token(), null);
         assertThat(response.statusCode()).isEqualTo(422);
         assertThat(response.body()).contains("api.IdempotencyKeyRequired");
+        // The approval carrying no key is proven by every approval in this suite: none
+        // sends an Idempotency-Key header, and the converged retry is the machine's.
     }
 
     @Test
@@ -399,10 +633,58 @@ class AdjustmentEndpointDatabaseTest {
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> get(String proposal, String token) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(proposalUri(proposal))
+                        .header("Authorization", "Bearer " + token)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** The approval deliberately carries no idempotency key: the machine converges. */
+    private HttpResponse<String> approve(String proposal, String token) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(
+                                URI.create(
+                                        "http://localhost:" + port + "/v1/ledger/adjustments/"
+                                                + proposal + "/approval"))
+                        .header("Authorization", "Bearer " + token)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> reject(String proposal, String token) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(proposalUri(proposal))
+                        .header("Authorization", "Bearer " + token)
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private URI proposalUri(String proposal) {
+        return URI.create("http://localhost:" + port + "/v1/ledger/adjustments/" + proposal);
+    }
+
     private static UUID entryIdOf(HttpResponse<String> response) {
         Matcher matcher = ENTRY_ID.matcher(response.body());
         assertThat(matcher.find()).as("the response carries the entry id").isTrue();
         return UUID.fromString(matcher.group(1));
+    }
+
+    private static UUID proposalIdOf(HttpResponse<String> response) {
+        assertThat(response.statusCode()).isEqualTo(201);
+        Matcher matcher = PROPOSAL_ID.matcher(response.body());
+        assertThat(matcher.find()).as("the response carries the proposal id").isTrue();
+        return UUID.fromString(matcher.group(1));
+    }
+
+    /** Strips the members that differ per request by design: correlation, and the URI. */
+    private static String withoutCorrelation(String body) {
+        return body.replaceAll("\"correlationId\"\\s*:\\s*\"[^\"]*\"", "\"correlationId\":\"\"")
+                .replaceAll("\"instance\"\\s*:\\s*\"[^\"]*\"", "\"instance\":\"\"");
     }
 
     // -----------------------------------------------------------------
@@ -479,27 +761,13 @@ class AdjustmentEndpointDatabaseTest {
         }
     }
 
-    private static long adjustmentAuditRowsFor(Connection app, UUID entry) throws SQLException {
-        try (PreparedStatement count =
-                app.prepareStatement(
-                        "SELECT count(*) FROM platform.audit_record"
-                                + " WHERE operation = 'ledger.AdjustmentPosted'"
-                                + " AND target_id = ?")) {
-            count.setString(1, entry.toString());
-            try (ResultSet row = count.executeQuery()) {
-                row.next();
-                return row.getLong(1);
-            }
-        }
-    }
-
-    private static String auditReasonFor(Connection app, UUID entry) throws SQLException {
+    private static String proposalColumn(Connection app, UUID proposal, String column)
+            throws SQLException {
         try (PreparedStatement read =
                 app.prepareStatement(
-                        "SELECT reason FROM platform.audit_record"
-                                + " WHERE operation = 'ledger.AdjustmentPosted'"
-                                + " AND target_id = ?")) {
-            read.setString(1, entry.toString());
+                        "SELECT " + column + " FROM ledger.adjustment_proposal"
+                                + " WHERE id = ?")) {
+            read.setObject(1, proposal);
             try (ResultSet row = read.executeQuery()) {
                 assertThat(row.next()).isTrue();
                 return row.getString(1);
@@ -507,13 +775,30 @@ class AdjustmentEndpointDatabaseTest {
         }
     }
 
-    private static String auditActorFor(Connection app, UUID entry) throws SQLException {
+    private static long auditRowsFor(Connection app, String operation, String target)
+            throws SQLException {
+        try (PreparedStatement count =
+                app.prepareStatement(
+                        "SELECT count(*) FROM platform.audit_record"
+                                + " WHERE operation = ? AND target_id = ?")) {
+            count.setString(1, operation);
+            count.setString(2, target);
+            try (ResultSet row = count.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    private static String auditColumnFor(
+            Connection app, String operation, String target, String column)
+            throws SQLException {
         try (PreparedStatement read =
                 app.prepareStatement(
-                        "SELECT actor_id FROM platform.audit_record"
-                                + " WHERE operation = 'ledger.AdjustmentPosted'"
-                                + " AND target_id = ?")) {
-            read.setString(1, entry.toString());
+                        "SELECT " + column + " FROM platform.audit_record"
+                                + " WHERE operation = ? AND target_id = ?")) {
+            read.setString(1, operation);
+            read.setString(2, target);
             try (ResultSet row = read.executeQuery()) {
                 assertThat(row.next()).isTrue();
                 return row.getString(1);
@@ -528,6 +813,19 @@ class AdjustmentEndpointDatabaseTest {
                                 + " WHERE event_type = 'ledger.JournalEntryPosted'"
                                 + " AND aggregate_id = ?")) {
             count.setObject(1, entry);
+            try (ResultSet row = count.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    private static long entriesForScope(Connection app, String scope) throws SQLException {
+        try (PreparedStatement count =
+                app.prepareStatement(
+                        "SELECT count(*) FROM ledger.journal_entry"
+                                + " WHERE idempotency_scope = ?")) {
+            count.setString(1, scope);
             try (ResultSet row = count.executeQuery()) {
                 row.next();
                 return row.getLong(1);
@@ -555,6 +853,18 @@ class AdjustmentEndpointDatabaseTest {
                         app.prepareStatement(
                                 "SELECT count(*) FROM ledger.journal_entry"
                                         + " WHERE entry_type = 'ADJUSTMENT'")) {
+            try (ResultSet row = count.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    private static long proposalCount() throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count =
+                        app.prepareStatement(
+                                "SELECT count(*) FROM ledger.adjustment_proposal")) {
             try (ResultSet row = count.executeQuery()) {
                 row.next();
                 return row.getLong(1);

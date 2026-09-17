@@ -353,12 +353,14 @@ class OwnershipIsScopedTest {
                                         + " SURFACE's. P3-TSK-016's reversal arrived and said"
                                         + " so: an IN-PROCESS caller (ReversalService reads the"
                                         + " original a commanding flow names - no HTTP surface"
-                                        + " exists), so the URL-named arrival remains"
-                                        + " P3-TSK-017's adjustment (the ADMINISTERED shape),"
-                                        + " and P3-TSK-018's statements arrived through their own"
-                                        + " reader (JdbcStatementDerivation - scoped one level"
-                                        + " up by the caller's own product, see its entry), so"
-                                        + " this method still has no URL-named caller.")),
+                                        + " exists), and P3-TSK-018's statements arrived through"
+                                        + " their own reader (JdbcStatementDerivation - scoped"
+                                        + " one level up by the caller's own product, see its"
+                                        + " entry). The URL-named arrival this entry predicted"
+                                        + " landed on the PROPOSAL instead (P3-TSK-021: the"
+                                        + " four-eyes surface names proposals, and the entry id"
+                                        + " only ever comes back out), so this method still has"
+                                        + " no URL-named caller.")),
                     Map.entry(
                             "com.finapp.ledger.JdbcBalanceDerivation.derive",
                             new Entry(
@@ -451,6 +453,50 @@ class OwnershipIsScopedTest {
                                         + " where the statement actually is (the P1-TSK-021"
                                         + " revokeAll finding), and its classification is"
                                         + " upsert's own, one entry up.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcAdjustmentProposalStore.read",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P3-TSK-021. The one statement behind findById and its"
+                                        + " FOR UPDATE twin lockById (the approval's"
+                                        + " lock-then-look serialisation point, P2-TSK-015) -"
+                                        + " the detector locates the helper where the"
+                                        + " statement actually is (the P1-TSK-021 revokeAll"
+                                        + " finding). The URL-named administrative arrival"
+                                        + " the journal findById entry predicted, landed on"
+                                        + " the proposal: the identifier comes from"
+                                        + " /v1/ledger/adjustments/{id}, and the checks that"
+                                        + " stand in for an ownership predicate are"
+                                        + " @RequiresPermission(LEDGER_ADJUST) at the"
+                                        + " boundary (AdjustmentController, refusal audited)"
+                                        + " and the four-eyes rules at the domain - a"
+                                        + " proposal has no single owner to scope by,"
+                                        + " deliberately: the initiator must NOT be able to"
+                                        + " fence the approver out, because a second person"
+                                        + " reading it is the control (INV-AUD-04).")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcAdjustmentProposalStore.linesOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P3-TSK-021. The proposal's line read, keyed by the"
+                                        + " proposal the caller already resolved - reached"
+                                        + " only through read, whose classification it"
+                                        + " shares.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcAdjustmentProposalStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P3-TSK-021. The conditional decision (status ="
+                                        + " 'PROPOSED' in the statement, the row count the"
+                                        + " outcome), always under lockById's FOR UPDATE."
+                                        + " The checks that stand in: the boundary"
+                                        + " permission, the aggregate's self-approval and"
+                                        + " terminal refusals judged on the LOCKED row, and"
+                                        + " V010's approver <> initiator CHECK plus the"
+                                        + " freeze trigger beneath - the named negatives are"
+                                        + " AdjustmentEndpointDatabaseTest#"
+                                        + "selfApprovalIsRefused and"
+                                        + " #aSessionWithoutTheRoleIsRefused.")),
                     Map.entry(
                             "com.finapp.ledger.JdbcJournalEntryStore.reversalLinesOf",
                             new Entry(

@@ -21,9 +21,9 @@ import com.finapp.platform.audit.AuditableAction;
  * the audit record is the trail of the <em>act</em> of posting, under a different retention and
  * access regime ({@code INV-AUD-01}, ADR-0010).
  *
- * <p>{@code JOURNAL_ENTRY_POSTED} and the hold pair are emitted by their owning services;
- * {@code ADJUSTMENT_POSTED} names its owning task in
- * {@code AuditCompletenessTest.NOT_YET_EMITTED}.
+ * <p>Every action here is emitted by its owning service. <em>(This paragraph claimed
+ * {@code ADJUSTMENT_POSTED} sat in {@code AuditCompletenessTest.NOT_YET_EMITTED} until
+ * `P3-TSK-021` — stale since `P3-TSK-017` emitted it; corrected where it lived.)</em>
  */
 public enum LedgerAuditAction implements AuditableAction {
 
@@ -59,6 +59,38 @@ public enum LedgerAuditAction implements AuditableAction {
             "A person posted a manual adjusting entry; the reason and the authorising actor are"
                     + " recorded.",
             true),
+
+    /**
+     * A person proposed a manual adjustment, awaiting a second person's approval.
+     *
+     * <p><strong>Reason required</strong> — {@code INV-REV-04}'s justification enters the
+     * trail at the moment the initiator writes it, not at approval. This record and
+     * {@code ADJUSTMENT_POSTED} are the four-eyes trail ({@code INV-AUD-04}): two acts, two
+     * records, each naming its own actor — the initiator here, the approver there — which is
+     * how the "second actor column" ADR-0010 anticipated dissolves rather than gets paid.
+     * Emitted by {@code AdjustmentService.propose} (`P3-TSK-021`), by the creating call only.
+     */
+    ADJUSTMENT_PROPOSED(
+            "ledger.AdjustmentProposed",
+            "A person proposed a manual adjustment for a second person's approval; the reason"
+                    + " and the initiator are recorded.",
+            true),
+
+    /**
+     * A standing adjustment proposal was rejected — by a second person, or withdrawn by its
+     * initiator.
+     *
+     * <p>No reason required: declining to move value is not the high-risk act the reason
+     * regime exists for, and a mandatory justification for saying no would produce a column
+     * of {@code "no"}. What the record carries is who declined, which is the fact an
+     * investigator wants. Emitted by {@code AdjustmentService.reject} (`P3-TSK-021`), by the
+     * deciding call only — a converged repeat records nothing.
+     */
+    ADJUSTMENT_REJECTED(
+            "ledger.AdjustmentRejected",
+            "A standing adjustment proposal was rejected or withdrawn; the record names the"
+                    + " proposal and who declined it.",
+            false),
 
     /**
      * A hold was placed against an account's available balance.

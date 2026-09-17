@@ -4610,7 +4610,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Accept**: met — a freshly started instance publishes every series, proven by the pinned
   guard rather than asserted.
 
-**P3-TSK-021 — Four-eyes on manual adjustments** — `READY`
+**P3-TSK-021 — Four-eyes on manual adjustments** — `COMPLETE` (2026-09-17)
 - **Scope**: `INV-AUD-04`'s Phase 3 element, found owed by `P3-TST-003`: the catalogue marks
   the invariant `Phase: 3`, the manual adjustment exists (`P3-TSK-017`), and the mechanism is
   deliberately unbuilt — no defined threshold, no second approver, four-eyes recorded as
@@ -4622,8 +4622,55 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   alternative outcome — a superseding decision narrowing the catalogue's phase marking — is a
   decision for this task to argue, not assume.
 - **Deps**: `P3-TSK-017`. **Risk**: High. **Cx**: M. **DoD**: `DOD-SEC`, `DOD-FIN`
+- **Done**: the catalogue's marking stands and the mechanism is built — **the threshold is
+  defined as every adjustment**: `INV-REV-04` permits thresholds, but a threshold is a
+  per-currency amount policy (a versioned artefact, `INV-HIST-04`) with nothing to calibrate
+  it and the `INV-MON-04` cross-currency trap beneath, so unconditional is the honest
+  strengthening, with a de-minimis threshold recorded as a future policy artefact whose seam
+  is the proposal row. **Four-eyes is two authenticated acts, never one request with two
+  names**: `POST /v1/ledger/adjustments` now *proposes* (`ledger.adjustment_proposal` +
+  lines, `V010`; nothing posts; 201 `{proposalId}` — the reviewed BREAKING change, since no
+  client exists and a parallel one-person write kept for compatibility would keep the
+  invariant violated), `GET …/{id}` shows an approver exactly what they would approve,
+  `POST …/{id}/approval` by a **different** `LEDGER_ADJUST` holder posts the entry through
+  `PostingEffect` in the approval's own transaction, and `DELETE …/{id}` rejects — or, for
+  the initiator, withdraws, deliberately: removing an action needs no second person.
+  **Approver ≠ initiator holds at three ranks**: the aggregate refuses self-approval
+  (`INV-LIFE-02`), `V010`'s `CHECK (status <> 'APPROVED' OR decided_by <> proposed_by)` is
+  the invariant's own Enforce clause at `DB-CONSTRAINT` (plain, because the table is new),
+  and a deferred constraint trigger (the `V004` mechanism) refuses any `ADJUSTMENT` entry
+  COMMIT without an approved proposal — raw SQL bound, history untouched (`INV-HIST-01`).
+  **The approver approves what they read, structurally**: payload and lines frozen by
+  trigger for every writer, terminals terminal, the decision columns arriving with their
+  edge. **One permission, deliberately** (`P2-TSK-004`'s rule: the trust decision is one;
+  the control is person-distinctness; maker/checker is a recorded seam). **Approval carries
+  no idempotency key, deliberately**: the one-way machine is the idempotency
+  (`INV-IDEM-01` through state, the `P2-TSK-008` natural-key argument) — lock-then-look on
+  the proposal row, ten concurrent approvals producing exactly one entry counted in the
+  table with every response converging on it; propose keeps the full machinery (scope
+  `ledger.adjust`, fingerprint binding actor + reason + lines). **Two audit records are the
+  four-eyes trail**: `ledger.AdjustmentProposed` (new, reason required) names the initiator,
+  `ledger.AdjustmentPosted` names the approver — ADR-0010's "second actor column" debt
+  dissolved rather than paid, and the entry's `idempotency_scope`
+  (`ledger.adjust.approve:<proposalId>`) is the investigator's join. A refused
+  self-approval writes **nothing** and answers the actionable
+  `409 ledger.SelfApprovalRefused`; a decided proposal answers `ledger.ProposalNotOpen`;
+  unknown and malformed are one 404. The posting meter observes the **approval** (posted /
+  converged-replayed / self-approval-refused) and a proposal moves no meter, because it
+  writes no journal. Registries fed: two audit actions, two error codes, eighteen classified
+  columns, five ownership-register entries (the journal `findById` entry's predicted
+  URL-named arrival landed on the *proposal*), the `MUTATION_TESTING.md` §2 `INV-AUD-04` row
+  with §3 rewritten as the resolution record, the plan's three four-eyes-debt statements and
+  the supplement's closing item corrected with provenance, the OpenAPI baseline regenerated
+  (58 diffs, 5 BREAKING, each reviewed). **Seven mutations, all caught by the intended
+  assertion, restores byte-identical** — the domain self-check dropped, `V010`'s CHECK
+  dropped, the deferred trigger dropped, the lock made a plain read, the freeze trigger
+  dropped, the proposed-audit dropped, the entry's actor made the initiator.
+- **Accept**: met — self-approval is refused with the invariant's named negative test,
+  nothing written, and a second person approves the same proposal as the positive control;
+  the register row stands and the battery survives the status flip.
 
-**P3-DOC-001 — Phase 3 review record** — `TODO`
+**P3-DOC-001 — Phase 3 review record** — `READY`
 - **Scope**: the `PHASE_GATES.md` §4 review: eight areas, twelve universal criteria, **the
   financial supplement F1–F8 — which binds for the first time and is not "not applicable" here**,
   and the nine Phase 3-specific criteria, each with evidence; numbers counted, never quoted; the

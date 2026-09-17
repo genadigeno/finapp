@@ -51,6 +51,7 @@ public class LedgerBeans {
         return new AdjustmentService(
                 idempotentExecutor,
                 journalEntryStore,
+                new com.finapp.ledger.JdbcAdjustmentProposalStore(),
                 auditWriter,
                 outboxWriter,
                 balanceProjection,

@@ -416,6 +416,33 @@ rather than a lifecycle word's usual `INTERNAL`.
 | `hold` | `placed_at` | `CONFIDENTIAL` | Dates financial activity — `journal_entry.created_at`'s reasoning |
 | `hold` | `released_at` | `CONFIDENTIAL` | Same: when a reservation ended dates the movement or its abandonment |
 
+### `ledger.adjustment_proposal` and `ledger.adjustment_proposal_line` — *added by `P3-TSK-021`*
+
+The four-eyes lifecycle (`INV-AUD-04`): what an initiator asked to move and a second person
+answered. The payload is a journal entry in waiting, so every column carries the ceiling of
+the journal column it becomes at approval.
+
+| Table | Column | Level | Why this level |
+|---|---|---|---|
+| `adjustment_proposal` | `id` | `INTERNAL` | A platform-minted UUIDv7; names nothing by itself |
+| `adjustment_proposal` | `status` | `RESTRICTED-FINANCIAL` | Whether a manual movement is pending, done or declined — `hold.status`'s reasoning: a pending movement's existence is a financial fact |
+| `adjustment_proposal` | `posting_date` | `CONFIDENTIAL` | `journal_entry.posting_date`'s reasoning — it becomes that column at approval |
+| `adjustment_proposal` | `value_date` | `CONFIDENTIAL` | As `posting_date` |
+| `adjustment_proposal` | `reference` | `RESTRICTED-FINANCIAL` | `journal_entry.reference`'s reasoning, before the entry exists |
+| `adjustment_proposal` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — `journal_entry.reason`'s reasoning verbatim |
+| `adjustment_proposal` | `proposed_by` | `RESTRICTED-PII` | `journal_entry.actor_id`'s reasoning: a person's identity-provider subject |
+| `adjustment_proposal` | `proposed_at` | `CONFIDENTIAL` | Dates financial activity — `journal_entry.created_at`'s reasoning |
+| `adjustment_proposal` | `decided_by` | `RESTRICTED-PII` | The second person — `proposed_by`'s reasoning |
+| `adjustment_proposal` | `decided_at` | `CONFIDENTIAL` | As `proposed_at` |
+| `adjustment_proposal` | `journal_entry_id` | `INTERNAL` | A platform-minted entry identifier — the `reverses_entry_id` reasoning: it must appear in the joins that make the four-eyes trail investigable |
+| `adjustment_proposal_line` | `proposal_id` | `INTERNAL` | A platform-minted proposal identifier |
+| `adjustment_proposal_line` | `seq` | `INTERNAL` | Line order |
+| `adjustment_proposal_line` | `ledger_account_id` | `INTERNAL` | `journal_line.ledger_account_id`'s reasoning |
+| `adjustment_proposal_line` | `direction` | `INTERNAL` | An enumeration of two values |
+| `adjustment_proposal_line` | `amount_minor` | `RESTRICTED-FINANCIAL` | A proposed movement's amount — `hold.amount_minor`'s reasoning, before the movement exists |
+| `adjustment_proposal_line` | `currency` | `INTERNAL` | As `journal_line.currency` |
+| `adjustment_proposal_line` | `scale` | `INTERNAL` | Precision metadata of the amount |
+
 ### `accounts.customer_account` — *added by `P3-TSK-012`*
 
 **No amount column exists here, by design** — the product carries no balance (ADR-0042); the

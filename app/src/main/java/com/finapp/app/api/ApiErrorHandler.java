@@ -306,6 +306,58 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * The initiator tried to approve their own adjustment proposal (`P3-TSK-021`,
+     * {@code INV-AUD-04}) — the invariant's named negative. Nothing was written: the
+     * refusal rolls the transaction back and the proposal stays standing for a second
+     * person, which is what the actionable detail says.
+     */
+    @ExceptionHandler(com.finapp.ledger.SelfApprovalRefusedException.class)
+    public ResponseEntity<ProblemDetailBody> handleSelfApprovalRefused(
+            com.finapp.ledger.SelfApprovalRefusedException exception,
+            HttpServletRequest request) {
+        // Warn, not error: the refusal is the four-eyes control working.
+        LOGGER.warn("A self-approval was refused on {}", request.getRequestURI());
+        return render(
+                ProblemDetail.of(
+                        com.finapp.ledger.LedgerErrorCode.SELF_APPROVAL_REFUSED,
+                        request.getRequestURI(),
+                        "Have a second authorised operator approve the proposal."));
+    }
+
+    /**
+     * A decision named an already-decided proposal (`P3-TSK-021`, {@code INV-LIFE-04}):
+     * one code for the approve and reject surfaces, because the remedy is one — read the
+     * proposal's outcome, and raise a new proposal for a new adjustment.
+     */
+    @ExceptionHandler(com.finapp.ledger.AdjustmentProposalNotOpenException.class)
+    public ResponseEntity<ProblemDetailBody> handleProposalNotOpen(
+            com.finapp.ledger.AdjustmentProposalNotOpenException exception,
+            HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        com.finapp.ledger.LedgerErrorCode.PROPOSAL_NOT_OPEN,
+                        request.getRequestURI(),
+                        "The proposal is already decided; a new adjustment is a new"
+                                + " proposal."));
+    }
+
+    /**
+     * A decision named a proposal that does not exist (`P3-TSK-021`): the same {@code 404}
+     * body the slice's malformed-identifier fold produces, so unknown and malformed stay
+     * one answer (`P1-TSK-016`).
+     */
+    @ExceptionHandler(com.finapp.ledger.AdjustmentProposalNotFoundException.class)
+    public ResponseEntity<ProblemDetailBody> handleProposalNotFound(
+            com.finapp.ledger.AdjustmentProposalNotFoundException exception,
+            HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        PlatformErrorCode.NOT_FOUND,
+                        request.getRequestURI(),
+                        "no such adjustment proposal"));
+    }
+
+    /**
      * The account still holds value, so the agreement cannot end (`P3-TSK-014`).
      *
      * <p>The detail names no amount and no currency ({@code INV-AUD-02}): which balance
