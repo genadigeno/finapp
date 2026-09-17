@@ -259,12 +259,53 @@ class AccountEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("all three endpoints refuse an unauthenticated caller")
+    @DisplayName("closing over HTTP: 204, the list shows CLOSED, the history stays readable,"
+            + " a repeat converges (P3-TSK-014 - the milestone acceptance's last clause)")
+    void closingEndToEnd() throws Exception {
+        Person person = givenAPerson("ACTIVE");
+        String accountId = field(post("/me/accounts", person.session(), OPEN_USD, key()).body(), "id");
+
+        // Not-yours first, so the 404 is proven against a LIVE account.
+        Person stranger = givenAPerson("ACTIVE");
+        assertThat(delete("/me/accounts/" + accountId, stranger.session()).statusCode())
+                .as("a stranger's close finds nothing to lock")
+                .isEqualTo(404);
+
+        assertThat(delete("/me/accounts/" + accountId, person.session()).statusCode())
+                .isEqualTo(204);
+        assertThat(get("/me/accounts", person.session()).body())
+                .as("a closed agreement is still the caller's history")
+                .contains(accountId)
+                .contains("\"status\":\"CLOSED\"");
+        // The history survives over HTTP too: the balance of a closed account stays readable
+        // (INV-HIST-01 - the agreement ended, the accounting did not).
+        assertThat(get("/me/accounts/" + accountId + "/balance", person.session()).statusCode())
+                .isEqualTo(200);
+        // A retried DELETE whose first response was lost must not read as a failure.
+        assertThat(delete("/me/accounts/" + accountId, person.session()).statusCode())
+                .isEqualTo(204);
+
+        // A non-empty account refuses with the actionable code, naming no amount.
+        Person funded = givenAPerson("ACTIVE");
+        String fundedAccount =
+                field(post("/me/accounts", funded.session(), OPEN_USD, key()).body(), "id");
+        creditOverLedger(fundedAccount, 800);
+        HttpResponse<String> refused = delete("/me/accounts/" + fundedAccount, funded.session());
+        assertThat(refused.statusCode()).isEqualTo(409);
+        assertThat(refused.body())
+                .contains("accounts.AccountNotEmpty")
+                .doesNotContain("800")
+                .doesNotContain("8.00");
+    }
+
+    @Test
+    @DisplayName("all four endpoints refuse an unauthenticated caller")
     void unauthenticatedIsRefused() throws Exception {
         assertThat(post("/me/accounts", null, OPEN_USD, key()).statusCode()).isEqualTo(401);
         assertThat(get("/me/accounts", null).statusCode()).isEqualTo(401);
         assertThat(get("/me/accounts/" + IDS.next() + "/balance", null).statusCode())
                 .isEqualTo(401);
+        assertThat(delete("/me/accounts/" + IDS.next(), null).statusCode()).isEqualTo(401);
     }
 
     // -----------------------------------------------------------------
@@ -388,6 +429,55 @@ class AccountEndpointDatabaseTest {
             request.header("Idempotency-Key", idempotencyKey);
         }
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> delete(String path, String token) throws Exception {
+        HttpRequest.Builder request =
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1" + path))
+                        .DELETE();
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** A balanced clearing-to-wallet credit, the acceptance test's posting in helper form. */
+    private void creditOverLedger(String accountId, long minorUnits) throws Exception {
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            LedgerAccount wallet =
+                    ledgerAccounts
+                            .findOwned(
+                                    app,
+                                    UUID.fromString(accountId),
+                                    AccountPurpose.CUSTOMER_WALLET,
+                                    USD)
+                            .orElseThrow();
+            LedgerAccount clearing =
+                    ledgerAccounts
+                            .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                            .orElseThrow();
+            postingService()
+                    .post(
+                            app,
+                            new PostingCommand(
+                                    "endpoint-close-" + IDS.next(),
+                                    DATE,
+                                    DATE,
+                                    "close-refusal-credit",
+                                    List.of(
+                                            new JournalLine(
+                                                    clearing.id(),
+                                                    Direction.DEBIT,
+                                                    Money.ofMinorUnits(minorUnits, USD)),
+                                            new JournalLine(
+                                                    wallet.id(),
+                                                    Direction.CREDIT,
+                                                    Money.ofMinorUnits(minorUnits, USD)))));
+            app.commit();
+        }
     }
 
     private static String key() {

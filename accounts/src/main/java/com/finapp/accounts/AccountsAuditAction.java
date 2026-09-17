@@ -11,9 +11,9 @@ import com.finapp.platform.audit.AuditableAction;
  * {@code kyc.CaseOpened}/{@code P2-TSK-005} precedent: `P3-TSK-011` shipped no enum because no
  * accounts action's design was fixed yet; this task fixes opening's.
  *
- * <p><strong>Deliberately one.</strong> {@code accounts.AccountClosed} is absent on purpose —
- * whether closing is its own audited act and what its record carries is `P3-TSK-014`'s design.
- * Suspension has no producer at all this phase ({@link CustomerAccountStatus}), so an action
+ * <p><strong>Deliberately two.</strong> {@code ACCOUNT_CLOSED} arrived with `P3-TSK-014`, the
+ * task whose design fixed it — exactly as the absence this javadoc used to record predicted.
+ * Suspension still has no producer this phase ({@link CustomerAccountStatus}), so an action
  * for it would be vocabulary with no decision behind it.
  */
 public enum AccountsAuditAction implements AuditableAction {
@@ -32,6 +32,22 @@ public enum AccountsAuditAction implements AuditableAction {
             "accounts.AccountOpened",
             "A customer account product was opened; the record names the account, the product"
                     + " type and the customer, never a balance.",
+            false),
+
+    /**
+     * A customer account product was closed.
+     *
+     * <p>No reason required: closing is a person's own act on their own agreement, and a
+     * demanded justification at the moment of exit is pressure applied exactly where none may
+     * exist (the consent-withdrawal reasoning, {@code AUDITABLE_ACTIONS.md} §4). The control
+     * is the zero-balance precondition, not a paragraph. The code matches the event type the
+     * same closing publishes; emitted by {@link AccountClosing} in the closing transaction, by
+     * the closing call only — a converged repeat is not a second act.
+     */
+    ACCOUNT_CLOSED(
+            "accounts.AccountClosed",
+            "A customer account product was closed; the agreement ended, the accounting history"
+                    + " did not (INV-HIST-01).",
             false);
 
     private final String code;

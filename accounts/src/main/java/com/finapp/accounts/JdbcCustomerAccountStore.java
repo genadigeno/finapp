@@ -161,6 +161,63 @@ public final class JdbcCustomerAccountStore implements CustomerAccountStore<Conn
         }
     }
 
+    @Override
+    public Optional<CustomerAccount> lockOwnedBy(
+            Connection unitOfWork, CustomerAccountId accountId, UUID customerId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // customer_id = ? IS the ownership check, in the statement (ADR-0031);
+                        // FOR UPDATE is the closers' serialization point (P3-TSK-014).
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE id = ? AND customer_id = ? FOR UPDATE")) {
+            read.setObject(1, accountId.value());
+            read.setObject(2, customerId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(
+                    DatabaseFailure.describe("locking an owned account", failure));
+        }
+    }
+
+    @Override
+    public boolean moveStatus(
+            Connection unitOfWork,
+            CustomerAccountId accountId,
+            CustomerAccountStatus from,
+            CustomerAccountStatus to,
+            java.time.Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(to, "to must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+        if (!from.canTransitionTo(to)) {
+            // The machine's own refusal, before any SQL (INV-LIFE-02).
+            throw new IllegalCustomerAccountTransitionException(accountId, from, to);
+        }
+        try (PreparedStatement move =
+                unitOfWork.prepareStatement(
+                        "UPDATE " + TABLE + " SET status = ?, status_changed_at = ?"
+                                + " WHERE id = ? AND status = ?")) {
+            move.setString(1, to.name());
+            move.setTimestamp(2, Timestamp.from(at));
+            move.setObject(3, accountId.value());
+            move.setString(4, from.name());
+            return move.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(
+                    DatabaseFailure.describe("moving the status of an agreement", failure));
+        }
+    }
+
     private static CustomerAccount rehydrate(ResultSet row) throws SQLException {
         return CustomerAccount.rehydrate(
                 CustomerAccountId.of(row.getObject("id", UUID.class)),

@@ -156,6 +156,64 @@ public final class JdbcLedgerAccountStore implements LedgerAccountStore<Connecti
         }
     }
 
+    @Override
+    public java.util.List<LedgerAccount> lockOwnedForUpdate(Connection unitOfWork, UUID ownerRef) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(ownerRef, "ownerRef must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // FOR UPDATE, because it is the mode that conflicts with the FOR KEY
+                        // SHARE every in-flight posting holds (the FK and V007's trigger read);
+                        // ordered by id so two multi-account closers cannot deadlock.
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE owner_ref = ? ORDER BY id FOR UPDATE")) {
+            read.setObject(1, ownerRef);
+            try (ResultSet rows = read.executeQuery()) {
+                java.util.List<LedgerAccount> accounts = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    accounts.add(rehydrate(rows));
+                }
+                return java.util.List.copyOf(accounts);
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe(
+                            "locking the accounts of owner " + ownerRef, failure));
+        }
+    }
+
+    @Override
+    public boolean moveStatus(
+            Connection unitOfWork,
+            LedgerAccountId accountId,
+            LedgerAccountStatus from,
+            LedgerAccountStatus to,
+            java.time.Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(to, "to must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+        if (!from.canTransitionTo(to)) {
+            // The machine's own refusal, before any SQL (INV-LIFE-02): the conditional below
+            // enforces the FROM, not the legality of the edge.
+            throw new IllegalLedgerAccountTransitionException(accountId, from, to);
+        }
+        try (PreparedStatement move =
+                unitOfWork.prepareStatement(
+                        "UPDATE " + TABLE + " SET status = ?, status_changed_at = ?"
+                                + " WHERE id = ? AND status = ?")) {
+            move.setString(1, to.name());
+            move.setTimestamp(2, Timestamp.from(at));
+            move.setObject(3, accountId.value());
+            move.setString(4, from.name());
+            return move.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("moving the status of an account", failure));
+        }
+    }
+
     private static LedgerAccount rehydrate(ResultSet row) throws SQLException {
         String glCode = row.getString("gl_code");
         UUID ownerRef = row.getObject("owner_ref", UUID.class);

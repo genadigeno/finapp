@@ -1,5 +1,6 @@
 package com.finapp.app.accounts;
 
+import com.finapp.accounts.AccountClosing;
 import com.finapp.accounts.AccountOpening;
 import com.finapp.accounts.CustomerAccount;
 import com.finapp.accounts.CustomerAccountId;
@@ -51,6 +52,7 @@ public final class AccountService {
     static final String IDEMPOTENCY_SCOPE = "accounts.open";
 
     private final AccountOpening opening;
+    private final AccountClosing closing;
     private final CustomerAccountStore<Connection> accounts;
     private final BalanceDisplay<Connection> balances;
     private final IdentityStore<Connection> identities;
@@ -61,6 +63,7 @@ public final class AccountService {
 
     public AccountService(
             AccountOpening opening,
+            AccountClosing closing,
             CustomerAccountStore<Connection> accounts,
             BalanceDisplay<Connection> balances,
             IdentityStore<Connection> identities,
@@ -69,6 +72,7 @@ public final class AccountService {
             TransactionTemplate transactions,
             DataSource dataSource) {
         this.opening = Objects.requireNonNull(opening, "opening must not be null");
+        this.closing = Objects.requireNonNull(closing, "closing must not be null");
         this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
         this.balances = Objects.requireNonNull(balances, "balances must not be null");
         this.identities = Objects.requireNonNull(identities, "identities must not be null");
@@ -190,6 +194,25 @@ public final class AccountService {
     /** An owned account and its per-currency displayed balances. */
     public record Balances(
             CustomerAccount account, List<BalanceDisplay.DisplayedBalance> perCurrency) {}
+
+    /**
+     * Ends the caller's agreement {@code accountId} — or converges on one already ended, which
+     * is the retry story of a lost {@code DELETE} response. Empty is the one answer for
+     * not-yours, does-not-exist and a caller with no live customer alike (`P3-TSK-014`).
+     */
+    public Optional<AccountClosing.Closure> close(Session current, CustomerAccountId accountId) {
+        Objects.requireNonNull(current, "current must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        return inOneTransaction(
+                unitOfWork ->
+                        liveCustomerOf(unitOfWork, current)
+                                .flatMap(
+                                        customer ->
+                                                closing.close(
+                                                        unitOfWork,
+                                                        customer.id().value(),
+                                                        accountId)));
+    }
 
     // -----------------------------------------------------------------
 

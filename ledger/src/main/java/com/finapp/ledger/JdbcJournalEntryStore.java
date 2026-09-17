@@ -86,6 +86,17 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                 insert.executeBatch();
             }
         } catch (SQLException failure) {
+            // V007's trigger refuses a line on a non-ACTIVE account with ERRCODE 23514 and a
+            // stable marker; translated to a named domain refusal so a commanding flow can
+            // treat "this account stopped accepting postings" as an outcome (P3-TSK-014). The
+            // marker is matched rather than the prose, and the server text is not propagated -
+            // the composed message carries the entry, never a row (the P1-TSK-008 discipline).
+            if (failure.getMessage() != null
+                    && failure.getMessage().contains("ledger_account_accepts_postings")) {
+                throw new LedgerAccountNotPostableException(
+                        "a line of entry " + entry.id() + " names an account that is no longer"
+                                + " ACTIVE; the posting is refused (P3-TSK-014)");
+            }
             throw new LedgerStorageException(
                     DatabaseFailure.describe("appending journal entry " + entry.id(), failure));
         }

@@ -1,11 +1,14 @@
 package com.finapp.app.accounts;
 
+import com.finapp.accounts.AccountClosing;
 import com.finapp.accounts.AccountHolderVerification;
 import com.finapp.accounts.AccountOpening;
 import com.finapp.accounts.CustomerAccountStore;
 import com.finapp.accounts.JdbcCustomerAccountStore;
 import com.finapp.identity.IdentityStore;
+import com.finapp.ledger.BalanceDerivation;
 import com.finapp.ledger.BalanceDisplay;
+import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.JdbcBalanceDisplay;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.LedgerAccountStore;
@@ -50,6 +53,34 @@ class AccountsBeans {
     }
 
     @Bean
+    BalanceDerivation<Connection> balanceDerivation() {
+        return new JdbcBalanceDerivation();
+    }
+
+    /**
+     * `P3-TSK-014`'s close: the zero-balance check is a financial decision, so it takes the
+     * DERIVATION — never {@code balanceDisplay} — inside the account lock ({@code INV-BAL-05}).
+     */
+    @Bean
+    AccountClosing accountClosing(
+            CustomerAccountStore<Connection> customerAccountStore,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            BalanceDerivation<Connection> balanceDerivation,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new AccountClosing(
+                customerAccountStore,
+                ledgerAccountStore,
+                balanceDerivation,
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock);
+    }
+
+    @Bean
     AccountHolderVerification<Connection> accountHolderVerification(
             PartyStore<Connection> partyStore) {
         return new VerifiedAccountHolder(partyStore);
@@ -90,6 +121,7 @@ class AccountsBeans {
     @Bean
     AccountService accountService(
             AccountOpening accountOpening,
+            AccountClosing accountClosing,
             CustomerAccountStore<Connection> customerAccountStore,
             BalanceDisplay<Connection> balanceDisplay,
             IdentityStore<Connection> identityStore,
@@ -99,6 +131,7 @@ class AccountsBeans {
             DataSource dataSource) {
         return new AccountService(
                 accountOpening,
+                accountClosing,
                 customerAccountStore,
                 balanceDisplay,
                 identityStore,

@@ -243,6 +243,7 @@ legitimacy. **Four-eyes is not implied by the flag** — it is recorded debt (`I
 | Code | Reason required | What it is |
 |---|---|---|
 | `accounts.AccountOpened` | No | A customer account product was opened; the record names the account, the product type and the customer, never a balance. |
+| `accounts.AccountClosed` | No | A customer account product was closed; the agreement ended, the accounting history did not (INV-HIST-01). |
 
 Declared with the aggregate whose design fixes its meaning (`P3-TSK-012`) rather than with the
 module skeleton — `P3-TSK-011`'s recorded decision, the `kyc.CaseOpened`/`P2-TSK-005`
@@ -251,8 +252,12 @@ reasoning, §4), and a mandatory justification would produce a column of *"wante
 The code matches the event type the same opening publishes — one fact, named once, in two
 registries — and is emitted by `AccountOpening` in the opening transaction, by the
 <strong>creating</strong> call only: a converged retry is not a second act.
-`accounts.AccountClosed` is deliberately absent — whether closing is its own audited act and
-what its record carries is `P3-TSK-014`'s design; suspension has no producer at all this phase.
+`accounts.AccountClosed` arrived with `P3-TSK-014` — the task whose design fixed it, exactly
+as the absence recorded here predicted. No reason, for the withdrawal's own argument: closing is
+a person's exit from their own agreement, and a demanded justification at that moment is
+pressure applied where none may exist; the control is the zero-balance precondition. Emitted by
+the closing call only — a converged repeat is not a second act. Suspension still has no
+producer this phase.
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure

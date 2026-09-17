@@ -71,4 +71,27 @@ public interface CustomerAccountStore<T> {
      */
     Optional<CustomerAccount> findOwnedBy(
             T unitOfWork, CustomerAccountId accountId, UUID customerId);
+
+    /**
+     * {@link #findOwnedBy}, read {@code FOR UPDATE} — the closer's serialization point
+     * (`P3-TSK-014`): N concurrent closes queue here, one closes, and the rest re-read
+     * {@code CLOSED} under the lock and converge. The ownership predicate is the same
+     * statement's ({@code customer_id = ?}), so a stranger's close finds nothing to lock.
+     */
+    Optional<CustomerAccount> lockOwnedBy(
+            T unitOfWork, CustomerAccountId accountId, UUID customerId);
+
+    /**
+     * Moves an agreement {@code from} one status {@code to} another — the conditional whose
+     * row count is the outcome, arriving with its first caller exactly as this interface's
+     * javadoc deferred it (`P3-TSK-014`'s close). The machine is asked before any SQL
+     * ({@code INV-LIFE-02}); the conditional's {@code WHERE status = ?} is the edge restated
+     * where every writer meets it.
+     */
+    boolean moveStatus(
+            T unitOfWork,
+            CustomerAccountId accountId,
+            CustomerAccountStatus from,
+            CustomerAccountStatus to,
+            java.time.Instant at);
 }

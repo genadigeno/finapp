@@ -200,6 +200,37 @@ class OwnershipIsScopedTest {
                                         + " until P3-TSK-013's balance read became the second)."
                                         + " The owner is the proven session's identity.")),
                     Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "DELETE /v1/me/accounts/{id} - findOwnedBy's statement plus"
+                                        + " FOR UPDATE, the closers' serialization point"
+                                        + " (P3-TSK-014). Same ownership predicate, same"
+                                        + " session-derived customer: a stranger's close finds"
+                                        + " nothing to lock.")),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.moveStatus",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
+                                    "P3-TSK-014's close: the identifier reaching this method"
+                                        + " comes only from lockOwnedBy - owner in the"
+                                        + " statement, row lock held - so the conditional's own"
+                                        + " AND status = ? is the machine's edge, not an"
+                                        + " ownership check.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcLedgerAccountStore.moveStatus",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "A ledger account's status is the accounting's own fact"
+                                        + " (P3-TSK-014): the one production caller is"
+                                        + " AccountClosing, whose identifiers come from"
+                                        + " lockOwnedForUpdate(ownerRef) under the product"
+                                        + " row's owner-scoped lock - and the ledger itself"
+                                        + " knows only an opaque owner_ref (ADR-0042). The"
+                                        + " surfaces that control disclosure remain the"
+                                        + " product's.")),
+                    Map.entry(
                             "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -786,7 +817,10 @@ class OwnershipIsScopedTest {
                             + ".aChannelIsNotReadableByAnotherIdentity",
                     "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
                     "com.finapp.app.domain.AccountEndpointDatabaseTest"
-                            + ".ownershipIsExactlyTheCallers");
+                            + ".ownershipIsExactlyTheCallers",
+                    "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
+                    "com.finapp.app.domain.AccountEndpointDatabaseTest"
+                            + ".closingEndToEnd");
 
     /**
      * The identity schema's owner column. (This said "one name, because one module owns every

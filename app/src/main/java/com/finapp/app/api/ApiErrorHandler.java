@@ -1,6 +1,8 @@
 package com.finapp.app.api;
 
+import com.finapp.accounts.AccountNotEmptyException;
 import com.finapp.accounts.AccountOpeningRefusedException;
+import com.finapp.accounts.IllegalCustomerAccountTransitionException;
 import com.finapp.accounts.AccountsErrorCode;
 import com.finapp.accounts.UnsupportedAccountCurrencyException;
 import com.finapp.consent.ConsentErrorCode;
@@ -253,6 +255,39 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
                         AccountsErrorCode.ACCOUNT_OPENING_REFUSED,
                         request.getRequestURI(),
                         "Complete verification and retry."));
+    }
+
+    /**
+     * The account still holds value, so the agreement cannot end (`P3-TSK-014`).
+     *
+     * <p>The detail names no amount and no currency ({@code INV-AUD-02}): which balance
+     * refused is the caller's own to read from the balance endpoint they already own.
+     */
+    @ExceptionHandler(AccountNotEmptyException.class)
+    public ResponseEntity<ProblemDetailBody> handleAccountNotEmpty(
+            AccountNotEmptyException exception, HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        AccountsErrorCode.ACCOUNT_NOT_EMPTY,
+                        request.getRequestURI(),
+                        "Empty the account (see its balance endpoint) and retry."));
+    }
+
+    /**
+     * The agreement's machine refused the transition (`P3-TSK-014`) — in production reach,
+     * only a {@code SUSPENDED} agreement asked to close, and suspension has no producer this
+     * phase. A generic conflict rather than a dedicated code: unreachable surfaces do not earn
+     * vocabulary ({@code P1-TSK-018}'s actionability test, failed), and the mapping exists so
+     * the day a producer arrives the answer is a 409 and never our 500.
+     */
+    @ExceptionHandler(IllegalCustomerAccountTransitionException.class)
+    public ResponseEntity<ProblemDetailBody> handleCustomerAccountTransition(
+            IllegalCustomerAccountTransitionException exception, HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        PlatformErrorCode.CONFLICT,
+                        request.getRequestURI(),
+                        "The account's current state does not permit this operation."));
     }
 
     /** The requested account currency is not one the platform operates in (`P3-TSK-013`). */

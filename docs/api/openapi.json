@@ -17,6 +17,41 @@
       }
     },
     "responses": {
+      "accounts.AccountNotEmpty": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounts.AccountNotEmpty"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounts.AccountNotEmpty"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The account still holds a non-zero balance; empty it and retry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounts.AccountOpeningRefused": {
         "content": {
           "application/problem+json": {
@@ -1953,6 +1988,26 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/accounts/{id}": {
+      "delete": {
+        "operationId": "closeAccount",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
           }
         }
       }

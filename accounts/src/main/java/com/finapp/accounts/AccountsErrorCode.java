@@ -44,7 +44,21 @@ public enum AccountsErrorCode implements ErrorCode {
     UNSUPPORTED_CURRENCY(
             "accounts.UnsupportedCurrency",
             422,
-            "The platform does not operate accounts in this currency.");
+            "The platform does not operate accounts in this currency."),
+
+    /**
+     * The account still holds value, so the agreement cannot end (`P3-TSK-014`).
+     *
+     * <p>A {@code 409} and a distinct code because it is <strong>actionable</strong>: empty the
+     * account and retry — the request was well-formed and the world's state refuses it, the
+     * {@code consent.ConsentRequired} shape. The title names no amount and never will
+     * ({@code INV-AUD-02}): which balance refused is the caller's own to read from the balance
+     * endpoint they already own.
+     */
+    ACCOUNT_NOT_EMPTY(
+            "accounts.AccountNotEmpty",
+            409,
+            "The account still holds a non-zero balance; empty it and retry.");
 
     private final String code;
     private final int status;

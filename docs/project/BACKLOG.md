@@ -4184,18 +4184,52 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
   `@RequiresIdempotencyKey` removed, the malformed-id fold into 404 removed.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-FIN`
 
-**P3-TSK-014 — Closing an account, without closing its history** — `READY`
+**P3-TSK-014 — Closing an account, without closing its history** — `COMPLETE` (2026-09-17)
 - **Objective**: `CLOSED` ends the agreement and **not** the accounting history (`INV-HIST-01`).
 - **Scope**: close with a zero-balance precondition; the ledger account stops accepting postings
   and keeps every row.
 - **Deps**: P3-TSK-013.
 - **Tests**: closing with a non-zero balance refused; posting to a closed account refused under
   the account lock; history intact and readable afterwards.
+- **Gate evidence (2026-09-17)**: full battery green — 1079 hermetic, 645 database, 14 kafka
+  tests — **and M3.4 closes with it**: the milestone acceptance holds end to end over HTTP
+  (open 201 → balance → `DELETE` 204 → the list shows `CLOSED` → the balance of the closed
+  account still readable — the history over HTTP — → a repeated `DELETE` converges 204).
+  **The race this task exists for is closed by lock-mode analysis, not hope**: every in-flight
+  posting holds `FOR KEY SHARE` on its accounts (the `journal_line` FK, and `V007`'s trigger
+  read takes it explicitly), a plain status `UPDATE`'s `FOR NO KEY UPDATE` would NOT conflict
+  with it, so the closer takes `SELECT … FOR UPDATE` — the mode that does — then looks
+  (`P2-TSK-015`). Both interleavings proven **deterministically** with the loser observed
+  Lock-waiting in `pg_stat_activity`: a posting in flight blocks the close, whose
+  fresh-statement derivation then sees the money and refuses (`accounts.AccountNotEmpty`, 409,
+  naming **no amount** — `INV-AUD-02`); a close in flight blocks the posting's trigger read,
+  which on resume re-reads `CLOSED` and refuses — the exact race `P3-TSK-006` recorded that a
+  lock-free status read loses. **`V007` is the DB-CONSTRAINT-rank half**: a `BEFORE INSERT`
+  trigger on `journal_line` refusing any non-`ACTIVE` account for every writer — proven by raw
+  SQL under the application role against a from-scratch database — translated in the store to
+  the named `LedgerAccountNotPostableException` so Phase 4 can treat it as a domain outcome.
+  **The zero-balance check derives from postings inside the lock** (`INV-BAL-05` — never the
+  projection; recorded honestly: the swap is behaviourally invisible because the projection is
+  transactional, so that property is held by the stated design and review rather than a
+  runnable mutation). The stores' deferred status moves arrived with their first caller as
+  their javadocs promised (`lockOwnedBy` + `moveStatus` on both stores; classified in
+  `OwnershipIsScopedTest` — `OWNER_SCOPED`/`AUTHORITATIVE_ID`/`NOT_OWNED`, with the closing
+  test as the named negative). `ACCOUNT_CLOSED` arrived with the design that fixed it, no
+  reason (the withdrawal argument), emitted by the closing call only; ten concurrent closes
+  produce one transition, one record, one event, nine converged — and the freed slot admits a
+  successor agreement (`INV-LIFE-04`'s asymmetry). History proven intact: same line count,
+  same stored values, readable after the close. The plan's §9 table had **no close endpoint
+  row** while its own M3.4 line says "open/query/close over HTTP" — the recurring plan-drift
+  class, corrected with provenance. **Seven mutations, all caught by the intended assertion,
+  restores byte-identical**: the zero-check dropped, the `V007` trigger dropped, the trigger's
+  `FOR KEY SHARE` made lock-free, the closer's `FOR UPDATE` dropped (each lock proven
+  load-bearing by its own interleaving), the converged path acting again, the audit dropped,
+  the ledger close dropped.
 - **Risk**: Medium. **Cx**: S. **DoD**: `DOD-FIN`
 
 ## P3-EPIC-05 — Holds and available balance (M3.5)
 
-**P3-TSK-015 — `Hold`: place and release against available balance** — `TODO`
+**P3-TSK-015 — `Hold`: place and release against available balance** — `READY`
 - **Objective**: `INV-BAL-04` — a hold cannot make available balance negative.
 - **Context**: Ledger. **Scope**: the aggregate; `V006` creating `ledger.hold`; place/release
   taking `SELECT … FOR UPDATE` on the **account row**, deriving from postings inside the lock

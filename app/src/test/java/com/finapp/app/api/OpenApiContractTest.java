@@ -259,6 +259,8 @@ class OpenApiContractTest {
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",
+                        // P3-TSK-014: DELETE lives on the account path itself.
+                        ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}/balance",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",

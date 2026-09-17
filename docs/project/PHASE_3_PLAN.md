@@ -287,6 +287,7 @@ Key constraints and indexes:
 | `POST /v1/me/accounts` | session | Opens the caller's account product; requires `customer.status = ACTIVE` |
 | `GET /v1/me/accounts` | session | The caller's products |
 | `GET /v1/me/accounts/{id}/balance` | session, ownership | **Projection** — settled, holds, available; the response says what kind of number it is |
+| `DELETE /v1/me/accounts/{id}` | session, ownership | Ends the agreement; zero-balance precondition; the history survives *(this row was missing until `P3-TSK-014` — the M3.4 milestone line says "open/query/close over HTTP" while this table omitted the close, the recurring plan-drift class)* |
 | `GET /v1/me/accounts/{id}/statement` | session, ownership | Period statement derived from postings |
 | `POST /v1/ledger/adjustments` | session, `LEDGER_ADJUST` | Manual adjusting entry; reason required; audited |
 | `GET /v1/ledger/accounts/{id}` | session, `LEDGER_READ` | Operational view |

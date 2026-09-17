@@ -64,4 +64,34 @@ public interface LedgerAccountStore<T> {
      */
     Optional<LedgerAccount> findOperational(
             T unitOfWork, AccountPurpose purpose, CurrencyCode currency);
+
+    /**
+     * Every ledger account owned by {@code ownerRef}, read {@code FOR UPDATE} in a fixed order
+     * (`P3-TSK-014`).
+     *
+     * <p><strong>The lock mode is the design.</strong> Every in-flight posting already holds
+     * {@code FOR KEY SHARE} on its accounts' rows — the {@code journal_line} FK takes it, and
+     * `V007`'s trigger read takes it explicitly — and {@code FOR UPDATE} is the mode that
+     * conflicts with it. A plain status {@code UPDATE} would take {@code FOR NO KEY UPDATE},
+     * which does <em>not</em> conflict, and the close would race the posting it must exclude.
+     * So the closer locks here first, then looks (`P2-TSK-015`): the balance it derives in a
+     * fresh statement includes every posting that won the lock race, and every posting that
+     * lost re-judges the status the close actually left. Ordered by id — the fixed-order rule
+     * that keeps two multi-account closers from deadlocking (the `P3-TSK-009` precedent).
+     */
+    java.util.List<LedgerAccount> lockOwnedForUpdate(T unitOfWork, UUID ownerRef);
+
+    /**
+     * Moves an account {@code from} one status {@code to} another — the conditional whose row
+     * count is the outcome, arriving with its first caller exactly as this interface's javadoc
+     * deferred it (`P3-TSK-014`'s close). The machine's edge is in the statement
+     * ({@code WHERE status = from}); the caller holds the row lock, so a zero here is an
+     * invariant already broken and must be loud, never converged.
+     */
+    boolean moveStatus(
+            T unitOfWork,
+            LedgerAccountId accountId,
+            LedgerAccountStatus from,
+            LedgerAccountStatus to,
+            java.time.Instant at);
 }

@@ -186,6 +186,7 @@ are a closed enum shared by everyone.
 |---|---|---|
 | `accounts.AccountOpeningRefused` | 409 | The caller is not eligible to hold accounts; complete verification and retry. |
 | `accounts.UnsupportedCurrency` | 422 | The platform does not operate accounts in this currency. |
+| `accounts.AccountNotEmpty` | 409 | The account still holds a non-zero balance; empty it and retry. |
 
 **The opening refusal is cause-blind, on purpose** (`P3-TSK-012`/`P3-TSK-013`): no customer
 relationship, a verification still pending and a terminal one are one refusal — the
@@ -195,7 +196,13 @@ malformed account identifier on the balance endpoint is `api.NotFound`, byte-ide
 its causes (the `P1-TSK-016` session reasoning — a distinct answer would confirm the identifier
 belongs to somebody). `accounts.UnsupportedCurrency` names its subject because the currency is a
 value the caller chose and must be able to correct, and the supported set is published by every
-account the platform opens.
+account the platform opens. `accounts.AccountNotEmpty` (`P3-TSK-014`) is the close's one refusal
+with a code of its own — actionable (empty the account and retry), and its title and detail name
+**no amount and no currency**: which balance refused is the caller's own to read from the balance
+endpoint they already own, and a refusal that quoted the number would put a
+`RESTRICTED-FINANCIAL` value into a response family that is also rendered into logs
+(`INV-AUD-02`). A `SUSPENDED` agreement asked to close answers the generic `api.Conflict`:
+suspension has no producer this phase, and unreachable surfaces do not earn vocabulary.
 
 ## 3a. Rejection at the boundary
 

@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -85,6 +86,22 @@ public class AccountController {
     @GetMapping
     public List<AccountService.AccountView> listAccounts(HttpServletRequest request) {
         return accounts.list(current(request));
+    }
+
+    /**
+     * Ends the caller's agreement — the milestone acceptance's last clause (`P3-TSK-014`).
+     *
+     * <p>{@code 204} for the converged repeat as well as the close: a retried {@code DELETE}
+     * whose first response was lost must not read as a failure, and what distinguishes the
+     * closing call is the records (one audit record, one event), never the answer. No
+     * idempotency key: closing moves no money — the zero-balance precondition is what makes
+     * that true — and convergence is the retry mechanism (the consent-withdrawal shape).
+     */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void closeAccount(@PathVariable("id") String id, HttpServletRequest request) {
+        accounts.close(current(request), parsedOrAbsent(id))
+                .orElseThrow(AccountController::accountNotFound);
     }
 
     /** The balances of the caller's account, per currency, named for what they are. */
