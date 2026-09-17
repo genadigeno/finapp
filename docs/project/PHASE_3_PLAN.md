@@ -294,8 +294,8 @@ Key constraints and indexes:
 | `DELETE /v1/me/accounts/{id}` | session, ownership | Ends the agreement; zero-balance precondition; the history survives *(this row was missing until `P3-TSK-014` — the M3.4 milestone line says "open/query/close over HTTP" while this table omitted the close, the recurring plan-drift class)* |
 | `GET /v1/me/accounts/{id}/statement` | session, ownership | Period statement derived from postings |
 | `POST /v1/ledger/adjustments` | session, `LEDGER_ADJUST` | Manual adjusting entry; reason required; audited |
-| `GET /v1/ledger/accounts/{id}` | session, `LEDGER_READ` | Operational view — **declared, never built, owned by no task** (the `P3-DOC-001` area-7 finding: `LEDGER_READ` exists in no enum and no criterion names either row; the trial-balance *capability* shipped as the continuous job and gauge instead). Owner: the Phase 3 → 4 transition — schedule them or strike the declaration |
-| `GET /v1/ledger/trial-balance` | session, `LEDGER_READ` | Per currency, as of — same finding, same owner as the row above |
+| ~~`GET /v1/ledger/accounts/{id}`~~ | ~~session, `LEDGER_READ`~~ | **Struck by the Phase 3 → 4 transition (2026-09-17)** — declared here, never built, owned by no task (`P3-DOC-001`'s area-7 finding). Ruling: the trial-balance *capability* exists as the continuous job and gauge (`INV-ACC-01`'s own Verify clause); an operational read surface with no consumer is dead contract, and it arrives with the operator tooling that consumes it (Phase 15, or the first phase that needs it) as its own decision — `LEDGER_READ` with it |
+| ~~`GET /v1/ledger/trial-balance`~~ | ~~session, `LEDGER_READ`~~ | Struck — same ruling as the row above |
 
 **Posting is an internal API, not a public one.** No external caller may post an arbitrary
 journal entry (`DELIVERY_PLAN.md` §Phase 3.7). The only public write is the adjustment, and it

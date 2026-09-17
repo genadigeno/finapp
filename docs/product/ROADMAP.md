@@ -34,28 +34,30 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-09-13).** **Phases 0, 1 and 2 are `COMPLETE`.** Phase 2 closed on its
-exit review (`P2-DOC-001`) and was confirmed by the Phase 2 → 3 transition's independent
-audit: 23 of 23 backlog items, all twelve universal and six phase-specific criteria, 13
-endpoints, 11 tables, 9 auditable actions, and 1025 hermetic / 584 database / 14 kafka tests.
-A Party can now be verified to the standard a regulator requires, with the evidence retained and
-the decision defensible — and nothing processes for a consent-gated purpose without a
-current, purpose-scoped basis.
+**Current position (2026-09-17).** **Phases 0, 1, 2 and 3 are `COMPLETE`.** Phase 3 closed on
+its exit review (`P3-DOC-001` — the first review in the programme whose area 2 had a posting
+to walk) and was confirmed by the Phase 3 → 4 transition's independent audit: 25 of 25
+backlog items, all twelve universal criteria, **the financial supplement F1–F8 binding for
+the first time and all met**, sixteen phase-specific criteria, 4 ADRs `Accepted`, and 1121
+hermetic / 683 database / 14 kafka tests. **Money exists**: a verified customer opens an
+account, receives balanced immutable postings, sees a balance that is explainable from the
+records three independent ways, holds funds, has mistakes corrected by referencing reversals
+and four-eyes adjustments without one committed byte changing — and the trial balance is a
+continuously published zero per currency.
 
-**Phase 3 is `IN_PROGRESS`** (started 2026-09-13): planned in full in `PHASE_3_PLAN.md`, with ADR-0039…0042 `Proposed`
-and 24 backlog items across eight milestones. **No new invariant group was needed** — unlike
-Phases 1 and 2, whose properties existed only as gate prose, Phase 3's were catalogued at project
-initiation, because Phase 3 is what the catalogue was written for; the platform stays at 82.
+**Phase 4 is `READY`** (entry gate passed 2026-09-17): planned in full in `PHASE_4_PLAN.md`,
+with ADR-0043 (the transfer and its posting commit in one transaction — no internal saga;
+unresolved question 5 closed) and ADR-0044 (a four-state transfer lifecycle in which every
+state is earned by a producer) `Proposed`, and 14 backlog items across eight milestones.
+**No new invariant group again**: Phase 4's five in-scope properties were catalogued at
+initiation; the platform stays at 82.
 
-The first task, `P3-TSK-001` — the `ledger` module and its schema — is complete; it came first because every
-`DB-PRIVILEGE` claim the phase makes is only *available* at that rank if the migrator owns the
-objects from the start.
-
-**Phase 3 is where money arrives**, and three things change with it: the financial supplement
-F1–F8 binds for the first time, `DB-PRIVILEGE` finally carries `INV-LED-03` and
-`INV-HIST-01` (the mechanism has existed since `P0-TSK-022` with nothing to protect), and
-mistakes become permanent — `INV-HIST-01` forbids editing financial history, so a posting
-written wrongly is corrected by a compensating entry and the wrong one stays visible for ever.
+**Phase 4 is the first customer-visible money movement** — and deliberately the *easy* half
+of moving money: both legs internal, one database, one transaction, no third party. Its job
+is to prove the lifecycle, idempotency, conservation-under-contention and reversal
+disciplines on the rail the platform controls entirely, so that Phase 5 — where an
+unreliable provider decides outcomes and `UNKNOWN` becomes a modelled state — changes one
+variable at a time, not four.
 
 ---
 

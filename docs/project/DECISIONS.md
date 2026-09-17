@@ -417,6 +417,32 @@ customer accounts cannot post anything), a closed product whose accounting histo
 it, and a statement. `accounts` and `wallet` stay one module with a recorded split trigger.
 &rarr; [ADR-0042](../adr/ADR-0042-account-model-four-distinct-concepts.md)
 
+### Transfer execution
+**The transfer and its posting commit in one local transaction, and no internal saga
+exists.** Both legs are internal and both modules share one database (ADR-0001's principal
+benefit), so the execution transaction holds everything — claim, transfer row, history,
+journal entry, audit, outbox — and a crash leaves *nothing* rather than a half-transfer to
+repair. A failed transfer is a **committed domain outcome** with its reason and no posting,
+never an exception leak; "compensation" means the business reversal (a new referencing entry,
+`INV-REV-01`, atomic with the state move) and nothing else, because no partial state exists
+to compensate. The boundary at which this answer changes is named: an outcome a third party
+decides is a *payment*, and Phase 5's lifecycle owns that shape — this ADR must not be
+inherited by analogy. Closes unresolved question 5, open since initiation. &rarr;
+[ADR-0043](../adr/ADR-0043-transfer-and-posting-commit-together.md)
+
+**The transfer lifecycle is four states, and every state is earned by a producer**:
+`INITIATED → {COMPLETED, FAILED}`, `COMPLETED → REVERSED`. The conventional rich machine was
+rejected because ADR-0043 makes most of its states unobservable — a state that begins and
+ends inside one uncommitted transaction is a comment wearing a status's clothes, and a state
+no command can produce is a branch somebody eventually writes code for. `PROCESSING` belongs
+to Phase 5's payments, `CANCELLED` to scheduled transfers, `VALIDATED`/`AUTHORIZED` to no
+durable fact at all. `COMPLETED` is **stable, not terminal** — one outgoing edge, driven by
+its own reversal command — a recorded reading of `INV-LIFE-04` chosen over the alternative
+that stores "what happened to this transfer?" in two places free to disagree. The events
+follow the machine: the terminal facts publish, and `TransferInitiated` does not, because it
+would commit beside its own outcome. &rarr;
+[ADR-0044](../adr/ADR-0044-transfer-lifecycle-states-are-earned.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

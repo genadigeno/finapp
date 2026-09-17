@@ -196,6 +196,37 @@ observability — the three things a reader would check first:*
 - Limit and risk seams exist as interfaces with documented default behaviour and no Phase 13
   logic.
 
+*Extended by the Phase 3 → 4 transition (2026-09-17): the original list predates ADR-0043/0044
+— its "or the compensating path" branch is now decided (atomic, no compensating path exists to
+implement), and it said nothing measurable about conservation, the lock, reversal,
+beneficiaries, authority, observability or the register — the things this phase's review will
+be judged on:*
+
+- **Ten instances draining one account conserve value**: exactly the affordable transfers
+  succeed, every loser is a committed `FAILED` domain outcome, the source is never negative,
+  and the sum over both accounts is unchanged — counted in the tables, not inferred
+  (`INV-CON-02` demonstrated).
+- The atomicity branch is proven in ADR-0043's form: an injected failure at the last write of
+  the execution transaction leaves **nothing** — no transfer row, no claim, no posting, no
+  outbox row.
+- The availability decision is proven to derive **inside the source account's lock** — the
+  moved-outside-the-lock mutation (the `P3-TST-002` shape) is performed and caught.
+- A reversal posts a new entry referencing the original, moves the transfer
+  `COMPLETED → REVERSED` in the same transaction, leaves the original byte-identical, and a
+  second reversal is refused at the aggregate **and** the ledger; reversal authority is a
+  named permission with a passing negative test and a required reason.
+- Beneficiary creation requires the second factor when one is enrolled, negatively tested;
+  a removed beneficiary refuses new transfers while its row survives as evidence.
+- The transfer surface carries the asynchronous-outcome contract shape (status on the
+  response, a status query endpoint) even though execution is synchronous.
+- The limit and risk seams are **required parameters** of the execution command — a caller
+  that skips them does not compile — and their contracts state in-lock evaluation.
+- The phase's meters are published by a freshly started instance; the transfer chain is
+  traceable identifier-to-identifier (transfer ↔ entry ↔ reversal) with no timestamp join.
+- Every `Phase: 4` invariant in `FINANCIAL_INVARIANTS.md` — **read from the catalogue, not
+  from the phase plan** — has a mutation-register row, the transfers-context `INV-IDEM-01`
+  row included.
+
 ### Phase 5 — Payment Infrastructure
 - Provider timeout followed by a successful provider outcome is handled correctly and tested.
 - `UNKNOWN` is a modelled state with a reconciliation-by-query sweeper that resolves it.

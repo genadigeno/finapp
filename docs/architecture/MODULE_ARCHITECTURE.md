@@ -322,10 +322,10 @@ phases must satisfy, not a description of code.
 - **Transaction:** the transfer state transition and the ledger posting commit together — one database, one transaction. This is the principal benefit of ADR-0001.
 - **Consistency:** strong.
 - **APIs:** `POST /transfers` with mandatory `Idempotency-Key`; status query; history; beneficiary CRUD. Asynchronous outcome modelled explicitly even though execution is synchronous today.
-- **Events:** `TransferInitiated`, `TransferCompleted`, `TransferFailed`, `TransferReversed`.
-- **Failure:** a client timeout followed by retry produces one effect (`INV-IDEM-01`); racing requests produce one movement (`INV-CON-02`); insufficient funds is a domain outcome with a defined state; a blocked transfer has a defined unwind path that strands no value.
-- **Security:** ownership-scoped on the source account; step-up authentication for high value or a new beneficiary; every command audited.
-- **Operations:** volume and value by state, failure reasons, stuck-transfer detector, idempotency-conflict rate.
+- **Events:** `TransferCompleted`, `TransferFailed`, `TransferReversed` — the terminal facts. *(`TransferInitiated` removed by the Phase 3 → 4 transition: under ADR-0043 it commits beside its own outcome — ADR-0044.)*
+- **Failure:** a client timeout followed by retry produces one effect (`INV-IDEM-01`); racing requests produce one movement (`INV-CON-02`); insufficient funds is a committed domain outcome with a defined state; a refused transfer strands no value because nothing partial can exist (ADR-0043 — one transaction).
+- **Security:** ownership-scoped on the source account; step-up authentication at **beneficiary creation** (`MULTI_FACTOR` when enrolled — the value-threshold trigger is a recorded Phase 13 seam, per the transition); every command audited; reversal behind `TRANSFER_REVERSE` with a required reason.
+- **Operations:** volume by outcome, failure reasons, latency, idempotency-conflict rate. *(Value-by-state and the stuck-transfer detector corrected by the transition — the first is a financial figure outside the ledger's authority, the second has no subject under ADR-0043.)*
 - **Seams:** limit/velocity check and risk decision — interfaces defined here, implemented in Phase 13.
 
 ### `payments` — Phase 5

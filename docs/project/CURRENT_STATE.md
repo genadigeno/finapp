@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-17 (`P3-DOC-001`)
+Last updated: 2026-09-17 (Phase 3 → Phase 4 transition)
 
 ---
 
@@ -117,12 +117,30 @@ the flat typed chart (ADR-0040); the transactional projection no decision may re
 the four account concepts (ADR-0042). **`DB-PRIVILEGE` finally carries `INV-LED-03` and
 `INV-HIST-01`** — the mechanism built in `P0-TSK-022` met the tables it was built for.
 
-**One item leaves the phase open-eyed rather than silently**: plan §9 declares
+**One item left the phase open-eyed rather than silently**: plan §9 declared
 `GET /v1/ledger/accounts/{id}` and `GET /v1/ledger/trial-balance` behind a `LEDGER_READ`
 permission, and none of the three was built or owned by any task — the recurring
-unowned-declaration class, found by the review's hand-diff. Non-blocking (no criterion names
-them; the trial-balance *capability* shipped as the continuous job and gauge), recorded with
-owner = the Phase 3 → 4 transition: schedule them or strike the declaration.
+unowned-declaration class, found by the review's hand-diff. **Ruled by the Phase 3 → 4
+transition: the declaration is struck** — the trial-balance capability exists as the
+continuous job and gauge, and an operational read surface with no consumer is dead contract;
+it arrives with the operator tooling that consumes it, as its own decision.
+
+**Phase 4 — Internal Transfers**
+Status: **`READY`** — entry gate passed 2026-09-17, all twelve criteria
+([`reviews/PHASE_3_TO_4_TRANSITION.md`](reviews/PHASE_3_TO_4_TRANSITION.md)).
+
+Planned in [`PHASE_4_PLAN.md`](PHASE_4_PLAN.md): **the first customer-visible money
+movement** — a verified customer moves funds between two platform accounts, with the
+ADR-0044 lifecycle, idempotency at the financial boundary, every command audited, a
+privileged reasoned reversal, second-factor beneficiary creation, and the limit/risk
+**seams** as compiler-required parameters Phase 13 will implement. Decisions in ADR-0043
+(the transfer and its posting commit in **one transaction** — no internal saga; unresolved
+question 5 closed) and ADR-0044 (four states, each earned by a producer — no `PROCESSING`,
+no `CANCELLED`, no fiction), both `Proposed`. 14 backlog items across 8 milestones
+(M4.1–M4.8); the in-scope invariants are whatever the catalogue marks `Phase: 4` — **five**
+at planning time (`INV-IDEM-01` transfers element, `INV-CON-02`, `INV-LIFE-01/-02/-04`), no
+new group needed for the second transition running. Deliberately the *easy* half of moving
+money — both legs internal, no third party — so Phase 5 changes one variable at a time.
 
 Planned in [`PHASE_2_PLAN.md`](PHASE_2_PLAN.md): a Party verified to the standard a regulator
 requires, with evidence retained and the decision defensible — KYC/KYB cases, screening with
@@ -141,6 +159,15 @@ because the probe that found this passed against a build that had not run (the `
 class, again).
 
 ## Current Milestone
+
+**M4.1 — Foundations.** `P4-TSK-001`, `P4-TSK-002`; **0 of 2 — next `P4-TSK-001`
+(`READY`)** — the `transfers` module and its privilege floor (the fourth performance of the
+established shape, with the build-graph edges that make the phase's top risk — the transfer
+module writing postings — structurally unreachable before any transfer code exists), and the
+ADR governance registers build-reconciled, paying the twice-carried second-copy item as work
+rather than carrying it a third time.
+
+### Phase 3 milestones — all closed
 
 **M3.8 — Observability and the gate.** `P3-TST-003`, `P3-TSK-020`,
 `P3-TSK-021`, `P3-DOC-001`; **CLOSED 2026-09-17, 4 of 4 — and with it the
@@ -447,18 +474,93 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P3-DOC-001` is `COMPLETE`; **Phase 3 is `COMPLETE`
-at 25 of 25**. **Next: the Phase 3 → Phase 4 transition** — its own act,
-not a backlog task, performed with no application code written: the
-independent Phase 3 completion audit, the distributed-systems and security
-audits, `PHASE_4_PLAN.md` (transfers — `INV-CON-02` goes live), the
-elaborated backlog, and the decisions Phase 4 cannot start without
-(unresolved question 5: the transfer/ledger transaction boundary and
-compensation strategy, High risk). It inherits the review's plan-§9
-finding (the unbuilt `LEDGER_READ` surface) and the standing
-derive-the-ADR-index item.
+**None in progress.** The Phase 3 → Phase 4 transition is **conducted**;
+Phase 3 is `COMPLETE` (confirmed by the transition's independent audit) and
+Phase 4 is `READY`. **Next: `P4-TSK-001` (`READY`)** — the `transfers`
+module, its schema and the privilege floor.
 
 ### Just completed
+
+**Phase 3 → Phase 4 transition** — **CONDUCTED** (2026-09-17).
+[`reviews/PHASE_3_TO_4_TRANSITION.md`](reviews/PHASE_3_TO_4_TRANSITION.md)
+
+| Part | Outcome |
+|---|---|
+| Phase 3 completion audit, 16 categories | **16 `PASS`** |
+| Financial correctness audit, 14 properties | **14 `PASS`** — every property against its database-rank mechanism, not application logic |
+| Multi-instance audit | **`PASS`** — every contended decision arbitrated by PostgreSQL and raced with counted outcomes; the fresh single-instance sweep zero across Phase 3 code |
+| Atomicity / idempotency / persistence audits | `PASS` — no atomicity assumed across a boundary that lacks it; nothing rests on JVM memory |
+| Architecture audit | No drift; **one governance decay — the fourth of its class — repaired** |
+| Security, reconciliation-readiness, testing audits | `PASS`; 1121 hermetic / 683 database / 14 kafka green on a fresh post-transition run |
+| Phase 3 verdict | **`COMPLETE`** (confirming `P3-DOC-001`) |
+| Phase 4 entry gate | **All twelve criteria hold → `READY`** |
+
+### The transition's own finding: the register decayed again, on schedule
+
+**`DISTRIBUTED_EXECUTION.md` §3 had no Phase 3 rows at all** — while Phase 3
+introduced the platform's most contended shared state (the journal, the
+projection, holds, the adjustment proposal). This is the **fourth**
+occurrence of the register-decay class, one transition after the pattern
+was named by the transition that repaired Phase 2's identical gap — which
+sharpens the conclusion rather than embarrassing it: the registers with
+build guards have not decayed once, and this one's guard checks only the
+process-local direction. Repaired with **ten rows plus the Phase 3 note**
+(one genuinely new coordination twist: `V009`'s advisory lock is taken
+*inside a trigger*, binding raw SQL; two deliberate absences are the
+design — postings take no lock, verifiers take no lock), and the check is
+now a named transition-audit step.
+
+### Two decisions taken, because Phase 4 cannot start without them
+
+**ADR-0043** closes unresolved question 5 (High, open since initiation):
+the transfer state transition and its posting commit in **one local
+transaction** — the seam `PostingService` was built with — a failed
+transfer is a *committed domain outcome* with no posting, "compensation"
+means the business reversal and nothing else, and **no internal saga
+exists**, with the boundary at which that answer changes named (an outcome
+a third party decides is a payment, Phase 5's lifecycle). The rejected
+designs each manufacture the failure they exist to handle: a durable
+`INITIATED` needs a sweeper, a lease and a stranded state; an
+outbox-mediated posting puts a customer-visible `COMPLETED` ahead of the
+money.
+
+**ADR-0044** derives the lifecycle instead of copying it: four states
+(`INITIATED → {COMPLETED, FAILED}`, `COMPLETED → REVERSED`), every state
+earned by a producer. `VALIDATED`/`AUTHORIZED` are preconditions, not
+durable facts; `PROCESSING` is the payment lifecycle's; `CANCELLED` arrives
+with scheduled transfers and the window that makes it meaningful.
+`COMPLETED` is **stable, not terminal** — one outgoing edge, driven by the
+reversal command — a recorded reading of `INV-LIFE-04` chosen over storing
+one fact in two places. The events follow the machine: terminal facts
+publish; `TransferInitiated` does not (it would commit beside its own
+outcome), corrected in the delivery plan and module register with
+provenance.
+
+### Rulings the transition owed
+
+The `LEDGER_READ` declaration is **struck** with provenance rather than
+scheduled (the capability exists as the job and gauge; a surface with no
+consumer is dead contract). The twice-carried ADR-index item becomes
+**`P4-TSK-002`** — a build guard, as work, in M4.1. The step-up trigger
+moves to **beneficiary creation** (a value threshold is a versioned policy
+artefact with nothing to calibrate it — the `P3-TSK-021` argument); the
+stuck-transfer detector is recorded **subjectless** under ADR-0043.
+
+### What the transition produced
+
+`PHASE_4_PLAN.md` (18 sections, twelve failure scenarios, four meters,
+eight milestones); ADR-0043 and ADR-0044 (`Proposed`, both index copies);
+the Phase 4 gate criteria **extended with ten measurable bullets**
+(conservation under the ten-way drain, the injected-failure atomicity
+probe, in-lock availability, reversal byte-identity, step-up, the
+compiler-required seams, traceability, the catalogue-read register rule);
+14 backlog items across M4.1–M4.8, each with acceptance criteria; the §3
+register repair; the roadmap's current position rewritten (it was frozen
+at 2026-09-13); and the three delivery-plan/module-register corrections.
+**No application code was written**, which is the constraint a transition
+is performed under.
+
+### Previously
 
 **`P3-DOC-001` — Phase 3 review record** — `COMPLETE` (2026-09-17).
 **The gate passes and Phase 3 is `COMPLETE`**
@@ -8456,12 +8558,13 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-**None in progress.** Phases 0, 1, 2 and 3 are `COMPLETE`.
+**None in progress.** Phases 0, 1, 2 and 3 are `COMPLETE`; Phase 4 is `READY`.
 
-The last work performed was `P3-DOC-001` (2026-09-17): the Phase 3 exit
-review, whose verdict is what flipped the phase to `COMPLETE`. The next
-work is the **Phase 3 → Phase 4 transition** — its own act, not a backlog
-task.
+The last work performed was the **Phase 3 → Phase 4 transition**
+(2026-09-17): the independent completion audit confirming Phase 3, the §3
+register repair, ADR-0043/0044, `PHASE_4_PLAN.md`, the extended gate and
+the elaborated backlog. The next work is **`P4-TSK-001`** — the
+`transfers` module, its schema and the privilege floor.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -8676,11 +8779,6 @@ it begins.
 
 | # | Question | Must resolve by | Risk if unresolved |
 |---|----------|-----------------|--------------------|
-| 1 | Isolation level and locking strategy for concurrent postings | Phase 3 | **High** — lost updates or double spend under contention (`INV-CON-01`) |
-| 2 | Chart-of-accounts structure and its relationship to the Phase 14 GL | Phase 3 | High — a narrow structure forces retroactive remapping, breaking `INV-ACC-04` |
-| 3 | Balance projection placement (ledger schema vs separate read store) | Phase 3 | Medium — affects contention and rebuild cost (ADR-0009) |
-| 4 | Whether `accounts` and `wallet` are one module or two | Phase 3 | Medium — **working position recorded** (one module, `MODULE_ARCHITECTURE.md` §3 M1) with a named split trigger; still to be confirmed |
-| 5 | Transfer/ledger transaction boundary and compensation strategy | Phase 4 | High — determines whether a saga is ever needed internally |
 | 6 | Accounting treatment of authorization (memo/hold) vs capture (posting) | Phase 5 | High — misstates available funds if wrong |
 | 7 | Whether `checkout` is its own module or part of `merchant` | Phase 6 | Low — **working position recorded** (own module, §3 M2) with a named merge trigger |
 | 8 | Fee model: who pays, when recognised, gross vs net settlement | Phase 6 | High — changing revenue recognition after postings exist is a restatement |
@@ -8689,6 +8787,19 @@ it begins.
 | 11 | Fail-safe policy for risk evaluation: block or allow on unavailability | Phase 13 | High — a wrong default is either an outage or an open door |
 
 Resolved since:
+- ~~5. Transfer/ledger transaction boundary and compensation strategy~~ &rarr;
+  [ADR-0043](../adr/ADR-0043-transfer-and-posting-commit-together.md) (Phase 3 → 4
+  transition, 2026-09-17). One local transaction; a failed transfer is a committed domain
+  outcome; compensation is the business reversal and nothing else; **no internal saga** —
+  and the boundary at which that answer changes is named (Phase 5's payment lifecycle).
+  The question's own "determines whether a saga is ever needed internally" is answered: no,
+  not while ADR-0001 holds
+- ~~1–4. Posting isolation and locking · chart structure · projection placement ·
+  `accounts`/`wallet` as one module~~ &rarr; ADR-0039, ADR-0040, ADR-0041, ADR-0042 (Phase
+  2 → 3 transition, 2026-09-13; `Accepted` at `P3-DOC-001`). *These four rows sat in the
+  open table for a full phase after their ADRs were taken — found by the Phase 3 → 4
+  transition while moving question 5, the stale-second-copy class in this document's own
+  §Unresolved table, corrected here*
 - ~~Data-access mechanism: JPA/Hibernate, Spring Data JDBC, or plain JDBC?~~ &rarr; [ADR-0033](../adr/ADR-0033-explicit-sql-and-no-object-relational-mapper.md) (`P1-TSK-001`, 2026-09-04). Explicit SQL through `JdbcClient`; no ORM. Open since `P0-TSK-011`, scheduled for Phase 3, brought forward because Phase 1 creates nine tables
 
 Resolved during initiation:
@@ -8703,32 +8814,29 @@ Resolved during initiation:
 
 ## Next Task
 
-**The Phase 3 → Phase 4 transition.** Status `READY`; not a backlog task — a
-transition is its own act, performed under the constraint that **no
-application code is written**, and it is what makes Phase 4 `READY` rather
-than merely planned.
+**`P4-TSK-001` — The `transfers` module and schema.** Status `READY`; depends
+on nothing (Phase 3 `COMPLETE`).
 
-It must produce what the three prior transitions produced: an **independent**
-completion audit of Phase 3 (a gate assessed only by whoever finished the work
-is not two checks), the distributed-systems and security audits,
-`PHASE_4_PLAN.md` — transfers, the first flow where two customer positions
-move together: ADR-0039's `FOR UPDATE` meets its second caller, `INV-CON-02`
-and `INV-LIFE-01`…`04` go live, and the transfer-and-posting atomicity seam
-`PostingService`'s join-the-caller's-transaction design was built for is
-finally exercised — the backlog elaborated to task granularity, and the
-decision Phase 4 cannot start without: **unresolved question 5, the
-transfer/ledger transaction boundary and compensation strategy** (High risk —
-it determines whether a saga is ever needed internally). It also inherits two
-recorded items: the exit review's plan-§9 finding (the declared, unbuilt
-`LEDGER_READ` operational surface — schedule it or strike the declaration)
-and the standing derive-the-ADR-index item.
-
-*(This section named `P3-TSK-011` — eleven tasks stale, while §Current Task
-above stayed correct — until `P3-DOC-001`'s review replaced it: two sections
-of one document disagreeing, the §Active Work drift class met again and
-corrected by the review whose subject is documentation reflecting reality.)*
+M4.1 opens: the established module shape, fourth performance — a guarded
+module, the `transfers` schema owned by the migrator with the default-deny
+privilege floor, no tables — and the part that is genuinely this phase's:
+**the build-graph edges that make the phase's top risk structurally
+unreachable before any transfer code exists**. `transfers → ledger` is
+declared (postings are commanded through `PostingService`, never written);
+`transfers → accounts` is refused (the product resolves through a port `app`
+implements, the `AccountHolderVerification` shape); every sibling forbids
+`transfers` and a planted `ledger → transfers` edge fails Gradle
+configuration as a cycle, demonstrated. The Transfer aggregate is
+`P4-TSK-003`'s; the schema tables are `P4-TSK-004`'s; the atomic movement is
+`P4-TSK-005`'s. Risk: Low. Cx: S. DoD: `DOD-BUILD`, `DOD-ARCH`.
 
 ### Superseded: the transition itself
+
+*(This section named the Phase 3 → 4 transition until it was conducted on
+2026-09-17, and `P3-TSK-011` — eleven tasks stale — before that, until
+`P3-DOC-001` replaced it.)*
+
+### Superseded earlier: the Phase 2 → 3 transition
 
 *(This section named the Phase 2 → 3 transition until it was conducted on 2026-09-13.)*
 
@@ -8758,6 +8866,7 @@ rather than left.)*
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | **Phase 3 → Phase 4 transition conducted — Phase 3 `COMPLETE` (confirmed), Phase 4 `READY`.** A **second, independent** pass over the phase its exit review had ruled complete hours earlier (the standing precedent: a gate assessed only by whoever finished the work is not two checks). Sixteen completion categories **all `PASS`**; a **fourteen-property financial correctness audit all `PASS`**, each property against its database-rank mechanism (balance judged at COMMIT for every writer; immutability by privilege **plus** the migrator-binding trigger; double-release and double-reversal each refused by row-count conditionals and the in-trigger advisory bound; every balance replay-verified); the multi-instance question answered **`PASS`** with a fresh zero-occurrence single-instance sweep over Phase 3 code; atomicity/idempotency/persistence audits `PASS` — no atomicity assumed across a boundary that lacks it, nothing resting on JVM memory; reconciliation-readiness `PASS` — the whole chain walkable by stored identifier in both directions; **1121 hermetic / 683 database / 14 kafka green on a fresh post-transition run**. **The transition's own finding: `DISTRIBUTED_EXECUTION.md` §3 had no Phase 3 rows at all — the fourth occurrence of the register-decay class, one transition after the pattern was named** by the transition that repaired Phase 2's identical gap. Repaired with **ten rows plus the Phase 3 note** (one genuinely new coordination twist: `V009`'s advisory lock taken *inside a trigger*, binding raw SQL; two deliberate absences as design — postings and verifiers take no lock); the check is now a named transition-audit step. A second decay of the same class found in this document's own §Unresolved table: **questions 1–4 sat open for a full phase after ADR-0039…0042 closed them** — moved to Resolved with provenance. **Two ADRs taken, because Phase 4 cannot start without them**: ADR-0043 — the transfer and its posting commit in **one local transaction** (the seam `PostingService` was built with), a failed transfer is a *committed domain outcome*, compensation means the business reversal and nothing else, **no internal saga** (closing unresolved question 5, High, open since initiation — the rejected designs each manufacture the failure they exist to handle: a durable `INITIATED` needs a sweeper, a lease and a stranded state; an outbox-mediated posting puts a customer-visible `COMPLETED` ahead of the money); and ADR-0044 — the lifecycle **derived rather than copied**: four states (`INITIATED → {COMPLETED, FAILED}`, `COMPLETED → REVERSED`), every state earned by a producer, `VALIDATED`/`AUTHORIZED`/`PROCESSING`/`CANCELLED` each refused with its reason, `COMPLETED` stable-not-terminal as a recorded reading of `INV-LIFE-04`, and the events following the machine (terminal facts publish; `TransferInitiated` does not, since it would commit beside its own outcome — the delivery plan and module register corrected with provenance). **Rulings owed and delivered**: the `LEDGER_READ` declaration **struck** with provenance rather than scheduled; the twice-carried ADR-index item becomes **`P4-TSK-002`** (a build guard, as work, first in M4.1); the step-up trigger moved to **beneficiary creation** (a value threshold is a versioned policy artefact with nothing to calibrate it — the `P3-TSK-021` argument; the value trigger a recorded Phase 13 seam); the stuck-transfer detector recorded **subjectless** under ADR-0043; value-by-state meters refused (a financial figure outside the ledger's authority). **Phase 4 initialised without implementing it**: `PHASE_4_PLAN.md` (the transfer model with the Transfer/Payment/posting/settlement distinctions stated, twelve failure scenarios, four meters, eight milestones); the gate criteria **extended with ten measurable bullets** (conservation under the ten-way drain counted in the tables, the injected-failure atomicity probe, in-lock availability with the moved-outside mutation named, reversal byte-identity and refused seconds, step-up negative tests, compiler-required seams with in-lock contracts, identifier-to-identifier traceability, the catalogue-read register rule); **14 backlog items across M4.1–M4.8** with acceptance criteria, five in-scope invariants token-parsed from the catalogue (`INV-IDEM-01` transfers element, `INV-CON-02`, `INV-LIFE-01/-02/-04` — no new group for the second transition running, platform stays 82); the roadmap's frozen current-position rewritten. All twelve entry criteria hold. **No application code was written**, which is the constraint a transition is performed under. Next: `P4-TSK-001`. |
 | 2026-09-17 | **`P3-DOC-001` complete — the exit review, and Phase 3 is `COMPLETE` at 25 of 25.** [`reviews/PHASE_3_REVIEW.md`](reviews/PHASE_3_REVIEW.md): eight areas (**8 `PASS`** — and **area 2 had a subject for the first time in the programme**: the four-eyes adjustment walked end to end, economic event → propose/approve → the approval's transaction → the `ADJUSTMENT` entry with the approver as actor (`INV-LED-05`, ADR-0021) → balanced per-currency lines under `V004`'s COMMIT-time judgment and `V010`'s four-eyes trigger → projection, replay-from-zero derivation, reconciling statement and per-currency trial balance, every step naming its code and its test, with settlement and reconciliation stated as the chain's later-phase links), twelve universal criteria (**12 `PASS`**), **the financial supplement F1–F8 binding for the first time and all eight `Met`** — re-assessed at the gate rather than inherited from `P3-TST-003`'s supplement, F5 met with its Phase-3 vacuity stated — sixteen phase-specific criteria (**16 `PASS`**; the backlog's scope said "nine", pre-extension text recorded as a finding), and the ten-instances question answered **`PASS`** over nine contended decisions, each with its PostgreSQL arbiter and its counted race. **Conducted in the `P2-DOC-001` order — assess → land corrections → flip the status (the guarded act) → re-run the full battery — and this time the flip surfaced nothing**: `MutationDemonstrationTest` derived Phase 3's demanded set from the catalogue and found all nineteen rows, `PlannedMetersExistTest`'s derived guard took over §15's table from the pinned one, and the battery was green — because `P3-TST-003` predicted the flip's one failure (`INV-AUD-04`'s unwritable row) and `P3-TSK-021` pre-paid it, the gate machinery finding its defect **before** the gate instead of at it. **The in-scope set was counted token-exactly from the catalogue** (a naive substring match reads "13" as containing "3"): nineteen `Phase: 3` invariants where the plan's §6 table lists seventeen — the drift the plan's own closing paragraph predicted, the catalogue ruling. **Six area-7 findings by hand-diff, five corrected and one recorded with an owner**: plan §9 declares `GET /v1/ledger/accounts/{id}`, `GET /v1/ledger/trial-balance` and a `LEDGER_READ` permission that were never built and no task owns — non-blocking (no criterion names them; the trial-balance *capability* shipped as the continuous job and gauge), owner = the Phase 3 → 4 transition, the rows annotated with provenance; two stale `LEDGER_MODEL.md` adjustment spots corrected (the document's own front matter assigned the update here — §1's "a correction anybody may make" and §6's approver-column debt, both superseded by `P3-TSK-021`'s two acts); **three stale backlog phase headers corrected** (Phase 0 `IN_PROGRESS`, Phase 2 `READY`, Phase 3 `READY` — the backlog carries a second copy of each phase's status, the ADR-index decay in a second artefact); this document's §Next Task stale at `P3-TSK-011` across eleven tasks while §Current Task stayed correct — replaced, with the duplicated paragraph in the superseded block removed; the backlog's "nine" recorded; ADR-0039…0042 flipped to `Accepted` in the files **and** the index's second copy (checked deliberately this time), `DECISIONS.md` already correct — an improvement on Phase 2, where it had omitted the whole phase. **Everything counted, nothing quoted**: **138 mutations, probes and demonstrations across the 22 items that performed them** (20 task sweeps totalling 136 + one performed demonstration each by `P3-TST-001`/`-002`), plus three §5 guard-teeth re-proofs; `P3-TSK-001`'s four probes not performed (owner's direction, recorded then); **one survivor across the phase, correctly** (`P3-TSK-003`'s defence-in-depth predicate), **zero wrongly** — Phase 2 had three wrong-survivals and Phase 3's sweeps, designed against those findings, produced none. The review itself performed no mutation, and that is the point: nineteen of nineteen rows were landed ahead of the gate, so nothing was left to scramble for. **What the phase delivered**: money — 2 modules, 8 tables, 13 migrations, 9 operations on 7 paths (platform 40/34), 8 auditable actions all emitted, 2 permissions + 1 role, 5 event types, 5 aggregates, 4 ADRs `Accepted` (platform 42), 0 new invariants (19 in scope of the standing 82, 19 register rows), 25 of 25 backlog items across 8 milestones, **1121 hermetic / 683 database / 14 kafka tests** after the flip. **Next: the Phase 3 → Phase 4 transition** — transfers, and unresolved question 5 (the transfer/ledger transaction boundary, High risk) taken before the first transfer is written; it inherits the `LEDGER_READ` finding and the derive-the-ADR-index item. |
 | 2026-09-17 | **`P3-TSK-021` complete — four-eyes on manual adjustments; M3.8 is 3 of 4 and the register is nineteen of nineteen.** `INV-AUD-04`'s Phase 3 element, built as **two authenticated acts, never one request with two names**: `POST /v1/ledger/adjustments` now *proposes* (`V010`: `ledger.adjustment_proposal` + lines, `PROPOSED → {APPROVED, REJECTED}` both terminal, payload frozen by trigger for every writer so approve-what-you-read is structural) and posts **nothing** — the reviewed BREAKING contract change (no client exists; a parallel one-person write kept for compatibility would keep the invariant violated); `GET …/{id}` shows an approver what they would approve; `POST …/{id}/approval` by a **different** `LEDGER_ADJUST` holder posts the entry through `PostingEffect` in the approval's own transaction; `DELETE …/{id}` rejects — or withdraws, deliberately, because removing an action needs no second person. **The threshold is defined as every adjustment**: `INV-REV-04` permits thresholds, but a threshold is a per-currency amount policy — a versioned artefact (`INV-HIST-04`) with nothing to calibrate it, and the `INV-MON-04` cross-currency trap beneath — so unconditional is the honest strengthening, with a de-minimis threshold recorded as a future policy artefact whose seam is the proposal row. **Approver ≠ initiator holds at three ranks**: the aggregate refuses self-approval (`INV-LIFE-02`), `V010`'s CHECK is the invariant's own Enforce clause at `DB-CONSTRAINT` (plain, the table being new), and a deferred constraint trigger (the `V004` mechanism) refuses any `ADJUSTMENT` COMMIT without an approved proposal — raw SQL bound, pre-four-eyes history untouched (`INV-HIST-01`), proven by a raw commit refused at 23514 naming the invariant with a forced-IMMEDIATE posting as the positive control. **One permission, deliberately** (`P2-TSK-004`'s rule: one trust decision; the control is person-distinctness; maker/checker a recorded seam). **Approval carries no idempotency key, deliberately**: the one-way machine is the idempotency (`INV-IDEM-01` through state) — lock-then-look on the proposal row (`P2-TSK-015`), ten concurrent approvals producing exactly one entry counted in the table with every response converging on it, the conditional decision as belt recorded as defence in depth. **ADR-0010's second-actor-column debt dissolved rather than paid**: two acts, two audit records, each one actor — `ledger.AdjustmentProposed` (new, reason required) names the initiator, `ledger.AdjustmentPosted` names the approver whose act the posting is (ADR-0021), the pairing on the proposal row one join from the entry's `idempotency_scope` (`ledger.adjust.approve:<proposalId>`); `ledger.AdjustmentRejected` needs no reason. A refused self-approval writes nothing, deliberately; the posting meter observes the approval and a proposal moves no meter, because it writes no journal. The `MUTATION_TESTING.md` §2 row landed with §3 rewritten as the resolution record; the plan's three four-eyes-debt statements, the supplement's closing item, `LedgerAuditAction`'s stale NOT_YET_EMITTED claim and the ownership register's predicted URL-named arrival all corrected with provenance; eighteen columns classified; the OpenAPI baseline regenerated (58 diffs, 5 BREAKING, each reviewed — the operationId rename and `ProposalView` are the deliberate break). **Seven mutations, all caught by the intended assertion, restores byte-identical** — the domain self-check dropped, the CHECK dropped, the deferred trigger dropped, the lock made a plain read, the freeze trigger dropped, the proposed-audit dropped, the entry's actor made the initiator. **1121 hermetic tests, 683 database tests, counted.** Next: `P3-DOC-001`, the exit review. |
 | 2026-09-17 | **`P3-TSK-020` complete — the six planned meters, eagerly registered; M3.8 is 2 of 4.** `PHASE_3_PLAN.md` §15 is real and held by the **pinned Phase-3 guard** in `PlannedMetersExistTest` (the `P2-TSK-020` shape: the plan's table against the plain no-database context — the derived guard takes over at the flip). Four series arrived beside the two existing ones: `finapp.ledger.posting{outcome}` and `finapp.ledger.posting.latency` through a new **`PostingObserver` port, a required primary-constructor parameter on all three journal-write commands** — no defaulted overload, so Phase 4's transfer wiring is forced by the compiler to decide rather than silently lose its counts (the `MeteredKycCaseStore` argument made structural); latency from the injected `Clock`, never `nanoTime()`; `finapp.ledger.hold.active` via the new `HoldStore.countActive` (NaN never zero, `max()` never `sum()`); `finapp.accounts.account{opened|closed}` counted **post-commit and only for the acting call** — converged retries and replays never throughput, mutation-proven in both directions. The wiring proven through real HTTP (posted +1, replayed +1 with posted unchanged, refused +1, every command timed) — the test that catches a bean measuring nothing. **`P3-TSK-015`'s owned remainder landed with its owner**: `ProjectionVerification` compares `holds_minor` against the kernel fold of the `ACTIVE` hold rows, read in the same statement as the projection row — one snapshot, no watermark needed, because a hold transaction updates both atomically under the account lock; unverifiable is `DRIFTING`. The extension's enabling fix found in advance: `HoldDatabaseTest`'s committed `holds_minor` corruption would have become permanent global drift, so it restores. Dashboard row *Ledger and accounts — financial correctness* (six panels, the deferred drift and trial-balance panels included), every query resolving live; `currency` joined the resolver's non-series vocabulary; `_count`/`_sum`/`_max`, never `_bucket`. `LedgerMetrics$HoldCached` the same Micrometer exemption case a sixth time. **Eight mutations, all caught by the intended assertion, restores byte-identical.** 1107 hermetic tests, 676 database tests. Next: `P3-TSK-021`. |

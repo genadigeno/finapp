@@ -434,16 +434,26 @@ beneficiary CRUD. Explicit asynchronous-outcome semantics even though execution 
 synchronous here — the contract must not assume synchrony forever.
 
 ### 8. Event work
-`TransferInitiated`, `TransferCompleted`, `TransferFailed`, `TransferReversed`. Consumers
-must tolerate duplicates and ordering issues.
+`TransferCompleted`, `TransferFailed`, `TransferReversed` — the terminal facts. Consumers
+must tolerate duplicates and ordering issues. *(`TransferInitiated` was listed here until the
+Phase 3 → 4 transition: under ADR-0043 it would commit in the same transaction as its own
+outcome, and an event that always accompanies its successor is one fact named twice
+(ADR-0044). It joins the vocabulary with the first observable initiated state.)*
 
 ### 9. Security work
-Ownership authorization on source account; beneficiary ownership; step-up authentication
-for high-value or new-beneficiary transfers; full audit of every transfer command.
+Ownership authorization on source account; beneficiary ownership; step-up authentication at
+**beneficiary creation** — `MULTI_FACTOR` when a factor is enrolled; full audit of every
+transfer command. *(This read "for high-value or new-beneficiary transfers" until the
+Phase 3 → 4 transition: a value threshold is a per-currency versioned policy artefact with
+nothing to calibrate it — the `P3-TSK-021` argument — so the structural trigger ships and the
+value trigger is a recorded seam on the risk port, Phase 13's.)*
 
 ### 10. Observability work
-Transfer volume/value by state, failure reasons, latency, stuck-transfer detector,
-idempotency-key collision rate.
+Transfer volume by outcome, failure reasons, latency, idempotency-conflict rate. *(Two items
+corrected by the Phase 3 → 4 transition: **value**-by-state meters are refused — an aggregate
+money figure in a telemetry store is a financial number outside the ledger's authority — and
+the **stuck-transfer detector has no subject** under ADR-0043, there being no durable
+intermediate state to be stuck; it arrives with the first asynchronous execution path.)*
 
 ### 11. Testing work
 Full lifecycle and every invalid transition; insufficient funds; self-transfer; closed or

@@ -4707,22 +4707,264 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 ---
 
-# Phase 4 — Epics and Capabilities
+# Phase 4 — Internal Transfers
 
-Status: `PLANNED` — features and tasks elaborated at Phase 4's entry gate.
+Status: `READY` — entry gate passed 2026-09-17
+([`reviews/PHASE_3_TO_4_TRANSITION.md`](reviews/PHASE_3_TO_4_TRANSITION.md)). Elaborated to
+task granularity by the same transition. The engineering plan is
+[`PHASE_4_PLAN.md`](PHASE_4_PLAN.md); decisions are ADR-0043 and ADR-0044 (`Proposed`); the
+in-scope invariants are whatever the catalogue marks `Phase: 4` — five at planning time
+(`INV-IDEM-01` transfers element, `INV-CON-02`, `INV-LIFE-01`, `INV-LIFE-02`, `INV-LIFE-04`) —
+**read from the catalogue at the gate, never from this file**. The financial supplement F1–F8
+binds this phase as it bound Phase 3; every task below carries `DOD-FIN` where it can affect
+money.
 
-## Phase 4 — Internal Transfers
+**The original epic table is superseded by the elaboration below, with two epics corrected on
+the record**: *P4-EPIC-03 Transfer idempotency* is not a slice — the mechanism is the Phase 0
+executor and the semantics land inside the execution and HTTP tasks (`INV-IDEM-01/-03`), where
+they are testable against real behaviour rather than as a layer; and *P4-EPIC-08's
+stuck-transfer detection has no subject* — under ADR-0043 no durable intermediate state exists
+to be stuck, so building the detector would be monitoring a fiction (it arrives with the first
+asynchronous execution path). Operational query is the ordinary status/list surface.
 
-| Epic | Capabilities |
-|------|-------------|
-| P4-EPIC-01 Beneficiaries | Beneficiary lifecycle; ownership; new-beneficiary risk seam |
-| P4-EPIC-02 Transfer lifecycle | State machine; validation; execution; terminal states |
-| P4-EPIC-03 Transfer idempotency | Financial-boundary idempotency; conflict semantics |
-| P4-EPIC-04 Transfer accounting | Posting request to ledger; atomicity or compensation |
-| P4-EPIC-05 Transfer reversal | Reversal path with compensating postings |
-| P4-EPIC-06 Limits and risk seams | Limit check interface; risk decision interface; documented defaults |
-| P4-EPIC-07 Transfer history | Transfer query, receipts, correlation to postings |
-| P4-EPIC-08 Transfer operations | Stuck-transfer detection; operational query and intervention |
+**Milestones**: M4.1 Foundations (`P4-TSK-001`, `-002`) · M4.2 The movement exists
+(`P4-TSK-003`…`-005`) · M4.3 Beneficiaries (`P4-TSK-006`, `-007`) · M4.4 Over HTTP
+(`P4-TSK-008`) · M4.5 Reversal (`P4-TSK-009`) · M4.6 The seams (`P4-TSK-010`) · M4.7
+Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4.8 The gate
+(`P4-DOC-001`). Acceptance per milestone in `PHASE_4_PLAN.md` §16.
+
+**P4-TSK-001 — The `transfers` module and schema** — `READY`
+- **Scope**: the `P3-TSK-011` shape, fourth performance: a guarded module on the documented
+  direction with the build-graph edge ADR-0042's discipline decides — `transfers → ledger`
+  declared (postings are commanded, never written), `transfers → accounts` **refused** (the
+  product resolves through a port `app` implements, the `AccountHolderVerification` shape);
+  every existing sibling forbids `transfers` and `transfers` forbids every sibling but
+  `ledger`; a planted `ledger → transfers` edge fails Gradle configuration as a cycle,
+  demonstrated. `V001`: the `transfers` schema, owner `finapp_migrator`, `REVOKE ALL FROM
+  PUBLIC`, `USAGE` alone to `finapp_app`, no tables, no `ALTER DEFAULT PRIVILEGES` — each
+  table's grants arrive with its migration. Migrate → validate → re-migrate idempotent on a
+  throwaway PostgreSQL; ACL checked exactly. No audit-action enum yet (the deliberately-few
+  licence: the actions arrive with the aggregates whose designs fix their meaning).
+- **Deps**: none (Phase 3 `COMPLETE`).
+- **Accept**: `build databaseTest` green with the module present; a planted `double` fails
+  the floating-point rules naming the new module; both isolation directions and the cycle
+  demonstrated; the schema floor proven live.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
+
+**P4-TSK-002 — The ADR governance registers, build-reconciled** — `TODO`
+- **Scope**: the twice-carried governance item, finally paid as its own task rather than
+  re-carried: a hermetic test reconciling, for every `docs/adr/ADR-*.md`, the file's
+  `Status:` line against the README index's status column, and asserting every ADR file has
+  exactly one index row and every index row a file — so the second-copy decay (`P2-DOC-001`'s
+  finding, met again verbatim by `P3-DOC-001`) becomes a build failure instead of a review
+  finding. `DECISIONS.md` is deliberately out of scope: it is curated prose, not a status
+  copy, and a coverage check over prose is a false precision. The documents join the declared
+  build inputs (the established mechanism).
+- **Deps**: `P4-TSK-001` (only for sequencing; no code dependency).
+- **Accept**: a mutated index status fails the build naming the ADR; a missing index row and
+  an orphan row each fail; teeth proven by mutation and restored byte-identical.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-DOC`
+
+**P4-TSK-003 — The `Transfer` aggregate and its lifecycle** — `TODO`
+- **Scope**: ADR-0044 made code: `Transfer` with `INITIATED → {COMPLETED, FAILED}`,
+  `COMPLETED → REVERSED`, `FAILED`/`REVERSED` terminal; the machine on the enum
+  (`permittedTransitions()`, `sqlValueList()`, `sqlTerminalValueList()` — the established
+  generated-constraint ceremony); `FailureReason` enumerated (`INSUFFICIENT_FUNDS`,
+  `SOURCE_NOT_POSTABLE`, `DESTINATION_NOT_POSTABLE`, `CURRENCY_MISMATCH`, `SELF_TRANSFER`);
+  invariants in the constructor — positive amount, source ≠ destination, reason present
+  exactly when `FAILED`, entry id present exactly when money moved. Hermetic only; no store,
+  no schema (next task), no service.
+- **Deps**: `P4-TSK-001`.
+- **Accept**: every invalid transition rejected by the aggregate, swept from the
+  cross-product of the machine (`INV-LIFE-01/-02`); both terminals swept separately
+  (`INV-LIFE-04`); `COMPLETED`'s single outgoing edge asserted as a property of the machine.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
+
+**P4-TSK-004 — The transfer schema: `V002`** — `TODO`
+- **Scope**: `transfers.transfer` (UUIDv7 id; owning customer id — the ownership predicate's
+  column; source/destination ledger-account references; the `MoneyColumns` generated shape
+  pinned verbatim; reference; status with the generated `CHECK`; `failure_reason NOT NULL ⇔
+  FAILED`; `journal_entry_id UNIQUE, NOT NULL ⇔ status IN (COMPLETED, REVERSED)`;
+  `reversal_entry_id NOT NULL ⇔ REVERSED`; actor and instants from the injected clock, never
+  `DEFAULT now()`) and `transfers.transfer_event` (append-only history: seq, from/to, actor,
+  instant). A transition trigger permits exactly the machine's edges for every writer (the
+  `V010` shape); grants `SELECT, INSERT` plus `UPDATE` column-narrowed to the reversal
+  columns; history `SELECT, INSERT` only. Every column classified at its ceiling. A
+  migration-reconciliation test derives the `CHECK`s from the enum.
+- **Deps**: `P4-TSK-003`.
+- **Accept**: raw SQL cannot store an unknown status, an illegal edge, a failed transfer
+  without its reason, or a completed one without its entry — each refused from scratch;
+  the per-column grant sweep with a positive control; classification guard green.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-BUILD`
+
+**P4-TSK-005 — The execution command: one transaction, the lock, the outcome** — `TODO`
+- **Scope**: `TransferExecution` (the phase's High-risk task): claim (scope
+  `transfer.execute`, fingerprint binding actor + source + destination + amount + currency +
+  reference — `INV-IDEM-03`'s subjects) → resolve and validate (ownership via the caller's
+  live customer; both accounts `ACTIVE` products; same currency; not self) → `SELECT … FOR
+  UPDATE` on the **source account row** (ADR-0039's set, third member) → availability =
+  settled (through `BalanceDerivation`) − active holds, **inside the lock, in fresh
+  statements** (`INV-BAL-04/-05`, the `P3-TSK-015` protocol reused) → the seams consulted
+  (ports arrive `P4-TSK-010`; until then the parameters exist with the documented
+  default-permit implementations) → post through `PostingService` (one `POSTING` entry:
+  debit source wallet, credit destination wallet; the transfer id in the entry's reference)
+  → transfer row + history + `transfers.TransferExecuted` audit + terminal event, one
+  commit. Insufficient funds and sibling refusals commit `FAILED` with the reason, **no
+  posting and no hold on the money**; boundary mistakes remain 4xx with nothing written.
+- **Deps**: `P4-TSK-004`.
+- **Accept**: ten instances draining 1000-affordable from one account accept exactly the
+  affordable transfers with the rest `FAILED(INSUFFICIENT_FUNDS)`, the source never
+  negative, **total value over both accounts conserved — counted in the tables**
+  (`INV-CON-02`); an injected failure at the last write leaves *nothing* (ADR-0043's
+  demonstration); a retry replays the stored outcome, success and failure both; the
+  availability decision proven inside the lock (the moved-outside mutation, the `P3-TST-002`
+  shape, performed and caught).
+- **Risk**: **High**. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
+
+**P4-TSK-006 — The `Beneficiary` aggregate and schema: `V003`** — `TODO`
+- **Scope**: `Beneficiary` (owning party id, display name, destination account reference,
+  `ACTIVE → REMOVED`, terminal) and `transfers.beneficiary`: partial unique one-live per
+  (party, destination account); removal a conditional `UPDATE` whose row count converges
+  retries; the row survives `REMOVED` as evidence; grants column-narrowed to the removal
+  columns; display name classified `RESTRICTED-PII`. The destination must exist and be a
+  customer-owned product (validated through the resolution port); it is deliberately **not**
+  re-validated on every later transfer — the transfer's own postability check owns that.
+- **Deps**: `P4-TSK-001`.
+- **Accept**: ten concurrent creates of one destination produce one live row, nine
+  converged; a removed beneficiary's slot is re-creatable (`INV-LIFE-04`'s freed-slot
+  asymmetry, stated and tested); raw SQL cannot resurrect a `REMOVED` row.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOMAIN`
+- **Out of scope**: external destinations (Phase 5+), beneficiary sharing, per-beneficiary
+  limits (Phase 13).
+
+**P4-TSK-007 — The beneficiary endpoints, and the step-up point** — `TODO`
+- **Scope**: `POST /v1/beneficiaries` — **`MULTI_FACTOR` required when a factor is
+  enrolled**, the conditional-assurance domain check (`P1-TSK-033`'s pattern; a static
+  annotation would lock out password-only customers), because creating a destination is
+  where account-takeover monetises and a value threshold is a policy artefact nothing can
+  calibrate (the `P3-TSK-021` argument, recorded in the plan §11) — plus
+  `GET /v1/beneficiaries` and `DELETE /v1/beneficiaries/{id}` (ownership; one 404;
+  converging 204). Audit: `transfers.BeneficiaryAdded` / `BeneficiaryRemoved`, actor the
+  person. Contract diff reviewed; no body shape a 500.
+- **Deps**: `P4-TSK-006`.
+- **Accept**: an enrolled identity on a `PASSWORD` session is refused with the actionable
+  step-up code and **nothing written**, and succeeds at `MULTI_FACTOR` (the positive
+  control); an unenrolled identity creates at `PASSWORD`; a stranger's beneficiary id is a
+  404 on `DELETE`; both audit actions emitted and leaving `NOT_YET_EMITTED`.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`
+
+**P4-TSK-008 — `POST /v1/transfers`, status and list** — `TODO`
+- **Scope**: the transfer surface: `POST /v1/transfers` (session +
+  `@RequiresIdempotencyKey`; body: source account id, exactly one of destination account id
+  or beneficiary id, amount as a decimal string parsed exactly, currency, reference) →
+  `201` with the transfer view **including status** — the asynchronous-outcome contract
+  shape; `GET /v1/transfers/{id}` and `GET /v1/transfers` (ownership; not-yours/unknown/
+  malformed one 404). A `FAILED` outcome is a `201` whose body says so, never an HTTP error
+  (the command was accepted; the refusal is the domain's, queryable and replayable). The
+  events (`transfers.TransferCompleted`/`TransferFailed`) get their first emitters here if
+  not already wired by `P4-TSK-005`.
+- **Deps**: `P4-TSK-005`, `P4-TSK-007`.
+- **Accept**: end to end over HTTP — a verified customer with two accounts moves money,
+  both balance endpoints move, **both statements show the entry's lines**, and the chain
+  transfer → entry id → statement line is walked by identifier; a retried key replays the
+  original body byte-for-byte; a reused key with a different payload is the distinct 409
+  (`INV-IDEM-03`); a keyless request is the interceptor's 422; no body shape a 500.
+- **Risk**: Medium. **Cx**: L. **DoD**: `DOD-API`, `DOD-FIN`
+
+**P4-TSK-009 — The reversal** — `TODO`
+- **Scope**: `TRANSFER_REVERSE` (identity `V015`, the `V014` ceremony — granted to
+  `LEDGER_OPERATOR`: one money-operating population, a new role being a trust decision
+  nothing here takes) and `POST /v1/transfers/{id}/reversal` (reason required, bounded in
+  the three reconciled places): one transaction moving `COMPLETED → REVERSED` (the
+  conditional's row count arbitrates) and posting the referencing reversal entry through
+  `ReversalService` (`INV-REV-01/-02` — the full-amount reversal; partials are not a
+  transfer-level concept). Audit `transfers.TransferReversed` naming the operator and the
+  reason; event `transfers.TransferReversed`. Four-eyes deliberately not required
+  (`INV-AUD-04` names adjustments; a reversal is bounded by the original — recorded in the
+  plan §11 with the proposal-row seam named).
+- **Deps**: `P4-TSK-008`.
+- **Accept**: the original entry byte-identical after reversal (PostgreSQL's own
+  renderings); both customers' balances restored exactly; ten concurrent reversals produce
+  **one** reversal entry and one state move, counted; a reversal of a `REVERSED` or
+  `FAILED` transfer is a 409 at the aggregate and has nothing to reverse at the ledger; a
+  session without the permission is refused with nothing written and the operator's success
+  as the positive control (`INV-AUD-03`).
+- **Risk**: **High**. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-SEC`
+
+**P4-TSK-010 — The limit and risk seams** — `TODO`
+- **Scope**: `TransferLimitCheck` and `TransferRiskDecision` — ports in `transfers`,
+  **required parameters of the execution command with no defaulted overload** (the
+  `PostingObserver` compiler-enforced precedent: Phase 13's wiring must be a decision, and a
+  skipped control must not compile). Default implementations permit and are named for what
+  they are (`PermitAllUntilPhase13`); the contracts state **in-lock evaluation** — the seam
+  is consulted after the source lock is held, so Phase 13 inherits atomicity instead of
+  discovering `INV-CON-03`'s race (the seam register's two Phase 4 rows in `ROADMAP.md`
+  §Refinement 2, honoured). A refusal-shaped result exists in the vocabulary
+  (`FAILED(LIMIT_REFUSED)` / `FAILED(RISK_REFUSED)` reasons reserved) so the Phase 13
+  implementation changes no contract. `DISTRIBUTED_EXECUTION.md` §3 rows for both (stateless
+  by contract; state is Phase 13's problem, and the row says where its authority must live).
+- **Deps**: `P4-TSK-005`.
+- **Accept**: removing either parameter fails compilation, demonstrated; the defaults are
+  exercised on every transfer test; the in-lock contract is asserted (the seam observes the
+  lock held — a decorator probe); no Phase 13 logic anywhere, verified by the seams' size.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-ARCH`
+- **Out of scope**: any limit value, any velocity window, any risk rule — Phase 13.
+
+**P4-TSK-011 — The meters and the dashboard row** — `TODO`
+- **Scope**: `PHASE_4_PLAN.md` §15 real: `finapp.transfers.transfer{outcome}` (completed,
+  failed, reversed, replayed, refused — post-commit, acting call only, the `P3-TSK-020`
+  discipline), `finapp.transfers.transfer.latency` (the injected clock),
+  `finapp.transfers.beneficiary{outcome}`, `finapp.transfers.conflict` (`INV-IDEM-03`
+  conflicts — a security signal). All eager; the pinned Phase-4 guard in
+  `PlannedMetersExistTest` until the flip; a *Transfers* dashboard row resolving against a
+  live scrape. The plan's refused value-by-state meters and subjectless stuck-detector stay
+  refused with their §15 provenance.
+- **Deps**: `P4-TSK-008`, `P4-TSK-009`.
+- **Accept**: a freshly started instance publishes every series; a replayed transfer lands
+  `replayed` with `completed` unchanged; a conflict lands `conflict`; dashboard queries
+  resolve; mutation sweep over the counting discipline.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
+
+**P4-TST-001 — Conservation under sustained concurrent movement** — `TODO`
+- **Scope**: the phase's composition demonstration (the `P3-TST-001` posture): ten
+  instances transferring A→B and B→A continuously — mixed amounts, some designed to lose —
+  while the projection verification and trial-balance sweeps run; ended by the sweeps'
+  floors, never by time. Plus the register row for `INV-CON-02` with its named mutation
+  (the availability check moved outside the lock — recorded from `P4-TSK-005`'s sweep, or
+  performed here if that sweep dropped rather than moved it: dropped and moved are
+  different defects, the `P3-TST-002` lesson).
+- **Deps**: `P4-TSK-008`.
+- **Accept**: every mid-storm trial-balance sweep reads zero per currency; every
+  verification verdict `CLEAN`/`IN_FLIGHT`, never `DRIFTING`; the final sum over both
+  accounts equals the starting sum **exactly**, counted from the tables and independently
+  recomputed; no source ever negative.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-FIN`
+
+**P4-TST-002 — The `Phase: 4` register rows** — `TODO`
+- **Scope**: `MUTATION_TESTING.md` §2 rows for every invariant the catalogue marks
+  `Phase: 4` — the set read from the catalogue at execution time, not from this sentence —
+  including the **transfers-context `INV-IDEM-01` row** (the kernel and financial-boundary
+  rows prove the mechanism, not this caller) and the `INV-LIFE-01/-02/-04` rows naming the
+  cross-product sweep. Every named mutation performed by its owning task's sweep or by this
+  item; §5 teeth re-proven; the item's §4 row.
+- **Deps**: `P4-TSK-009`, `P4-TST-001`.
+- **Accept**: all register-guard checks green over the new rows; the demanded set verified
+  token-exactly against the catalogue; every named class and method exists; restores
+  byte-identical.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`
+
+**P4-DOC-001 — Phase 4 review record** — `TODO`
+- **Scope**: the `PHASE_GATES.md` §4 review: eight areas — area 2 walking a **transfer**
+  end to end this time (economic event → transfer → entry → lines → both balances) — the
+  twelve universal criteria, the financial supplement F1–F8 re-assessed at the gate, the
+  Phase 4-specific criteria **as the gate lists them at review time** (the extended list;
+  never a remembered count — the `P3-DOC-001` finding), the ADR-0043/0044 acceptance
+  decision, every number counted. The `P2-DOC-001` order: assess → corrections → **flip
+  (the guarded act)** → full battery → finalize.
+- **Deps**: everything above.
+- **Accept**: the review's verdict is what flips the phase; the post-flip battery green;
+  area 2's walk names its code and tests at every step.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-DOC`
 
 ---
 
