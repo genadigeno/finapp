@@ -4477,7 +4477,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Accept**: met — see gate evidence.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-FIN`
 
-**P3-TSK-019 — The trial-balance job: zero per currency, or an incident** — `READY`
+**P3-TSK-019 — The trial-balance job: zero per currency, or an incident** — `COMPLETE` (2026-09-17)
 - **Objective**: `INV-ACC-01`, the primary continuous correctness signal.
 - **Scope**: a job asserting total debits = total credits per currency across all postings;
   `finapp.ledger.trial.balance` gauge per currency; alerting; **it never self-corrects** — a
@@ -4485,9 +4485,56 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 - **Deps**: P3-TSK-006.
 - **Tests**: an injected imbalance (via a direct `INSERT` bypassing the domain) is detected and
   alerted; the job is safe under concurrent posting; the gauge is NaN when unreadable.
+- **Gate evidence (2026-09-17)**: full battery green — 1105 hermetic, 674 database,
+  14 kafka tests — **and M3.7 CLOSES at 2 of 2.** `TrialBalance` in `ledger`: one
+  `SELECT ... GROUP BY currency, scale, direction` — one statement, one snapshot — with the
+  per-currency verdict computed as **exact decimal arithmetic** in Java. The deviation from
+  the `Money` fold is argued on `P3-TSK-008`'s own terms: both failure modes it names are
+  **structurally closed at this one statement** — cross-scale addition cannot occur because
+  `scale` is a grouping key, and silent widening cannot occur because `SUM(bigint)` is
+  `numeric`, read back as `BigDecimal` exactly; `Money` itself is deliberately not used,
+  because a system-wide group sum can legitimately exceed `long` and `Money`'s overflow
+  refusal would turn a large **balanced** ledger into a false incident — the one failure a
+  monitoring job must not produce. **No `IN_FLIGHT` verdict exists, and that is the design**:
+  a snapshot never contains half an entry and every committed entry balances at COMMIT, so
+  every snapshot of a healthy journal balances exactly — demonstrated by sweeps racing four
+  live posters (≥8 sweeps overlapping ≥40 commits, every verdict zero). **The injection
+  rides the deferral**: V004's balance constraint is `INITIALLY DEFERRED`, so an open
+  transaction holds raw unbalanced rows the constraint has not yet judged — exactly what a
+  trigger-less writer's committed rows look like to the sweep's one `SELECT` — three shapes
+  at once (USD equal-raw-sums-at-different-scales 1500@2 vs 1500@3, the `P3-TSK-005` scales
+  probe at system level; EUR debit-excess and GBP credit-excess of the same decimal value,
+  so collapsed currency buckets would cancel), all three flagged, then rolled back: nothing
+  commits, no trigger is disabled, no cleanup can leak corruption into sibling suites.
+  **What leaves the class is verdicts and currency codes, never an amount** (the
+  `ProjectionVerification` stance, `INV-AUD-02`). The gauge:
+  `finapp.ledger.trial.balance{currency=...}` — 0 verified balanced, 1 out of balance,
+  **NaN when unreadable, never zero** (zero means *verified balanced*, so a comforting zero
+  would silence the one alert the gauge exists to fire); eager per `SupportedCurrencies`
+  (`P1-TSK-029`), a currency found only in history registers at discovery; WARN names
+  currency codes only, rate-limited by the 30s cache floor. **The scrape is the schedule** —
+  the `P3-TSK-010` answer to plan §14's no-leader warning verbatim: read-only, idempotent,
+  no lease, nothing ambient, no `DISTRIBUTED_EXECUTION.md` §3 question; every instance
+  publishes the same fleet-wide figure (`max()`, never `sum()`). **`currency` joined
+  `ALLOWED_TAG_KEYS` deliberately** — bounded by ISO 4217, a category shared by everyone
+  that cannot name a person or a resource, and the plan's §15 table says "per currency"
+  (the `purpose` precedent). **It never self-corrects, structurally**: the class issues
+  exactly one `SELECT`, and repair is a reasoned adjustment (`P3-TSK-017`). Dashboard row
+  deferred to M3.8 with the drift panel, per `P3-TSK-010`'s recorded deferral;
+  `LedgerMetrics$TrialCached` joined the floating-point exemption set as the same
+  Micrometer-gauge case a fifth time. **Six mutations, all caught by the intended
+  assertion, restores byte-identical** — the zero comparison neutralised, the currency
+  buckets collapsed (the cross-currency subsidy cancels), the scale dropped from the
+  decimal conversion (raw minor units compared), the direction sign dropped (caught by the
+  positive control), the unknown reading made zero, the eager registration removed. One
+  process finding recorded: the first battery invocation **never ran** — a `grep -c`
+  returning zero matches broke the `&&` chain before gradle started, and the missing log
+  file is what caught it (the build-never-ran class, met in the chaining rather than the
+  harness).
+- **Accept**: met — see gate evidence.
 - **Risk**: High. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-OBS`
 
-**P3-TST-003 — The financial supplement F1–F8, demonstrated** — `TODO`
+**P3-TST-003 — The financial supplement F1–F8, demonstrated** — `READY`
 - **Scope**: each of F1–F8 assessed with a named test, and the register rows for every
   `Phase: 3` invariant — **the set read from `FINANCIAL_INVARIANTS.md`, not from
   `PHASE_3_PLAN.md` §6** (the Phase 2 → 3 transition's finding: `INV-HIST-02` belonged to Phase 2

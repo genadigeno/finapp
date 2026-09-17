@@ -99,8 +99,15 @@ class TelemetryConfiguration {
         com.finapp.ledger.ProjectionVerification verification =
                 new com.finapp.ledger.ProjectionVerification(
                         new com.finapp.ledger.JdbcBalanceDerivation());
+        // P3-TSK-019: the trial balance rides the same scrape-is-the-schedule stance - one
+        // read-only sweep per cache floor, no leader, no ambient schedule, no §3 question.
+        com.finapp.ledger.TrialBalance trialBalance = new com.finapp.ledger.TrialBalance();
         return new LedgerMetrics(
-                verification::verify, dataSource::getConnection, clock, registry);
+                verification::verify,
+                trialBalance::sweep,
+                dataSource::getConnection,
+                clock,
+                registry);
     }
 
     /**

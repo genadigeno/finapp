@@ -82,7 +82,14 @@ public final class MetricNames {
                     // /v1/me path variable). Added deliberately, which is this list's job: the
                     // plan's own table says "counter by purpose", and unlike P1-TSK-029's
                     // refused `stage` there is no naming that carries the signal without it.
-                    "purpose");
+                    "purpose",
+                    // Which currency (P3-TSK-019). Bounded by ISO 4217 - a closed standard
+                    // vocabulary that names a category shared by everyone and structurally
+                    // cannot name a person or a resource. Added deliberately, which is this
+                    // list's job: the Phase 3 plan's own §15 table says the trial-balance
+                    // gauge is "per currency", and a per-currency name split would invent
+                    // series the plan does not carry (the `purpose` precedent, P2-TSK-020).
+                    "currency");
 
     /** Substrings that must never appear in a tag KEY, because of what they imply about values. */
     public static final Set<String> FORBIDDEN_TAG_KEY_FRAGMENTS =

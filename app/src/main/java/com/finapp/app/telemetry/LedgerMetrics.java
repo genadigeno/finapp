@@ -2,6 +2,9 @@ package com.finapp.app.telemetry;
 
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.ProjectionVerification;
+import com.finapp.ledger.SupportedCurrencies;
+import com.finapp.ledger.TrialBalance;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
@@ -9,16 +12,22 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Publishes how many accounts' projections disagree with the derivation (`P3-TSK-010`,
- * ADR-0041 rule 2, {@code INV-BAL-02}). <strong>Zero at all times; the alerting threshold is
- * zero</strong> — one drifting account is an incident, because the projection is trusted for
- * display only on the strength of this comparison.
+ * ADR-0041 rule 2, {@code INV-BAL-02}) — and, since `P3-TSK-019`, whether the trial balance
+ * is zero per currency ({@code INV-ACC-01}). <strong>Zero at all times; the alerting
+ * threshold is zero</strong> — one drifting account or one imbalanced currency is an
+ * incident, because everything above the journal is trusted on the strength of these
+ * comparisons.
  *
  * <h2>The scrape is the schedule, and that is the design's answer to "no leader"</h2>
  *
@@ -48,6 +57,14 @@ final class LedgerMetrics {
     static final String PROJECTION_DRIFT = "finapp.ledger.projection.drift";
 
     /**
+     * {@code finapp.ledger.trial.balance} — per currency: 0 verified balanced, 1 out of
+     * balance, NaN unverifiable. The value is a <strong>verdict, never the imbalance
+     * amount</strong>: a magnitude is a financial figure, and telemetry gets identifiers and
+     * counts only ({@code INV-AUD-02}, the drift gauge's own discipline).
+     */
+    static final String TRIAL_BALANCE = "finapp.ledger.trial.balance";
+
+    /**
      * Six times the sibling gauges' floor, because this reading walks every posted account
      * and folds its history — the honest cost of recomputation-as-evidence, paid at a pace
      * that cannot become load on the database it is auditing.
@@ -68,19 +85,42 @@ final class LedgerMetrics {
         ProjectionVerification.Report verify(Connection connection);
     }
 
+    /** The trial-balance seam — the same unit-testability reason as {@link Verification}. */
+    @FunctionalInterface
+    interface Trial {
+        TrialBalance.Report sweep(Connection connection);
+    }
+
     private final Verification verification;
+    private final Trial trial;
     private final Connections connections;
     private final Clock clock;
+    private final MeterRegistry registry;
     private final AtomicReference<Cached> cached = new AtomicReference<>(Cached.empty());
+    private final AtomicReference<TrialCached> trialCached =
+            new AtomicReference<>(TrialCached.empty());
+
+    /** The currencies whose series exist, so a discovered one registers exactly once. */
+    private final Set<String> trialSeries = ConcurrentHashMap.newKeySet();
 
     LedgerMetrics(
             Verification verification,
+            Trial trial,
             Connections connections,
             Clock clock,
             MeterRegistry registry) {
         this.verification = verification;
+        this.trial = trial;
         this.connections = connections;
         this.clock = clock;
+        this.registry = registry;
+
+        // Eager per supported currency (P1-TSK-029): a freshly started instance publishes
+        // every series, so the zero-threshold alert has something to evaluate from the
+        // first scrape. A currency found only in history registers at discovery.
+        for (CurrencyCode currency : SupportedCurrencies.ALL) {
+            registerTrialSeries(currency.code());
+        }
 
         Gauge.builder(PROJECTION_DRIFT, this, self -> self.reading().valueOrNaN())
                 .description(
@@ -91,6 +131,57 @@ final class LedgerMetrics {
                 // No baseUnit (the P0-TSK-029 finding: Micrometer appends it to the name).
                 .strongReference(true)
                 .register(registry);
+    }
+
+    private void registerTrialSeries(String currency) {
+        if (!trialSeries.add(currency)) {
+            return;
+        }
+        Gauge.builder(TRIAL_BALANCE, this, self -> self.trialReading().valueOrNaN(currency))
+                .tag("currency", currency)
+                .description(
+                        "Whether the trial balance is zero for this currency (INV-ACC-01):"
+                            + " 0 verified balanced, 1 out of balance, NaN unverifiable."
+                            + " Zero at all times; alert on any non-zero value. Fleet-wide"
+                            + " from every instance: aggregate with max(), never sum()")
+                .strongReference(true)
+                .register(registry);
+    }
+
+    private TrialCached trialReading() {
+        TrialCached current = trialCached.get();
+        if (!current.isStaleAt(clock.instant())) {
+            return current;
+        }
+        TrialCached fresh;
+        try (Connection connection = connections.open()) {
+            TrialBalance.Report report = trial.sweep(connection);
+            Map<String, Long> verdicts = new HashMap<>();
+            for (CurrencyCode currency : report.outOfBalance()) {
+                verdicts.put(currency.code(), 1L);
+                // A series for a currency the supported set never named - historical rows
+                // are still the journal's, and an imbalance there is still an incident.
+                registerTrialSeries(currency.code());
+            }
+            if (!report.outOfBalance().isEmpty()) {
+                // Identifiers only, never an amount (INV-AUD-02). WARN once per refresh,
+                // not per scrape - the cache is also the log's rate limit.
+                log.warn(
+                        "Trial balance out of balance for {} (INV-ACC-01): total debits do"
+                                + " not equal total credits - an incident, never"
+                                + " self-corrected",
+                        report.outOfBalance());
+            }
+            fresh = new TrialCached(clock.instant(), Map.copyOf(verdicts), false);
+        } catch (Exception unreadable) {
+            log.warn(
+                    "Could not sweep the trial balance; the gauge reports absent rather than"
+                            + " zero: {}",
+                    unreadable.getClass().getSimpleName());
+            fresh = new TrialCached(clock.instant(), Map.of(), true);
+        }
+        trialCached.set(fresh);
+        return fresh;
     }
 
     private Cached reading() {
@@ -133,6 +224,31 @@ final class LedgerMetrics {
             summary.append(account);
         }
         return summary.toString();
+    }
+
+    /**
+     * One trial sweep's verdicts and when they were taken — the {@link Cached} stance
+     * verbatim: non-authoritative, per instance, no §3 row. A currency absent from the map
+     * verified balanced (a currency with no lines is vacuously the same verdict); the
+     * {@code unknown} flag is the whole sweep failing, surfacing as NaN on
+     * <strong>every</strong> series, because zero means "verified balanced".
+     */
+    private record TrialCached(Instant takenAt, Map<String, Long> outByCurrency, boolean unknown) {
+
+        static TrialCached empty() {
+            return new TrialCached(Instant.MIN, Map.of(), true);
+        }
+
+        boolean isStaleAt(Instant now) {
+            return takenAt.isBefore(now.minus(MIN_REFRESH));
+        }
+
+        double valueOrNaN(String currency) {
+            if (unknown) {
+                return Double.NaN;
+            }
+            return outByCurrency.containsKey(currency) ? 1.0d : 0.0d;
+        }
     }
 
     /**

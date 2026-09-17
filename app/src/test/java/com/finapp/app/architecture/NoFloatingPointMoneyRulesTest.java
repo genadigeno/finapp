@@ -157,6 +157,13 @@ class NoFloatingPointMoneyRulesTest {
                     // the ledger module; only the tally reaches this class.
                     "com.finapp.app.telemetry.LedgerMetrics",
                     "com.finapp.app.telemetry.LedgerMetrics$Cached",
+                    // P3-TSK-019. The SAME case again: per-currency trial-balance VERDICTS
+                    // (0 balanced / 1 out / NaN unverifiable) - never the imbalance amount,
+                    // which deliberately does not leave TrialBalance at all - published
+                    // through the ToDoubleFunction Micrometer's Gauge imposes. The sweep's
+                    // own arithmetic is exact BigDecimal inside the ledger module; the only
+                    // floating point is the registry boundary's.
+                    "com.finapp.app.telemetry.LedgerMetrics$TrialCached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.
