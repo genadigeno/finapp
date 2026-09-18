@@ -4,10 +4,143 @@ An enterprise fintech reference platform: double-entry ledger, payments, settlem
 reconciliation, built as a modular monolith with financial correctness enforced mechanically
 rather than by convention.
 
-**Phase 0 delivers no business capability.** That is deliberate — money representation,
-idempotency, outbox, audit and correlation cannot be retrofitted once financial history
-exists. See [`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md) for what is built
-today.
+**Phase 0 delivered no business capability, and that was deliberate** — money representation,
+idempotency, outbox, audit and correlation cannot be retrofitted once financial history exists.
+Four phases on, money does exist: a double-entry ledger, balances explainable from the postings,
+holds, and customer-visible internal transfers over HTTP. Where the project stands is summarised
+immediately below, and described canonically in
+[`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md).
+
+---
+
+## Where the project is
+
+**Phases 0, 1, 2 and 3 are `COMPLETE`. Phase 4 — Internal Transfers — is `IN_PROGRESS`.**
+
+Every number below is counted from this repository rather than recalled: items from
+[`docs/project/BACKLOG.md`](docs/project/BACKLOG.md), decisions from [`docs/adr/`](docs/adr/README.md),
+properties from [`docs/domain/FINANCIAL_INVARIANTS.md`](docs/domain/FINANCIAL_INVARIANTS.md),
+the surface from [`docs/api/openapi.json`](docs/api/openapi.json).
+[`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md) is the canonical, always-current
+description of where the project is; this section is the summary of it.
+
+```
+Programme    ████▓░░░░░░░░░░░░   4 of 17 phases complete, 1 in progress
+Backlog      █████████████████░  154 of 160 elaborated items complete
+Phase 4      ████████░░░░░░      8 of 14 items, 4 of 8 milestones closed
+```
+
+| | |
+|---|---|
+| 🔨 **Current work** | Phase 4, milestone **M4.5 — Reversal**; next item `P4-TSK-009` (`READY`) |
+| 💰 **Business capability** | Money exists: accounts, a double-entry ledger, explainable balances, holds, and customer-visible internal transfers over HTTP |
+| 📐 **Decisions** | 44 ADRs — 42 `Accepted`, 2 `Proposed` — ADR-0043 and ADR-0044, this phase's own, which its exit gate accepts |
+| 🔒 **Invariants** | 82 catalogued; each in-scope one has a test *demonstrated to fail* when the invariant is broken |
+| 🗄️ **Schema** | 54 forward-only migrations across 8 schema-owning modules |
+| 🌐 **API** | 38 published paths, 46 operations, compared byte for byte against the running application on every build |
+| 🧾 **Audit and errors** | 45 auditable actions, 34 error codes, both reconciled with the code by the build |
+| 🧩 **Code** | 10 Gradle modules, 487 production and 286 test source files |
+| 📦 **History** | 234 commits, 2026-08-31 to 2026-09-18 |
+
+---
+
+### Roadmap
+
+Seventeen phases. The sequence and the reasoning behind its order live in
+[`docs/product/ROADMAP.md`](docs/product/ROADMAP.md); the per-phase engineering plan — objective,
+contexts, deliverables, exit criteria, risks and explicit out-of-scope — lives in
+[`docs/project/DELIVERY_PLAN.md`](docs/project/DELIVERY_PLAN.md). The gate model and the status
+vocabulary are [`docs/project/PHASE_GATES.md`](docs/project/PHASE_GATES.md).
+
+| # | Phase | Status | Primary outcome |
+|---|-------|--------|-----------------|
+| 0 | Domain and Architecture Foundation | COMPLETE 2026-09-04 | Buildable, boundary-enforced modular monolith; financial and platform kernel |
+| 1 | Identity and Customer Foundation | COMPLETE 2026-09-09 | Party/Customer/Identity, authentication, sessions, authorization, audit |
+| 2 | KYC/KYB and Consent | COMPLETE 2026-09-13 | Verification lifecycle, screening adapters, append-only consent history |
+| 3 | Accounts and Financial Ledger | COMPLETE 2026-09-17 | Chart of accounts, double-entry ledger, balances, holds, reversals |
+| 4 | **Internal Transfers** | **IN_PROGRESS** | The first end-to-end money movement on the ledger |
+| 5 | Payment Infrastructure | PLANNED | Payment intent/attempt, provider adapters, auth/capture, refunds, webhooks |
+| 6 | Checkout and Merchant Platform | PLANNED | Merchants, checkout sessions, fees, merchant payouts |
+| 7 | Cards, Wallets, A2A and Instant Payments | PLANNED | Multi-rail abstraction, disputes and chargebacks |
+| 8 | Settlement and Reconciliation | PLANNED | Settlement ingestion, matching, breaks, suspense, investigation |
+| 9 | FX and Cross-Border Payments | PLANNED | Quotes, rate locks, multi-currency conversion, cross-border workflow |
+| 10 | Credit Decisioning | PLANNED | Credit profile, bureau adapters, versioned policy, explainable decisions |
+| 11 | Lending | PLANNED | Applications, offers, disbursement, schedules, repayment, delinquency |
+| 12 | BNPL | PLANNED | Merchant-financed instalments, merchant settlement, refund interaction |
+| 13 | Risk, Fraud and AML | PLANNED | Signals, rules, decisions, cases, ongoing monitoring |
+| 14 | Accounting and Financial Reporting | PLANNED | GL mapping, trial balance, period close, reporting abstraction |
+| 15 | Production Hardening | PLANNED | Security hardening, SLOs, runbooks, operational readiness |
+| 16 | Scale, Resilience and Disaster Recovery | PLANNED | Load characterisation, degradation modes, backup/restore, DR |
+
+**A phase is not complete because its tasks are.** It is complete when a *review* says so, against
+the twelve universal exit criteria plus the phase's own. Phase 0's first review and Phase 1's both
+**failed** their gate and returned the phase to `IN_PROGRESS` — which is the model working rather
+than a setback. Phase 3 was the first phase whose financial supplement F1–F8 was binding.
+
+---
+
+### Completed phases
+
+| Phase | Items | What it delivered |
+|-------|-------|-------------------|
+| 0 — Foundation | 63 of 63 | A boundary-enforced modular monolith with the financial and platform kernel and **zero business capability**, deliberately: money representation, idempotency, outbox, audit and correlation cannot be retrofitted once financial history exists |
+| 1 — Identity | 35 of 35 | A Party can exist, become a Customer, hold an Identity, prove it over HTTP, hold a session with a recorded assurance level, and have every privileged action authorised and audited — with **no money anywhere in it, by design** |
+| 2 — KYC/KYB and Consent | 23 of 23 | A Party verified to the standard a regulator requires, with the evidence retained verbatim, the decision defensible and reproducible, and an append-only consent history with an enforcement gate |
+| 3 — Ledger | 25 of 25 | **Money exists**: balanced immutable postings, a balance explainable three independent ways, holds, reversals and four-eyes adjustments that correct mistakes without one committed byte changing, and a trial balance continuously asserted zero per currency |
+
+Each phase's review record is in [`docs/project/reviews/`](docs/project/reviews/), alongside the
+transition audit that opened the phase after it.
+
+---
+
+### 🔨 Phase 4 — Internal Transfers
+
+The first customer-visible money movement, and deliberately the **easy half** of moving money: both
+legs internal, one database, one transaction, no third party. Its job is to prove the lifecycle,
+idempotency, conservation-under-contention and reversal disciplines on the rail the platform
+controls entirely — so that Phase 5, where an unreliable provider decides outcomes and `UNKNOWN`
+becomes a modelled state, changes one variable at a time rather than four.
+
+Planned in [`docs/project/PHASE_4_PLAN.md`](docs/project/PHASE_4_PLAN.md). Entry gate passed
+2026-09-17, all twelve criteria
+([`PHASE_3_TO_4_TRANSITION.md`](docs/project/reviews/PHASE_3_TO_4_TRANSITION.md)).
+
+**Milestones**
+
+| | Milestone | Progress | Note |
+|---|---|---|---|
+| ✅ | M4.1 — Foundations | `██████████` 2/2 | The `transfers` module, its privilege floor, and the build-graph edges that make the phase's top risk structurally unreachable |
+| ✅ | M4.2 — The movement exists | `██████████` 3/3 | Ten instances draining one account accept exactly the affordable transfers, total value conserved to the minor unit, counted in the tables |
+| ✅ | M4.3 — Beneficiaries | `██████████` 2/2 | The saved destination, created under a conditional second factor, listed and removed |
+| ✅ | M4.4 — Over HTTP | `██████████` 1/1 | `POST /v1/transfers` answering the judgement in the body — a `FAILED` outcome is a `201` that says so, never an HTTP error |
+| 🔨 | **M4.5 — Reversal** | `░░░░░░░░░░` 0/1 | The privileged, reasoned correction |
+| ⬜ | M4.6 — The seams | `░░░░░░░░░░` 0/1 | Limits and risk as compiler-required parameters |
+| ⬜ | M4.7 — Observability and demonstration | `░░░░░░░░░░` 0/3 | Meters, conservation under sustained contention, the mutation register |
+| ⬜ | M4.8 — The gate | `░░░░░░░░░░` 0/1 | The exit review, whose verdict flips the status |
+
+**Remaining work**
+
+| | Item | What it does |
+|---|---|---|
+| 🚧 | `P4-TSK-009` **← next** | The privileged, reasoned reversal: `POST /v1/transfers/{id}/reversal`, `COMPLETED` to `REVERSED` with the referencing entry, the original left byte-identical |
+| ⬜ | `P4-TSK-010` | The limit and risk seams as **required** constructor parameters with no defaulted overload, evaluated in-lock, so Phase 13 inherits atomicity rather than discovering the race |
+| ⬜ | `P4-TSK-011` | The four planned meters, eagerly registered, and a dashboard row whose queries resolve against a live scrape |
+| ⬜ | `P4-TST-001` | Conservation under sustained concurrent movement — ten instances transferring both ways while the verification and trial-balance sweeps run |
+| ⬜ | `P4-TST-002` | The mutation-register rows for every invariant the catalogue marks `Phase: 4`, read from the catalogue rather than from any plan |
+| ⬜ | `P4-DOC-001` | The exit review, whose verdict is what flips the phase status — area 2 walking a **transfer** end to end |
+
+---
+
+### Verification state
+
+The standing instruction on this phase is that the full battery is **skipped**; tasks are verified
+by targeted tiers instead, and no fleet-wide test counts are claimed for them.
+
+| | |
+|---|---|
+| Last full battery | **2026-09-17** (`P4-TSK-003`): 1133 hermetic, 683 database, 14 kafka tests |
+| Since then | Targeted tiers per task — the full `:app:test` hermetic tier with every guard green, the owning module's tier, and the relevant database suites |
+| CI | Four gates on every push to `master`: build and tests, migrations against a real PostgreSQL, secret scan over full history, dependency scan of a CycloneDX SBOM (see section 6) |
 
 ---
 
@@ -545,5 +678,6 @@ when it is healthy; `docker compose ps` shows the current state.
 | What must never be violated? | [`docs/domain/FINANCIAL_INVARIANTS.md`](docs/domain/FINANCIAL_INVARIANTS.md) |
 | How are modules bounded and enforced? | [`docs/architecture/MODULE_ARCHITECTURE.md`](docs/architecture/MODULE_ARCHITECTURE.md) |
 | Why was something decided this way? | [`docs/adr/`](docs/adr/README.md) |
+| Where does the whole programme go? | [`docs/product/ROADMAP.md`](docs/product/ROADMAP.md) |
 | What is the plan? | [`docs/project/DELIVERY_PLAN.md`](docs/project/DELIVERY_PLAN.md), [`docs/project/BACKLOG.md`](docs/project/BACKLOG.md) |
 | When is work actually done? | [`docs/project/DEFINITION_OF_DONE.md`](docs/project/DEFINITION_OF_DONE.md) |

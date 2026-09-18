@@ -34,7 +34,7 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-09-17).** **Phases 0, 1, 2 and 3 are `COMPLETE`.** Phase 3 closed on
+**Current position (2026-09-18).** **Phases 0, 1, 2 and 3 are `COMPLETE`.** Phase 3 closed on
 its exit review (`P3-DOC-001` — the first review in the programme whose area 2 had a posting
 to walk) and was confirmed by the Phase 3 → 4 transition's independent audit: 25 of 25
 backlog items, all twelve universal criteria, **the financial supplement F1–F8 binding for
@@ -45,12 +45,17 @@ records three independent ways, holds funds, has mistakes corrected by referenci
 and four-eyes adjustments without one committed byte changing — and the trial balance is a
 continuously published zero per currency.
 
-**Phase 4 is `READY`** (entry gate passed 2026-09-17): planned in full in `PHASE_4_PLAN.md`,
-with ADR-0043 (the transfer and its posting commit in one transaction — no internal saga;
-unresolved question 5 closed) and ADR-0044 (a four-state transfer lifecycle in which every
-state is earned by a producer) `Proposed`, and 14 backlog items across eight milestones.
-**No new invariant group again**: Phase 4's five in-scope properties were catalogued at
-initiation; the platform stays at 82.
+**Phase 4 is `IN_PROGRESS` — 8 of 14 items, milestones M4.1 through M4.4 `CLOSED`, M4.5 open**
+(entry gate passed 2026-09-17, all twelve criteria; started the same day). Planned in full in
+`PHASE_4_PLAN.md`, with ADR-0043 (the transfer and its posting commit in one transaction — no
+internal saga; unresolved question 5 closed) and ADR-0044 (a four-state transfer lifecycle in
+which every state is earned by a producer) `Proposed`, and 14 backlog items across eight
+milestones. **No new invariant group again**: Phase 4's five in-scope properties were catalogued
+at initiation; the platform stays at 82. The movement exists and is over HTTP; what remains is the
+reversal (`P4-TSK-009`, `READY`), the limit and risk seams, observability, the sustained
+conservation demonstration and the exit review. *(This paragraph read `READY` until 2026-09-18 —
+the stale-second-copy class this programme keeps meeting, corrected when `README.md` began linking
+here for the phase's status.)*
 
 **Phase 4 is the first customer-visible money movement** — and deliberately the *easy* half
 of moving money: both legs internal, one database, one transaction, no third party. Its job
