@@ -75,7 +75,7 @@ asm = "9.7.1"
 # bcprov-jdk18on is the JDK 1.8+ artefact line; 1.85.2 is the current release, confirmed against
 # Maven Central's own <release> marker rather than a search result (the P0-TSK-037 lesson, where
 # <latest> and <release> both pointed at a beta).
-bouncycastle = "1.85.2"
+bouncycastle = "1.86"
 
 springdoc = "3.1.0"
 
