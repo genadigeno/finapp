@@ -4709,8 +4709,10 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 # Phase 4 — Internal Transfers
 
-Status: `READY` — entry gate passed 2026-09-17
-([`reviews/PHASE_3_TO_4_TRANSITION.md`](reviews/PHASE_3_TO_4_TRANSITION.md)). Elaborated to
+Status: `IN_PROGRESS` — started 2026-09-17 with `P4-TSK-001`; entry gate passed the same day
+([`reviews/PHASE_3_TO_4_TRANSITION.md`](reviews/PHASE_3_TO_4_TRANSITION.md)) *(this header
+read `READY` until `P4-TSK-008`'s gate — the stale-second-copy class `P3-DOC-001` found in
+three earlier phase headers, corrected on being met rather than left)*. Elaborated to
 task granularity by the same transition. The engineering plan is
 [`PHASE_4_PLAN.md`](PHASE_4_PLAN.md); decisions are ADR-0043 and ADR-0044 (`Proposed`); the
 in-scope invariants are whatever the catalogue marks `Phase: 4` — five at planning time
@@ -5076,7 +5078,18 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   actions emitted.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`
 
-**P4-TSK-008 — `POST /v1/transfers`, status and list** — `READY`
+**P4-TSK-008 — `POST /v1/transfers`, status and list** — `COMPLETE` (2026-09-18)
+- **Completion notes**: the events were already wired by `P4-TSK-005`, so the conditional
+  clause demanded nothing. The accept's "a verified customer with two accounts" is
+  unsatisfiable by design — `ProductType` has one value and one agreement per customer per
+  product type is live (`P3-TSK-012`), so a second open converges onto the first — and the
+  demonstration is two verified customers, which exercises the same three surfaces and
+  more: both parties see the same entry identifier from their own side. One idempotency
+  claim (the command's), no second HTTP layer; byte-for-byte holds structurally — the view
+  renders the replayed judgement plus columns `V002`'s trigger freezes. New
+  `transfers.UnknownSource` (422); the beneficiary arm folds unknown/stranger's/malformed/
+  **removed** into one `transfers.UnknownDestination` (M4.3's fourth clause demonstrated
+  with row counts).
 - **Scope**: the transfer surface: `POST /v1/transfers` (session +
   `@RequiresIdempotencyKey`; body: source account id, exactly one of destination account id
   or beneficiary id, amount as a decimal string parsed exactly, currency, reference) →
@@ -5094,7 +5107,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   (`INV-IDEM-03`); a keyless request is the interceptor's 422; no body shape a 500.
 - **Risk**: Medium. **Cx**: L. **DoD**: `DOD-API`, `DOD-FIN`
 
-**P4-TSK-009 — The reversal** — `TODO`
+**P4-TSK-009 — The reversal** — `READY`
 - **Scope**: `TRANSFER_REVERSE` (identity `V015`, the `V014` ceremony — granted to
   `LEDGER_OPERATOR`: one money-operating population, a new role being a trust decision
   nothing here takes) and `POST /v1/transfers/{id}/reversal` (reason required, bounded in

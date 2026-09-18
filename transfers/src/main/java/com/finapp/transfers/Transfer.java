@@ -50,6 +50,15 @@ import java.util.UUID;
  */
 public final class Transfer {
 
+    /**
+     * The reference's bound — `V002`'s {@code transfer_reference_is_bounded} literal, restated
+     * here as the one definition the boundary DTO references directly (the
+     * {@code Beneficiary.MAX_DISPLAY_NAME_LENGTH} idiom) and {@code TransferMigrationTest}
+     * reconciles against the migration. Deliberately not enforced by this constructor: the
+     * boundary owns the caller's 422 and the column owns every other writer's refusal.
+     */
+    public static final int MAX_REFERENCE_LENGTH = 200;
+
     private final TransferId id;
     private final UUID customerId;
     private final LedgerAccountId sourceAccount;

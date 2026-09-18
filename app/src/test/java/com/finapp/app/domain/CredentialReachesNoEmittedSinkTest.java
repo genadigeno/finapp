@@ -317,6 +317,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // a beneficiary stores is classified in transfers.beneficiary's
                         // register rows, not in this vocabulary.
                         "BeneficiaryCreateRequest",
+                        // P4-TSK-008. Carries the caller's product and destination identifiers,
+                        // an amount as an exact decimal string and a free-text reference
+                        // (RESTRICTED-PII at the register, never a secret; disclosed only to
+                        // the customer it belongs to) - here because the set is every schema
+                        // REACHABLE from a request body. What executing a transfer stores is
+                        // classified in transfers.transfer's register rows, not here.
+                        "TransferCreateRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/

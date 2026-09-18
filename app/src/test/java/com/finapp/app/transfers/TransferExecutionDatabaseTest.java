@@ -96,10 +96,11 @@ class TransferExecutionDatabaseTest {
                     new JdbcLedgerAccountStore());
 
     // ------------------------------------------------------------------
-    // Wiring — direct, because the execution command has no bean until its surface,
-    // P4-TSK-008 (the P1-TSK-007 licence). The participants port gained a bean with the
-    // beneficiary surface (P4-TSK-007); this suite keeps its own instance deliberately —
-    // it exercises the command, not the composition root.
+    // Wiring — direct, deliberately, although the command gained its bean with its surface
+    // (P4-TSK-008, TransferBeans): this suite exercises the command, not the composition
+    // root, and its decorating fixtures (a lying resolution, a throwing outbox) need to
+    // compose their own instances. The composition root's copy is exercised over HTTP by
+    // TransferEndpointDatabaseTest.
     // ------------------------------------------------------------------
 
     private static IdempotentExecutor executor() {

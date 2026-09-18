@@ -29,8 +29,10 @@
  * {@link com.finapp.transfers.Beneficiary} with its one-live-per-(party, destination) schema
  * and port-validated creation ({@code P4-TSK-006}) — carried over HTTP with the conditional
  * step-up, both beneficiary audit actions and the module's first error code
- * ({@code P4-TSK-007}). The transfer surface is {@code P4-TSK-008}'s; the reversal
- * {@code P4-TSK-009}'s (with its own audit action — the deliberately-few licence continues);
- * the seam hardening {@code P4-TSK-010}'s.
+ * ({@code P4-TSK-007}). The transfer surface exists ({@code P4-TSK-008}): the store's
+ * ownership reads ({@code customer_id = ?} in the statement) and the {@code /v1/transfers}
+ * slice in {@code app}, where the execution command left the unconsumed-wiring licence for its
+ * first composition-root consumer. The reversal is {@code P4-TSK-009}'s (with its own audit
+ * action — the deliberately-few licence continues); the seam hardening {@code P4-TSK-010}'s.
  */
 package com.finapp.transfers;

@@ -53,6 +53,16 @@ class TransferMigrationTest {
     }
 
     @Test
+    @DisplayName("the reference bound is Transfer.MAX_REFERENCE_LENGTH (P4-TSK-008)")
+    void referenceBoundMatchesTheConstant() {
+        // The boundary DTO references the constant directly, so this is the one place the
+        // number could drift from the column: a widened constant with the old CHECK would 500
+        // at the last write on a value the boundary accepted.
+        assertThat(migration())
+                .contains("CHECK (length(reference) <= " + Transfer.MAX_REFERENCE_LENGTH + ")");
+    }
+
+    @Test
     @DisplayName("the monetary shape is MoneyColumns.ddl(), verbatim")
     void monetaryShapeIsTheGeneratedFragment() {
         assertThat(migration())

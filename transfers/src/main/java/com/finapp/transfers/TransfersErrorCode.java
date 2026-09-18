@@ -29,7 +29,24 @@ public enum TransfersErrorCode implements ErrorCode {
     UNKNOWN_DESTINATION(
             "transfers.UnknownDestination",
             422,
-            "The destination does not resolve to a platform account that can receive funds.");
+            "The destination does not resolve to a platform account that can receive funds."),
+
+    /**
+     * The named source resolves to no product of the caller's that can send funds
+     * (`P4-TSK-008`).
+     *
+     * <p>A {@code 422}: a body field the caller supplied and must be able to correct — a 404
+     * would describe the request URI, and {@code POST /v1/transfers} exists. <strong>One code
+     * for unknown, not-yours and malformed alike</strong>: the resolution port answers all
+     * three with one empty ({@code TransferParticipants.sourceOwnedBy}, {@code INV-IDN-07}'s
+     * reasoning at a port), and the surface keeps the fold — a split would make the transfer
+     * endpoint an oracle over other people's products. Distinct from
+     * {@link #UNKNOWN_DESTINATION} because the remedies differ: a different field to fix.
+     */
+    UNKNOWN_SOURCE(
+            "transfers.UnknownSource",
+            422,
+            "The source does not resolve to an account of the caller's that can send funds.");
 
     private final String code;
     private final int status;

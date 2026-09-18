@@ -21,12 +21,39 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Wiring for the ledger's one public surface (`P3-TSK-017`): the adjustment.
  *
  * <p>The stores are stateless, so direct instances are the wiring (the {@code AccountsBeans}
- * stance); the posting and reversal commands stay unwired deliberately — they are in-process
- * APIs whose consumers are Phase 4's flows, and a bean with no consumer is the
- * {@code P1-TSK-007} licence declined.
+ * stance). The posting command's predicted consumer arrived with the transfer surface
+ * (`P4-TSK-008` — {@code TransferBeans} composes it into the execution command), so it is
+ * beaned below; the reversal command stays unwired deliberately until its own surface
+ * (`P4-TSK-009` — the {@code P1-TSK-007} licence).
  */
 @Configuration
 public class LedgerBeans {
+
+    /**
+     * The one write path ({@code INV-LED-04}), observed by the real {@code PostingObserver}
+     * bean — the required-parameter design (`P3-TSK-020`) forcing exactly this wiring decision:
+     * a transfer's posting counts on {@code finapp.ledger.posting} like every other.
+     */
+    @Bean
+    com.finapp.ledger.PostingService postingService(
+            IdempotentExecutor idempotentExecutor,
+            JournalEntryStore<Connection> journalEntryStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            BalanceProjection<Connection> balanceProjection,
+            com.finapp.sharedkernel.id.IdGenerator ids,
+            Clock clock,
+            com.finapp.ledger.PostingObserver postingObserver) {
+        return new com.finapp.ledger.PostingService(
+                idempotentExecutor,
+                journalEntryStore,
+                auditWriter,
+                outboxWriter,
+                balanceProjection,
+                ids,
+                clock,
+                postingObserver);
+    }
 
     @Bean
     JournalEntryStore<Connection> journalEntryStore(com.finapp.sharedkernel.id.IdGenerator ids) {

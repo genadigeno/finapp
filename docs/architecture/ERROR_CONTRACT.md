@@ -209,6 +209,7 @@ suspension has no producer this phase, and unreachable surfaces do not earn voca
 | Code | Status | Meaning |
 |---|---|---|
 | `transfers.UnknownDestination` | 422 | The destination does not resolve to a platform account that can receive funds. |
+| `transfers.UnknownSource` | 422 | The source does not resolve to an account of the caller's that can send funds. |
 
 **One code for unknown and malformed alike, on purpose** (`P4-TSK-007`): a beneficiary's
 destination identifier names a **third party's** product, so the refusal is byte-identical
@@ -216,12 +217,26 @@ across its causes (malformed-equals-absent, the `kyc.OwnerNotEligible` shape) �
 make the creation endpoint an oracle over which identifiers are well-formed-but-unknown. What
 the code discloses is bounded to "no product with a customer wallet answers to this
 identifier", behind an unguessable UUIDv7 — exactly what a transfer naming the same destination
-would disclose through its own judgement. **There is deliberately no beneficiary not-found
-code**: an unknown, not-yours or malformed beneficiary identifier on the removal endpoint is
+would disclose through its own judgement. `P4-TSK-008` widened the code's service, not its
+shape: on `POST /v1/transfers` it also answers the **beneficiary arm** — unknown, a
+stranger's, malformed and **removed** one byte-identical refusal (a removed beneficiary
+refuses new transfers, M4.3's fourth clause; "does not resolve to an account that can receive
+funds" is literally the title). **There is deliberately no beneficiary not-found code**: an
+unknown, not-yours or malformed beneficiary identifier on the removal endpoint is
 `api.NotFound`, byte-identical across its causes (the `P1-TSK-016` reasoning), while the
 caller's own already-removed row converges on `204`. The step-up refusal is **not** a transfers
 code: it is `identity.AssuranceRequired`, the assurance vocabulary's own (`P1-TSK-018`),
 because "step up and retry" is the identity concern however many surfaces demand it.
+
+**`transfers.UnknownSource` is a 422, not a 404** (`P4-TSK-008`): the source is a body field —
+a 404 describes the request URI, and `POST /v1/transfers` exists — and it is the caller's own
+correctable value. One code for unknown, not-yours and malformed alike, because the resolution
+port answers all three with one empty (`TransferParticipants.sourceOwnedBy`, `INV-IDN-07`'s
+reasoning at a port); distinct from `UnknownDestination` because the remedies differ — a
+different field to fix. **A `FAILED` judgement is not an error code at all**: insufficient
+funds, an unpostable side, a currency mismatch and a self-transfer are committed domain
+outcomes answered as `201` with the reason in the body (ADR-0043/0044 — the
+asynchronous-outcome contract shape), never members of this vocabulary.
 
 ### `ledger` — `LedgerErrorCode`
 

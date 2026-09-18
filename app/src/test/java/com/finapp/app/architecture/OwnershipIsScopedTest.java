@@ -263,6 +263,28 @@ class OwnershipIsScopedTest {
                                         + " 404). Without the predicate a stranger's DELETE of"
                                         + " a live row would answer 204 and read as theirs.")),
                     Map.entry(
+                            "com.finapp.transfers.JdbcTransferStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/transfers/{id} (P4-TSK-008) - the identifier comes"
+                                        + " from the path, and customer_id = ? in the statement"
+                                        + " is the ownership check (V002 named the column for"
+                                        + " this read on the day it was created). The customer"
+                                        + " itself is session-derived (findLiveCustomerFor), so"
+                                        + " not-yours, unknown and malformed are one empty"
+                                        + " answer and one 404.")),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcTransferStore.findById",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.transfers.TransferExecution.execute",
+                                    "Renders the POST response: the identifier is the execution"
+                                        + " command's own result inside the same transaction -"
+                                        + " minted by the claim this call just made or"
+                                        + " replayed, whose fingerprint binds the actor and"
+                                        + " party - never a request's. The HTTP reads go"
+                                        + " through findOwned.")),
+                    Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revokeAll",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -977,6 +999,9 @@ class OwnershipIsScopedTest {
                     "com.finapp.transfers.JdbcBeneficiaryStore.findOwned",
                     "com.finapp.app.transfers.BeneficiaryEndpointDatabaseTest"
                             + ".aStrangersBeneficiaryIdIsOne404OnDelete",
+                    "com.finapp.transfers.JdbcTransferStore.findOwned",
+                    "com.finapp.app.transfers.TransferEndpointDatabaseTest"
+                            + ".aStrangersTransferIdIsOne404",
                     "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
                     "com.finapp.app.domain.AccountEndpointDatabaseTest"
                             + ".ownershipIsExactlyTheCallers",

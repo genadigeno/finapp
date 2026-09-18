@@ -269,6 +269,11 @@ class OpenApiContractTest {
                         // (MULTI_FACTOR when a factor is enrolled, decided in the domain).
                         ApiVersion.CURRENT_PREFIX + "/beneficiaries",
                         ApiVersion.CURRENT_PREFIX + "/beneficiaries/{id}",
+                        // P4-TSK-008: the transfer surface - the POST answers 201 with the
+                        // judgement in the body (a FAILED outcome is never an HTTP error),
+                        // and the reads are ownership-scoped (customer_id = ?).
+                        ApiVersion.CURRENT_PREFIX + "/transfers",
+                        ApiVersion.CURRENT_PREFIX + "/transfers/{id}",
                         // P3-TSK-017: the ledger's one public surface - the adjustment,
                         // behind LEDGER_ADJUST, reason required (INV-REV-04).
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments",
