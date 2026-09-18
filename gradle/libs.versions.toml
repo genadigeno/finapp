@@ -77,7 +77,7 @@ asm = "9.7.1"
 # <latest> and <release> both pointed at a beta).
 bouncycastle = "1.85.2"
 
-springdoc = "3.1.0"
+springdoc = "3.1.1"
 
 # Tomcat, pinned ABOVE what the Spring Boot BOM manages.
 #
