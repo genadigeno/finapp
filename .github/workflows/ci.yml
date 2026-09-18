@@ -16,7 +16,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # The integration branch is `master`, which is the repository's default branch. It was
+    # `main` until 2026-09-18, when the history was moved onto `master` and `main` was deleted.
+    # This trigger moved with it in the same commit, deliberately: a workflow still listening on
+    # a branch that no longer exists is every gate silently not running, which is the failure
+    # exit criterion 7 exists to make impossible.
+    branches: [master]
   pull_request:
   workflow_dispatch:
   schedule:
@@ -39,11 +44,11 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # Superseded pull-request runs are cancelled; runs on main are not. A main run is the
+  # Superseded pull-request runs are cancelled; runs on master are not. A master run is the
   # record that a merged change passed its gates, and discarding it to save a few minutes
   # trades evidence for speed — the wrong trade on a platform whose CI results are the
   # justification for believing the build is sound.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 # Scanner image pins are NOT here. Both live in infra/scanner-pins.sh, and both scanners are
 # invoked through infra/scripts/, which this workflow calls - so the local invocation and the CI

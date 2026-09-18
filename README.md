@@ -373,7 +373,7 @@ here to test the scan — history is scanned, so it would stay red for ever. Use
 the procedure is in [`SECRET_MANAGEMENT.md`](docs/architecture/SECRET_MANAGEMENT.md) §6.
 
 **The pipeline runs.** A remote was added on 2026-09-04 (`P0-TSK-042`) and the four jobs execute on
-every push to `main`. The first run failed, which is the gate working: it found two defects that
+every push to `master`. The first run failed, which is the gate working: it found two defects that
 could not be reached from a Windows machine at all — `gradlew` committed without its executable
 bit, and verification metadata that was complete only for a *warm* dependency cache. Both are
 fixed and described in §7a.

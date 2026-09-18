@@ -9137,7 +9137,7 @@ documentation reflecting reality must not leave its own document stale.)*
 **None.**
 
 ~~**The suite has never run in CI.**~~ — **resolved 2026-09-04** by `P0-TSK-042`. The remote is
-`https://github.com/genadigeno/finapp`, and the four jobs run on every push to `main`. Run
+`https://github.com/genadigeno/finapp`, and the four jobs run on every push to `master`. Run
 [33803262202](https://github.com/genadigeno/finapp/actions/runs/33803262202) is green on all four.
 This closes exit criterion 7, the Phase 0-specific "build green in CI from a clean clone", and the
 `DOD-BUILD` item outstanding against `P0-TSK-001`–`005` since the first week.
