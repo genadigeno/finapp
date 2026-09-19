@@ -5,6 +5,7 @@ import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountNotPostableException;
+import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
@@ -71,15 +72,20 @@ import java.util.UUID;
  *
  * <h2>The lock, and what runs inside it</h2>
  *
- * <p>{@code SELECT … FOR UPDATE} on the <strong>source account row</strong> — ADR-0039's
- * enumerated set, third member: the mode that conflicts with every in-flight posting's
- * {@code FOR KEY SHARE} and with every sibling drainer, so the loser's fresh derivation sees
- * the winner's committed movement. The source's postability is judged from the <em>locked</em>
- * row, availability from {@link AvailableBalance} (postings and hold rows, never the
- * projection — {@code INV-BAL-04/-05}), and the two seams are consulted in-lock so Phase 13
- * inherits atomicity. The destination is deliberately never locked: a credit needs no
- * availability answer, and `V007`'s trigger plus the projection-row lock handle the rest
- * (ADR-0041's recorded stance).
+ * <p>{@code SELECT … FOR UPDATE} on <strong>both participants' account rows, in one fixed
+ * order</strong> — ADR-0039's enumerated set, third member: the mode that conflicts with
+ * every in-flight posting's {@code FOR KEY SHARE} and with every sibling drainer, so the
+ * loser's fresh derivation sees the winner's committed movement. The source's postability is
+ * judged from the <em>locked</em> row, availability from {@link AvailableBalance} (postings
+ * and hold rows, never the projection — {@code INV-BAL-04/-05}), and the two seams are
+ * consulted in-lock so Phase 13 inherits atomicity.
+ *
+ * <p>This paragraph read <em>"the destination is deliberately never locked: a credit needs no
+ * availability answer"</em> until `P4-TST-001`. The claim was true of the explicit lock and
+ * false about what happens — the posting's foreign key takes {@code FOR KEY SHARE} on the
+ * destination regardless — and the uncontrolled order between the two was a deadlock that a
+ * one-directional drain structurally cannot reach. See {@link #lockBothInFixedOrder}, where
+ * the correction and its measurement are recorded.
  *
  * <h2>The posting, behind a savepoint</h2>
  *
@@ -231,17 +237,10 @@ public final class TransferExecution {
             return commit(uow, initiated.fail(refusal.get()), actor, correlation);
         }
 
-        // The serialization point (ADR-0039's set, third member). A gone row under a resolved
-        // product is an invariant already broken - loud, never a domain outcome.
-        LedgerAccount lockedSource =
-                ledgerAccounts
-                        .lockForUpdate(uow, initiated.sourceAccount())
-                        .orElseThrow(
-                                () ->
-                                        new TransfersStorageException(
-                                                "source account " + initiated.sourceAccount()
-                                                        + " resolved and then vanished - an"
-                                                        + " invariant is already broken"));
+        // The serialization point (ADR-0039's set, third member) - BOTH participants, in one
+        // fixed order. See lockBothInFixedOrder: locking the source alone deadlocks the moment
+        // money moves in both directions between one pair (P4-TST-001's finding).
+        LedgerAccount lockedSource = lockBothInFixedOrder(uow, initiated);
         if (lockedSource.status() != LedgerAccountStatus.ACTIVE) {
             return commit(uow, initiated.fail(FailureReason.SOURCE_NOT_POSTABLE), actor,
                     correlation);
@@ -300,6 +299,72 @@ public final class TransferExecution {
     }
 
     /** The pre-lock refusals, in the precedence the aggregate's pair rule forces. */
+    /**
+     * Locks <strong>both</strong> participating account rows {@code FOR UPDATE} in one fixed
+     * order, and answers the source's locked row.
+     *
+     * <h2>Why the destination is locked, when a credit needs no availability answer</h2>
+     *
+     * <p>This method's javadoc said for three tasks that "the destination is deliberately
+     * never locked", and that was true of the <em>explicit</em> lock and false about what
+     * happens: every {@code journal_line} insert takes {@code FOR KEY SHARE} on its account
+     * through the foreign key (`P3-TSK-014`'s recorded mechanism), so the destination's row
+     * <em>is</em> locked — implicitly, and in whatever order the two participants happen to
+     * be reached. {@code FOR UPDATE} conflicts with {@code FOR KEY SHARE}, so A→B holding
+     * {@code FOR UPDATE(A)} and needing {@code KEY SHARE(B)} against B→A holding
+     * {@code FOR UPDATE(B)} and needing {@code KEY SHARE(A)} is a cycle, and PostgreSQL
+     * aborts one with {@code 40P01}.
+     *
+     * <p><strong>Found by measurement, not by reading</strong>: `P4-TST-001`'s storm —
+     * ten instances moving money both ways between one pair — produced <strong>783
+     * deadlocks against 203 domain outcomes</strong>. The one-directional drain
+     * (`P4-TSK-005`) could not reach it, because a cycle needs two directions. Money was
+     * never at risk (a deadlocked transaction writes nothing, so conservation held exactly),
+     * but {@code INV-CON-02} requires the loser to fail with a <strong>domain outcome</strong>,
+     * and an infrastructure abort is not one.
+     *
+     * <p>The remedy is the idiom this module's own sibling already names:
+     * {@code LedgerAccountStore.lockOwnedForUpdate} orders its multi-account lock by id
+     * "so two multi-account closers cannot deadlock" (`P3-TSK-009`'s precedent), and a
+     * transfer is a multi-account operation that had not applied it. A global total order
+     * over the locked rows makes a cycle impossible.
+     *
+     * <p><strong>The order need not be the database's</strong>, and deliberately is not:
+     * {@code UUID.compareTo} compares signed longs while PostgreSQL compares bytewise, and
+     * they disagree (`P3-TSK-008`'s recorded trap). That disagreement is harmless here,
+     * because what a deadlock-free protocol requires is that every <em>instance</em> agree
+     * on one order — not that the order match any particular sort.
+     */
+    private LedgerAccount lockBothInFixedOrder(Connection uow, Transfer initiated) {
+        LedgerAccountId source = initiated.sourceAccount();
+        LedgerAccountId destination = initiated.destinationAccount();
+        boolean sourceFirst = source.value().compareTo(destination.value()) <= 0;
+        LedgerAccount firstLocked =
+                lockOrThrow(uow, sourceFirst ? source : destination);
+        if (source.equals(destination)) {
+            // Unreachable: an equal pair is refused as SELF_TRANSFER before the lock. Kept
+            // so the ordering cannot become a double lock if that ever changes.
+            return firstLocked;
+        }
+        LedgerAccount secondLocked =
+                lockOrThrow(uow, sourceFirst ? destination : source);
+        return sourceFirst ? firstLocked : secondLocked;
+    }
+
+    /**
+     * A gone row under a resolved product is an invariant already broken — loud, never a
+     * domain outcome.
+     */
+    private LedgerAccount lockOrThrow(Connection uow, LedgerAccountId account) {
+        return ledgerAccounts
+                .lockForUpdate(uow, account)
+                .orElseThrow(
+                        () ->
+                                new TransfersStorageException(
+                                        "account " + account + " resolved and then vanished -"
+                                                + " an invariant is already broken"));
+    }
+
     private static Optional<FailureReason> preLockRefusal(
             TransferCommand command,
             TransferParticipants.Source source,

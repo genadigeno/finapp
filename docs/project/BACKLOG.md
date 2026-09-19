@@ -5256,7 +5256,45 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   resolve; mutation sweep over the counting discipline.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
 
-**P4-TST-001 — Conservation under sustained concurrent movement** — `READY`
+**P4-TST-001 — Conservation under sustained concurrent movement** — `COMPLETE` (2026-09-19)
+- **Completion notes**: the composition demonstration **found a real defect**, which is what
+  this class of item exists for. Ten instances moving money both ways between one pair
+  produced **783 deadlocks (`40P01`) against 203 domain outcomes**: the execution locked the
+  **source** row `FOR UPDATE` while the posting's foreign key takes `FOR KEY SHARE` on the
+  destination regardless (`P3-TSK-014`'s mechanism), so A→B and B→A held each other's row and
+  waited for the other's — a cycle. **The one-directional drain (`P4-TSK-005`) could not
+  reach it**, because a cycle needs two directions, and `TransferExecution`'s own javadoc had
+  said for three tasks that *"the destination is deliberately never locked"* — true of the
+  explicit lock and false about what happens. **Money was never at risk** (a deadlocked
+  transaction writes nothing, so conservation held exactly through all 783), but
+  `INV-CON-02` requires the loser to fail with a **domain outcome**, and an infrastructure
+  abort is not one. **Remedied in scope, deliberately**: the fix is the idiom the sibling
+  store method already names (`lockOwnedForUpdate` orders by id *"so two multi-account
+  closers cannot deadlock"*, `P3-TSK-009`) applied to the multi-account operation that is a
+  transfer — both participants locked in one fixed order — and the alternative was an
+  `INV-CON-02` register row, **this item's own deliverable**, that could not be written
+  honestly (the `P3-TST-003` unwritable-row shape, resolved the other way because here the
+  mechanism is ten lines rather than a lifecycle). The order is Java's `UUID` order and
+  deliberately not PostgreSQL's byte order: a deadlock-free protocol needs every *instance*
+  to agree, not the database (`P3-TSK-008`'s recorded disagreement, harmless here). The storm
+  went from **206s with 79% aborts to 4.5s with none**. **A surviving mutation then corrected
+  the test**: the pre-lock availability derivation survived the first draft, because amounts
+  of 1.00–3.00 against 10.00 never bring an account near zero and a stale read differs only
+  at the boundary — with 7.00 and 9.00 in the rotation it is caught mid-storm at **−5.00 in
+  round 2**. Conservation is asserted as **three readings that must reconcile**: the journal's
+  own sum over the pair, an independent recomputation from `transfers.transfer` applied to the
+  starting balances, and the outcome tally where every loser is a committed
+  `FAILED(INSUFFICIENT_FUNDS)`. **Four mutations, all caught, restores byte-identical** — the
+  ordering removed (495 deadlocks return); availability derived pre-lock (−5.00 mid-storm, and
+  `expected: 3 but was: 10` on the drain); the posting over-moving (caught by the negative
+  assertion, **recorded as the different assertion it is**) and under-moving (caught by the
+  two-table reconciliation, `expected: 2 but was: 0` — which established which assertion is
+  load-bearing rather than assuming). §5 teeth re-proven. **One process finding**: a compile
+  failure was read as a test result from a stale XML — the harness now refuses to report
+  unless `:app:databaseTest` actually ran. Verified by targeted tiers (the full `:app:test`
+  hermetic tier with the register guard green, every transfers database suite, and the Phase 3
+  contention suites the lock change could have disturbed) with **the full battery deliberately
+  skipped on the owner's instruction; no fleet-wide counts claimed**.
 - **Scope**: the phase's composition demonstration (the `P3-TST-001` posture): ten
   instances transferring A→B and B→A continuously — mixed amounts, some designed to lose —
   while the projection verification and trial-balance sweeps run; ended by the sweeps'
@@ -5271,7 +5309,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   recomputed; no source ever negative.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-FIN`
 
-**P4-TST-002 — The `Phase: 4` register rows** — `TODO`
+**P4-TST-002 — The `Phase: 4` register rows** — `READY`
 - **Scope**: `MUTATION_TESTING.md` §2 rows for every invariant the catalogue marks
   `Phase: 4` — the set read from the catalogue at execution time, not from this sentence —
   including the **transfers-context `INV-IDEM-01` row** (the kernel and financial-boundary

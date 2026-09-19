@@ -59,7 +59,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * <p>The concurrency proofs are the command's and are <strong>cited, not repeated</strong>
  * (the `P1-TSK-012` rule): the claim's unique constraint, the source row's {@code FOR UPDATE}
  * and the ten-way drain live in {@code TransferExecutionDatabaseTest} and
- * {@code TransferConservationDatabaseTest}-to-come. What only this suite can prove is the
+ * {@code TransferConservationDatabaseTest}. What only this suite can prove is the
  * surface: the contract shape, the disclosure folds, the byte-for-byte replay, and M4.3's
  * fourth clause — a removed beneficiary refuses new transfers.
  */

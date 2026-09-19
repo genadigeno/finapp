@@ -113,3 +113,17 @@ per-entry and per-currency, which is what makes it expressible at all.
 - The **balance-read staleness bound** for decisions that do *not* take the lock is
   `INV-BAL-05`'s subject and is ADR-0041's to state.
 - Batch/netting operations: an open decision, owned by whichever phase introduces one.
+- **An operation that locks more than one account row must take those locks in a fixed global
+  order** — added by `P4-TST-001` (2026-09-19), which found the gap by measuring rather than
+  by reading. This ADR states its protocol per *account decision* ("placing a hold", "any
+  future debit that must not overdraw") and is silent about operations touching **two**
+  accounts; the transfer is the first, and it locked the source alone. That was not enough,
+  because a posting's foreign key takes `FOR KEY SHARE` on *both* accounts regardless
+  (`P3-TSK-014`'s mechanism) and `FOR UPDATE` conflicts with it: A→B against B→A is a cycle,
+  measured at **783 deadlocks against 203 domain outcomes** under ten instances moving money
+  both ways between one pair. Conservation survived — a deadlocked transaction writes nothing
+  — but `INV-CON-02` requires the loser to fail with a *domain outcome*, and `40P01` is not
+  one. The remedy is the order `LedgerAccountStore.lockOwnedForUpdate` already applies for
+  multi-account closers, generalised: any total order the instances agree on, which need not
+  be the database's own (`P3-TSK-008` records that Java and PostgreSQL disagree on UUID
+  order, and that disagreement is harmless here).

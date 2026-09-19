@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-19 (`P4-TSK-011` — the meters and the dashboard row; M4.7 is 1 of 3)
+Last updated: 2026-09-19 (`P4-TST-001` — conservation under sustained concurrent movement; M4.7 is 2 of 3)
 
 ---
 
@@ -162,9 +162,10 @@ class, again).
 ## Current Milestone
 
 **M4.7 — Observability and demonstration.** `P4-TSK-011`, `P4-TST-001`, `P4-TST-002`;
-**1 of 3 — next `P4-TST-001` (`READY`)** — the four planned meters and the dashboard
-row are live (`P4-TSK-011`); what remains is conservation under sustained concurrent
-movement and the mutation-register rows for every invariant the catalogue marks
+**2 of 3 — next `P4-TST-002` (`READY`)** — the four planned meters and the dashboard
+row are live (`P4-TSK-011`) and conservation under sustained concurrent movement is
+demonstrated (`P4-TST-001`, which found and fixed a real deadlock on the way); what
+remains is the mutation-register rows for every invariant the catalogue marks
 `Phase: 4`.
 
 ### M4.6 — The seams — CLOSED
@@ -556,11 +557,101 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P4-TSK-011` is `COMPLETE`; **M4.7 is 1 of 3.
-Next: `P4-TST-001` (`READY`)** — conservation under sustained concurrent
-movement.
+**None in progress.** `P4-TST-001` is `COMPLETE`; **M4.7 is 2 of 3.
+Next: `P4-TST-002` (`READY`)** — the `Phase: 4` register rows.
 
 ### Just completed
+
+**`P4-TST-001` — Conservation under sustained concurrent movement** —
+`COMPLETE` (2026-09-19). **M4.7 is 2 of 3 — and the composition
+demonstration found a real defect, which is what this class of item is
+for.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every mid-storm trial-balance sweep reads zero per currency | `TransferConservationDatabaseTest`: the **global** sweep each round, safe by construction rather than by luck — a committed imbalance is impossible, `V004`'s deferred triggers judging every entry at COMMIT for every writer — with a `currenciesVerified ≥ 1` guard so a sweep that saw nothing cannot pass |
+| Every verification verdict `CLEAN`/`IN_FLIGHT`, never `DRIFTING` | Per account, the `P3-TST-001` precedent: a global `verify()` would couple this test to every other suite's leftovers, which is a flake rather than a property |
+| The final sum equals the starting sum **exactly**, counted from the tables and independently recomputed | **Three readings that must reconcile**: the journal's own sum over the pair; an independent recomputation from `transfers.transfer` applied to the starting balances — two tables that never see each other agreeing to the minor unit, `INV-LED-04`'s chain as arithmetic; and the outcome tally, where every loser is a committed `FAILED(INSUFFICIENT_FUNDS)` (`INV-CON-02`'s own wording) with nothing posted |
+| No source ever negative | Asserted **mid-storm**, from one statement so the pair is one snapshot — which is the assertion that caught two of the four mutations |
+
+### The finding: money moving both ways deadlocked, 783 times
+
+The storm's first honest run produced **783 deadlocks (`40P01`) against
+203 domain outcomes**. The execution locked the **source** row
+`FOR UPDATE` while the posting's foreign key takes `FOR KEY SHARE` on
+the destination regardless (`P3-TSK-014`'s recorded mechanism), so
+A→B holding `FOR UPDATE(A)` and needing `KEY SHARE(B)`, against B→A
+holding `FOR UPDATE(B)` and needing `KEY SHARE(A)`, is a cycle. **The
+one-directional drain could not reach it** — a cycle needs two
+directions — and `TransferExecution`'s own javadoc had said for three
+tasks that *"the destination is deliberately never locked"*, which was
+true of the explicit lock and false about what happens. **Money was
+never at risk**: a deadlocked transaction writes nothing, so
+conservation held exactly through all 783. What did not hold is
+`INV-CON-02`'s clause that the loser fails with a **domain outcome** —
+an infrastructure abort is not one, and it reaches a customer as a 500.
+
+**Remedied in scope, deliberately, and the scope decision is on the
+record.** The fix is the idiom this module's sibling already names —
+`lockOwnedForUpdate` orders by id *"so two multi-account closers cannot
+deadlock"* (`P3-TSK-009`) — applied to the multi-account operation that
+is a transfer: both participants locked in one fixed order, ten lines.
+The alternative was an `INV-CON-02` register row — **this item's own
+deliverable** — that could not be written honestly; that is
+`P3-TST-003`'s unwritable-row shape, resolved the other way here
+because there the missing mechanism was a whole four-eyes lifecycle and
+here it is a lock order. The order is Java's `UUID` order and
+deliberately **not** PostgreSQL's byte order: a deadlock-free protocol
+needs every *instance* to agree, not the database (`P3-TSK-008`'s
+recorded disagreement, harmless here). The storm went from **206
+seconds with 79% aborts to 4.5 seconds with none** — the aborts were
+also the throughput. Recorded where the next reader will meet it:
+`DISTRIBUTED_EXECUTION.md` §3's `transfers.transfer` row and the
+ADR-0039 lock-set sentence, `PHASE_4_PLAN.md` §7 (which had **no row
+for bidirectional movement at all**), and **ADR-0039's own follow-ups**
+— its protocol is stated per *account decision* and was silent about
+operations touching two accounts.
+
+### The surviving mutation that corrected the test
+
+The availability decision derived **before** the lock grant — the
+gate criterion's own named mutation — **survived the first draft of
+this storm**, and was caught only by `P4-TSK-005`'s drain. The reason
+is the test's, not the code's: amounts of 1.00–3.00 against 10.00
+balances never bring an account near zero, and a stale read differs
+from a fresh one only at the boundary, so the sustained suite was
+proving *less* than its one-directional sibling. With 7.00 and 9.00 in
+the rotation the boundary is contested continuously and the mutation is
+caught **mid-storm at −5.00 in round 2** — an account driven negative,
+which is the sharpest form the assertion could take. **Four mutations,
+all caught by the intended assertion, restores byte-identical**: the
+ordering removed (495 deadlocks return, named by the outcome tally);
+availability derived pre-lock (above); the posting **over**-moving one
+minor unit (caught by the negative-balance assertion — recorded as the
+different assertion it is, rather than claimed for the one it was aimed
+at); and the posting **under**-moving (caught by *"A's journal position
+is exactly what its completed transfers say"*, `expected: 2 but was:
+0`) — which is how the two-table reconciliation was established as
+load-bearing rather than assumed. The `INV-CON-02` row landed in
+`MUTATION_TESTING.md` §2 — the first `Phase: 4` row; the other four are
+`P4-TST-002`'s, read from the catalogue — with §5 teeth re-proven
+(*every method the register names exists on its class* failing on a
+corrupted reference) and restored byte-identical.
+
+### One process finding, recorded
+
+**A compile failure was read as a test result.** A `-Werror` warning
+failed `compileTestJava`, and the result-reading script parsed the
+previous run's XML and reported a verdict — identical numbers to the
+run before, which is what gave it away. The harness now refuses to
+report unless `> Task :app:databaseTest` actually appears in the log,
+and deletes prior results first. That is the *"reports success for work
+it did not do"* class this repository keeps meeting, this time in the
+machinery rather than the work — the fourth occurrence, after
+`P1-TSK-026`'s cmd trap, `P1-TSK-027`'s tree-breaking harness and
+`P0-TSK-038`'s stale UP-TO-DATE read.
+
+### Previously
 
 **`P4-TSK-011` — The meters and the dashboard row** — `COMPLETE` (2026-09-19).
 **M4.7 opens at 1 of 3: `PHASE_4_PLAN.md` §15 is real**, and the phase's
@@ -9360,14 +9451,14 @@ Project initiation (2026-08-31):
 ## Active Work
 
 **None in progress.** Phases 0, 1, 2 and 3 are `COMPLETE`; Phase 4 is
-`IN_PROGRESS` at 11 of 14 (M4.1 through M4.6 `CLOSED`; M4.7 at 1 of 3).
+`IN_PROGRESS` at 12 of 14 (M4.1 through M4.6 `CLOSED`; M4.7 at 2 of 3).
 
-The last work performed was **`P4-TSK-011`** (2026-09-19): the four §15
-meters and the *Transfers* dashboard row — post-commit acting-call
-counting from the judgement's own vocabulary, the conflict security
-signal on its own series, the pinned Phase-4 guard, and every dashboard
-query resolving against a live scrape. The next work is
-**`P4-TST-001`** — conservation under sustained concurrent movement.
+The last work performed was **`P4-TST-001`** (2026-09-19): conservation
+under sustained concurrent movement — ten instances moving money both
+ways while the trial-balance and projection sweeps run, three readings
+that must reconcile, and **a real deadlock found by measuring and fixed
+in scope** (both participants' rows now locked in one fixed order). The
+next work is **`P4-TST-002`** — the `Phase: 4` register rows.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -9617,8 +9708,32 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P4-TST-001` — Conservation under sustained concurrent movement.**
-Status `READY`; depends on `P4-TSK-008` (`COMPLETE`).
+**`P4-TST-002` — The `Phase: 4` register rows.** Status `READY`;
+depends on `P4-TSK-009` and `P4-TST-001` (both `COMPLETE`).
+
+`MUTATION_TESTING.md` §2 rows for every invariant the catalogue marks
+`Phase: 4` — **the set read from the catalogue at execution time, never
+from a plan or from this sentence** (the `P3-TST-003` finding). A
+token-exact read gives **five**: `INV-IDEM-01` (the transfers-context
+row — the kernel and financial-boundary rows prove the mechanism, not
+this caller), `INV-CON-02` (**already landed by `P4-TST-001`**, so four
+remain), and `INV-LIFE-01/-02/-04` naming the cross-product sweep.
+Every named mutation performed by its owning task's sweep or by this
+item; §5 teeth re-proven; the item's own §4 row. Accept: all
+register-guard checks green over the new rows; the demanded set
+verified token-exactly against the catalogue; every named class and
+method exists; restores byte-identical. Risk: Low, Cx: S per the
+backlog. DoD: `DOD-TEST`.
+
+### Superseded: P4-TST-001
+
+*(This section named `P4-TST-001` until its gate on 2026-09-19. Its
+text is kept below, because the gate's finding changed what the item
+turned out to be: the "recorded from `P4-TSK-005`'s sweep" conditional
+resolved to **record** as written — that sweep did perform the moved
+form — and the item then performed it again against the sustained
+composition, where it **survived** until the storm's amounts were
+sharpened.)*
 
 The phase's composition demonstration (the `P3-TST-001` posture): ten
 instances transferring A→B and B→A continuously — mixed amounts, some
@@ -9717,6 +9832,7 @@ rather than left.)*
 
 | Date | Change |
 |------|--------|
+| 2026-09-19 | **`P4-TST-001` complete — conservation under sustained concurrent movement, and the composition demonstration found a real defect; M4.7 is 2 of 3.** Ten instances moving money both ways between one pair while the trial-balance and projection sweeps run, the sweeper ending the storm on its own floors (25 rounds, 200 committed commands) so the overlap is the exit condition rather than scheduling luck. **The first honest run produced 783 deadlocks (`40P01`) against 203 domain outcomes**: the execution locked the **source** row `FOR UPDATE` while the posting's foreign key takes `FOR KEY SHARE` on the destination regardless (`P3-TSK-014`'s mechanism), so A→B and B→A each held what the other needed — and **the one-directional drain could not reach it, because a cycle needs two directions**, while `TransferExecution`'s javadoc had said for three tasks that *"the destination is deliberately never locked"*, true of the explicit lock and false about what happens. **Money was never at risk** (a deadlocked transaction writes nothing, so conservation held exactly through all 783); what failed is `INV-CON-02`'s clause that the loser fails with a **domain outcome**. **Remedied in scope with the reasoning on the record**: the fix is the idiom the sibling store method already names (`lockOwnedForUpdate` orders by id *"so two multi-account closers cannot deadlock"*) applied to the multi-account operation a transfer is — both participants in one fixed order, ten lines — because the alternative was an `INV-CON-02` register row, **this item's own deliverable**, that could not be written honestly (the `P3-TST-003` unwritable-row shape, resolved the other way because there the mechanism was a four-eyes lifecycle and here a lock order); the order is Java's `UUID` order and deliberately **not** PostgreSQL's byte order, since a deadlock-free protocol needs every *instance* to agree rather than the database (`P3-TSK-008`'s recorded disagreement, harmless here). **The storm went from 206s with 79% aborts to 4.5s with none** — the aborts were also the throughput. Recorded where the next reader meets it: `DISTRIBUTED_EXECUTION.md` §3's row and lock-set sentence, `PHASE_4_PLAN.md` §7 (which had **no row for bidirectional movement at all**), and **ADR-0039's own follow-ups**, whose protocol is stated per *account decision* and was silent about operations touching two accounts. **A surviving mutation then corrected the test**: the pre-lock availability derivation survived the first draft — amounts of 1.00–3.00 against 10.00 never bring an account near zero, and a stale read differs only at the boundary, so the sustained suite was proving less than its one-directional sibling — and with 7.00 and 9.00 in the rotation it is caught **mid-storm at −5.00 in round 2**. Conservation is asserted as **three readings that must reconcile**: the journal's sum over the pair, an independent recomputation from `transfers.transfer`, and the outcome tally where every loser is a committed `FAILED(INSUFFICIENT_FUNDS)` with nothing posted. **Four mutations, all caught by the intended assertion, restores byte-identical** — the ordering removed (495 deadlocks return); availability pre-lock (−5.00, and `expected: 3 but was: 10` on the drain); the posting over-moving (caught by the negative assertion, **recorded as the different assertion it is**) and under-moving (caught by the two-table reconciliation, `expected: 2 but was: 0`, which established which assertion is load-bearing rather than assuming). The `INV-CON-02` row landed in `MUTATION_TESTING.md` §2 — the first `Phase: 4` row, the other four being `P4-TST-002`'s — with §5 teeth re-proven and restored byte-identical. **Process finding: a compile failure was read as a test result** from a stale XML (identical numbers to the prior run gave it away); the harness now refuses to report unless `:app:databaseTest` actually ran — the *"reports success for work it did not do"* class, met in the machinery rather than the work. **Verified by targeted tiers — the full `:app:test` hermetic tier (427 tests, the register guard green), every transfers database suite and the Phase 3 contention suites the lock change could have disturbed, all green — the full battery deliberately skipped on the owner's instruction; no fleet-wide counts claimed.** Next: `P4-TST-002`. |
 | 2026-09-19 | **`P4-TSK-011` complete — the meters and the dashboard row; M4.7 is 1 of 3.** `PHASE_4_PLAN.md` §15 made real with no new mechanism — `P3-TSK-020`'s answers applied to transfers without weakening: one `TransferMetrics` class (the `AccountMetrics` shape, public because the counting seam lives in `app.transfers`), every series eager at construction (`P1-TSK-029`), wired in `TelemetryConfiguration`, with `TransferService` and `BeneficiaryService` gaining **required constructor parameters**. **The counter anchors in the service, not a command decorator, because post-commit is not achievable inside the command** (ADR-0043: the execution runs in the caller's transaction, so a decorator counts before the commit it cannot see): the outcome crosses the transaction boundary in a holder (the `AccountService.openedNow` shape) and is counted after the commit **from the `TransferResult`'s own vocabulary**, so the count cannot drift from the judgement — `replayed` lands with the original outcome's series unchanged, `reversed` counts the acting reversal only. **`refused` defined on the record** (the plan only listed it): a transfer command the platform declined to judge with nothing written — the resolution refusals and the reversal machine's 409, never the caller's own 422s, which named no coherent command; a metric is invisible to the caller, so it may count what the byte-identical responses hide, and a rise in `refused` is somebody probing destinations. **`conflict` is its own series, never an outcome value** — an `INV-IDEM-03` fingerprint conflict is a security signal, and an alert on a security signal must be one series rather than a tag filter someone forgets. The latency timer wraps the execution path in a `finally` (every outcome, the injected clock, no histogram buckets); beneficiary counters take the acting-call discipline verbatim. The pinned Phase-4 guard joined `PlannedMetersExistTest` (third of its shape; the derived guard takes over at the flip with no edit); the dashboard gained the *Transfers* row — outcomes, latency from `_count`/`_sum`/`_max`, conflicts on their own panel, beneficiary lifecycle — every query resolved by `DashboardQueriesResolveTest` against a live scrape. **No `DISTRIBUTED_EXECUTION.md` §3 row and the absence is the design** (per-instance counters are non-authoritative readings, the `AccountMetrics` precedent); no `INV-MON-01` exemption owed (no gauge, no `ToDoubleFunction`); no contract change, no new audit action, no events; the plan's refused value-by-state meters and subjectless stuck-detector stay refused with their §15 provenance. **Eight mutations, all caught by the intended assertion, restores byte-identical** — replay counted as completed; `refused` dropped (**caught twice**: the refusal test and the reversal test's refused half); `conflict` dropped; `reversed` hoisted above the acting check (`expected: 1.0 but was: 2.0`); eager registration made lazy (the pinned Phase-4 guard failing by name — the `P1-TSK-029` defect caught by the guard built against it); a dashboard series renamed (the resolver's designed message); a converged beneficiary create counted as `added`; latency made success-only (the refused-still-times assertion) — and the count-inside-the-transaction mutation **cut on analysis and recorded**: after the judgement returns, nothing reachable rolls the transaction back (the `P3-TSK-014` behaviourally-invisible class). **Verified by targeted tiers — the full `:app:test` hermetic tier with every guard green (427 tests), `TransferMetersDatabaseTest` and `DashboardQueriesResolveTest` green on their first runs — the full battery deliberately skipped on the owner's instruction; no fleet-wide counts claimed.** Next: `P4-TST-001`. |
 | 2026-09-19 | **`P4-TSK-010` complete — the limit and risk seams; M4.6 CLOSES (1 of 1).** The skeletons `P4-TSK-005` shipped were hardened into contracts Phase 13 can honour — the delta the skeleton left: `check(Transfer)` carried **no unit of work and no way to refuse**, so a Phase 13 limit could neither anchor a counter to durable state in the execution's transaction (`INV-CON-03` — the in-lock contract was a sentence, not a seam) nor refuse without a contract change. Both ports are now **generic over the unit of work** and return **`SeamVerdict.PERMIT`/`REFUSE`** — two values and no reason, because the refusal→reason mapping is the execution's, fixed per seam, so a limit implementation can never commit the risk vocabulary. `FailureReason` gained `LIMIT_REFUSED`/`RISK_REFUSED` **with their producers** (ADR-0044's doctrine): the execution's mapping arms, exercised by a refusing decorator — a seam refusal is a committed `FAILED` with **nothing posted** (zero entries counted), replayed by the claim, and when both seams refuse the limit's reason wins by consultation order (asserted). **`V004` widened the reason `CHECK`** (the role-ceremony shape on a genuine column constraint) and `TransferMigrationTest`'s reason check moved to the **latest-definition derivation** with `V002`'s five-value literal pinned as history — the applied-history lesson its own javadoc predicted. **The in-lock contract is observed, never stated**: a decorator probe's second connection attempts `FOR UPDATE NOWAIT` on the source row and both seams see `55P03` — deterministic, and the only assertion that can see WHERE a permit-all seam ran. **Removing the `limits` parameter was demonstrated to fail compilation** at the composition root (*constructor cannot be applied to given types* in `TransferBeans`) and restored byte-identical — the skipped control does not compile, which is the control this phase ships. The no-Phase-13-logic accept clause is mechanised (`TransferSeamsTest`: the default holds no field, each port one method, the verdict exactly two values); `DISTRIBUTED_EXECUTION.md` §3 gained both seam rows (stateless by contract; Phase 13's authority lives in durable rows on the passed unit of work, in-lock, never process memory); `ERROR_CONTRACT.md`'s committed-outcomes prose gained the reserved reasons. No contract change, no new audit action, no meters (plan §15 is `P4-TSK-011`'s), no ownership entries owed. **Seven mutations, all caught by the intended assertion, restores byte-identical** — seams hoisted above the lock (the NOWAIT probe), limit verdict ignored, risk verdict ignored, reasons swapped (both assertions, symmetrically), `V004` narrowed (the reconciliation naming it), the default made refusing, a state field added (the size guard). **Verified by targeted tiers — the full `:app:test` hermetic tier with every guard green, `:transfers:test`, the seam database suite; the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Next: `P4-TSK-011`, M4.7 opens. |
 | 2026-09-19 | **`P4-TSK-009` complete — the reversal; M4.5 CLOSES (1 of 1).** The privileged, reasoned correction: `POST /v1/transfers/{id}/reversal` behind the new `TRANSFER_REVERSE` (joined `LEDGER_OPERATOR` — one money-operating population; **no `V015`**, the scope's drift corrected on being met: the `V014` ceremony replaces the ROLE constraint and a permission is never a column, ADR-0031), one transaction moving `COMPLETED → REVERSED` and posting the referencing full-amount entry through `ReversalService` (`INV-REV-01/-02`), which got its **first bean** in `LedgerBeans` observed by the real `PostingObserver`. **Lock-then-look on the transfer row is the arbiter** (`TransferStore.lockById`, `FOR UPDATE` — the store's own javadoc deferred exactly this here): the conditional `UPDATE` cannot arbitrate because it needs the reversal entry id the posting has not yet minted, and post-then-move would surface the losers as `V009` over-reversals instead of the machine's 409 — so the machine is judged from the locked row **before any ledger work** (`canTransitionTo(REVERSED)`, never a status literal), the conditional's row count is the recorded belt (its mutation cut on analysis: invisible under the held lock), `V002`'s trigger edges bind raw SQL and the ledger bound sits beneath. **No idempotency key, deliberately** (the `P3-TSK-021` approval precedent): the one-way machine is the idempotency — a retry gets the one `409 transfers.NotReversible` (named for what is *checked*, covering `FAILED`, already-`REVERSED` and the race's loser alike) and the view carries the reversal. **The reversal posts unconditionally** — no availability judgement on the destination, whose wallet legitimately goes negative (`P3-TSK-008`; gating a correction on the recipient's spending would let spending make correction impossible) — and a destination closed since the transfer surfaces the catalogued `ledger.AccountNotPostable` with the whole transaction rolled back, the recorded corner. Every accept clause demonstrated over real HTTP with the operator granted through the real `Authorization` write: the original entry and lines **byte-identical as PostgreSQL's own renderings**; both balances restored exactly; ten concurrent reversals one entry and one move **counted in the tables** (one 201, nine 409s) plus the deterministic interleaving with the loser observed **Lock-waiting** and refused with nothing posted; the permissionless session (the transfer's own customer) 403 with nothing written, the reason required and bounded (422s, `SuspensionRequest`'s cited bounds), unknown and malformed one 404. The view gained `reversalEntryId`/`reversedAt` — rendered by the GETs, **never by the POST's replay path** (byte-for-byte survives the reversal, as `P4-TSK-008` predicted); the operator's identity stays the trail's fact, not the customer view's. Registers fed: `transfers.TransferReversed` (**reason required**, emitted on arrival), `transfers.NotReversible` catalogued with its reusable response, `lockById` classified `ADMINISTERED`, `TransferReversalRequest` in the credential-sink set, contract baseline **+92/−0** (reviewed), and `DISTRIBUTED_EXECUTION.md` §3 gained the `transfers.transfer` row **by the task rather than by the next transition audit**. **Eight mutations, all caught by the intended assertion, restores byte-identical** (`FOR UPDATE` dropped — caught twice; machine check removed — 409 becoming our 500; directions not swapped — `ReversalBound` refusing the mirror; audit, reason, event, history each dropped; `@RequiresPermission` removed — 403 becoming 201). **Verified by targeted tiers — the full `:app:test` hermetic tier with every guard green, `:transfers:test`, `:identity:test`, the transfers-package database suites; the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Process note: a scripted backlog edit duplicated a 755-line region — caught by `diff --stat` and occurrence counts, repaired by restore-and-reapply. Next: `P4-TSK-010`, M4.6 opens. |
