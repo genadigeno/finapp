@@ -285,6 +285,21 @@ class OwnershipIsScopedTest {
                                         + " party - never a request's. The HTTP reads go"
                                         + " through findOwned.")),
                     Map.entry(
+                            "com.finapp.transfers.JdbcTransferStore.lockById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P4-TSK-009. The reversal's FOR UPDATE serialisation point:"
+                                        + " the identifier comes from the URL of"
+                                        + " POST /v1/transfers/{id}/reversal and names SOMEBODY"
+                                        + " ELSE'S transfer - that is the operation, not a"
+                                        + " defect (the P1-TSK-028 class). What stands in for"
+                                        + " the missing ownership predicate:"
+                                        + " @RequiresPermission(TRANSFER_REVERSE) at the"
+                                        + " boundary, asserted with nothing written by"
+                                        + " TransferReversalDatabaseTest's permissionless"
+                                        + " refusal. The lock is the reversal's concurrency"
+                                        + " arbiter, not an ownership mechanism.")),
+                    Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revokeAll",
                             new Entry(
                                     Scope.OWNER_SCOPED,

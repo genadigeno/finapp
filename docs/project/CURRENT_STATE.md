@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-18 (`P4-TSK-008` — the transfer surface; M4.4 closes)
+Last updated: 2026-09-19 (`P4-TSK-009` — the reversal; M4.5 closes)
 
 ---
 
@@ -161,10 +161,23 @@ class, again).
 
 ## Current Milestone
 
-**M4.5 — Reversal.** `P4-TSK-009`; **0 of 1 — next `P4-TSK-009` (`READY`)** — the
-privileged, reasoned reversal: `TRANSFER_REVERSE` (`V015`), `POST
-/v1/transfers/{id}/reversal`, `COMPLETED → REVERSED` with the referencing entry
-through `ReversalService`.
+**M4.6 — The seams.** `P4-TSK-010`; **0 of 1 — next `P4-TSK-010` (`READY`)** — the
+limit and risk seams as required parameters with no defaulted overload, evaluated
+in-lock, so Phase 13 inherits atomicity rather than discovering the race.
+
+### M4.5 — Reversal — CLOSED
+
+**M4.5 — Reversal.** `P4-TSK-009`; **CLOSED 2026-09-19, 1 of 1** — the privileged,
+reasoned correction: `TRANSFER_REVERSE` on `LEDGER_OPERATOR` (no migration — a
+permission is never a column, ADR-0031; the scope's `V015` was a drift, corrected
+on being met), `POST /v1/transfers/{id}/reversal` with the reason required, one
+transaction moving `COMPLETED → REVERSED` under the transfer row's `FOR UPDATE`
+and posting the referencing entry through `ReversalService`. The milestone's
+stated acceptance **holds by demonstration**: the original entry byte-identical
+as PostgreSQL's own renderings, both balances restored exactly, ten concurrent
+reversals producing one entry and one move counted in the tables, the loser of
+the deterministic interleaving observed Lock-waiting and refused with nothing
+posted, and the permissionless session refused with nothing written.
 
 ### M4.4 — Over HTTP — CLOSED
 
@@ -528,10 +541,94 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P4-TSK-008` is `COMPLETE`; **M4.4 closes at 1 of
-1, and M4.5 opens. Next: `P4-TSK-009` (`READY`)** — the reversal.
+**None in progress.** `P4-TSK-009` is `COMPLETE`; **M4.5 closes at 1 of
+1, and M4.6 opens. Next: `P4-TSK-010` (`READY`)** — the limit and risk
+seams.
 
 ### Just completed
+
+**`P4-TSK-009` — The reversal** — `COMPLETE` (2026-09-19). **M4.5
+closes: the privileged, reasoned correction exists** — one transaction,
+lock-then-look on the transfer row, the referencing entry through
+`ReversalService`, and the original untouched (`INV-REV-01`).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The original entry byte-identical after reversal | `TransferReversalDatabaseTest.theReversalAcceptanceChainHolds`: the whole entry row and every line captured as **PostgreSQL's own renderings** before the reversal and compared equal after (the `P3-TSK-016` idiom) — on top of the standing `DB-PRIVILEGE` immutability, the claim about *this* reversal specifically |
+| Both balances restored exactly | Source back at `"10.00"`, destination at `"0.00"`, each read over its owner's own balance endpoint |
+| Ten concurrent reversals → one entry, one move, counted | One 201 and nine 409s over HTTP, with the reversal-entry, history and audit counts read **from the tables**; plus the deterministic interleaving — the loser observed **Lock-waiting** on the transfer row's `FOR UPDATE` in `pg_stat_activity`, resuming onto the winner's commit to the machine's refusal with **nothing posted** |
+| `REVERSED`/`FAILED` → 409, nothing at the ledger | One `transfers.NotReversible` for both (and for the race's loser) — named for what is *checked*, the machine's edge via `canTransitionTo(REVERSED)`, judged from the locked row **before any ledger work**; the ledger's own refusal is the layer beneath, demonstrated by the machine-check mutation surfacing `V009`'s over-reversal bound |
+| Permissionless session refused with nothing written | The transfer's **own customer**'s 403 (`INV-AUD-03`), every count zero, status still `COMPLETED` — the operator's acceptance chain the positive control, the denial audited by the interceptor |
+
+### The design decisions, each on the record
+
+**Lock-then-look is the arbiter, and the backlog's "the conditional's
+row count arbitrates" was corrected by the design**: the conditional
+`UPDATE` needs the reversal entry id, which does not exist until the
+posting — so post-then-move would let every racer do ledger work and
+surface the losers as `V009` over-reversals instead of the machine's
+409. `TransferStore.lockById` (`FOR UPDATE`, the `P2-TSK-015` idiom —
+the store's own javadoc deferred exactly this to this task) serialises;
+the conditional's row count is the recorded **belt** (its
+made-unconditional mutation cut on analysis: invisible under the held
+lock); `V002`'s trigger edges bind raw SQL and the ledger bound sits
+beneath. **No idempotency key, deliberately** (the `P3-TSK-021`
+approval precedent): `COMPLETED → REVERSED` happens at most once ever,
+so the machine is the idempotency — a retry gets the 409 and the view
+carries the reversal. **The reversal posts unconditionally**: no
+availability judgement on the destination, whose wallet legitimately
+goes negative (`P3-TSK-008` — the true position; gating a correction on
+the recipient's spending would let spending make correction
+impossible). A destination product closed since the transfer surfaces
+the catalogued `ledger.AccountNotPostable` with the whole transaction
+rolled back — the recorded corner. **The scope's `V015` was a drift,
+corrected on being met**: the `V014` ceremony replaces the ROLE
+constraint, and this task adds a permission to an existing role — a
+permission is never a column (ADR-0031), so there is no migration to
+write and `RoleAssignmentMigrationTest` holds the constraint unchanged.
+
+### What else the task settled
+
+`TRANSFER_REVERSE` joined `LEDGER_OPERATOR` (one money-operating
+population; `RoleNameTest`'s exact set updated, the pairwise
+disjointness and no-orphaned-permission assertions derived and
+untouched). The view gained `reversalEntryId` and `reversedAt` — the
+reversal's own chain-walk key beside `journalEntryId`, rendered by the
+GETs and **never by the POST's replay path** (byte-for-byte survives
+the reversal, exactly as `P4-TSK-008` predicted); the operator's
+identity is deliberately not disclosed to the customer — the trail's
+fact, not the view's. **`ReversalService` got its first bean** in
+`LedgerBeans` (the `PostingService` precedent — the `P1-TSK-007`
+licence expiring with its first composition-root consumer), observed by
+the real `PostingObserver` so a reversal counts on
+`finapp.ledger.posting`. `lockById` classified **`ADMINISTERED`** (the
+operator names somebody else's transfer from the URL; the standing
+check is the permission at the boundary — the `P1-TSK-028` class);
+`TransferReversalRequest` cites `SuspensionRequest`'s bounds (the
+`P2-TSK-012` idiom) and joined the credential-sink pinned set; the
+reason travels in the body, never a query string (`INV-AUD-02`).
+Contract baseline **+92/−0** (the new path, the reusable
+`transfers.NotReversible` response, the request schema, the two view
+fields — reviewed). `DISTRIBUTED_EXECUTION.md` §3 gained the
+`transfers.transfer` row **by the task rather than by the next
+transition audit** — the register-decay note finally heeded by a task
+instead of repaired after one. **Eight mutations, all caught by the
+intended assertion, restores byte-identical** (`FOR UPDATE` dropped —
+caught twice, blocked-observation and race counts; the machine check
+removed — 409 becoming our 500; directions not swapped —
+`ReversalBound` refusing the mirror; audit dropped; reason dropped —
+`AuditRecord`'s constructor refusing by name; event dropped; history
+dropped; `@RequiresPermission` removed — 403 becoming 201), one cut on
+analysis and recorded. **Verified by targeted tiers — the full
+`:app:test` hermetic tier with every guard green, `:transfers:test`,
+`:identity:test`, and the transfers-package database suites — the full
+battery deliberately skipped on the owner's instruction; no fleet-wide
+counts claimed.** Process note: a scripted backlog edit duplicated a
+755-line region — caught by `diff --stat` and occurrence counts rather
+than by reading the region it targeted, and repaired by
+restore-and-reapply with anchors asserted unique.
+
+### Previously
 
 **`P4-TSK-008` — `POST /v1/transfers`, status and list** — `COMPLETE`
 (2026-09-18). **M4.4 closes: the first customer-visible money movement
@@ -9117,13 +9214,14 @@ Project initiation (2026-08-31):
 ## Active Work
 
 **None in progress.** Phases 0, 1, 2 and 3 are `COMPLETE`; Phase 4 is
-`IN_PROGRESS` at 8 of 14 (M4.1 through M4.4 `CLOSED`; M4.5 opens).
+`IN_PROGRESS` at 9 of 14 (M4.1 through M4.5 `CLOSED`; M4.6 opens).
 
-The last work performed was **`P4-TSK-008`** (2026-09-18): the transfer
-surface — `POST /v1/transfers` answering the judgement in the body,
-status and list under ownership, the chain walked by identifier, and
-M4.3's fourth clause paid. The next work is **`P4-TSK-009`** — the
-reversal.
+The last work performed was **`P4-TSK-009`** (2026-09-19): the reversal —
+`POST /v1/transfers/{id}/reversal` behind `TRANSFER_REVERSE`, one
+transaction moving `COMPLETED → REVERSED` under the transfer row's lock
+with the referencing entry posted through `ReversalService` and the
+original byte-identical. The next work is **`P4-TSK-010`** — the limit
+and risk seams.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -9373,23 +9471,30 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P4-TSK-009` — The reversal.** Status `READY`; depends on
-`P4-TSK-008` (`COMPLETE`).
+**`P4-TSK-010` — The limit and risk seams.** Status `READY`; depends on
+`P4-TSK-005` (`COMPLETE`).
 
-M4.5 is the task: `TRANSFER_REVERSE` (identity `V015`, the `V014`
-ceremony — granted to `LEDGER_OPERATOR`) and `POST
-/v1/transfers/{id}/reversal` (reason required, bounded in the three
-reconciled places): one transaction moving `COMPLETED → REVERSED` (the
-conditional's row count arbitrates) and posting the referencing reversal
-entry through `ReversalService` (`INV-REV-01/-02` — the full-amount
-reversal). Audit `transfers.TransferReversed` naming the operator and
-the reason; event `transfers.TransferReversed`. Four-eyes deliberately
-not required (plan §11, the proposal-row seam named). Accept: the
-original entry byte-identical after reversal; both balances restored
-exactly; ten concurrent reversals produce **one** entry and one move,
-counted; a reversal of a `REVERSED` or `FAILED` transfer is a 409; the
-permissionless session refused with nothing written (`INV-AUD-03`).
-Risk: **High**, Cx: M per the backlog. DoD: `DOD-FIN`, `DOD-SEC`.
+M4.6 is the task: `TransferLimitCheck` and `TransferRiskDecision` —
+ports in `transfers`, **required parameters of the execution command
+with no defaulted overload** (the `PostingObserver` compiler-enforced
+precedent: Phase 13's wiring must be a decision, and a skipped control
+must not compile). Default implementations permit and are named for
+what they are (`PermitAllUntilPhase13`); the contracts state **in-lock
+evaluation**, so Phase 13 inherits atomicity instead of discovering
+`INV-CON-03`'s race (the seam register's two Phase 4 rows in
+`ROADMAP.md` §Refinement 2, honoured). Refusal-shaped results exist in
+the vocabulary (`FAILED(LIMIT_REFUSED)`/`FAILED(RISK_REFUSED)` reasons
+reserved) so the Phase 13 implementation changes no contract;
+`DISTRIBUTED_EXECUTION.md` §3 rows for both (stateless by contract).
+Accept: removing either parameter fails compilation, demonstrated; the
+defaults are exercised on every transfer test; the in-lock contract is
+asserted (a decorator probe observes the lock held); no Phase 13 logic
+anywhere. Risk: Low, Cx: S per the backlog. DoD: `DOD-ARCH`. Out of
+scope: any limit value, any velocity window, any risk rule — Phase 13.
+
+### Superseded: P4-TSK-009
+
+*(This section named `P4-TSK-009` until its gate on 2026-09-19.)*
 
 ### Superseded: P4-TSK-008
 
@@ -9461,6 +9566,7 @@ rather than left.)*
 
 | Date | Change |
 |------|--------|
+| 2026-09-19 | **`P4-TSK-009` complete — the reversal; M4.5 CLOSES (1 of 1).** The privileged, reasoned correction: `POST /v1/transfers/{id}/reversal` behind the new `TRANSFER_REVERSE` (joined `LEDGER_OPERATOR` — one money-operating population; **no `V015`**, the scope's drift corrected on being met: the `V014` ceremony replaces the ROLE constraint and a permission is never a column, ADR-0031), one transaction moving `COMPLETED → REVERSED` and posting the referencing full-amount entry through `ReversalService` (`INV-REV-01/-02`), which got its **first bean** in `LedgerBeans` observed by the real `PostingObserver`. **Lock-then-look on the transfer row is the arbiter** (`TransferStore.lockById`, `FOR UPDATE` — the store's own javadoc deferred exactly this here): the conditional `UPDATE` cannot arbitrate because it needs the reversal entry id the posting has not yet minted, and post-then-move would surface the losers as `V009` over-reversals instead of the machine's 409 — so the machine is judged from the locked row **before any ledger work** (`canTransitionTo(REVERSED)`, never a status literal), the conditional's row count is the recorded belt (its mutation cut on analysis: invisible under the held lock), `V002`'s trigger edges bind raw SQL and the ledger bound sits beneath. **No idempotency key, deliberately** (the `P3-TSK-021` approval precedent): the one-way machine is the idempotency — a retry gets the one `409 transfers.NotReversible` (named for what is *checked*, covering `FAILED`, already-`REVERSED` and the race's loser alike) and the view carries the reversal. **The reversal posts unconditionally** — no availability judgement on the destination, whose wallet legitimately goes negative (`P3-TSK-008`; gating a correction on the recipient's spending would let spending make correction impossible) — and a destination closed since the transfer surfaces the catalogued `ledger.AccountNotPostable` with the whole transaction rolled back, the recorded corner. Every accept clause demonstrated over real HTTP with the operator granted through the real `Authorization` write: the original entry and lines **byte-identical as PostgreSQL's own renderings**; both balances restored exactly; ten concurrent reversals one entry and one move **counted in the tables** (one 201, nine 409s) plus the deterministic interleaving with the loser observed **Lock-waiting** and refused with nothing posted; the permissionless session (the transfer's own customer) 403 with nothing written, the reason required and bounded (422s, `SuspensionRequest`'s cited bounds), unknown and malformed one 404. The view gained `reversalEntryId`/`reversedAt` — rendered by the GETs, **never by the POST's replay path** (byte-for-byte survives the reversal, as `P4-TSK-008` predicted); the operator's identity stays the trail's fact, not the customer view's. Registers fed: `transfers.TransferReversed` (**reason required**, emitted on arrival), `transfers.NotReversible` catalogued with its reusable response, `lockById` classified `ADMINISTERED`, `TransferReversalRequest` in the credential-sink set, contract baseline **+92/−0** (reviewed), and `DISTRIBUTED_EXECUTION.md` §3 gained the `transfers.transfer` row **by the task rather than by the next transition audit**. **Eight mutations, all caught by the intended assertion, restores byte-identical** (`FOR UPDATE` dropped — caught twice; machine check removed — 409 becoming our 500; directions not swapped — `ReversalBound` refusing the mirror; audit, reason, event, history each dropped; `@RequiresPermission` removed — 403 becoming 201). **Verified by targeted tiers — the full `:app:test` hermetic tier with every guard green, `:transfers:test`, `:identity:test`, the transfers-package database suites; the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Process note: a scripted backlog edit duplicated a 755-line region — caught by `diff --stat` and occurrence counts, repaired by restore-and-reapply. Next: `P4-TSK-010`, M4.6 opens. |
 | 2026-09-18 | **`P4-TSK-008` complete — the transfer surface; M4.4 CLOSES (1 of 1) and M4.3's fourth clause is paid.** The first customer-visible money movement over HTTP: `POST /v1/transfers` (session + `@RequiresIdempotencyKey`) answering `201` with the judgement in the body — **a `FAILED` outcome is a `201` whose body says so, never an HTTP error**, the asynchronous-outcome contract shape Phase 5 inherits — plus `GET /v1/transfers/{id}` and `GET /v1/transfers` under ownership (`customer_id = ?` in the statement, the Session → Identity → Party → live Customer chain; not-yours/unknown/malformed one 404 as an equality between the causes). **One idempotency claim, the command's, deliberately**: the accounts precedent stacked an HTTP executor over a domain *converge*, and stacking one over a domain *executor* would be two claims and two fingerprints for one financial boundary — byte-for-byte replay holds structurally instead, the view rendering the **replayed judgement** (`TransferResult` — the original status and reason, so `P4-TSK-009`'s reversal cannot leak into a replay) plus columns `V002`'s trigger freezes for every writer; proven at HTTP by comparing raw bodies. **The `beneficiaryId` arm is a per-decision authoritative read** (`party_id = ?`, `ACTIVE` required): unknown, a stranger's, malformed and **removed** one byte-identical `transfers.UnknownDestination` — M4.3's fourth clause demonstrated with row counts — with the removed-between-retries corner recorded (refused rather than replayed; the resolution runs before the claim can answer, nothing written, `INV-IDEM-01`'s financial half absolute). **`transfers.UnknownSource` (422) joined the vocabulary** (a body field, not a URI — one answer for unknown/not-yours/malformed, the port's own fold). The view carries **no account identifiers** (the row stores ledger accounts — internal vocabulary, the destination's a third party's; the `P3-TSK-018` no-counterparty rule) — the chain walks `journalEntryId`, and the entry's `reference` walks back (plan §12, asserted from both parties' sides). **The accept's "a verified customer with two accounts" corrected on the record**: `ProductType` has one value and `P3-TSK-012`'s one-live index makes a second open **converge onto the first** — found by the first run's correct `FAILED(SELF_TRANSFER)` — so the demonstration is two verified customers. The store's deferred reads arrived classified (`findOwned` OWNER_SCOPED with its negative test by name; `findById` AUTHORITATIVE_ID; `listFor` newest-first on `V002`'s named index); `Transfer.MAX_REFERENCE_LENGTH` became the bound's one definition, migration-reconciled; the execution command left the unconsumed-wiring licence (`TransferBeans`), and **`PostingService` gained its bean in `LedgerBeans`** — the consumer its comment predicted, observed by the real `PostingObserver`. No events owed (`P4-TSK-005` wired both terminals), no meters, no new audit action. Contract baseline **+180/−0**, the six `BREAKING` labels the classifier erring safe on the brand-new path's `required` members (reviewed); `TransferCreateRequest` joined the credential-sink pinned set; the stale Phase 4 backlog header (`READY`) corrected — the `P3-DOC-001` stale-second-copy class, fourth artefact. **Eight mutations performed, all caught by the intended assertion** — the ownership predicate caught **twice** (behaviourally `404 but was 200`, and by the build rule naming the method), the live filter dropped (caught by two tests incl. the clause's own), the exactly-one-of check dropped, **the rounding mutation survived once and strengthened the suite** (the sweep's inexact shape named an unknown destination whose refusal masked the rounding — the `P2-TSK-016` masked-shape lesson; caught by the valid-pair probe), the source fold split, the key requirement removed, the list predicate neutralised (the bulk disclosure), the order inverted — restores byte-identical; **one cut on analysis and recorded** (status-from-row is behaviourally invisible until the reversal exists). **Verified by targeted tiers — the full `:app:test` hermetic tier with every guard green, `:transfers:test`, and the transfer/execution/beneficiary/adjustment database suites; the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Next: `P4-TSK-009`, M4.5 opens. |
 | 2026-09-18 | **`P4-TSK-007` complete — the beneficiary endpoints and the step-up point; M4.3 CLOSES (2 of 2).** The surface in `app` — the only module seeing both halves the step-up joins: `BeneficiaryService` (the `AccountService` shape: `Session → Identity → Party`, deliberately **no live-customer step** — a beneficiary is the Party's convenience, no verification gate declared), `BeneficiaryController` (`@RequiresSession`; the conditional assurance a **domain check**, `P1-TSK-033`'s pattern), `BeneficiaryBeans` — the `transfers` module's first beans, wiring `JdbcTransferParticipants` for its first composition-root consumer while the execution command stays unbeaned until `P4-TSK-008` (the licence). **The step-up judged from an authoritative per-decision read inside the creation's transaction, before any write**: an enrolled identity at `PASSWORD` is refused the actionable **403 `identity.AssuranceRequired`** with nothing written (structural — the exception rolls the transaction back, which is also why the moved-after-the-write mutation was **cut on analysis and recorded**, the `P3-TSK-017` shape); the value threshold stays refused (plan §11). **Driven whole over real HTTP**: register → log in → enrol → confirm → refused → the factor proven over `/v1/authentications/mfa` → 201 audited as the **person** (target the beneficiary, `destination=` summary, the `RESTRICTED-PII` name asserted absent — the `P1-TSK-027` compose-the-halves lesson). The unenrolled create at `PASSWORD` converges on retry — **a different display name converging onto the existing name proven at the surface** (`P4-TSK-006`'s recorded consequence), one row, one record. The removal: stranger's/unknown/malformed **one 404 as an equality between the causes** (normalised only for correlation and the caller's own echoed `instance` path); the owner converges 204, one `BeneficiaryRemoved` record; own-already-removed told from the 404 by the new **`findOwned`** (`OWNER_SCOPED`, demanded by the ownership guard with its negative test by name). **`transfers.UnknownDestination` (422), the module's first error code**: unknown and malformed one byte-identical answer (malformed-equals-absent for a third party's identifier, the `kyc.OwnerNotEligible` shape); the domain's name rule mapped to a 422 naming `displayName` never the value, the probe's control character travelling as a **JSON escape** (a raw control byte is the parser's 400 and never reaches the rule under test). Both audit actions catalogued and **emitted on arrival**; `BeneficiaryCreateRequest` bounds the name by referencing the domain constant directly and joined the credential-sink pinned set; contract baseline **+135/−0**, the five `BREAKING` labels the classifier erring safe on the brand-new path's `required` members (reviewed, the `P1-TSK-006` precedent). **Eight mutations, all caught by the intended assertion, restores byte-identical** — step-up check removed (`403→201`), creation audit dropped, converged retry audited too (`1 but was: 2`), removal audit dropped, the 404 fold broken (stranger got 204), destination validation dropped, the list's ownership predicate dropped (the bulk disclosure), the name-rule mapping removed (`422 but was: 500`). M4.3's fourth clause (*a removed one refuses new transfers*) recorded as `P4-TSK-008`'s resolution step rather than glossed. **Verified by targeted tiers (the full `:app:test` hermetic tier with every guard green; the two beneficiary database suites); the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Next: `P4-TSK-008`, M4.4 opens. |
 | 2026-09-18 | **`P4-TSK-006` complete — the `Beneficiary` aggregate and `V003`; M4.3 opens (1 of 2).** The saved destination as the `Hold`/`CustomerAccount` precedents composed: `BeneficiaryStatus` (`ACTIVE → REMOVED`, terminal, the full generated-constraint ceremony — `sqlTerminalValueList()` feeding **two consumers that must agree**, `V003`'s one-live index predicate and the store's converge read), the `Beneficiary` record (one constructor holding the coherence — status ⇔ removal instant, refused on rehydrate too — and the display name restating `PartyName`'s rule because module isolation forbids the import, the `DocumentCipher` restated-mechanism precedent; the name never in a `toString` or message, needle-asserted), and `V003` — the partial unique one-live per (party, destination) as concurrency arbiter and freed-slot asymmetry in one index, the coherence `CHECK`, and the **every-writer trigger** (the ledger `V008` shape: identity and name frozen, exactly one edge) which is what makes "raw SQL cannot resurrect a `REMOVED` row" true for the migrator too; grants `SELECT, INSERT` + `UPDATE (status, removed_at)`, no `DELETE`. **Owned by a Party, by raw `UUID`s, on the record** (a saved destination outlives any one customer relationship — the consent precedent; `transfers` cannot see the owning modules' typed ids — the `Transfer.customerId` precedent; no cross-schema FK — ADR-0029). `JdbcBeneficiaryStore`: savepoint converge (a retry with a different display name **converges onto the existing name, recorded**: renaming is remove-and-recreate) and conditional removal carrying `party_id = ?` — **`OwnershipIsScopedTest`'s predicate vocabulary widened with `party_id = ?`**, the designed edit-forces-decision path, and the guard demanded the negative test by name before passing. `BeneficiaryCreation` validates the destination through `TransferParticipants.destination` for **existence only, deliberately** — postability goes stale by design and each transfer's own judgement owns it (plan §7's accepted race). **Every acceptance clause counted in the table**: ten concurrent creates → one created, nine converged onto the winner's id, one row; the freed slot re-creatable with the `REMOVED` row surviving as evidence; resurrection and the **edit smuggled inside the legal removal edge** each refused as the migrator — the smuggled-edge probe designed because a status-preserving edit is refused by the edge check too, and a probe two controls catch proves neither. **Eight mutations, all caught by the intended assertion, restores byte-identical** — the index dropped (`Expected size: 1 but was: 10`), the edge check removed, the frozen check removed (caught by exactly the smuggled-edge probe), the coherence `CHECK` dropped, the ownership predicate dropped (**caught twice**: behavioural + build rule), the machine check removed, the index made total (**caught twice**: freed slot + hermetic reconciliation), the constructor coherence dropped. 7 columns classified (`display_name` `RESTRICTED-PII` — a person names people). Deliberately absent: endpoints, step-up, audit actions, events, meters, beans — all `P4-TSK-007`'s/plan §14's by the plan's own assignment. **Verified by targeted tiers (27 hermetic `:transfers:test`, beneficiary + classification database tests, the ownership guard); the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Next: `P4-TSK-007`. |

@@ -324,6 +324,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // REACHABLE from a request body. What executing a transfer stores is
                         // classified in transfers.transfer's register rows, not here.
                         "TransferCreateRequest",
+                        // P4-TSK-009. Carries only the operator's REASON - free prose by a
+                        // person, bound for the audit record's reason column
+                        // (RESTRICTED-FINANCIAL, never rendered by any toString), never a
+                        // secret - here because the set is every schema REACHABLE from a
+                        // request body. The SuspensionRequest shape with the same bounds
+                        // cited from the same constants.
+                        "TransferReversalRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/

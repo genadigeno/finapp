@@ -210,6 +210,7 @@ suspension has no producer this phase, and unreachable surfaces do not earn voca
 |---|---|---|
 | `transfers.UnknownDestination` | 422 | The destination does not resolve to a platform account that can receive funds. |
 | `transfers.UnknownSource` | 422 | The source does not resolve to an account of the caller's that can send funds. |
+| `transfers.NotReversible` | 409 | The transfer is not in a state that can be reversed. |
 
 **One code for unknown and malformed alike, on purpose** (`P4-TSK-007`): a beneficiary's
 destination identifier names a **third party's** product, so the refusal is byte-identical
@@ -237,6 +238,18 @@ different field to fix. **A `FAILED` judgement is not an error code at all**: in
 funds, an unpostable side, a currency mismatch and a self-transfer are committed domain
 outcomes answered as `201` with the reason in the body (ADR-0043/0044 — the
 asynchronous-outcome contract shape), never members of this vocabulary.
+
+**`transfers.NotReversible` is one 409 for every machine refusal** (`P4-TSK-009`): a `FAILED`
+transfer moved no money and has nothing to reverse, an already-`REVERSED` one is already
+corrected, and the loser of two concurrent reversals resumes onto the winner's committed row —
+one code, named for what is *checked* (the machine's edge, the `NOT_ACTIVE` lesson) rather than
+for the commonest cause. The caller is a `TRANSFER_REVERSE` holder reading a state their `GET`
+already discloses, so no oracle is opened; the remedy is the same in every case — read the
+transfer. An unknown or malformed identifier on the reversal endpoint is `api.NotFound`,
+byte-identical across its causes. A destination product closed since the transfer surfaces the
+ledger's own `ledger.AccountNotPostable` (409) with nothing written — the recorded corner, not a
+transfers code, because the refusing mechanism is `V007`'s trigger and the vocabulary is the
+ledger's.
 
 ### `ledger` — `LedgerErrorCode`
 

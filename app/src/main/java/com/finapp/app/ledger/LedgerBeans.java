@@ -23,8 +23,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>The stores are stateless, so direct instances are the wiring (the {@code AccountsBeans}
  * stance). The posting command's predicted consumer arrived with the transfer surface
  * (`P4-TSK-008` — {@code TransferBeans} composes it into the execution command), so it is
- * beaned below; the reversal command stays unwired deliberately until its own surface
- * (`P4-TSK-009` — the {@code P1-TSK-007} licence).
+ * beaned below; the reversal command's arrived the same way (`P4-TSK-009` — the transfer
+ * reversal is its first composition-root consumer, expiring the {@code P1-TSK-007} licence
+ * exactly as this sentence used to predict).
  */
 @Configuration
 public class LedgerBeans {
@@ -45,6 +46,33 @@ public class LedgerBeans {
             Clock clock,
             com.finapp.ledger.PostingObserver postingObserver) {
         return new com.finapp.ledger.PostingService(
+                idempotentExecutor,
+                journalEntryStore,
+                auditWriter,
+                outboxWriter,
+                balanceProjection,
+                ids,
+                clock,
+                postingObserver);
+    }
+
+    /**
+     * The reversal command (`P3-TSK-016`), beaned by its first composition-root consumer —
+     * `P4-TSK-009`'s transfer reversal — with the same shared collaborators and the same real
+     * {@code PostingObserver} as its two siblings, so a transfer's reversal counts on
+     * {@code finapp.ledger.posting} like every other journal write.
+     */
+    @Bean
+    com.finapp.ledger.ReversalService reversalService(
+            IdempotentExecutor idempotentExecutor,
+            JournalEntryStore<Connection> journalEntryStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            BalanceProjection<Connection> balanceProjection,
+            com.finapp.sharedkernel.id.IdGenerator ids,
+            Clock clock,
+            com.finapp.ledger.PostingObserver postingObserver) {
+        return new com.finapp.ledger.ReversalService(
                 idempotentExecutor,
                 journalEntryStore,
                 auditWriter,

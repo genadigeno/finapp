@@ -26,13 +26,13 @@ description of where the project is; this section is the summary of it.
 
 ```
 Programme    ████▓░░░░░░░░░░░░   4 of 17 phases complete, 1 in progress
-Backlog      █████████████████░  154 of 160 elaborated items complete
-Phase 4      ████████░░░░░░      8 of 14 items, 4 of 8 milestones closed
+Backlog      █████████████████░  155 of 160 elaborated items complete
+Phase 4      █████████░░░░░      9 of 14 items, 5 of 8 milestones closed
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 4, milestone **M4.5 — Reversal**; next item `P4-TSK-009` (`READY`) |
+| 🔨 **Current work** | Phase 4, milestone **M4.6 — The seams**; next item `P4-TSK-010` (`READY`) |
 | 💰 **Business capability** | Money exists: accounts, a double-entry ledger, explainable balances, holds, and customer-visible internal transfers over HTTP |
 | 📐 **Decisions** | 44 ADRs — 42 `Accepted`, 2 `Proposed` — ADR-0043 and ADR-0044, this phase's own, which its exit gate accepts |
 | 🔒 **Invariants** | 82 catalogued; each in-scope one has a test *demonstrated to fail* when the invariant is broken |
@@ -113,8 +113,8 @@ Planned in [`docs/project/PHASE_4_PLAN.md`](docs/project/PHASE_4_PLAN.md). Entry
 | ✅ | M4.2 — The movement exists | `██████████` 3/3 | Ten instances draining one account accept exactly the affordable transfers, total value conserved to the minor unit, counted in the tables |
 | ✅ | M4.3 — Beneficiaries | `██████████` 2/2 | The saved destination, created under a conditional second factor, listed and removed |
 | ✅ | M4.4 — Over HTTP | `██████████` 1/1 | `POST /v1/transfers` answering the judgement in the body — a `FAILED` outcome is a `201` that says so, never an HTTP error |
-| 🔨 | **M4.5 — Reversal** | `░░░░░░░░░░` 0/1 | The privileged, reasoned correction |
-| ⬜ | M4.6 — The seams | `░░░░░░░░░░` 0/1 | Limits and risk as compiler-required parameters |
+| ✅ | M4.5 — Reversal | `██████████` 1/1 | The privileged, reasoned correction: the original entry byte-identical, both balances restored exactly, the loser of the race refused with nothing posted |
+| 🔨 | **M4.6 — The seams** | `░░░░░░░░░░` 0/1 | Limits and risk as compiler-required parameters |
 | ⬜ | M4.7 — Observability and demonstration | `░░░░░░░░░░` 0/3 | Meters, conservation under sustained contention, the mutation register |
 | ⬜ | M4.8 — The gate | `░░░░░░░░░░` 0/1 | The exit review, whose verdict flips the status |
 
@@ -122,8 +122,7 @@ Planned in [`docs/project/PHASE_4_PLAN.md`](docs/project/PHASE_4_PLAN.md). Entry
 
 | | Item | What it does |
 |---|---|---|
-| 🚧 | `P4-TSK-009` **← next** | The privileged, reasoned reversal: `POST /v1/transfers/{id}/reversal`, `COMPLETED` to `REVERSED` with the referencing entry, the original left byte-identical |
-| ⬜ | `P4-TSK-010` | The limit and risk seams as **required** constructor parameters with no defaulted overload, evaluated in-lock, so Phase 13 inherits atomicity rather than discovering the race |
+| 🚧 | `P4-TSK-010` **← next** | The limit and risk seams as **required** constructor parameters with no defaulted overload, evaluated in-lock, so Phase 13 inherits atomicity rather than discovering the race |
 | ⬜ | `P4-TSK-011` | The four planned meters, eagerly registered, and a dashboard row whose queries resolve against a live scrape |
 | ⬜ | `P4-TST-001` | Conservation under sustained concurrent movement — ten instances transferring both ways while the verification and trial-balance sweeps run |
 | ⬜ | `P4-TST-002` | The mutation-register rows for every invariant the catalogue marks `Phase: 4`, read from the catalogue rather than from any plan |

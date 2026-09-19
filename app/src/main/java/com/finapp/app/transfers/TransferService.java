@@ -14,10 +14,12 @@ import com.finapp.transfers.Beneficiary;
 import com.finapp.transfers.BeneficiaryId;
 import com.finapp.transfers.BeneficiaryStore;
 import com.finapp.transfers.FailureReason;
+import com.finapp.transfers.IllegalTransferTransitionException;
 import com.finapp.transfers.Transfer;
 import com.finapp.transfers.TransferCommand;
 import com.finapp.transfers.TransferExecution;
 import com.finapp.transfers.TransferId;
+import com.finapp.transfers.TransferReversal;
 import com.finapp.transfers.TransferResult;
 import com.finapp.transfers.TransferStore;
 import com.finapp.transfers.TransfersErrorCode;
@@ -76,6 +78,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public final class TransferService {
 
     private final TransferExecution execution;
+    private final TransferReversal reversal;
     private final TransferStore<Connection> transfers;
     private final BeneficiaryStore<Connection> beneficiaries;
     private final IdentityStore<Connection> identities;
@@ -85,6 +88,7 @@ public final class TransferService {
 
     public TransferService(
             TransferExecution execution,
+            TransferReversal reversal,
             TransferStore<Connection> transfers,
             BeneficiaryStore<Connection> beneficiaries,
             IdentityStore<Connection> identities,
@@ -92,6 +96,7 @@ public final class TransferService {
             TransactionTemplate transferTransactions,
             DataSource dataSource) {
         this.execution = Objects.requireNonNull(execution, "execution must not be null");
+        this.reversal = Objects.requireNonNull(reversal, "reversal must not be null");
         this.transfers = Objects.requireNonNull(transfers, "transfers must not be null");
         this.beneficiaries =
                 Objects.requireNonNull(beneficiaries, "beneficiaries must not be null");
@@ -111,6 +116,10 @@ public final class TransferService {
      * destination's belongs to a third party (the `P3-TSK-018` no-counterparty rule); the
      * commanded pair is the caller's own knowledge, echoed nowhere. The amount is a decimal
      * string (`P3-TSK-013`'s reasoning), disclosed only to the customer it belongs to.
+     * {@code reversalEntryId} and {@code reversedAt} exist exactly when {@code REVERSED}
+     * (`P4-TSK-009` — the reversal's own chain-walk key beside {@code journalEntryId});
+     * <strong>the operator's identity is deliberately not disclosed</strong> — who reversed a
+     * customer's transfer is the audit trail's fact, not the customer's view's.
      */
     public record TransferView(
             String id,
@@ -120,7 +129,9 @@ public final class TransferService {
             String currency,
             String reference,
             String journalEntryId,
-            String createdAt) {}
+            String createdAt,
+            String reversalEntryId,
+            String reversedAt) {}
 
     /**
      * Executes (or replays) the caller's transfer and answers the judgement — a {@code FAILED}
@@ -188,10 +199,10 @@ public final class TransferService {
                                                                 + " execution inserted or"
                                                                 + " replayed it in this very"
                                                                 + " transaction"));
-                    // Status and reason from the RESULT, not the row: a replay must render the
-                    // original judgement byte for byte, whatever later commands (the reversal,
-                    // P4-TSK-009) have done to the row's current state.
-                    return view(row, result.status().name(), result.failureReason());
+                    // Status and reason from the RESULT, not the row - and no reversal
+                    // columns, ever: a replay must render the original judgement byte for
+                    // byte, whatever the reversal (P4-TSK-009) has done to the row since.
+                    return view(row, result.status().name(), result.failureReason(), null, null);
                 });
     }
 
@@ -230,6 +241,39 @@ public final class TransferService {
                                                         .map(TransferService::currentView)
                                                         .toList())
                                 .orElse(List.of()));
+    }
+
+    /**
+     * Reverses the transfer as the acting operator (`P4-TSK-009`) — the operator surface on a
+     * customer slice, deliberately distinct in shape: no session-derived customer chain,
+     * because the subject is <em>somebody else's</em> transfer named from the URL, and the
+     * standing checks are {@code @RequiresPermission(TRANSFER_REVERSE)} at the boundary plus
+     * the actor {@code SecurityContext} carries into the command and its audit record
+     * (the {@code ADMINISTERED} class, `P1-TSK-028`).
+     *
+     * <p>The machine's refusal — {@code FAILED}, already-{@code REVERSED}, or the loser of a
+     * concurrent race — maps to the one {@code 409 transfers.NotReversible}, with nothing
+     * written (the thrown refusal rolls the transaction back, and it is thrown before any
+     * ledger work anyway). An unknown identifier answers empty for the controller's one 404.
+     */
+    public Optional<TransferView> reverse(TransferId transfer, String reason) {
+        Objects.requireNonNull(transfer, "transfer must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+        return inOneTransaction(
+                unitOfWork -> {
+                    try {
+                        return reversal
+                                .reverse(unitOfWork, transfer, reason)
+                                .map(TransferService::currentView);
+                    } catch (IllegalTransferTransitionException refused) {
+                        throw new ApiException(
+                                TransfersErrorCode.NOT_REVERSIBLE,
+                                "A reversal was refused by the transfer's state ("
+                                        + refused.from() + ")",
+                                "the transfer is " + refused.from()
+                                        + " and only a COMPLETED transfer can be reversed.");
+                    }
+                });
     }
 
     // -----------------------------------------------------------------
@@ -294,16 +338,27 @@ public final class TransferService {
         return amount;
     }
 
-    /** The GET view: the row's CURRENT state — what the world looks like now, by design. */
+    /**
+     * The GET view: the row's CURRENT state — what the world looks like now, by design — the
+     * reversal columns included when they exist. The POST path deliberately does not render
+     * them: a replayed POST must be byte-for-byte the original body, and the reversal columns
+     * are exactly the four `V002` leaves writable (`P4-TSK-009` must not leak into a replay).
+     */
     private static TransferView currentView(Transfer row) {
         return view(
                 row,
                 row.status().name(),
-                Optional.ofNullable(row.failureReason()));
+                Optional.ofNullable(row.failureReason()),
+                row.reversalEntryId() == null ? null : row.reversalEntryId().value().toString(),
+                row.reversedAt() == null ? null : row.reversedAt().toString());
     }
 
     private static TransferView view(
-            Transfer row, String status, Optional<FailureReason> reason) {
+            Transfer row,
+            String status,
+            Optional<FailureReason> reason,
+            String reversalEntryId,
+            String reversedAt) {
         return new TransferView(
                 row.id().value().toString(),
                 status,
@@ -312,7 +367,9 @@ public final class TransferService {
                 row.amount().currency().code(),
                 row.reference(),
                 row.journalEntryId() == null ? null : row.journalEntryId().value().toString(),
-                row.initiatedAt().toString());
+                row.initiatedAt().toString(),
+                reversalEntryId,
+                reversedAt);
     }
 
     /** An absent reference and a blank one are the same absence. */

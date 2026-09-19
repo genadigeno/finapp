@@ -1,7 +1,9 @@
 package com.finapp.app.transfers;
 
+import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
+import com.finapp.identity.PermissionName;
 import com.finapp.identity.Session;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -70,6 +72,29 @@ public class TransferController {
         // Method names here are published operationIds (the P2-TSK-006 `view_1` lesson): a
         // second handler named like BeneficiaryController's would rename a PUBLISHED operation.
         return transfers.create(current(request), body, idempotencyKey);
+    }
+
+    /**
+     * Reverses the transfer as the acting operator (`P4-TSK-009`) — the one privileged handler
+     * on this surface: {@code @RequiresPermission(TRANSFER_REVERSE)} beside the class's
+     * {@code @RequiresSession}, both protective, so the interceptor enforces the session AND
+     * the permission (only the {@code @Unauthenticated} contradiction is refused). Answers
+     * {@code 201} with the reversed view; a transfer the machine refuses is the one
+     * {@code 409 transfers.NotReversible}; unknown and malformed are one {@code 404}.
+     *
+     * <p><strong>Deliberately no idempotency key</strong> (the `P3-TSK-021` approval
+     * precedent): {@code COMPLETED -> REVERSED} happens at most once ever, so the machine is
+     * the idempotency ({@code INV-IDEM-01} through state) — a retry after a lost response gets
+     * the 409 naming the state, and the view carries the reversal.
+     */
+    @PostMapping(path = "/{id}/reversal", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.TRANSFER_REVERSE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public TransferService.TransferView reverseTransfer(
+            @PathVariable("id") String id, @Valid @RequestBody TransferReversalRequest body) {
+        return transfers
+                .reverse(parsedOrAbsent(id), body.reason())
+                .orElseThrow(TransferController::transferNotFound);
     }
 
     /** The caller's transfer — its current state, the reversal included when it exists. */

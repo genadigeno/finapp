@@ -1137,6 +1137,41 @@
           }
         }
       },
+      "transfers.NotReversible": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "transfers.NotReversible"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/transfers.NotReversible"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The transfer is not in a state that can be reversed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "transfers.UnknownDestination": {
         "content": {
           "application/problem+json": {
@@ -2180,6 +2215,20 @@
         ],
         "type": "object"
       },
+      "TransferReversalRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "pattern": "[^\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Cn}]+",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "TransferView": {
         "properties": {
           "amount": {
@@ -2201,6 +2250,12 @@
             "type": "string"
           },
           "reference": {
+            "type": "string"
+          },
+          "reversalEntryId": {
+            "type": "string"
+          },
+          "reversedAt": {
             "type": "string"
           },
           "status": {
@@ -3351,6 +3406,43 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/transfers/{id}/reversal": {
+      "post": {
+        "operationId": "reverseTransfer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferReversalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferView"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }

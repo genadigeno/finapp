@@ -51,14 +51,16 @@ public enum RoleName {
     KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW)),
 
     /**
-     * Operates the ledger and nothing else (`P3-TSK-007`): commands postings and manual
-     * adjustments over the surfaces that check {@link PermissionName#LEDGER_POST} and
-     * {@link PermissionName#LEDGER_ADJUST}.
+     * Operates the platform's money and nothing else (`P3-TSK-007`, widened by `P4-TSK-009`):
+     * commands postings, manual adjustments and transfer reversals over the surfaces that check
+     * {@link PermissionName#LEDGER_POST}, {@link PermissionName#LEDGER_ADJUST} and
+     * {@link PermissionName#TRANSFER_REVERSE}.
      *
-     * <p><strong>One role holding two permissions</strong>, because a role exists when a
-     * distinct trust decision does and Phase 3 has one ledger-operating population — while the
-     * permission vocabulary stays precise so `P3-TSK-017`'s adjustment endpoint can check
-     * {@code LEDGER_ADJUST} specifically. Holds none of the administrative or review
+     * <p><strong>One role holding three permissions</strong>, because a role exists when a
+     * distinct trust decision does and there is one money-operating population — a new role for
+     * the reversal would be a trust decision nothing takes (`P4-TSK-009`'s backlog sentence) —
+     * while the permission vocabulary stays precise so `P3-TSK-017`'s adjustment endpoint and
+     * `P4-TSK-009`'s reversal endpoint each check their own specifically. Holds none of the administrative or review
      * permissions, and they hold neither of these: posting the platform's money and managing
      * the people who hold it are different trust decisions, asserted pairwise and over HTTP in
      * both directions ({@code INV-AUD-03}).
@@ -68,7 +70,11 @@ public enum RoleName {
      * role, and what the split buys is that the escalation is a recorded grant in the trail
      * rather than a capability that was silently always there.
      */
-    LEDGER_OPERATOR(EnumSet.of(PermissionName.LEDGER_POST, PermissionName.LEDGER_ADJUST));
+    LEDGER_OPERATOR(
+            EnumSet.of(
+                    PermissionName.LEDGER_POST,
+                    PermissionName.LEDGER_ADJUST,
+                    PermissionName.TRANSFER_REVERSE));
 
     private final Set<PermissionName> permissions;
 

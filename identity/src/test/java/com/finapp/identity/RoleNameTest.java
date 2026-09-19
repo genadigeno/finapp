@@ -60,16 +60,19 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("LEDGER_OPERATOR grants exactly the two ledger permissions - nothing else")
-    void ledgerOperatorGrantsExactlyTwo() {
-        // One role, two permissions (P3-TSK-007): Phase 3 has one ledger-operating population,
-        // and the vocabulary stays precise so P3-TSK-017 can check LEDGER_ADJUST specifically.
-        // Exact set, so the role quietly gaining ROLE_ASSIGN - the permission that grants
-        // permissions - is a failing test rather than a silent expansion.
+    @DisplayName("LEDGER_OPERATOR grants exactly the three money-operating permissions")
+    void ledgerOperatorGrantsExactlyThree() {
+        // One role, three permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009): one
+        // money-operating population, and the vocabulary stays precise so the adjustment and
+        // reversal endpoints each check their own. Exact set, so the role quietly gaining
+        // ROLE_ASSIGN - the permission that grants permissions - is a failing test rather
+        // than a silent expansion.
         assertThat(RoleName.LEDGER_OPERATOR.permissions())
-                .as("operating the ledger is not managing identities or reviewing cases")
+                .as("operating the money is not managing identities or reviewing cases")
                 .containsExactlyInAnyOrder(
-                        PermissionName.LEDGER_POST, PermissionName.LEDGER_ADJUST);
+                        PermissionName.LEDGER_POST,
+                        PermissionName.LEDGER_ADJUST,
+                        PermissionName.TRANSFER_REVERSE);
     }
 
     @Test

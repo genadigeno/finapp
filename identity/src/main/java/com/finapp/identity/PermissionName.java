@@ -95,5 +95,23 @@ public enum PermissionName {
      * so the vocabulary is precise and the bundling is coarse. Names
      * {@code ledger.AdjustmentPosted}; the endpoint is `P3-TSK-017`'s, so it ships with a probe.
      */
-    LEDGER_ADJUST
+    LEDGER_ADJUST,
+
+    /**
+     * Reverse a completed transfer (`P4-TSK-009`) — the privileged, reasoned correction:
+     * {@code COMPLETED -> REVERSED} with the new referencing entry, the original left
+     * byte-identical ({@code INV-REV-01}).
+     *
+     * <p>Distinct from {@link #LEDGER_ADJUST} for the same reason that one is distinct from
+     * {@link #LEDGER_POST}: the checks differ per surface — the reversal endpoint checks exactly
+     * this, demands a recorded reason, and is bounded by the original ({@code INV-REV-02}),
+     * which is why four-eyes is deliberately not required of it where the unbounded adjustment
+     * earns {@code INV-AUD-04}'s regime (`PHASE_4_PLAN.md` §11). Names
+     * {@code transfers.TransferReversed}, declared and emitted by the same task — the second
+     * permission whose actions live outside {@code identity} and outside {@code ledger};
+     * authorization stays here per ADR-0031's recorded merge, the {@code KYC_REVIEW} precedent.
+     * Unlike its two ledger siblings it ships with its real check site,
+     * {@code POST /v1/transfers/'{id}'/reversal}.
+     */
+    TRANSFER_REVERSE
 }

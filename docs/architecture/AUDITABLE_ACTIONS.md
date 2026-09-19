@@ -293,6 +293,7 @@ producer this phase.
 | `transfers.TransferExecuted` | No | A transfer execution was judged: COMPLETED with its posting or FAILED with its enumerated reason; the record names the transfer, the accounts and the outcome, never an amount. |
 | `transfers.BeneficiaryAdded` | No | A party saved a transfer destination; the record names the beneficiary and the destination account by identifier, never the display name. |
 | `transfers.BeneficiaryRemoved` | No | A party removed a saved transfer destination; the removed row survives as evidence. |
+| `transfers.TransferReversed` | **Yes** | An operator reversed a completed transfer with a recorded reason; the record names the transfer, the original entry and the reversal entry, never an amount. |
 
 Declared with the command whose design fixes its meaning (`P4-TSK-005`, `P4-TSK-007`) rather
 than with the module skeleton — `P4-TSK-001`'s recorded decision, the `accounts`/`P3-TSK-011`
@@ -306,8 +307,15 @@ reason, the consent pair's reasoning — emitted by the acting call only (a conv
 removal moved nothing and records nothing), with the display name (`RESTRICTED-PII`) never in
 target or summary: `transfers.BeneficiaryAdded` is the trail creating a destination leaves,
 which is the act where an account takeover monetises and the reason the surface demands the
-enrolled identity's second factor. The reversal's action, with its **required** reason and its
-privileged actor, is `P4-TSK-009`'s design and deliberately not declared here.
+enrolled identity's second factor. **`transfers.TransferReversed` is the module's one
+reason-required action** (`P4-TSK-009`, `PHASE_4_PLAN.md` §11): a reversal is a privileged act
+over somebody else's money, so the operator's justification enters the trail at the moment they
+write it — made structurally mandatory by `AuditRecord`'s constructor, carried in a `POST` body
+rather than a query parameter because free prose may name a person or an incident
+(`INV-AUD-02`). Emitted by `TransferReversal` in the reversal transaction, by the winning move
+only: the loser of a concurrent race writes nothing at all, and the ledger's own
+`ledger.JournalEntryPosted` record of the reversal entry sits beside it — two acts at two
+levels, the `P4-TSK-005` layering.
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure

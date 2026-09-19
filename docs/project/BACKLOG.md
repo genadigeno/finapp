@@ -5107,7 +5107,35 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   (`INV-IDEM-03`); a keyless request is the interceptor's 422; no body shape a 500.
 - **Risk**: Medium. **Cx**: L. **DoD**: `DOD-API`, `DOD-FIN`
 
-**P4-TSK-009 — The reversal** — `READY`
+**P4-TSK-009 — The reversal** — `COMPLETE` (2026-09-19)
+- **Completion notes**: every accept clause demonstrated in `TransferReversalDatabaseTest`
+  over real HTTP with the operator granted through the real `Authorization` write - the
+  original entry and every line byte-identical as PostgreSQL's own renderings; both
+  balances restored exactly over the balance endpoints; the trail naming the operator with
+  the reason verbatim; ten concurrent reversals one entry and one move **counted in the
+  tables** (one 201, nine 409s), plus the deterministic interleaving with the loser
+  observed Lock-waiting on the transfer row's `FOR UPDATE` and refused with nothing
+  posted; `FAILED` and already-`REVERSED` each the one `409 transfers.NotReversible`; the
+  permissionless session (the transfer's own customer) refused 403 with nothing written,
+  the operator's success the positive control. The arbiter is **lock-then-look on the
+  transfer row** (the conditional's row count demoted to belt - under the held lock it
+  cannot lose, the mutation cut on analysis and recorded), because the `UPDATE` needs the
+  reversal entry id the posting has not yet minted, and post-then-move would surface the
+  loser as a ledger-level over-reversal instead of the machine's 409. **No idempotency
+  key, deliberately** (the `P3-TSK-021` approval precedent): the one-way machine is the
+  idempotency, and a retry gets the 409 with the view carrying the reversal. The reversal
+  posts **unconditionally** - no availability judgement on the destination, whose wallet
+  legitimately goes negative (`P3-TSK-008`) - and a destination product closed since the
+  transfer surfaces the catalogued `ledger.AccountNotPostable` with the whole transaction
+  rolled back, the recorded corner. **The scope's "identity `V015`, the `V014` ceremony"
+  was a drift, corrected on being met**: that ceremony replaces the ROLE constraint when a
+  role is added, and this task adds a permission to an existing role - a permission is
+  never a column (ADR-0031), so there is no migration to write and
+  `RoleAssignmentMigrationTest` holds the constraint unchanged. **Eight mutations, all
+  caught by the intended assertion, restores byte-identical**; verified by targeted tiers
+  (the full `:app:test` hermetic tier with every guard green, `:transfers:test`,
+  `:identity:test`, the transfers-package database suites) with **the full battery
+  deliberately skipped on the owner's instruction; no fleet-wide counts claimed**.
 - **Scope**: `TRANSFER_REVERSE` (identity `V015`, the `V014` ceremony — granted to
   `LEDGER_OPERATOR`: one money-operating population, a new role being a trust decision
   nothing here takes) and `POST /v1/transfers/{id}/reversal` (reason required, bounded in
@@ -5127,7 +5155,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   as the positive control (`INV-AUD-03`).
 - **Risk**: **High**. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-SEC`
 
-**P4-TSK-010 — The limit and risk seams** — `TODO`
+**P4-TSK-010 — The limit and risk seams** — `READY`
 - **Scope**: `TransferLimitCheck` and `TransferRiskDecision` — ports in `transfers`,
   **required parameters of the execution command with no defaulted overload** (the
   `PostingObserver` compiler-enforced precedent: Phase 13's wiring must be a decision, and a

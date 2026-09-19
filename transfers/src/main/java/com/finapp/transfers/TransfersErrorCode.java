@@ -46,7 +46,25 @@ public enum TransfersErrorCode implements ErrorCode {
     UNKNOWN_SOURCE(
             "transfers.UnknownSource",
             422,
-            "The source does not resolve to an account of the caller's that can send funds.");
+            "The source does not resolve to an account of the caller's that can send funds."),
+
+    /**
+     * The transfer is not in a state the machine permits a reversal to leave (`P4-TSK-009`).
+     *
+     * <p>A {@code 409}: the request was well formed and the state refuses it. <strong>One code
+     * for {@code FAILED}, already-{@code REVERSED} and the loser of a concurrent race
+     * alike</strong> — named for what is <em>checked</em> (the machine's edge, the
+     * {@code NOT_ACTIVE} lesson), never for the commonest cause: a {@code FAILED} transfer
+     * moved no money and has nothing to reverse, a {@code REVERSED} one is already corrected,
+     * and both answers send the operator to the same place — {@code GET /v1/transfers/'{id}'},
+     * whose view carries the state and the reversal when it exists. The caller is a
+     * {@code TRANSFER_REVERSE} holder, so naming the state discloses nothing an operator does
+     * not already read.
+     */
+    NOT_REVERSIBLE(
+            "transfers.NotReversible",
+            409,
+            "The transfer is not in a state that can be reversed.");
 
     private final String code;
     private final int status;

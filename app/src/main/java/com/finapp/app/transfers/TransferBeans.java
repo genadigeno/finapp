@@ -16,6 +16,7 @@ import com.finapp.transfers.JdbcTransferStore;
 import com.finapp.transfers.PermitAllUntilPhase13;
 import com.finapp.transfers.TransferExecution;
 import com.finapp.transfers.TransferParticipants;
+import com.finapp.transfers.TransferReversal;
 import com.finapp.transfers.TransferStore;
 import java.sql.Connection;
 import java.time.Clock;
@@ -72,6 +73,23 @@ class TransferBeans {
     }
 
     /**
+     * The reversal command (`P4-TSK-009`), composed from the shared beans — the ledger's
+     * {@code ReversalService} arriving through its own new bean in {@code LedgerBeans}, so the
+     * reversal posting is observed and claimed exactly as every other journal write.
+     */
+    @Bean
+    TransferReversal transferReversal(
+            TransferStore<Connection> transferStore,
+            com.finapp.ledger.ReversalService reversalService,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new TransferReversal(
+                transferStore, reversalService, auditWriter, outboxWriter, ids, clock);
+    }
+
+    /**
      * The transfer transaction: {@code REQUIRES_NEW} and default isolation (ADR-0039) — the
      * contended writes are the idempotency claim (unique-constraint arbitrated) and the
      * posting under the source row's {@code FOR UPDATE}, both the command's own.
@@ -87,6 +105,7 @@ class TransferBeans {
     @Bean
     TransferService transferService(
             TransferExecution transferExecution,
+            TransferReversal transferReversal,
             TransferStore<Connection> transferStore,
             BeneficiaryStore<Connection> beneficiaryStore,
             IdentityStore<Connection> identityStore,
@@ -95,6 +114,7 @@ class TransferBeans {
             DataSource dataSource) {
         return new TransferService(
                 transferExecution,
+                transferReversal,
                 transferStore,
                 beneficiaryStore,
                 identityStore,

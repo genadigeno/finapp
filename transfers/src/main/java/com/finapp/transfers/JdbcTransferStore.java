@@ -154,6 +154,59 @@ public final class JdbcTransferStore implements TransferStore<Connection> {
         }
     }
 
+    @Override
+    public Optional<Transfer> lockById(Connection unitOfWork, TransferId transfer) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(transfer, "transfer must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // FOR UPDATE: the reversal's serialisation point (P4-TSK-009). The
+                        // column-narrowed UPDATE grant suffices for the row lock - the
+                        // adjustment_proposal precedent (P3-TSK-021).
+                        "SELECT " + COLUMNS + " FROM transfers.transfer WHERE id = ?"
+                                + " FOR UPDATE")) {
+            read.setObject(1, transfer.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new TransfersStorageException(
+                    DatabaseFailure.describe("locking transfer " + transfer, failure));
+        }
+    }
+
+    @Override
+    public void markReversed(Connection unitOfWork, Transfer reversed, TransferStatus from) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(reversed, "reversed must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        // Exactly V002's granted columns; status = ? is the recorded belt -
+                        // under lockById's lock the row count can only be 1.
+                        "UPDATE transfers.transfer"
+                                + " SET status = ?, reversal_entry_id = ?, reversed_by = ?,"
+                                + " reversed_at = ?"
+                                + " WHERE id = ? AND status = ?")) {
+            update.setString(1, reversed.status().name());
+            update.setObject(2, reversed.reversalEntryId().value());
+            update.setObject(3, reversed.reversedBy());
+            update.setTimestamp(4, Timestamp.from(reversed.reversedAt()));
+            update.setObject(5, reversed.id().value());
+            update.setString(6, from.name());
+            int moved = update.executeUpdate();
+            if (moved != 1) {
+                throw new TransfersStorageException(
+                        "reversing transfer " + reversed.id() + " moved " + moved
+                                + " rows where the held lock guarantees exactly 1 - an"
+                                + " invariant is already broken");
+            }
+        } catch (SQLException failure) {
+            throw new TransfersStorageException(
+                    DatabaseFailure.describe("reversing transfer " + reversed.id(), failure));
+        }
+    }
+
     private static Transfer rehydrate(ResultSet row) throws SQLException {
         UUID entryId = row.getObject("journal_entry_id", UUID.class);
         UUID reversalEntryId = row.getObject("reversal_entry_id", UUID.class);

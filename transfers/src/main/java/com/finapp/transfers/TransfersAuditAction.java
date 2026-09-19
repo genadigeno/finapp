@@ -57,7 +57,27 @@ public enum TransfersAuditAction implements AuditableAction {
             "transfers.BeneficiaryRemoved",
             "A party removed a saved transfer destination; the removed row survives as"
                     + " evidence.",
-            false);
+            false),
+
+    /**
+     * A completed transfer was reversed by an operator (`P4-TSK-009`): {@code COMPLETED ->
+     * REVERSED} with the new referencing entry, the original left byte-identical
+     * ({@code INV-REV-01/-02}).
+     *
+     * <p><strong>Reason required</strong> (`PHASE_4_PLAN.md` §11): the reversal is a privileged
+     * act taken over somebody else's money, and a quiet one is how an accomplice undoes a
+     * customer's transfer — the justification enters the trail at the moment the operator
+     * writes it, made structurally mandatory by {@code AuditRecord}'s own constructor. The
+     * summary names the transfer and both entries by identifier, never an amount
+     * ({@code INV-AUD-02}). Emitted by {@code TransferReversal} in the reversal transaction —
+     * the winning move only, since the loser of a concurrent race writes nothing at all.
+     */
+    TRANSFER_REVERSED(
+            "transfers.TransferReversed",
+            "An operator reversed a completed transfer with a recorded reason; the record"
+                    + " names the transfer, the original entry and the reversal entry, never"
+                    + " an amount.",
+            true);
 
     private final String code;
     private final String description;

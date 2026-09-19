@@ -15,8 +15,9 @@ import java.util.UUID;
  * classified on arrival in the ownership register: {@link #findOwned} and {@link #listFor}
  * carry {@code customer_id = ?} in the statement (ADR-0031 — `V002` named that column as the
  * ownership predicate's on the day it was created), and {@link #findById} serves only an
- * identifier the execution command itself just minted, never a request's. `P4-TSK-009`'s
- * reversal lock remains deferred to its own arrival.
+ * identifier the execution command itself just minted, never a request's. The reversal pair
+ * ({@link #lockById}, {@link #markReversed}) arrived with `P4-TSK-009`, exactly as this
+ * paragraph deferred them.
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */
@@ -53,4 +54,25 @@ public interface TransferStore<T> {
      * {@code transfer_by_customer} index, named for this read on the day the table was created.
      */
     List<Transfer> listFor(T unitOfWork, UUID customerId);
+
+    /**
+     * The transfer {@code transfer}, read {@code FOR UPDATE} — the reversal's serialisation
+     * point (`P4-TSK-009`, the `P2-TSK-015` lock-then-look idiom): the loser of two concurrent
+     * reversals blocks here, resumes on the winner's commit, and this locked read <em>is</em>
+     * its fresh look — the machine judged from it refuses with nothing posted. Whoever the
+     * transfer belongs to, deliberately: the caller is an operator naming the subject from a
+     * URL, and the standing check is {@code @RequiresPermission(TRANSFER_REVERSE)} at the
+     * boundary ({@code ADMINISTERED} in the ownership register, the `P1-TSK-028` class).
+     */
+    Optional<Transfer> lockById(T unitOfWork, TransferId transfer);
+
+    /**
+     * Records {@code reversed}'s transition onto its row: the conditional
+     * {@code UPDATE … SET status, reversal_entry_id, reversed_by, reversed_at WHERE id = ? AND
+     * status = ?} — exactly `V002`'s granted columns and the trigger's one legal edge. Under
+     * {@link #lockById}'s lock the row count can only be 1; anything else is an invariant
+     * already broken and throws loudly rather than committing beside it. The predicate is the
+     * recorded <em>belt</em> ({@code INV-CON-02}'s discipline); the lock is the arbiter.
+     */
+    void markReversed(T unitOfWork, Transfer reversed, TransferStatus from);
 }

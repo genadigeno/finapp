@@ -274,6 +274,7 @@ class OpenApiContractTest {
                         // and the reads are ownership-scoped (customer_id = ?).
                         ApiVersion.CURRENT_PREFIX + "/transfers",
                         ApiVersion.CURRENT_PREFIX + "/transfers/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/transfers/{id}/reversal",
                         // P3-TSK-017: the ledger's one public surface - the adjustment,
                         // behind LEDGER_ADJUST, reason required (INV-REV-04).
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments",
