@@ -15,8 +15,9 @@ immediately below, and described canonically in
 
 ## Where the project is
 
-**Phases 0 through 4 are `COMPLETE`, and Phase 5 — Payment Infrastructure — is `READY`**: the
-Phase 4 → 5 transition was conducted on 2026-09-20
+**Phases 0 through 4 are `COMPLETE`, and Phase 5 — Payment Infrastructure — is `IN_PROGRESS`**
+(started 2026-09-20 with `P5-TSK-001`; M5.1 open at 1 of 3): the
+Phase 4 → 5 transition was conducted the same day
 ([`docs/project/reviews/PHASE_4_TO_5_TRANSITION.md`](docs/project/reviews/PHASE_4_TO_5_TRANSITION.md)),
 confirming Phase 4 with an independent audit and a **fleet-wide full battery** — 1157 hermetic /
 729 database / 14 kafka, 0 failures — and initialising Phase 5 in full: ADR-0045–0049, the
@@ -31,18 +32,18 @@ description of where the project is; this section is the summary of it.
 
 ```
 Programme    █████░░░░░░░░░░░░   5 of 17 phases complete
-Backlog      ████████████████░░  160 of 181 elaborated items complete
+Backlog      ████████████████░░  161 of 181 elaborated items complete
 Phase 4      ██████████████     14 of 14 items, 8 of 8 milestones closed
-Phase 5      ░░░░░░░░░░░░░░░░░░   READY — 0 of 21 items, first task P5-TSK-001
+Phase 5      █░░░░░░░░░░░░░░░░░   1 of 21 items — M5.1 open, next P5-TSK-002
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | **None in progress.** Phase 5 is `READY`; the next task is **`P5-TSK-001`** — the `payments` and `paymentmethods` modules and their privilege floors. The phase where the outcome becomes an unreliable third party's and `INV-LIFE-03` goes live |
+| 🔨 **Current work** | Phase 5 in progress — the payment modules and their privilege floors exist (`P5-TSK-001`), with the PCI boundary (`paymentmethods`) the most isolated module on the platform. Next: **`P5-TSK-002`**, the per-credential confinement generalised |
 | 💰 **Business capability** | Money exists: accounts, a double-entry ledger, explainable balances, holds, and customer-visible internal transfers over HTTP |
 | 📐 **Decisions** | 49 ADRs — 44 `Accepted`, and ADR-0045–0049 `Proposed` by the Phase 4 → 5 transition for the phase they open |
 | 🔒 **Invariants** | 87 catalogued — the transition added `INV-PAY-01`–05, Phase 5's gate properties given stable IDs before code is written against prose; each in-scope one has a test *demonstrated to fail* when the invariant is broken |
-| 🗄️ **Schema** | 55 forward-only migrations across 8 schema-owning modules |
+| 🗄️ **Schema** | 57 forward-only migrations across 10 schema-owning modules |
 | 🌐 **API** | 39 published paths, 47 operations, compared byte for byte against the running application on every build |
 | 🧾 **Audit and errors** | 46 auditable actions, 35 error codes, both reconciled with the code by the build |
 | 🧩 **Code** | 10 Gradle modules, 491 production and 298 test source files |

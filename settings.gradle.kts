@@ -80,4 +80,18 @@ include("accounts")
 // the module that moves money must not compile against the module that owns the product.
 include("transfers")
 
+// The Phase 5 payment modules (P5-TSK-001). `paymentmethods` first: the tokenised-instrument
+// boundary - the platform's PCI line (MODULE_ARCHITECTURE.md M7) - with NO business-sibling edge
+// at all, so nothing reconstructable into an instrument can be compiled against by any other
+// module. `payments` second, after `ledger` for the same structural reason as `accounts` and
+// `transfers`: payments -> ledger is its one permitted sibling edge (a capture's money movement
+// IS a ledger posting, commanded through PostingService and never written - INV-LED-04,
+// ADR-0048), so with this edge declared, `ledger -> payments` is a Gradle dependency cycle the
+// build refuses outright. `payments -> paymentmethods` is deliberately ABSENT and is refused by
+// PaymentsModuleIsolationTest alone - no cycle backs that refusal, which is exactly why the test
+// exists: the module that talks to providers must not see the module that holds the PCI
+// boundary; the instrument resolves through a port `app` implements (ADR-0049, PHASE_5_PLAN §3).
+include("paymentmethods")
+include("payments")
+
 include("app")

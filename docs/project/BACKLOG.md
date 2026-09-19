@@ -5440,7 +5440,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
 
 # Phase 5 — Payment Infrastructure
 
-Status: `READY` (2026-09-20) — entry gate passed by the Phase 4 → 5 transition
+Status: `IN_PROGRESS` (started 2026-09-20 with `P5-TSK-001`) — entry gate passed the same day by the Phase 4 → 5 transition
 ([`reviews/PHASE_4_TO_5_TRANSITION.md`](reviews/PHASE_4_TO_5_TRANSITION.md)), elaborated to
 task granularity by the same transition. The engineering plan is
 [`PHASE_5_PLAN.md`](PHASE_5_PLAN.md); decisions are ADR-0045…ADR-0049 (`Proposed`); the
@@ -5463,7 +5463,7 @@ sample of one is the first-rail trap the question 9 record warns about.
 demonstration (`P5-TSK-017`, `P5-TST-002`, `P5-TST-003`) · M5.9 The gate (`P5-DOC-001`).
 Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 
-**P5-TSK-001 — The `payments` and `paymentmethods` modules and schemas** — `READY`
+**P5-TSK-001 — The `payments` and `paymentmethods` modules and schemas** — `COMPLETE` (2026-09-20)
 - **Objective**: the module shape's fifth and sixth performances, and the phase's boundary
   decisions as build-graph facts. Bounded contexts 9 and 10.
 - **Scope**: two guarded modules on the documented direction. `payments → ledger` declared
@@ -5482,9 +5482,34 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - **Deps**: none. **Out of scope**: every table, aggregate, bean and endpoint.
 - **Accept**: build green with both modules; both floors proven live; both isolation
   asymmetries demonstrated; the planted probes caught.
+- **Gate evidence (2026-09-20)**: hermetic fleet green with both modules — **1161 tests, 0
+  failures**, the +4 the two isolation tests' own methods. **Six probes, all caught by the
+  intended assertion, restores verified byte-identical by comparison**: a planted `double`
+  in each module caught **naming that module** (`com.finapp.payments.Planted.amount is
+  double (INV-MON-01)`, then the paymentmethods twin — run once per module deliberately,
+  because one module's catch cannot vouch for the other's coverage; the first plant was
+  written with a PowerShell BOM and refused by javac before it could prove anything — the
+  a-mutation-must-compile rule, met again, re-planted clean); `payments → party` caught
+  (*payments must not depend on party*, the party jar named in the failure);
+  **`payments → paymentmethods` caught** (*payments must not depend on paymentmethods* —
+  the load-bearing probe, since no Gradle cycle backs the PCI refusal and the test is the
+  only control); `accounts → payments` caught from the other side; `ledger → payments`
+  refused by **Gradle configuration outright** as a circular dependency. **The floor proven
+  live** on a throwaway `postgres:18.6` with the real role script: migrate → validate →
+  re-migrate idempotent for both schemas; owner `finapp_migrator`; ACL exactly
+  `{finapp_migrator=UC, finapp_app=U}` with **no `PUBLIC` entry**; `USAGE` and **not**
+  `CREATE` for the app role; **zero application tables** (each schema holding only Flyway's
+  own history: the schema-creation marker plus one versioned row, both successful).
+  Housekeeping: both `gradle.lockfile`s generated in the one-invocation regeneration and
+  **identical to `transfers`'s but for the header line**; `gradle/verification-metadata.xml`
+  unchanged (the modules add no artefact the build did not already trust); the `build-logic`
+  Kotlin RC3→GA lockfile drift met and reverted a **fifth** time. Verified by targeted
+  tiers — the fleet-wide hermetic `test` task and the two schema-floor checks above —
+  **the full battery deliberately skipped on the owner's instruction; no fleet-wide
+  database or kafka counts claimed.**
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
 
-**P5-TSK-002 — The per-credential confinement, generalised** — `TODO`
+**P5-TSK-002 — The per-credential confinement, generalised** — `READY`
 - **Objective**: pay the debt row that fired at `P2-TSK-011`: four hand-written copies of
   the loopback-confinement shape (`DatabaseCredentialGuard`, `MfaKey`, `DocumentKey`,
   `CallbackKey`) become one mechanism before the fifth and sixth credentials (the provider

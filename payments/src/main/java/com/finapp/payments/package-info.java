@@ -1,0 +1,39 @@
+/**
+ * Money movement whose outcome is decided by an unreliable third party: the payment, its
+ * lifecycle, its provider evidence - never a posting.
+ *
+ * <p><strong>What belongs here.</strong> PaymentIntent, PaymentAttempt and Refund - the
+ * customer's objective, the provider-facing try, and the bounded return - with their status
+ * machines, per-operation provider idempotency references and verbatim provider evidence
+ * ({@code MODULE_ARCHITECTURE.md} §4, bounded context 9). A payment's outcome is decided by a
+ * third party, which is the exact boundary ADR-0043 named as where the transfer's one-transaction
+ * answer stops: here <em>no transaction spans a provider call</em> (ADR-0046) - the dispatch
+ * commits before the provider is asked, the outcome applies in a second transaction, and
+ * ambiguity commits an {@code *_UNKNOWN} state ({@code INV-LIFE-03}), never an assumed failure.
+ *
+ * <p><strong>This module commands postings and writes none</strong> ({@code INV-LED-04}). The
+ * ledger's first touch is <em>capture</em> (ADR-0048): debit PSP clearing, credit the customer
+ * wallet, in the capture's outcome transaction through the ledger's command API - authorization
+ * posts nothing, because the issuer holds the customer's external funds and nothing about our
+ * books has changed. The direction is structural: with {@code payments -> ledger} in the build
+ * graph, the reverse edge is a Gradle dependency cycle, and
+ * {@link com.finapp.payments PaymentsModuleIsolationTest} pins the positive half.
+ *
+ * <p><strong>Deliberately no edge to {@code paymentmethods}</strong> - and unlike the ledger
+ * asymmetry, no cycle backs this refusal, so the isolation test is the only control. The module
+ * that talks to providers must not compile against the module that holds the PCI boundary
+ * ({@code INV-PAY-02}, M7): the instrument resolves through a port {@code app} implements
+ * ({@code P5-TSK-009}), and provider vocabulary stays behind the adapter ({@code INV-PAY-03}).
+ *
+ * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema
+ * ({@code P5-TSK-001}) - nothing else. The provider port and simulated adapter are
+ * {@code P5-TSK-003}; the aggregates and machines {@code P5-TSK-006}/{@code -007}; the schema's
+ * tables {@code P5-TSK-008}; the commands {@code P5-TSK-009}/{@code -010}/{@code -015}.
+ *
+ * <p><strong>Deliberately no audit-action enum yet</strong> (the deliberately-few licence,
+ * {@code P4-TSK-001}'s precedent): the actions arrive with the commands whose designs fix their
+ * meaning - confirmation and cancellation as the person ({@code P5-TSK-009}/{@code -011}),
+ * outcome application as the platform ({@code P5-TSK-009}/{@code -014}), the refund with its
+ * required reason ({@code P5-TSK-015}).
+ */
+package com.finapp.payments;

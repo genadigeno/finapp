@@ -45,7 +45,7 @@ structurally unable to run). **Money moves between customers**: 14 of 14 backlog
 ADRs `Accepted`, 83 mutations all caught, and the reversal, seams, meters and conservation
 storms all landed before the gate rather than at it.
 
-**Phase 5 is `READY`** (entry gate passed 2026-09-20, all twelve criteria —
+**Phase 5 is `IN_PROGRESS`** (started 2026-09-20 with `P5-TSK-001`; entry gate passed the same day, all twelve criteria —
 [`PHASE_4_TO_5_TRANSITION.md`](../project/reviews/PHASE_4_TO_5_TRANSITION.md)). Planned in
 full in `PHASE_5_PLAN.md`, with ADR-0045–0049 `Proposed` — the intent/attempt machines, the
 no-transaction-spans-a-provider-call discipline with `UNKNOWN` and reconciliation-by-query,
@@ -53,7 +53,7 @@ webhook ingestion, the accounting treatment of authorization vs capture (unresol
 question 6 closed) and the first simulated provider with its finality semantics (question 9
 closed) — plus the new `INV-PAY-01`–05 group taking the catalogue to **87 invariants**, 21
 backlog items across nine milestones, and `PAYMENT_LIFECYCLES.md` rewritten from its stub.
-First task: `P5-TSK-001`, `READY`.
+`P5-TSK-001` landed the two modules and their privilege floors the same day; M5.1 is open at 1 of 3, next `P5-TSK-002`.
 
 **Phase 4 was the first customer-visible money movement** — and deliberately the *easy* half
 of moving money: both legs internal, one database, one transaction, no third party. Its job

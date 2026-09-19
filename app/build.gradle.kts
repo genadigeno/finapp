@@ -63,6 +63,11 @@ dependencies {
     // ProductionModules derives the swept set from app's classpath and a module not on it is a
     // module no rule protects.
     implementation(project(":transfers"))
+    // The Phase 5 payment modules (P5-TSK-001), on the classpath for the same reason - and the
+    // planted-double probe is run once PER module deliberately, because one module's catch
+    // cannot vouch for the other's coverage.
+    implementation(project(":payments"))
+    implementation(project(":paymentmethods"))
 
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
