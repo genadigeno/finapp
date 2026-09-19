@@ -334,7 +334,7 @@ phases must satisfy, not a description of code.
 - **Transaction:** own. **No transaction spans a provider call**: state is committed before the call and the outcome applied in a separate transaction.
 - **Consistency:** strong internally. Provider truth is eventually consistent and may be permanently unknown.
 - **APIs:** intent create/confirm/cancel, attempt status, refund create. Idempotency mandatory on every money-moving command; terminal-state semantics documented.
-- **Events:** `PaymentIntentCreated`, `PaymentAuthorized`, `PaymentCaptured`, `PaymentFailed`, `PaymentStateUnknown`, `RefundInitiated`, `RefundCompleted`.
+- **Events:** `PaymentIntentCreated`, `PaymentAuthorized`, `PaymentCaptured`, `PaymentFailed`, `PaymentStateUnknown`, `RefundInitiated`, `RefundCompleted`, `RefundFailed` *(added by the Phase 4 → 5 transition with provenance: terminal facts publish — ADR-0044's doctrine — and a refund's failure is one; `RefundInitiated` stays, legitimately, because under ADR-0046 the dispatch commits durably before its own outcome exists — the opposite of the `TransferInitiated` case)*.
 - **Failure:** the module's defining concern. A timeout is never treated as failure; unknown is a modelled state with a reconciliation-by-query sweeper (`INV-LIFE-03`); duplicate and out-of-order webhooks produce one effect; an unrecognised provider state maps to indeterminate, never to success.
 - **Security:** webhook signature verification and replay-window enforcement; provider credentials in secret management; tokenised instruments only — no PAN, ever; refunds are privileged.
 - **Operations:** per-provider success/failure/latency, unknown-state count **and age**, webhook lag and duplicate rate, stuck-attempt alerting.

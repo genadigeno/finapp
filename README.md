@@ -15,8 +15,12 @@ immediately below, and described canonically in
 
 ## Where the project is
 
-**Phases 0 through 4 are `COMPLETE`. The next act is the Phase 4 → Phase 5 transition**, which is
-its own act rather than a backlog task: no Phase 5 item exists until it has been conducted.
+**Phases 0 through 4 are `COMPLETE`, and Phase 5 — Payment Infrastructure — is `READY`**: the
+Phase 4 → 5 transition was conducted on 2026-09-20
+([`docs/project/reviews/PHASE_4_TO_5_TRANSITION.md`](docs/project/reviews/PHASE_4_TO_5_TRANSITION.md)),
+confirming Phase 4 with an independent audit and a **fleet-wide full battery** — 1157 hermetic /
+729 database / 14 kafka, 0 failures — and initialising Phase 5 in full: ADR-0045–0049, the
+`INV-PAY` invariant group, `PHASE_5_PLAN.md`, and 21 backlog items across nine milestones.
 
 Every number below is counted from this repository rather than recalled: items from
 [`docs/project/BACKLOG.md`](docs/project/BACKLOG.md), decisions from [`docs/adr/`](docs/adr/README.md),
@@ -27,16 +31,17 @@ description of where the project is; this section is the summary of it.
 
 ```
 Programme    █████░░░░░░░░░░░░   5 of 17 phases complete
-Backlog      ██████████████████  160 of 160 elaborated items complete
+Backlog      ████████████████░░  160 of 181 elaborated items complete
 Phase 4      ██████████████     14 of 14 items, 8 of 8 milestones closed
+Phase 5      ░░░░░░░░░░░░░░░░░░   READY — 0 of 21 items, first task P5-TSK-001
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | **None in progress.** Next is the **Phase 4 → Phase 5 transition** — where the outcome becomes an unreliable third party's, `INV-LIFE-03` goes live, and ADR-0043's atomicity answer must **not** be inherited by analogy |
+| 🔨 **Current work** | **None in progress.** Phase 5 is `READY`; the next task is **`P5-TSK-001`** — the `payments` and `paymentmethods` modules and their privilege floors. The phase where the outcome becomes an unreliable third party's and `INV-LIFE-03` goes live |
 | 💰 **Business capability** | Money exists: accounts, a double-entry ledger, explainable balances, holds, and customer-visible internal transfers over HTTP |
-| 📐 **Decisions** | 44 ADRs, **all `Accepted`** — ADR-0043 and ADR-0044 accepted at the Phase 4 exit gate, both copies reconciled by the build |
-| 🔒 **Invariants** | 82 catalogued; each in-scope one has a test *demonstrated to fail* when the invariant is broken |
+| 📐 **Decisions** | 49 ADRs — 44 `Accepted`, and ADR-0045–0049 `Proposed` by the Phase 4 → 5 transition for the phase they open |
+| 🔒 **Invariants** | 87 catalogued — the transition added `INV-PAY-01`–05, Phase 5's gate properties given stable IDs before code is written against prose; each in-scope one has a test *demonstrated to fail* when the invariant is broken |
 | 🗄️ **Schema** | 55 forward-only migrations across 8 schema-owning modules |
 | 🌐 **API** | 39 published paths, 47 operations, compared byte for byte against the running application on every build |
 | 🧾 **Audit and errors** | 46 auditable actions, 35 error codes, both reconciled with the code by the build |
@@ -143,8 +148,7 @@ on that evidence with the deviation stated rather than waived.
 
 | | |
 |---|---|
-| Hermetic tier | **fleet-wide and current**: 1157 tests, 0 failures across all ten modules, run after the Phase 4 flip — which is where the flip's own guards live |
-| Database and kafka | Verified **per task**, suite by suite. The last fleet-wide measurement is 2026-09-17 (`P4-TSK-003`): 683 database, 14 kafka. **No fleet-wide database or kafka count is claimed for Phase 4** — recorded as a deviation in the exit review's area 8, with an owner |
+| Full battery | **Fleet-wide and current (2026-09-20, the Phase 4 → 5 transition): 1157 hermetic / 729 database / 14 kafka tests, 0 failures** — the first genuine fleet-wide database and kafka count of Phase 4, closing the exit review's recorded deviation. Producing it found and repaired a test-harness defect: the per-JVM PostgreSQL container's default connection ceiling could not carry every cached Spring context's fixed pool, so the fleet-wide `:app:databaseTest` was structurally unable to run — every failure a connection error, zero assertion failures, and the harness now provisions the ceiling the fleet needs |
 | CI | Four gates on every push to `master`: build and tests, migrations against a real PostgreSQL, secret scan over full history, dependency scan of a CycloneDX SBOM (see section 6) |
 
 ---

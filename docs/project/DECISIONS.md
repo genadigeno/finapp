@@ -443,6 +443,53 @@ follow the machine: the terminal facts publish, and `TransferInitiated` does not
 would commit beside its own outcome. &rarr;
 [ADR-0044](../adr/ADR-0044-transfer-lifecycle-states-are-earned.md)
 
+### Payment execution
+**The payment lifecycle is two aggregates and three machines, every state earned by a
+producer** (ADR-0044's doctrine applied where its refused states finally have producers):
+the intent (`REQUIRES_CONFIRMATION → {PROCESSING, CANCELLED}`, `PROCESSING → {SUCCEEDED,
+FAILED}`) answers the customer's question; the attempt — with durable `*_DISPATCHED` and
+`*_UNKNOWN` states — owns every provider interaction and reference; refunds are their own
+bounded aggregate, never a state stored twice on the intent. One attempt per intent in
+Phase 5, a schema built for N. →
+[ADR-0045](../adr/ADR-0045-payment-intent-and-attempt.md)
+
+**No transaction spans a provider call.** Atomicity with a third party is unavailable at
+any price, so the discipline is dispatch-before-call: the operation's state and its
+platform-minted provider idempotency reference commit **before** the provider is asked, the
+call holds no connection, and the outcome — including the capture's posting — applies in a
+second transaction through conditional transitions. Ambiguity commits `*_UNKNOWN`
+(`INV-LIFE-03`), never an assumed failure — the single most expensive assumption in
+payments, made structurally impossible rather than discouraged. Resolution is by query:
+every instance sweeps, **no lease and no leader**, because queries are idempotent and the
+conditional transition arbitrates. →
+[ADR-0046](../adr/ADR-0046-no-transaction-spans-a-provider-call.md)
+
+**Webhooks are authenticated before parsing, freshness-bounded, evidence-first and
+order-blind.** Signature over the raw bytes per provider key with a signed timestamp
+window (`INV-PAY-01`); verbatim evidence and inbox dedupe commit together before any state
+effect; every effect is a conditional machine edge, so duplicates, out-of-order arrivals
+and webhook-before-response are the same harmless race and the losers are evidence. An
+authentic unmappable webhook is acknowledged with its evidence retained — alerting, not a
+stalled provider queue, is the escalation. →
+[ADR-0047](../adr/ADR-0047-webhook-ingestion.md)
+
+**Authorization is a payment-domain fact; the ledger's first touch is capture.** An
+authorization is the issuer's promise against the customer's external instrument — nothing
+about our books has changed, so it posts nothing and holds nothing. Capture posts debit
+`PSP_CLEARING` / credit wallet atomically with the state transition; the clearing balance
+is continuously the captured-but-unsettled position (`INV-SET-01`). A refund holds the
+wallet funds at dispatch inside the account lock and releases-and-posts on completion.
+Closes unresolved question 6, open since initiation. →
+[ADR-0048](../adr/ADR-0048-authorization-is-not-a-posting.md)
+
+**The first provider is a simulated card-style PSP, and nothing is final before
+settlement.** Card-style auth/capture is the maximal exercise of the lifecycle
+distinctions — a simpler rail would ship a port too thin and close the first-rail trap.
+Authorization is revocable, capture reversible by bounded refund, settlement never
+recorded in Phase 5; `INV-REV-03` has no subject until the second rail (Phase 7). The
+port stays one provider wide deliberately. Closes unresolved question 9. →
+[ADR-0049](../adr/ADR-0049-first-provider-simulated-card-psp.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
@@ -494,7 +541,7 @@ where later capability is structurally needed earlier, the earlier phase defines
 → [ADR-0007](../adr/ADR-0007-phase-gated-delivery.md), [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md)
 
 ### Invariant governance
-Eighty-two financial, security and operational invariants are catalogued with stable IDs,
+Eighty-seven financial, security and operational invariants are catalogued with stable IDs,
 enforcement mechanisms and verification methods. (This line said "seventy-one" until the
 Phase 1 → 2 transition — stale since `INV-IDN-08` — and now derives its correction from the
 catalogue's own index.) Phases declare the invariants they protect

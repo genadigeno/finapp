@@ -5438,13 +5438,346 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
 
 ---
 
-# Phases 5–16 — Epics
+# Phase 5 — Payment Infrastructure
+
+Status: `READY` (2026-09-20) — entry gate passed by the Phase 4 → 5 transition
+([`reviews/PHASE_4_TO_5_TRANSITION.md`](reviews/PHASE_4_TO_5_TRANSITION.md)), elaborated to
+task granularity by the same transition. The engineering plan is
+[`PHASE_5_PLAN.md`](PHASE_5_PLAN.md); decisions are ADR-0045…ADR-0049 (`Proposed`); the
+domain statement is [`PAYMENT_LIFECYCLES.md`](../domain/PAYMENT_LIFECYCLES.md). The in-scope
+invariants are whatever the catalogue marks `Phase: 5` — **eleven at planning time**
+(`INV-HIST-02` providers, `INV-IDEM-01` payments, `INV-IDEM-04` webhooks, `INV-LIFE-03`,
+`INV-REV-02` refunds, `INV-SET-01`, and the transition's new `INV-PAY-01`…`05`) — **read
+from the catalogue at the gate, never from this file**. The financial supplement F1–F8
+binds; every task that can affect money carries `DOD-FIN`.
+
+**The original epic table is superseded by the elaboration below, with one epic corrected
+on the record**: *provider adapter framework* is deliberately **not** a framework — the port
+is one provider wide until Phase 7 (ADR-0049 §4), and building the abstraction against a
+sample of one is the first-rail trap the question 9 record warns about.
+
+**Milestones**: M5.1 Foundations (`P5-TSK-001`…`-003`) · M5.2 The instrument (`P5-TSK-004`,
+`-005`) · M5.3 The intent and the attempt (`P5-TSK-006`…`-008`) · M5.4 Money arrives
+(`P5-TSK-009`…`-011`) · M5.5 Webhooks (`P5-TSK-012`, `-013`) · M5.6 The unknown state
+(`P5-TSK-014`, `P5-TST-001`) · M5.7 Refunds (`P5-TSK-015`, `-016`) · M5.8 Observability and
+demonstration (`P5-TSK-017`, `P5-TST-002`, `P5-TST-003`) · M5.9 The gate (`P5-DOC-001`).
+Acceptance per milestone in `PHASE_5_PLAN.md` §16.
+
+**P5-TSK-001 — The `payments` and `paymentmethods` modules and schemas** — `READY`
+- **Objective**: the module shape's fifth and sixth performances, and the phase's boundary
+  decisions as build-graph facts. Bounded contexts 9 and 10.
+- **Scope**: two guarded modules on the documented direction. `payments → ledger` declared
+  (postings and holds are commanded, never written — `INV-LED-04`); `payments →
+  paymentmethods` **refused** — the instrument resolves through a port `app` implements
+  (`InstrumentResolution`, the `AccountHolderVerification` shape), so the PCI module is
+  invisible to the module that talks to providers; every sibling isolation test gains both
+  modules in both directions; a planted `ledger → payments` edge fails Gradle configuration
+  as a cycle, demonstrated. `V001` in each schema: owner `finapp_migrator`, `REVOKE ALL
+  FROM PUBLIC`, `USAGE` alone to `finapp_app`, no tables, no `ALTER DEFAULT PRIVILEGES`.
+  Migrate → validate → re-migrate idempotent on a throwaway PostgreSQL, ACL checked
+  exactly. No audit-action enums yet (the deliberately-few licence). A planted `double` in
+  each module fails the floating-point rules naming it (the `P4-TSK-001` classpath lesson:
+  both modules join `app`'s classpath with the edge that makes `ProductionModules` see
+  them).
+- **Deps**: none. **Out of scope**: every table, aggregate, bean and endpoint.
+- **Accept**: build green with both modules; both floors proven live; both isolation
+  asymmetries demonstrated; the planted probes caught.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
+
+**P5-TSK-002 — The per-credential confinement, generalised** — `TODO`
+- **Objective**: pay the debt row that fired at `P2-TSK-011`: four hand-written copies of
+  the loopback-confinement shape (`DatabaseCredentialGuard`, `MfaKey`, `DocumentKey`,
+  `CallbackKey`) become one mechanism before the fifth and sixth credentials (the provider
+  API key, the provider webhook key) arrive — the count at which copies drift.
+- **Scope**: one platform mechanism (marked-local-default recognition, loopback
+  confinement, domain separation) that each credential declares itself to; the four
+  existing guards re-expressed over it with **behaviour proven unchanged** (their existing
+  tests are the equivalence proof, untouched); the two payment credentials arrive in
+  `P5-TSK-003`/`-012` as its first new consumers. The startup-guard test gains the new
+  credentials as they land (the standing `P1-TSK-017` precedent).
+- **Deps**: none. **Out of scope**: a secrets manager (Phase 15); key rotation.
+- **Accept**: one definition of the confinement; all four existing credential guards green
+  with no test edited; removing the confinement from the shared mechanism fails every
+  consumer's guard test.
+- **Risk**: Medium (touches four proven controls). **Cx**: M. **DoD**: `DOD-SEC`,
+  `DOD-KERNEL`
+
+**P5-TSK-003 — The provider port and the simulated card PSP adapter** — `TODO`
+- **Objective**: ADR-0049 as code: `PaymentProvider` (authorize / capture / refund /
+  **query by our reference**), our vocabulary in and out, one simulated card-style adapter.
+- **Scope**: the port in `payments`; the adapter over HTTP against the `P0-TSK-037`
+  harness, with a deployable simulated endpoint for the running instance (the Phase 2
+  verification-provider shape). The **total state mapping** with its default branch
+  indeterminate, never success (`INV-PAY-03`); every operation takes the platform-minted
+  idempotency reference (`INV-PAY-04` — the port's contract requires it); every answer's
+  raw bytes returned for evidence retention by the caller. Contract tests over every
+  outbound harness mode: clear, refused, timeout, unavailable, 5xx, malformed, garbage,
+  unknown state, slow-but-in-time, and **received-before-lost-response** (`requestCount`
+  is the oracle). Misbehaviour is a result, never an exception (the `P2-TSK-009` totality
+  rule). Provider API credential through `P5-TSK-002`'s mechanism, confined.
+- **Deps**: `P5-TSK-001`, `P5-TSK-002`. **Out of scope**: a second provider; rail
+  abstraction (Phase 7); webhooks (`P5-TSK-012`).
+- **Accept**: every harness mode drives a defined port outcome; the unknown-state answer
+  maps to indeterminate; a re-dispatched operation presents the same reference, asserted.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-KERNEL`, `DOD-SEC`
+
+**P5-TSK-004 — The `PaymentMethod` aggregate and schema** — `TODO`
+- **Objective**: the tokenised instrument — the PCI boundary's subject (`INV-PAY-02`).
+- **Scope**: the aggregate (`ACTIVE → DETACHED`, terminal — the `Beneficiary` machine
+  shape), token reference plus display metadata only; `V002` in `paymentmethods`: one-live
+  partial index per (party, token) as concurrency arbiter and freed-slot rule,
+  every-writer freeze trigger, grants `SELECT, INSERT` + the detach columns; the
+  `information_schema`-derived sweep asserting instrument input appears in **no column**;
+  ten concurrent attaches produce one live row, counted; raw SQL cannot resurrect a
+  detached row. Column classification at the ceiling.
+- **Deps**: `P5-TSK-001`. **Out of scope**: endpoints (`P5-TSK-005`); the tokenisation
+  provider call (simulated token minting arrives with the attach surface).
+- **Accept**: the race counted; the sweep green; the freeze proven as the migrator; the
+  machine swept exhaustively.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-SEC`
+- Note: **not** `DOD-FIN` — an instrument reference moves no money.
+
+**P5-TSK-005 — The payment-method endpoints and the step-up point** — `TODO`
+- **Scope**: `POST /v1/me/payment-methods` (attach — step-up required exactly when a
+  factor is enrolled, the `P4-TSK-007` conditional domain check verbatim; the simulated
+  tokenisation exchange fails the attach when unavailable, **nothing raw ever stored**),
+  `DELETE /v1/me/payment-methods/{id}` (converging, one 404 for stranger's/unknown/
+  malformed), `GET /v1/me/payment-methods`. Audit actions attach/detach as the person,
+  catalogued and emitted on arrival; `PaymentMethodAttached`/`Detached` events; contract
+  baseline extended; request DTOs join the credential-sink pinned set.
+- **Deps**: `P5-TSK-004`. **Accept**: the whole flow over real HTTP including the step-up
+  refusal with nothing written; the outage attach fails clean; ownership one-404 asserted
+  as an equality between causes.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`
+
+**P5-TSK-006 — The `PaymentIntent` aggregate and machine** — `TODO`
+- **Scope**: ADR-0045's five-state machine (`REQUIRES_CONFIRMATION → {PROCESSING,
+  CANCELLED}`, `PROCESSING → {SUCCEEDED, FAILED}`) on the enum with
+  `sqlValueList()`/`sqlTerminalValueList()`; one constructor holding the coherence;
+  `rehydrate` refusing corrupt rows; the exhaustive cross-product sweep derived from
+  `permittedTransitions()`; `SUCCEEDED`'s **no outgoing edge** pinned as a machine
+  property; typed ledger-account reference for the wallet, raw UUIDs where module
+  boundaries forbid the typed ids (the `Transfer` precedent). Hermetic only.
+- **Deps**: `P5-TSK-001`. **Accept**: every invalid transition rejected; both terminals
+  and the stable state swept; `INV-AUD-02` needle-asserted on refusal messages.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
+
+**P5-TSK-007 — The `PaymentAttempt` and `Refund` aggregates and machines** — `TODO`
+- **Scope**: the seven-state attempt machine and four-state refund machine (ADR-0045,
+  `PAYMENT_LIFECYCLES.md` §3–§4), same ceremony: per-outcome transition doors through one
+  machine check, coherence both directions (mapped reason ⇔ `FAILED`; captured amount ⇔
+  `CAPTURED`; provider references' presence rules), `*_UNKNOWN` resolution edges,
+  `INV-PAY-05`'s domain half (capture ≤ authorized; refund sum ≤ captured judged at the
+  aggregate). Hermetic only.
+- **Deps**: `P5-TSK-006`. **Accept**: exhaustive sweeps over both machines; the
+  deliberately-absent states asserted absent (no state without a producer); coherence
+  refused on rehydrate.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
+
+**P5-TSK-008 — The payments schema: intent, attempt, refund, evidence** — `TODO`
+- **Scope**: `V002`+ in `payments`: `payment_intent`, `payment_attempt`, `refund`, their
+  history tables, and `provider_evidence` — the machines' `CHECK`s and every-writer
+  transition triggers generated from the enums and reconciled by migration tests;
+  `MoneyColumns` verbatim; the one-live-attempt-per-intent partial index; per-operation
+  idempotency references `NOT NULL`-before-dispatch and `UNIQUE` (`INV-PAY-04`'s
+  representable half); provider references unique per provider when present; the refund
+  **in-trigger sum bound** against the captured amount (`INV-PAY-05` at `DB-CONSTRAINT`,
+  the `V009` pattern, advisory-lock namespace registered); evidence append-only at the
+  privilege, checksummed, encrypted under `P5-TSK-002`'s mechanism (`INV-HIST-02`);
+  grants per table, swept per column with positive controls; classification at the
+  ceiling. Raw-SQL refusals from scratch.
+- **Deps**: `P5-TSK-007`, `P5-TSK-002`. **Accept**: every constraint exercised against raw
+  SQL; the reconciliations hold; the bound refuses an over-refund for every writer.
+- **Risk**: High (the phase's schema). **Cx**: L. **DoD**: `DOD-FIN`, `DOD-KERNEL`
+
+**P5-TSK-009 — The authorization command: dispatch-before-call** — `TODO`
+- **Objective**: ADR-0046 as code, on the money path for the first time.
+- **Scope**: intent create (keyed `payment.create`, fingerprint binding actor + wallet +
+  instrument + amount + currency + scale) and confirm: one transaction commits
+  `PROCESSING`, the attempt at `AUTH_DISPATCHED` with its minted provider reference, the
+  audit record and `PaymentIntentCreated`/dispatch bookkeeping — **then** the provider
+  call holding no connection (asserted structurally, the `P1-TSK-026` discipline) — then
+  the outcome transaction: the conditional transition to
+  `AUTHORIZED`/`FAILED`/`AUTH_UNKNOWN`, verbatim evidence, audit, outbox. Cancel from
+  `REQUIRES_CONFIRMATION` only. Connection-refused-before-send is
+  `FAILED(PROVIDER_UNAVAILABLE)`; anything after send is `AUTH_UNKNOWN`. **No ledger
+  effect anywhere** (ADR-0048).
+- **Deps**: `P5-TSK-003`, `P5-TSK-008`. **Accept**: the two-transaction shape proven by a
+  crash injected between them (stranded `AUTH_DISPATCHED`, visible, nothing else); every
+  harness outcome drives its committed state; a retried confirm converges; ten instances
+  confirming one intent produce one attempt, counted.
+- **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-API`
+- Note: named mutation for the register — the dispatch commit moved **after** the provider
+  call (the discipline inverted): the crash probe and the stranded-state assertions catch
+  it.
+
+**P5-TSK-010 — The capture command: the ledger's first touch** — `TODO`
+- **Scope**: `AUTHORIZED → CAPTURE_DISPATCHED` commit → provider call → outcome
+  transaction committing `CAPTURED` **with the posting** — debit `PSP_CLEARING`, credit
+  the customer wallet, key `payment-capture:<attemptId>` through `PostingService` on the
+  same connection — and the intent's `PROCESSING → SUCCEEDED`, atomically (ADR-0048).
+  Ambiguity commits `CAPTURE_UNKNOWN` with **nothing posted**. `INV-SET-01` recorded on
+  the row and in the docs: captured is not settled; nothing moves clearing onward.
+  Events: `PaymentAuthorized` (from `P5-TSK-009`'s outcome), `PaymentCaptured`,
+  `PaymentFailed`, `PaymentStateUnknown` — terminal-and-durable facts through the outbox.
+- **Deps**: `P5-TSK-009`. **Accept**: exactly one entry per attempt under a ten-way
+  duplicate-outcome race, counted in the journal; a rolled-back outcome leaves no posting
+  and no transition; the wallet balance moves and is explainable (`INV-BAL-02` extends
+  with no new mechanism); an injected posting failure fails the whole outcome transaction
+  loudly.
+- **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`
+- Note: named mutation — the posting hoisted **out** of the outcome transaction: the
+  crash-between probe catches a `CAPTURED` state beside no entry.
+
+**P5-TSK-011 — The payment surface over HTTP** — `TODO`
+- **Scope**: `POST /v1/payments`, `POST /v1/payments/{id}/confirmation`,
+  `DELETE /v1/payments/{id}`, `GET /v1/payments/{id}`, `GET /v1/payments` — session +
+  ownership (the `/v1/me`-derived chain; one 404 across stranger's/unknown/malformed),
+  `@RequiresIdempotencyKey` on create and the byte-for-byte replay discipline, the
+  asynchronous-outcome contract shape (the answer may honestly be `PROCESSING`), payment
+  error codes catalogued (**no provider vocabulary** — `INV-PAY-03` at the contract,
+  boundary-tested), no body shape a 500, contract baseline extended and reviewed.
+  Confirmation/cancellation audited as the person.
+- **Deps**: `P5-TSK-010`. **Accept**: the acceptance chain over real HTTP — attach,
+  create, confirm, the simulated provider authorises and captures, the wallet balance
+  moves, the statement shows the entry, the chain walked by identifier; a retried create
+  replays byte-for-byte; a changed request is the distinct 409.
+- **Risk**: Medium. **Cx**: L. **DoD**: `DOD-API`, `DOD-FIN`
+
+**P5-TSK-012 — Webhook ingestion: authenticated, evidence-first, deduplicated** — `TODO`
+- **Scope**: ADR-0047's door: `POST /v1/providers/payments/webhooks` — HMAC over
+  timestamp + raw bytes per provider key (through `P5-TSK-002`, confined), constant-time,
+  **before parsing**; freshness window refusing stale messages; verbatim evidence row +
+  inbox dedupe on (provider, event id) committed together before any state effect;
+   2xx-after-commit acknowledgment; authentic-but-unmappable acknowledged with evidence
+  and meter (the anti-stall decision, recorded); unauthenticated/stale writes **nothing**
+  (`INV-PAY-01`). The `SIGNED_CALLBACK` ownership class covers the reads.
+- **Deps**: `P5-TSK-008`, `P5-TSK-003`. **Accept**: negative tests per cause, each with
+  nothing written; a triple delivery lands one dedupe record and three evidence
+  decisions per ADR-0047 §2; signature proven against published vectors.
+- **Risk**: High (the forgery surface). **Cx**: M. **DoD**: `DOD-SEC`, `DOD-EVENT`
+- Note: named mutation — verification moved after parsing; the raw-bytes discipline is the
+  `P2-TSK-011` precedent and its mutation.
+
+**P5-TSK-013 — Webhook-driven transitions: idempotent, order-blind** — `TODO`
+- **Scope**: authenticated webhooks mapped through the total state mapping onto the
+  conditional machine edges; duplicate-with-fresh-id, out-of-order (capture report before
+  auth report), before-the-sync-response, racing-the-sweeper and
+  late-on-a-terminal-attempt each driven to **exactly one effect counted in the tables**,
+  the losers retained as evidence (`INV-IDEM-04`, `INV-LIFE-04`); a webhook resolving an
+  `*_UNKNOWN` applies the same outcome transaction as the sweeper (one code path — the
+  `CheckOutcomeTrail` extraction rule if a second copy threatens).
+- **Deps**: `P5-TSK-012`, `P5-TSK-010`. **Accept**: each ordering scenario counted; the
+  webhook-resolved capture posts exactly once (the claim proven under the race).
+- **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-EVENT`
+
+**P5-TSK-014 — The reconciliation-by-query sweeper** — `TODO`
+- **Scope**: ADR-0046 §4: every instance polls for `*_DISPATCHED`/`*_UNKNOWN` rows past
+  their bounds (server-clock judged — the ADR-0014 discipline), queries the provider by
+  our reference, applies outcomes through the standard outcome transactions. **No lease,
+  no leader, by design** — the conditional transition arbitrates and queries are
+  idempotent; the schedule property-gated, disabled in the suites that need stillness,
+  registered in `DISTRIBUTED_EXECUTION.md` §3 with the relay's justification shape.
+  Bounds configuration explicit; a swept resolution is audited as the platform (an
+  enumerated `enterSystem()` site with its justification).
+- **Deps**: `P5-TSK-010`. **Accept**: a stranded `AUTH_DISPATCHED` (crash mid-call) and an
+  aged `CAPTURE_UNKNOWN` each resolve; **concurrent sweepers race to one winner counted**;
+  a sweeper racing the webhook produces one effect.
+- **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-KERNEL`
+
+**P5-TST-001 — The ambiguity demonstration** — `TODO`
+- **Scope**: the phase's reason for existing, driven whole: the provider **succeeds while
+  the response is lost** (the harness's received-before-lost mode) → `*_UNKNOWN`
+  committed → the sweeper resolves → **exactly one financial effect**, counted in the
+  journal and the payment tables; the same for timeout-then-success at authorization and
+  at capture; provider-succeeds-after-we-resolved-failure lands as refused-edge evidence
+  with an alert meter. The named mutations: timeout mapped to `FAILED` (the
+  most-expensive-mistake shape) — caught by the demonstration; the sweeper's transition
+  made unconditional — caught by the race.
+- **Deps**: `P5-TSK-014`, `P5-TSK-013`. **Accept**: every scenario's effect counted, never
+  inferred; the register rows for `INV-LIFE-03` land here with the demonstrations
+  performed.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-FIN`
+
+**P5-TSK-015 — The refund command: hold, then post** — `TODO`
+- **Scope**: `POST /v1/payments/{id}/refund` behind `PAYMENT_REFUND` (joins
+  `LEDGER_OPERATOR` — one money-operating population; a permission is never a column),
+  reason required (`INV-AUD-03`, the reversal precedent); dispatch transaction: the bound
+  judged under lock-then-look on the attempt row, the **Phase 3 hold placed on the wallet
+  inside the account lock** (ADR-0048 §4 — `P3-TSK-015`'s owed capture composition),
+  `DISPATCHED` + provider reference committed; outcome transaction: completion
+  releases-and-posts (debit wallet, credit clearing, key `payment-refund:<refundId>`)
+  atomically, failure releases with nothing posted, ambiguity commits `UNKNOWN` with the
+  hold standing. Partial refunds; concurrent partials bounded at both ranks
+  (`INV-PAY-05`, `INV-REV-02`).
+- **Deps**: `P5-TSK-010`, `P5-TSK-008`. **Accept**: ten concurrent partials accept exactly
+  the bounded set, counted; the held funds are unspendable mid-flight (driven); the
+  permissionless session refused with nothing written; the sum bound refuses raw SQL.
+- **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-SEC`
+
+**P5-TSK-016 — The refund surface and events** — `TODO`
+- **Scope**: the refund view on the payment surface (refund totals derived from the rows —
+  the intent has no refund state, ADR-0045), `RefundInitiated`/`RefundCompleted`/
+  `RefundFailed` through the outbox, audit naming the operator with the reason, the
+  refund's no-500 sweep, contract baseline. The webhook-completed refund proven (the
+  provider reports completion asynchronously).
+- **Deps**: `P5-TSK-015`, `P5-TSK-013`. **Accept**: the acceptance chain over HTTP;
+  the derived totals reconcile with the rows; a replayed refund key replays byte-for-byte.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-EVENT`
+
+**P5-TSK-017 — The meters and the dashboard row** — `TODO`
+- **Scope**: `PHASE_5_PLAN.md` §15 real: the six meters, eager from a plain context
+  (pinned Phase-5 guard until the flip — the established shape), counted from judgements'
+  own vocabulary post-commit (replays/converges never throughput); `provider` and
+  `operation` join `ALLOWED_TAG_KEYS` as bounded compile-time sets, the decision recorded;
+  `unknown.active`/`unknown.age` as database gauges, NaN never zero, `max()` fleet-wide;
+  the *Payments* dashboard row resolving against a live scrape.
+- **Deps**: `P5-TSK-011`, `P5-TSK-014`. **Accept**: a fresh instance publishes every
+  series; the mutation sweep over the counting discipline; queries resolve live.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
+
+**P5-TST-002 — The `Phase: 5` register rows** — `TODO`
+- **Scope**: every invariant the catalogue marks `Phase: 5` — **token-parsed with the
+  guard's own regex, eleven at planning time** — carries a `MUTATION_TESTING.md` §2 row
+  with its demonstration performed or honestly recorded from the owning task's sweep (the
+  `P3-TST-003`/`P4-TST-002` posture: the audit finds what was not done and does it); the
+  flip probed — Phase 5 simulated `COMPLETE`, battery green, one row removed to prove the
+  demanded set grew — and restored byte-identical; §5 teeth re-proven.
+- **Deps**: `P5-TST-001` and the owning tasks. **Accept**: all guard checks green over the
+  new rows; the probe's failure names the invariant.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`
+- Note: the guard keys on invariant **identifiers**, so the payments-context rows for
+  `INV-IDEM-01`/`INV-IDEM-04`/`INV-HIST-02`/`INV-REV-02` are owed by doctrine and the gate
+  list, not by the build — the `P4-TST-002` finding, pre-applied.
+
+**P5-TST-003 — Conservation under concurrent captures and refunds** — `TODO`
+- **Scope**: the composition storm (the `P3-TST-001`/`P4-TST-001` posture): ten instances
+  authorising, capturing and partially refunding continuously while the trial-balance and
+  projection sweeps run, ended by the sweeper's floors; every sweep zero per currency;
+  every verdict `CLEAN`/`IN_FLIGHT`; the clearing and wallet positions reconciling
+  **exactly** to captured − refunded, counted from the tables and independently
+  recomputed; no wallet negative through the refund holds.
+- **Deps**: `P5-TSK-015`. **Accept**: the three readings reconcile; the storm's amounts
+  contest the availability boundary (the `P4-TST-001` lesson, pre-applied).
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-FIN`
+
+**P5-DOC-001 — Phase 5 review record** — `TODO`
+- **Scope**: the exit review per `PHASE_GATES.md` §4 and §5 Phase 5 (original bullets plus
+  the transition's extension, **read from the gate at review time**), the F1–F8 supplement
+  re-assessed, the ten-instances question answered over the phase's contended decisions,
+  conducted in the assess → corrections → **flip** → battery order with the review's own
+  verdict flipping the phase.
+- **Deps**: everything above. **Accept**: the review's verdict is what flips the status;
+  the post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
+
+---
+
+# Phases 6–16 — Epics
 
 Status: `PLANNED` — capabilities elaborated at each phase's entry gate.
 
 | Phase | Epics |
 |-------|-------|
-| 5 Payment Infrastructure | Payment intent; payment attempt; payment methods and tokenisation; provider adapter framework; authorization and capture; refunds; webhook ingestion and dedupe; provider state mapping; unknown-state resolution; payment accounting |
 | 6 Checkout and Merchant | Merchant onboarding and KYB integration; merchant accounts; checkout session; order; fee schedule and assessment; merchant payable accounting; merchant payout; merchant reporting; multi-tenant isolation |
 | 7 Cards, Wallets, A2A, Instant | Rail abstraction and capability model; card rail; wallet rail; A2A rail; instant-payment rail; rail routing policy; finality and irrevocability handling; dispute lifecycle; chargeback and representment; dispute accounting |
 | 8 Settlement and Reconciliation | Settlement expectation tracking; settlement file ingestion; evidence retention; matching engine; tolerance and rule versioning; break classification; break lifecycle and investigation; four-eyes resolution; suspense management; reconciliation reporting |

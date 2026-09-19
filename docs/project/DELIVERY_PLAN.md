@@ -527,7 +527,9 @@ explicitly with terminal-state semantics documented.
 
 ### 8. Event work
 `PaymentIntentCreated`, `PaymentAuthorized`, `PaymentCaptured`, `PaymentFailed`,
-`RefundInitiated`, `RefundCompleted`, `PaymentStateUnknown`. Webhook-driven transitions
+`RefundInitiated`, `RefundCompleted`, `RefundFailed`, `PaymentStateUnknown` *(the
+`RefundFailed` addition is the Phase 4 → 5 transition's, with provenance: terminal facts
+publish — ADR-0044's doctrine)*. Webhook-driven transitions
 must be idempotent.
 
 ### 9. Security work

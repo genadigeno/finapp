@@ -867,6 +867,91 @@ proves nothing about v4.
 
 ---
 
+# Payments and Providers — `INV-PAY`
+
+Added by the Phase 4 → 5 transition (2026-09-20), on the Phase 0 → 1 and 1 → 2 precedent:
+Phase 5's defining properties existed only as prose gate bullets in `PHASE_GATES.md` §5 — no
+stable ID, no ranked enforcement mechanism, no named verification method, no
+`MUTATION_TESTING.md` row — and Phase 5 is the phase whose product is *surviving an
+unreliable third party*. The financial core of that survival was catalogued at initiation
+(`INV-LIFE-03`, `INV-IDEM-04`, `INV-HIST-02`, `INV-SET-01`, `INV-REV-02`); these five are the
+properties the gate demanded and nothing catalogued. Written before any payment code exists
+against prose.
+
+### INV-PAY-01 — A provider's outcome is adopted only from an authenticated source
+**Statement:** No payment state transition is driven by an inbound provider message whose
+authenticity has not been verified — signature checked over the raw bytes, before parsing,
+in constant time, within the provider's declared freshness window. An unauthenticated or
+stale message produces no transition and no financial effect; whether its evidence is
+retained is a per-provider decision, recorded.
+**Why:** A webhook that clears a payment is the input that credits a wallet. A "signature"
+anyone can compute, or a replayable one, is an open door to payment-outcome forgery — the
+`P2-TSK-011` reasoning, now with money on the other side of the door.
+**Enforce:** `DOMAIN` — verification before parsing, before any read, at the one ingestion
+path; per-provider keys under the externalised-secret regime.
+**Verify:** Negative tests per cause (missing, wrong, stale signature), each asserting
+nothing was written; the signature scheme proven against the provider's own test vectors
+where published.
+**Phase:** 5
+
+### INV-PAY-02 — Raw card data never enters the platform
+**Statement:** No PAN, CVV, track data or any value from which an instrument could be
+reconstructed is stored, logged, transported or exposed anywhere in the platform. The
+platform holds tokenised references only, and the tokenisation boundary is the
+`paymentmethods` module: a tokenisation provider being unavailable fails the operation and
+never falls back to holding raw detail.
+**Why:** PCI scope is the one boundary far cheaper to keep closed than to reopen
+(`MODULE_ARCHITECTURE.md` M7); a stored PAN converts a database leak into card fraud at
+every merchant the customer ever used.
+**Enforce:** `STATIC` (the `secretsAreWrapped` vocabulary already refuses card-named
+fields) + `DOMAIN` (no type exists to carry a PAN) + `PROCESS` (schema review: no column
+may be classified to admit one).
+**Verify:** `information_schema`-derived column sweeps asserting instrument input appears in
+no column of any row; the module isolation tests holding the `paymentmethods` boundary.
+**Phase:** 5
+
+### INV-PAY-03 — Provider vocabulary is confined behind the adapter
+**Statement:** No provider-specific state, error code, field name or enum value appears in
+the domain model, a persisted domain column, an event payload or a public API contract. A
+provider answer is normalised through a **total** mapping whose default branch is
+indeterminate — never success — and the raw answer is retained as evidence (`INV-HIST-02`).
+**Why:** `CLAUDE.md` §Integration and ADR-0008: a domain that speaks one provider's language
+belongs to that vendor, and an unmapped state silently treated as success is a wrong
+financial fact.
+**Enforce:** `STATIC` (module boundaries: no provider adapter type reachable from the
+domain) + `DOMAIN` (the mapping's default branch).
+**Verify:** State-mapping table tests covering every provider state including an unknown
+one; contract review of the published API.
+**Phase:** 5
+
+### INV-PAY-04 — A provider-bound money operation is idempotent at the provider
+**Statement:** Every request that asks a provider to move money (authorize, capture, refund)
+carries a platform-minted idempotency reference, stored durably **before** the request is
+sent, so a platform retry or a resolution-by-query can never cause the provider to perform
+the operation twice.
+**Why:** `INV-IDEM-01` protects the platform's own boundary; this is the same rule pointed
+outward. Without it, the recovery path for an unknown outcome — retry or query — is itself
+a double-charge mechanism.
+**Enforce:** `DOMAIN` (the reference is minted and persisted in the dispatch transaction;
+the port's contract requires it) + `DB-CONSTRAINT` (`NOT NULL`, unique per operation).
+**Verify:** Contract tests asserting a re-dispatched operation presents the same reference;
+schema tests on the uniqueness.
+**Phase:** 5
+
+### INV-PAY-05 — Capture is bounded by authorization; refund is bounded by capture
+**Statement:** The captured amount never exceeds the authorized amount, and the sum of
+non-failed refunds never exceeds the captured amount — including under concurrent partial
+refunds, for every writer.
+**Why:** Over-capture takes money the customer never approved; over-refund creates money
+(`INV-REV-02`'s reasoning, applied at the payment boundary where the amounts live in the
+payment domain rather than the journal).
+**Enforce:** `DOMAIN` (the aggregate refuses) + `DB-CONSTRAINT` where representable (the
+`V009` in-trigger bound pattern for the concurrent-sum half).
+**Verify:** Concurrent partial-refund tests counted in the tables; raw-SQL refusal tests.
+**Phase:** 5
+
+---
+
 # Invariant Index
 
 | Group | IDs | Concern |
@@ -889,6 +974,7 @@ proves nothing about v4.
 | `INV-IDN` | 01–08 | Identity, credentials and sessions |
 | `INV-KYC` | 01–06 | Verification and case management |
 | `INV-CNS` | 01–04 | Consent |
+| `INV-PAY` | 01–05 | Payments and providers |
 
-**82 invariants.** Every one must be enforced and verified before the phase that owns it can
+**87 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate.

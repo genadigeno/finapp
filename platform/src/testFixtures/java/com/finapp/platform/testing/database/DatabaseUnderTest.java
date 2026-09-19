@@ -96,6 +96,22 @@ public final class DatabaseUnderTest implements LauncherSessionListener {
                         .withDatabaseName("finapp")
                         .withUsername("finapp")
                         .withPassword(MARKED_LOCAL_DEFAULT)
+                        // max_connections raised above the image's default of 100, because this
+                        // container serves a whole test JVM: Spring caches every distinct context
+                        // configuration for the JVM's life, each cached context holds a FIXED
+                        // pool of 8 (minimum-idle equals maximum-pool-size, P1-TSK-004's design),
+                        // and the suites' own raw connections sit on top. The first fleet-wide
+                        // `:app:databaseTest` after Phase 4 (the Phase 4 -> 5 transition,
+                        // 2026-09-20) exhausted the default ceiling and failed every
+                        // alphabetically-late suite with `FATAL: remaining connection slots are
+                        // reserved` - P1-TSK-004's "the fleet does not fit" finding arriving in
+                        // the test fleet, invisible to every targeted (fresh-JVM) run. Raising
+                        // the ceiling HERE weakens no production claim: the production
+                        // relationship `instances x pool <= max_connections - reserved` is
+                        // asserted against the declared deployment configuration by
+                        // ConnectionPoolSizingGuard and its build test, not against this
+                        // container, whose only client is this one JVM.
+                        .withCommand("postgres", "-c", "max_connections=400")
                         // The same role script the compose stack runs on first initialisation.
                         // Roles are cluster objects and cannot live in a migration (ADR-0011), so
                         // a container that skipped this would have no finapp_app and every

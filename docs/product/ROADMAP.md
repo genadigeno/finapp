@@ -34,32 +34,30 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-09-18).** **Phases 0, 1, 2 and 3 are `COMPLETE`.** Phase 3 closed on
-its exit review (`P3-DOC-001` — the first review in the programme whose area 2 had a posting
-to walk) and was confirmed by the Phase 3 → 4 transition's independent audit: 25 of 25
-backlog items, all twelve universal criteria, **the financial supplement F1–F8 binding for
-the first time and all met**, sixteen phase-specific criteria, 4 ADRs `Accepted`, and 1121
-hermetic / 683 database / 14 kafka tests. **Money exists**: a verified customer opens an
-account, receives balanced immutable postings, sees a balance that is explainable from the
-records three independent ways, holds funds, has mistakes corrected by referencing reversals
-and four-eyes adjustments without one committed byte changing — and the trial balance is a
-continuously published zero per currency.
+**Current position (2026-09-20).** **Phases 0 through 4 are `COMPLETE`.** Phase 4 closed on
+its exit review (`P4-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met,
+16 phase-specific criteria, the ten-instances question over six contended decisions) and was
+confirmed by the Phase 4 → 5 transition's independent audit — which also produced **the
+first genuinely fleet-wide full battery of the phase**: 1157 hermetic / 729 database / 14
+kafka tests, 0 failures, closing the review's one recorded deviation (and finding, then
+repairing, the test-harness connection ceiling that had made the fleet-wide database tier
+structurally unable to run). **Money moves between customers**: 14 of 14 backlog items, 2
+ADRs `Accepted`, 83 mutations all caught, and the reversal, seams, meters and conservation
+storms all landed before the gate rather than at it.
 
-**Phase 4 is `IN_PROGRESS` — 8 of 14 items, milestones M4.1 through M4.4 `CLOSED`, M4.5 open**
-(entry gate passed 2026-09-17, all twelve criteria; started the same day). Planned in full in
-`PHASE_4_PLAN.md`, with ADR-0043 (the transfer and its posting commit in one transaction — no
-internal saga; unresolved question 5 closed) and ADR-0044 (a four-state transfer lifecycle in
-which every state is earned by a producer) `Proposed`, and 14 backlog items across eight
-milestones. **No new invariant group again**: Phase 4's five in-scope properties were catalogued
-at initiation; the platform stays at 82. The movement exists and is over HTTP; what remains is the
-reversal (`P4-TSK-009`, `READY`), the limit and risk seams, observability, the sustained
-conservation demonstration and the exit review. *(This paragraph read `READY` until 2026-09-18 —
-the stale-second-copy class this programme keeps meeting, corrected when `README.md` began linking
-here for the phase's status.)*
+**Phase 5 is `READY`** (entry gate passed 2026-09-20, all twelve criteria —
+[`PHASE_4_TO_5_TRANSITION.md`](../project/reviews/PHASE_4_TO_5_TRANSITION.md)). Planned in
+full in `PHASE_5_PLAN.md`, with ADR-0045–0049 `Proposed` — the intent/attempt machines, the
+no-transaction-spans-a-provider-call discipline with `UNKNOWN` and reconciliation-by-query,
+webhook ingestion, the accounting treatment of authorization vs capture (unresolved
+question 6 closed) and the first simulated provider with its finality semantics (question 9
+closed) — plus the new `INV-PAY-01`–05 group taking the catalogue to **87 invariants**, 21
+backlog items across nine milestones, and `PAYMENT_LIFECYCLES.md` rewritten from its stub.
+First task: `P5-TSK-001`, `READY`.
 
-**Phase 4 is the first customer-visible money movement** — and deliberately the *easy* half
+**Phase 4 was the first customer-visible money movement** — and deliberately the *easy* half
 of moving money: both legs internal, one database, one transaction, no third party. Its job
-is to prove the lifecycle, idempotency, conservation-under-contention and reversal
+was to prove the lifecycle, idempotency, conservation-under-contention and reversal
 disciplines on the rail the platform controls entirely, so that Phase 5 — where an
 unreliable provider decides outcomes and `UNKNOWN` becomes a modelled state — changes one
 variable at a time, not four.

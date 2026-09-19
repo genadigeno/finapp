@@ -238,6 +238,48 @@ be judged on:*
 - Every provider interaction retains external evidence sufficient for Phase 8.
 - Refund cannot exceed the captured amount, including under concurrent partial refunds.
 
+*Extended by the Phase 4 → 5 transition (2026-09-20): the original list predates
+ADR-0045…0049 and said nothing measurable about the dispatch discipline, the accounting
+treatment, conservation, the sweeper's multi-instance shape, the PCI boundary's mechanism,
+or the register — the things this phase's review will be judged on:*
+
+- **The ambiguity demonstration is end to end and counted**: a provider that succeeds while
+  the response is lost leaves a committed `*_UNKNOWN`/`*_DISPATCHED` state, the sweeper
+  resolves it by querying with **our** stored idempotency reference, and exactly **one**
+  financial effect exists afterwards — counted in the journal and the payment tables, never
+  inferred (`INV-LIFE-03`, `INV-PAY-04`).
+- **No transaction spans a provider call**, asserted structurally (no connection held
+  during the call) as well as behaviourally; a crash mid-call strands a visible
+  `*_DISPATCHED` state that the sweeper resolves.
+- **The sweeper is safe at N instances with no lease**: concurrent sweepers, a racing
+  webhook and a late synchronous response all land on conditional transitions, and the
+  race is demonstrated with one winner counted in the tables.
+- **The ledger's first touch is capture** (ADR-0048): authorization posts nothing, the
+  capture posting (`PSP_CLEARING` → wallet) commits atomically with the state transition
+  under the claim `payment-capture:<attemptId>`, and a ten-way duplicate-outcome race
+  produces exactly one entry.
+- **Conservation under the capture/refund storm**: concurrent captures and partial refunds
+  against the trial-balance and projection sweeps, every sweep zero per currency, the
+  clearing and wallet positions reconciling exactly to captured − refunded.
+- **The refund's funds are reserved**: dispatch places the hold inside the account lock,
+  completion releases-and-posts atomically, failure releases with nothing posted; the sum
+  bound holds at database rank under a concurrent-partials race (`INV-PAY-05`).
+- **Webhook authenticity and freshness negatively tested per cause** (missing, wrong,
+  stale signature — nothing written, `INV-PAY-01`); duplicate, out-of-order and
+  before-the-sync-response deliveries each counted to one effect; an authentic
+  unmappable webhook retains evidence, increments its meter and stalls nothing.
+- **The PCI boundary is mechanical**: the `paymentmethods` isolation holds both ways, the
+  `information_schema`-derived sweep finds instrument input in no column, and a
+  tokenisation-provider outage fails the attach with nothing stored (`INV-PAY-02`).
+- **Refund authority is a named permission** with a passing negative test and a required
+  reason; instrument attach requires the second factor when one is enrolled, negatively
+  tested.
+- The phase's meters are published by a freshly started instance, the unknown-state age is
+  alertable, and the chain intent ↔ attempt ↔ provider references ↔ entry is traceable
+  identifier-to-identifier with no timestamp join.
+- Every `Phase: 5` invariant in `FINANCIAL_INVARIANTS.md` — **read from the catalogue, not
+  from the phase plan** — has a mutation-register row, the `INV-PAY` group included.
+
 ### Phase 6 — Checkout and Merchant Platform
 - Cross-merchant data access is impossible (negative tests per endpoint).
 - Merchant payable is derived from ledger postings, not a stored mutable field.

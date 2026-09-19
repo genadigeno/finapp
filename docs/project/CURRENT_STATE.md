@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-19 (`P4-DOC-001` — the exit review; **Phase 4 is `COMPLETE` at 14 of 14**, and the next act is the Phase 4 → 5 transition)
+Last updated: 2026-09-20 (the Phase 4 → 5 transition — Phase 4 confirmed `COMPLETE` by independent audit with the first fleet-wide full battery; **Phase 5 is `READY`**, first task `P5-TSK-001`)
 
 ---
 
@@ -176,6 +176,26 @@ no `CANCELLED`, no fiction), both `Accepted` at this gate. 14 backlog items acro
 at planning time (`INV-IDEM-01` transfers element, `INV-CON-02`, `INV-LIFE-01/-02/-04`), no
 new group needed for the second transition running. Deliberately the *easy* half of moving
 money — both legs internal, no third party — so Phase 5 changes one variable at a time.
+
+**Phase 5 — Payment Infrastructure**
+Status: 🚦 **`READY`** (2026-09-20) — entry gate passed, all twelve criteria
+([`reviews/PHASE_4_TO_5_TRANSITION.md`](reviews/PHASE_4_TO_5_TRANSITION.md)). The external
+world arrives: money movement whose outcome is decided by an unreliable third party, with
+`INV-LIFE-03` live for the first time. Planned in [`PHASE_5_PLAN.md`](PHASE_5_PLAN.md);
+decisions in ADR-0045–0049 (`Proposed`): the intent/attempt model and its three machines,
+**no transaction spans a provider call** (dispatch-before-call, `UNKNOWN` modelled,
+reconciliation by query with no lease), webhooks (authenticated before parsing,
+freshness-bounded, evidence-first, order-blind), **authorization is a payment-domain fact
+and the ledger's first touch is capture** (unresolved question 6 closed — DR `PSP_CLEARING`
+/ CR wallet, with the refund holding its funds at dispatch), and the first provider — a
+simulated card-style PSP whose finality is nothing-final-before-settlement (question 9
+closed; `INV-REV-03` stays subjectless until the second rail). The transition catalogued
+**`INV-PAY-01`…`05`** — Phase 5's gate properties given stable IDs before code is written
+against prose, the `INV-IDN`/`INV-KYC` precedent — taking the platform to **87
+invariants**; the in-scope set is whatever the catalogue marks `Phase: 5`, **eleven** at
+planning time. 21 backlog items across nine milestones (M5.1–M5.9);
+[`PAYMENT_LIFECYCLES.md`](../domain/PAYMENT_LIFECYCLES.md) rewritten from its stub to the
+decided model. First task: **`P5-TSK-001`**, `READY`.
 
 Planned in [`PHASE_2_PLAN.md`](PHASE_2_PLAN.md): a Party verified to the standard a regulator
 requires, with evidence retained and the decision defensible — KYC/KYB cases, screening with
@@ -604,12 +624,57 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P4-DOC-001` is `COMPLETE` and **Phase 4 is
-`COMPLETE` at 14 of 14**. Next is the **Phase 4 → Phase 5 transition** — its
-own act, not a backlog task, and no Phase 5 item exists until it has been
-conducted.
+**`P5-TSK-001` — the `payments` and `paymentmethods` modules and schemas** —
+`READY`. Phase 5's first task: two guarded modules, two privilege floors, and
+the phase's boundary decisions as build-graph facts (`payments → ledger`
+declared; `payments → paymentmethods` refused — the instrument resolves
+through a port, so the PCI module stays invisible to the module that talks to
+providers). See the backlog entry and `PHASE_5_PLAN.md` §3.
 
 ### Just completed
+
+**Phase 4 → Phase 5 transition** — **CONDUCTED** (2026-09-20).
+[`reviews/PHASE_4_TO_5_TRANSITION.md`](reviews/PHASE_4_TO_5_TRANSITION.md)
+
+| Part | Outcome |
+|---|---|
+| Phase 4 completion audit, 18 categories | **18 `PASS`** |
+| Financial correctness audit, 11 properties | **11 `PASS`** — each against its database-rank mechanism |
+| Multi-instance audit | **`PASS`** — fresh zero-occurrence single-instance sweep over Phase 4 code; every contended decision arbitrated by PostgreSQL with a counted race |
+| Atomicity / idempotency / persistence audits | `PASS` — no atomicity assumed across a boundary that lacks it |
+| Architecture audit | No drift; **the register-decay check — now a named audit step — found the register current, the first phase boundary where it did** |
+| Security, reconciliation-readiness audits | `PASS`; limits stated and owned |
+| Testing audit | **The full battery, fleet-wide, for the first time in the phase: 1157 hermetic / 729 database / 14 kafka, 0 failures** — closing the exit review's recorded criterion-7 deviation |
+| Phase 4 verdict | **`COMPLETE`** (confirming `P4-DOC-001`) |
+| Phase 5 entry gate | **All twelve criteria hold → `READY`** |
+
+**The audit's one significant finding was produced by closing the deviation, which is what
+the deviation-recording discipline is for.** The first fleet-wide `build databaseTest
+kafkaTest` since Phase 3 **failed**: every `com.finapp.app.transfers` database suite —
+suites that each passed their targeted, fresh-JVM runs all phase — died with `FATAL:
+remaining connection slots are reserved`, and **zero assertion failures anywhere**. The
+mechanism is `P1-TSK-004`'s finding arriving in the test fleet: Spring caches every distinct
+context configuration for the JVM's life, each cached context holds a **fixed** pool of 8
+(`minimum-idle` equals `maximum-pool-size`, by design), the suites' own raw connections sit
+on top, and the per-JVM container ran the image default `max_connections=100` — so the
+fleet of cached contexts could not fit, and the suites that run alphabetically last paid.
+Invisible to every targeted run, structurally: a fresh JVM caches too few contexts to
+matter. **Repaired in the harness** (`DatabaseUnderTest` provisions `max_connections=400`,
+with the finding recorded at the line), which weakens no production claim — the production
+relationship `instances × pool ≤ max_connections − reserved` is asserted against the
+declared deployment configuration by `ConnectionPoolSizingGuard` and its build test, not
+against a container whose only client is one test JVM. Battery re-run: **green, 0
+failures** — and the review's honest wording (*"no fleet-wide count claimed"*) is
+vindicated in the sharpest way: the count that was not claimed did not, at that moment,
+exist to claim.
+
+**Two decisions closed that Phase 5 could not start without** (questions 6 and 9, plus the
+three ADRs the register anticipated) and **one overdue question found and ruled**: question
+10 (*which jurisdiction-neutral compliance abstractions belong in the MVP*, due Phase 2)
+sat open for three phases after Phase 2's plan and delivery answered it — the
+stale-second-copy class in the unresolved table again, moved to Resolved with provenance.
+
+### Previously
 
 **`P4-DOC-001` — Phase 4 review record** — `COMPLETE` (2026-09-19).
 **The gate passes and Phase 4 is `COMPLETE` at 14 of 14**
@@ -9673,16 +9738,17 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-**None in progress.** Phases 0, 1, 2, 3 **and 4** are `COMPLETE`; all eight
-Phase 4 milestones are `CLOSED` at 14 of 14 items.
+**None in progress.** Phases 0 through 4 are `COMPLETE`, and **Phase 5 is
+`READY`** with `P5-TSK-001` as the next task.
 
-The last work performed was **`P4-DOC-001`** (2026-09-19): the exit review,
-whose own verdict flipped the phase — 8 areas, 12 universal criteria, F1–F8
-and 16 phase-specific criteria, with the post-flip battery green and two
-findings corrected in the record. The next act is the **Phase 4 → Phase 5
-transition**, which is its own act rather than a backlog task: no Phase 5
-item exists until it has been conducted, and it owes the three payment
-decisions already named in §Unresolved Architectural Questions.
+The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
+Phase 4 confirmed by independent audit, the first fleet-wide full battery of
+the phase (1157 / 729 / 14, 0 failures — after finding and repairing the
+test-harness connection ceiling that had made the fleet-wide database tier
+structurally unable to run), ADR-0045–0049 `Proposed`, the `INV-PAY` group
+catalogued (87 invariants), `PHASE_5_PLAN.md` and 21 backlog items across
+nine milestones, `PAYMENT_LIFECYCLES.md` rewritten, and questions 6, 9 and
+the overdue 10 closed.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -9869,7 +9935,7 @@ carries, what triggers paying it down, and the owning phase.
 | **Redis is plaintext with no enforcement; Kafka is now guarded.** `P2-TSK-001` brought the first Kafka client and, with it, `KafkaTransportGuard` - a non-loopback bootstrap over `PLAINTEXT` refuses startup, which is ADR-0023's recorded promise kept on schedule. TLS/SASL themselves remain Phase 15's deployment posture, and the guard's limit is stated in `SECURITY_ARCHITECTURE.md` | There is still no Redis client, so a Redis guard would guard nothing | **Bounded**: the local broker is loopback-only and the guard holds the boundary; Redis carries no risk until a client exists | The first Redis client; a deployed broker for the TLS posture | Phase 15 |
 | ~~**A caller can put personal or financial data into the correlation identifier.**~~ - **closed 2026-09-04** by `P1-TSK-002` / ADR-0034. The platform now mints the identifier on every request and never adopts an inbound one; a well-formed caller value is echoed in `X-Client-Correlation-Id` and reaches no sink. **Narrowing the charset was the obvious repair and does not work** - a date of birth, a phone number and an account number are alphanumeric, so any charset still able to carry a UUID carries them; of the four probed values it would have stopped two and left two. The control had to be structural. | - | - | - | - |
 | ~~**No production code establishes a security scope.**~~ - **closed 2026-09-06** by `P1-TSK-006`. `RegistrationService` establishes one for `POST /v1/registrations`, and the actor is `enterSystem()` because the caller is **unauthenticated** - which is a call site that *stays* after Phase 1 revisits it, not one to be removed. The alternative, attributing the action to the Party it creates, is circular and is unavailable on the refusal path where nothing was created; an actor that differs between success and failure is worse than a uniform honest one. The information is carried by the audit record's **target** instead - the attempted login identifier, on both paths. | - | - | - | - |
-| **The loopback confinement is per credential, not a general mechanism.** `DatabaseCredentialGuard` guards the datasource password; `MfaKey`, `DocumentKey` and `CallbackKey` guard themselves | **The trigger is now met**: `P2-TSK-011`'s callback signing key (`FINAPP_KYC_CALLBACK_KEY`, `CallbackKey`) arrived as the **fourth** credential, again confined and tested in `MfaKey`'s shape rather than by generalising, because folding a refactor of three proven guards into a callback task is `EXECUTION_PROTOCOL.md` rule 4's case — but the row's own trigger ("the fourth credential, or Phase 5's provider adapters — whichever asks first") has fired, so the generalisation is **due as its own piece of work** rather than the next task's side effect | **Low but no longer shrinking.** The build rule remains general - a fifth credential cannot arrive as a literal - and four hand-written instances of one shape is exactly the count at which the copies start to drift | **Fired** (`P2-TSK-011`). The generalisation is owed as its own task; Phase 5's provider adapters are the natural host if nothing schedules it sooner | Phase 5 |
+| **The loopback confinement is per credential, not a general mechanism.** `DatabaseCredentialGuard` guards the datasource password; `MfaKey`, `DocumentKey` and `CallbackKey` guard themselves | **The trigger is now met**: `P2-TSK-011`'s callback signing key (`FINAPP_KYC_CALLBACK_KEY`, `CallbackKey`) arrived as the **fourth** credential, again confined and tested in `MfaKey`'s shape rather than by generalising, because folding a refactor of three proven guards into a callback task is `EXECUTION_PROTOCOL.md` rule 4's case — but the row's own trigger ("the fourth credential, or Phase 5's provider adapters — whichever asks first") has fired, so the generalisation is **due as its own piece of work** rather than the next task's side effect | **Low but no longer shrinking.** The build rule remains general - a fifth credential cannot arrive as a literal - and four hand-written instances of one shape is exactly the count at which the copies start to drift | **Fired and scheduled**: `P5-TSK-002`, second in M5.1, before the fifth and sixth credentials (the provider API and webhook keys) arrive | Phase 5 (`P5-TSK-002`) |
 | ~~**No output scrubber for text the platform does not control.**~~ - **answered 2026-09-06** by `P1-TSK-009`, and the answer is that the scrubber is **not built**. A scrubber is a deny-list over emitted text, and to recognise a secret it must be *given* the secret - which makes the plaintext travel **further**, into a filter invoked on every log statement in the platform, rather than less far; it also produces exactly the false confidence ADR-0019 warns about, since a deny-list that misses one shape is indistinguishable from one that misses none. **What replaces it is the opposite shape and is checkable**: a plaintext can only reach any sink if something first *unwraps* it, and every unwrap is a call to `expose()` - named to be found, deliberately. `SecretsAreUnwrappedInOnePlaceTest` pins that set to **four production classes, all in `identity`**, so a new unwrap anywhere fails the build and forces a decision. **The residual is stated rather than closed**: inside `identity` a plaintext could still be handed to a log call and nothing mechanical would catch it - bounded by the set being four classes rather than a codebase, and by the one production log call on that path being asserted quiet against a real database. |
 | **The scrape endpoint widens the unauthenticated surface to three.** `/actuator/prometheus` joins health and info | `DOD-OBS` requires the dashboard to render live data from a running instance, which needs a scrape endpoint, and there is no authentication anywhere yet | A scrape publishes JVM internals, HTTP route templates and pool statistics - a description of the running system rather than its secrets. The **content** is constrained by a build failure: no tag may carry a request-influenced value | `P0-EPIC-10` landing | Phase 0, M0.4 |
 | **The operational endpoints are unauthenticated.** `/actuator/health/*` and `/actuator/info` are reachable by anyone who can reach the port | `DOD-API` requires a negative authentication test for every new surface, and there is no authentication anywhere in the platform yet - `P0-EPIC-10` is the epic that brings it. Building one authentication mechanism for the actuator alone would be a second scheme to retire | **Low, and bounded by what is published.** The bodies are pinned by exact-match test to a status and, for the aggregate, its group names; details, components, environment, JVM and OS are all off, and twelve other endpoints are proven absent. What remains is that an unauthenticated caller can learn the instance is up and which build it runs | `P0-EPIC-10` landing, at which point `show-details: when-authorized` also becomes available | Phase 0, M0.4 |
@@ -9897,14 +9963,30 @@ it begins.
 
 | # | Question | Must resolve by | Risk if unresolved |
 |---|----------|-----------------|--------------------|
-| 6 | Accounting treatment of authorization (memo/hold) vs capture (posting) | Phase 5 | High — misstates available funds if wrong |
 | 7 | Whether `checkout` is its own module or part of `merchant` | Phase 6 | Low — **working position recorded** (own module, §3 M2) with a named merge trigger |
 | 8 | Fee model: who pays, when recognised, gross vs net settlement | Phase 6 | High — changing revenue recognition after postings exist is a restatement |
-| 9 | Which payment rail to simulate first, and its finality semantics | Phase 5 | Medium — first rail shapes the abstraction (mitigated by designing to `PAYMENT_LIFECYCLES.md`) |
-| 10 | Which jurisdiction-neutral compliance abstractions belong in the MVP | Phase 2 | Medium |
 | 11 | Fail-safe policy for risk evaluation: block or allow on unavailability | Phase 13 | High — a wrong default is either an outage or an open door |
 
 Resolved since:
+- ~~6. Accounting treatment of authorization (memo/hold) vs capture (posting)~~ →
+  [ADR-0048](../adr/ADR-0048-authorization-is-not-a-posting.md) (Phase 4 → 5 transition,
+  2026-09-20). Authorization is a payment-domain fact with **no ledger effect** — the
+  issuer holds the customer's external funds, so neither a memo posting (entries for
+  never-money) nor a wallet hold (the wrong subject) states anything true; **the ledger's
+  first touch is capture** (DR `PSP_CLEARING` / CR wallet), and the refund is the mirror
+  that *does* hold, because there the funds at risk are wallet funds
+- ~~9. Which payment rail to simulate first, and its finality semantics~~ →
+  [ADR-0049](../adr/ADR-0049-first-provider-simulated-card-psp.md) (same transition). A
+  simulated card-style PSP — the maximal exercise of the lifecycle distinctions, so the
+  port cannot ship too thin — with nothing final before settlement; `INV-REV-03` stays
+  subjectless until the second rail (Phase 7)
+- ~~10. Which jurisdiction-neutral compliance abstractions belong in the MVP~~ —
+  **answered by the Phase 1 → 2 transition's plan and Phase 2's delivery** (KYC/KYB cases,
+  screening with human-resolved hits, consent as an append-only history —
+  jurisdiction-neutral behind provider adapters and versioned policy, ADR-0035…0038), and
+  found still sitting in the open table three phases later by the Phase 4 → 5 transition
+  — the stale-second-copy class in this table, again (questions 1–4 sat the same way for
+  a phase). Ruled resolved with this provenance rather than silently deleted
 - ~~5. Transfer/ledger transaction boundary and compensation strategy~~ &rarr;
   [ADR-0043](../adr/ADR-0043-transfer-and-posting-commit-together.md) (Phase 3 → 4
   transition, 2026-09-17). One local transaction; a failed transfer is a committed domain
@@ -9932,37 +10014,30 @@ Resolved during initiation:
 
 ## Next Task
 
-**The Phase 4 → Phase 5 transition.** Not a backlog task: a transition is its
-own act, performed under the constraint that **no application code is
-written**, and it is what makes Phase 5 `READY` rather than merely planned.
+**`P5-TSK-001` — the `payments` and `paymentmethods` modules and schemas.**
+Phase 5's first task, first for the standing reason — the privilege floor is
+what every later grant claim rests on — and for the phase-specific one: the
+build-graph decisions (`payments → ledger` declared so postings are commanded
+and never written; `payments → paymentmethods` **refused** so the PCI
+boundary is a module nothing payment-facing can see) are the structure that
+keeps the phase's named risks unreachable before any payment code exists.
+Scope, acceptance and DoD profile in the backlog entry; the module registers
+in `MODULE_ARCHITECTURE.md` §3 already carry both modules' nine attributes.
 
-It must produce what the four previous transitions produced: a completion
-audit of the closed phase conducted **independently** of the exit review (a
-gate assessed only by whoever finished the work is not two checks), a
-distributed-systems and security audit, `PHASE_5_PLAN.md`, the backlog
-elaborated to task granularity with acceptance criteria, and — the part that
-cannot be deferred into implementation — the decisions Phase 5 cannot start
-without.
+**What Phase 5 inherits, already scheduled**: the per-credential confinement
+generalisation (`P5-TSK-002` — the debt row that fired at `P2-TSK-011`), the
+`P3-TSK-015` hold-then-capture composition (the refund's mechanism,
+`P5-TSK-015`), and the provider harness built in `P0-TSK-037` meeting the
+caller it was built for (`P5-TSK-003`).
 
-**Phase 5 changes the one variable this phase deliberately held fixed**: the
-outcome is decided by an **unreliable third party**. So ADR-0043's own
-boundary sentence is the first thing the transition must read — *this phase's
-atomicity answer must not be inherited by analogy* — and `INV-LIFE-03`
-(unknown external state is a **modelled** state, never an assumed outcome)
-becomes live for the first time. The open questions already named below are
-**6** (the accounting treatment of authorization versus capture, High — it
-misstates available funds if wrong) and **9** (which rail to simulate first
-and its finality semantics); **8** (the fee model, High) follows one phase
-later and is worth reading now, because changing revenue recognition after
-postings exist is a restatement.
+### Superseded: the Phase 4 → 5 transition
 
-**What the transition inherits from this phase**: nothing owed. The exit
-review left no remediation item, no unresolved critical issue, and no
-financial-correctness debt — the recorded items are seams with named owners
-(the Phase 13 limit/risk authority, the step-up's value trigger, the
-stuck-transfer detector's absent subject) and one deviation (no fleet-wide
-database or kafka count for Phase 4, by the owner's standing skip), which the
-transition may choose to close by running one.
+*(This section described the transition until it was conducted on 2026-09-20.
+Its stated inheritance — "nothing owed … one deviation (no fleet-wide
+database or kafka count), which the transition may choose to close by running
+one" — was exercised: the transition ran the full battery, which failed for a
+test-harness reason, was repaired, and is green fleet-wide for the first time
+in the phase.)*
 
 ### Superseded: P4-DOC-001
 
@@ -10087,6 +10162,7 @@ rather than left.)*
 
 | Date | Change |
 |------|--------|
+| 2026-09-20 | **Phase 4 → Phase 5 transition conducted — Phase 4 `COMPLETE` (confirmed), Phase 5 `READY`.** The second, independent pass over the phase its exit review ruled complete the day before (the standing precedent): eighteen completion categories **all `PASS`**; an eleven-property financial correctness audit **all `PASS`**, each property held against its database-rank mechanism (insert-carries-outcome grants, the fixed-order two-account lock, the claim at the financial boundary, `V002`'s trigger edges, the in-trigger reversal bound beneath the machine check); the multi-instance question answered **`PASS`** with a fresh zero-occurrence single-instance sweep over `transfers` production code and every contended decision named with its PostgreSQL arbiter; atomicity/idempotency/persistence audits `PASS`; **the register-decay check — the named transition-audit step — found `DISTRIBUTED_EXECUTION.md` §3 current at a phase boundary for the first time** (the beneficiary row landed by `P4-DOC-001`'s hand-diff, the transfer row by `P4-TSK-009` itself). **The testing audit closed the exit review's recorded deviation by running the full battery fleet-wide — and it failed**: every `app.transfers` database suite died on `FATAL: remaining connection slots are reserved`, zero assertion failures anywhere — the per-JVM container's default `max_connections=100` could not carry ~dozens of cached Spring contexts each holding a fixed pool of 8 plus the suites' raw connections (`P1-TSK-004`'s *the fleet does not fit*, arriving in the test fleet, structurally invisible to every targeted fresh-JVM run). Repaired in `DatabaseUnderTest` (the container provisions `max_connections=400`, the finding recorded at the line — no production claim weakened, since the production relationship is asserted against declared deployment configuration); **re-run green: 1157 hermetic / 729 database / 14 kafka, 0 failures — the first genuine fleet-wide database and kafka count of Phase 4.** **Phase 5 initialised without implementing it**: ADR-0045 (intent/attempt — two aggregates, three machines, every state producer-earned, `PROCESSING`/`CANCELLED`/the dispatched and unknown states finally *earning* what ADR-0044 refused transfers), ADR-0046 (**no transaction spans a provider call** — dispatch-before-call with the provider idempotency reference stored first, ambiguity commits `*_UNKNOWN` never an assumed failure, reconciliation by query with **no lease and no leader** because conditional transitions arbitrate), ADR-0047 (webhooks authenticated before parsing with a freshness window, evidence-first, inbox-deduplicated, order-blind by conditional edges), ADR-0048 (**closes question 6**: authorization posts nothing — the issuer holds the customer's external funds — the ledger's first touch is capture, DR `PSP_CLEARING` / CR wallet; the refund holds wallet funds at dispatch, paying `P3-TSK-015`'s recorded remainder), ADR-0049 (**closes question 9**: a simulated card-style PSP first, the maximal exercise of the lifecycle distinctions; nothing final before settlement; the port deliberately one provider wide until Phase 7). **The `INV-PAY-01`…`05` group catalogued** — authenticated provider outcomes, no raw card data, provider vocabulary confined, provider-side idempotency, capture/refund bounds — Phase 5's gate prose given stable IDs before code is written against it (the `INV-IDN`/`INV-KYC` precedent), the platform at **87 invariants**, the in-scope set eleven token-parsed. `PHASE_5_PLAN.md` (18 sections, 15 failure scenarios, six meters, nine milestones); the Phase 5 gate criteria **extended with eleven measurable bullets**; **21 backlog items** with acceptance criteria; `PAYMENT_LIFECYCLES.md` rewritten from its 28-line stub; `RefundFailed` added to the event lists with provenance; question 10 found **three phases overdue** and ruled resolved with provenance; the roadmap's frozen current-position rewritten. All twelve entry criteria hold. **No application code was written** — the one repair was test infrastructure, under the user-directed repair-before-transition rule. Next: `P5-TSK-001`. |
 | 2026-09-19 | **`P4-DOC-001` complete — the exit review, and Phase 4 is `COMPLETE` at 14 of 14.** [`reviews/PHASE_4_REVIEW.md`](reviews/PHASE_4_REVIEW.md): eight areas (**8 `PASS`** — and **area 2 walks a transfer**, which is what this phase was for: the customer's instruction as the economic event, `TransferExecution` as the domain operation, **one local transaction** as the financial transaction (ADR-0043), a `POSTING` entry whose reference carries the transfer id, balanced per-currency lines debiting the source wallet and crediting the destination, both balances as a transactional projection read under each owner's own token, both statements carrying the entry **and** transfer identifiers, and a reversal that corrects by **referencing** rather than editing — every step naming its code and its test), twelve universal criteria (**12 `PASS`**), the financial supplement **F1–F8 all `Met`** re-assessed at the gate rather than inherited (F5 with its Phase-4 reading stated: no external event produces a financial effect here, and the mechanism that will bind is the Phase 0/2-proven inbox), sixteen phase-specific criteria (**16 `PASS`** — six original plus the transition's ten, **read from the gate at review time** rather than from a remembered count, the `P3-DOC-001` finding), and the ten-instances question **`PASS`** over six contended decisions each with its arbiter and its counted race. **Conducted in the `P2-DOC-001` order — assess → corrections → flip (the guarded act) → battery → finalise — and the post-flip battery is green: 1157 hermetic tests, 0 failures across all ten modules**, including both guards the flip arms: `MutationDemonstrationTest`, now deriving **five** `Phase: 4` invariants from the catalogue and finding every row, and `PlannedMetersExistTest`, whose derived rule now unions §15's meter table while the pinned Phase-4 test becomes the harmless second reading `P4-TSK-011` predicted. **The flip surfaced nothing, and it was pre-paid twice rather than lucky**: `P4-TST-002` landed every demanded row and **probed** the flip (simulated `COMPLETE`, battery green, then one row removed to prove the demanded set had genuinely grown — *currently 4*), and `P4-TSK-011` landed the meters behind a guard designed to hand over with no edit. Second phase running that the gate machinery finished its work **before** the gate instead of at it. **Two area-7 findings, both in the record rather than the code, both corrected in the review**: `DISTRIBUTED_EXECUTION.md` §3 had **no `transfers.beneficiary` row** — and §3 is an **enforced exemption set** rather than a description, so an absent row is a component whose next author finds no precedent — the register-decay class's **fifth** occurrence and **the first inside a phase rather than at its boundary**, sharper because `P4-TSK-009` added its own row precisely as the register's note asks while `P4-TSK-006`'s table never got one; and **`P4-TSK-008`'s block recorded *Completion notes* where every sibling records *Gate evidence***, with its eight-mutation sweep, its one survivor and its one cut written only into this document — restated in the backlog, because the backlog is the record and a reader comparing two documents is not a mechanism. **The ADR index needed no repair, and that is a result rather than an absence**: the second-copy status decay found by hand at three consecutive gates is now `P4-TSK-002`'s build failure naming the ADR, and this gate's acceptance of ADR-0043 and ADR-0044 flipped both copies with the guard reconciling them. **One criterion is met with a recorded deviation rather than waived**: criterion 7 asks for the full suite against real infrastructure, and the owner's standing instruction skips `build databaseTest kafkaTest` — so the **hermetic** tier, where the flip's own guards live, was run fleet-wide, the database and kafka tiers were verified per task throughout, and **no fleet-wide database or kafka count is claimed for Phase 4**, recorded in area 8 with an owner. **What the phase delivered**: money moves between customers — 1 new module with the build-graph asymmetry that makes its top risk structurally unreachable, 3 tables, 4 migrations, 7 operations on 5 paths, 2 aggregates, 4 audit actions all emitted, 3 terminal events, 3 error codes, 1 permission on an existing role, 4 meters and a dashboard row, 2 ADRs `Accepted`, **0 new invariants** (the catalogue stays at **82**; 5 in scope, 5 register rows), 14 of 14 backlog items across 8 milestones all `CLOSED`, and **83 mutations — every one caught by the intended assertion, 4 cut on analysis, 2 survived mid-task and each improved a test, 0 survived wrongly**. **Next: the Phase 4 → Phase 5 transition** — its own act, where the one variable this phase held fixed changes: the outcome becomes a third party's, ADR-0043's atomicity answer must **not** be inherited by analogy, and `INV-LIFE-03` goes live. |
 | 2026-09-19 | **`P4-TST-002` complete — the `Phase: 4` register rows; M4.7 CLOSES at 3 of 3 and only the exit review remains.** The set read **token-exactly** with the guard's own regex (`(?<![0-9])4(?![0-9])` against each `**Phase:**` line, so `13` cannot match and `4 onward` does) is **five** — `INV-IDEM-01` (transfers), `INV-CON-02` (landed by `P4-TST-001`), `INV-LIFE-01/-02/-04` — and the four remaining rows landed, taking §2 to **87 rows over 82 catalogued invariants**, with all **nine** `MutationDemonstrationTest` checks green. **The audit found the gap it was written to find, and it changed what the item was.** `INV-IDEM-01`'s catalogue **Verify** line reads *concurrent-duplicate integration tests* and this phase's exit criterion 2 reads *proven under concurrent submission from two threads* — and the transfers caller had **no concurrent-duplicate test at all**: what existed was the sequential retry, which exercises the **replay** path, because once the winner's record is committed a duplicate is a lookup. Writing the row against it would have been **the false row this register refuses**, worse than a missing one because it is believed, so the demonstration was **performed** (the `P3-TST-002` precedent: the audit finds what was not done and does it) — `TransferExecutionDatabaseTest#tenConcurrentIdenticalKeysProduceOneTransfer`, ten instances on one key behind a `CyclicBarrier` with their own connection, `SecurityContext` and correlation flow, asserting one distinct transfer id across every judged result, exactly one executed, and **one effect counted in four tables** with the source at `7.00` and the destination at `3.00`. **The losers' second legal outcome is accepted** — the honest `IdempotencyInProgressException` — because demanding *nine replays* would make the assertion a statement about how fast the winner's transaction happens to be; every other exception fails the test. **The mutation is concurrency-only, which is what makes the new test load-bearing rather than a second copy of `P0-TST-004`**: a pre-flight read substituted for the unique constraint (the shape this codebase's comments have warned about since `P0-TSK-016`) leaves **all five sequential tests green** and fails **exactly** the new one — and its observed shape is recorded rather than assumed, since the losers do not commit a second transfer but abort with `IdempotencyStorageException`, so a retry that should have replayed reaches the customer as a **500**. **Two findings about the guard itself.** It **would never have demanded the `INV-IDEM-01` row** — the check keys on the invariant *identifier*, which already carries the kernel and posting rows — so that row is owed by the gate's extended list and by doctrine and by nothing the build can say; the three `INV-LIFE` rows are the ones the flip would have failed on. And **§6 item 4 claimed more than the guard does** (*every test class named in either register*, where the class- and method-existence checks read §2 only) — corrected to what is actually checked, with why widening is not the answer: §4's prose columns are full of backticked tokens that are not tests, so scanning them would fail the build on a method name quoted in an explanation. The *documentation describing behaviour that does not exist* class, found in the register's own §6. **The flip is pre-paid and that was probed rather than asserted**: Phase 4's status line simulated `COMPLETE` with the battery green, then — the non-vacuity half — one new row removed, which fails naming the invariant and reports *(currently 4)*, proving the demanded set really had grown; both files restored byte-identical. §5 teeth re-proven (a corrupted method reference failed *every method the register names exists on its class* naming exactly it). **No production code changed**, no migration, no contract change; one §3 paragraph records that `INV-LIFE-01` names **seven** operations and this phase delivers one, and that `transfers.beneficiary`'s machine is **deliberately not claimed** under any `INV-LIFE` row, a saved destination not being a money-moving operation. **Verified by targeted tiers — `:app:test` 427 and `:transfers:test` 31 with 0 failures, plus the execution database suite (6 tests) green, failing only the new test under the mutation and green again after the restore — the full battery deliberately skipped on the owner's instruction; no fleet-wide counts claimed.** Next: `P4-DOC-001`, the exit review. |
 | 2026-09-19 | **`P4-TST-001` complete — conservation under sustained concurrent movement, and the composition demonstration found a real defect; M4.7 is 2 of 3.** Ten instances moving money both ways between one pair while the trial-balance and projection sweeps run, the sweeper ending the storm on its own floors (25 rounds, 200 committed commands) so the overlap is the exit condition rather than scheduling luck. **The first honest run produced 783 deadlocks (`40P01`) against 203 domain outcomes**: the execution locked the **source** row `FOR UPDATE` while the posting's foreign key takes `FOR KEY SHARE` on the destination regardless (`P3-TSK-014`'s mechanism), so A→B and B→A each held what the other needed — and **the one-directional drain could not reach it, because a cycle needs two directions**, while `TransferExecution`'s javadoc had said for three tasks that *"the destination is deliberately never locked"*, true of the explicit lock and false about what happens. **Money was never at risk** (a deadlocked transaction writes nothing, so conservation held exactly through all 783); what failed is `INV-CON-02`'s clause that the loser fails with a **domain outcome**. **Remedied in scope with the reasoning on the record**: the fix is the idiom the sibling store method already names (`lockOwnedForUpdate` orders by id *"so two multi-account closers cannot deadlock"*) applied to the multi-account operation a transfer is — both participants in one fixed order, ten lines — because the alternative was an `INV-CON-02` register row, **this item's own deliverable**, that could not be written honestly (the `P3-TST-003` unwritable-row shape, resolved the other way because there the mechanism was a four-eyes lifecycle and here a lock order); the order is Java's `UUID` order and deliberately **not** PostgreSQL's byte order, since a deadlock-free protocol needs every *instance* to agree rather than the database (`P3-TSK-008`'s recorded disagreement, harmless here). **The storm went from 206s with 79% aborts to 4.5s with none** — the aborts were also the throughput. Recorded where the next reader meets it: `DISTRIBUTED_EXECUTION.md` §3's row and lock-set sentence, `PHASE_4_PLAN.md` §7 (which had **no row for bidirectional movement at all**), and **ADR-0039's own follow-ups**, whose protocol is stated per *account decision* and was silent about operations touching two accounts. **A surviving mutation then corrected the test**: the pre-lock availability derivation survived the first draft — amounts of 1.00–3.00 against 10.00 never bring an account near zero, and a stale read differs only at the boundary, so the sustained suite was proving less than its one-directional sibling — and with 7.00 and 9.00 in the rotation it is caught **mid-storm at −5.00 in round 2**. Conservation is asserted as **three readings that must reconcile**: the journal's sum over the pair, an independent recomputation from `transfers.transfer`, and the outcome tally where every loser is a committed `FAILED(INSUFFICIENT_FUNDS)` with nothing posted. **Four mutations, all caught by the intended assertion, restores byte-identical** — the ordering removed (495 deadlocks return); availability pre-lock (−5.00, and `expected: 3 but was: 10` on the drain); the posting over-moving (caught by the negative assertion, **recorded as the different assertion it is**) and under-moving (caught by the two-table reconciliation, `expected: 2 but was: 0`, which established which assertion is load-bearing rather than assuming). The `INV-CON-02` row landed in `MUTATION_TESTING.md` §2 — the first `Phase: 4` row, the other four being `P4-TST-002`'s — with §5 teeth re-proven and restored byte-identical. **Process finding: a compile failure was read as a test result** from a stale XML (identical numbers to the prior run gave it away); the harness now refuses to report unless `:app:databaseTest` actually ran — the *"reports success for work it did not do"* class, met in the machinery rather than the work. **Verified by targeted tiers — the full `:app:test` hermetic tier (427 tests, the register guard green), every transfers database suite and the Phase 3 contention suites the lock change could have disturbed, all green — the full battery deliberately skipped on the owner's instruction; no fleet-wide counts claimed.** Next: `P4-TST-002`. |
