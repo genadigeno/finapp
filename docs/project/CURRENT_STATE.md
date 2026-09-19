@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-19 (`P4-TSK-010` — the limit and risk seams; M4.6 closes)
+Last updated: 2026-09-19 (`P4-TSK-011` — the meters and the dashboard row; M4.7 is 1 of 3)
 
 ---
 
@@ -162,9 +162,10 @@ class, again).
 ## Current Milestone
 
 **M4.7 — Observability and demonstration.** `P4-TSK-011`, `P4-TST-001`, `P4-TST-002`;
-**0 of 3 — next `P4-TSK-011` (`READY`)** — the four planned meters and the dashboard
-row, conservation under sustained concurrent movement, and the mutation-register rows
-for every invariant the catalogue marks `Phase: 4`.
+**1 of 3 — next `P4-TST-001` (`READY`)** — the four planned meters and the dashboard
+row are live (`P4-TSK-011`); what remains is conservation under sustained concurrent
+movement and the mutation-register rows for every invariant the catalogue marks
+`Phase: 4`.
 
 ### M4.6 — The seams — CLOSED
 
@@ -555,11 +556,80 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**None in progress.** `P4-TSK-010` is `COMPLETE`; **M4.6 closes at 1 of
-1, and M4.7 opens. Next: `P4-TSK-011` (`READY`)** — the meters and the
-dashboard row.
+**None in progress.** `P4-TSK-011` is `COMPLETE`; **M4.7 is 1 of 3.
+Next: `P4-TST-001` (`READY`)** — conservation under sustained concurrent
+movement.
 
 ### Just completed
+
+**`P4-TSK-011` — The meters and the dashboard row** — `COMPLETE` (2026-09-19).
+**M4.7 opens at 1 of 3: `PHASE_4_PLAN.md` §15 is real**, and the phase's
+critical flow is a published fact rather than a query over the audit trail.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A freshly started instance publishes every series | The pinned Phase-4 guard in `PlannedMetersExistTest` (the `P2-TSK-020`/`P3-TSK-020` shape, third performance): §15's table parsed and held against the plain no-database context — exactly the "freshly started instance" the acceptance names; the derived guard takes over at the flip with no edit |
+| A replayed transfer lands `replayed` with `completed` unchanged | `TransferMetersDatabaseTest`, over real HTTP against the wired beans: the acting judgement counts once, its byte-identical retry moves `replayed` only — and the mutation counting the replay as `completed` fails exactly there |
+| A conflict lands `conflict` | The same key with a different amount: the 409, `conflict` +1, **every outcome series unchanged** — the security signal is one series an alert can watch, never a tag filter |
+| Dashboard queries resolve | The *Transfers* row (outcomes, latency from `_count`/`_sum`/`_max`, conflicts on their own panel, beneficiary lifecycle), every query resolved by `DashboardQueriesResolveTest` against a live scrape |
+| Mutation sweep over the counting discipline | **Eight mutations, all caught by the intended assertion, restores byte-identical**; one cut on analysis and recorded |
+
+### The counting discipline, and where the counter had to live
+
+**The counter anchors in `TransferService`, not a command decorator,
+because post-commit is not achievable inside the command**: the
+execution runs in the caller's transaction (ADR-0043), so a decorator
+counts before the commit it cannot see. The outcome crosses the
+transaction boundary (the `AccountService.openedNow` shape) and is
+counted after the commit, **from the `TransferResult`'s own
+vocabulary** — the count cannot drift from the judgement. `reversed`
+counts the acting reversal only (the machine's 409 losers land on
+`refused`); **`refused` is defined on the record**, since the plan only
+listed it: a transfer command the platform declined to judge with
+nothing written — the resolution refusals and the reversal machine's
+409, never the caller's own 422s, which named no coherent command. A
+metric is invisible to the caller (`P1-TSK-029`'s recovery-meter
+argument), so it may count what the byte-identical responses hide: a
+rise in `refused` is somebody probing destinations. The latency timer
+wraps the execution path in a `finally` — every outcome, the injected
+clock — because a timer recording only successes flatters exactly the
+incident an operator is trying to see. Beneficiary counters take the
+acting-call discipline verbatim: converged creates (the
+different-display-name converge included) and converged removals count
+nothing.
+
+### What else the task settled
+
+One `TransferMetrics` class in `app.telemetry` (the `AccountMetrics`
+shape — public because the counting seam lives in `app.transfers`, the
+vocabulary methods rather than a registry handle), eager in
+`TelemetryConfiguration`; `TransferService` and `BeneficiaryService`
+gained **required constructor parameters** (no defaulted overload — the
+wiring updated at the composition root). **No `DISTRIBUTED_EXECUTION.md`
+§3 row, and the absence is the design**: per-instance counters are
+non-authoritative readings with no coordination question (the
+`AccountMetrics` precedent). No `INV-MON-01` exemption owed — no gauge,
+so no `ToDoubleFunction` anywhere. No contract change, no new audit
+action, no events. The plan's refused value-by-state meters and the
+subjectless stuck-detector stay refused with their §15 provenance. The
+sweep: replay-as-completed; `refused` dropped (**caught twice** — the
+refusal test and the reversal test's refused half); `conflict` dropped;
+`reversed` hoisted above the acting check (`expected: 1.0 but was:
+2.0`); eager registration made lazy (the pinned Phase-4 guard failing
+by name — the `P1-TSK-029` defect, caught by the guard built against
+it); a dashboard series renamed (`DashboardQueriesResolveTest`'s
+designed message); a converged beneficiary create counted; latency made
+success-only (the refused-still-times assertion). The
+count-inside-the-transaction mutation **cut on analysis and recorded**:
+after the judgement returns, nothing reachable rolls the transaction
+back, so the discipline is held by the code shape and the stated rule
+(the `P3-TSK-014` class). **Verified by targeted tiers — the full
+`:app:test` hermetic tier with every guard green,
+`TransferMetersDatabaseTest`, `DashboardQueriesResolveTest` — the full
+battery deliberately skipped on the owner's instruction; no fleet-wide
+counts claimed.**
+
+### Previously
 
 **`P4-TSK-010` — The limit and risk seams** — `COMPLETE` (2026-09-19).
 **M4.6 closes: the seams are contracts Phase 13 can honour**, not
@@ -9290,14 +9360,14 @@ Project initiation (2026-08-31):
 ## Active Work
 
 **None in progress.** Phases 0, 1, 2 and 3 are `COMPLETE`; Phase 4 is
-`IN_PROGRESS` at 10 of 14 (M4.1 through M4.6 `CLOSED`; M4.7 opens).
+`IN_PROGRESS` at 11 of 14 (M4.1 through M4.6 `CLOSED`; M4.7 at 1 of 3).
 
-The last work performed was **`P4-TSK-010`** (2026-09-19): the limit and
-risk seams — generic, verdict-returning contracts with
-`LIMIT_REFUSED`/`RISK_REFUSED` reserved and produced, the in-lock
-contract observed by a decorator probe, and `V004` widening the reason
-`CHECK`. The next work is **`P4-TSK-011`** — the meters and the
-dashboard row.
+The last work performed was **`P4-TSK-011`** (2026-09-19): the four §15
+meters and the *Transfers* dashboard row — post-commit acting-call
+counting from the judgement's own vocabulary, the conflict security
+signal on its own series, the pinned Phase-4 guard, and every dashboard
+query resolving against a live scrape. The next work is
+**`P4-TST-001`** — conservation under sustained concurrent movement.
 
 *(This section named `P2-TSK-001` as next until `P3-TSK-001`'s gate — stale across the whole of
 Phase 2, found by re-reading the document the gate updates.)*
@@ -9547,23 +9617,27 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P4-TSK-011` — The meters and the dashboard row.** Status `READY`;
-depends on `P4-TSK-008` and `P4-TSK-009` (both `COMPLETE`).
+**`P4-TST-001` — Conservation under sustained concurrent movement.**
+Status `READY`; depends on `P4-TSK-008` (`COMPLETE`).
 
-M4.7 opens with it: `PHASE_4_PLAN.md` §15 made real —
-`finapp.transfers.transfer{outcome}` (completed, failed, reversed,
-replayed, refused — post-commit, acting call only, the `P3-TSK-020`
-discipline), `finapp.transfers.transfer.latency` (the injected clock),
-`finapp.transfers.beneficiary{outcome}`, and
-`finapp.transfers.conflict` (`INV-IDEM-03` conflicts — a security
-signal). All eager; the pinned Phase-4 guard in `PlannedMetersExistTest`
-until the flip; a *Transfers* dashboard row resolving against a live
-scrape. The plan's refused value-by-state meters and the subjectless
-stuck-detector stay refused with their §15 provenance. Accept: a
-freshly started instance publishes every series; a replayed transfer
-lands `replayed` with `completed` unchanged; a conflict lands
-`conflict`; dashboard queries resolve. Risk: Low, Cx: M per the
-backlog. DoD: `DOD-OBS`.
+The phase's composition demonstration (the `P3-TST-001` posture): ten
+instances transferring A→B and B→A continuously — mixed amounts, some
+designed to lose — while the projection verification and trial-balance
+sweeps run; ended by the sweeps' floors, never by time. Plus the
+register row for `INV-CON-02` with its named mutation (the availability
+check moved outside the lock — recorded from `P4-TSK-005`'s sweep,
+which **performed exactly the moved form** and caught it by the drain's
+over-acceptance; dropped and moved are different defects, the
+`P3-TST-002` lesson). Accept: every mid-storm trial-balance sweep reads
+zero per currency; every verification verdict `CLEAN`/`IN_FLIGHT`,
+never `DRIFTING`; the final sum over both accounts equals the starting
+sum **exactly**, counted from the tables and independently recomputed;
+no source ever negative. Risk: Medium, Cx: M per the backlog. DoD:
+`DOD-TEST`, `DOD-FIN`.
+
+### Superseded: P4-TSK-011
+
+*(This section named `P4-TSK-011` until its gate on 2026-09-19.)*
 
 ### Superseded: P4-TSK-010
 
@@ -9643,6 +9717,7 @@ rather than left.)*
 
 | Date | Change |
 |------|--------|
+| 2026-09-19 | **`P4-TSK-011` complete — the meters and the dashboard row; M4.7 is 1 of 3.** `PHASE_4_PLAN.md` §15 made real with no new mechanism — `P3-TSK-020`'s answers applied to transfers without weakening: one `TransferMetrics` class (the `AccountMetrics` shape, public because the counting seam lives in `app.transfers`), every series eager at construction (`P1-TSK-029`), wired in `TelemetryConfiguration`, with `TransferService` and `BeneficiaryService` gaining **required constructor parameters**. **The counter anchors in the service, not a command decorator, because post-commit is not achievable inside the command** (ADR-0043: the execution runs in the caller's transaction, so a decorator counts before the commit it cannot see): the outcome crosses the transaction boundary in a holder (the `AccountService.openedNow` shape) and is counted after the commit **from the `TransferResult`'s own vocabulary**, so the count cannot drift from the judgement — `replayed` lands with the original outcome's series unchanged, `reversed` counts the acting reversal only. **`refused` defined on the record** (the plan only listed it): a transfer command the platform declined to judge with nothing written — the resolution refusals and the reversal machine's 409, never the caller's own 422s, which named no coherent command; a metric is invisible to the caller, so it may count what the byte-identical responses hide, and a rise in `refused` is somebody probing destinations. **`conflict` is its own series, never an outcome value** — an `INV-IDEM-03` fingerprint conflict is a security signal, and an alert on a security signal must be one series rather than a tag filter someone forgets. The latency timer wraps the execution path in a `finally` (every outcome, the injected clock, no histogram buckets); beneficiary counters take the acting-call discipline verbatim. The pinned Phase-4 guard joined `PlannedMetersExistTest` (third of its shape; the derived guard takes over at the flip with no edit); the dashboard gained the *Transfers* row — outcomes, latency from `_count`/`_sum`/`_max`, conflicts on their own panel, beneficiary lifecycle — every query resolved by `DashboardQueriesResolveTest` against a live scrape. **No `DISTRIBUTED_EXECUTION.md` §3 row and the absence is the design** (per-instance counters are non-authoritative readings, the `AccountMetrics` precedent); no `INV-MON-01` exemption owed (no gauge, no `ToDoubleFunction`); no contract change, no new audit action, no events; the plan's refused value-by-state meters and subjectless stuck-detector stay refused with their §15 provenance. **Eight mutations, all caught by the intended assertion, restores byte-identical** — replay counted as completed; `refused` dropped (**caught twice**: the refusal test and the reversal test's refused half); `conflict` dropped; `reversed` hoisted above the acting check (`expected: 1.0 but was: 2.0`); eager registration made lazy (the pinned Phase-4 guard failing by name — the `P1-TSK-029` defect caught by the guard built against it); a dashboard series renamed (the resolver's designed message); a converged beneficiary create counted as `added`; latency made success-only (the refused-still-times assertion) — and the count-inside-the-transaction mutation **cut on analysis and recorded**: after the judgement returns, nothing reachable rolls the transaction back (the `P3-TSK-014` behaviourally-invisible class). **Verified by targeted tiers — the full `:app:test` hermetic tier with every guard green (427 tests), `TransferMetersDatabaseTest` and `DashboardQueriesResolveTest` green on their first runs — the full battery deliberately skipped on the owner's instruction; no fleet-wide counts claimed.** Next: `P4-TST-001`. |
 | 2026-09-19 | **`P4-TSK-010` complete — the limit and risk seams; M4.6 CLOSES (1 of 1).** The skeletons `P4-TSK-005` shipped were hardened into contracts Phase 13 can honour — the delta the skeleton left: `check(Transfer)` carried **no unit of work and no way to refuse**, so a Phase 13 limit could neither anchor a counter to durable state in the execution's transaction (`INV-CON-03` — the in-lock contract was a sentence, not a seam) nor refuse without a contract change. Both ports are now **generic over the unit of work** and return **`SeamVerdict.PERMIT`/`REFUSE`** — two values and no reason, because the refusal→reason mapping is the execution's, fixed per seam, so a limit implementation can never commit the risk vocabulary. `FailureReason` gained `LIMIT_REFUSED`/`RISK_REFUSED` **with their producers** (ADR-0044's doctrine): the execution's mapping arms, exercised by a refusing decorator — a seam refusal is a committed `FAILED` with **nothing posted** (zero entries counted), replayed by the claim, and when both seams refuse the limit's reason wins by consultation order (asserted). **`V004` widened the reason `CHECK`** (the role-ceremony shape on a genuine column constraint) and `TransferMigrationTest`'s reason check moved to the **latest-definition derivation** with `V002`'s five-value literal pinned as history — the applied-history lesson its own javadoc predicted. **The in-lock contract is observed, never stated**: a decorator probe's second connection attempts `FOR UPDATE NOWAIT` on the source row and both seams see `55P03` — deterministic, and the only assertion that can see WHERE a permit-all seam ran. **Removing the `limits` parameter was demonstrated to fail compilation** at the composition root (*constructor cannot be applied to given types* in `TransferBeans`) and restored byte-identical — the skipped control does not compile, which is the control this phase ships. The no-Phase-13-logic accept clause is mechanised (`TransferSeamsTest`: the default holds no field, each port one method, the verdict exactly two values); `DISTRIBUTED_EXECUTION.md` §3 gained both seam rows (stateless by contract; Phase 13's authority lives in durable rows on the passed unit of work, in-lock, never process memory); `ERROR_CONTRACT.md`'s committed-outcomes prose gained the reserved reasons. No contract change, no new audit action, no meters (plan §15 is `P4-TSK-011`'s), no ownership entries owed. **Seven mutations, all caught by the intended assertion, restores byte-identical** — seams hoisted above the lock (the NOWAIT probe), limit verdict ignored, risk verdict ignored, reasons swapped (both assertions, symmetrically), `V004` narrowed (the reconciliation naming it), the default made refusing, a state field added (the size guard). **Verified by targeted tiers — the full `:app:test` hermetic tier with every guard green, `:transfers:test`, the seam database suite; the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Next: `P4-TSK-011`, M4.7 opens. |
 | 2026-09-19 | **`P4-TSK-009` complete — the reversal; M4.5 CLOSES (1 of 1).** The privileged, reasoned correction: `POST /v1/transfers/{id}/reversal` behind the new `TRANSFER_REVERSE` (joined `LEDGER_OPERATOR` — one money-operating population; **no `V015`**, the scope's drift corrected on being met: the `V014` ceremony replaces the ROLE constraint and a permission is never a column, ADR-0031), one transaction moving `COMPLETED → REVERSED` and posting the referencing full-amount entry through `ReversalService` (`INV-REV-01/-02`), which got its **first bean** in `LedgerBeans` observed by the real `PostingObserver`. **Lock-then-look on the transfer row is the arbiter** (`TransferStore.lockById`, `FOR UPDATE` — the store's own javadoc deferred exactly this here): the conditional `UPDATE` cannot arbitrate because it needs the reversal entry id the posting has not yet minted, and post-then-move would surface the losers as `V009` over-reversals instead of the machine's 409 — so the machine is judged from the locked row **before any ledger work** (`canTransitionTo(REVERSED)`, never a status literal), the conditional's row count is the recorded belt (its mutation cut on analysis: invisible under the held lock), `V002`'s trigger edges bind raw SQL and the ledger bound sits beneath. **No idempotency key, deliberately** (the `P3-TSK-021` approval precedent): the one-way machine is the idempotency — a retry gets the one `409 transfers.NotReversible` (named for what is *checked*, covering `FAILED`, already-`REVERSED` and the race's loser alike) and the view carries the reversal. **The reversal posts unconditionally** — no availability judgement on the destination, whose wallet legitimately goes negative (`P3-TSK-008`; gating a correction on the recipient's spending would let spending make correction impossible) — and a destination closed since the transfer surfaces the catalogued `ledger.AccountNotPostable` with the whole transaction rolled back, the recorded corner. Every accept clause demonstrated over real HTTP with the operator granted through the real `Authorization` write: the original entry and lines **byte-identical as PostgreSQL's own renderings**; both balances restored exactly; ten concurrent reversals one entry and one move **counted in the tables** (one 201, nine 409s) plus the deterministic interleaving with the loser observed **Lock-waiting** and refused with nothing posted; the permissionless session (the transfer's own customer) 403 with nothing written, the reason required and bounded (422s, `SuspensionRequest`'s cited bounds), unknown and malformed one 404. The view gained `reversalEntryId`/`reversedAt` — rendered by the GETs, **never by the POST's replay path** (byte-for-byte survives the reversal, as `P4-TSK-008` predicted); the operator's identity stays the trail's fact, not the customer view's. Registers fed: `transfers.TransferReversed` (**reason required**, emitted on arrival), `transfers.NotReversible` catalogued with its reusable response, `lockById` classified `ADMINISTERED`, `TransferReversalRequest` in the credential-sink set, contract baseline **+92/−0** (reviewed), and `DISTRIBUTED_EXECUTION.md` §3 gained the `transfers.transfer` row **by the task rather than by the next transition audit**. **Eight mutations, all caught by the intended assertion, restores byte-identical** (`FOR UPDATE` dropped — caught twice; machine check removed — 409 becoming our 500; directions not swapped — `ReversalBound` refusing the mirror; audit, reason, event, history each dropped; `@RequiresPermission` removed — 403 becoming 201). **Verified by targeted tiers — the full `:app:test` hermetic tier with every guard green, `:transfers:test`, `:identity:test`, the transfers-package database suites; the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Process note: a scripted backlog edit duplicated a 755-line region — caught by `diff --stat` and occurrence counts, repaired by restore-and-reapply. Next: `P4-TSK-010`, M4.6 opens. |
 | 2026-09-18 | **`P4-TSK-008` complete — the transfer surface; M4.4 CLOSES (1 of 1) and M4.3's fourth clause is paid.** The first customer-visible money movement over HTTP: `POST /v1/transfers` (session + `@RequiresIdempotencyKey`) answering `201` with the judgement in the body — **a `FAILED` outcome is a `201` whose body says so, never an HTTP error**, the asynchronous-outcome contract shape Phase 5 inherits — plus `GET /v1/transfers/{id}` and `GET /v1/transfers` under ownership (`customer_id = ?` in the statement, the Session → Identity → Party → live Customer chain; not-yours/unknown/malformed one 404 as an equality between the causes). **One idempotency claim, the command's, deliberately**: the accounts precedent stacked an HTTP executor over a domain *converge*, and stacking one over a domain *executor* would be two claims and two fingerprints for one financial boundary — byte-for-byte replay holds structurally instead, the view rendering the **replayed judgement** (`TransferResult` — the original status and reason, so `P4-TSK-009`'s reversal cannot leak into a replay) plus columns `V002`'s trigger freezes for every writer; proven at HTTP by comparing raw bodies. **The `beneficiaryId` arm is a per-decision authoritative read** (`party_id = ?`, `ACTIVE` required): unknown, a stranger's, malformed and **removed** one byte-identical `transfers.UnknownDestination` — M4.3's fourth clause demonstrated with row counts — with the removed-between-retries corner recorded (refused rather than replayed; the resolution runs before the claim can answer, nothing written, `INV-IDEM-01`'s financial half absolute). **`transfers.UnknownSource` (422) joined the vocabulary** (a body field, not a URI — one answer for unknown/not-yours/malformed, the port's own fold). The view carries **no account identifiers** (the row stores ledger accounts — internal vocabulary, the destination's a third party's; the `P3-TSK-018` no-counterparty rule) — the chain walks `journalEntryId`, and the entry's `reference` walks back (plan §12, asserted from both parties' sides). **The accept's "a verified customer with two accounts" corrected on the record**: `ProductType` has one value and `P3-TSK-012`'s one-live index makes a second open **converge onto the first** — found by the first run's correct `FAILED(SELF_TRANSFER)` — so the demonstration is two verified customers. The store's deferred reads arrived classified (`findOwned` OWNER_SCOPED with its negative test by name; `findById` AUTHORITATIVE_ID; `listFor` newest-first on `V002`'s named index); `Transfer.MAX_REFERENCE_LENGTH` became the bound's one definition, migration-reconciled; the execution command left the unconsumed-wiring licence (`TransferBeans`), and **`PostingService` gained its bean in `LedgerBeans`** — the consumer its comment predicted, observed by the real `PostingObserver`. No events owed (`P4-TSK-005` wired both terminals), no meters, no new audit action. Contract baseline **+180/−0**, the six `BREAKING` labels the classifier erring safe on the brand-new path's `required` members (reviewed); `TransferCreateRequest` joined the credential-sink pinned set; the stale Phase 4 backlog header (`READY`) corrected — the `P3-DOC-001` stale-second-copy class, fourth artefact. **Eight mutations performed, all caught by the intended assertion** — the ownership predicate caught **twice** (behaviourally `404 but was 200`, and by the build rule naming the method), the live filter dropped (caught by two tests incl. the clause's own), the exactly-one-of check dropped, **the rounding mutation survived once and strengthened the suite** (the sweep's inexact shape named an unknown destination whose refusal masked the rounding — the `P2-TSK-016` masked-shape lesson; caught by the valid-pair probe), the source fold split, the key requirement removed, the list predicate neutralised (the bulk disclosure), the order inverted — restores byte-identical; **one cut on analysis and recorded** (status-from-row is behaviourally invisible until the reversal exists). **Verified by targeted tiers — the full `:app:test` hermetic tier with every guard green, `:transfers:test`, and the transfer/execution/beneficiary/adjustment database suites; the full battery deliberately skipped on the owner's instruction — no fleet-wide counts claimed.** Next: `P4-TSK-009`, M4.5 opens. |

@@ -1,5 +1,6 @@
 package com.finapp.app.transfers;
 
+import com.finapp.app.telemetry.TransferMetrics;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.party.Customer;
@@ -7,6 +8,7 @@ import com.finapp.party.PartyId;
 import com.finapp.party.PartyStore;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
+import com.finapp.platform.idempotency.IdempotencyConflictException;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.money.MonetaryException;
@@ -21,12 +23,16 @@ import com.finapp.transfers.TransferExecution;
 import com.finapp.transfers.TransferId;
 import com.finapp.transfers.TransferReversal;
 import com.finapp.transfers.TransferResult;
+import com.finapp.transfers.TransferStatus;
 import com.finapp.transfers.TransferStore;
 import com.finapp.transfers.TransfersErrorCode;
 import com.finapp.transfers.UnknownTransferDestinationException;
 import com.finapp.transfers.UnknownTransferSourceException;
 import java.math.BigDecimal;
 import java.sql.Connection;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -85,6 +91,8 @@ public final class TransferService {
     private final PartyStore<Connection> parties;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
+    private final TransferMetrics metrics;
+    private final Clock clock;
 
     public TransferService(
             TransferExecution execution,
@@ -94,7 +102,9 @@ public final class TransferService {
             IdentityStore<Connection> identities,
             PartyStore<Connection> parties,
             TransactionTemplate transferTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            TransferMetrics metrics,
+            Clock clock) {
         this.execution = Objects.requireNonNull(execution, "execution must not be null");
         this.reversal = Objects.requireNonNull(reversal, "reversal must not be null");
         this.transfers = Objects.requireNonNull(transfers, "transfers must not be null");
@@ -105,6 +115,8 @@ public final class TransferService {
         this.transactions =
                 Objects.requireNonNull(transferTransactions, "transferTransactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.metrics = Objects.requireNonNull(metrics, "metrics must not be null");
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     /**
@@ -157,11 +169,54 @@ public final class TransferService {
 
         Money amount = parsedAmount(body.amount(), body.currency());
 
-        // Malformed folds into the source refusal (malformed-equals-absent): the resolution
-        // port answers unknown and not-yours with one empty, and the fold keeps malformed
-        // indistinguishable from both.
-        UUID sourceRef = parsedOr(body.sourceAccountId(), TransferService::unknownSource);
+        // The meters' window opens after the caller's own 422s: a request that never named a
+        // coherent command is neither a refusal nor a latency sample (P4-TSK-011).
+        Instant started = clock.instant();
+        try {
+            // Malformed folds into the source refusal (malformed-equals-absent): the resolution
+            // port answers unknown and not-yours with one empty, and the fold keeps malformed
+            // indistinguishable from both.
+            UUID sourceRef = parsedOr(body.sourceAccountId(), TransferService::unknownSource);
 
+            Judgement judged = judge(body, idempotencyKey, current, amount, sourceRef);
+            // Post-commit and only for the acting call (P3-TSK-020, the AccountService
+            // discipline): the outcome is the result's own vocabulary, so the count cannot
+            // drift from the judgement - and a replay lands `replayed` with the original
+            // outcome's series unchanged (INV-IDEM-01's shape, visible on a dashboard).
+            if (judged.result().replayed()) {
+                metrics.replayed();
+            } else if (judged.result().status() == TransferStatus.COMPLETED) {
+                metrics.completed();
+            } else {
+                metrics.failed();
+            }
+            return judged.view();
+        } catch (ApiException refusal) {
+            countIfRefusal(refusal);
+            throw refusal;
+        } catch (IdempotencyConflictException conflict) {
+            // The INV-IDEM-03 conflict is its own series, never an outcome value: a security
+            // signal (a stranger replaying logged keys) must be one series an alert can watch.
+            // Counted post-rollback, rethrown to the global 409 mapping.
+            metrics.conflict();
+            throw conflict;
+        } finally {
+            // Every outcome - a timer recording only successes flatters exactly the incident
+            // an operator is trying to see (the LedgerWriteMeters stance).
+            metrics.latency(Duration.between(started, clock.instant()));
+        }
+    }
+
+    /** The judged transfer and its rendered view — one transaction, the command's own. */
+    private record Judgement(TransferView view, TransferResult result) {}
+
+    private Judgement judge(
+            TransferCreateRequest body,
+            String idempotencyKey,
+            Session current,
+            Money amount,
+            UUID sourceRef) {
+        boolean hasBeneficiaryArm = hasText(body.beneficiaryId());
         return inOneTransaction(
                 unitOfWork -> {
                     UUID partyId = partyOf(unitOfWork, current);
@@ -202,7 +257,9 @@ public final class TransferService {
                     // Status and reason from the RESULT, not the row - and no reversal
                     // columns, ever: a replay must render the original judgement byte for
                     // byte, whatever the reversal (P4-TSK-009) has done to the row since.
-                    return view(row, result.status().name(), result.failureReason(), null, null);
+                    return new Judgement(
+                            view(row, result.status().name(), result.failureReason(), null, null),
+                            result);
                 });
     }
 
@@ -259,21 +316,47 @@ public final class TransferService {
     public Optional<TransferView> reverse(TransferId transfer, String reason) {
         Objects.requireNonNull(transfer, "transfer must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
-        return inOneTransaction(
-                unitOfWork -> {
-                    try {
-                        return reversal
-                                .reverse(unitOfWork, transfer, reason)
-                                .map(TransferService::currentView);
-                    } catch (IllegalTransferTransitionException refused) {
-                        throw new ApiException(
-                                TransfersErrorCode.NOT_REVERSIBLE,
-                                "A reversal was refused by the transfer's state ("
-                                        + refused.from() + ")",
-                                "the transfer is " + refused.from()
-                                        + " and only a COMPLETED transfer can be reversed.");
-                    }
-                });
+        try {
+            Optional<TransferView> reversed =
+                    inOneTransaction(
+                            unitOfWork -> {
+                                try {
+                                    return reversal
+                                            .reverse(unitOfWork, transfer, reason)
+                                            .map(TransferService::currentView);
+                                } catch (IllegalTransferTransitionException refused) {
+                                    throw new ApiException(
+                                            TransfersErrorCode.NOT_REVERSIBLE,
+                                            "A reversal was refused by the transfer's state ("
+                                                    + refused.from() + ")",
+                                            "the transfer is " + refused.from()
+                                                    + " and only a COMPLETED transfer can be"
+                                                    + " reversed.");
+                                }
+                            });
+            // Post-commit and only for the acting call (P3-TSK-020): the machine's losers land
+            // in the catch as refusals, and the unknown identifier's empty is no command at
+            // all - nothing was refused of a real transfer, so nothing counts.
+            reversed.ifPresent(view -> metrics.reversed());
+            return reversed;
+        } catch (ApiException refusal) {
+            countIfRefusal(refusal);
+            throw refusal;
+        }
+    }
+
+    /**
+     * The {@code refused} outcome (`P4-TSK-011`): a transfer command the platform declined to
+     * judge, with nothing written — the resolution refusals and the reversal machine's 409,
+     * post-rollback. The caller's own 422s never arrive here as module codes, which is what
+     * keeps "never named a coherent command" out of the count.
+     */
+    private void countIfRefusal(ApiException thrown) {
+        if (thrown.errorCode() == TransfersErrorCode.UNKNOWN_SOURCE
+                || thrown.errorCode() == TransfersErrorCode.UNKNOWN_DESTINATION
+                || thrown.errorCode() == TransfersErrorCode.NOT_REVERSIBLE) {
+            metrics.refused();
+        }
     }
 
     // -----------------------------------------------------------------

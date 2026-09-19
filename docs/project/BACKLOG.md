@@ -5205,7 +5205,43 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-ARCH`
 - **Out of scope**: any limit value, any velocity window, any risk rule — Phase 13.
 
-**P4-TSK-011 — The meters and the dashboard row** — `READY`
+**P4-TSK-011 — The meters and the dashboard row** — `COMPLETE` (2026-09-19)
+- **Completion notes**: `PHASE_4_PLAN.md` §15 made real with no new mechanism — every
+  question was answered by `P3-TSK-020`, applied to transfers without weakening. One
+  `TransferMetrics` class in `app.telemetry` (the `AccountMetrics` shape), every series
+  registered at construction (`P1-TSK-029`), wired eagerly in `TelemetryConfiguration`.
+  **The counter anchors in `TransferService`, not a command decorator, because
+  post-commit is not achievable inside the command** (the execution runs in the caller's
+  transaction, ADR-0043): the outcome is captured across the transaction boundary (the
+  `AccountService.openedNow` shape) and counted after the commit, from the
+  `TransferResult`'s own vocabulary so the count cannot drift from the judgement.
+  `replayed` lands with the original outcome's series unchanged; `reversed` counts the
+  acting reversal only. **`refused` defined on the record** (the plan only listed it): a
+  transfer command the platform declined to judge with nothing written — the resolution
+  refusals and the reversal machine's 409 — never the caller's own 422s, which named no
+  coherent command; a metric is invisible to the caller, so it may count what the
+  byte-identical responses hide. **`conflict` is its own series, never an outcome value**:
+  a security signal must be one series an alert can watch. The latency timer wraps the
+  execution path in a `finally` — every outcome, the injected clock, no histogram
+  buckets. Beneficiary counters take the acting-call discipline verbatim (converged
+  creates and removals count nothing). The pinned Phase-4 guard joined
+  `PlannedMetersExistTest` (the third of its shape; the derived guard takes over at the
+  flip with no edit); the dashboard gained the *Transfers* row (outcomes, latency from
+  `_count`/`_sum`/`_max`, conflicts on their own panel, beneficiary lifecycle), every
+  query resolving against a live scrape. No `DISTRIBUTED_EXECUTION.md` §3 row — per-
+  instance counters are non-authoritative readings (the `AccountMetrics` precedent); no
+  `INV-MON-01` exemption owed (no gauge, so no `ToDoubleFunction`). **Eight mutations,
+  all caught by the intended assertion, restores byte-identical** (replay counted as
+  completed; refused dropped — caught twice; conflict dropped; reversed hoisted above
+  the acting check — 1 became 2; eager registration made lazy — the pinned guard by
+  name; a dashboard series renamed; a converged beneficiary create counted; latency made
+  success-only); the count-inside-the-transaction mutation **cut on analysis and
+  recorded** — after the judgement returns, nothing reachable rolls the transaction
+  back, so the post-commit discipline is held by the code shape and the stated rule (the
+  `P3-TSK-014` class). Verified by targeted tiers (the full `:app:test` hermetic tier
+  with every guard green, `TransferMetersDatabaseTest`, `DashboardQueriesResolveTest`)
+  with **the full battery deliberately skipped on the owner's instruction; no
+  fleet-wide counts claimed**.
 - **Scope**: `PHASE_4_PLAN.md` §15 real: `finapp.transfers.transfer{outcome}` (completed,
   failed, reversed, replayed, refused — post-commit, acting call only, the `P3-TSK-020`
   discipline), `finapp.transfers.transfer.latency` (the injected clock),
@@ -5220,7 +5256,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   resolve; mutation sweep over the counting discipline.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
 
-**P4-TST-001 — Conservation under sustained concurrent movement** — `TODO`
+**P4-TST-001 — Conservation under sustained concurrent movement** — `READY`
 - **Scope**: the phase's composition demonstration (the `P3-TST-001` posture): ten
   instances transferring A→B and B→A continuously — mixed amounts, some designed to lose —
   while the projection verification and trial-balance sweeps run; ended by the sweeps'

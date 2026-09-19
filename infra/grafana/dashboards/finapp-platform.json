@@ -562,6 +562,102 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "Transfers — customer money movement",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 60 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Transfer commands by outcome",
+      "description": "finapp.transfers.transfer (P4-TSK-011): the first customer-visible money movement, by outcome. completed and failed are acting judgements; replayed is a retried key returning its recorded judgement (INV-IDEM-01); reversed is the operator's correction; refused is a command declined with nothing written - a rise in refused is somebody probing destinations.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 61 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_transfers_transfer_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Transfer latency",
+      "description": "finapp.transfers.transfer.latency (P4-TSK-011): duration of the transfer execution command, every outcome of POST /v1/transfers - a timer recording only successes would flatter exactly the incident an operator is trying to see. Read from _count/_sum/_max; no histogram buckets are published (the P1-TSK-029 lesson).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 61 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_transfers_transfer_latency_seconds_max)", "legendFormat": "max" },
+        { "refId": "B", "expr": "sum(rate(finapp_transfers_transfer_latency_seconds_sum[5m])) / sum(rate(finapp_transfers_transfer_latency_seconds_count[5m]))", "legendFormat": "mean" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Idempotency conflicts",
+      "description": "finapp.transfers.conflict (P4-TSK-011): INV-IDEM-03 fingerprint conflicts on the transfer command - a known key presented with a materially different request. A security signal: a stranger replaying logged keys (ADR-0004's owning-principal fingerprint refusing them). The healthy reading is a flat zero.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 61 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(finapp_transfers_conflict_total[5m]))", "legendFormat": "conflicts" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Beneficiary lifecycle",
+      "description": "finapp.transfers.beneficiary (P4-TSK-011): saved destinations added and removed. Only the acting call counts - a converged retry is never throughput (P3-TSK-020's discipline).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 68 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_transfers_beneficiary_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

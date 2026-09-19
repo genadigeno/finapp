@@ -1,6 +1,7 @@
 package com.finapp.app.transfers;
 
 import com.finapp.accounts.CustomerAccountStore;
+import com.finapp.app.telemetry.TransferMetrics;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
 import com.finapp.ledger.LedgerAccountStore;
@@ -79,7 +80,8 @@ class BeneficiaryBeans {
             IdGenerator ids,
             Clock clock,
             TransactionTemplate beneficiaryTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            TransferMetrics transferMetrics) {
         return new BeneficiaryService(
                 beneficiaryCreation,
                 beneficiaryStore,
@@ -89,6 +91,7 @@ class BeneficiaryBeans {
                 ids,
                 clock,
                 beneficiaryTransactions,
-                dataSource);
+                dataSource,
+                transferMetrics);
     }
 }

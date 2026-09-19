@@ -133,6 +133,12 @@ class TelemetryConfiguration {
         return new AccountMetrics(registry);
     }
 
+    /** The transfer surface's meters (`P4-TSK-011`), eager for the same reason. */
+    @Bean
+    TransferMetrics transferMetrics(MeterRegistry registry) {
+        return new TransferMetrics(registry);
+    }
+
     /**
      * Wraps the auto-configured connection pool so acquiring a connection is visible in a trace.
      *

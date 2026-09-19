@@ -1,5 +1,6 @@
 package com.finapp.app.transfers;
 
+import com.finapp.app.telemetry.TransferMetrics;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.IdentityErrorCode;
 import com.finapp.identity.IdentityStore;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import javax.sql.DataSource;
 import org.springframework.jdbc.datasource.DataSourceUtils;
@@ -72,6 +74,7 @@ public final class BeneficiaryService {
     private final Clock clock;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
+    private final TransferMetrics metrics;
 
     public BeneficiaryService(
             BeneficiaryCreation<Connection> creation,
@@ -82,7 +85,8 @@ public final class BeneficiaryService {
             IdGenerator ids,
             Clock clock,
             TransactionTemplate beneficiaryTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            TransferMetrics metrics) {
         this.creation = Objects.requireNonNull(creation, "creation must not be null");
         this.beneficiaries =
                 Objects.requireNonNull(beneficiaries, "beneficiaries must not be null");
@@ -95,6 +99,7 @@ public final class BeneficiaryService {
                 Objects.requireNonNull(
                         beneficiaryTransactions, "beneficiaryTransactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.metrics = Objects.requireNonNull(metrics, "metrics must not be null");
     }
 
     /** The rendered saved destination — never more than identifiers, the name and an instant. */
@@ -131,7 +136,10 @@ public final class BeneficiaryService {
             throw unknownDestination();
         }
 
-        return inOneTransaction(
+        // The AccountService.openedNow shape (P3-TSK-020): the acting flag crosses the
+        // transaction boundary so the count can wait for the commit.
+        AtomicBoolean addedNow = new AtomicBoolean(false);
+        BeneficiaryView view = inOneTransaction(
                 unitOfWork -> {
                     UUID partyId = partyOf(unitOfWork, current);
                     // The step-up gate, before any write: the ApiException aborts the
@@ -163,9 +171,16 @@ public final class BeneficiaryService {
                                         "destination="
                                                 + created.beneficiary()
                                                         .destinationAccountId()));
+                        addedNow.set(true);
                     }
                     return BeneficiaryView.of(created.beneficiary());
                 });
+        // After the commit and only for the acting call (P3-TSK-020): a converged retry -
+        // the different-display-name converge included - is never throughput.
+        if (addedNow.get()) {
+            metrics.beneficiaryAdded();
+        }
+        return view;
     }
 
     /** The caller's live beneficiaries, oldest first. */
@@ -191,7 +206,8 @@ public final class BeneficiaryService {
     public boolean delete(Session current, BeneficiaryId beneficiary) {
         Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(beneficiary, "beneficiary must not be null");
-        return inOneTransaction(
+        AtomicBoolean removedNow = new AtomicBoolean(false);
+        boolean owned = inOneTransaction(
                 unitOfWork -> {
                     UUID partyId = partyOf(unitOfWork, current);
                     if (beneficiaries.remove(
@@ -203,6 +219,7 @@ public final class BeneficiaryService {
                                 TransfersAuditAction.BENEFICIARY_REMOVED,
                                 beneficiary,
                                 Optional.empty());
+                        removedNow.set(true);
                         return true;
                     }
                     // The conditional matched nothing: the caller's already-removed row
@@ -211,6 +228,11 @@ public final class BeneficiaryService {
                             .findOwned(unitOfWork, beneficiary, partyId)
                             .isPresent();
                 });
+        // After the commit and only for the winning removal (P3-TSK-020).
+        if (removedNow.get()) {
+            metrics.beneficiaryRemoved();
+        }
+        return owned;
     }
 
     // -----------------------------------------------------------------

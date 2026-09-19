@@ -172,6 +172,32 @@ class PlannedMetersExistTest {
         assertThat(registeredMeters()).containsAll(planned);
     }
 
+    /**
+     * `P4-TSK-011`'s acceptance, performed ahead of the flip — the same shape a third time:
+     * every meter Phase 4's plan §15 names is registered in this context, which boots with
+     * nothing configured and no reachable database, so it is exactly the "freshly started
+     * instance" the acceptance names. Between now and the flip this is the only thing holding
+     * the four series; after it, a harmless second reading of the same table. What this proves
+     * that no per-class test can: the transfer, beneficiary, conflict and latency series are
+     * the WIRED {@code TransferMetrics} bean's eager registrations, not a test's own.
+     */
+    @Test
+    @DisplayName("Phase 4's planned meters are already published, ahead of the phase flip")
+    void phase4PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        for (String line : read(repositoryFile("docs/project/PHASE_4_PLAN.md"))) {
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(planned)
+                .as("the Phase 4 plan's §15 table must parse, or this checks nothing")
+                .hasSizeGreaterThanOrEqualTo(4);
+
+        assertThat(registeredMeters()).containsAll(planned);
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

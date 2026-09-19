@@ -1,5 +1,6 @@
 package com.finapp.app.transfers;
 
+import com.finapp.app.telemetry.TransferMetrics;
 import com.finapp.identity.IdentityStore;
 import com.finapp.ledger.AvailableBalance;
 import com.finapp.ledger.JdbcBalanceDerivation;
@@ -113,7 +114,9 @@ class TransferBeans {
             IdentityStore<Connection> identityStore,
             PartyStore<Connection> partyStore,
             TransactionTemplate transferTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            TransferMetrics transferMetrics,
+            Clock clock) {
         return new TransferService(
                 transferExecution,
                 transferReversal,
@@ -122,6 +125,8 @@ class TransferBeans {
                 identityStore,
                 partyStore,
                 transferTransactions,
-                dataSource);
+                dataSource,
+                transferMetrics,
+                clock);
     }
 }
