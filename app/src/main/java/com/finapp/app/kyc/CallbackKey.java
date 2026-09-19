@@ -1,33 +1,39 @@
 package com.finapp.app.kyc;
 
-import com.finapp.app.mfa.MfaKey;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
-import java.util.Objects;
+import com.finapp.app.security.ConfinedCredential.KeyLength;
+import com.finapp.app.security.ConfinedCredential.KeySpec;
 
 /**
  * Where the provider-callback signing key comes from (`P2-TSK-011`).
  *
- * <h2>The fourth per-credential confinement — the debt row's own trigger, met</h2>
+ * <h2>The fourth per-credential confinement — the copy that fired the trigger, now a
+ * declaration</h2>
  *
- * <p>{@code MfaKey}'s shape, hand-written a fourth time: the recorded debt row names <em>"the
- * fourth credential, or Phase 5's provider adapters — whichever asks first"</em> as its trigger,
- * and this is the fourth credential. Generalising the confinement inside a callback task would
- * be a refactor of three proven guards smuggled into unrelated work ({@code EXECUTION_PROTOCOL.md}
- * rule 4, the `P2-TSK-008` precedent verbatim) — so the row is updated instead: the trigger is
- * reached, four hand-written instances exist, and the generalisation is due as its own piece of
- * work for the phase review to schedule.
+ * <p>This was {@code MfaKey}'s shape hand-written a fourth time, and its own javadoc recorded
+ * that the debt row's trigger was thereby reached and the generalisation due as its own piece of
+ * work. `P5-TSK-002` is that work: this class is now a {@link KeySpec} declaration over
+ * {@code ConfinedCredential}, with its behaviour — signature, exception types, message texts,
+ * derived local bytes — preserved byte for byte. {@code CallbackKeyTest}, untouched, is the
+ * equivalence proof.
  *
- * <h2>One published default literal in the whole repository</h2>
+ * <h2>What its spec says that the others' do not</h2>
  *
- * <p>The marked local default is {@link MfaKey#MARKED_LOCAL_DEFAULT} <em>by reference</em>, so
- * the build rule that single-sources the marker keeps one subject. The locally derived key is
- * domain-separated — {@code "/callback"} appended before hashing — so no two concerns share key
- * bytes even locally, the {@code DocumentKey} reasoning.
+ * <p>Domain separation {@code "/callback"}; a length rule of <strong>at least</strong> 32 bytes
+ * rather than exactly (HMAC accepts any length and RFC 2104 recommends no shorter than the
+ * digest; unlike an AES key there is no valid-but-weaker interpretation to guard against); and a
+ * refusal tail stating what the published default would cost — a callback endpoint it signs
+ * would accept anybody's check outcomes.
  */
 public final class CallbackKey {
+
+    private static final KeySpec SPEC =
+            new KeySpec(
+                    "callback signing key",
+                    "provider-callback signing key",
+                    "FINAPP_KYC_CALLBACK_KEY",
+                    "/callback",
+                    KeyLength.AT_LEAST_32,
+                    ", and a callback endpoint it signs would accept anybody's check outcomes.");
 
     private CallbackKey() {}
 
@@ -39,42 +45,6 @@ public final class CallbackKey {
      *     database is not on loopback
      */
     public static byte[] decode(String configured, boolean localDefaultPermitted) {
-        Objects.requireNonNull(configured, "The callback signing key must be configured");
-
-        if (MfaKey.MARKED_LOCAL_DEFAULT.equals(configured)) {
-            if (!localDefaultPermitted) {
-                throw new IllegalStateException(
-                        "The provider-callback signing key is still the published local default,"
-                            + " and this instance is not talking to a database on loopback. Set"
-                            + " FINAPP_KYC_CALLBACK_KEY to a base64 key of at least 32 bytes. The"
-                            + " published default is not a secret: every reader of this repository"
-                            + " has it, and a callback endpoint it signs would accept anybody's"
-                            + " check outcomes.");
-            }
-            try {
-                return MessageDigest.getInstance("SHA-256")
-                        .digest(
-                                (MfaKey.MARKED_LOCAL_DEFAULT + "/callback")
-                                        .getBytes(StandardCharsets.UTF_8));
-            } catch (NoSuchAlgorithmException impossible) {
-                throw new IllegalStateException("SHA-256 is required by every JVM");
-            }
-        }
-
-        byte[] configuredKey;
-        try {
-            configuredKey = Base64.getDecoder().decode(configured);
-        } catch (IllegalArgumentException e) {
-            // Never echoes the value: it is key material, and this message reaches a log line.
-            throw new IllegalStateException("The callback signing key is not valid base64");
-        }
-        if (configuredKey.length < 32) {
-            // At least, not exactly: HMAC accepts any length, and RFC 2104 recommends a key no
-            // shorter than the digest - 32 bytes for SHA-256. Unlike an AES key there is no
-            // second valid-but-weaker interpretation to guard against, so longer is permitted.
-            throw new IllegalStateException(
-                    "The callback signing key must decode to at least 32 bytes");
-        }
-        return configuredKey;
+        return SPEC.decode(configured, localDefaultPermitted);
     }
 }

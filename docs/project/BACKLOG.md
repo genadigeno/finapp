@@ -5509,7 +5509,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   database or kafka counts claimed.**
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`
 
-**P5-TSK-002 — The per-credential confinement, generalised** — `READY`
+**P5-TSK-002 — The per-credential confinement, generalised** — `COMPLETE` (2026-09-20)
 - **Objective**: pay the debt row that fired at `P2-TSK-011`: four hand-written copies of
   the loopback-confinement shape (`DatabaseCredentialGuard`, `MfaKey`, `DocumentKey`,
   `CallbackKey`) become one mechanism before the fifth and sixth credentials (the provider
@@ -5524,10 +5524,37 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - **Accept**: one definition of the confinement; all four existing credential guards green
   with no test edited; removing the confinement from the shared mechanism fails every
   consumer's guard test.
+- **Gate evidence (2026-09-20)**: `ConfinedCredential` in `app.security` — the marker's now
+  **single** Java literal (it lived twice, in `DatabaseCredentialGuard` and `MfaKey` — the
+  copies-drift shape, found and closed by the generalisation itself), `isMarkedLocalDefault`,
+  and `KeySpec` (name · confinement name · environment variable · domain suffix ·
+  `EXACTLY_32`/`AT_LEAST_32` · refusal tail) reproducing the four guards' behaviour **byte
+  for byte** — messages, exception types, derived local bytes (MFA's suffix empty, its
+  bytes predating the suffix idea). The three key classes are one-line specs + delegates
+  with signatures and public constants kept; the guard's literal became a reference; **the
+  beans changed not at all** (the loopback answer stays `DatabaseEndpoint`'s, passed in).
+  `ConfinedCredentialTest` covers only the next-consumer half no existing suite can: a
+  fifth spec (shaped like the payment webhook key's) is domain-separated from **all three**
+  existing keys pairwise, inherits the confinement naming its own variable, never echoes,
+  and both length rules hold. **All four existing suites untouched and green — the
+  equivalence proof.** **Six mutations, all caught by the intended assertion, restores
+  verified byte-identical**: the confinement removed from the shared decode — **the
+  acceptance mutation — fails every consumer's confinement test at once** (MfaKey,
+  DocumentKey, CallbackKey, the new spec's); the domain suffix dropped (both
+  domain-separation tests + the pairwise new one); `EXACTLY_32` relaxed past 16 bytes (the
+  AES-128 trap, caught by MfaKey's and DocumentKey's length tests); `AT_LEAST_32`
+  tightened to exactly (CallbackKey's longer-is-permitted half); the base64 refusal made
+  to echo the value (MfaKey's refused-quietly + the mechanism's own non-echo); the guard's
+  marker reference drifted to a second literal (the `isSameAs` chain check + the startup
+  guard's remote-refusal test). Verified by targeted tiers — `:app:test` green (the four
+  suites, the new suite, `secretsAreWrapped`, `SecretsAreUnwrappedInOnePlaceTest`,
+  `CommittedConfigurationHoldsNoSecretTest` all over the reshaped classes) — **the full
+  battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+  counts claimed.**
 - **Risk**: Medium (touches four proven controls). **Cx**: M. **DoD**: `DOD-SEC`,
   `DOD-KERNEL`
 
-**P5-TSK-003 — The provider port and the simulated card PSP adapter** — `TODO`
+**P5-TSK-003 — The provider port and the simulated card PSP adapter** — `READY`
 - **Objective**: ADR-0049 as code: `PaymentProvider` (authorize / capture / refund /
   **query by our reference**), our vocabulary in and out, one simulated card-style adapter.
 - **Scope**: the port in `payments`; the adapter over HTTP against the `P0-TSK-037`

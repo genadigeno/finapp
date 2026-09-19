@@ -1,7 +1,8 @@
 package com.finapp.app.mfa;
 
-import java.util.Base64;
-import java.util.Objects;
+import com.finapp.app.security.ConfinedCredential;
+import com.finapp.app.security.ConfinedCredential.KeyLength;
+import com.finapp.app.security.ConfinedCredential.KeySpec;
 
 /**
  * Where the MFA encryption key comes from (`P1-TSK-017`, ADR-0020, {@code INV-IDN-08}).
@@ -23,17 +24,33 @@ import java.util.Objects;
  * challenge — for every customer, at a moment nobody is watching, with an error that looks like a
  * cryptography bug rather than a configuration one. Refusing at startup makes it a deploy failure
  * instead, which is the cheapest place for it to be found.
+ *
+ * <h2>Re-expressed over the generalised confinement</h2>
+ *
+ * <p>This was the shape's second hand-written copy; since `P5-TSK-002` it is a
+ * {@link ConfinedCredential.KeySpec} declaration, with its behaviour — signature, exception
+ * types, message texts, and the derived local key bytes (no domain suffix, because this
+ * credential's derivation predates the suffix idea and its bytes must not change) — preserved
+ * byte for byte. {@code MfaKeyTest}, untouched, is the equivalence proof.
  */
 public final class MfaKey {
 
     /**
-     * The published local default, and the reason it is published.
-     *
-     * <p>An unmarked default is worse than this one: it looks like a real key, so nobody notices it
-     * is not. Named so that {@code CommittedConfigurationHoldsNoSecretTest} recognises it, and so
-     * that a person reading a configuration file cannot mistake it for a secret.
+     * The published local default — a reference to the repository's one Java literal of it
+     * ({@link ConfinedCredential#MARKED_LOCAL_DEFAULT}), kept here as a public constant because
+     * {@code DocumentKey}, {@code CallbackKey} and the test fixtures have referenced it by this
+     * name since before the generalisation existed.
      */
-    public static final String MARKED_LOCAL_DEFAULT = "local-development-only-not-a-secret";
+    public static final String MARKED_LOCAL_DEFAULT = ConfinedCredential.MARKED_LOCAL_DEFAULT;
+
+    private static final KeySpec SPEC =
+            new KeySpec(
+                    "MFA encryption key",
+                    "MFA encryption key",
+                    "FINAPP_MFA_KEY",
+                    "",
+                    KeyLength.EXACTLY_32,
+                    ".");
 
     private MfaKey() {}
 
@@ -45,38 +62,6 @@ public final class MfaKey {
      *     database is not on loopback
      */
     public static byte[] decode(String configured, boolean localDefaultPermitted) {
-        Objects.requireNonNull(configured, "The MFA encryption key must be configured");
-
-        if (MARKED_LOCAL_DEFAULT.equals(configured)) {
-            if (!localDefaultPermitted) {
-                throw new IllegalStateException(
-                        "The MFA encryption key is still the published local default, and this"
-                            + " instance is not talking to a database on loopback. Set"
-                            + " FINAPP_MFA_KEY to a base64 32-byte key. The published default is"
-                            + " not a secret: every reader of this repository has it.");
-            }
-            // DERIVED from the marked string rather than being a second literal, so this
-            // repository holds exactly one published default and the build rule that
-            // single-sources it has one subject rather than two.
-            try {
-                return java.security.MessageDigest.getInstance("SHA-256")
-                        .digest(MARKED_LOCAL_DEFAULT.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            } catch (java.security.NoSuchAlgorithmException impossible) {
-                throw new IllegalStateException("SHA-256 is required by every JVM");
-            }
-        }
-
-        byte[] key;
-        try {
-            key = Base64.getDecoder().decode(configured);
-        } catch (IllegalArgumentException e) {
-            // Never echoes the value: it is key material, and this message reaches a log line.
-            throw new IllegalStateException("The MFA encryption key is not valid base64");
-        }
-        if (key.length != 32) {
-            throw new IllegalStateException(
-                    "The MFA encryption key must decode to exactly 32 bytes, for AES-256");
-        }
-        return key;
+        return SPEC.decode(configured, localDefaultPermitted);
     }
 }

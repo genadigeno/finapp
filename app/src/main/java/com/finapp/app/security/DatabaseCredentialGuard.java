@@ -48,7 +48,12 @@ import org.springframework.stereotype.Component;
 public class DatabaseCredentialGuard {
 
     /**
-     * The one sanctioned local-development fallback, and the single source of that value.
+     * The one sanctioned local-development fallback — since `P5-TSK-002` a reference to the
+     * repository's single Java literal of it ({@link ConfinedCredential#MARKED_LOCAL_DEFAULT});
+     * until then this constant and {@code MfaKey}'s were two literals of the same value, which is
+     * exactly the copies-drift shape the generalisation exists to close. Kept as a public
+     * constant here because the guard's tests and callers have referenced it by this name since
+     * `P0-TSK-031`.
      *
      * <p><strong>On the name.</strong> Calling this {@code PASSWORD} would fail the build:
      * {@code secretsAreWrapped} rejects any production field whose name says it holds a secret
@@ -63,7 +68,7 @@ public class DatabaseCredentialGuard {
      * if any of them drifts to a different local default. That check, not this constant, is what
      * makes the value single-sourced.
      */
-    public static final String MARKED_LOCAL_DEFAULT = "local-development-only-not-a-secret";
+    public static final String MARKED_LOCAL_DEFAULT = ConfinedCredential.MARKED_LOCAL_DEFAULT;
 
     /**
      * The variable to set. Named in the failure message so the fix needs no documentation.
