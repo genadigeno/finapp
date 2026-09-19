@@ -24,10 +24,12 @@ import org.junit.jupiter.api.Test;
  * an edge in the trigger the machine lost is a move raw SQL can make that the domain cannot —
  * both silent without this reconciliation.
  *
- * <p>`V002` is pinned directly rather than by latest-definition derivation because it is the
- * tables' creating migration; when a later migration replaces a constraint, the
- * {@code RoleAssignmentMigrationTest} applied-history lesson applies and this test must learn
- * it.
+ * <p>`V002` is pinned directly for everything it still defines; the <strong>reason
+ * {@code CHECK} moved to the latest-definition derivation</strong> when `V004` replaced it
+ * (`P4-TSK-010`) — the {@code RoleAssignmentMigrationTest} applied-history lesson, learned on
+ * the day this class's own javadoc predicted it would have to be: the latest definition is
+ * reconciled against the enum, and `V002`'s original five-value literal is pinned separately,
+ * because history keeping its shape is its own claim.
  */
 @DisplayName("transfer migration reconciliation (P4-TSK-004)")
 class TransferMigrationTest {
@@ -46,10 +48,23 @@ class TransferMigrationTest {
     }
 
     @Test
-    @DisplayName("the reason CHECK is generated from the reason enum")
+    @DisplayName("the LATEST reason CHECK is generated from the reason enum (P4-TSK-010)")
     void reasonCheckMatchesTheEnum() {
-        assertThat(migration())
+        // The latest, DERIVED - not V002, whose applied CHECK is history that cannot be edited
+        // (ADR-0011): a reason added to the enum without its widening migration, or a widened
+        // constraint the enum does not carry, fails whichever came first - and the derivation
+        // finds the next widening's migration without anyone re-pointing this test.
+        assertThat(latestReasonConstraintDefinition())
                 .contains("CHECK (failure_reason IN (" + FailureReason.sqlValueList() + "))");
+    }
+
+    @Test
+    @DisplayName("V002's original five-value reason literal keeps its shape, as history")
+    void originalReasonCheckIsPinnedAsHistory() {
+        assertThat(migration())
+                .contains("CHECK (failure_reason IN ('INSUFFICIENT_FUNDS',"
+                        + " 'SOURCE_NOT_POSTABLE', 'DESTINATION_NOT_POSTABLE',"
+                        + " 'CURRENCY_MISMATCH', 'SELF_TRANSFER'))");
     }
 
     @Test
@@ -108,6 +123,98 @@ class TransferMigrationTest {
     @DisplayName("the guard can actually read the migration")
     void theGuardIsNotVacuous() {
         assertThat(migration()).contains("CREATE TABLE transfers.transfer (");
+    }
+
+    /**
+     * The content of the highest-numbered transfers migration defining the reason constraint —
+     * the {@code RoleAssignmentMigrationTest} derivation, jar-aware for the same reason: this
+     * module's own tests see its migrations inside the jar {@code java-library} packs, while an
+     * IDE run sees a resources directory. Fails loudly when nothing defines the constraint,
+     * because a derivation returning nothing would let the reconciliation pass over an empty
+     * string.
+     */
+    private static String latestReasonConstraintDefinition() {
+        String latest = null;
+        int latestVersion = -1;
+        for (java.util.Map.Entry<String, String> entry : allMigrations().entrySet()) {
+            java.util.regex.Matcher name =
+                    java.util.regex.Pattern.compile("V(\\d+)__.*\\.sql").matcher(entry.getKey());
+            if (!name.matches()) {
+                continue;
+            }
+            String sql = entry.getValue();
+            if (!sql.contains("transfer_failure_reason_is_known") || !sql.contains("CHECK")) {
+                continue;
+            }
+            int version = Integer.parseInt(name.group(1));
+            if (version > latestVersion) {
+                latestVersion = version;
+                latest = sql;
+            }
+        }
+        if (latest == null) {
+            throw new IllegalStateException(
+                    "no migration defines transfer_failure_reason_is_known");
+        }
+        return latest;
+    }
+
+    /** Every transfers migration on the classpath, file name to content — jar and directory. */
+    private static java.util.Map<String, String> allMigrations() {
+        String directory = "db/migration/transfers";
+        java.util.Map<String, String> migrations = new java.util.TreeMap<>();
+        try {
+            java.util.Enumeration<java.net.URL> roots =
+                    TransferMigrationTest.class.getClassLoader().getResources(directory);
+            while (roots.hasMoreElements()) {
+                java.net.URL root = roots.nextElement();
+                if ("jar".equals(root.getProtocol())) {
+                    java.net.JarURLConnection connection =
+                            (java.net.JarURLConnection) root.openConnection();
+                    // toURI, not getFile: on Windows the latter yields "/C:/..." with URL
+                    // escaping intact, which is a path only sometimes.
+                    try (java.util.jar.JarFile jar =
+                            new java.util.jar.JarFile(
+                                    java.nio.file.Path.of(connection.getJarFileURL().toURI())
+                                            .toFile())) {
+                        java.util.Enumeration<java.util.jar.JarEntry> entries = jar.entries();
+                        while (entries.hasMoreElements()) {
+                            java.util.jar.JarEntry entry = entries.nextElement();
+                            if (entry.getName().startsWith(directory + "/")
+                                    && entry.getName().endsWith(".sql")) {
+                                try (InputStream in = jar.getInputStream(entry)) {
+                                    migrations.put(
+                                            entry.getName()
+                                                    .substring(directory.length() + 1),
+                                            new String(
+                                                    in.readAllBytes(),
+                                                    StandardCharsets.UTF_8));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    java.nio.file.Path dir = java.nio.file.Path.of(root.toURI());
+                    try (java.util.stream.Stream<java.nio.file.Path> files =
+                            java.nio.file.Files.list(dir)) {
+                        for (java.nio.file.Path file : files.toList()) {
+                            if (file.getFileName().toString().endsWith(".sql")) {
+                                migrations.put(
+                                        file.getFileName().toString(),
+                                        java.nio.file.Files.readString(file));
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception failure) {
+            throw new IllegalStateException(
+                    "could not enumerate the transfers migrations", failure);
+        }
+        if (migrations.isEmpty()) {
+            throw new IllegalStateException("no transfers migrations found on the classpath");
+        }
+        return migrations;
     }
 
     /** From the classpath, the sibling migration tests' idiom. */

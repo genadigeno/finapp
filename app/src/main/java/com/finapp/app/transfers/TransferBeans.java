@@ -44,7 +44,9 @@ class TransferBeans {
      * deliberate differences the suite records: the shared beans (participants, posting,
      * executor) rather than private instances, and the real {@code PostingObserver} through the
      * {@code postingService} bean. The two seams are {@link PermitAllUntilPhase13}, named for
-     * what they are; `P4-TSK-010` hardens this wiring into a decision.
+     * what they are — `P4-TSK-010` hardened the contracts (verdict-returning, in-lock, on the
+     * execution's own unit of work) so replacing these two instances is the whole of Phase 13's
+     * wiring change, and a skipped control still does not compile.
      */
     @Bean
     TransferExecution transferExecution(
@@ -64,8 +66,8 @@ class TransferBeans {
                 new AvailableBalance<>(new JdbcBalanceDerivation(), new JdbcHoldStore()),
                 postingService,
                 transferStore,
-                new PermitAllUntilPhase13(),
-                new PermitAllUntilPhase13(),
+                new PermitAllUntilPhase13<>(),
+                new PermitAllUntilPhase13<>(),
                 auditWriter,
                 outboxWriter,
                 ids,

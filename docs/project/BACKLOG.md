@@ -5155,7 +5155,38 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   as the positive control (`INV-AUD-03`).
 - **Risk**: **High**. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-SEC`
 
-**P4-TSK-010 — The limit and risk seams** — `READY`
+**P4-TSK-010 — The limit and risk seams** — `COMPLETE` (2026-09-19)
+- **Completion notes**: the skeletons `P4-TSK-005` shipped were hardened into contracts
+  Phase 13 can actually honour — the delta the skeleton left: both ports became generic
+  over the unit of work (a `check(Transfer)` with no connection could never anchor a
+  counter to durable state in-lock, so the in-lock contract was a sentence, not a seam)
+  and **verdict-returning** (`SeamVerdict.PERMIT/REFUSE`, two values and no reason,
+  because the refusal→reason mapping is the execution's, fixed per seam — a limit
+  implementation can never commit the risk vocabulary). `FailureReason` gained
+  `LIMIT_REFUSED`/`RISK_REFUSED` with their producers — the execution's mapping arms,
+  exercised by a refusing test decorator: a seam refusal is a committed
+  `FAILED` outcome, nothing posted, the retry replaying it (`CommandResult.failed`), so
+  Phase 13's arrival changes no contract anywhere. `V004` widened the reason `CHECK`
+  (the role-ceremony shape on a genuine column constraint), and
+  `TransferMigrationTest`'s reason check moved to the **latest-definition derivation**
+  with `V002`'s five-value literal pinned as history — the applied-history lesson its own
+  javadoc predicted it would have to learn. **The in-lock contract is observed, not
+  stated**: a decorator probe's second connection attempts `FOR UPDATE NOWAIT` on the
+  source row and both seams see `55P03` — deterministic, and the only assertion that can
+  see WHERE a permit-all seam ran. **Removing the `limits` parameter was demonstrated to
+  fail compilation** at the composition root (`TransferBeans`: constructor cannot be
+  applied) and restored byte-identical. `DISTRIBUTED_EXECUTION.md` §3 gained both rows
+  (stateless by contract; the row says Phase 13's authority lives in durable rows on the
+  execution's unit of work, never process memory — `INV-CON-03`). The no-Phase-13-logic
+  clause is mechanised: `TransferSeamsTest` asserts the default holds no field, each port
+  one method, the verdict exactly two values. **Seven mutations, all caught by the
+  intended assertion, restores byte-identical** (seams hoisted above the lock — the
+  NOWAIT probe; limit verdict ignored; risk verdict ignored; reasons swapped — both
+  reason assertions; `V004` narrowed — the latest-definition reconciliation naming it;
+  the default made refusing; a state field added — the size guard). Verified by targeted
+  tiers (the full `:app:test` hermetic tier with every guard green, `:transfers:test`,
+  the seam database suite) with **the full battery deliberately skipped on the owner's
+  instruction; no fleet-wide counts claimed**.
 - **Scope**: `TransferLimitCheck` and `TransferRiskDecision` — ports in `transfers`,
   **required parameters of the execution command with no defaulted overload** (the
   `PostingObserver` compiler-enforced precedent: Phase 13's wiring must be a decision, and a
@@ -5174,7 +5205,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-ARCH`
 - **Out of scope**: any limit value, any velocity window, any risk rule — Phase 13.
 
-**P4-TSK-011 — The meters and the dashboard row** — `TODO`
+**P4-TSK-011 — The meters and the dashboard row** — `READY`
 - **Scope**: `PHASE_4_PLAN.md` §15 real: `finapp.transfers.transfer{outcome}` (completed,
   failed, reversed, replayed, refused — post-commit, acting call only, the `P3-TSK-020`
   discipline), `finapp.transfers.transfer.latency` (the injected clock),

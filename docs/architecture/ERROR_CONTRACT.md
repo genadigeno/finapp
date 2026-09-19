@@ -235,9 +235,11 @@ correctable value. One code for unknown, not-yours and malformed alike, because 
 port answers all three with one empty (`TransferParticipants.sourceOwnedBy`, `INV-IDN-07`'s
 reasoning at a port); distinct from `UnknownDestination` because the remedies differ — a
 different field to fix. **A `FAILED` judgement is not an error code at all**: insufficient
-funds, an unpostable side, a currency mismatch and a self-transfer are committed domain
-outcomes answered as `201` with the reason in the body (ADR-0043/0044 — the
-asynchronous-outcome contract shape), never members of this vocabulary.
+funds, an unpostable side, a currency mismatch, a self-transfer — and, from `P4-TSK-010`,
+a limit or risk seam's refusal (`LIMIT_REFUSED`/`RISK_REFUSED`, reserved so Phase 13's
+implementations change no contract) — are committed domain outcomes answered as `201` with
+the reason in the body (ADR-0043/0044 — the asynchronous-outcome contract shape), never
+members of this vocabulary.
 
 **`transfers.NotReversible` is one 409 for every machine refusal** (`P4-TSK-009`): a `FAILED`
 transfer moved no money and has nothing to reverse, an already-`REVERSED` one is already

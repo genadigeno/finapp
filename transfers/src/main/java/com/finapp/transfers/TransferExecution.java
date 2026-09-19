@@ -113,8 +113,8 @@ public final class TransferExecution {
     private final AvailableBalance<Connection> availability;
     private final PostingService postings;
     private final TransferStore<Connection> transfers;
-    private final TransferLimitCheck limits;
-    private final TransferRiskDecision risk;
+    private final TransferLimitCheck<Connection> limits;
+    private final TransferRiskDecision<Connection> risk;
     private final AuditWriter<Connection> audit;
     private final OutboxWriter<Connection> outbox;
     private final IdGenerator ids;
@@ -127,8 +127,8 @@ public final class TransferExecution {
             AvailableBalance<Connection> availability,
             PostingService postings,
             TransferStore<Connection> transfers,
-            TransferLimitCheck limits,
-            TransferRiskDecision risk,
+            TransferLimitCheck<Connection> limits,
+            TransferRiskDecision<Connection> risk,
             AuditWriter<Connection> audit,
             OutboxWriter<Connection> outbox,
             IdGenerator ids,
@@ -255,8 +255,16 @@ public final class TransferExecution {
             return commit(uow, initiated.fail(FailureReason.INSUFFICIENT_FUNDS), actor,
                     correlation);
         }
-        limits.check(initiated);
-        risk.check(initiated);
+        // A seam's REFUSE is a committed domain outcome carrying that seam's own reserved
+        // reason (P4-TSK-010) - one reason per seam, mapped HERE so a limit implementation can
+        // never commit the risk vocabulary - judged in-lock on this same unit of work, which is
+        // how Phase 13's durable counters commit atomically with the movement (INV-CON-03).
+        if (limits.check(uow, initiated) == SeamVerdict.REFUSE) {
+            return commit(uow, initiated.fail(FailureReason.LIMIT_REFUSED), actor, correlation);
+        }
+        if (risk.check(uow, initiated) == SeamVerdict.REFUSE) {
+            return commit(uow, initiated.fail(FailureReason.RISK_REFUSED), actor, correlation);
+        }
 
         // The money, behind a savepoint (class javadoc): V007's destination refusal aborts the
         // transaction state, and it must become a committed FAILED, not a lost transaction.
