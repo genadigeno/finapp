@@ -1,6 +1,6 @@
 # ADR-0043 — The transfer and its posting commit in one transaction; there is no internal saga
 
-Status: Proposed
+Status: Accepted (2026-09-19, P4-DOC-001)
 Date: 2026-09-17
 Phase: 4
 Context: Transfers

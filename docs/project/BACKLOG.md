@@ -4709,7 +4709,7 @@ acceptance criteria and DoD profile. A task that states "n/a" for a field has co
 
 # Phase 4 — Internal Transfers
 
-Status: `IN_PROGRESS` — started 2026-09-17 with `P4-TSK-001`; entry gate passed the same day
+Status: `COMPLETE` (2026-09-19, `P4-DOC-001`) — started 2026-09-17 with `P4-TSK-001`; entry gate passed the same day
 ([`reviews/PHASE_3_TO_4_TRANSITION.md`](reviews/PHASE_3_TO_4_TRANSITION.md)) *(this header
 read `READY` until `P4-TSK-008`'s gate — the stale-second-copy class `P3-DOC-001` found in
 three earlier phase headers, corrected on being met rather than left)*. Elaborated to
@@ -5100,6 +5100,26 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   events (`transfers.TransferCompleted`/`TransferFailed`) get their first emitters here if
   not already wired by `P4-TSK-005`.
 - **Deps**: `P4-TSK-005`, `P4-TSK-007`.
+- **Gate evidence (2026-09-18)**: *(added by `P4-DOC-001`'s hand-diff — this item recorded
+  **Completion notes** where every sibling records **Gate evidence**, and its mutation sweep
+  was written only into `CURRENT_STATE.md`. The backlog is the record, so the sweep is
+  restated here from it rather than left to a reader who compares two documents.)* **Eight
+  mutations performed, all caught by the intended assertion, restores byte-identical** — the
+  ownership predicate dropped (**caught twice**: behaviourally as `404 but was 200`, and by
+  the build rule naming the method), the live-beneficiary filter dropped, the
+  exactly-one-destination check dropped, the source fold split, the `@RequiresIdempotencyKey`
+  requirement removed, the list's ownership predicate neutralised (the bulk disclosure), the
+  list order inverted, and the amount rounded rather than refused — **which survived once**
+  and strengthened the suite before being caught: the no-500 sweep's inexact shape named an
+  *unknown destination* whose refusal masked the rounding, so the probe was re-aimed at an
+  otherwise-valid pair (the `P2-TSK-016` masked-shape lesson). **One mutation cut on analysis
+  and recorded**: the POST view's status-from-row swap is behaviourally invisible until
+  `P4-TSK-009` gives the row a second writer. Contract baseline **+180/−0**, the six
+  `BREAKING` labels the classifier erring safe on a brand-new path's own `required` members
+  (reviewed). **Verified by targeted tiers — the full `:app:test` hermetic tier with every
+  guard green, `:transfers:test`, and the transfer, execution, beneficiary and adjustment
+  database suites — the full battery deliberately skipped on the owner's instruction; no
+  fleet-wide counts claimed.**
 - **Accept**: end to end over HTTP — a verified customer with two accounts moves money,
   both balance endpoints move, **both statements show the entry's lines**, and the chain
   transfer → entry id → statement line is walked by identifier; a retried key replays the
@@ -5367,7 +5387,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   every restore byte-identical by comparison.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`
 
-**P4-DOC-001 — Phase 4 review record** — `READY`
+**P4-DOC-001 — Phase 4 review record** — `COMPLETE` (2026-09-19)
 - **Scope**: the `PHASE_GATES.md` §4 review: eight areas — area 2 walking a **transfer**
   end to end this time (economic event → transfer → entry → lines → both balances) — the
   twelve universal criteria, the financial supplement F1–F8 re-assessed at the gate, the
@@ -5376,8 +5396,44 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   decision, every number counted. The `P2-DOC-001` order: assess → corrections → **flip
   (the guarded act)** → full battery → finalize.
 - **Deps**: everything above.
-- **Accept**: the review's verdict is what flips the phase; the post-flip battery green;
-  area 2's walk names its code and tests at every step.
+- **Gate evidence (2026-09-19)**:
+  [`reviews/PHASE_4_REVIEW.md`](reviews/PHASE_4_REVIEW.md) — **8 areas `PASS`, 12 universal
+  criteria `PASS`, F1–F8 all `Met`, 16 phase-specific criteria `PASS`**, and the
+  ten-instances question `PASS` over **six** contended decisions each with its arbiter and
+  its counted race. **Verdict: Phase 4 `COMPLETE`.** Conducted in the `P2-DOC-001` order,
+  and **the post-flip battery is green — 1157 hermetic tests, 0 failures across all ten
+  modules** — including both guards the flip arms: `MutationDemonstrationTest`, now deriving
+  five `Phase: 4` invariants from the catalogue, and `PlannedMetersExistTest`, whose derived
+  rule now unions §15's meter table. **The flip surfaced nothing, pre-paid twice rather than
+  lucky**: `P4-TST-002` landed every row and *probed* the flip (simulated `COMPLETE`, battery
+  green, one row then removed to prove the demanded set had grown — *currently 4*), and
+  `P4-TSK-011` landed the meters behind a pinned guard the derived one takes over with no
+  edit. Second phase running that the gate machinery finished its work **before** the gate.
+  **Two area-7 findings, both in the record rather than the code, both corrected here**:
+  `DISTRIBUTED_EXECUTION.md` §3 had **no `transfers.beneficiary` row** — the register-decay
+  class's **fifth** occurrence and the first *inside* a phase rather than at a boundary,
+  sharper because `P4-TSK-009` added its own row precisely as the register's note asks while
+  `P4-TSK-006`'s table never got one (row landed, with provenance); and **`P4-TSK-008`'s
+  block recorded *Completion notes* where every sibling records *Gate evidence***, with its
+  eight-mutation sweep written only into `CURRENT_STATE.md` (restated here, since the backlog
+  is the record and a reader comparing two documents is not a mechanism). **The ADR index
+  needed no repair, and that is a result**: the second-copy decay found by hand at three
+  consecutive gates is now `P4-TSK-002`'s build failure, and this gate's acceptance flipped
+  both copies with the guard reconciling them. **One criterion is met with a recorded
+  deviation rather than waived**: criterion 7 asks for the full suite against real
+  infrastructure, and the owner's standing instruction skips `build databaseTest kafkaTest` —
+  so the **hermetic** tier (where the flip's own guards live) was run fleet-wide and the
+  database and kafka tiers were verified per task throughout, with **no fleet-wide database
+  or kafka count claimed for this phase**. Counted, never quoted: 1 module, 3 tables, 4
+  migrations, 7 operations on 5 paths, 2 aggregates, 4 audit actions all emitted, 3 events,
+  3 error codes, 1 permission on an existing role, 4 meters, 2 ADRs `Accepted`, **0 new
+  invariants** (the catalogue stays at 82; 5 in scope, 5 register rows), 14 of 14 backlog
+  items across 8 milestones, and **83 mutations — every one caught by the intended
+  assertion, 4 cut on analysis, 2 survived mid-task and each improved a test, 0 survived
+  wrongly**.
+- **Accept**: met — the review's own verdict is what flipped the phase (the status was
+  `IN_PROGRESS` until this record ruled); the post-flip battery green; area 2's walk names
+  its code and its test at every step.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-DOC`
 
 ---

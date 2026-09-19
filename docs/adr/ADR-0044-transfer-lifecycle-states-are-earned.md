@@ -1,6 +1,6 @@
 # ADR-0044 — The transfer lifecycle: states are earned by their producers
 
-Status: Proposed
+Status: Accepted (2026-09-19, P4-DOC-001)
 Date: 2026-09-17
 Phase: 4
 Context: Transfers

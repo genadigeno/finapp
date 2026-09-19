@@ -15,7 +15,8 @@ immediately below, and described canonically in
 
 ## Where the project is
 
-**Phases 0, 1, 2 and 3 are `COMPLETE`. Phase 4 — Internal Transfers — is `IN_PROGRESS`.**
+**Phases 0 through 4 are `COMPLETE`. The next act is the Phase 4 → Phase 5 transition**, which is
+its own act rather than a backlog task: no Phase 5 item exists until it has been conducted.
 
 Every number below is counted from this repository rather than recalled: items from
 [`docs/project/BACKLOG.md`](docs/project/BACKLOG.md), decisions from [`docs/adr/`](docs/adr/README.md),
@@ -25,16 +26,16 @@ the surface from [`docs/api/openapi.json`](docs/api/openapi.json).
 description of where the project is; this section is the summary of it.
 
 ```
-Programme    ████▓░░░░░░░░░░░░   4 of 17 phases complete, 1 in progress
-Backlog      █████████████████░  159 of 160 elaborated items complete
-Phase 4      █████████████░     13 of 14 items, 7 of 8 milestones closed
+Programme    █████░░░░░░░░░░░░   5 of 17 phases complete
+Backlog      ██████████████████  160 of 160 elaborated items complete
+Phase 4      ██████████████     14 of 14 items, 8 of 8 milestones closed
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 4, milestone **M4.8 — The gate**; next item `P4-DOC-001` (`READY`) — the exit review, whose own verdict flips the phase |
+| 🔨 **Current work** | **None in progress.** Next is the **Phase 4 → Phase 5 transition** — where the outcome becomes an unreliable third party's, `INV-LIFE-03` goes live, and ADR-0043's atomicity answer must **not** be inherited by analogy |
 | 💰 **Business capability** | Money exists: accounts, a double-entry ledger, explainable balances, holds, and customer-visible internal transfers over HTTP |
-| 📐 **Decisions** | 44 ADRs — 42 `Accepted`, 2 `Proposed` — ADR-0043 and ADR-0044, this phase's own, which its exit gate accepts |
+| 📐 **Decisions** | 44 ADRs, **all `Accepted`** — ADR-0043 and ADR-0044 accepted at the Phase 4 exit gate, both copies reconciled by the build |
 | 🔒 **Invariants** | 82 catalogued; each in-scope one has a test *demonstrated to fail* when the invariant is broken |
 | 🗄️ **Schema** | 55 forward-only migrations across 8 schema-owning modules |
 | 🌐 **API** | 39 published paths, 47 operations, compared byte for byte against the running application on every build |
@@ -58,7 +59,7 @@ vocabulary are [`docs/project/PHASE_GATES.md`](docs/project/PHASE_GATES.md).
 | 1 | Identity and Customer Foundation | COMPLETE 2026-09-09 | Party/Customer/Identity, authentication, sessions, authorization, audit |
 | 2 | KYC/KYB and Consent | COMPLETE 2026-09-13 | Verification lifecycle, screening adapters, append-only consent history |
 | 3 | Accounts and Financial Ledger | COMPLETE 2026-09-17 | Chart of accounts, double-entry ledger, balances, holds, reversals |
-| 4 | **Internal Transfers** | **IN_PROGRESS** | The first end-to-end money movement on the ledger |
+| 4 | Internal Transfers | COMPLETE 2026-09-19 | The first end-to-end money movement on the ledger |
 | 5 | Payment Infrastructure | PLANNED | Payment intent/attempt, provider adapters, auth/capture, refunds, webhooks |
 | 6 | Checkout and Merchant Platform | PLANNED | Merchants, checkout sessions, fees, merchant payouts |
 | 7 | Cards, Wallets, A2A and Instant Payments | PLANNED | Multi-rail abstraction, disputes and chargebacks |
@@ -87,13 +88,14 @@ than a setback. Phase 3 was the first phase whose financial supplement F1–F8 w
 | 1 — Identity | 35 of 35 | A Party can exist, become a Customer, hold an Identity, prove it over HTTP, hold a session with a recorded assurance level, and have every privileged action authorised and audited — with **no money anywhere in it, by design** |
 | 2 — KYC/KYB and Consent | 23 of 23 | A Party verified to the standard a regulator requires, with the evidence retained verbatim, the decision defensible and reproducible, and an append-only consent history with an enforcement gate |
 | 3 — Ledger | 25 of 25 | **Money exists**: balanced immutable postings, a balance explainable three independent ways, holds, reversals and four-eyes adjustments that correct mistakes without one committed byte changing, and a trial balance continuously asserted zero per currency |
+| 4 — Internal Transfers | 14 of 14 | **Money moves between customers**: an explicit lifecycle whose every state is earned by a producer, idempotency at the financial boundary proven under concurrent submission, conservation under ten instances moving money **both ways**, a privileged reasoned reversal that corrects by referencing rather than editing, and the limit and risk seams as contracts Phase 13 can honour |
 
 Each phase's review record is in [`docs/project/reviews/`](docs/project/reviews/), alongside the
 transition audit that opened the phase after it.
 
 ---
 
-### 🔨 Phase 4 — Internal Transfers
+### ✅ Phase 4 — Internal Transfers
 
 The first customer-visible money movement, and deliberately the **easy half** of moving money: both
 legs internal, one database, one transaction, no third party. Its job is to prove the lifecycle,
@@ -103,7 +105,11 @@ becomes a modelled state, changes one variable at a time rather than four.
 
 Planned in [`docs/project/PHASE_4_PLAN.md`](docs/project/PHASE_4_PLAN.md). Entry gate passed
 2026-09-17, all twelve criteria
-([`PHASE_3_TO_4_TRANSITION.md`](docs/project/reviews/PHASE_3_TO_4_TRANSITION.md)).
+([`PHASE_3_TO_4_TRANSITION.md`](docs/project/reviews/PHASE_3_TO_4_TRANSITION.md)); closed
+2026-09-19 by the exit review
+([`PHASE_4_REVIEW.md`](docs/project/reviews/PHASE_4_REVIEW.md)) — 8 areas, 12 universal
+criteria, F1–F8 and 16 phase-specific criteria, with **the review's own verdict flipping the
+status** and the post-flip battery green.
 
 **Milestones**
 
@@ -116,25 +122,29 @@ Planned in [`docs/project/PHASE_4_PLAN.md`](docs/project/PHASE_4_PLAN.md). Entry
 | ✅ | M4.5 — Reversal | `██████████` 1/1 | The privileged, reasoned correction: the original entry byte-identical, both balances restored exactly, the loser of the race refused with nothing posted |
 | ✅ | M4.6 — The seams | `██████████` 1/1 | Limits and risk as compiler-required, verdict-returning, in-lock contracts — Phase 13 inherits atomicity and changes no contract |
 | ✅ | M4.7 — Observability and demonstration | `██████████` 3/3 | The meters, the dashboard row, conservation under sustained bidirectional contention — which found and fixed a real deadlock — and the register rows, whose audit found the caller had no concurrent-duplicate test and performed it |
-| 🔨 | **M4.8 — The gate** | `░░░░░░░░░░` 0/1 | The exit review, whose verdict flips the status |
+| ✅ | M4.8 — The gate | `██████████` 1/1 | The exit review, whose verdict flipped the status — and the flip surfaced nothing, because `P4-TST-002` and `P4-TSK-011` had each pre-paid their half |
 
-**Remaining work**
+**What the review found**
 
-| | Item | What it does |
+| | Finding | Outcome |
 |---|---|---|
-| 🚧 | `P4-DOC-001` **← next** | The exit review, whose verdict is what flips the phase status — area 2 walking a **transfer** end to end. Its one known hazard is pre-paid: the register carries a row for every `Phase: 4` invariant, and the flip was probed rather than assumed |
+| 🧠 | The component register had **no `transfers.beneficiary` row** — and §3 is an *enforced exemption set*, not a description | The register-decay class's **fifth** occurrence and the first *inside* a phase rather than at a boundary; row landed with its provenance |
+| 🧠 | `P4-TSK-008`'s backlog block recorded *Completion notes* where every sibling records *Gate evidence*, with its mutation sweep only in `CURRENT_STATE.md` | Restated in the backlog, which is the record |
+| ✅ | The ADR index needed **no** repair — the second-copy decay found by hand at three consecutive gates | `P4-TSK-002`'s build guard reconciled both copies when this gate accepted ADR-0043/0044 |
+| ⚠️ | Criterion 7 asks for the full suite; the standing instruction skips `build databaseTest kafkaTest` | **Met with the deviation recorded**: hermetic fleet-wide (1157, 0 failures), database and kafka per task, **no fleet-wide count claimed** |
 
 ---
 
 ### Verification state
 
-The standing instruction on this phase is that the full battery is **skipped**; tasks are verified
-by targeted tiers instead, and no fleet-wide test counts are claimed for them.
+The standing instruction on Phase 4 was that the full battery is **skipped**; every task was
+verified by targeted tiers and recorded in those words, and the exit review assessed criterion 7
+on that evidence with the deviation stated rather than waived.
 
 | | |
 |---|---|
-| Last full battery | **2026-09-17** (`P4-TSK-003`): 1133 hermetic, 683 database, 14 kafka tests |
-| Since then | Targeted tiers per task — the full `:app:test` hermetic tier with every guard green, the owning module's tier, and the relevant database suites |
+| Hermetic tier | **fleet-wide and current**: 1157 tests, 0 failures across all ten modules, run after the Phase 4 flip — which is where the flip's own guards live |
+| Database and kafka | Verified **per task**, suite by suite. The last fleet-wide measurement is 2026-09-17 (`P4-TSK-003`): 683 database, 14 kafka. **No fleet-wide database or kafka count is claimed for Phase 4** — recorded as a deviation in the exit review's area 8, with an owner |
 | CI | Four gates on every push to `master`: build and tests, migrations against a real PostgreSQL, secret scan over full history, dependency scan of a CycloneDX SBOM (see section 6) |
 
 ---

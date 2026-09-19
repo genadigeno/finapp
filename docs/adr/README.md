@@ -60,8 +60,8 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0040](ADR-0040-chart-of-accounts-structure.md) | A flat account with a typed classification, not a tree | Accepted | 3 | Domain |
 | [0041](ADR-0041-balance-projection-placement.md) | The balance projection is transactional, ledger-owned, and never backs a decision | Accepted | 3 | Data |
 | [0042](ADR-0042-account-model-four-distinct-concepts.md) | Customer Account, Ledger Account, Wallet and Operational Account are four things | Accepted | 3 | Domain |
-| [0043](ADR-0043-transfer-and-posting-commit-together.md) | The transfer and its posting commit in one transaction; no internal saga | Proposed | 4 | Transfers |
-| [0044](ADR-0044-transfer-lifecycle-states-are-earned.md) | The transfer lifecycle: states are earned by their producers | Proposed | 4 | Transfers |
+| [0043](ADR-0043-transfer-and-posting-commit-together.md) | The transfer and its posting commit in one transaction; no internal saga | Accepted | 4 | Transfers |
+| [0044](ADR-0044-transfer-lifecycle-states-are-earned.md) | The transfer lifecycle: states are earned by their producers | Accepted | 4 | Transfers |
 
 ## Anticipated ADRs
 
