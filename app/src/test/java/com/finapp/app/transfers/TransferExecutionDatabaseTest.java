@@ -27,6 +27,7 @@ import com.finapp.party.JdbcPartyStore;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.IdempotencyConflictException;
+import com.finapp.platform.idempotency.IdempotencyInProgressException;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.JdbcIdempotencyRecordStore;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
@@ -63,6 +64,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -209,6 +211,102 @@ class TransferExecutionDatabaseTest {
             app.rollback();
                     return null;
         });
+    }
+
+    @Test
+    @DisplayName("ten instances submitting ONE key produce exactly one financial effect — the"
+            + " concurrent half INV-IDEM-01's Verify line names (P4-TST-002)")
+    void tenConcurrentIdenticalKeysProduceOneTransfer() throws Exception {
+        // THE HALF THE SEQUENTIAL RETRY CANNOT PROVE.
+        //
+        // aTransferMovesMoneyOnceAndItsRetryReplays executes, retries, and finds one row - which
+        // exercises the REPLAY path, because by then the record already exists. The property
+        // INV-IDEM-01's Verify line actually names ("concurrent-duplicate integration tests")
+        // and PHASE_GATES.md section Phase 4 demands ("proven under concurrent submission") is
+        // the other one: N simultaneous FIRST attempts, where the claim's unique constraint is
+        // the arbiter rather than a lookup. A check-then-act claim, or a claim taken after the
+        // command runs, passes every sequential assertion here and produces N effects under
+        // this one.
+        //
+        // The losers have TWO legal outcomes and both are accepted, because the executor's
+        // contract says so: block on the claim until the winner commits and then replay, or
+        // exceed the bounded lock_timeout and be told IdempotencyInProgressException - the
+        // honest unknown (INV-LIFE-03's principle at the kernel). Demanding "nine replays"
+        // would make this a statement about how fast the winner's transaction happens to be.
+        // What is NOT negotiable is asserted hard: one effect, counted in four tables.
+        Holder source = fundedHolder(10_00);
+        Holder destination = holder();
+        String key = "transfer-" + IDS.next();
+
+        int instances = 10;
+        CyclicBarrier start = new CyclicBarrier(instances);
+        ExecutorService pool = Executors.newFixedThreadPool(instances);
+        List<TransferResult> judged = new ArrayList<>();
+        int toldInProgress = 0;
+        try {
+            List<Callable<Optional<TransferResult>>> racers = new ArrayList<>();
+            for (int i = 0; i < instances; i++) {
+                racers.add(
+                        () ->
+                                asInstance(source, app -> {
+                                    start.await();
+                                    try {
+                                        TransferResult result =
+                                                execution()
+                                                        .execute(
+                                                                app,
+                                                                command(
+                                                                        key,
+                                                                        source,
+                                                                        destination,
+                                                                        usd(3_00)));
+                                        app.commit();
+                                        return Optional.of(result);
+                                    } catch (IdempotencyInProgressException unknown) {
+                                        app.rollback();
+                                        return Optional.<TransferResult>empty();
+                                    }
+                                }));
+            }
+            // Anything other than the in-progress refusal propagates out of get() and fails
+            // this test naming it: a duplicate must never surface as a storage error, a
+            // conflict, or a second judgement.
+            for (Future<Optional<TransferResult>> outcome : pool.invokeAll(racers)) {
+                Optional<TransferResult> result = outcome.get(120, TimeUnit.SECONDS);
+                if (result.isPresent()) {
+                    judged.add(result.get());
+                } else {
+                    toldInProgress++;
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(judged.size() + toldInProgress)
+                .as("every instance was told something")
+                .isEqualTo(instances);
+        assertThat(judged).as("at least the winner was judged").isNotEmpty();
+        assertThat(judged.stream().map(TransferResult::transferId).distinct())
+                .as("every judged instance was told about the same one transfer")
+                .hasSize(1);
+        assertThat(judged.stream().filter(result -> !result.replayed()))
+                .as("exactly one executed; the rest replayed its judgement")
+                .hasSize(1);
+
+        try (Connection app = DatabaseRoles.application()) {
+            UUID transferId = judged.getFirst().transferId().value();
+            // One financial effect, counted - never inferred from return values.
+            assertThat(transferCountFor(app, source.customerId)).isEqualTo(1);
+            assertThat(auditRecords(app, transferId)).isEqualTo(1);
+            assertThat(outboxEvents(app, transferId, "transfers.TransferCompleted")).isEqualTo(1);
+            assertThat(historyRows(app, transferId)).containsExactly("INITIATED>COMPLETED");
+
+            // And the money moved once: 10.00 - 3.00, not 10.00 - N x 3.00. This is the
+            // assertion a lost claim cannot satisfy however the return values read.
+            assertThat(settledOf(app, source.walletId)).isEqualTo(7_00);
+            assertThat(settledOf(app, destination.walletId)).isEqualTo(3_00);
+        }
     }
 
     @Test

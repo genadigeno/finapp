@@ -5309,7 +5309,7 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   recomputed; no source ever negative.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-FIN`
 
-**P4-TST-002 — The `Phase: 4` register rows** — `READY`
+**P4-TST-002 — The `Phase: 4` register rows** — `COMPLETE` (2026-09-19)
 - **Scope**: `MUTATION_TESTING.md` §2 rows for every invariant the catalogue marks
   `Phase: 4` — the set read from the catalogue at execution time, not from this sentence —
   including the **transfers-context `INV-IDEM-01` row** (the kernel and financial-boundary
@@ -5317,12 +5317,57 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
   cross-product sweep. Every named mutation performed by its owning task's sweep or by this
   item; §5 teeth re-proven; the item's §4 row.
 - **Deps**: `P4-TSK-009`, `P4-TST-001`.
-- **Accept**: all register-guard checks green over the new rows; the demanded set verified
-  token-exactly against the catalogue; every named class and method exists; restores
-  byte-identical.
+- **Gate evidence (2026-09-19)**: the set read token-exactly with the guard's own regex
+  (`(?<![0-9])4(?![0-9])` against each `**Phase:**` line, so `13` cannot match and
+  `4 onward` does) is **five** — `INV-IDEM-01` (transfers), `INV-CON-02` (landed by
+  `P4-TST-001`) and `INV-LIFE-01/-02/-04` — and the four remaining rows landed, taking §2
+  to 87 rows over 82 catalogued invariants. **All nine `MutationDemonstrationTest` checks
+  green**; §5 teeth re-proven (one method reference corrupted, `every method the register
+  names exists on its class` failed naming exactly
+  `INV-LIFE-04 -> TransferTest has no bothTerminalsRefuseEveryTransitionX`, restored and
+  verified byte-identical by comparison). **The flip is pre-paid, and the probe proves it
+  rather than asserting it**: Phase 4's status line simulated `COMPLETE`, the guard green,
+  and — the non-vacuity half — one new row then removed, which fails naming the invariant
+  and reports *(currently 4)*, so the demanded set really did grow and the four rows are
+  what makes the flip green. Both files restored byte-identical. **Two findings, and the
+  first is the reason this item added a test.** (1) **The guard would never have demanded
+  the `INV-IDEM-01` row** — it keys on the invariant identifier, which already carries the
+  kernel and posting rows — so that row is owed by the gate's own extended list and by
+  doctrine, and by nothing the build can say. (2) **The transfers caller had no
+  concurrent-duplicate test at all**, while `INV-IDEM-01`'s Verify line reads *concurrent-
+  duplicate integration tests* and this phase's criterion 2 reads *proven under concurrent
+  submission from two threads*: what existed was the sequential retry, which exercises the
+  **replay** path because by then the record is committed. Writing the row against it would
+  have been the false row this register refuses, so the demonstration was **performed** (the
+  `P3-TST-002` precedent) — `TransferExecutionDatabaseTest#tenConcurrentIdenticalKeysProduceOneTransfer`:
+  ten instances on one key behind a `CyclicBarrier`, own connection and scopes each, one
+  distinct transfer id across every judged result, exactly one executed, and **one effect
+  counted in four tables** with the source at `7.00` and the destination at `3.00`. The
+  losers' second legal outcome — the honest `IdempotencyInProgressException` — is accepted
+  and every other exception fails the test, because demanding *nine replays* would make the
+  assertion a statement about how fast the winner's transaction happens to be. **The
+  mutation is concurrency-only, which is what makes the test load-bearing rather than a
+  second copy of `P0-TST-004`**: a pre-flight read substituted for the unique constraint
+  leaves **all five sequential tests green** and fails exactly the new one — and its
+  observed shape is recorded rather than assumed, since the losers do not commit a second
+  transfer but abort with `IdempotencyStorageException`, so a retry that should have
+  replayed reaches the customer as a 500. One documentation finding recorded on the way:
+  §6 item 4 claimed the class-existence check covers *either register* and it reads §2 only
+  — corrected to what is actually checked, with why widening it needs a reference column §4
+  does not have. **No production code changed**, no migration, no contract change; one §3
+  paragraph records that `INV-LIFE-01` names seven operations and this phase delivers one,
+  and that `transfers.beneficiary`'s machine is deliberately not claimed under any
+  `INV-LIFE` row. **Verified by targeted tiers — `:app:test` 427 and `:transfers:test` 31,
+  0 failures, plus the execution database suite (6 tests) green before the mutation, failing
+  only the new test under it, and green again after the restore — the full battery
+  deliberately skipped on the owner's instruction; no fleet-wide counts claimed.**
+- **Accept**: met — all register-guard checks green over the new rows; the demanded set
+  verified token-exactly against the catalogue (five, four landed here); every named class
+  and method exists (the guard proves it, including the three `transfers`-module classes);
+  every restore byte-identical by comparison.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`
 
-**P4-DOC-001 — Phase 4 review record** — `TODO`
+**P4-DOC-001 — Phase 4 review record** — `READY`
 - **Scope**: the `PHASE_GATES.md` §4 review: eight areas — area 2 walking a **transfer**
   end to end this time (economic event → transfer → entry → lines → both balances) — the
   twelve universal criteria, the financial supplement F1–F8 re-assessed at the gate, the

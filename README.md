@@ -26,21 +26,21 @@ description of where the project is; this section is the summary of it.
 
 ```
 Programme    ████▓░░░░░░░░░░░░   4 of 17 phases complete, 1 in progress
-Backlog      █████████████████░  158 of 160 elaborated items complete
-Phase 4      ████████████░░     12 of 14 items, 6 of 8 milestones closed
+Backlog      █████████████████░  159 of 160 elaborated items complete
+Phase 4      █████████████░     13 of 14 items, 7 of 8 milestones closed
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 4, milestone **M4.7 — Observability and demonstration**; next item `P4-TST-002` (`READY`) |
+| 🔨 **Current work** | Phase 4, milestone **M4.8 — The gate**; next item `P4-DOC-001` (`READY`) — the exit review, whose own verdict flips the phase |
 | 💰 **Business capability** | Money exists: accounts, a double-entry ledger, explainable balances, holds, and customer-visible internal transfers over HTTP |
 | 📐 **Decisions** | 44 ADRs — 42 `Accepted`, 2 `Proposed` — ADR-0043 and ADR-0044, this phase's own, which its exit gate accepts |
 | 🔒 **Invariants** | 82 catalogued; each in-scope one has a test *demonstrated to fail* when the invariant is broken |
-| 🗄️ **Schema** | 54 forward-only migrations across 8 schema-owning modules |
-| 🌐 **API** | 38 published paths, 46 operations, compared byte for byte against the running application on every build |
-| 🧾 **Audit and errors** | 45 auditable actions, 34 error codes, both reconciled with the code by the build |
-| 🧩 **Code** | 10 Gradle modules, 487 production and 286 test source files |
-| 📦 **History** | 234 commits, 2026-08-31 to 2026-09-18 |
+| 🗄️ **Schema** | 55 forward-only migrations across 8 schema-owning modules |
+| 🌐 **API** | 39 published paths, 47 operations, compared byte for byte against the running application on every build |
+| 🧾 **Audit and errors** | 46 auditable actions, 35 error codes, both reconciled with the code by the build |
+| 🧩 **Code** | 10 Gradle modules, 491 production and 298 test source files |
+| 📦 **History** | 239 commits, 2026-08-31 to 2026-09-19 |
 
 ---
 
@@ -115,15 +115,14 @@ Planned in [`docs/project/PHASE_4_PLAN.md`](docs/project/PHASE_4_PLAN.md). Entry
 | ✅ | M4.4 — Over HTTP | `██████████` 1/1 | `POST /v1/transfers` answering the judgement in the body — a `FAILED` outcome is a `201` that says so, never an HTTP error |
 | ✅ | M4.5 — Reversal | `██████████` 1/1 | The privileged, reasoned correction: the original entry byte-identical, both balances restored exactly, the loser of the race refused with nothing posted |
 | ✅ | M4.6 — The seams | `██████████` 1/1 | Limits and risk as compiler-required, verdict-returning, in-lock contracts — Phase 13 inherits atomicity and changes no contract |
-| 🔨 | **M4.7 — Observability and demonstration** | `███████░░░` 2/3 | The meters, the dashboard row, and conservation under sustained bidirectional contention — which found and fixed a real deadlock; the mutation register remains |
-| ⬜ | M4.8 — The gate | `░░░░░░░░░░` 0/1 | The exit review, whose verdict flips the status |
+| ✅ | M4.7 — Observability and demonstration | `██████████` 3/3 | The meters, the dashboard row, conservation under sustained bidirectional contention — which found and fixed a real deadlock — and the register rows, whose audit found the caller had no concurrent-duplicate test and performed it |
+| 🔨 | **M4.8 — The gate** | `░░░░░░░░░░` 0/1 | The exit review, whose verdict flips the status |
 
 **Remaining work**
 
 | | Item | What it does |
 |---|---|---|
-| 🚧 | `P4-TST-002` **← next** | The mutation-register rows for every invariant the catalogue marks `Phase: 4`, read from the catalogue rather than from any plan |
-| ⬜ | `P4-DOC-001` | The exit review, whose verdict is what flips the phase status — area 2 walking a **transfer** end to end |
+| 🚧 | `P4-DOC-001` **← next** | The exit review, whose verdict is what flips the phase status — area 2 walking a **transfer** end to end. Its one known hazard is pre-paid: the register carries a row for every `Phase: 4` invariant, and the flip was probed rather than assumed |
 
 ---
 
