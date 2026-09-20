@@ -5745,7 +5745,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   counts claimed.**
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`
 
-**P5-TSK-006 — The `PaymentIntent` aggregate and machine** — `READY`
+**P5-TSK-006 — The `PaymentIntent` aggregate and machine** — `COMPLETE` (2026-09-20)
 - **Scope**: ADR-0045's five-state machine (`REQUIRES_CONFIRMATION → {PROCESSING,
   CANCELLED}`, `PROCESSING → {SUCCEEDED, FAILED}`) on the enum with
   `sqlValueList()`/`sqlTerminalValueList()`; one constructor holding the coherence;
@@ -5755,9 +5755,48 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   boundaries forbid the typed ids (the `Transfer` precedent). Hermetic only.
 - **Deps**: `P5-TSK-001`. **Accept**: every invalid transition rejected; both terminals
   and the stable state swept; `INV-AUD-02` needle-asserted on refusal messages.
+- **Gate evidence (2026-09-20)**: **every accept clause demonstrated hermetically** —
+  `PaymentIntentTest`, 7 tests: the cross-product sweep (5 states × 4 doors, expectation
+  read from `permittedTransitions()`) refuses all 16 illegal pairs at the aggregate
+  (`INV-LIFE-02`) and lands the 4 legal ones where the machine says; **both terminals AND
+  the stable state swept separately by name** (`CANCELLED`, `FAILED`, `SUCCEEDED` × every
+  door — `INV-LIFE-04`); the `INV-AUD-02` needle on the refusal messages (currency named,
+  `9876`/`98.76` planted and asserted absent) at birth and at rehydrate, the same
+  constructor. **The machine is pinned, not only swept** — each state's transition set
+  exactly, `SUCCEEDED`'s no-outgoing-edge by name, nothing transitioning TO
+  `REQUIRES_CONFIRMATION` (birth the only door), the terminal set exactly
+  `{SUCCEEDED, FAILED, CANCELLED}` — and the SUCCEEDED-given-an-edge mutation is why: the
+  machine-derived sweep followed the machine and stayed green, and only the pin (with the
+  stable-state sweep and the SQL-literal pin) caught it. **The one interpretive decision
+  on the record** (the enum's javadoc): `SUCCEEDED` is ADR-0045's *stable* state AND in
+  the terminal set — `isTerminal()` stays the structural derivation (the `TransferStatus`
+  idiom), `INV-LIFE-04`'s own text names refund as a new operation out of a terminal
+  state, and nothing downstream wants a live/stable split (no one-live index on the
+  intent, plan §8) — the inverse of `TransferStatus`'s recorded `COMPLETED` exclusion.
+  **The intent's coherence is status-independent by design**: the mapped reason is the
+  attempt's fact, the posting evidence the attempt's, refund totals the refund rows'
+  (ADR-0045's one-fact-one-place at the field set), so nothing but `status` changes after
+  birth (asserted per field) — which is what lets `P5-TSK-008` narrow the `UPDATE` grant
+  to one column. Typed `LedgerAccountId` for the wallet; party/customer/instrument raw
+  `UUID`s, the instrument raw because `payments` has NO edge to the PCI module (the
+  `Transfer` precedent, sharpened). The SQL fragments pinned by literal until
+  `P5-TSK-008`'s reconciliation consumes them (the `P1-TSK-013` class); a class rather
+  than a record, load-bearing (a record's `toString` renders `Money` — `INV-AUD-02`).
+  `package-info`'s "what exists so far" updated by the task that made it stale. **Eight
+  mutations, all caught by the intended assertion, restores verified byte-identical
+  (`cmp`)**: the machine check removed from the door (the sweep); `SUCCEEDED` given an
+  edge (the pin); a terminal given an exit; the positivity refusal dropped (both needle
+  tests); the refusal made to name the amount (the needle alone — proving `Money`'s
+  rendering does carry the value); `sqlTerminalValueList` hand-listed without `SUCCEEDED`
+  (the literal pin alone); positivity checked at birth only — trust-the-database
+  (**caught by the rehydrate test ALONE**, proving it load-bearing beyond the
+  dropped-check mutation); the birth status changed. Verified by targeted tiers —
+  `:payments:test` 41, `:app:test` 435 with every guard green over the new types, 0
+  failures, fresh runs — **the full battery deliberately skipped on the owner's
+  instruction; no fleet-wide database or kafka counts claimed.**
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
 
-**P5-TSK-007 — The `PaymentAttempt` and `Refund` aggregates and machines** — `TODO`
+**P5-TSK-007 — The `PaymentAttempt` and `Refund` aggregates and machines** — `READY`
 - **Scope**: the seven-state attempt machine and four-state refund machine (ADR-0045,
   `PAYMENT_LIFECYCLES.md` §3–§4), same ceremony: per-outcome transition doors through one
   machine check, coherence both directions (mapped reason ⇔ `FAILED`; captured amount ⇔
