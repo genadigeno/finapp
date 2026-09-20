@@ -32,14 +32,14 @@ description of where the project is; this section is the summary of it.
 
 ```
 Programme    █████░░░░░░░░░░░░   5 of 17 phases complete
-Backlog      ████████████████░░  163 of 181 elaborated items complete
+Backlog      ████████████████░░  164 of 181 elaborated items complete
 Phase 4      ██████████████     14 of 14 items, 8 of 8 milestones closed
-Phase 5      ███░░░░░░░░░░░░░░░   3 of 21 items — M5.1 closed, next P5-TSK-004
+Phase 5      ███░░░░░░░░░░░░░░░   4 of 21 items — M5.2 at 1 of 2, next P5-TSK-005
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 5 in progress — M5.1 closed: the payment modules stand on their floors, the confinement is one mechanism, and the provider port speaks every harness failure mode. Next: **`P5-TSK-004`**, the `PaymentMethod` aggregate and schema |
+| 🔨 **Current work** | Phase 5 in progress — the PCI boundary has its subject: the `PaymentMethod` aggregate and schema, where a PAN cannot physically be stored in any column. Next: **`P5-TSK-005`**, the payment-method endpoints and the step-up point |
 | 💰 **Business capability** | Money exists: accounts, a double-entry ledger, explainable balances, holds, and customer-visible internal transfers over HTTP |
 | 📐 **Decisions** | 49 ADRs — 44 `Accepted`, and ADR-0045–0049 `Proposed` by the Phase 4 → 5 transition for the phase they open |
 | 🔒 **Invariants** | 87 catalogued — the transition added `INV-PAY-01`–05, Phase 5's gate properties given stable IDs before code is written against prose; each in-scope one has a test *demonstrated to fail* when the invariant is broken |

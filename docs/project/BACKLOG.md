@@ -5617,7 +5617,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   database or kafka counts claimed.**
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-KERNEL`, `DOD-SEC`
 
-**P5-TSK-004 — The `PaymentMethod` aggregate and schema** — `READY`
+**P5-TSK-004 — The `PaymentMethod` aggregate and schema** — `COMPLETE` (2026-09-20)
 - **Objective**: the tokenised instrument — the PCI boundary's subject (`INV-PAY-02`).
 - **Scope**: the aggregate (`ACTIVE → DETACHED`, terminal — the `Beneficiary` machine
   shape), token reference plus display metadata only; `V002` in `paymentmethods`: one-live
@@ -5630,10 +5630,57 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   provider call (simulated token minting arrives with the attach surface).
 - **Accept**: the race counted; the sweep green; the freeze proven as the migrator; the
   machine swept exhaustively.
+- **Gate evidence (2026-09-20)**: the `Beneficiary`/`V003` ceremony's fifth performance,
+  and the part genuinely this task's is **`INV-PAY-02` at `DB-CONSTRAINT` rank**: a PAN
+  cannot physically be stored in any column — the token `CHECK` refuses
+  digits-and-separators shapes (bare, hyphenated, 15-digit alike), the brand's charset
+  holds no digits at all, the display suffix is exactly four (last4, PCI's own displayable
+  bound), the expiry two range-checked integers — proven by **the PAN sweep**: every text
+  column derived from `information_schema`, three PAN shapes planted per column, each
+  refused `23514`, so a text column added later without a PAN-refusing shape FAILS the
+  sweep. The aggregate (`PaymentMethod`, one constructor holding coherence both directions,
+  `attach`/`rehydrate`/`detach` all through it), the machine on `PaymentMethodStatus`
+  (`ACTIVE → DETACHED`, terminal; generated `sqlValueList`/`sqlTerminalValueList` with the
+  migration reconciliation), and the wrapped **`TokenReference`** — the `InstrumentToken`
+  mechanism **restated, not imported** (the PCI module sees no business sibling; the
+  `DocumentCipher` restated-mechanism precedent), component named `secret` so
+  `secretsAreWrapped` enforces the wrapping, `expose()` a registered unwrapping method with
+  the store as its one production caller. **The token column is plaintext by recorded
+  decision**: hashing is unavailable (the token is presented, not compared), a leaked token
+  alone charges nothing without the confined API credential held outside the database, and
+  encryption at rest is the recorded seam (the migration header carries the reasoning).
+  `V002`: the one-live (party, token) partial index as arbiter and freed-slot rule, the
+  by-party index named for `P5-TSK-005`'s listing, the every-writer freeze trigger, grants
+  `SELECT, INSERT` + `UPDATE (status, detached_at)` swept per column with the detach as
+  positive control. **The race counted**: ten instances, one live row in the table, nine
+  converged onto the winner's id; the freed slot re-attachable with the detached row
+  surviving as evidence; resurrection and the **smuggled-edge probe** (an edit inside the
+  legal detach edge — the only shape that isolates the freeze) refused as the migrator.
+  Registers fed **by the task**: `DISTRIBUTED_EXECUTION.md` §3 row (the register-decay
+  class's fifth occurrence was exactly this table's sibling never getting one),
+  `DATA_CLASSIFICATION.md` ten columns at the ceiling (token and suffix `RESTRICTED-PII`),
+  the ownership register (`detach` `OWNER_SCOPED`, `party_id = ?`, negative test named),
+  the unwrap whitelist (two entries). **Expiry is month AND year** — the plan's §8
+  shorthand corrected on being met, with provenance. `secretsAreWrapped` fired on a
+  `Pattern` named for the card number and the **accurate-rename** answer applied
+  (`DIGITS_AND_SEPARATORS` — named for what it matches). **Eight mutations, all caught by
+  the intended assertion, restores verified byte-identical**: the one-live index dropped
+  (`Expected size: 1 but was: 10`), the index made total (**caught twice**: freed slot +
+  hermetic reconciliation), the trigger's edge check removed (resurrection), the
+  frozen-identity check removed (the smuggled-edge probe), **the not-a-PAN `CHECK` dropped
+  (the `INV-PAY-02` acceptance — the sweep fails naming the token column)**, the detach's
+  ownership predicate dropped (**caught twice**: the stranger's detach and the ownership
+  build rule naming the missing predicate), the aggregate's machine check removed (the
+  cross-product sweep), the coherence `CHECK` dropped (the raw-SQL refusal; the hermetic
+  reconciliation pins it too). Verified by targeted tiers — `:paymentmethods:test`,
+  `:app:test` (every register guard green over the fed registers),
+  `PaymentMethodDatabaseTest` (6 tests) and `ColumnClassificationTest` fresh — **the full
+  battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+  counts claimed.**
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-SEC`
 - Note: **not** `DOD-FIN` — an instrument reference moves no money.
 
-**P5-TSK-005 — The payment-method endpoints and the step-up point** — `TODO`
+**P5-TSK-005 — The payment-method endpoints and the step-up point** — `READY`
 - **Scope**: `POST /v1/me/payment-methods` (attach — step-up required exactly when a
   factor is enrolled, the `P4-TSK-007` conditional domain check verbatim; the simulated
   tokenisation exchange fails the attach when unavailable, **nothing raw ever stored**),

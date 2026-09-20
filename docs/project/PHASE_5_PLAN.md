@@ -138,9 +138,11 @@ Schema `payments` (owner `finapp_migrator`, default-deny floor first):
 - `webhook dedupe` rides the platform inbox (no new table).
 
 Schema `paymentmethods`: `payment_method` — party ref, token reference, instrument
-metadata (brand, provider-supplied display suffix, expiry month) — display metadata
-only, nothing reconstructable (`INV-PAY-02` column sweep), one-live partial index,
-append-only history discipline as for beneficiaries.
+metadata (brand, provider-supplied display suffix, expiry month **and year** — this line
+said "expiry month" until `P5-TSK-004` met it: a month without a year is not display
+metadata anyone can render, corrected with provenance rather than silently widened) —
+display metadata only, nothing reconstructable (`INV-PAY-02` column sweep), one-live
+partial index, append-only history discipline as for beneficiaries.
 
 Grants per table in the migration that creates it; frozen columns by every-writer trigger
 per the established ceremony.

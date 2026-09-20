@@ -18,8 +18,11 @@
  * whole dependency ball as its review surface.
  *
  * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema
- * ({@code P5-TSK-001}) - nothing else. The aggregate and its schema are {@code P5-TSK-004}; the
- * attach/detach/list surface with its step-up point is {@code P5-TSK-005}.
+ * ({@code P5-TSK-001}), and the aggregate with its schema ({@code P5-TSK-004}: the
+ * {@code ACTIVE -> DETACHED} machine, the wrapped {@code TokenReference}, {@code V002}'s
+ * one-live index, every-writer freeze and per-column PAN refusals - updated by the task that
+ * made the previous sentence stale, the recurring class). The attach/detach/list surface with
+ * its step-up point is {@code P5-TSK-005}.
  *
  * <p><strong>Deliberately no audit-action enum yet</strong> (the deliberately-few licence):
  * attach and detach are audited as the person by the surface whose design fixes them

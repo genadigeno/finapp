@@ -55,7 +55,8 @@ class SecretsAreUnwrappedInOnePlaceTest {
             Set.of(
                     "com.finapp.sharedkernel.security.Sensitive.expose()",
                     "com.finapp.identity.RawPassword.expose()",
-                    "com.finapp.payments.InstrumentToken.expose()");
+                    "com.finapp.payments.InstrumentToken.expose()",
+                    "com.finapp.paymentmethods.TokenReference.expose()");
 
     /**
      * The production classes permitted to unwrap a secret.
@@ -156,7 +157,19 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // unwrap outside `identity`: not a session token handed back to its owner,
                     // but the same claim one boundary over - a value whose purpose is to be
                     // transmitted, unwrapped at the transmitting edge and nowhere else.
-                    "com.finapp.payments.SimulatedCardPspAdapter");
+                    "com.finapp.payments.SimulatedCardPspAdapter",
+                    // P5-TSK-004. The stored instrument's token, wrapped on the same idiom -
+                    // the InstrumentToken mechanism RESTATED in paymentmethods, because the
+                    // PCI module sees no business sibling and cannot import it (the
+                    // DocumentCipher restated-mechanism precedent). Validates its charset and
+                    // PAN-shape refusal at construction and re-exposes; its expose() is an
+                    // unwrapping method above, so every caller is an entry here.
+                    "com.finapp.paymentmethods.TokenReference",
+                    // P5-TSK-004. The token's one production caller besides its type: writing
+                    // the column and binding the converge read's parameter - the store IS
+                    // where the stored token must exist bare, and DatabaseFailure.describe
+                    // keeps it out of every failure message.
+                    "com.finapp.paymentmethods.JdbcPaymentMethodStore");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

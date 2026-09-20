@@ -502,6 +502,25 @@ one free-text column is the reason the section exists: a person names people.
 | `beneficiary` | `created_at` | `CONFIDENTIAL` | Dates a person's act of saving a destination — `consent_record.recorded_at`'s reasoning |
 | `beneficiary` | `removed_at` | `CONFIDENTIAL` | As `created_at` |
 
+### `paymentmethods.payment_method` — *added by `P5-TSK-004`*
+
+**The PCI boundary's subject** (`INV-PAY-02`): a token reference plus display metadata, every
+column's shape unable to carry a PAN by `CHECK` — which is why the levels below describe
+instrument-linked data and never card data, there being no column that could hold any.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `payment_method` | `id` | `INTERNAL` | An aggregate identifier |
+| `payment_method` | `party_id` | `CONFIDENTIAL` | The `beneficiary.party_id` reasoning: the pairing is the fact — this person holds payment instruments |
+| `payment_method` | `token_reference` | `RESTRICTED-PII` | **The instrument reference itself** — resolves at the provider to a person's card, and paired with the confined API credential it is chargeable. The `document.checksum_sha256` possession-oracle reasoning: never in a log, a message or a rendering, which the wrapped `TokenReference` carries structurally |
+| `payment_method` | `brand` | `CONFIDENTIAL` | A fact about a person's instrument — `beneficiary.created_at`'s tier of disclosure, not an identifier |
+| `payment_method` | `display_suffix` | `RESTRICTED-PII` | **A partial instrument identifier** — last4 is displayable by PCI's own definition, and its ceiling is still the instrument it partially names; paired with brand and expiry it narrows to one card |
+| `payment_method` | `expiry_month` | `CONFIDENTIAL` | As `brand` |
+| `payment_method` | `expiry_year` | `CONFIDENTIAL` | As `brand` |
+| `payment_method` | `status` | `INTERNAL` | An enumeration of two values, both the person's own acts — the `beneficiary.status` reasoning |
+| `payment_method` | `created_at` | `CONFIDENTIAL` | Dates a person's act of attaching an instrument — `consent_record.recorded_at`'s reasoning |
+| `payment_method` | `detached_at` | `CONFIDENTIAL` | As `created_at` |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |

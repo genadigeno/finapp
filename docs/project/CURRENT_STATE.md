@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-20 (`P5-TSK-003` — the provider port and the simulated card PSP adapter; M5.1 closes at 3 of 3, next `P5-TSK-004`)
+Last updated: 2026-09-20 (`P5-TSK-004` — the `PaymentMethod` aggregate and schema; M5.2 at 1 of 2, next `P5-TSK-005`)
 
 ---
 
@@ -624,14 +624,92 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**`P5-TSK-004` — the `PaymentMethod` aggregate and schema** — `READY`.
-M5.2 opens: the tokenised instrument, the PCI boundary's subject
-(`INV-PAY-02`) — the `ACTIVE → DETACHED` machine on the `Beneficiary` shape,
-`V002` in `paymentmethods` with the one-live partial index, the every-writer
-freeze trigger, and the `information_schema`-derived sweep asserting
-instrument input appears in **no column**. See the backlog entry.
+**`P5-TSK-005` — the payment-method endpoints and the step-up point** —
+`READY`. M5.2's second half: `POST /v1/me/payment-methods` (attach — the
+`P4-TSK-007` conditional step-up verbatim; the simulated tokenisation
+exchange failing the attach when unavailable, nothing raw ever stored),
+`DELETE`/`GET` under ownership, audit actions and events on arrival, the
+contract baseline extended. See the backlog entry.
 
 ### Just completed
+
+**`P5-TSK-004` — the `PaymentMethod` aggregate and schema** — `COMPLETE` (2026-09-20).
+**M5.2 opens at 1 of 2: the PCI boundary has its subject** — and the part genuinely this
+task's, on the `Beneficiary`/`V003` ceremony's fifth performance, is that **`INV-PAY-02`
+landed at `DB-CONSTRAINT` rank**: not "we don't store a PAN" but *a PAN cannot physically
+be stored in any column of this schema*.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The race counted | Ten instances attaching one instrument: **one live row counted in the table**, one `created`, nine converged **onto the winner's row id** — the partial unique (party, token) index arbitrating behind the savepoint, the `P4-TSK-006` protocol verbatim |
+| The sweep green | **The PAN sweep**: every text column derived from `information_schema`, three card-number shapes (bare, hyphenated, 15-digit) planted per column, each refused `23514` by that column's own `CHECK` — token not-a-PAN, brand's digit-free charset, suffix exactly-four — so a text column added later without a PAN-refusing shape *fails the sweep*; non-text columns recorded structurally unable. The not-a-PAN `CHECK` dropped is **the acceptance mutation**, and the sweep fails naming the token column |
+| The freeze proven as the migrator | Resurrection refused (`P0001`), and the **smuggled-edge probe** — a token edit hidden inside the legal detach edge, the only shape that isolates the freeze from the edge check — refused too; the coherence pair and unknown status refused from scratch at `CHECK` rank |
+| The machine swept exhaustively | The cross-product derived from `values()`/`permittedTransitions()`, the machine **pinned** (one edge, `DETACHED` terminal, nothing transitions TO `ACTIVE` — birth the only door), coherence refused on rehydrate in both directions |
+
+### The wrapped token, restated where the import is forbidden
+
+`TokenReference` is the `InstrumentToken` mechanism **restated, not imported** — the PCI
+module sees no business sibling in either direction, so the wrapped-token discipline is
+restated the way `DocumentCipher` restates `SecretCipher`'s, with the duplication as the
+isolation's recorded cost. Component named `secret` (the `RawPassword` idiom: the name is
+the control), `expose()` a registered unwrapping method, and two whitelist entries — the
+type (validates, re-exposes) and `JdbcPaymentMethodStore` (writes the column; the one
+production caller). And one rule the in-flight twin does not need: **a digits-and-separators
+value is refused** — `4111-1111-1111-1111` is a formatted card number, not a token — at the
+domain and at `DB-CONSTRAINT` rank both. `secretsAreWrapped` fired on the pattern constant
+named for the card number, and the **accurate-rename** answer applied
+(`DIGITS_AND_SEPARATORS`, named for what it matches — the `REQUIRED_ENVIRONMENT_VARIABLE`
+precedent).
+
+### The token column is plaintext, and the decision is on the record
+
+Hashing is unavailable — the token must be *presented* to the provider, not compared — and
+what bounds a leaked column is that a token alone charges nothing: the provider requires
+the confined API credential, held outside the database (`P5-TSK-002`/`-003`), and tokens
+are revocable by detach. Encryption at rest under the generalised key mechanism is the
+recorded seam (one migration plus the `DocumentCipher` shape); the plan mandates it for
+`provider_evidence` and deliberately not here. The migration header carries the reasoning
+where the next reviewer will meet it.
+
+### The registers fed by the task, not by the next audit
+
+**`DISTRIBUTED_EXECUTION.md` §3 gained its row in this task** — the register-decay class's
+fifth occurrence was precisely `P4-TSK-006`'s sibling table never getting one until the
+exit review's hand-diff; not repeated. `DATA_CLASSIFICATION.md` gained the ten columns at
+their ceiling (`token_reference` and `display_suffix` `RESTRICTED-PII` — the instrument
+reference and a partial instrument identifier), the ownership register gained `detach`
+(`OWNER_SCOPED`, `party_id = ?` in the statement, negative test named), and every register
+guard is green over the additions. **Expiry is month AND year** — the plan's §8 shorthand
+("expiry month") corrected on being met, because a month without a year is not display
+metadata anyone can render.
+
+### What deliberately did not arrive
+
+Endpoints, step-up, the simulated tokenisation exchange, audit actions and events (all
+`P5-TSK-005`'s, the surface whose design fixes them — the `P4-TSK-006` → `-007` split);
+beans (the licence); the surface reads (`findOwned`, the listing — named in the store's
+javadoc; `V002`'s by-party index is already there for them); a history table (**the plan's
+own reading**: "append-only history discipline as for beneficiaries" means the detached row
+survives as the evidence, and `Beneficiary` has no event table either); token encryption
+(the seam above). No `DOD-FIN` — an instrument reference moves no money.
+
+### Eight mutations, all caught by the intended assertion, restores byte-identical
+
+The one-live index dropped (`Expected size: 1 but was: 10`); the index made total
+(**caught twice**: the freed slot and the hermetic reconciliation); the trigger's edge
+check removed (resurrection succeeds); the frozen-identity check removed (exactly the
+smuggled-edge probe); **the not-a-PAN `CHECK` dropped — the `INV-PAY-02` acceptance
+mutation, the sweep failing on the token column**; the detach's ownership predicate dropped
+(**caught twice**: the stranger's detach behaviourally, and `OwnershipIsScopedTest` naming
+the missing predicate); the aggregate's machine check removed (the sweep, plus the
+double-detach rendering probe); the coherence `CHECK` dropped (the raw-SQL refusal, with
+the hermetic reconciliation pinning it too). **Verified by targeted tiers —
+`:paymentmethods:test`, `:app:test` with every register guard green,
+`PaymentMethodDatabaseTest` (6 tests) and `ColumnClassificationTest` fresh over the new
+schema — the full battery deliberately skipped on the owner's instruction; no fleet-wide
+database or kafka counts claimed.**
+
+### Previously
 
 **`P5-TSK-003` — the provider port and the simulated card PSP adapter** — `COMPLETE`
 (2026-09-20). **M5.1 CLOSES at 3 of 3**, and its stated acceptance — *both modules and
@@ -10344,6 +10422,7 @@ rather than left.)*
 
 | Date | Change |
 |------|--------|
+| 2026-09-20 | **`P5-TSK-004` complete — the `PaymentMethod` aggregate and schema; M5.2 opens at 1 of 2.** The `Beneficiary`/`V003` ceremony's fifth performance, and the part genuinely this task's is **`INV-PAY-02` at `DB-CONSTRAINT` rank: a PAN cannot physically be stored in any column** (the `INV-IDN-01` `credential_derivation_is_encoded` pattern at the instrument boundary) — the token `CHECK` refuses digits-and-separators shapes, the brand's charset holds no digits, the suffix is exactly four (last4, PCI's own displayable bound), the expiry two range-checked integers — proven by **the PAN sweep**: every text column derived from `information_schema`, three card-number shapes planted per column, each refused `23514`, so a text column added later without a PAN-refusing shape fails the sweep. The aggregate on the established ceremony (one constructor, coherence both directions, rehydrate refusing corruption), the two-state machine pinned (nothing transitions TO `ACTIVE`), and the wrapped **`TokenReference`** — the `InstrumentToken` mechanism restated where the import is forbidden (the `DocumentCipher` precedent), `secret`-named component, `expose()` registered, two whitelist entries. **The token column is plaintext by recorded decision** (presented not compared, so unhashable; bounded by the confined API credential outside the database; encryption the recorded seam, reasoning in the migration header). `V002`: one-live (party, token) partial index as ten-way arbiter (one live row counted, nine converged onto the winner's id), freed slot with the detached row as evidence, every-writer freeze proven as the migrator including the **smuggled-edge probe**, grants `SELECT, INSERT` + `UPDATE (status, detached_at)` swept per column. **Registers fed by the task**: the `DISTRIBUTED_EXECUTION.md` §3 row (the decay class's fifth occurrence was this table's sibling never getting one — not repeated), ten classification rows at the ceiling, the ownership register's `detach` entry with its negative test. The plan's "expiry month" shorthand corrected on being met (month AND year). **Eight mutations, all caught by the intended assertion, restores byte-identical** — index dropped, index made total (caught twice), edge check removed, freeze removed (the smuggled edge), **not-a-PAN `CHECK` dropped (the acceptance mutation)**, ownership predicate dropped (caught twice), machine check removed, coherence dropped. Verified by targeted tiers — `:paymentmethods:test`, `:app:test`, `PaymentMethodDatabaseTest` (6 tests), `ColumnClassificationTest` — **the full battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.** Next: `P5-TSK-005`. |
 | 2026-09-20 | **`P5-TSK-003` complete — the provider port and the simulated card PSP adapter; M5.1 CLOSES at 3 of 3.** ADR-0049 as code: `PaymentProvider` in `payments` (`providerName`, authorize / capture / refund / **query by our reference**), every money-moving signature requiring the platform-minted `ProviderIdempotencyReference` so a dispatch without one does not compile (`INV-PAY-04` by signature), and the answer types as the total mapping's vocabulary — `APPROVED` (provider reference **required**: an approval the capture cannot act on is `INDETERMINATE`, coherence in the constructor), `DECLINED`, **`NOTHING_SENT`** (only a refused connection is knowledge — an RST means nothing was transmitted, so the caller commits `FAILED(PROVIDER_UNAVAILABLE)`; a connect timeout is silence, and silence is ambiguity), `INDETERMINATE` the default branch, plus the query's `UNRECOGNISED` earned **only by an explicit parsed answer** (a 404 is a status code, not an answer — a misrouted load balancer must not resolve a live operation to `FAILED`). Wire vocabulary confined to the package-private `PspWireClient` (`INV-PAY-03` by file layout); evidence verbatim byte-for-byte against a trim-hostile body, bound stated (1 MiB, `P5-TSK-008` reconciles). **Every harness mode drives a defined outcome** — the `P0-TSK-037` harness meeting the caller it was built for — including the reference-carrying unknown-state probe the mutation analysis demanded, because the harness's own unknown-state body carries no reference and a default-branch-approves mutation would have dodged the easy half. The harness gained `headerValues` (strings only), making the two wire facts assertable: **a re-dispatch presents the same `Idempotency-Key`**, and every dispatch carries the confined credential. **`secretsAreWrapped` fired four times and the rule won every time**: the token became `InstrumentToken` (the `RawPassword` idiom — `Sensitive<String> secret`, `expose()` a registered unwrapping method, two named whitelist entries, the only production caller being the adapter putting the token on the wire — `INV-PAY-02`'s one legitimate destination), and the client holds `byte[] key` (the `CallbackSignature` idiom) with the header built per request. `ProviderApiKey` — **the fifth credential as the one-line `KeySpec` `P5-TSK-002` built for it** (`FINAPP_PAYMENT_PROVIDER_KEY`, `/payment-provider`, `AT_LEAST_32`) with its own test (the `P2-TSK-011` no-test lesson). **No beans** (the unconsumed-wiring licence; `P5-TSK-009` wires with the property names fixed in the adapter's javadoc), no store, no events, no meters, **no `DISTRIBUTED_EXECUTION.md` §3 row — the adapter is stateless and the reference in the signature is what makes ten instances safe, not coordination**. **Seven mutations, all caught by the intended assertion, restores byte-identical** — default-branch-approves, timeout-as-knowledge, fresh-reference-per-dispatch, the `APPROVED` coherence dropped, non-200 evidence dropped, the credential dropped, the client rethrowing. Verified by targeted tiers — `:payments:test` 34 / `:app:test` 435 / `:platform:test` 170, 0 failures — **the full battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.** Next: `P5-TSK-004`. |
 | 2026-09-20 | **`P5-TSK-002` complete — the per-credential confinement, generalised; M5.1 is 2 of 3 and the `P2-TSK-011` debt row is paid.** Four hand-written copies of the ADR-0020 shape (`DatabaseCredentialGuard`, `MfaKey`, `DocumentKey`, `CallbackKey`) become one mechanism — `ConfinedCredential` + `KeySpec` in `app.security`, deliberately beside `DatabaseEndpoint` rather than in the `platform` module (every consumer past and planned is wired in the composition root, and the loopback answer stays `DatabaseEndpoint`'s, passed in — the beans changed not at all). The five axes the copies actually varied on became the spec — name, confinement name, environment variable, domain suffix, `EXACTLY_32`/`AT_LEAST_32`, refusal tail — and behaviour was preserved **byte for byte** (signatures, exception types, message texts, derived local bytes, MFA's suffix empty because its bytes predate the suffix idea), which is what lets **the four untouched suites be the equivalence proof**. **The generalisation found the drift it exists to prevent, already present**: the marker literal lived TWICE in Java — the guard's constant and `MfaKey`'s — under a javadoc claiming exactly one, with nothing reconciling them (the configuration rule covers YAML/Kotlin/SQL, not Java constants); one literal now, both public constants kept as references, the chain pinned by an `isSameAs` check whose drift mutation is caught twice. `ConfinedCredentialTest` covers only the next-consumer half: a fifth spec (shaped like the payment webhook key's) domain-separated pairwise from all three keys, inheriting the confinement naming its own variable, never echoing, both length rules. **Six mutations, all caught by the intended assertion, restores byte-identical** — the confinement removed (**the acceptance mutation: every consumer's confinement test fails at once**, which is the property that makes one definition better than four), the suffix dropped, exactly-32 relaxed (the AES-128 trap), at-least-32 tightened (the two rules proven genuinely two), the echo, the drifted reference. `:app:test` green with every security rule over the reshaped classes; **the full battery deliberately skipped on the owner's instruction; no fleet-wide counts claimed.** Next: `P5-TSK-003`. |
 | 2026-09-20 | **`P5-TSK-001` complete — the `payments` and `paymentmethods` modules and their privilege floors; Phase 5 is `IN_PROGRESS`.** The module shape's fifth and sixth performances, and what is genuinely this phase's is the build graph carrying two different boundary decisions at once: `payments → ledger` declared with the module (a capture's money movement IS a ledger posting, commanded and never written — INV-LED-04, ADR-0048; the planted reverse edge fails **Gradle configuration as a cycle**, demonstrated), and **`payments → paymentmethods` refused with NO cycle behind it** — the PCI boundary (M7, INV-PAY-02) rests on `PaymentsModuleIsolationTest` alone, which is why the probe planting exactly that edge was the one the task could not skip: caught by *payments must not depend on paymentmethods*, restore verified. `paymentmethods` is the most isolated business module on the platform — no business sibling in either direction, deliberately, because a PCI boundary that depends on siblings has the whole dependency ball as its review surface. Two `V001`s on the established template (`REVOKE ALL FROM PUBLIC`, `USAGE` alone, **no `ALTER DEFAULT PRIVILEGES`** — the evidence and attempt tables coming are exactly ones whose grants must be narrowed per table), proven live on a throwaway `postgres:18.6`: migrate → validate → re-migrate idempotent, owner `finapp_migrator`, ACL exactly `{finapp_migrator=UC, finapp_app=U}`, no `PUBLIC`, `USAGE` not `CREATE`, zero application tables. Both planted `double`s caught **naming their module** through the classpath edges added with the modules (the `P4-TSK-001` lesson pre-applied, probed once per module); all seven sibling isolation lists gained both modules (the one-directional-decay lesson, sixth application). **Six probes, all caught by the intended assertion, restores byte-identical**; the first double plant refused by javac over a PowerShell BOM (a mutation must compile), and the final count taken from a fresh fleet run because the probe runs had left mixed stale XMLs (the reports-for-work-it-did-not-do class, dodged). Lockfiles identical to `transfers`'s but for headers; verification metadata unchanged; the `build-logic` Kotlin drift reverted a fifth time. No audit-action enums (the licence, recorded), no runtime state, no §3 row — the absences are the design. **1161 hermetic tests, 0 failures — the full battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.** Next: `P5-TSK-002`. |

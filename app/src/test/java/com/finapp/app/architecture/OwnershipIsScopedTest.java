@@ -241,6 +241,17 @@ class OwnershipIsScopedTest {
                                         + " unknown and malformed are one empty answer and one"
                                         + " 404.")),
                     Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.detach",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "DELETE /v1/me/payment-methods/{id} (P5-TSK-005's surface;"
+                                        + " the store landed with P5-TSK-004) - the identifier"
+                                        + " comes from the path, and party_id = ? in the"
+                                        + " statement is the ownership check: a payment method"
+                                        + " belongs to the Party, and the conditional's row"
+                                        + " count folds not-yours and already-detached into"
+                                        + " one indistinguishable false.")),
+                    Map.entry(
                             "com.finapp.transfers.JdbcBeneficiaryStore.remove",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -1008,6 +1019,9 @@ class OwnershipIsScopedTest {
                     "com.finapp.identity.JdbcContactChannelStore.findOwned",
                     "com.finapp.app.domain.RecoveryAbuseDatabaseTest"
                             + ".aChannelIsNotReadableByAnotherIdentity",
+                    "com.finapp.paymentmethods.JdbcPaymentMethodStore.detach",
+                    "com.finapp.app.paymentmethods.PaymentMethodDatabaseTest"
+                            + ".detachmentConvergesAndIsOwnershipScoped",
                     "com.finapp.transfers.JdbcBeneficiaryStore.remove",
                     "com.finapp.app.transfers.BeneficiaryDatabaseTest"
                             + ".removalConvergesAndIsOwnershipScoped",
