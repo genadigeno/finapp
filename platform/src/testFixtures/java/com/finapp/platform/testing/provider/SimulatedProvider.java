@@ -259,6 +259,23 @@ public final class SimulatedProvider implements AutoCloseable {
         return server.countRequestsMatching(anyRequestedFor(urlEqualTo(path)).build()).getCount();
     }
 
+    /**
+     * The values one header carried on every request to this path, in arrival order.
+     *
+     * <p>One element per request; a request that lacked the header contributes {@code null}, so
+     * the list's length always equals {@link #requestCount}. Added by `P5-TSK-003`, because two
+     * of the payment port's properties are facts about the wire that no assertion on the
+     * caller's own records can see: that a re-dispatched operation presented the <em>same</em>
+     * idempotency reference (`INV-PAY-04` lives in the provider's dedupe, which sees headers,
+     * not our records), and that a credential is actually sent (a credential nothing sends is
+     * decorative). Returns strings only - the no-WireMock-in-the-signature rule, as ever.
+     */
+    public java.util.List<String> headerValues(String path, String headerName) {
+        return server.findAll(anyRequestedFor(urlEqualTo(path))).stream()
+                .map(request -> request.getHeader(headerName))
+                .collect(java.util.stream.Collectors.toList());
+    }
+
     /** Forgets every stub and every recorded request. */
     public void reset() {
         server.resetAll();

@@ -5554,7 +5554,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - **Risk**: Medium (touches four proven controls). **Cx**: M. **DoD**: `DOD-SEC`,
   `DOD-KERNEL`
 
-**P5-TSK-003 — The provider port and the simulated card PSP adapter** — `READY`
+**P5-TSK-003 — The provider port and the simulated card PSP adapter** — `COMPLETE` (2026-09-20)
 - **Objective**: ADR-0049 as code: `PaymentProvider` (authorize / capture / refund /
   **query by our reference**), our vocabulary in and out, one simulated card-style adapter.
 - **Scope**: the port in `payments`; the adapter over HTTP against the `P0-TSK-037`
@@ -5571,9 +5571,53 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   abstraction (Phase 7); webhooks (`P5-TSK-012`).
 - **Accept**: every harness mode drives a defined port outcome; the unknown-state answer
   maps to indeterminate; a re-dispatched operation presents the same reference, asserted.
+- **Gate evidence (2026-09-20)**: `PaymentProvider` in `payments` — `providerName`,
+  authorize / capture / refund / **query by our reference**, every money-moving signature
+  requiring the platform-minted `ProviderIdempotencyReference`, so a dispatch without one
+  does not compile (`INV-PAY-04` by signature). The total mapping's vocabulary is the
+  answer types themselves: `APPROVED` (provider reference **required** — an approval the
+  next operation cannot act on is `INDETERMINATE`, coherence in the record constructor),
+  `DECLINED`, `NOTHING_SENT` (**only a refused connection — `ConnectException` — is
+  knowledge**; a connect timeout is silence, and silence is ambiguity), `INDETERMINATE`
+  the default branch — plus the query's `UNRECOGNISED`, earned **only by an explicit
+  parsed answer**: a 404 is a status code, not an answer, because a misrouted load
+  balancer must not resolve a live operation to `FAILED`. Wire vocabulary confined to the
+  package-private `PspWireClient` (`INV-PAY-03` by file layout); evidence returned
+  verbatim **byte for byte** against a body hostile to trim-and-re-encode, with the
+  retention bound stated (1 MiB — `P5-TSK-008`'s evidence table must reconcile).
+  **Every harness mode drives a defined outcome**, counted in the matrix: approved,
+  declined, approved-sans-reference, unknown state **with and without a reference** (the
+  reference-carrying probe added by the mutation analysis, because the harness's own
+  unknown-state body carries none and a default-branch-approves mutation would dodge it),
+  malformed, garbage, bodyless and bodied 5xx, timeout (`requestCount == 1`), refused
+  connection (`NOTHING_SENT`, nothing counted), received-then-lost (`requestCount` the
+  oracle), slow-but-in-time, oversized. The harness gained `headerValues` — strings only,
+  the no-WireMock-in-the-signature rule — which is what makes the two wire facts
+  assertable: **a re-dispatch presents the same `Idempotency-Key`** and **every dispatch
+  carries the confined credential**. `secretsAreWrapped` fired four times on the first
+  version and the rule won every time: the token became `InstrumentToken` (the
+  `RawPassword` idiom — `Sensitive<String> secret`, its `expose()` registered as an
+  unwrapping method, two named whitelist entries), and the client holds `byte[] key`
+  (the `CallbackSignature` idiom) with the header built per request and stored nowhere.
+  `ProviderApiKey` — the fifth credential, arrived as the one-line `KeySpec` `P5-TSK-002`
+  built for it (`FINAPP_PAYMENT_PROVIDER_KEY`, suffix `/payment-provider`, `AT_LEAST_32`)
+  with its own test (the `P2-TSK-011` no-test lesson): pairwise domain separation from
+  all three sibling keys, the confinement naming its own variable. **No beans,
+  deliberately** — the unconsumed-wiring licence; `P5-TSK-009` wires, with the property
+  names fixed in the adapter's javadoc (`finapp.payments.provider.url`, no default — the
+  Phase 2 shape). **Seven mutations, all caught by the intended assertion, restores
+  verified byte-identical**: the default branch made to approve (the `INV-PAY-03`
+  acceptance mutation, caught by the reference-carrying probe), the `IOException`
+  catch-all made knowledge (timeout-as-failure — caught by the received-then-lost oracle),
+  a fresh reference minted per dispatch (the `INV-PAY-04` acceptance mutation, caught at
+  the wire), the `APPROVED` coherence dropped, non-200 evidence dropped (`INV-HIST-02`),
+  the credential dropped, the client rethrowing (totality). Verified by targeted tiers —
+  `:payments:test` 34, `:app:test` 435, `:platform:test` 170, 0 failures, fresh runs —
+  **the full battery deliberately skipped on the owner's instruction; no fleet-wide
+  database or kafka counts claimed.**
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-KERNEL`, `DOD-SEC`
 
-**P5-TSK-004 — The `PaymentMethod` aggregate and schema** — `TODO`
+**P5-TSK-004 — The `PaymentMethod` aggregate and schema** — `READY`
 - **Objective**: the tokenised instrument — the PCI boundary's subject (`INV-PAY-02`).
 - **Scope**: the aggregate (`ACTIVE → DETACHED`, terminal — the `Beneficiary` machine
   shape), token reference plus display metadata only; `V002` in `paymentmethods`: one-live

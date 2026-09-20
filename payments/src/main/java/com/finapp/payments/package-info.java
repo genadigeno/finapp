@@ -26,9 +26,11 @@
  * ({@code P5-TSK-009}), and provider vocabulary stays behind the adapter ({@code INV-PAY-03}).
  *
  * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema
- * ({@code P5-TSK-001}) - nothing else. The provider port and simulated adapter are
- * {@code P5-TSK-003}; the aggregates and machines {@code P5-TSK-006}/{@code -007}; the schema's
- * tables {@code P5-TSK-008}; the commands {@code P5-TSK-009}/{@code -010}/{@code -015}.
+ * ({@code P5-TSK-001}), and the provider port with its simulated card-PSP adapter
+ * ({@code P5-TSK-003}: {@code PaymentProvider}, the answer types, the wire client - updated by
+ * the task that made the previous sentence stale, the recurring class). The aggregates and
+ * machines are {@code P5-TSK-006}/{@code -007}; the schema's tables {@code P5-TSK-008}; the
+ * commands {@code P5-TSK-009}/{@code -010}/{@code -015}.
  *
  * <p><strong>Deliberately no audit-action enum yet</strong> (the deliberately-few licence,
  * {@code P4-TSK-001}'s precedent): the actions arrive with the commands whose designs fix their

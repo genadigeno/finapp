@@ -42,7 +42,9 @@ import org.junit.jupiter.api.Test;
  * <p>This says <em>where</em> a secret may be unwrapped, not what happens to it afterwards. Inside
  * {@code identity} a plaintext could still be handed to a log call, and nothing mechanical would
  * catch it - that residual is real, is recorded in {@code CURRENT_STATE.md}, and is bounded by the
- * set below being seven methods rather than a codebase.
+ * set below being a short, individually justified list rather than a codebase. (This sentence
+ * carried a count - "seven methods" - that had silently gone stale as entries arrived; corrected
+ * count-free by `P5-TSK-003`, the stale-count class this repository keeps meeting.)
  */
 @Tag("architecture")
 @DisplayName("a secret is unwrapped only where this test says it may be (P1-TSK-009)")
@@ -52,15 +54,18 @@ class SecretsAreUnwrappedInOnePlaceTest {
     private static final Set<String> UNWRAPPING_METHODS =
             Set.of(
                     "com.finapp.sharedkernel.security.Sensitive.expose()",
-                    "com.finapp.identity.RawPassword.expose()");
+                    "com.finapp.identity.RawPassword.expose()",
+                    "com.finapp.payments.InstrumentToken.expose()");
 
     /**
      * The production classes permitted to unwrap a secret.
      *
-     * <p>All six are in {@code identity}, and that is the property worth reading off this list:
-     * the plaintext exists inside one module's call chain and nowhere else. Adding an entry is a
-     * decision; adding one in another module should be a conversation, because it means a
-     * credential has left the module that owns credentials.
+     * <p>Nearly all are in {@code identity}, and that is the property worth reading off this
+     * list: a plaintext exists inside the owning module's call chain, and every entry elsewhere
+     * carries its own justification below. Adding an entry is a decision; adding one in another
+     * module should be a conversation, because it means a secret has left the module that owns
+     * it. (This sentence too carried a stale count - "all six" - corrected count-free by
+     * `P5-TSK-003`.)
      */
     private static final Set<String> PERMITTED =
             Set.of(
@@ -138,7 +143,20 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     "com.finapp.identity.EmailAddress",
                     // Hashes the token it holds, and hands its one copy to a notifier that does not
                     // exist yet (`SessionToken`'s shape, for a shorter-lived value).
-                    "com.finapp.identity.SingleUseToken");
+                    "com.finapp.identity.SingleUseToken",
+                    // P5-TSK-003. The instrument token, wrapped on the RawPassword idiom:
+                    // validates its charset at construction and re-exposes for the wire. Its
+                    // expose() is itself an unwrapping method above, so every caller is an entry
+                    // here - the RawPassword shape exactly.
+                    "com.finapp.payments.InstrumentToken",
+                    // P5-TSK-003. The one production caller of InstrumentToken.expose(): the
+                    // token coming off onto the provider wire, which is the one place it
+                    // legitimately goes (INV-PAY-02 - the token IS what we hold instead of raw
+                    // card data, and the provider is who it is FOR). The fourth-and-unlike
+                    // unwrap outside `identity`: not a session token handed back to its owner,
+                    // but the same claim one boundary over - a value whose purpose is to be
+                    // transmitted, unwrapped at the transmitting edge and nowhere else.
+                    "com.finapp.payments.SimulatedCardPspAdapter");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

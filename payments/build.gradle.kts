@@ -92,4 +92,8 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+
+    // The P0-TSK-037 provider harness: the adapter's contract tests drive every outbound
+    // failure mode through a real HTTP server (the kyc precedent, line for line).
+    testImplementation(testFixtures(project(":platform")))
 }
