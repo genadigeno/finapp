@@ -71,6 +71,26 @@ import java.util.Optional;
  * exceptions to status codes are P0-TSK-017. This class is the mechanism; it serves an HTTP
  * command, an event consumer and a scheduled job identically, which is exactly why ADR-0004
  * rejected putting it in a filter.
+ *
+ * <h2>The two-transaction command (`P5-TSK-016`)</h2>
+ *
+ * <p>{@link #execute} is the one-transaction model above and stays the default. A
+ * dispatch-before-call command (ADR-0046) cannot use it: its judgement arrives in a
+ * <em>second</em> transaction, after a provider call that must hold no connection, and a
+ * response recorded at claim time would be a response recorded before the judgement exists —
+ * which is how a replay comes to be rendered from a re-read, the exact defect the frozen
+ * stored response exists to prevent.
+ *
+ * <p>{@link #begin} and {@link #complete} are that shape made honest within this model's own
+ * rules. {@code begin} claims and runs the dispatch, and the claim <strong>stays
+ * {@code IN_PROGRESS}</strong> — claim and dispatch effects still commit together, so the
+ * one-transaction section's hazard (an effect no record describes) still cannot arise: the
+ * claim row is the record, and the dispatch rows carry the key as their own column.
+ * {@code complete} records the judged response in the outcome's transaction, once; the freeze
+ * takes it from there. The crash between the two leaves an {@code IN_PROGRESS} claim whose
+ * lease runs down exactly as designed — the retry that takes it over re-runs the dispatch,
+ * which is why a {@link DispatchCommand} must converge on the committed work by its natural
+ * key instead of repeating it.
  */
 public final class IdempotentExecutor {
 
@@ -132,6 +152,109 @@ public final class IdempotentExecutor {
             // situation as a live IN_PROGRESS record, and it gets the same honest answer.
             case CONTENDED -> throw new IdempotencyInProgressException(key);
         };
+    }
+
+    /**
+     * Tx1 of a two-transaction command: claims the key and runs {@code dispatch} beside the
+     * still-{@code IN_PROGRESS} claim, or replays the recorded outcome, or takes over an
+     * expired claim and re-runs the (convergent) dispatch.
+     *
+     * @throws IdempotencyConflictException the key was used for a different request
+     * @throws IdempotencyInProgressException another flight holds the key and its lease is
+     *     still running — deterministic, bounded, and true
+     */
+    public BeginOutcome begin(
+            java.sql.Connection unitOfWork,
+            IdempotencyKey key,
+            RequestFingerprint fingerprint,
+            DispatchCommand dispatch) {
+
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(fingerprint, "fingerprint must not be null");
+        Objects.requireNonNull(dispatch, "dispatch must not be null");
+
+        Instant now = clock.instant();
+        CorrelationId correlationId = currentCorrelationId();
+
+        switch (store.claim(
+                unitOfWork, key, fingerprint, correlationId, now, now.plus(retention), lease)) {
+            case CLAIMED -> {
+                return BeginOutcome.dispatched(dispatch.dispatch(unitOfWork));
+            }
+            case ALREADY_CLAIMED -> {
+                IdempotencyRecord existing =
+                        store.find(unitOfWork, key)
+                                .orElseThrow(() -> new IdempotencyInProgressException(key));
+                if (!fingerprint.matches(existing.fingerprint())) {
+                    throw new IdempotencyConflictException(key);
+                }
+                if (existing.state().isTerminal()) {
+                    // The point of the whole exercise: the response of record, byte for byte.
+                    return BeginOutcome.replayed(existing.response());
+                }
+                if (store.reclaimIfLeaseExpired(
+                        unitOfWork, key, correlationId, now, now.plus(retention), lease)) {
+                    // The crashed flight's key, taken over: the dispatch re-runs and MUST
+                    // converge on the work Tx1 committed (the DispatchCommand contract).
+                    return BeginOutcome.dispatched(dispatch.dispatch(unitOfWork));
+                }
+                throw new IdempotencyInProgressException(key);
+            }
+            case CONTENDED -> throw new IdempotencyInProgressException(key);
+        }
+        throw new IllegalStateException("unreachable: ClaimOutcome is exhaustive");
+    }
+
+    /**
+     * Tx2 of a two-transaction command: records the judged response against the
+     * {@code IN_PROGRESS} claim, inside the outcome's own transaction — the outcome and the
+     * response of record commit together, and the freeze (platform {@code V003}) makes the
+     * response final from this commit on.
+     *
+     * @return {@code true} if this call recorded the outcome; {@code false} when the claim was
+     *     already terminal — a takeover finished first, and the loser converges (its own
+     *     conditional writes lost the same way)
+     */
+    public boolean complete(
+            java.sql.Connection unitOfWork,
+            IdempotencyKey key,
+            boolean succeeded,
+            StoredResponse response) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(response, "response must not be null");
+        return store.complete(
+                unitOfWork,
+                key,
+                succeeded ? IdempotencyState.COMPLETED : IdempotencyState.FAILED,
+                response,
+                clock.instant());
+    }
+
+    /** Tx1's answer: exactly one of the two is present. */
+    public record BeginOutcome(Optional<StoredResponse> replay, Optional<byte[]> dispatched) {
+
+        public BeginOutcome {
+            Objects.requireNonNull(replay, "replay must not be null");
+            Objects.requireNonNull(dispatched, "dispatched must not be null");
+            if (replay.isPresent() == dispatched.isPresent()) {
+                throw new IllegalArgumentException(
+                        "exactly one of replay and dispatched must be present");
+            }
+        }
+
+        static BeginOutcome replayed(StoredResponse response) {
+            return new BeginOutcome(Optional.of(response), Optional.empty());
+        }
+
+        static BeginOutcome dispatched(byte[] working) {
+            return new BeginOutcome(
+                    Optional.empty(),
+                    Optional.of(
+                            Objects.requireNonNull(
+                                    working, "a dispatch must return working state")));
+        }
     }
 
     // -----------------------------------------------------------------

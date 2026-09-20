@@ -58,7 +58,15 @@
  * {@code sumNonFailedFor}, {@code V004}'s trigger beneath), places the hold and commits
  * before the wire call; completion releases-and-posts atomically keyed
  * {@code payment-refund:<refundId>}, failure releases with nothing posted, ambiguity leaves
- * the hold standing - the customer's funds visibly reserved, never silently spendable).
+ * the hold standing - the customer's funds visibly reserved, never silently spendable), and
+ * the refund's surface and facts ({@code P5-TSK-016}: {@code RefundInitiated} in the dispatch
+ * transaction - legitimate where {@code TransferInitiated} was not, since under ADR-0046 the
+ * dispatch commits durably before its own outcome exists - {@code RefundCompleted}/{@code
+ * RefundFailed} inside the outcome's conditional so duplicates emit nothing, the webhook
+ * resolver completing UNKNOWN refunds through the same shared outcomes, and the refund as the
+ * platform's first two-transaction keyed command: the claim held IN_PROGRESS across the wire,
+ * completed with the judged response in Tx2, replayed byte-for-byte from then on, the
+ * takeover re-run converging by {@code V008}'s dispatch key).
  *
  * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
  * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and

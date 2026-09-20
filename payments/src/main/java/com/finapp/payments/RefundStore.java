@@ -18,9 +18,29 @@ import java.util.Optional;
  */
 public interface RefundStore<T> {
 
-    void insert(T unitOfWork, Refund refund);
+    /**
+     * @param dispatchKey the idempotency claim whose Tx1 creates this row (`V008`,
+     *     `P5-TSK-016`) — the takeover convergence's natural key, never null for new rows
+     */
+    void insert(T unitOfWork, Refund refund, String dispatchKey);
 
     Optional<Refund> findById(T unitOfWork, RefundId refund);
+
+    /**
+     * The newest refund carrying {@code dispatchKey} (`P5-TSK-016`): the takeover re-run's
+     * convergence lookup. Newest first because a key can legitimately reappear after the
+     * claim's retention has swept it — the caller judges the row's facts before converging.
+     */
+    Optional<Refund> findByDispatchKey(T unitOfWork, String dispatchKey);
+
+    /**
+     * The refund whose stored reference — ours minted at dispatch, or the provider's from a
+     * committed completion — matches (`INV-PAY-04`, both columns; the attempt-store shape
+     * verbatim). The webhook door's attribution read (`SIGNED_CALLBACK`): verification runs
+     * before it, and the reachable writes are the refund's own conditional edges.
+     */
+    Optional<Refund> findByOperationReference(
+            T unitOfWork, ProviderIdempotencyReference reference);
 
     /** The attempt's refunds, oldest first — `P5-TSK-016`'s derived-totals read arrives here. */
     List<Refund> listFor(T unitOfWork, PaymentAttemptId attempt);

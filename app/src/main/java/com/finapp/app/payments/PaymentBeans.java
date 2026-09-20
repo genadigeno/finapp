@@ -307,6 +307,7 @@ class PaymentBeans {
                     paymentRefundCommand,
             PaymentIntentStore<Connection> paymentIntentStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
             com.finapp.identity.IdentityStore<Connection> identityStore,
             TransactionTemplate paymentTransactions,
             DataSource dataSource) {
@@ -318,6 +319,7 @@ class PaymentBeans {
                 paymentRefundCommand,
                 paymentIntentStore,
                 paymentAttemptStore,
+                refundStore,
                 identityStore,
                 paymentTransactions,
                 dataSource);
@@ -382,6 +384,7 @@ class PaymentBeans {
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
             PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
             com.finapp.payments.PaymentOutcomes paymentOutcomes,
             com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer,
             tools.jackson.databind.ObjectMapper objectMapper,
@@ -393,6 +396,7 @@ class PaymentBeans {
                 providerEvidenceStore,
                 paymentAttemptStore,
                 paymentIntentStore,
+                refundStore,
                 paymentOutcomes,
                 inboxConsumer,
                 objectMapper,

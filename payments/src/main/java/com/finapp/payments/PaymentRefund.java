@@ -6,7 +6,6 @@ import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
-import com.finapp.platform.idempotency.CommandResult;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.RequestFingerprint;
@@ -53,8 +52,19 @@ import java.util.UUID;
  * {@code payment-refund:<refundId>} — the capture's exact inverse pair); failure releases
  * with nothing posted; ambiguity commits {@code UNKNOWN} <strong>with the hold
  * standing</strong> — {@code INV-LIFE-03} with money visibly parked on it. All through
- * {@link PaymentOutcomes#applyRefund}, the one code path `P5-TSK-016`'s webhook resolver
- * consumes next.
+ * {@link PaymentOutcomes#applyRefund}, the one code path the webhook resolver consumes too
+ * (`P5-TSK-016`) — and each terminal transition publishes its fact from inside the
+ * conditional, so duplicates emit nothing.
+ *
+ * <h2>The response of record (`P5-TSK-016`)</h2>
+ *
+ * <p>The first two-transaction keyed command: Tx1 commits the dispatch beside the claim held
+ * {@code IN_PROGRESS} ({@code IdempotentExecutor.begin}), Tx2 completes the claim with the
+ * judged {@code refundId|status} — so a replay renders what this key was answered,
+ * byte-for-byte (platform {@code V003}'s freeze), never a re-read. The crash between the two
+ * is the lease's case: the retry takes the claim over and {@code dispatchOrConverge} finds
+ * the committed work by `V008`'s dispatch key — no second hold, no second row, the wire
+ * re-driven with the stored reference ({@code INV-PAY-04}).
  *
  * <h2>The operator commands; the platform applies</h2>
  *
@@ -124,6 +134,8 @@ public final class PaymentRefund {
      *     the return now ({@code INV-BAL-04}) — the caller's 409, nothing written
      * @throws com.finapp.platform.idempotency.IdempotencyConflictException the key was used
      *     for a materially different request ({@code INV-IDEM-03})
+     * @throws com.finapp.platform.idempotency.IdempotencyInProgressException another flight
+     *     holds this key and its lease is running — deterministic, bounded, and true
      */
     @SuppressWarnings("try") // The Scope is used for its close side effect.
     public RefundResult refund(
@@ -135,56 +147,42 @@ public final class PaymentRefund {
         Actor operator = SecurityContext.require();
         Correlation correlation = PaymentCreation.resolvedCorrelation();
 
-        // Tx1: the claim and the dispatch - the hold, the row and the audit, one commit,
-        // before the provider can possibly have acted (ADR-0046).
-        Tx1 tx1 =
+        // Tx1: the claim and the dispatch - the hold, the row, the audit and the
+        // RefundInitiated fact, one commit, before the provider can possibly have acted
+        // (ADR-0046) - with the claim held IN_PROGRESS (the executor's two-transaction
+        // shape, P5-TSK-016): the response of record is the JUDGED outcome, so it cannot be
+        // written here, where no judgement exists yet.
+        IdempotencyKey claimKey = new IdempotencyKey(IDEMPOTENCY_SCOPE, idempotencyKey);
+        Dispatch[] holder = new Dispatch[1];
+        IdempotentExecutor.BeginOutcome begun =
                 transactions.inTransaction(
-                        uow -> {
-                            IdempotentExecutor.ExecutionOutcome outcome =
-                                    executor.execute(
-                                            uow,
-                                            new IdempotencyKey(IDEMPOTENCY_SCOPE, idempotencyKey),
-                                            RequestFingerprint.sha256(
-                                                    canonicalForm(
-                                                            operator, intentId, amount, reason)),
-                                            claimed ->
-                                                    dispatch(
-                                                            claimed, intentId, amount, reason,
-                                                            operator, correlation));
-                            RefundId refundId =
-                                    RefundId.of(
-                                            UUID.fromString(
-                                                    new String(
-                                                            outcome.body().orElseThrow(),
-                                                            StandardCharsets.UTF_8)));
-                            if (outcome.replayed()) {
-                                // The retry of a lost response: no second hold, no second
-                                // wire call - the truth as it stands now, honestly.
-                                Refund current =
-                                        refunds.findById(uow, refundId).orElseThrow();
-                                return new Tx1(
-                                        Optional.of(
-                                                new RefundResult(
-                                                        refundId, current.status(), true)),
-                                        null);
-                            }
-                            Refund fresh = refunds.findById(uow, refundId).orElseThrow();
-                            PaymentIntent intent =
-                                    intents.findById(uow, intentId).orElseThrow();
-                            PaymentAttempt attempt =
-                                    attempts.findForIntent(uow, intentId).orElseThrow();
-                            return new Tx1(
-                                    Optional.empty(),
-                                    new Dispatch(
-                                            fresh,
-                                            intentId,
-                                            intent.walletAccount(),
-                                            attempt.captureProviderReference()));
-                        });
-        if (tx1.replayed().isPresent()) {
-            return tx1.replayed().get();
+                        uow ->
+                                executor.begin(
+                                        uow,
+                                        claimKey,
+                                        RequestFingerprint.sha256(
+                                                canonicalForm(
+                                                        operator, intentId, amount, reason)),
+                                        claimed -> {
+                                            Dispatch dispatched =
+                                                    dispatchOrConverge(
+                                                            claimed, idempotencyKey, intentId,
+                                                            amount, reason, operator,
+                                                            correlation);
+                                            holder[0] = dispatched;
+                                            return dispatched
+                                                    .refund()
+                                                    .id()
+                                                    .value()
+                                                    .toString()
+                                                    .getBytes(StandardCharsets.UTF_8);
+                                        }));
+        if (begun.replay().isPresent()) {
+            // The response of record, byte for byte (platform V003's freeze) - never a
+            // re-read: what this key was answered is what this key is answered.
+            return parsedReplay(begun.replay().get());
         }
-        Dispatch dispatch = tx1.dispatch();
+        Dispatch dispatch = holder[0];
 
         // The provider call - between the transactions, holding no database connection
         // (ADR-0046, P1-TSK-026). An exception propagates: the dispatch stays committed with
@@ -201,16 +199,24 @@ public final class PaymentRefund {
         try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
             return transactions.inTransaction(
                     uow -> {
+                        // The source state read in this transaction: DISPATCHED on the fresh
+                        // flight, and on a taken-over one possibly UNKNOWN - or already
+                        // terminal, when a webhook resolved the crashed flight first, in
+                        // which case this call converges with the truth and applies nothing.
+                        Refund current =
+                                refunds.findById(uow, dispatch.refund().id()).orElseThrow();
                         RefundStatus committed =
-                                outcomes.applyRefund(
-                                        uow,
-                                        dispatch.intent(),
-                                        dispatch.refund(),
-                                        RefundStatus.DISPATCHED,
-                                        answer.verdict(),
-                                        answer.providerReference(),
-                                        dispatch.wallet(),
-                                        correlation);
+                                resolvable(current.status())
+                                        ? outcomes.applyRefund(
+                                                uow,
+                                                dispatch.intent(),
+                                                dispatch.refund(),
+                                                current.status(),
+                                                answer.verdict(),
+                                                answer.providerReference(),
+                                                dispatch.wallet(),
+                                                correlation)
+                                        : current.status();
                         // Whatever the mapping said, what arrived is retained (INV-HIST-02) -
                         // AFTER the outcome's row lock (the P5-TSK-013 lock-order rule).
                         answer.evidence()
@@ -223,16 +229,92 @@ public final class PaymentRefund {
                                                         EvidenceKind.RESPONSE,
                                                         bytes,
                                                         Instant.now(clock)));
+                        // The response of record, committed WITH the outcome and frozen from
+                        // here (platform V003, INV-LIFE-04). A false return is a takeover
+                        // race's loser converging - its conditional writes lost the same way.
+                        executor.complete(
+                                uow,
+                                claimKey,
+                                true,
+                                StoredResponse.of(
+                                        renderedForm(dispatch.refund().id(), committed),
+                                        "text/plain"));
                         return new RefundResult(dispatch.refund().id(), committed, false);
                     });
         }
     }
 
-    private record Tx1(Optional<RefundResult> replayed, Dispatch dispatch) {}
+    private static boolean resolvable(RefundStatus status) {
+        return status == RefundStatus.DISPATCHED || status == RefundStatus.UNKNOWN;
+    }
+
+    /** The claim's stored judgement: {@code <refundId>|<status>}, parsed back on replay. */
+    private static byte[] renderedForm(RefundId refund, RefundStatus status) {
+        return (refund.value() + "|" + status.name()).getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static RefundResult parsedReplay(StoredResponse stored) {
+        String body =
+                new String(
+                        stored.bodyBytes()
+                                .orElseThrow(
+                                        () ->
+                                                new IllegalStateException(
+                                                        "a completed refund claim stores its"
+                                                                + " judgement; an empty body is"
+                                                                + " a wiring defect")),
+                        StandardCharsets.UTF_8);
+        int separator = body.indexOf('|');
+        return new RefundResult(
+                RefundId.of(UUID.fromString(body.substring(0, separator))),
+                RefundStatus.valueOf(body.substring(separator + 1)),
+                true);
+    }
+
+    /**
+     * The {@code DispatchCommand} contract made real: a lease takeover re-runs this against
+     * work the crashed flight already committed, so the first act is the convergence lookup
+     * by the dispatch key ({@code V008}). Found with the same facts and not yet terminal —
+     * the crashed flight's dispatch stands: no second hold, no second row, no duplicate
+     * audit or fact, and the wire re-drives with the reference already stored
+     * ({@code INV-PAY-04}'s whole point). A key resurfacing after the claim's retention
+     * swept it — different facts, or a finished refund — is a NEW command by the retention
+     * contract, and dispatches fresh.
+     */
+    private Dispatch dispatchOrConverge(
+            Connection uow,
+            String dispatchKey,
+            PaymentIntentId intentId,
+            Money amount,
+            String reason,
+            Actor operator,
+            Correlation correlation) {
+        Optional<Refund> existing = refunds.findByDispatchKey(uow, dispatchKey);
+        if (existing.isPresent()) {
+            Refund found = existing.get();
+            PaymentAttempt attempt =
+                    attempts.findById(uow, found.attemptId())
+                            .orElseThrow(UnknownPaymentException::new);
+            if (attempt.intentId().equals(intentId)
+                    && found.amount().equals(amount)
+                    && found.reason().equals(reason)
+                    && resolvable(found.status())) {
+                PaymentIntent intent =
+                        intents.findById(uow, intentId).orElseThrow(UnknownPaymentException::new);
+                return new Dispatch(
+                        found,
+                        intentId,
+                        intent.walletAccount(),
+                        attempt.captureProviderReference());
+            }
+        }
+        return dispatch(uow, dispatchKey, intentId, amount, reason, operator, correlation);
+    }
 
     /** The claimed dispatch: bound under the attempt lock, hold inside the account lock. */
-    private CommandResult dispatch(
+    private Dispatch dispatch(
             Connection uow,
+            String dispatchKey,
             PaymentIntentId intentId,
             Money amount,
             String reason,
@@ -274,9 +356,13 @@ public final class PaymentRefund {
                         reason,
                         hold.id(),
                         new ProviderIdempotencyReference("rfd-" + ids.next()));
-        refunds.insert(uow, refund);
+        refunds.insert(uow, refund, dispatchKey);
 
         Instant now = Instant.now(clock);
+        // The dispatch's own fact, in the transaction that commits it (INV-EVT-01; plan §10:
+        // RefundInitiated is legitimate because this commit is durable before the outcome
+        // exists). Announced through the shared component - one envelope vocabulary.
+        outcomes.announceRefundInitiated(uow, refund, intentId, correlation, now);
         audit.append(
                 uow,
                 new AuditRecord(
@@ -299,10 +385,8 @@ public final class PaymentRefund {
                                         + ", reference="
                                         + refund.providerIdempotencyReference().value())));
 
-        return CommandResult.succeeded(
-                StoredResponse.of(
-                        refund.id().value().toString().getBytes(StandardCharsets.UTF_8),
-                        "text/plain"));
+        return new Dispatch(
+                refund, intentId, intent.walletAccount(), attempt.captureProviderReference());
     }
 
     /** The operator and the money's meaning ({@code INV-IDEM-03}); correlation excluded. */

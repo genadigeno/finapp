@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 119 "Previously" blocks, newest first, from `P5-TST-001` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 120 "Previously" blocks, newest first, from `P5-TSK-015` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,49 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P5-TSK-015` — the refund command: hold, then post** — `COMPLETE` (2026-09-20). **M5.7
+opens at 1 of 2: the phase's money goes both ways, and `P3-TSK-015`'s owed composition
+fired.** `PaymentRefund` behind `PAYMENT_REFUND` (joined `LEDGER_OPERATOR` — a permission is
+never a column), the reason required (`INV-AUD-03`, asserted verbatim in the operator's own
+audit record over HTTP): the dispatch takes the attempt row `FOR UPDATE` FIRST (the pinned
+attempt → account order — the `P5-TSK-013` 40P01 lesson applied in advance), judges the
+two-rank bound (lock-then-look over `sumNonFailedFor`, the honest 422 **before any hold**;
+`V004`'s advisory-locked trigger beneath), places the Phase 3 hold — **`HoldService`'s first
+production composition** — and commits before the wire call; completion releases-and-posts
+atomically (`payment-refund:<refundId>`, the capture's inverse pair); failure releases with
+nothing posted; **ambiguity commits `UNKNOWN` with the hold standing** (`INV-LIFE-03` with
+money visibly parked on it), all through `PaymentOutcomes.applyRefund` — the extraction's
+fourth consumer — as the platform through the fifth enumerated `enterSystem()` site.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Ten concurrent partials accept exactly the bounded set, counted | 3 rows, 3 standing holds, sum 12.00, zero entries, one more cent unspendable — dispatched into ambiguity deliberately (the shared-stub-reference 23505 is a harness artifact, recorded) |
+| Held funds unspendable mid-flight (driven) | `UNKNOWN` committed, the hold stands, a competing 1-cent spend refused by `INV-BAL-04` |
+| Permissionless session refused with nothing written | 403 over real HTTP, refund and hold counts unmoved |
+| The sum bound refuses raw SQL | `23514 payments_refund_is_bounded`, the schema's own rank |
+
+### Eight mutations — one survived its first run, and that is the battery working
+
+All eight ended caught, restores `cmp`-verified: the NAMED hold-dropped; the NAMED
+release-dropped-from-completion; the posting dropped (`COMPLETED` beside no entry); the
+domain bound dropped (observed: **the layers are three deep** — the hold refused the
+sequential overrun before the trigger could; the trigger's rank held by the raw-SQL probe);
+**the attempt lock dropped SURVIVED round one** — with the wallet holding exactly the
+capture, hold placements serialize on the ACCOUNT lock and `INV-BAL-04` masked the mutation
+— so the funded-wallet race was added (the account lock can no longer arbitrate) and the
+mutation then failed as the trigger's `23514` where the honest 422 belongs, the gap closed
+where it was found; the permission dropped; DECLINED-falls-to-ambiguity; the fail-path
+release dropped. The `INV-PAY-05` register row landed with the demonstrations performed. The
+gate also found and fixed the no-attempt refusal **inventing a state** (`AUTH_DISPATCHED` of
+an attempt that never existed — the refusal now carries none), and reclassified
+`JdbcPaymentIntentStore.findById` **`ADMINISTERED`** (the refund made "the identifier is
+never a request's" false — the `P1-TSK-028` class). **Verified by targeted tiers —
+`:payments:test` 108 / `:platform:test` 171 / `:app:test` 444 / the payment database suites
+73 (schema 10, authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6,
+transitions 7, sweeper 8, ambiguity 5, refund 9, refund endpoints 3), 0 failures, fresh runs
+— the full battery deliberately skipped on the owner's instruction; no fleet-wide database
+or kafka counts claimed.**
 
 **`P5-TST-001` — the ambiguity demonstration** — `COMPLETE` (2026-09-20). **M5.6 CLOSES at
 2 of 2: the phase's promise, driven whole and counted.** Five scenarios over the real

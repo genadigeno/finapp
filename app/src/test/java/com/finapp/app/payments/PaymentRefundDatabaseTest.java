@@ -34,6 +34,8 @@ import com.finapp.payments.PaymentNotRefundableException;
 import com.finapp.payments.PaymentOutcomes;
 import com.finapp.payments.PaymentRefund;
 import com.finapp.payments.RefundExceedsCaptureException;
+import com.finapp.payments.RefundId;
+import com.finapp.payments.RefundStatus;
 import com.finapp.payments.SimulatedCardPspAdapter;
 import com.finapp.payments.TransactionRunner;
 import com.finapp.platform.audit.JdbcAuditWriter;
@@ -60,6 +62,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -93,6 +96,10 @@ class PaymentRefundDatabaseTest {
             "0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8);
     private static final byte[] EVIDENCE_KEY =
             "abcdef0123456789abcdef0123456789".getBytes(StandardCharsets.UTF_8);
+
+    private static final byte[] WEBHOOK_KEY =
+            "refund-webhook-key-0123456789abcdef".getBytes(
+                    java.nio.charset.StandardCharsets.UTF_8);
 
     private static SimulatedProvider psp;
 
@@ -577,6 +584,256 @@ class PaymentRefundDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The webhook-completed refund (P5-TSK-016): asynchronous completion, and the facts
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a webhook completes the UNKNOWN refund: released-and-posted, one entry, the"
+            + " RefundCompleted fact once - and a duplicate under a fresh event id converges")
+    void aWebhookCompletesTheUnknownRefund() throws Exception {
+        Captured captured = capturedPayment();
+        psp.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.REFUNDS_PATH);
+        PaymentRefund.RefundResult result =
+                refundCommand()
+                        .refund(
+                                captured.intent(),
+                                Money.ofMinorUnits(5_00, EUR),
+                                "async completion",
+                                "wh-" + UUID.randomUUID());
+        assertThat(result.status()).isEqualTo(RefundStatus.UNKNOWN);
+        assertThat(activeHoldCount(captured.wallet())).isEqualTo(1);
+        assertThat(refundEventCount(result.refund(), "payments.RefundInitiated")).isEqualTo(1);
+        assertThat(refundEventCount(result.refund(), "payments.RefundCompleted")).isZero();
+
+        // The provider's unsolicited statement, quoting OUR minted reference (INV-PAY-04).
+        PaymentWebhookService webhooks = webhookService();
+        String reference = refundReference(result.refund());
+
+        // A word outside the total vocabulary first: retained, acknowledged, NOTHING moves
+        // (INV-PAY-03 - the mapping's default is never success).
+        deliverWebhook(
+                webhooks,
+                "{\"eventId\":\"rfd-evt-" + UUID.randomUUID() + "\",\"operation\":\""
+                        + reference
+                        + "\",\"status\":\"pending_review\",\"reference\":\"psp_x\"}");
+        assertThat(refundStatus(result.refund())).isEqualTo("UNKNOWN");
+        assertThat(refundEntryCount(captured.attempt())).isZero();
+
+        deliverWebhook(
+                webhooks,
+                "{\"eventId\":\"rfd-evt-" + UUID.randomUUID() + "\",\"operation\":\""
+                        + reference + "\",\"status\":\"approved\",\"reference\":\"psp_rfd-wh\"}");
+
+        assertThat(refundStatus(result.refund())).isEqualTo("COMPLETED");
+        assertThat(activeHoldCount(captured.wallet())).as("released with the posting").isZero();
+        assertThat(refundEntryCount(captured.attempt())).isEqualTo(1);
+        assertThat(settled(captured.wallet())).isEqualTo("7.00");
+        assertThat(refundEventCount(result.refund(), "payments.RefundCompleted"))
+                .as("the terminal fact, once, in the committing transaction")
+                .isEqualTo(1);
+        // Identifiers and enumerated names only - never an amount (the needle).
+        assertThat(refundEventPayloads(result.refund()))
+                .doesNotContain("5.00")
+                .doesNotContain("500")
+                .doesNotContain("psp_rfd-wh");
+
+        // Distinct-id duplicate: past the inbox by design, absorbed by the machine - no
+        // second posting, no second fact (INV-IDEM-04 at both ranks).
+        deliverWebhook(
+                webhooks,
+                "{\"eventId\":\"rfd-evt-" + UUID.randomUUID() + "\",\"operation\":\""
+                        + reference + "\",\"status\":\"approved\",\"reference\":\"psp_rfd-wh\"}");
+        assertThat(refundEntryCount(captured.attempt())).isEqualTo(1);
+        assertThat(refundEventCount(result.refund(), "payments.RefundCompleted")).isEqualTo(1);
+        assertThat(transitionCount(result.refund(), "COMPLETED")).isEqualTo(1);
+
+        // A contradictory late report on the terminal refund: evidence only (INV-LIFE-04).
+        deliverWebhook(
+                webhooks,
+                "{\"eventId\":\"rfd-evt-" + UUID.randomUUID() + "\",\"operation\":\""
+                        + reference + "\",\"status\":\"declined\",\"reference\":\"psp_x\"}");
+        assertThat(refundStatus(result.refund())).isEqualTo("COMPLETED");
+        assertThat(refundEventCount(result.refund(), "payments.RefundFailed")).isZero();
+    }
+
+    @Test
+    @DisplayName("a declined webhook fails the UNKNOWN refund: released, nothing posted, the"
+            + " RefundFailed fact once")
+    void aDeclinedWebhookFailsTheRefund() throws Exception {
+        Captured captured = capturedPayment();
+        psp.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.REFUNDS_PATH);
+        PaymentRefund.RefundResult result =
+                refundCommand()
+                        .refund(
+                                captured.intent(),
+                                Money.ofMinorUnits(5_00, EUR),
+                                "declined async",
+                                "whd-" + UUID.randomUUID());
+        assertThat(result.status()).isEqualTo(RefundStatus.UNKNOWN);
+
+        deliverWebhook(
+                webhookService(),
+                "{\"eventId\":\"rfd-evt-" + UUID.randomUUID() + "\",\"operation\":\""
+                        + refundReference(result.refund())
+                        + "\",\"status\":\"declined\",\"reference\":\"psp_no\"}");
+
+        assertThat(refundStatus(result.refund())).isEqualTo("FAILED");
+        assertThat(activeHoldCount(captured.wallet()))
+                .as("the customer's money is theirs again")
+                .isZero();
+        assertThat(refundEntryCount(captured.attempt())).isZero();
+        assertThat(settled(captured.wallet())).isEqualTo("12.00");
+        assertThat(refundEventCount(result.refund(), "payments.RefundFailed")).isEqualTo(1);
+        assertThat(refundEventCount(result.refund(), "payments.RefundCompleted")).isZero();
+    }
+
+    @Test
+    @DisplayName("ten concurrent refund webhooks, distinct event ids, one UNKNOWN refund: one"
+            + " entry, one COMPLETED transition, one fact - counted in the tables")
+    void tenConcurrentRefundWebhooksProduceOneEffect() throws Exception {
+        Captured captured = capturedPayment();
+        psp.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.REFUNDS_PATH);
+        PaymentRefund.RefundResult result =
+                refundCommand()
+                        .refund(
+                                captured.intent(),
+                                Money.ofMinorUnits(5_00, EUR),
+                                "raced completion",
+                                "whr-" + UUID.randomUUID());
+        assertThat(result.status()).isEqualTo(RefundStatus.UNKNOWN);
+        PaymentWebhookService webhooks = webhookService();
+        String reference = refundReference(result.refund());
+
+        int resolvers = 10;
+        CountDownLatch open = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(resolvers);
+        try {
+            List<Future<Object>> results =
+                    java.util.stream.IntStream.range(0, resolvers)
+                            .<Future<Object>>mapToObj(
+                                    i ->
+                                            pool.submit(
+                                                    () -> {
+                                                        open.await();
+                                                        try (CorrelationContext.Scope flow =
+                                                                CorrelationContext.enter(
+                                                                        Correlation.startingWith(
+                                                                                CorrelationId
+                                                                                        .generate(
+                                                                                                IDS)))) {
+                                                            deliverWebhook(
+                                                                    webhooks,
+                                                                    "{\"eventId\":\"rfd-race-" + i
+                                                                            + "-"
+                                                                            + UUID.randomUUID()
+                                                                            + "\",\"operation\":\""
+                                                                            + reference
+                                                                            + "\",\"status\":\"approved\","
+                                                                            + "\"reference\":\"psp_rfd-race\"}");
+                                                        }
+                                                        return null;
+                                                    }))
+                            .toList();
+            open.countDown();
+            for (Future<Object> delivery : results) {
+                delivery.get();
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // Counted where winners are counted - the tables.
+        assertThat(refundStatus(result.refund())).isEqualTo("COMPLETED");
+        assertThat(refundEntryCount(captured.attempt())).isEqualTo(1);
+        assertThat(transitionCount(result.refund(), "COMPLETED")).isEqualTo(1);
+        assertThat(refundEventCount(result.refund(), "payments.RefundCompleted")).isEqualTo(1);
+        assertThat(activeHoldCount(captured.wallet())).isZero();
+        assertThat(settled(captured.wallet())).isEqualTo("7.00");
+    }
+
+    @Test
+    @DisplayName("the taken-over retry finishes the crashed flight: converges on the committed"
+            + " dispatch, re-drives the wire with the STORED reference, and the response of"
+            + " record replays byte-for-byte from then on")
+    void theTakenOverRetryFinishesTheCrashedFlight() throws Exception {
+        Captured captured = capturedPayment();
+        Money amount = Money.ofMinorUnits(5_00, EUR);
+        String reason = "crashed flight";
+        String key = "crash-" + UUID.randomUUID();
+        com.finapp.platform.security.Actor actor = SecurityContext.require();
+
+        // The crashed flight's Tx1, reconstructed as it commits: the hold, the refund row
+        // carrying the dispatch key (V008), and the claim IN_PROGRESS whose lease has
+        // already expired (the platform suite's negative-lease idiom - the database's own
+        // clock judges expiry).
+        com.finapp.ledger.Hold hold =
+                runner.inTransaction(uow -> holdService().place(uow, captured.wallet(), amount));
+        UUID refundId = IDS.next();
+        String storedReference = "rfd-crash-" + UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            execute(
+                    app,
+                    "INSERT INTO payments.refund (id, attempt_id, amount_minor, currency,"
+                            + " scale, reason, hold_reference,"
+                            + " provider_idempotency_reference, status, created_at,"
+                            + " dispatch_key)"
+                            + " VALUES (?, ?, 500, 'EUR', 2, ?, ?, ?, 'DISPATCHED', now(), ?)",
+                    refundId,
+                    captured.attempt().value(),
+                    reason,
+                    hold.id().value(),
+                    storedReference,
+                    key);
+        }
+        try (Connection other = DatabaseRoles.application()) {
+            other.setAutoCommit(false);
+            new JdbcIdempotencyRecordStore()
+                    .claim(
+                            other,
+                            new com.finapp.platform.idempotency.IdempotencyKey(
+                                    "payment.refund", key),
+                            com.finapp.platform.idempotency.RequestFingerprint.sha256(
+                                    ("payment.refund|" + actor.id() + "|"
+                                                    + captured.intent().value() + "|500|EUR|2|"
+                                                    + reason)
+                                            .getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                            CorrelationId.of("crashed-flow"),
+                            Instant.now(CLOCK),
+                            Instant.now(CLOCK).plus(Duration.ofDays(1)),
+                            Duration.ofSeconds(-1));
+            other.commit();
+        }
+        providerRefunds("psp_rfd-heal");
+
+        // The retry: takes the claim over, CONVERGES on the committed dispatch (no second
+        // hold, no second row), re-asks the provider with the reference the crashed flight
+        // stored (INV-PAY-04's whole point), and completes the claim with the judgement.
+        PaymentRefund.RefundResult healed =
+                refundCommand().refund(captured.intent(), amount, reason, key);
+
+        assertThat(healed.replayed()).isFalse();
+        assertThat(healed.refund().value()).isEqualTo(refundId);
+        assertThat(healed.status()).isEqualTo(RefundStatus.COMPLETED);
+        assertThat(refundRowCount(captured.attempt())).isEqualTo(1);
+        assertThat(holdsEverPlaced(captured.wallet()))
+                .as("the crashed flight's hold, and no other")
+                .isEqualTo(1);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH)).isEqualTo(1);
+        assertThat(refundEntryCount(captured.attempt())).isEqualTo(1);
+        assertThat(settled(captured.wallet())).isEqualTo("7.00");
+
+        // And from here the key answers the response of record, byte for byte.
+        PaymentRefund.RefundResult replay =
+                refundCommand().refund(captured.intent(), amount, reason, key);
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.refund().value()).isEqualTo(refundId);
+        assertThat(replay.status()).isEqualTo(RefundStatus.COMPLETED);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH))
+                .as("the replay never reaches the wire")
+                .isEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------
 
@@ -733,6 +990,58 @@ class PaymentRefundDatabaseTest {
                 URI.create(psp.baseUrl()), Duration.ofSeconds(2), PSP_KEY);
     }
 
+    /** The REAL webhook resolver, composed as the beans compose it (the sweeper-suite idiom). */
+    private PaymentWebhookService webhookService() {
+        org.springframework.jdbc.datasource.DriverManagerDataSource dataSource =
+                new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                        DatabaseRoles.required("finapp.db.url"),
+                        DatabaseRoles.required("finapp.db.app.user"),
+                        DatabaseRoles.required("finapp.db.app.password"));
+        org.springframework.transaction.support.TransactionTemplate template =
+                new org.springframework.transaction.support.TransactionTemplate(
+                        new org.springframework.jdbc.support.JdbcTransactionManager(dataSource));
+        template.setPropagationBehavior(
+                org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return new PaymentWebhookService(
+                new com.finapp.payments.WebhookSignature(
+                        WEBHOOK_KEY, Duration.ofMinutes(5), CLOCK),
+                evidence,
+                attempts,
+                intents,
+                refunds,
+                outcomes(),
+                new com.finapp.platform.inbox.InboxConsumer<>(
+                        new com.finapp.platform.inbox.JdbcInboxRecordStore(),
+                        CLOCK,
+                        Duration.ofDays(14)),
+                new tools.jackson.databind.ObjectMapper(),
+                CLOCK,
+                template,
+                dataSource);
+    }
+
+    private static void deliverWebhook(PaymentWebhookService webhooks, String body) {
+        String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
+        webhooks.deliver(
+                body.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                timestamp,
+                hmacHex(timestamp + "." + body));
+    }
+
+    private static String hmacHex(String signedPayload) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(WEBHOOK_KEY, "HmacSHA256"));
+            return java.util.HexFormat.of()
+                    .formatHex(
+                            mac.doFinal(
+                                    signedPayload.getBytes(
+                                            java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.GeneralSecurityException impossible) {
+            throw new IllegalStateException("HmacSHA256 is required by every JVM", impossible);
+        }
+    }
+
     private static void providerRefunds(String pspReference) {
         psp.succeedsWith(
                 SimulatedCardPspAdapter.REFUNDS_PATH,
@@ -749,6 +1058,58 @@ class PaymentRefundDatabaseTest {
     // -----------------------------------------------------------------
     // Counters - in the tables, never inferred
     // -----------------------------------------------------------------
+
+    private static String refundReference(RefundId refund) throws SQLException {
+        return oneString(
+                "SELECT provider_idempotency_reference FROM payments.refund WHERE id = ?",
+                refund.value());
+    }
+
+    private static String refundStatus(RefundId refund) throws SQLException {
+        return oneString("SELECT status FROM payments.refund WHERE id = ?", refund.value());
+    }
+
+    private static long transitionCount(RefundId refund, String to) throws SQLException {
+        return count(
+                "SELECT count(*) FROM payments.refund_event WHERE refund_id = ?"
+                        + " AND to_status = '" + to + "'",
+                refund.value());
+    }
+
+    /** The published facts, counted in the outbox table - never inferred. */
+    private static long refundEventCount(RefundId refund, String type) throws SQLException {
+        return count(
+                "SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?"
+                        + " AND event_type = '" + type + "'",
+                refund.value());
+    }
+
+    private static String refundEventPayloads(RefundId refund) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT string_agg(convert_from(payload, 'UTF8'), '||')"
+                                        + " FROM platform.outbox_event WHERE aggregate_id = ?")) {
+            read.setObject(1, refund.value());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getString(1);
+            }
+        }
+    }
+
+    private static String oneString(String sql, Object argument) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            read.setObject(1, argument);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    throw new IllegalStateException("no row for: " + sql);
+                }
+                return row.getString(1);
+            }
+        }
+    }
 
     private static long nonFailedRefundSum(PaymentAttemptId attempt) throws SQLException {
         return count(

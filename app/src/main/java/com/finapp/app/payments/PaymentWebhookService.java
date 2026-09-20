@@ -15,7 +15,10 @@ import com.finapp.payments.PaymentAttemptId;
 import com.finapp.payments.PaymentAttemptStore;
 import com.finapp.payments.ProviderEvidenceStore;
 import com.finapp.payments.ProviderIdempotencyReference;
+import com.finapp.payments.Refund;
 import com.finapp.payments.RefundId;
+import com.finapp.payments.RefundStatus;
+import com.finapp.payments.RefundStore;
 import com.finapp.payments.SimulatedCardPspAdapter;
 import com.finapp.payments.WebhookSignature;
 import com.finapp.platform.api.ApiException;
@@ -86,6 +89,7 @@ public class PaymentWebhookService {
     private final ProviderEvidenceStore<Connection> evidence;
     private final PaymentAttemptStore<Connection> attempts;
     private final PaymentIntentStore<Connection> intents;
+    private final RefundStore<Connection> refunds;
     private final PaymentOutcomes outcomes;
     private final InboxConsumer<Connection> inbox;
     private final ObjectMapper json;
@@ -98,6 +102,7 @@ public class PaymentWebhookService {
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
             PaymentIntentStore<Connection> paymentIntentStore,
+            RefundStore<Connection> refundStore,
             PaymentOutcomes paymentOutcomes,
             InboxConsumer<Connection> inboxConsumer,
             ObjectMapper objectMapper,
@@ -113,6 +118,7 @@ public class PaymentWebhookService {
                 Objects.requireNonNull(paymentAttemptStore, "paymentAttemptStore must not be null");
         this.intents =
                 Objects.requireNonNull(paymentIntentStore, "paymentIntentStore must not be null");
+        this.refunds = Objects.requireNonNull(refundStore, "refundStore must not be null");
         this.outcomes = Objects.requireNonNull(paymentOutcomes, "paymentOutcomes must not be null");
         this.inbox = Objects.requireNonNull(inboxConsumer, "inboxConsumer must not be null");
         this.json = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
@@ -166,7 +172,7 @@ public class PaymentWebhookService {
             // and a correct provider then never redelivers.
             inOneTransaction(
                     unitOfWork -> {
-                        retain(unitOfWork, Optional.empty(), rawBody);
+                        retain(unitOfWork, Optional.empty(), Optional.empty(), rawBody);
                         return null;
                     });
             log.warn(
@@ -189,6 +195,16 @@ public class PaymentWebhookService {
                                             reference ->
                                                     attempts.findByOperationReference(
                                                             unitOfWork, reference));
+                            // The refund's statements attribute by the same INV-PAY-04 rule
+                            // (P5-TSK-016): tried second because the vocabularies are
+                            // distinct - an attempt reference never names a refund.
+                            Optional<Refund> refundSubject =
+                                    subject.isPresent()
+                                            ? Optional.empty()
+                                            : operation.flatMap(
+                                                    reference ->
+                                                            refunds.findByOperationReference(
+                                                                    unitOfWork, reference));
                             // THE EFFECT BEFORE THE EVIDENCE ROW, deliberately - a lock-order
                             // rule, not a priority statement: the evidence INSERT takes FOR
                             // KEY SHARE on the attempt row (the FK), and the outcome's UPDATE
@@ -211,16 +227,19 @@ public class PaymentWebhookService {
                                                     // The P5-TSK-013 effect: the conditional
                                                     // machine transitions, with the dedupe
                                                     // record, or not at all (ADR-0047 §3-§4).
-                                                    subject.ifPresent(
-                                                            attempt ->
-                                                                    effect(
-                                                                            uow,
-                                                                            attempt,
-                                                                            operation.get(),
-                                                                            parsed.get())));
+                                                    effect(
+                                                            uow,
+                                                            subject,
+                                                            refundSubject,
+                                                            operation,
+                                                            parsed.get()));
                             retain(unitOfWork,
-                                    subject.map(PaymentAttempt::id), rawBody);
-                            return new Delivered(consumed, subject.map(PaymentAttempt::id));
+                                    subject.map(PaymentAttempt::id),
+                                    refundSubject.map(Refund::id),
+                                    rawBody);
+                            return new Delivered(
+                                    consumed,
+                                    subject.isPresent() || refundSubject.isPresent());
                         });
 
         if (delivered.consumed() == InboxConsumer.Outcome.CONTENDED) {
@@ -232,7 +251,7 @@ public class PaymentWebhookService {
                     "A payment webhook is being processed by another instance; asking the"
                             + " provider to redeliver");
         }
-        if (delivered.subject().isEmpty()) {
+        if (!delivered.attributed()) {
             // Authentic but unmappable: acknowledged with the evidence retained. The rate is
             // plan §15's webhook meter (P5-TSK-017); until then this line is the alert's raw
             // material. Identifiers only.
@@ -270,6 +289,27 @@ public class PaymentWebhookService {
     @SuppressWarnings("try") // The Scope is used for its close side effect.
     private void effect(
             Connection uow,
+            Optional<PaymentAttempt> attemptSubject,
+            Optional<Refund> refundSubject,
+            Optional<ProviderIdempotencyReference> operation,
+            WebhookPayload payload) {
+        if (attemptSubject.isEmpty() && refundSubject.isEmpty()) {
+            return;
+        }
+        // As the platform - the module's enumerated enterSystem() site, held HERE so the
+        // attempt branch and the refund branch (P5-TSK-016) are one site, not two: a
+        // provider's unsolicited statement has no session whichever machine it names.
+        try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
+            if (attemptSubject.isPresent()) {
+                attemptEffect(uow, attemptSubject.get(), operation.orElseThrow(), payload);
+            } else {
+                refundEffect(uow, refundSubject.get(), payload);
+            }
+        }
+    }
+
+    private void attemptEffect(
+            Connection uow,
             PaymentAttempt attempt,
             ProviderIdempotencyReference operation,
             WebhookPayload payload) {
@@ -284,7 +324,7 @@ public class PaymentWebhookService {
         }
         boolean authOperation = operation.equals(attempt.authorizationReference());
         Correlation correlation = PaymentCreation.resolvedCorrelation();
-        try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
+        {
             PaymentIntent intent =
                     intents.findById(uow, attempt.intentId())
                             .orElseThrow(
@@ -326,6 +366,64 @@ public class PaymentWebhookService {
                         attempt.status());
             }
         }
+    }
+
+    /**
+     * The refund's webhook effect (`P5-TSK-016`): the asynchronous completion a real PSP
+     * actually sends — the statement mapped through the same total vocabulary onto the
+     * refund machine's conditional edges, applied through the ONE shared outcome component,
+     * from this refund's own current source state ({@code DISPATCHED} or {@code UNKNOWN} —
+     * the order-blindness). Completion releases-and-posts atomically; a late report on a
+     * terminal refund is evidence beside an untouched row ({@code INV-LIFE-04}). Runs inside
+     * the caller's platform scope — one enumerated site, whichever machine the statement
+     * names.
+     */
+    private void refundEffect(Connection uow, Refund refund, WebhookPayload payload) {
+        Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
+        if (verdict.isEmpty()) {
+            log.warn(
+                    "An authenticated payment webhook for refund {} carried a status the"
+                            + " total mapping refuses to act on; retained as evidence,"
+                            + " nothing transitions (INV-PAY-03)",
+                    refund.id());
+            return;
+        }
+        if (!refundResolvable(refund.status())) {
+            log.info(
+                    "A payment webhook reported on refund {} in state {} which cannot move;"
+                            + " the statement stands as evidence and changes nothing"
+                            + " (INV-LIFE-04)",
+                    refund.id(),
+                    refund.status());
+            return;
+        }
+        PaymentAttempt attempt =
+                attempts.findById(uow, refund.attemptId())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a refund row's attempt exists: V004's"
+                                                        + " foreign key holds it"));
+        PaymentIntent intent =
+                intents.findById(uow, attempt.intentId())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an attempt row's intent exists: V003's"
+                                                        + " foreign key holds it"));
+        outcomes.applyRefund(
+                uow,
+                intent.id(),
+                refund,
+                refund.status(),
+                verdict.get(),
+                providerReference(payload),
+                intent.walletAccount(),
+                PaymentCreation.resolvedCorrelation());
+    }
+
+    private static boolean refundResolvable(RefundStatus status) {
+        return status == RefundStatus.DISPATCHED || status == RefundStatus.UNKNOWN;
     }
 
     /**
@@ -371,11 +469,14 @@ public class PaymentWebhookService {
 
     /** Evidence, attributed when the operation resolved ({@code V005}'s recorded rule). */
     private void retain(
-            Connection unitOfWork, Optional<PaymentAttemptId> attempt, byte[] rawBody) {
+            Connection unitOfWork,
+            Optional<PaymentAttemptId> attempt,
+            Optional<RefundId> refund,
+            byte[] rawBody) {
         evidence.append(
                 unitOfWork,
                 attempt,
-                Optional.<RefundId>empty(),
+                refund,
                 EvidenceKind.WEBHOOK,
                 rawBody,
                 Instant.now(clock));
@@ -401,8 +502,8 @@ public class PaymentWebhookService {
         return Optional.of(eventId);
     }
 
-    /** The delivery transaction's yield: the dedupe outcome and the attributed subject. */
-    private record Delivered(InboxConsumer.Outcome consumed, Optional<PaymentAttemptId> subject) {}
+    /** The delivery transaction's yield: the dedupe outcome, and whether anything owned it. */
+    private record Delivered(InboxConsumer.Outcome consumed, boolean attributed) {}
 
     /** Shape only, no read: a reference we never mint names nothing — the unattributable class. */
     private static Optional<ProviderIdempotencyReference> mintedShape(String operation) {

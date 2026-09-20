@@ -2255,6 +2255,12 @@
           "paymentMethodId": {
             "type": "string"
           },
+          "refundPending": {
+            "type": "string"
+          },
+          "refunded": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           }

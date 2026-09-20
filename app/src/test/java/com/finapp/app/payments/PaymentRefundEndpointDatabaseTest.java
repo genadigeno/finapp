@@ -27,6 +27,7 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -55,6 +56,9 @@ import org.springframework.test.context.DynamicPropertySource;
 class PaymentRefundEndpointDatabaseTest {
 
     private static final Clock CLOCK = Clock.system(ZoneOffset.UTC);
+    private static final byte[] WEBHOOK_KEY =
+            "refund-endpoint-webhook-key-0123456789".getBytes(
+                    java.nio.charset.StandardCharsets.UTF_8);
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final String PASSWORD = "a-perfectly-fine-pw-7";
 
@@ -84,6 +88,11 @@ class PaymentRefundEndpointDatabaseTest {
         registry.add("finapp.paymentmethods.tokenisation.timeout", () -> "PT0.7S");
         registry.add("finapp.payments.provider.url", () -> provider.baseUrl());
         registry.add("finapp.payments.provider.timeout", () -> "PT0.7S");
+        // The door's key, exactly as a deployment would supply it - the byte-for-byte test
+        // heals its UNKNOWN refund through the real webhook route (P5-TSK-016).
+        registry.add(
+                "finapp.payments.webhook.key",
+                () -> java.util.Base64.getEncoder().encodeToString(WEBHOOK_KEY));
     }
 
     @BeforeEach
@@ -194,6 +203,136 @@ class PaymentRefundEndpointDatabaseTest {
         assertThat(refused.body()).contains("payments.NotRefundable");
     }
 
+    @Test
+    @DisplayName("the derived totals reconcile with the rows: a completed 3.00 and a parked"
+            + " 4.00, on the customer's own GET (P5-TSK-016)")
+    void derivedTotalsReconcileWithTheRows() throws Exception {
+        String customer = verifiedCustomer(someLogin());
+        String paymentId = succeededPayment(customer);
+        Operator operator = operatorSession();
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.REFUNDS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_tot-" + suffix() + "\"}");
+        assertThat(refund(operator.token(), paymentId, "3.00", "EUR", "totals one", someKey())
+                        .statusCode())
+                .isEqualTo(201);
+        // The second refund parks in ambiguity: DISPATCHED money, pending by design.
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.REFUNDS_PATH);
+        HttpResponse<String> parked =
+                refund(operator.token(), paymentId, "4.00", "EUR", "totals two", someKey());
+        assertThat(parked.statusCode()).isEqualTo(201);
+        assertThat(field(parked.body(), "status")).isEqualTo("UNKNOWN");
+
+        // And a DECLINED refund: freed budget, counted in NEITHER total.
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.REFUNDS_PATH,
+                200,
+                "{\"status\":\"declined\",\"code\":\"do_not_honor_51\"}");
+        HttpResponse<String> declined =
+                refund(operator.token(), paymentId, "2.00", "EUR", "totals three", someKey());
+        assertThat(declined.statusCode()).isEqualTo(201);
+        assertThat(field(declined.body(), "status")).isEqualTo("FAILED");
+
+        // The customer's own GET carries the derived totals - the FAILED 2.00 in neither.
+        HttpResponse<String> view = get("/v1/payments/" + paymentId, customer);
+        assertThat(field(view.body(), "refunded")).isEqualTo("3.00");
+        assertThat(field(view.body(), "refundPending")).isEqualTo("4.00");
+
+        // Reconciled against the rows, computed INDEPENDENTLY (the accept).
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT COALESCE(SUM(amount_minor) FILTER (WHERE r.status ="
+                                        + " 'COMPLETED'), 0),"
+                                        + " COALESCE(SUM(amount_minor) FILTER (WHERE r.status IN"
+                                        + " ('DISPATCHED', 'UNKNOWN')), 0)"
+                                        + " FROM payments.refund r"
+                                        + " JOIN payments.payment_attempt a"
+                                        + " ON a.id = r.attempt_id"
+                                        + " WHERE a.intent_id = ?")) {
+            read.setObject(1, UUID.fromString(paymentId));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                assertThat(row.getLong(1)).isEqualTo(3_00L);
+                assertThat(row.getLong(2)).isEqualTo(4_00L);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a replayed refund key replays BYTE-FOR-BYTE: the recorded UNKNOWN, even"
+            + " after the webhook completed the refund (the accept)")
+    void aReplayedRefundKeyReplaysByteForByte() throws Exception {
+        String customer = verifiedCustomer(someLogin());
+        String paymentId = succeededPayment(customer);
+        Operator operator = operatorSession();
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.REFUNDS_PATH);
+        String key = someKey();
+
+        HttpResponse<String> original =
+                refund(operator.token(), paymentId, "5.00", "EUR", "async heal", key);
+        assertThat(original.statusCode()).isEqualTo(201);
+        assertThat(field(original.body(), "status")).isEqualTo("UNKNOWN");
+        String refundId = field(original.body(), "id");
+
+        // The provider completes asynchronously, through the REAL webhook door.
+        String reference = referenceOf(refundId);
+        deliverWebhook(
+                "{\"eventId\":\"ep-rfd-" + UUID.randomUUID() + "\",\"operation\":\""
+                        + reference
+                        + "\",\"status\":\"approved\",\"reference\":\"psp_ep-heal\"}");
+        HttpResponse<String> view = get("/v1/payments/" + paymentId, customer);
+        assertThat(field(view.body(), "refunded")).as("the heal is real").isEqualTo("5.00");
+
+        // The replay answers the RESPONSE OF RECORD - the honest UNKNOWN this call was
+        // answered - byte for byte; current truth lives on the GET above (the P5-TSK-011
+        // doctrine, refund form).
+        HttpResponse<String> replay =
+                refund(operator.token(), paymentId, "5.00", "EUR", "async heal", key);
+        assertThat(replay.statusCode()).isEqualTo(201);
+        assertThat(replay.body()).isEqualTo(original.body());
+    }
+
+    @Test
+    @DisplayName("hostile shapes never become our 500 - the no-500 sweep over the refund"
+            + " endpoint")
+    void hostileShapesNeverBecomeOur500() throws Exception {
+        String customer = verifiedCustomer(someLogin());
+        String paymentId = succeededPayment(customer);
+        Operator operator = operatorSession();
+
+        record Hostile(String amount, String currency, String reason, String id) {}
+        List<Hostile> shapes =
+                List.of(
+                        new Hostile("abc", "EUR", "x", paymentId),
+                        new Hostile("-1.00", "EUR", "x", paymentId),
+                        new Hostile("0", "EUR", "x", paymentId),
+                        new Hostile("1.234", "EUR", "x", paymentId),
+                        new Hostile("1e2", "EUR", "x", paymentId),
+                        new Hostile("", "EUR", "x", paymentId),
+                        new Hostile("1.00", "EURO", "x", paymentId),
+                        new Hostile("1.00", "eu", "x", paymentId),
+                        new Hostile("1.00", "", "x", paymentId),
+                        new Hostile("1.00", "EUR", "y".repeat(201), paymentId),
+                        new Hostile("1.00", "EUR", "x", "not-a-uuid"),
+                        new Hostile("1.00", "EUR", "x", UUID.randomUUID().toString()),
+                        new Hostile("999999999999999999999.00", "EUR", "x", paymentId));
+        for (Hostile shape : shapes) {
+            HttpResponse<String> answer =
+                    refund(
+                            operator.token(),
+                            shape.id(),
+                            shape.amount(),
+                            shape.currency(),
+                            shape.reason(),
+                            someKey());
+            assertThat(answer.statusCode())
+                    .as("shape %s must be the caller's refusal, never our 500", shape)
+                    .isLessThan(500);
+        }
+    }
+
     // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------
@@ -299,6 +438,64 @@ class PaymentRefundEndpointDatabaseTest {
                         false);
         assertThat(attached.statusCode()).isEqualTo(201);
         return field(attached.body(), "id");
+    }
+
+    private HttpResponse<String> get(String path, String token) throws Exception {
+        return send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + port + path))
+                        .header("Authorization", "Bearer " + token)
+                        .GET()
+                        .build());
+    }
+
+    private static String referenceOf(String refundId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT provider_idempotency_reference FROM payments.refund"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, UUID.fromString(refundId));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
+
+    private void deliverWebhook(String body) throws Exception {
+        String timestamp =
+                Long.toString(java.time.Instant.now(CLOCK).getEpochSecond());
+        HttpRequest request =
+                HttpRequest.newBuilder()
+                        .uri(
+                                URI.create(
+                                        "http://localhost:" + port
+                                                + "/v1/providers/payments/webhooks"))
+                        .header("Content-Type", "application/json")
+                        .header(
+                                com.finapp.payments.WebhookSignature.TIMESTAMP_HEADER,
+                                timestamp)
+                        .header(
+                                com.finapp.payments.WebhookSignature.SIGNATURE_HEADER,
+                                hmacHex(timestamp + "." + body))
+                        .POST(HttpRequest.BodyPublishers.ofString(body))
+                        .build();
+        assertThat(send(request).statusCode()).isEqualTo(204);
+    }
+
+    private static String hmacHex(String signedPayload) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(WEBHOOK_KEY, "HmacSHA256"));
+            return java.util.HexFormat.of()
+                    .formatHex(
+                            mac.doFinal(
+                                    signedPayload.getBytes(
+                                            java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.GeneralSecurityException impossible) {
+            throw new IllegalStateException("HmacSHA256 is required by every JVM", impossible);
+        }
     }
 
     // -----------------------------------------------------------------

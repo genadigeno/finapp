@@ -84,6 +84,7 @@ public final class PaymentService {
     private final ObjectProvider<PaymentRefund> refund;
     private final PaymentIntentStore<Connection> intents;
     private final PaymentAttemptStore<Connection> attempts;
+    private final com.finapp.payments.RefundStore<Connection> refunds;
     private final IdentityStore<Connection> identities;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
@@ -96,6 +97,7 @@ public final class PaymentService {
             ObjectProvider<PaymentRefund> refund,
             PaymentIntentStore<Connection> intents,
             PaymentAttemptStore<Connection> attempts,
+            com.finapp.payments.RefundStore<Connection> refunds,
             IdentityStore<Connection> identities,
             TransactionTemplate paymentTransactions,
             DataSource dataSource) {
@@ -106,6 +108,7 @@ public final class PaymentService {
         this.refund = Objects.requireNonNull(refund, "refund must not be null");
         this.intents = Objects.requireNonNull(intents, "intents must not be null");
         this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
+        this.refunds = Objects.requireNonNull(refunds, "refunds must not be null");
         this.identities = Objects.requireNonNull(identities, "identities must not be null");
         this.transactions =
                 Objects.requireNonNull(paymentTransactions, "paymentTransactions must not be null");
@@ -132,7 +135,9 @@ public final class PaymentService {
             String amount,
             String currency,
             String paymentMethodId,
-            String createdAt) {}
+            String createdAt,
+            String refunded,
+            String refundPending) {}
 
     /**
      * Creates (or replays) the caller's payment intent — {@code 201} for the replay as well as
@@ -182,7 +187,10 @@ public final class PaymentService {
                     // Status from the RESULT, not the row: a replay must render the original
                     // judgement (REQUIRES_CONFIRMATION) byte for byte, whatever confirmation
                     // has done to the row since. No reason ever: nothing has been judged.
-                    return view(row, result.status(), null);
+                    // Totals fixed at the judgement's zeros, not a re-read: at creation nothing is
+                    // dispatched, and the replay must render the original bytes whatever
+                    // refunds have done to the rows since (the P5-TSK-011 doctrine).
+                    return view(row, result.status(), null, zeroTotals(row));
                 });
     }
 
@@ -352,7 +360,8 @@ public final class PaymentService {
                 unitOfWork -> {
                     UUID partyId = partyOf(unitOfWork, current);
                     return intents.listFor(unitOfWork, partyId).stream()
-                            .map(row -> view(row, row.status(), reasonFor(unitOfWork, row)))
+                            .map(row -> view(row, row.status(), reasonFor(unitOfWork, row),
+                                    liveTotals(unitOfWork, row)))
                             .toList();
                 });
     }
@@ -363,7 +372,9 @@ public final class PaymentService {
     private Optional<PaymentView> currentView(
             Connection unitOfWork, PaymentIntentId intentId, UUID partyId) {
         return intents.findOwned(unitOfWork, intentId, partyId)
-                .map(row -> view(row, row.status(), reasonFor(unitOfWork, row)));
+                .map(row ->
+                        view(row, row.status(), reasonFor(unitOfWork, row),
+                                liveTotals(unitOfWork, row)));
     }
 
     /**
@@ -381,7 +392,8 @@ public final class PaymentService {
                 .orElse(null);
     }
 
-    private PaymentView view(PaymentIntent row, PaymentIntentStatus status, String reason) {
+    private PaymentView view(
+            PaymentIntent row, PaymentIntentStatus status, String reason, RefundTotals totals) {
         return new PaymentView(
                 row.id().value().toString(),
                 status.name(),
@@ -389,7 +401,56 @@ public final class PaymentService {
                 row.amount().toBigDecimal().toPlainString(),
                 row.amount().currency().code(),
                 row.paymentMethodId().toString(),
-                row.createdAt().toString());
+                row.createdAt().toString(),
+                totals.refunded(),
+                totals.pending());
+    }
+
+    /**
+     * The refund totals, DERIVED from the refund rows at read time (`P5-TSK-016`, ADR-0045:
+     * the intent carries no refund state, so there is nothing to drift) — {@code refunded}
+     * is the {@code COMPLETED} sum, {@code refundPending} the {@code DISPATCHED}+{@code
+     * UNKNOWN} sum: the customer's money parked behind a standing hold, made visible.
+     * {@code FAILED} refunds count in neither, which is the freed-budget arithmetic.
+     */
+    private record RefundTotals(String refunded, String pending) {}
+
+    private RefundTotals zeroTotals(PaymentIntent row) {
+        return new RefundTotals(
+                zero(row.amount()).toBigDecimal().toPlainString(),
+                zero(row.amount()).toBigDecimal().toPlainString());
+    }
+
+    private static Money zero(Money like) {
+        return Money.ofMinorUnits(0, like.currency());
+    }
+
+    private RefundTotals liveTotals(Connection unitOfWork, PaymentIntent row) {
+        return attempts.findForIntent(unitOfWork, row.id())
+                .map(
+                        attempt -> {
+                            long refunded = 0;
+                            long pending = 0;
+                            for (com.finapp.payments.Refund refund :
+                                    refunds.listFor(unitOfWork, attempt.id())) {
+                                switch (refund.status()) {
+                                    case COMPLETED -> refunded += refund.amount().minorUnits();
+                                    case DISPATCHED, UNKNOWN ->
+                                            pending += refund.amount().minorUnits();
+                                    case FAILED -> {
+                                        // Freed budget: counts in neither total.
+                                    }
+                                }
+                            }
+                            return new RefundTotals(
+                                    Money.ofMinorUnits(refunded, row.amount().currency())
+                                            .toBigDecimal()
+                                            .toPlainString(),
+                                    Money.ofMinorUnits(pending, row.amount().currency())
+                                            .toBigDecimal()
+                                            .toPlainString());
+                        })
+                .orElseGet(() -> zeroTotals(row));
     }
 
     /**

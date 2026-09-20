@@ -6367,7 +6367,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   owner's instruction; no fleet-wide database or kafka counts claimed.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-SEC`
 
-**P5-TSK-016 — The refund surface and events** — `READY`
+**P5-TSK-016 — The refund surface and events** — `COMPLETE` (2026-09-20)
 - **Scope**: the refund view on the payment surface (refund totals derived from the rows —
   the intent has no refund state, ADR-0045), `RefundInitiated`/`RefundCompleted`/
   `RefundFailed` through the outbox, audit naming the operator with the reason, the
@@ -6375,9 +6375,70 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   provider reports completion asynchronously).
 - **Deps**: `P5-TSK-015`, `P5-TSK-013`. **Accept**: the acceptance chain over HTTP;
   the derived totals reconcile with the rows; a replayed refund key replays byte-for-byte.
+- **Gate evidence (2026-09-20)**: **every accept counted over the real chain.** The design's
+  own centrepiece was corrected by the schema before a line landed: the sketched
+  rewrite-the-stored-response collided with **platform `V003`'s freeze** — a terminal claim's
+  response is immutable BY INVARIANT (`INV-LIFE-04`, "the stored response is what a replay
+  renders") — so the invariant was not weakened and the design adapted to the store's own
+  two-phase model: **the platform's first two-transaction keyed command**
+  (`IdempotentExecutor.begin`/`complete` + `DispatchCommand`, hermetically proven at the
+  store: begin holds `IN_PROGRESS`, a live retry answers `IdempotencyInProgress`
+  deterministically, complete records once and a second completion converges, expired leases
+  take over). Tx1 commits the dispatch beside the held claim; Tx2 completes it **with the
+  judged `refundId|status`** in the outcome's transaction; **`V008`** gives the refund its
+  `dispatch_key` (nullable — applied history; non-unique by design, the claim arbitrates)
+  so the takeover re-run **converges**: proven by the reconstructed-crash test — the retry
+  found the committed row, placed **no second hold**, re-drove the wire with the STORED
+  `rfd-` reference (`INV-PAY-04`'s whole point, `requestCount == 1`), completed the claim,
+  and replayed byte-for-byte thereafter. **The replay accept in its sharpest form over real
+  HTTP**: the original 201 answered the honest `UNKNOWN`, the webhook completed the refund
+  through the real door, the customer's GET showed `refunded 5.00` — and the replay answered
+  **the original bytes**, `COMPLETED` leaking nowhere (the `P5-TSK-011` doctrine, refund
+  form). **The webhook-completed refund whole**: attribution by our minted reference over
+  both `INV-PAY-04` columns (attempt-first, refund-second — distinct vocabularies), the one
+  shared `applyRefund` from the refund's own source state under the ONE enumerated
+  `enterSystem()` site (held in `effect` so the attempt and refund branches are one site,
+  not two); the heal counted (released-and-posts, one entry, settled moves), declined
+  releases with nothing posted, an unmappable word moves NOTHING (the mapping's default is
+  never success), a contradictory late report is evidence beside the untouched terminal,
+  and **ten concurrent refund webhooks → one entry, one transition, one fact**. **The
+  facts**: `RefundInitiated` in the dispatch transaction (legitimate where
+  `TransferInitiated` was not — ADR-0046 commits the dispatch durably before its outcome
+  exists), `RefundCompleted`/`RefundFailed` inside the outcome's conditional; payloads
+  identifiers and enumerated names — the needle asserts no amount and no provider
+  vocabulary; `UNKNOWN` publishes nothing, deliberately (not terminal; the standing hold is
+  its visible record). **The view**: `refunded`/`refundPending` DERIVED from the rows at
+  read time (ADR-0045 — no stored state to drift), reconciled against independent SQL with
+  a `FAILED` refund in the picture (freed budget in NEITHER total); the create's replay
+  keeps judgement-fixed zeros so `P5-TSK-011`'s byte-for-byte stands untouched. The no-500
+  sweep: thirteen hostile shapes, every answer the caller's refusal. Audit: cited —
+  `P5-TSK-015` delivered and asserted it. Contract baseline +6 lines added-only (the two
+  optional view fields). Refund sweeping stays a **recorded deferral** (webhook is the
+  resolver this task; the standing hold is the loud symptom; the sweep extension owned by
+  the phase audit). **Eight mutations, all ENDED caught by the intended assertion, restores
+  `cmp`-verified byte-identical — AND ONE SURVIVED ITS FIRST RUN, which is the battery
+  working**: the NAMED replay-from-a-re-read reverted (the healed `COMPLETED` leaked into
+  the replay — refused by the byte-equality probe); the NAMED webhook-default-made-success
+  (declined completed-and-posted where `FAILED` belongs — the most-expensive-mistake shape);
+  **the fact moved outside the conditional — SURVIVED round one**: the sequential-duplicate
+  probe never reaches `applyRefund` because the resolver's own from-state gate absorbs
+  terminal re-reports first (two layers, blind in different directions — an observation the
+  battery made, recorded here), so the intended assertion is the TEN-WAY RACE, where gate-passing
+  losers fired the mutated announce ten times against the count of one; `RefundInitiated`
+  dropped (the dispatch-fact count); the claim never completed (the replay answered
+  `IdempotencyInProgress` where the recorded bytes belong); the attribution dropped (the
+  `UNKNOWN` never healed); the from-state gate dropped (`IllegalRefundTransitionException`
+  loud on the late report — the machine's legality where quiet evidence belongs); the
+  freed-budget lie (`FAILED` counted as returned — `refunded 5.00` where `3.00`, the
+  reconcile probe). Verified by targeted tiers — `:payments:test` 108 / `:platform:test`
+  171 / `:app:test` 444 / the payment database suites 80 (schema 10, authorization 8,
+  capture 6, endpoints 10, unconfigured 1, webhook 6, transitions 7, sweeper 8, ambiguity
+  5, refund 13, refund endpoints 6) / the executor's database suite 17, 0 failures, fresh
+  runs — the full battery deliberately skipped on the owner's instruction; no fleet-wide
+  database or kafka counts claimed.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-EVENT`
 
-**P5-TSK-017 — The meters and the dashboard row** — `TODO`
+**P5-TSK-017 — The meters and the dashboard row** — `READY`
 - **Scope**: `PHASE_5_PLAN.md` §15 real: the six meters, eager from a plain context
   (pinned Phase-5 guard until the flip — the established shape), counted from judgements'
   own vocabulary post-commit (replays/converges never throughput); `provider` and

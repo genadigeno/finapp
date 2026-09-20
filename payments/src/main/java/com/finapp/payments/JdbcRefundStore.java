@@ -25,11 +25,12 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
                     + " provider_idempotency_reference, provider_reference, status, created_at";
 
     @Override
-    public void insert(Connection unitOfWork, Refund refund) {
+    public void insert(Connection unitOfWork, Refund refund, String dispatchKey) {
+        Objects.requireNonNull(dispatchKey, "dispatchKey must not be null (V008)");
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
-                        "INSERT INTO payments.refund (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        "INSERT INTO payments.refund (" + COLUMNS + ", dispatch_key)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, refund.id().value());
             insert.setObject(2, refund.attemptId().value());
             insert.setLong(3, refund.amount().minorUnits());
@@ -45,6 +46,7 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
                             : refund.providerReference().value());
             insert.setString(10, refund.status().name());
             insert.setTimestamp(11, Timestamp.from(refund.createdAt()));
+            insert.setString(12, dispatchKey);
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -65,6 +67,48 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("reading refund " + refund, failure));
+        }
+    }
+
+    @Override
+    public Optional<Refund> findByDispatchKey(Connection unitOfWork, String dispatchKey) {
+        Objects.requireNonNull(dispatchKey, "dispatchKey must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.refund"
+                                + " WHERE dispatch_key = ?"
+                                + " ORDER BY created_at DESC, id DESC LIMIT 1")) {
+            read.setString(1, dispatchKey);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading refund by dispatch key", failure));
+        }
+    }
+
+    @Override
+    public Optional<Refund> findByOperationReference(
+            Connection unitOfWork, ProviderIdempotencyReference reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // Both INV-PAY-04 columns (the attempt-store shape): the reference we
+                        // minted before the wire, and the provider's own from a committed
+                        // completion. Distinct vocabularies, so at most one row matches.
+                        "SELECT " + COLUMNS + " FROM payments.refund"
+                                + " WHERE provider_idempotency_reference = ?"
+                                + " OR provider_reference = ?")) {
+            read.setString(1, reference.value());
+            read.setString(2, reference.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading refund by operation reference", failure));
         }
     }
 

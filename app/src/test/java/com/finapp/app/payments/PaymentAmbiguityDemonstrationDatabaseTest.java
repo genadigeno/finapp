@@ -515,6 +515,7 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                         evidence,
                         attempts,
                         intents,
+                        new com.finapp.payments.JdbcRefundStore(),
                         outcomes(),
                         new InboxConsumer<>(new JdbcInboxRecordStore(), CLOCK, Duration.ofDays(14)),
                         new tools.jackson.databind.ObjectMapper(),

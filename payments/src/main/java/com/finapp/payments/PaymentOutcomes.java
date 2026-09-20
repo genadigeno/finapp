@@ -66,6 +66,14 @@ public final class PaymentOutcomes {
     static final String CAPTURED_EVENT_TYPE = "payments.PaymentCaptured";
     static final String FAILED_EVENT_TYPE = "payments.PaymentFailed";
     static final String UNKNOWN_EVENT_TYPE = "payments.PaymentStateUnknown";
+    // The refund vocabulary (P5-TSK-016; plan §10, MODULE_ARCHITECTURE's register): the two
+    // terminal facts, and the dispatch - legitimate where TransferInitiated was not, because
+    // under ADR-0046 the dispatch commits durably before its own outcome exists. UNKNOWN
+    // deliberately publishes nothing: not a terminal fact, and the standing hold is its
+    // visible record.
+    static final String REFUND_INITIATED_EVENT_TYPE = "payments.RefundInitiated";
+    static final String REFUND_COMPLETED_EVENT_TYPE = "payments.RefundCompleted";
+    static final String REFUND_FAILED_EVENT_TYPE = "payments.RefundFailed";
 
     private final PaymentIntentStore<Connection> intents;
     private final PaymentAttemptStore<Connection> attempts;
@@ -361,6 +369,11 @@ public final class PaymentOutcomes {
                                                     clearing.id(),
                                                     Direction.CREDIT,
                                                     refund.amount()))));
+                    // The terminal fact publishes with the transition that commits it
+                    // (INV-EVT-01) - inside the conditional, so a duplicate emits nothing.
+                    announceRefund(
+                            uow, REFUND_COMPLETED_EVENT_TYPE, refund, intentId,
+                            correlation, now);
                 }
                 committed = RefundStatus.COMPLETED;
             }
@@ -371,6 +384,11 @@ public final class PaymentOutcomes {
                     // The customer's money is theirs again, and the freed budget is the sum
                     // bound's own arithmetic (a FAILED refund no longer counts).
                     holds.release(uow, refund.holdReference());
+                    // A refund's failure is a terminal fact and publishes (ADR-0044's
+                    // doctrine, plan §10 in as many words).
+                    announceRefund(
+                            uow, REFUND_FAILED_EVENT_TYPE, refund, intentId, correlation,
+                            now);
                 }
                 committed = RefundStatus.FAILED;
             }
@@ -469,6 +487,61 @@ public final class PaymentOutcomes {
     }
 
     /** The outcome's event, in the transaction that commits the fact ({@code INV-EVT-01}). */
+    /**
+     * The dispatch's own fact (`P5-TSK-016`), written by {@code PaymentRefund}'s Tx1 in the
+     * transaction that commits the dispatch — this class already holds the outbox and the
+     * vocabulary, so the refund command announces through it rather than growing its own
+     * envelope-building copy.
+     */
+    void announceRefundInitiated(
+            Connection uow, Refund refund, PaymentIntentId intentId, Correlation correlation,
+            Instant now) {
+        announceRefund(uow, REFUND_INITIATED_EVENT_TYPE, refund, intentId, correlation, now);
+    }
+
+    /**
+     * Identifiers and enumerated names only — never an amount, never provider vocabulary
+     * ({@code INV-AUD-02}'s reasoning applied to events; plan §10). The refund is the
+     * aggregate; the intent and attempt ride as identifiers for consumers' joins.
+     */
+    private void announceRefund(
+            Connection uow,
+            String eventType,
+            Refund refund,
+            PaymentIntentId intentId,
+            Correlation correlation,
+            Instant now) {
+        outbox.write(
+                uow,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        eventType,
+                        PaymentCreation.EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        refund.id(),
+                        "refund",
+                        now,
+                        PaymentCreation.PRODUCER,
+                        correlation.correlationId(),
+                        correlation.cause().orElseThrow()),
+                EventPayload.of()
+                        .with("status", statusFor(eventType))
+                        .with("intentId", intentId.value().toString())
+                        .with("attemptId", refund.attemptId().value().toString())
+                        .toBytes(),
+                EventPayload.MEDIA_TYPE);
+    }
+
+    private static String statusFor(String refundEventType) {
+        return switch (refundEventType) {
+            case REFUND_INITIATED_EVENT_TYPE -> RefundStatus.DISPATCHED.name();
+            case REFUND_COMPLETED_EVENT_TYPE -> RefundStatus.COMPLETED.name();
+            case REFUND_FAILED_EVENT_TYPE -> RefundStatus.FAILED.name();
+            default -> throw new IllegalArgumentException(
+                    refundEventType + " is not a refund event type");
+        };
+    }
+
     private void announce(
             Connection uow,
             String eventType,
