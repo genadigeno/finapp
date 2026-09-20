@@ -321,6 +321,11 @@ class OpenApiContractTest {
                         // declaration, authenticated in fact by the HMAC signature over the raw
                         // body - the deliberate act of publishing a machine-facing route.
                         ApiVersion.CURRENT_PREFIX + "/providers/kyc/callbacks",
+                        // P5-TSK-012. The payments inbound door: unauthenticated by honest
+                        // declaration, authenticated in fact by the HMAC over
+                        // timestamp + "." + raw body with a freshness window (ADR-0047) -
+                        // the second machine-facing route, published deliberately.
+                        ApiVersion.CURRENT_PREFIX + "/providers/payments/webhooks",
                         // P2-TSK-012. The reviewer surface, the phase's privileged endpoints:
                         // both behind @RequiresPermission(KYC_REVIEW), the read audited.
                         ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}",

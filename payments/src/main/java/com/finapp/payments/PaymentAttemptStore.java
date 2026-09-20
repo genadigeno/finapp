@@ -29,6 +29,16 @@ public interface PaymentAttemptStore<T> {
     Optional<PaymentAttempt> findById(T unitOfWork, PaymentAttemptId attempt);
 
     /**
+     * The attempt one of whose minted operation references is {@code reference} — the webhook
+     * door's attribution read (`P5-TSK-012`). The identifier presented is one the platform
+     * handed the provider before anything was sent ({@code INV-PAY-04}), and the HMAC is
+     * verified before this read runs — the {@code SIGNED_CALLBACK} reasoning; empty is the
+     * unattributable webhook {@code V005} explicitly admits.
+     */
+    Optional<PaymentAttempt> findByOperationReference(
+            T unitOfWork, ProviderIdempotencyReference reference);
+
+    /**
      * {@code AUTHORIZED → CAPTURE_DISPATCHED}, the capture's idempotency reference minted by
      * this act and stored before anything is sent ({@code INV-PAY-04}, ADR-0046).
      */

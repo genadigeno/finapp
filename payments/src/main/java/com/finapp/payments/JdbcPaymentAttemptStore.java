@@ -82,6 +82,29 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     }
 
     @Override
+    public Optional<PaymentAttempt> findByOperationReference(
+            Connection unitOfWork, ProviderIdempotencyReference reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // Either minted reference names the attempt: the authorization's or
+                        // the capture's - both stored before anything was sent (INV-PAY-04),
+                        // both carrying V003's plain UNIQUEs, so at most one row answers.
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt"
+                                + " WHERE auth_reference = ? OR capture_reference = ?")) {
+            read.setString(1, reference.value());
+            read.setString(2, reference.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading an attempt by operation reference", failure));
+        }
+    }
+
+    @Override
     public Optional<PaymentAttempt> findById(Connection unitOfWork, PaymentAttemptId attempt) {
         Objects.requireNonNull(attempt, "attempt must not be null");
         try (PreparedStatement read =

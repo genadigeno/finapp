@@ -40,8 +40,12 @@
  * ADR-0048), and the HTTP surface's vocabulary ({@code P5-TSK-011}: {@code PaymentsErrorCode}
  * - the refusals only, a judged failure is a body fact, {@code INV-PAY-03} at the contract -
  * with the controller and its capture-chaining service composed in {@code app}, where every
- * surface lives - updated by the task that made the previous sentence stale, the recurring
- * class). The refund command is {@code P5-TSK-015}.
+ * surface lives), and the webhook door's verifier ({@code P5-TSK-012}: {@code WebhookSignature}
+ * - HMAC over {@code timestamp + "." + body} with the two-sided freshness window ADR-0047
+ * requires beyond the {@code P2-TSK-011} scheme; the door itself and its evidence-first,
+ * inbox-deduped ingestion live in {@code app} - updated by the task that made the previous
+ * sentence stale, the recurring class). The webhook-driven transitions are {@code P5-TSK-013},
+ * the refund command {@code P5-TSK-015}.
  *
  * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
  * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and

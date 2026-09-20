@@ -14,6 +14,14 @@ import java.util.Optional;
 public interface ProviderEvidenceStore<T> {
 
     /**
+     * The bound verbatim retention can honestly promise (`INV-HIST-02`): retention of an
+     * unbounded stream is not a property anyone can keep, so both producers — the wire
+     * client's answers and the webhook door (`P5-TSK-012`) — refuse an over-limit body at
+     * their own boundary, and `V005`'s size {@code CHECK} reconciles against this one number.
+     */
+    int MAX_PAYLOAD_BYTES = 1_048_576;
+
+    /**
      * Retains {@code payload} verbatim. At most one subject; both empty is legal — an
      * unattributable webhook is still retained ({@code V005}'s recorded rule).
      */

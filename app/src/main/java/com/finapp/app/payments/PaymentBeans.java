@@ -265,6 +265,46 @@ class PaymentBeans {
                 dataSource);
     }
 
+    /**
+     * The webhook signature verifier (`P5-TSK-012`, ADR-0047 §1) — credential seven through
+     * the confinement, the freshness tolerance server-clock judged. Conditional with the
+     * door: a deployment with no provider receives no webhooks.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.WebhookSignature webhookSignature(
+            @Value("${finapp.payments.webhook.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            @Value("${finapp.payments.webhook.tolerance:PT5M}") java.time.Duration tolerance,
+            Environment environment,
+            Clock clock) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        return new com.finapp.payments.WebhookSignature(
+                PaymentWebhookKey.decode(configuredKey, loopback), tolerance, clock);
+    }
+
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    PaymentWebhookService paymentWebhookService(
+            com.finapp.payments.WebhookSignature webhookSignature,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer,
+            tools.jackson.databind.ObjectMapper objectMapper,
+            Clock clock,
+            TransactionTemplate paymentTransactions,
+            DataSource dataSource) {
+        return new PaymentWebhookService(
+                webhookSignature,
+                providerEvidenceStore,
+                paymentAttemptStore,
+                inboxConsumer,
+                objectMapper,
+                clock,
+                paymentTransactions,
+                dataSource);
+    }
+
     @Bean
     PaymentCancellation paymentCancellation(
             PaymentIntentStore<Connection> paymentIntentStore,

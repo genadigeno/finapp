@@ -337,6 +337,31 @@ public final class SimulatedProvider implements AutoCloseable {
     /** The header {@link #deliverSignedCallback} delivers its signature in. */
     public static final String SIGNATURE_HEADER = "X-Provider-Signature";
 
+    /** The header {@link #deliverTimestampSignedCallback} delivers its signed timestamp in. */
+    public static final String TIMESTAMP_HEADER = "X-Provider-Timestamp";
+
+    /**
+     * The provider calls us back signing {@code timestamp + "." + body} — the payments scheme
+     * (`P5-TSK-012`, ADR-0047 §1): HMAC-SHA256 hex in {@value #SIGNATURE_HEADER}, the epoch
+     * seconds in {@value #TIMESTAMP_HEADER}. The timestamp is <em>inside</em> the signed
+     * payload, so a stale-replay test presents an old timestamp with the signature that old
+     * timestamp legitimately produces — computed here with JDK primitives because the harness
+     * cannot depend on the module that verifies it; the receiver's test reconciles both
+     * header names so the two cannot drift.
+     *
+     * @return the status the receiver returned for the last delivery
+     */
+    public int deliverTimestampSignedCallback(
+            URI target, String body, byte[] signingSecret, long epochSeconds, int times) {
+        String timestamp = Long.toString(epochSeconds);
+        String signature = signatureOf(timestamp + "." + body, signingSecret);
+        int status = -1;
+        for (int delivery = 0; delivery < times; delivery++) {
+            status = send(target, body, signature, timestamp);
+        }
+        return status;
+    }
+
     private static String signatureOf(String body, byte[] signingSecret) {
         try {
             javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
@@ -385,6 +410,10 @@ public final class SimulatedProvider implements AutoCloseable {
     }
 
     private int send(URI target, String body, String signature) {
+        return send(target, body, signature, null);
+    }
+
+    private int send(URI target, String body, String signature, String timestamp) {
         HttpRequest.Builder builder =
                 HttpRequest.newBuilder(target)
                         .header("Content-Type", "application/json")
@@ -392,6 +421,9 @@ public final class SimulatedProvider implements AutoCloseable {
                         .POST(HttpRequest.BodyPublishers.ofString(body));
         if (signature != null) {
             builder.header(SIGNATURE_HEADER, signature);
+        }
+        if (timestamp != null) {
+            builder.header(TIMESTAMP_HEADER, timestamp);
         }
         HttpRequest request = builder.build();
         try {

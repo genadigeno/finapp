@@ -384,6 +384,12 @@ class PaymentConfirmationTest {
     }
 
     private static final class FakeAttemptStore implements PaymentAttemptStore<Connection> {
+
+        @Override
+        public java.util.Optional<PaymentAttempt> findByOperationReference(
+                Connection uow, ProviderIdempotencyReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
         final Map<UUID, PaymentAttempt> rows = new HashMap<>();
 
         PaymentAttempt single() {

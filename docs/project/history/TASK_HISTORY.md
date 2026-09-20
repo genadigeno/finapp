@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 114 "Previously" blocks, newest first, from `P5-TSK-010` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 115 "Previously" blocks, newest first, from `P5-TSK-011` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,54 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P5-TSK-011` — the payment surface over HTTP** — `COMPLETE` (2026-09-20).
+**M5.4 CLOSES at 3 of 3: the phase's machinery meets its customer.** Five endpoints on the
+established ceremonies — the keyed create with byte-for-byte replay, session + ownership
+with one 404 across stranger's/unknown/malformed on every `{id}` route, and the
+asynchronous-outcome contract shape held honestly — plus the one behavioral novelty the
+task owned: **the surface is the capture's chainer** after a synchronous `AUTHORIZED`
+(`PaymentCapture`'s own recorded contract), on the converged answer too, so a client
+retry finishes an `AUTHORIZED` stranded by a crash between the confirm's outcome and the
+chain. The chain adds no new arbitration — racing chainers are `P5-TSK-010`'s counted
+ten-way race.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The acceptance chain over real HTTP | attach → create → confirm → the simulated provider authorises and captures → `SUCCEEDED` in one customer-visible call → the balance moves → the statement shows the entry → the chain walked by stored identifier both ways |
+| A retried create replays byte-for-byte | Proven **after** the payment succeeded: the view renders the recorded judgement (`REQUIRES_CONFIRMATION`), never a re-read — the named mutation's catcher |
+| A changed request is the distinct 409 | `api.Conflict` (`INV-IDEM-03`); keyless the interceptor's 422 |
+| Honestly `PROCESSING` | Twice: a lost authorization response (`AUTH_UNKNOWN` beneath, nothing chained) and a lost capture response (`CAPTURE_UNKNOWN`, **nothing posted, balance `0.00`**) — both `200`s whose body tells the truth (`INV-LIFE-03` at the contract) |
+
+### Decisions and registers
+
+**`PaymentsErrorCode` is the refusals only** — a judged failure is a body fact
+(`200 FAILED` with the mapped reason; the provider's planted decline code asserted absent —
+`INV-PAY-03` needle-tested). `payments.ProviderUnavailable` (503) is the unconfigured
+deployment's honest answer (the `ObjectProvider` decision paid), distinct in kind from the
+in-body `FAILED(PROVIDER_UNAVAILABLE)`. The view carries **no ledger and no attempt
+identifiers** (recorded absence — the entry's reference IS the attempt id; `P5-TSK-016`'s
+derived-totals view owns any revisit). The instrument fold was made **total at the bridge**
+in scope: a well-formed v4 UUID is malformed here (ADR-0013) and answers the one empty —
+found when the probe's 500 exposed the unguarded `PaymentMethodId.of`. Contract baseline
+extended and reviewed: **393 added lines, zero removed**; the 8 `BREAKING` labels are all
+`required` flags on the brand-new paths/schemas themselves.
+
+### Eight mutations, all caught, restores `cmp`-verified
+
+The **named capture-chain-dropped** (the acceptance chain alone: `SUCCEEDED` expected, the
+never-captured `PROCESSING` answered); the **named replay-from-a-re-read** (the
+post-success replay leaked the world's state); the GET's ownership predicate dropped; the
+malformed-instrument fold reverted (the uniform 422 became our 500 — the in-scope fix
+proven load-bearing); the cancel window's 409 swallowed; the unconfigured 503 dropped;
+the chain made unconditional (capture on `AUTH_UNKNOWN` — the loud 500 where the honest
+`PROCESSING` belongs); the list's ownership predicate dropped. **Verified by targeted
+tiers — `:payments:test` 86 / the payment database suites 35 (schema 10, authorization 8,
+capture 6, endpoints 10, unconfigured 1) / `:app:test` 438, 0 failures, fresh runs — the
+full battery deliberately skipped on the owner's instruction; no fleet-wide database or
+kafka counts claimed.**
 
 ### Previously
 

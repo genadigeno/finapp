@@ -23,16 +23,20 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * {@code ObjectProvider} decision recorded in {@code PaymentBeans}, the
  * {@code paymentmethods.TokenisationUnavailable} shape.
  *
- * <p>Deliberately its own class: the property is absent from the <em>default</em> context most
- * database suites share, so this costs no extra Spring context — where adding the property to
- * a method of {@code PaymentEndpointDatabaseTest} would.
+ * <p>Since `P5-TSK-012` the test overlay supplies {@code finapp.payments.provider.url} to
+ * every app context (so the conditional webhook door is published and route-scanned — the
+ * `P2-TSK-011` mechanism), this suite opts back OUT explicitly: {@code "false"} is
+ * {@code @ConditionalOnProperty}'s own designated non-match value, so the property below is
+ * the one honest way to simulate the unconfigured deployment against the real condition.
  *
  * <p>The 503 deliberately precedes resource resolution: whether the named payment exists is
  * not readable from a deployment-level refusal, so answering it first disloses nothing — and a
  * deployment that cannot confirm any payment has one honest answer for all of them.
  */
 @Tag("database")
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "finapp.payments.provider.url=false")
 @DisplayName("the payment surface without a configured provider (P5-TSK-011)")
 class PaymentSurfaceUnconfiguredDatabaseTest {
 

@@ -6073,7 +6073,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - Note: named mutation — the capture chain dropped after the synchronous `AUTHORIZED`:
   the acceptance chain catches it alone (no entry, no balance, no `SUCCEEDED`).
 
-**P5-TSK-012 — Webhook ingestion: authenticated, evidence-first, deduplicated** — `READY`
+**P5-TSK-012 — Webhook ingestion: authenticated, evidence-first, deduplicated** — `COMPLETE` (2026-09-20)
 - **Scope**: ADR-0047's door: `POST /v1/providers/payments/webhooks` — HMAC over
   timestamp + raw bytes per provider key (through `P5-TSK-002`, confined), constant-time,
   **before parsing**; freshness window refusing stale messages; verbatim evidence row +
@@ -6085,10 +6085,53 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   nothing written; a triple delivery lands one dedupe record and three evidence
   decisions per ADR-0047 §2; signature proven against published vectors.
 - **Risk**: High (the forgery surface). **Cx**: M. **DoD**: `DOD-SEC`, `DOD-EVENT`
+- **Gate evidence (2026-09-20)**: **every accept clause demonstrated over real HTTP**
+  (`PaymentWebhookDatabaseTest`, 6 tests, + `WebhookSignatureTest`, hermetic). **Negative
+  tests per cause, each with nothing written** ({@code INV-PAY-01}): missing, wrong and
+  tampered signatures; missing, stale and future-skewed timestamps (the window two-sided —
+  banking messages forward is as refused as replaying them back); **the `P2-TSK-011` scheme
+  replayed** (a valid HMAC over the body alone — proving the timestamp is inside the signed
+  payload, ADR-0047 §1's whole point); unsigned garbage (the named mutation's catcher); the
+  empty and oversized bodies the evidence bound refuses at the boundary — all one
+  byte-identical 401 (413 for the bound), evidence and inbox counts unmoved. **A triple
+  delivery lands ONE dedupe record and THREE evidence decisions** (ADR-0047 §2: the
+  duplicate's statement is as genuine as the first's), every delivery a 2xx. **The signature
+  proven against RFC 4231's published vectors** with the composition pinned as
+  `timestamp + "." + body`; the constant-time comparison pinned structurally (the
+  `CallbackSignature` ceremony). Attribution by our minted reference
+  (`findByOperationReference` over both `INV-PAY-04` columns — the `SIGNED_CALLBACK`
+  reasoning: the identifier presented is one WE handed the provider, verification runs
+  before the read, the reachable write set is empty); authentic-but-unparseable and
+  authentic-but-unmappable each acknowledged with evidence retained (the anti-stall
+  inversion, on the record in the service's javadoc; **the webhook meter is plan §15's,
+  deferred to `P5-TSK-017` with the ceremony it belongs to** — the -009/-010 precedent).
+  Credential seven arrived as the one-line `KeySpec` credential five's javadoc promised
+  (`PaymentWebhookKey`, suffix `/payment-webhook`, `AT_LEAST_32`, its own test — the
+  `P2-TSK-011` no-test finding honoured), and the startup guard's four property sites gained
+  credentials five and seven. The evidence bound moved to its retention owner
+  (`ProviderEvidenceStore.MAX_PAYLOAD_BYTES`, `PspWireClient` aliasing it — one definition).
+  The `P5-TSK-013` seam is the inbox handler, empty by design: ingestion transitions
+  nothing. The test overlay gained `finapp.payments.provider.url` (the `P2-TSK-011`
+  mechanism) so the door is published and route-scanned; the unconfigured suite opts out
+  with `@ConditionalOnProperty`'s own `false`. Contract baseline extended: **38 added lines,
+  zero removed**, the 2 `BREAKING` labels flags on the new route's own optional headers.
+  **Eight mutations, all caught by the intended assertion, restores `cmp`-verified
+  byte-identical**: the NAMED verification-after-parsing (unsigned garbage answered 204 with
+  evidence written — the exact inversion, caught by the probe added for it); the timestamp
+  dropped from the signed payload (the KYC-replay probe alone); the freshness window dropped
+  (stale-legitimately-signed answered 204); `Arrays.equals` for `isEqual` (the structural
+  pin); evidence-only-when-processed (the triple-delivery count: 1 where 3); the dedupe
+  dropped (the keyed record vanished); attribution dropped (the subject column empty); the
+  evidence bound dropped (the empty body became our 500 — "told at the boundary" proven
+  load-bearing). Verified by targeted tiers — `:payments:test` 108 / `:platform:test` 171 /
+  `:app:test` 441 / the payment database suites 41 (schema 10, authorization 8, capture 6,
+  endpoints 10, unconfigured 1, webhook 6), 0 failures, fresh runs — the full battery
+  deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
+  claimed.
 - Note: named mutation — verification moved after parsing; the raw-bytes discipline is the
-  `P2-TSK-011` precedent and its mutation.
+  `P2-TSK-011` precedent and its mutation. **Performed and caught** (the battery's first row).
 
-**P5-TSK-013 — Webhook-driven transitions: idempotent, order-blind** — `TODO`
+**P5-TSK-013 — Webhook-driven transitions: idempotent, order-blind** — `READY`
 - **Scope**: authenticated webhooks mapped through the total state mapping onto the
   conditional machine edges; duplicate-with-fresh-id, out-of-order (capture report before
   auth report), before-the-sync-response, racing-the-sweeper and
