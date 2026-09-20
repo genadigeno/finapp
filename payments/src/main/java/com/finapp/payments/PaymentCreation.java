@@ -238,8 +238,11 @@ public final class PaymentCreation {
                 .getBytes(StandardCharsets.UTF_8);
     }
 
-    /** The flow's correlation with the cause resolved — the established idiom. */
-    static Correlation resolvedCorrelation() {
+    /**
+     * The flow's correlation with the cause resolved — the established idiom. Public since
+     * `P5-TSK-013`: the webhook resolver in {@code app} shares the same discipline.
+     */
+    public static Correlation resolvedCorrelation() {
         Correlation current =
                 CorrelationContext.current()
                         .orElseThrow(

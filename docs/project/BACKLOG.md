@@ -6131,7 +6131,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - Note: named mutation — verification moved after parsing; the raw-bytes discipline is the
   `P2-TSK-011` precedent and its mutation. **Performed and caught** (the battery's first row).
 
-**P5-TSK-013 — Webhook-driven transitions: idempotent, order-blind** — `READY`
+**P5-TSK-013 — Webhook-driven transitions: idempotent, order-blind** — `COMPLETE` (2026-09-20)
 - **Scope**: authenticated webhooks mapped through the total state mapping onto the
   conditional machine edges; duplicate-with-fresh-id, out-of-order (capture report before
   auth report), before-the-sync-response, racing-the-sweeper and
@@ -6141,9 +6141,53 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   `CheckOutcomeTrail` extraction rule if a second copy threatens).
 - **Deps**: `P5-TSK-012`, `P5-TSK-010`. **Accept**: each ordering scenario counted; the
   webhook-resolved capture posts exactly once (the claim proven under the race).
+- **Gate evidence (2026-09-20)**: **the extraction the scope named fired** — `PaymentOutcomes`,
+  the one money-bearing outcome application all resolvers share (`CheckOutcomeTrail`'s rule:
+  the second copy threatened, so the switch moved), with the `from` parameter as the
+  order-blindness (an outcome applies from `*_DISPATCHED` or `*_UNKNOWN`, the machine's edges
+  differing only in source); both sync Tx2s became delegations, **net −20 lines with a new
+  component**, behavior preservation proven by the hermetic order pins re-running green — and
+  the confirmation suite inherited the no-database `PostingService` tripwire, making
+  "authorization posts nothing" structural there too. **Every ordering scenario counted over
+  real HTTP** (`PaymentWebhookTransitionDatabaseTest`, 7 flows end to end): the headline heal
+  — `CAPTURE_UNKNOWN` → capture-approved webhook → `CAPTURED` + intent `SUCCEEDED` + balance
+  moved + ONE entry, the customer's own GET flipping from honest `PROCESSING` to `SUCCEEDED`;
+  duplicate-with-fresh-id converged (no second transition, no second posting, statement
+  retained); `AUTH_UNKNOWN` → `AUTHORIZED` by webhook **then the client's confirm retry
+  converges and chains the capture** (the -011 recovery meeting this task, the chain whole);
+  declined → both rows `FAILED(DECLINED)`; the crash-stranded `AUTH_DISPATCHED` healed (the
+  before-the-sync arrival); out-of-order and late-on-terminal each evidence-only with history
+  counts unmoved; unrecognised status and approval-without-reference refused by the total
+  mapping (`INV-PAY-03` — evidence retained, nothing transitions, the recorded
+  unsolicited-statement decision). **The webhook-resolved capture posts exactly once under a
+  ten-way race** (the accept): ten concurrent resolvers, distinct event ids, one entry counted
+  by reference, one transition, ten statements retained. **The race found a real defect and
+  the task fixed it on the record**: two concurrent deliveries deadlocked (40P01) — the
+  evidence INSERT's FK takes `FOR KEY SHARE` on the attempt row and the outcome's
+  UNIQUE-column UPDATE needs the full `FOR UPDATE` it blocks — fixed by the lock-order rule
+  (the effect's row lock before any KEY SHARE, in every resolver's transaction; "evidence
+  first" is a COMMIT claim and stands — evidence, dedupe and effect still commit together),
+  recorded in `DISTRIBUTED_EXECUTION.md`. The effect runs as the platform through the third
+  enumerated `enterSystem()` site with its reasoning; the events emit once per committed
+  transition from the component (`DOD-EVENT` by construction). **Eight mutations, all caught
+  by the intended assertion, restores `cmp`-verified byte-identical**: the posting dropped
+  from the extracted APPROVED branch (`CAPTURED` beside no entry — balance and entry probes);
+  the resolvable-state gates dropped (the late report commanded an illegal edge, loud 500
+  where the evidence-only 204 belongs); the mapping's default made success (the
+  most-expensive-mistake shape, webhook form — `AUTH_UNKNOWN` became `AUTHORIZED`); declined
+  dropped from the mapping; the intent half of `failBoth` dropped in the EXTRACTED copy (the
+  -010 survivor's shape re-guarded — the GET read the intent ROW); the `from` parameter
+  hardcoded (the `AUTH_UNKNOWN` resolution silently converged); the platform scope dropped
+  (structural refusal — no session to fall back on); **the lock-order rule reverted (eight
+  40P01s in the log — the fix proven load-bearing by its own reintroduction)**. Verified by
+  targeted tiers — `:payments:test` 108 / `:platform:test` 171 / `:app:test` 441 / the
+  payment database suites 48 (schema 10, authorization 8, capture 6, endpoints 10,
+  unconfigured 1, webhook 6, transitions 7), 0 failures, fresh runs — the full battery
+  deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
+  claimed.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-EVENT`
 
-**P5-TSK-014 — The reconciliation-by-query sweeper** — `TODO`
+**P5-TSK-014 — The reconciliation-by-query sweeper** — `READY`
 - **Scope**: ADR-0046 §4: every instance polls for `*_DISPATCHED`/`*_UNKNOWN` rows past
   their bounds (server-clock judged — the ADR-0014 discipline), queries the provider by
   our reference, applies outcomes through the standard outcome transactions. **No lease,

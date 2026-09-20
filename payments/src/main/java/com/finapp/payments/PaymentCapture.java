@@ -84,10 +84,8 @@ public final class PaymentCapture {
     private final PaymentAttemptStore<Connection> attempts;
     private final ProviderEvidenceStore<Connection> evidence;
     private final PaymentProvider provider;
-    private final PostingService postings;
-    private final ChartOfAccounts<Connection> chart;
+    private final PaymentOutcomes outcomes;
     private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
     private final IdGenerator ids;
     private final Clock clock;
 
@@ -97,10 +95,8 @@ public final class PaymentCapture {
             PaymentAttemptStore<Connection> attempts,
             ProviderEvidenceStore<Connection> evidence,
             PaymentProvider provider,
-            PostingService postings,
-            ChartOfAccounts<Connection> chart,
+            PaymentOutcomes outcomes,
             AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
             IdGenerator ids,
             Clock clock) {
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
@@ -108,10 +104,8 @@ public final class PaymentCapture {
         this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
         this.evidence = Objects.requireNonNull(evidence, "evidence must not be null");
         this.provider = Objects.requireNonNull(provider, "provider must not be null");
-        this.postings = Objects.requireNonNull(postings, "postings must not be null");
-        this.chart = Objects.requireNonNull(chart, "chart must not be null");
+        this.outcomes = Objects.requireNonNull(outcomes, "outcomes must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
@@ -246,17 +240,33 @@ public final class PaymentCapture {
         return new CaptureResult(intentStatus, attempt.status(), true);
     }
 
-    /** Tx2: the outcome — and for APPROVED, the transition, THE POSTING and the intent, one commit. */
+    /**
+     * Tx2: the verbatim evidence, then the one shared outcome application
+     * ({@link PaymentOutcomes} — `P5-TSK-013`'s extraction: for APPROVED the transition, THE
+     * POSTING and the intent's {@code SUCCEEDED} stay one commit, whichever resolver calls).
+     */
     private CaptureResult applyCaptureOutcome(
             Connection uow,
             Dispatch dispatch,
             PaymentAttemptId attemptId,
             ProviderAnswer answer,
             Correlation correlation) {
-        Actor platform = SecurityContext.require();
-        Instant now = Instant.now(clock);
-
-        // Whatever the mapping said, what arrived is retained (INV-HIST-02).
+        PaymentOutcomes.Applied applied =
+                outcomes.applyCapture(
+                        uow,
+                        dispatch.intent(),
+                        attemptId,
+                        PaymentAttemptStatus.CAPTURE_DISPATCHED,
+                        answer.verdict(),
+                        answer.providerReference(),
+                        dispatch.wallet(),
+                        dispatch.amount(),
+                        correlation);
+        // Whatever the mapping said, what arrived is retained (INV-HIST-02) - AFTER the
+        // outcome's row lock, deliberately (P5-TSK-013's lock-order rule): the evidence
+        // INSERT takes FOR KEY SHARE on the attempt row, and taking it first deadlocks
+        // against a concurrent resolver's key-changing UPDATE (40P01). One transaction
+        // either way: retention and outcome still commit together.
         answer.evidence()
                 .ifPresent(
                         bytes ->
@@ -266,185 +276,7 @@ public final class PaymentCapture {
                                         Optional.empty(),
                                         EvidenceKind.RESPONSE,
                                         bytes,
-                                        now));
-
-        PaymentAttemptStatus committedAttempt;
-        PaymentIntentStatus committedIntent = PaymentIntentStatus.PROCESSING;
-        switch (answer.verdict()) {
-            case APPROVED -> {
-                if (attempts.capture(
-                        uow,
-                        attemptId,
-                        PaymentAttemptStatus.CAPTURE_DISPATCHED,
-                        answer.providerReference().orElseThrow(),
-                        dispatch.amount())) {
-                    attempts.recordTransition(
-                            uow,
-                            attemptId,
-                            PaymentAttemptStatus.CAPTURE_DISPATCHED,
-                            PaymentAttemptStatus.CAPTURED,
-                            platform,
-                            now);
-
-                    // THE POSTING - same connection, atomically with the transition
-                    // (ADR-0048). DR clearing / CR wallet; the key makes any duplicate
-                    // outcome structurally unable to post twice; no savepoint, deliberately
-                    // (class javadoc): a posting failure fails this whole transaction loudly.
-                    LedgerAccount clearing =
-                            chart.resolve(
-                                    uow,
-                                    AccountPurpose.SETTLEMENT_CLEARING,
-                                    dispatch.amount().currency());
-                    LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
-                    postings.post(
-                            uow,
-                            new PostingCommand(
-                                    "payment-capture:" + attemptId.value(),
-                                    today,
-                                    today,
-                                    attemptId.value().toString(),
-                                    List.of(
-                                            new JournalLine(
-                                                    clearing.id(),
-                                                    Direction.DEBIT,
-                                                    dispatch.amount()),
-                                            new JournalLine(
-                                                    dispatch.wallet(),
-                                                    Direction.CREDIT,
-                                                    dispatch.amount()))));
-
-                    if (intents.transition(
-                            uow,
-                            dispatch.intent(),
-                            PaymentIntentStatus.PROCESSING,
-                            PaymentIntentStatus.SUCCEEDED)) {
-                        intents.recordTransition(
-                                uow,
-                                dispatch.intent(),
-                                PaymentIntentStatus.PROCESSING,
-                                PaymentIntentStatus.SUCCEEDED,
-                                platform,
-                                now);
-                    }
-                    announce(uow, CAPTURED_EVENT_TYPE, dispatch.intent(), "CAPTURED",
-                            Optional.empty(), correlation, now);
-                }
-                committedAttempt = PaymentAttemptStatus.CAPTURED;
-                committedIntent = PaymentIntentStatus.SUCCEEDED;
-            }
-            case DECLINED -> {
-                committedAttempt =
-                        failBoth(uow, dispatch.intent(), attemptId,
-                                PaymentFailureReason.DECLINED, correlation, platform, now);
-                committedIntent = PaymentIntentStatus.FAILED;
-            }
-            case NOTHING_SENT -> {
-                committedAttempt =
-                        failBoth(uow, dispatch.intent(), attemptId,
-                                PaymentFailureReason.PROVIDER_UNAVAILABLE, correlation,
-                                platform, now);
-                committedIntent = PaymentIntentStatus.FAILED;
-            }
-            default -> {
-                // INDETERMINATE: CAPTURE_UNKNOWN commits with NOTHING POSTED (INV-LIFE-03) -
-                // the resolution query answers "did the capture happen?", and the posting
-                // arrives only with a resolved CAPTURED.
-                if (attempts.markCaptureUnknown(uow, attemptId)) {
-                    attempts.recordTransition(
-                            uow,
-                            attemptId,
-                            PaymentAttemptStatus.CAPTURE_DISPATCHED,
-                            PaymentAttemptStatus.CAPTURE_UNKNOWN,
-                            platform,
-                            now);
-                    announce(uow, PaymentConfirmation.UNKNOWN_EVENT_TYPE, dispatch.intent(),
-                            "CAPTURE_UNKNOWN", Optional.empty(), correlation, now);
-                }
-                committedAttempt = PaymentAttemptStatus.CAPTURE_UNKNOWN;
-            }
-        }
-
-        audit.append(
-                uow,
-                new AuditRecord(
-                        AuditId.next(ids),
-                        platform,
-                        now,
-                        PaymentsAuditAction.PAYMENT_OUTCOME_APPLIED,
-                        PaymentCreation.TARGET_TYPE,
-                        dispatch.intent().value().toString(),
-                        Optional.empty(),
-                        AuditOutcome.SUCCEEDED,
-                        correlation.correlationId(),
-                        Optional.of(
-                                "attempt=" + attemptId
-                                        + ", verdict=" + answer.verdict()
-                                        + ", attemptStatus=" + committedAttempt
-                                        + ", intentStatus=" + committedIntent)));
-        return new CaptureResult(committedIntent, committedAttempt, false);
-    }
-
-    /** The attempt fails with its mapped reason and the intent fails with it. */
-    private PaymentAttemptStatus failBoth(
-            Connection uow,
-            PaymentIntentId intentId,
-            PaymentAttemptId attemptId,
-            PaymentFailureReason reason,
-            Correlation correlation,
-            Actor platform,
-            Instant now) {
-        if (attempts.fail(uow, attemptId, PaymentAttemptStatus.CAPTURE_DISPATCHED, reason)) {
-            attempts.recordTransition(
-                    uow,
-                    attemptId,
-                    PaymentAttemptStatus.CAPTURE_DISPATCHED,
-                    PaymentAttemptStatus.FAILED,
-                    platform,
-                    now);
-            if (intents.transition(
-                    uow, intentId, PaymentIntentStatus.PROCESSING,
-                    PaymentIntentStatus.FAILED)) {
-                intents.recordTransition(
-                        uow,
-                        intentId,
-                        PaymentIntentStatus.PROCESSING,
-                        PaymentIntentStatus.FAILED,
-                        platform,
-                        now);
-            }
-            announce(uow, PaymentConfirmation.FAILED_EVENT_TYPE, intentId, "FAILED",
-                    Optional.of(reason), correlation, now);
-        }
-        return PaymentAttemptStatus.FAILED;
-    }
-
-    /** The outcome's event, in the transaction that commits the fact ({@code INV-EVT-01}). */
-    private void announce(
-            Connection uow,
-            String eventType,
-            PaymentIntentId intentId,
-            String status,
-            Optional<PaymentFailureReason> reason,
-            Correlation correlation,
-            Instant now) {
-        EventPayload payload = EventPayload.of().with("status", status);
-        if (reason.isPresent()) {
-            payload = payload.with("failureReason", reason.get().name());
-        }
-        outbox.write(
-                uow,
-                new EventEnvelope(
-                        EventId.next(ids),
-                        eventType,
-                        PaymentCreation.EVENT_VERSION,
-                        EventEnvelope.CURRENT_SCHEMA_VERSION,
-                        intentId,
-                        PaymentCreation.TARGET_TYPE,
-                        now,
-                        PaymentCreation.PRODUCER,
-                        correlation.correlationId(),
-                        correlation.cause().orElseThrow()),
-                payload.toBytes(),
-                EventPayload.MEDIA_TYPE);
+                                        Instant.now(clock)));
+        return new CaptureResult(applied.intent(), applied.attempt(), false);
     }
 }

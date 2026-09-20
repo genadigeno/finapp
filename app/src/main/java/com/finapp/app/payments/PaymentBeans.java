@@ -180,6 +180,32 @@ class PaymentBeans {
                 clock);
     }
 
+    /**
+     * The one shared outcome application (`P5-TSK-013`, ADR-0047 §4): the synchronous Tx2s,
+     * the webhook resolver and the sweeper (`P5-TSK-014`) all apply judgements through this
+     * single instance — unconditional, because it calls no provider and holds no state.
+     */
+    @Bean
+    com.finapp.payments.PaymentOutcomes paymentOutcomes(
+            PaymentIntentStore<Connection> paymentIntentStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.ledger.PostingService postingService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.PaymentOutcomes(
+                paymentIntentStore,
+                paymentAttemptStore,
+                postingService,
+                new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock);
+    }
+
     @Bean
     @ConditionalOnProperty("finapp.payments.provider.url")
     PaymentConfirmation paymentConfirmation(
@@ -189,8 +215,8 @@ class PaymentBeans {
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentParticipants<Connection> paymentParticipants,
             PaymentProvider paymentProvider,
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
             AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
             Clock clock) {
         return new PaymentConfirmation(
@@ -200,8 +226,8 @@ class PaymentBeans {
                 providerEvidenceStore,
                 paymentParticipants,
                 paymentProvider,
+                paymentOutcomes,
                 auditWriter,
-                outboxWriter,
                 ids,
                 clock);
     }
@@ -214,10 +240,8 @@ class PaymentBeans {
             PaymentAttemptStore<Connection> paymentAttemptStore,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentProvider paymentProvider,
-            com.finapp.ledger.PostingService postingService,
-            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
             AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
             Clock clock) {
         return new com.finapp.payments.PaymentCapture(
@@ -226,10 +250,8 @@ class PaymentBeans {
                 paymentAttemptStore,
                 providerEvidenceStore,
                 paymentProvider,
-                postingService,
-                new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
+                paymentOutcomes,
                 auditWriter,
-                outboxWriter,
                 ids,
                 clock);
     }
@@ -289,6 +311,8 @@ class PaymentBeans {
             com.finapp.payments.WebhookSignature webhookSignature,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
             com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer,
             tools.jackson.databind.ObjectMapper objectMapper,
             Clock clock,
@@ -298,6 +322,8 @@ class PaymentBeans {
                 webhookSignature,
                 providerEvidenceStore,
                 paymentAttemptStore,
+                paymentIntentStore,
+                paymentOutcomes,
                 inboxConsumer,
                 objectMapper,
                 clock,

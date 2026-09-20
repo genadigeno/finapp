@@ -434,7 +434,20 @@ class PaymentCaptureDatabaseTest {
             PaymentConfirmation.ConfirmationResult confirmed =
                     new PaymentConfirmation(
                                     runner, intents, attempts, evidence, participants,
-                                    adapter(), new JdbcAuditWriter(), new JdbcOutboxWriter(),
+                                    adapter(),
+                                    new com.finapp.payments.PaymentOutcomes(
+                                            intents, attempts,
+                                            new PostingService(
+                                                    executor(),
+                                                    new JdbcJournalEntryStore(IDS),
+                                                    new JdbcAuditWriter(),
+                                                    new JdbcOutboxWriter(),
+                                                    new JdbcBalanceProjection(),
+                                                    IDS, CLOCK, PostingObserver.NONE),
+                                            new ChartOfAccounts<>(ledgerAccounts),
+                                            new JdbcAuditWriter(), new JdbcOutboxWriter(),
+                                            IDS, CLOCK),
+                                    new JdbcAuditWriter(),
                                     IDS, CLOCK)
                             .confirm(holder.party(), holder.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
@@ -459,18 +472,24 @@ class PaymentCaptureDatabaseTest {
                 attempts,
                 evidence,
                 provider,
-                new PostingService(
-                        executor(),
-                        new JdbcJournalEntryStore(IDS),
+                new com.finapp.payments.PaymentOutcomes(
+                        intents,
+                        attempts,
+                        new PostingService(
+                                executor(),
+                                new JdbcJournalEntryStore(IDS),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                PostingObserver.NONE),
+                        new ChartOfAccounts<>(ledgerAccounts),
                         new JdbcAuditWriter(),
-                        new JdbcOutboxWriter(),
-                        new JdbcBalanceProjection(),
+                        outbox,
                         IDS,
-                        CLOCK,
-                        PostingObserver.NONE),
-                new ChartOfAccounts<>(ledgerAccounts),
+                        CLOCK),
                 new JdbcAuditWriter(),
-                outbox,
                 IDS,
                 CLOCK);
     }

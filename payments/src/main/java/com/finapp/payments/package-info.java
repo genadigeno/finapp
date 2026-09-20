@@ -43,9 +43,12 @@
  * surface lives), and the webhook door's verifier ({@code P5-TSK-012}: {@code WebhookSignature}
  * - HMAC over {@code timestamp + "." + body} with the two-sided freshness window ADR-0047
  * requires beyond the {@code P2-TSK-011} scheme; the door itself and its evidence-first,
- * inbox-deduped ingestion live in {@code app} - updated by the task that made the previous
- * sentence stale, the recurring class). The webhook-driven transitions are {@code P5-TSK-013},
- * the refund command {@code P5-TSK-015}.
+ * inbox-deduped ingestion live in {@code app}), and the one shared outcome application
+ * ({@code P5-TSK-013}: {@code PaymentOutcomes} - the synchronous Tx2s, the webhook resolver
+ * and the sweeper apply the same judgement through the same code, from their own source
+ * states, with the capture's transition-posting-intent atomicity preserved by extraction
+ * rather than re-decided - updated by the task that made the previous sentence stale, the
+ * recurring class). The sweeper is {@code P5-TSK-014}, the refund command {@code P5-TSK-015}.
  *
  * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
  * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and

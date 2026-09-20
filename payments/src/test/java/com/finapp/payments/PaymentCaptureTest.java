@@ -103,20 +103,27 @@ class PaymentCaptureTest {
                 attempts,
                 evidence,
                 provider,
-                new PostingService(
-                        new IdempotentExecutor(
-                                new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore(),
-                                CLOCK, Duration.ofDays(1), Duration.ofMinutes(5)),
-                        new com.finapp.ledger.JdbcJournalEntryStore(IDS),
+                new PaymentOutcomes(
+                        intents,
+                        attempts,
+                        new PostingService(
+                                new IdempotentExecutor(
+                                        new com.finapp.platform.idempotency
+                                                .JdbcIdempotencyRecordStore(),
+                                        CLOCK, Duration.ofDays(1), Duration.ofMinutes(5)),
+                                new com.finapp.ledger.JdbcJournalEntryStore(IDS),
+                                (uow, record) -> auditTrail.add(record),
+                                new JdbcOutboxWriter(),
+                                new com.finapp.ledger.JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                PostingObserver.NONE),
+                        new ChartOfAccounts<>(new JdbcLedgerAccountStore()),
                         (uow, record) -> auditTrail.add(record),
-                        new JdbcOutboxWriter(),
-                        new com.finapp.ledger.JdbcBalanceProjection(),
+                        (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS,
-                        CLOCK,
-                        PostingObserver.NONE),
-                new ChartOfAccounts<>(new JdbcLedgerAccountStore()),
+                        CLOCK),
                 (uow, record) -> auditTrail.add(record),
-                (uow, envelope, payload, mediaType) -> events.add(envelope),
                 IDS,
                 CLOCK);
     }

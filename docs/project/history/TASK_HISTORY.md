@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 115 "Previously" blocks, newest first, from `P5-TSK-011` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 116 "Previously" blocks, newest first, from `P5-TSK-012` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,49 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P5-TSK-012` — webhook ingestion: authenticated, evidence-first, deduplicated** —
+`COMPLETE` (2026-09-20). **M5.5 opens at 1 of 3: the forgery surface holds.** ADR-0047's
+door — `POST /v1/providers/payments/webhooks`, the platform's second machine-facing route:
+HMAC-SHA256 over **`timestamp + "." + raw bytes`** per provider key, constant-time,
+verified **before parsing**; a two-sided freshness window (what payments adds over the
+`P2-TSK-011` scheme, and why the timestamp lives inside the signed payload); verbatim
+evidence + inbox dedupe on `(provider, event id)` committed together; 2xx only after
+commit. The `P5-TSK-013` seam is the inbox handler — ingestion transitions nothing.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Negative tests per cause, nothing written | Seven forgery shapes one byte-identical 401 — wrong/missing/tampered signatures, missing/stale/future timestamps, the KYC scheme replayed, unsigned garbage — plus the bound's 413s; evidence and inbox counts unmoved (`INV-PAY-01`) |
+| Triple delivery | ONE dedupe record, THREE evidence decisions (ADR-0047 §2), every delivery a 2xx |
+| Signature proven against published vectors | RFC 4231's own numbers, the composition pinned as `timestamp.body`, constant-time pinned structurally |
+
+### Decisions and registers
+
+**The anti-stall inversion on the record**: authentic-but-unparseable and unmappable are
+acknowledged with evidence retained — the evidence row IS the detection; the webhook meter
+is plan §15's, deferred to `P5-TSK-017` with the metering ceremony it belongs to.
+**Credential seven** (`PaymentWebhookKey`, `/payment-webhook`, `AT_LEAST_32`) arrived as
+the one-line `KeySpec` credential five promised, with its own test; the startup guard's
+property sites gained credentials five and seven. Attribution by **our** minted reference
+(`findByOperationReference`, the `SIGNED_CALLBACK` reasoning). The evidence bound moved to
+its retention owner (`ProviderEvidenceStore.MAX_PAYLOAD_BYTES`). The test overlay gained
+`finapp.payments.provider.url`; the unconfigured suite opts out with `false`. Contract
+baseline +38/−0. `DISTRIBUTED_EXECUTION.md` gained the door's row (arbitration = the inbox
+PK, `P0-TSK-021` cited).
+
+### Eight mutations, all caught, restores `cmp`-verified
+
+The **named verification-moved-after-parsing** (unsigned garbage answered 204 with
+evidence written — caught by the probe added for exactly it); the timestamp dropped from
+the signed payload (the KYC-replay probe alone); the window dropped; `Arrays.equals` for
+`isEqual` (structural); evidence-only-when-processed (1 row where 3); the dedupe dropped;
+attribution dropped; the evidence bound dropped (the empty body became our 500).
+**Verified by targeted tiers — `:payments:test` 108 / `:platform:test` 171 / `:app:test`
+441 / the payment database suites 41 (schema 10, authorization 8, capture 6, endpoints 10,
+unconfigured 1, webhook 6), 0 failures, fresh runs — the full battery deliberately skipped
+on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 ### Previously
 

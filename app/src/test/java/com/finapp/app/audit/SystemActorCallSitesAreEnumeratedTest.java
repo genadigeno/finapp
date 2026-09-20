@@ -130,7 +130,16 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " application as the platform). Attributing the ledger's first touch"
                         + " to whichever person's request happened to carry the chain would"
                         + " record them as the author of the provider's capture and of a"
-                        + " posting they never commanded.");
+                        + " posting they never commanded.",
+                    "com.finapp.app.payments.PaymentWebhookService.effect",
+                    "The webhook-driven outcome application (P5-TSK-013, ADR-0047 section 4):"
+                        + " a provider's unsolicited statement has no session at all - there is"
+                        + " no person in the flow to mis-attribute to, and the same outcome"
+                        + " applied by the synchronous response or the sweeper is the platform's"
+                        + " act already (the P5-TSK-009 reasoning, third occurrence), so the"
+                        + " attribution must not depend on which resolver wins the harmless"
+                        + " race. The scope wraps only the effect: authentication, evidence and"
+                        + " dedupe run before it and claim nothing.");
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TSK-012` — webhook ingestion; **M5.5 opens at 1 of 3**, next `P5-TSK-013`)
+Last updated: 2026-09-20 (`P5-TSK-013` — webhook-driven transitions; **M5.5 at 2 of 3**, next `P5-TSK-014`)
 
 ---
 
@@ -229,63 +229,61 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TSK-013` — webhook-driven transitions: idempotent, order-blind** — `READY`.
-Authenticated webhooks mapped through the **total** provider-state mapping onto the
-conditional machine edges (ADR-0047 §4): duplicate-with-fresh-id, out-of-order (capture
-report before auth report), before-the-sync-response, racing-the-sweeper and
-late-on-a-terminal-attempt each driven to **exactly one effect counted in the tables**,
-the losers retained as evidence (`INV-IDEM-04`, `INV-LIFE-04`); a webhook resolving an
-`*_UNKNOWN` applies the same outcome transaction as the sweeper (one code path — the
-`CheckOutcomeTrail` extraction rule if a second copy threatens). The webhook-resolved
-capture posts exactly once, proven under the race. The seam is `P5-TSK-012`'s inbox
-handler, empty today by design. See the backlog entry.
+**`P5-TSK-014` — the reconciliation-by-query sweeper** — `READY`.
+ADR-0046 §4: every instance polls for `*_DISPATCHED`/`*_UNKNOWN` rows past their bounds
+(server-clock judged), queries the provider by our reference, applies outcomes through
+**the standard outcome transactions** — `P5-TSK-013`'s `PaymentOutcomes`, built for exactly
+this consumer. **No lease, no leader, by design**: the conditional transition arbitrates
+and queries are idempotent; the schedule property-gated, disabled in the suites that need
+stillness, registered in `DISTRIBUTED_EXECUTION.md` §3. Bounds configuration explicit; a
+swept resolution audited as the platform (an enumerated `enterSystem()` site). Accept: a
+stranded `AUTH_DISPATCHED` and an aged `CAPTURE_UNKNOWN` each resolve; concurrent sweepers
+race to one winner counted; a sweeper racing the webhook produces one effect. See the
+backlog entry.
 
 ### Just completed
 
-**`P5-TSK-012` — webhook ingestion: authenticated, evidence-first, deduplicated** —
-`COMPLETE` (2026-09-20). **M5.5 opens at 1 of 3: the forgery surface holds.** ADR-0047's
-door — `POST /v1/providers/payments/webhooks`, the platform's second machine-facing route:
-HMAC-SHA256 over **`timestamp + "." + raw bytes`** per provider key, constant-time,
-verified **before parsing**; a two-sided freshness window (what payments adds over the
-`P2-TSK-011` scheme, and why the timestamp lives inside the signed payload); verbatim
-evidence + inbox dedupe on `(provider, event id)` committed together; 2xx only after
-commit. The `P5-TSK-013` seam is the inbox handler — ingestion transitions nothing.
+**`P5-TSK-013` — webhook-driven transitions: idempotent, order-blind** — `COMPLETE`
+(2026-09-20). **M5.5 at 2 of 3: `INV-LIFE-03`'s question meets its first resolver.** The
+scope's named extraction fired: **`PaymentOutcomes`**, the one money-bearing outcome
+application every resolver shares — the sync Tx2s became delegations (net −20 lines with a
+new component; the hermetic order pins proved the refactor behavior-preserving), the
+webhook's effect runs in `P5-TSK-012`'s inbox-handler seam through the same code, from the
+attempt's own source state (`from` as a parameter is the order-blindness), and the sweeper
+(`P5-TSK-014`) consumes it next.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Negative tests per cause, nothing written | Seven forgery shapes one byte-identical 401 — wrong/missing/tampered signatures, missing/stale/future timestamps, the KYC scheme replayed, unsigned garbage — plus the bound's 413s; evidence and inbox counts unmoved (`INV-PAY-01`) |
-| Triple delivery | ONE dedupe record, THREE evidence decisions (ADR-0047 §2), every delivery a 2xx |
-| Signature proven against published vectors | RFC 4231's own numbers, the composition pinned as `timestamp.body`, constant-time pinned structurally |
+| Each ordering scenario counted | Seven end-to-end HTTP flows: the heal (`CAPTURE_UNKNOWN` → webhook → `SUCCEEDED`, balance moved, ONE entry, the customer's GET flipping honestly), duplicate-with-fresh-id converged, `AUTH_UNKNOWN` resolved then the confirm retry chained the capture (the recovery whole), declined failing both rows, the stranded `AUTH_DISPATCHED` healed, out-of-order/late evidence-only, the total mapping refusing unrecognised and unactionable |
+| The webhook-resolved capture posts exactly once, under the race | Ten concurrent resolvers, distinct event ids: one entry counted by reference, one transition, ten statements retained |
 
-### Decisions and registers
+### The race found a defect, and the task fixed it on the record
 
-**The anti-stall inversion on the record**: authentic-but-unparseable and unmappable are
-acknowledged with evidence retained — the evidence row IS the detection; the webhook meter
-is plan §15's, deferred to `P5-TSK-017` with the metering ceremony it belongs to.
-**Credential seven** (`PaymentWebhookKey`, `/payment-webhook`, `AT_LEAST_32`) arrived as
-the one-line `KeySpec` credential five promised, with its own test; the startup guard's
-property sites gained credentials five and seven. Attribution by **our** minted reference
-(`findByOperationReference`, the `SIGNED_CALLBACK` reasoning). The evidence bound moved to
-its retention owner (`ProviderEvidenceStore.MAX_PAYLOAD_BYTES`). The test overlay gained
-`finapp.payments.provider.url`; the unconfigured suite opts out with `false`. Contract
-baseline +38/−0. `DISTRIBUTED_EXECUTION.md` gained the door's row (arbitration = the inbox
-PK, `P0-TSK-021` cited).
+Two concurrent deliveries **deadlocked (40P01)**: the evidence `INSERT`'s FK takes
+`FOR KEY SHARE` on the attempt row, and the outcome's UNIQUE-column `UPDATE` needs the full
+`FOR UPDATE` it blocks. Fixed by the **lock-order rule** — the effect's row lock before any
+`KEY SHARE`, in every resolver's transaction (both sync Tx2s included; the latent shape
+existed there too once a second resolver arrived) — with "evidence first" clarified as a
+COMMIT claim: evidence, dedupe and effect still commit together. Recorded in
+`DISTRIBUTED_EXECUTION.md`; the reverting mutation reproduced eight 40P01s.
 
 ### Eight mutations, all caught, restores `cmp`-verified
 
-The **named verification-moved-after-parsing** (unsigned garbage answered 204 with
-evidence written — caught by the probe added for exactly it); the timestamp dropped from
-the signed payload (the KYC-replay probe alone); the window dropped; `Arrays.equals` for
-`isEqual` (structural); evidence-only-when-processed (1 row where 3); the dedupe dropped;
-attribution dropped; the evidence bound dropped (the empty body became our 500).
-**Verified by targeted tiers — `:payments:test` 108 / `:platform:test` 171 / `:app:test`
-441 / the payment database suites 41 (schema 10, authorization 8, capture 6, endpoints 10,
-unconfigured 1, webhook 6), 0 failures, fresh runs — the full battery deliberately skipped
-on the owner's instruction; no fleet-wide database or kafka counts claimed.**
+The posting dropped from the extracted branch (`CAPTURED` beside no entry); the
+resolvable-state gates dropped (loud 500 where the evidence-only 204 belongs); the
+mapping's default made success (`AUTH_UNKNOWN` became `AUTHORIZED` — the
+most-expensive-mistake shape); declined dropped; the intent half of `failBoth` dropped in
+the extracted copy (the -010 survivor's shape re-guarded); `from` hardcoded (the resolution
+silently converged); the platform scope dropped (structural refusal); the lock-order
+reverted (eight 40P01s). **Verified by targeted tiers — `:payments:test` 108 /
+`:platform:test` 171 / `:app:test` 441 / the payment database suites 48 (schema 10,
+authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6, transitions 7),
+0 failures, fresh runs — the full battery deliberately skipped on the owner's instruction;
+no fleet-wide database or kafka counts claimed.**
 
 ### Previously
 
-The per-task completion records behind this one — 115 blocks, from `P5-TSK-011` back to project
+The per-task completion records behind this one — 116 blocks, from `P5-TSK-012` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -299,8 +297,8 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1–M5.4 `CLOSED` (3+2+3+3), **M5.5 open at 1 of 3**:
-`P5-TSK-001`…`-012` complete. Next: `P5-TSK-013`, `READY` — webhook-driven transitions.
+**Phase 5 is `IN_PROGRESS`** — M5.1–M5.4 `CLOSED` (3+2+3+3), **M5.5 open at 2 of 3**:
+`P5-TSK-001`…`-013` complete. Next: `P5-TSK-014`, `READY` — the reconciliation-by-query sweeper.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of

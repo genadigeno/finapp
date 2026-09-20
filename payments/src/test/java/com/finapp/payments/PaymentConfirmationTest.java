@@ -92,6 +92,37 @@ class PaymentConfirmationTest {
                 evidence,
                 new FakeParticipants(),
                 provider,
+                outcomes(),
+                (uow, record) -> auditTrail.add(record),
+                IDS,
+                CLOCK);
+    }
+
+    /**
+     * The shared outcome component over the same fakes (`P5-TSK-013`'s extraction) — with a
+     * REAL {@code PostingService} and chart over stores with no database: any posting touch
+     * explodes, so "authorization posts nothing" (ADR-0048) is structural in this suite too,
+     * the {@code PaymentCaptureTest} tripwire inherited by the extraction.
+     */
+    private PaymentOutcomes outcomes() {
+        return new PaymentOutcomes(
+                intents,
+                attempts,
+                new com.finapp.ledger.PostingService(
+                        new com.finapp.platform.idempotency.IdempotentExecutor(
+                                new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore(),
+                                CLOCK,
+                                java.time.Duration.ofDays(1),
+                                java.time.Duration.ofMinutes(5)),
+                        new com.finapp.ledger.JdbcJournalEntryStore(IDS),
+                        (uow, record) -> auditTrail.add(record),
+                        new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                        new com.finapp.ledger.JdbcBalanceProjection(),
+                        IDS,
+                        CLOCK,
+                        com.finapp.ledger.PostingObserver.NONE),
+                new com.finapp.ledger.ChartOfAccounts<>(
+                        new com.finapp.ledger.JdbcLedgerAccountStore()),
                 (uow, record) -> auditTrail.add(record),
                 (uow, envelope, payload, mediaType) -> events.add(envelope),
                 IDS,
@@ -200,8 +231,8 @@ class PaymentConfirmationTest {
         PaymentConfirmation withoutInstrument =
                 new PaymentConfirmation(
                         runner, intents, attempts, evidence, noInstrument, provider,
+                        outcomes(),
                         (uow, record) -> auditTrail.add(record),
-                        (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS, CLOCK);
         assertThatThrownBy(() -> withoutInstrument.confirm(party, intent.id()))
                 .isInstanceOf(UnknownPaymentInstrumentException.class);

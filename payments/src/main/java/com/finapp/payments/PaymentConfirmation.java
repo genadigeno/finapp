@@ -57,18 +57,14 @@ import java.util.UUID;
  */
 public final class PaymentConfirmation {
 
-    static final String AUTHORIZED_EVENT_TYPE = "payments.PaymentAuthorized";
-    static final String FAILED_EVENT_TYPE = "payments.PaymentFailed";
-    static final String UNKNOWN_EVENT_TYPE = "payments.PaymentStateUnknown";
-
     private final TransactionRunner transactions;
     private final PaymentIntentStore<java.sql.Connection> intents;
     private final PaymentAttemptStore<java.sql.Connection> attempts;
     private final ProviderEvidenceStore<java.sql.Connection> evidence;
     private final PaymentParticipants<java.sql.Connection> participants;
     private final PaymentProvider provider;
+    private final PaymentOutcomes outcomes;
     private final AuditWriter<java.sql.Connection> audit;
-    private final OutboxWriter<java.sql.Connection> outbox;
     private final IdGenerator ids;
     private final Clock clock;
 
@@ -79,8 +75,8 @@ public final class PaymentConfirmation {
             ProviderEvidenceStore<java.sql.Connection> evidence,
             PaymentParticipants<java.sql.Connection> participants,
             PaymentProvider provider,
+            PaymentOutcomes outcomes,
             AuditWriter<java.sql.Connection> audit,
-            OutboxWriter<java.sql.Connection> outbox,
             IdGenerator ids,
             Clock clock) {
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
@@ -89,8 +85,8 @@ public final class PaymentConfirmation {
         this.evidence = Objects.requireNonNull(evidence, "evidence must not be null");
         this.participants = Objects.requireNonNull(participants, "participants must not be null");
         this.provider = Objects.requireNonNull(provider, "provider must not be null");
+        this.outcomes = Objects.requireNonNull(outcomes, "outcomes must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
@@ -242,7 +238,11 @@ public final class PaymentConfirmation {
                 Optional.of(new ConfirmationResult(intent.status(), attemptStatus, true)));
     }
 
-    /** Tx2: the conditional outcome, the verbatim evidence, the platform's audit and event. */
+    /**
+     * Tx2: the verbatim evidence, then the one shared outcome application
+     * ({@link PaymentOutcomes} — `P5-TSK-013`'s extraction: the webhook resolver and the
+     * sweeper apply the same judgement through the same code, from their own source states).
+     */
     private ConfirmationResult applyAuthorizationOutcome(
             java.sql.Connection uow,
             PaymentIntentId intentId,
@@ -250,10 +250,23 @@ public final class PaymentConfirmation {
             Money dispatchedAmount,
             ProviderAnswer answer,
             Correlation correlation) {
-        Actor platform = SecurityContext.require();
-        Instant now = Instant.now(clock);
-
-        // Whatever the mapping said, what arrived is retained (INV-HIST-02).
+        PaymentOutcomes.Applied applied =
+                outcomes.applyAuthorization(
+                        uow,
+                        intentId,
+                        attemptId,
+                        PaymentAttemptStatus.AUTH_DISPATCHED,
+                        answer.verdict(),
+                        answer.providerReference(),
+                        // The issuer approved the dispatched ask; the promise is the
+                        // dispatched amount - carried from Tx1, never re-read.
+                        dispatchedAmount,
+                        correlation);
+        // Whatever the mapping said, what arrived is retained (INV-HIST-02) - AFTER the
+        // outcome's row lock, deliberately (P5-TSK-013's lock-order rule): the evidence
+        // INSERT takes FOR KEY SHARE on the attempt row, and taking it first deadlocks
+        // against a concurrent resolver's key-changing UPDATE (40P01). One transaction
+        // either way: retention and outcome still commit together.
         answer.evidence()
                 .ifPresent(
                         bytes ->
@@ -263,149 +276,7 @@ public final class PaymentConfirmation {
                                         Optional.empty(),
                                         EvidenceKind.RESPONSE,
                                         bytes,
-                                        now));
-
-        PaymentAttemptStatus committedAttempt;
-        PaymentIntentStatus committedIntent = PaymentIntentStatus.PROCESSING;
-        switch (answer.verdict()) {
-            case APPROVED -> {
-                if (attempts.authorize(
-                        uow,
-                        attemptId,
-                        PaymentAttemptStatus.AUTH_DISPATCHED,
-                        answer.providerReference().orElseThrow(),
-                        // The issuer approved the dispatched ask; a partial approval is a
-                        // vocabulary no simulated provider speaks (ADR-0049's one-provider
-                        // sample), so the promise is the dispatched amount - carried from
-                        // Tx1, never re-read.
-                        dispatchedAmount)) {
-                    attempts.recordTransition(
-                            uow,
-                            attemptId,
-                            PaymentAttemptStatus.AUTH_DISPATCHED,
-                            PaymentAttemptStatus.AUTHORIZED,
-                            platform,
-                            now);
-                    announce(uow, AUTHORIZED_EVENT_TYPE, intentId,
-                            "AUTHORIZED", Optional.empty(), correlation, now);
-                }
-                committedAttempt = PaymentAttemptStatus.AUTHORIZED;
-            }
-            case DECLINED -> {
-                committedAttempt =
-                        failBoth(uow, intentId, attemptId, PaymentFailureReason.DECLINED,
-                                correlation, platform, now);
-                committedIntent = PaymentIntentStatus.FAILED;
-            }
-            case NOTHING_SENT -> {
-                committedAttempt =
-                        failBoth(uow, intentId, attemptId,
-                                PaymentFailureReason.PROVIDER_UNAVAILABLE, correlation,
-                                platform, now);
-                committedIntent = PaymentIntentStatus.FAILED;
-            }
-            default -> {
-                // INDETERMINATE: we do not know is the answer, and it commits (INV-LIFE-03).
-                if (attempts.markAuthUnknown(uow, attemptId)) {
-                    attempts.recordTransition(
-                            uow,
-                            attemptId,
-                            PaymentAttemptStatus.AUTH_DISPATCHED,
-                            PaymentAttemptStatus.AUTH_UNKNOWN,
-                            platform,
-                            now);
-                    announce(uow, UNKNOWN_EVENT_TYPE, intentId,
-                            "AUTH_UNKNOWN", Optional.empty(), correlation, now);
-                }
-                committedAttempt = PaymentAttemptStatus.AUTH_UNKNOWN;
-            }
-        }
-
-        audit.append(
-                uow,
-                new AuditRecord(
-                        AuditId.next(ids),
-                        platform,
-                        now,
-                        PaymentsAuditAction.PAYMENT_OUTCOME_APPLIED,
-                        PaymentCreation.TARGET_TYPE,
-                        intentId.value().toString(),
-                        Optional.empty(),
-                        AuditOutcome.SUCCEEDED,
-                        correlation.correlationId(),
-                        // Verdict and committed states as enumerated names - never an amount,
-                        // never provider vocabulary (INV-AUD-02, INV-PAY-03).
-                        Optional.of(
-                                "attempt=" + attemptId
-                                        + ", verdict=" + answer.verdict()
-                                        + ", attemptStatus=" + committedAttempt
-                                        + ", intentStatus=" + committedIntent)));
-        return new ConfirmationResult(committedIntent, Optional.of(committedAttempt), false);
-    }
-
-    /** The attempt fails with its mapped reason, and the intent fails with its attempt. */
-    private PaymentAttemptStatus failBoth(
-            java.sql.Connection uow,
-            PaymentIntentId intentId,
-            PaymentAttemptId attemptId,
-            PaymentFailureReason reason,
-            Correlation correlation,
-            Actor platform,
-            Instant now) {
-        if (attempts.fail(uow, attemptId, PaymentAttemptStatus.AUTH_DISPATCHED, reason)) {
-            attempts.recordTransition(
-                    uow,
-                    attemptId,
-                    PaymentAttemptStatus.AUTH_DISPATCHED,
-                    PaymentAttemptStatus.FAILED,
-                    platform,
-                    now);
-            if (intents.transition(
-                    uow,
-                    intentId,
-                    PaymentIntentStatus.PROCESSING,
-                    PaymentIntentStatus.FAILED)) {
-                intents.recordTransition(
-                        uow,
-                        intentId,
-                        PaymentIntentStatus.PROCESSING,
-                        PaymentIntentStatus.FAILED,
-                        platform,
-                        now);
-            }
-            announce(uow, FAILED_EVENT_TYPE, intentId, "FAILED", Optional.of(reason),
-                    correlation, now);
-        }
-        return PaymentAttemptStatus.FAILED;
-    }
-
-    /** The outcome's event, in the transaction that commits the fact ({@code INV-EVT-01}). */
-    private void announce(
-            java.sql.Connection uow,
-            String eventType,
-            PaymentIntentId intentId,
-            String status,
-            Optional<PaymentFailureReason> reason,
-            Correlation correlation,
-            Instant now) {
-        EventPayload payload = EventPayload.of().with("status", status);
-        if (reason.isPresent()) {
-            payload = payload.with("failureReason", reason.get().name());
-        }
-        outbox.write(
-                uow,
-                new EventEnvelope(
-                        EventId.next(ids),
-                        eventType,
-                        PaymentCreation.EVENT_VERSION,
-                        EventEnvelope.CURRENT_SCHEMA_VERSION,
-                        intentId,
-                        PaymentCreation.TARGET_TYPE,
-                        now,
-                        PaymentCreation.PRODUCER,
-                        correlation.correlationId(),
-                        correlation.cause().orElseThrow()),
-                payload.toBytes(),
-                EventPayload.MEDIA_TYPE);
+                                        Instant.now(clock)));
+        return new ConfirmationResult(applied.intent(), Optional.of(applied.attempt()), false);
     }
 }

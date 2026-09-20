@@ -1,6 +1,15 @@
 package com.finapp.app.payments;
 
 import com.finapp.payments.EvidenceKind;
+import com.finapp.payments.PaymentIntent;
+import com.finapp.payments.PaymentIntentStore;
+import com.finapp.payments.PaymentOutcomes;
+import com.finapp.payments.PaymentAttemptStatus;
+import com.finapp.payments.ProviderAnswer;
+import com.finapp.payments.ProviderReference;
+import com.finapp.payments.PaymentCreation;
+import com.finapp.platform.security.SecurityContext;
+import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.payments.PaymentAttempt;
 import com.finapp.payments.PaymentAttemptId;
 import com.finapp.payments.PaymentAttemptStore;
@@ -76,6 +85,8 @@ public class PaymentWebhookService {
     private final WebhookSignature signature;
     private final ProviderEvidenceStore<Connection> evidence;
     private final PaymentAttemptStore<Connection> attempts;
+    private final PaymentIntentStore<Connection> intents;
+    private final PaymentOutcomes outcomes;
     private final InboxConsumer<Connection> inbox;
     private final ObjectMapper json;
     private final Clock clock;
@@ -86,6 +97,8 @@ public class PaymentWebhookService {
             WebhookSignature webhookSignature,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            PaymentOutcomes paymentOutcomes,
             InboxConsumer<Connection> inboxConsumer,
             ObjectMapper objectMapper,
             Clock clock,
@@ -98,6 +111,9 @@ public class PaymentWebhookService {
                         providerEvidenceStore, "providerEvidenceStore must not be null");
         this.attempts =
                 Objects.requireNonNull(paymentAttemptStore, "paymentAttemptStore must not be null");
+        this.intents =
+                Objects.requireNonNull(paymentIntentStore, "paymentIntentStore must not be null");
+        this.outcomes = Objects.requireNonNull(paymentOutcomes, "paymentOutcomes must not be null");
         this.inbox = Objects.requireNonNull(inboxConsumer, "inboxConsumer must not be null");
         this.json = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -112,7 +128,8 @@ public class PaymentWebhookService {
      * (reconciliation by our reference, ADR-0046 §4 applied inbound), and the provider's
      * status word — untouched here; `P5-TSK-013`'s total mapping owns it ({@code INV-PAY-03}).
      */
-    private record WebhookPayload(String eventId, String operation, String status) {}
+    private record WebhookPayload(
+            String eventId, String operation, String status, String reference) {}
 
     /**
      * Accepts one delivery.
@@ -167,13 +184,20 @@ public class PaymentWebhookService {
                             // The attribution read and the evidence row share the delivery's
                             // transaction: evidence for EVERY authenticated delivery - the
                             // duplicate's statement is as genuine as the first's (ADR-0047 §2).
-                            Optional<PaymentAttemptId> subject =
+                            Optional<PaymentAttempt> subject =
                                     operation.flatMap(
                                             reference ->
                                                     attempts.findByOperationReference(
-                                                                    unitOfWork, reference)
-                                                            .map(PaymentAttempt::id));
-                            retain(unitOfWork, subject, rawBody);
+                                                            unitOfWork, reference));
+                            // THE EFFECT BEFORE THE EVIDENCE ROW, deliberately - a lock-order
+                            // rule, not a priority statement: the evidence INSERT takes FOR
+                            // KEY SHARE on the attempt row (the FK), and the outcome's UPDATE
+                            // rewrites a UNIQUE column, which needs the full FOR UPDATE that
+                            // KEY SHARE blocks - two deliveries retaining first then applying
+                            // deadlock each other (40P01, found by this suite's ten-way race).
+                            // "Evidence first" (ADR-0047 §2) is a COMMIT claim and stands:
+                            // evidence, dedupe and effect still commit together, and 2xx
+                            // still waits for that commit.
                             InboxConsumer.Outcome consumed =
                                     inbox.consume(
                                             unitOfWork,
@@ -183,13 +207,20 @@ public class PaymentWebhookService {
                                                             + ":"
                                                             + eventId.get()),
                                             MESSAGE_TYPE,
-                                            uow -> {
-                                                // The P5-TSK-013 seam: the conditional machine
-                                                // transitions run exactly here, with the
-                                                // dedupe record, or not at all. Ingestion
-                                                // itself has no state effect by design.
-                                            });
-                            return new Delivered(consumed, subject);
+                                            uow ->
+                                                    // The P5-TSK-013 effect: the conditional
+                                                    // machine transitions, with the dedupe
+                                                    // record, or not at all (ADR-0047 §3-§4).
+                                                    subject.ifPresent(
+                                                            attempt ->
+                                                                    effect(
+                                                                            uow,
+                                                                            attempt,
+                                                                            operation.get(),
+                                                                            parsed.get())));
+                            retain(unitOfWork,
+                                    subject.map(PaymentAttempt::id), rawBody);
+                            return new Delivered(consumed, subject.map(PaymentAttempt::id));
                         });
 
         if (delivered.consumed() == InboxConsumer.Outcome.CONTENDED) {
@@ -214,6 +245,128 @@ public class PaymentWebhookService {
                     "A duplicate payment webhook delivery was absorbed by the inbox; its bytes"
                             + " are retained as evidence (INV-IDEM-04, INV-HIST-02)");
         }
+    }
+
+    /**
+     * The webhook's state effect (`P5-TSK-013`, ADR-0047 §4): the statement mapped through
+     * the total vocabulary onto a conditional edge of the attempt machine, applied through
+     * the ONE shared outcome component — the same transaction the sync response and the
+     * sweeper use, from this attempt's own current source state.
+     *
+     * <p><strong>As the platform</strong> — the module's second enumerated
+     * {@code enterSystem()} site: a provider's unsolicited statement has no session, and the
+     * same outcome applied by the sweeper has no person at all, so attribution must not
+     * depend on which resolver wins the harmless race (the `P5-TSK-009` reasoning, third
+     * occurrence).
+     *
+     * <p><strong>Refused edges are evidence, never errors</strong> ({@code INV-LIFE-04}): a
+     * late report on a terminal attempt, an out-of-order authorization report on a captured
+     * one, an unrecognised status word, an approval missing the reference the row must store
+     * — each changes nothing, logs identifiers, and the retained bytes (already committed in
+     * this same transaction) are the statement of record. Unlike the synchronous call —
+     * whose ENDING without knowledge is itself the fact {@code *_UNKNOWN} records — an
+     * unsolicited statement we cannot read resolves nothing (the recorded decision).
+     */
+    @SuppressWarnings("try") // The Scope is used for its close side effect.
+    private void effect(
+            Connection uow,
+            PaymentAttempt attempt,
+            ProviderIdempotencyReference operation,
+            WebhookPayload payload) {
+        Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
+        if (verdict.isEmpty()) {
+            log.warn(
+                    "An authenticated payment webhook for attempt {} carried a status the"
+                            + " total mapping refuses to act on; retained as evidence,"
+                            + " nothing transitions (INV-PAY-03)",
+                    attempt.id());
+            return;
+        }
+        boolean authOperation = operation.equals(attempt.authorizationReference());
+        Correlation correlation = PaymentCreation.resolvedCorrelation();
+        try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
+            PaymentIntent intent =
+                    intents.findById(uow, attempt.intentId())
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "an attempt row's intent exists: V003's"
+                                                            + " foreign key holds it"));
+            if (authOperation && authResolvable(attempt.status())) {
+                outcomes.applyAuthorization(
+                        uow,
+                        intent.id(),
+                        attempt.id(),
+                        attempt.status(),
+                        verdict.get(),
+                        providerReference(payload),
+                        // The issuer approved the dispatched ask: the intent's amount, the
+                        // same promise the synchronous path carries from its Tx1.
+                        intent.amount(),
+                        correlation);
+            } else if (!authOperation && captureResolvable(attempt.status())) {
+                outcomes.applyCapture(
+                        uow,
+                        intent.id(),
+                        attempt.id(),
+                        attempt.status(),
+                        verdict.get(),
+                        providerReference(payload),
+                        intent.walletAccount(),
+                        // The capture is the authorized promise, in full (one attempt, no
+                        // partial capture until its producer exists - ADR-0045 §4).
+                        attempt.authorizedAmount(),
+                        correlation);
+            } else {
+                log.info(
+                        "A payment webhook reported on attempt {} in state {} which its"
+                                + " operation cannot move; the statement stands as evidence"
+                                + " and changes nothing (INV-LIFE-04)",
+                        attempt.id(),
+                        attempt.status());
+            }
+        }
+    }
+
+    /**
+     * The total mapping ({@code INV-PAY-03}): the provider's own two words act; everything
+     * else — unrecognised states, an approval without a usable reference — is empty, and the
+     * caller retains without transitioning. The vocabulary is the wire client's exactly:
+     * this is the same provider speaking.
+     */
+    private static Optional<ProviderAnswer.Verdict> mappedVerdict(WebhookPayload payload) {
+        return switch (payload.status() == null ? "" : payload.status()) {
+            case "approved" ->
+                    providerReference(payload).isPresent()
+                            ? Optional.of(ProviderAnswer.Verdict.APPROVED)
+                            // An approval the row cannot store is unactionable - not
+                            // knowledge (the PspWireClient totality rule, inbound).
+                            : Optional.empty();
+            case "declined" -> Optional.of(ProviderAnswer.Verdict.DECLINED);
+            default -> Optional.empty();
+        };
+    }
+
+    /** Shape-total: a reference we cannot store is absent, never a throw. */
+    private static Optional<ProviderReference> providerReference(WebhookPayload payload) {
+        if (payload.reference() == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(new ProviderReference(payload.reference()));
+        } catch (IllegalArgumentException unusable) {
+            return Optional.empty();
+        }
+    }
+
+    private static boolean authResolvable(PaymentAttemptStatus status) {
+        return status == PaymentAttemptStatus.AUTH_DISPATCHED
+                || status == PaymentAttemptStatus.AUTH_UNKNOWN;
+    }
+
+    private static boolean captureResolvable(PaymentAttemptStatus status) {
+        return status == PaymentAttemptStatus.CAPTURE_DISPATCHED
+                || status == PaymentAttemptStatus.CAPTURE_UNKNOWN;
     }
 
     /** Evidence, attributed when the operation resolved ({@code V005}'s recorded rule). */

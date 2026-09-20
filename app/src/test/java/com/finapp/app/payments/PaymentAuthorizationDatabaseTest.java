@@ -460,6 +460,32 @@ class PaymentAuthorizationDatabaseTest {
                 evidence,
                 participants,
                 provider,
+                outcomes(),
+                new JdbcAuditWriter(),
+                IDS,
+                CLOCK);
+    }
+
+    /** The shared outcome component over the real stores (`P5-TSK-013`'s extraction). */
+    private com.finapp.payments.PaymentOutcomes outcomes() {
+        return new com.finapp.payments.PaymentOutcomes(
+                intents,
+                attempts,
+                new com.finapp.ledger.PostingService(
+                        new com.finapp.platform.idempotency.IdempotentExecutor(
+                                new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore(),
+                                CLOCK,
+                                Duration.ofDays(1),
+                                Duration.ofMinutes(5)),
+                        new com.finapp.ledger.JdbcJournalEntryStore(IDS),
+                        new JdbcAuditWriter(),
+                        new JdbcOutboxWriter(),
+                        new com.finapp.ledger.JdbcBalanceProjection(),
+                        IDS,
+                        CLOCK,
+                        com.finapp.ledger.PostingObserver.NONE),
+                new com.finapp.ledger.ChartOfAccounts<>(
+                        new com.finapp.ledger.JdbcLedgerAccountStore()),
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
