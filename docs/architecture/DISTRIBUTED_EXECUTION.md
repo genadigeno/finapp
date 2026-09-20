@@ -157,6 +157,23 @@ The `KafkaProducer` the adapter holds is likewise per-instance and non-authorita
 buffers are in-flight copies of durable outbox rows, and losing them costs a retry, never a
 fact.
 
+### `PaymentSweeperSchedule` — the exemption's other half (`P5-TSK-014`)
+
+The second named exemption to `nothingSchedulesAmbiently`, standing on the bar's **other
+half**: the relay's justification is a lease per aggregate; the sweeper's is **idempotent per
+period, with no lease and no leader by design** (ADR-0046 §4). Every instance polls for
+`*_DISPATCHED` rows past their bound and `*_UNKNOWN` rows past their patience, queries the
+provider by our stored reference — read-only and idempotent at the provider, safe for every
+instance to race — and applies answers through `PaymentOutcomes`' conditional transitions,
+whose losers converge with nothing posted (the counted ten-sweeper and sweeper-vs-webhook
+races in `PaymentSweeperDatabaseTest`). A lease would add a liveness dependency and protect
+nothing the row count does not already decide. Bounds are explicit configuration, judged by
+the injected server clock (ADR-0014; minutes-scale bounds make NTP skew noise). The tick's
+tally (`applied`/`skipped`) is telemetry, never the count of record — the singular effect is
+counted in the journal and the transition rows. One failing row is logged and the sweep
+continues: the rows behind a poisoned one are other customers' money. Losing the executor
+costs this instance's ticks and nothing else.
+
 ### `InboxConsumers` — why the consumer loops need no lease (`P2-TSK-002`)
 
 The consuming counterpart, and deliberately **not** a second exemption to

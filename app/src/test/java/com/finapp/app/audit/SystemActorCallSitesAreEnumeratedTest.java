@@ -139,7 +139,15 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " act already (the P5-TSK-009 reasoning, third occurrence), so the"
                         + " attribution must not depend on which resolver wins the harmless"
                         + " race. The scope wraps only the effect: authentication, evidence and"
-                        + " dedupe run before it and claim nothing.");
+                        + " dedupe run before it and claim nothing.",
+                    "com.finapp.payments.PaymentSweeper.sweep",
+                    "The swept resolution (P5-TSK-014, ADR-0046 section 4): a scheduled"
+                        + " reconciliation query has no person at all - the cleanest case of"
+                        + " the P5-TSK-009 attribution reasoning, fourth occurrence - and the"
+                        + " same outcome applied by the synchronous response or a webhook is"
+                        + " already the platform's act, so attribution must not depend on"
+                        + " which resolver wins the harmless race. The scope wraps each row's"
+                        + " query-and-resolve; the candidate read before it claims nothing.");
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

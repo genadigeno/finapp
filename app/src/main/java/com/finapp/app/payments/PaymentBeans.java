@@ -331,6 +331,64 @@ class PaymentBeans {
                 dataSource);
     }
 
+    /**
+     * The reconciliation-by-query sweeper (`P5-TSK-014`) — provider-conditional like every
+     * consumer of the wire. Bounds explicit with documented defaults: a dispatch younger than
+     * {@code dispatched-age} is probably mid-call and left alone; an {@code *_UNKNOWN} is
+     * asked about after {@code unknown-age}. Server-clock judged (ADR-0014).
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.PaymentSweeper paymentSweeper(
+            TransactionRunner paymentTransactionRunner,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            PaymentProvider paymentProvider,
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            IdGenerator ids,
+            Clock clock,
+            @Value("${finapp.payments.sweeper.dispatched-age:PT10M}")
+                    java.time.Duration dispatchedAge,
+            @Value("${finapp.payments.sweeper.unknown-age:PT1M}") java.time.Duration unknownAge,
+            @Value("${finapp.payments.sweeper.batch:50}") int batchSize) {
+        return new com.finapp.payments.PaymentSweeper(
+                paymentTransactionRunner,
+                paymentAttemptStore,
+                paymentIntentStore,
+                providerEvidenceStore,
+                paymentProvider,
+                paymentOutcomes,
+                ids,
+                clock,
+                dispatchedAge,
+                unknownAge,
+                batchSize);
+    }
+
+    /**
+     * The schedule — the relay-gate shape for the identical reason: a background worker
+     * resolving payments under every {@code @SpringBootTest} would race assertions, so the
+     * app test overlay disables it and the database suite drives {@code sweep()} directly.
+     * {@code matchIfMissing = true}: a deployment that says nothing gets the sweeper, because
+     * a deployment that forgets it strands every ambiguous payment forever.
+     */
+    @Bean
+    @ConditionalOnProperty(
+            name = "finapp.payments.sweeper.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    // The provider half of the condition rides on the sweeper bean itself (declared above,
+    // provider-conditional): no provider, no sweeper, no schedule.
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(
+            com.finapp.payments.PaymentSweeper.class)
+    PaymentSweeperSchedule paymentSweeperSchedule(
+            com.finapp.payments.PaymentSweeper paymentSweeper,
+            @Value("${finapp.payments.sweeper.poll-interval:PT30S}")
+                    java.time.Duration pollInterval) {
+        return new PaymentSweeperSchedule(paymentSweeper, pollInterval);
+    }
+
     @Bean
     PaymentCancellation paymentCancellation(
             PaymentIntentStore<Connection> paymentIntentStore,

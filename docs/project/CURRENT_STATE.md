@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TSK-013` — webhook-driven transitions; **M5.5 at 2 of 3**, next `P5-TSK-014`)
+Last updated: 2026-09-20 (`P5-TSK-014` — the reconciliation-by-query sweeper; **M5.6 at 1 of 2**, next `P5-TST-001`)
 
 ---
 
@@ -229,61 +229,63 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TSK-014` — the reconciliation-by-query sweeper** — `READY`.
-ADR-0046 §4: every instance polls for `*_DISPATCHED`/`*_UNKNOWN` rows past their bounds
-(server-clock judged), queries the provider by our reference, applies outcomes through
-**the standard outcome transactions** — `P5-TSK-013`'s `PaymentOutcomes`, built for exactly
-this consumer. **No lease, no leader, by design**: the conditional transition arbitrates
-and queries are idempotent; the schedule property-gated, disabled in the suites that need
-stillness, registered in `DISTRIBUTED_EXECUTION.md` §3. Bounds configuration explicit; a
-swept resolution audited as the platform (an enumerated `enterSystem()` site). Accept: a
-stranded `AUTH_DISPATCHED` and an aged `CAPTURE_UNKNOWN` each resolve; concurrent sweepers
-race to one winner counted; a sweeper racing the webhook produces one effect. See the
+**`P5-TST-001` — the ambiguity demonstration** — `READY`.
+M5.6 concludes with the phase's reason for existing, driven whole: the provider
+**succeeds while the response is lost** → `*_UNKNOWN` committed → the sweeper resolves →
+**exactly one financial effect**, counted in the journal and the payment tables; the same
+for timeout-then-success at authorization and at capture;
+provider-succeeds-after-we-resolved-failure lands as refused-edge evidence. Named
+mutations: timeout mapped to `FAILED` (the most-expensive-mistake shape) — caught by the
+demonstration; the sweeper's transition made unconditional — caught by the race. The
+register rows for `INV-LIFE-03` land here with the demonstrations performed. See the
 backlog entry.
 
 ### Just completed
 
-**`P5-TSK-013` — webhook-driven transitions: idempotent, order-blind** — `COMPLETE`
-(2026-09-20). **M5.5 at 2 of 3: `INV-LIFE-03`'s question meets its first resolver.** The
-scope's named extraction fired: **`PaymentOutcomes`**, the one money-bearing outcome
-application every resolver shares — the sync Tx2s became delegations (net −20 lines with a
-new component; the hermetic order pins proved the refactor behavior-preserving), the
-webhook's effect runs in `P5-TSK-012`'s inbox-handler seam through the same code, from the
-attempt's own source state (`from` as a parameter is the order-blindness), and the sweeper
-(`P5-TSK-014`) consumes it next.
+**`P5-TSK-014` — the reconciliation-by-query sweeper** — `COMPLETE` (2026-09-20).
+**M5.6 opens at 1 of 2: ambiguity now resolves on the platform's own initiative.**
+`PaymentSweeper` polls for `*_DISPATCHED` rows past their bound and `*_UNKNOWN` rows past
+their patience, asks the provider about **our** stored reference holding no connection,
+and applies answers through `PaymentOutcomes` — the extraction built for exactly this
+consumer. **No lease, no leader, by design and checked**: `PaymentSweeperSchedule` is the
+second named exemption to `nothingSchedulesAmbiently`, standing on the rule's *other*
+half (idempotent per period), load-bearing-checked in the rule's own suite, registered in
+`DISTRIBUTED_EXECUTION.md` §3 beside the relay's lease-half.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Each ordering scenario counted | Seven end-to-end HTTP flows: the heal (`CAPTURE_UNKNOWN` → webhook → `SUCCEEDED`, balance moved, ONE entry, the customer's GET flipping honestly), duplicate-with-fresh-id converged, `AUTH_UNKNOWN` resolved then the confirm retry chained the capture (the recovery whole), declined failing both rows, the stranded `AUTH_DISPATCHED` healed, out-of-order/late evidence-only, the total mapping refusing unrecognised and unactionable |
-| The webhook-resolved capture posts exactly once, under the race | Ten concurrent resolvers, distinct event ids: one entry counted by reference, one transition, ten statements retained |
+| The stranded and the aged resolve | `AUTH_DISPATCHED` (crash mid-call) → `AUTHORIZED` on an approved query, evidence attributed; `CAPTURE_UNKNOWN` → `CAPTURED` + **one** posting + intent `SUCCEEDED`, a second sweep changing nothing |
+| Concurrent sweepers race to one winner counted | Ten sweepers → one entry, one `CAPTURED` transition row — counted in the tables; the tick's tally renamed `applied`/`skipped` on the record after the race showed "resolved" would lie about convergence |
+| A sweeper racing the webhook produces one effect | Driven against the REAL webhook resolver — the `P5-TSK-013` placeholder discharged |
 
-### The race found a defect, and the task fixed it on the record
+### The licence, its limit, and the third reason
 
-Two concurrent deliveries **deadlocked (40P01)**: the evidence `INSERT`'s FK takes
-`FOR KEY SHARE` on the attempt row, and the outcome's UNIQUE-column `UPDATE` needs the full
-`FOR UPDATE` it blocks. Fixed by the **lock-order rule** — the effect's row lock before any
-`KEY SHARE`, in every resolver's transaction (both sync Tx2s included; the latent shape
-existed there too once a second resolver arrived) — with "evidence first" clarified as a
-COMMIT claim: evidence, dedupe and effect still commit together. Recorded in
-`DISTRIBUTED_EXECUTION.md`; the reverting mutation reproduced eight 40P01s.
+An explicit `UNRECOGNISED` — the provider answering *in so many words* — resolves to
+`FAILED(NEVER_RECEIVED)`: the third `PaymentFailureReason`, arriving with its producer
+exactly as promised, through `PaymentOutcomes.applyUnrecognised` (one named method, no ad
+hoc composition). `V007` regenerates the reason `CHECK` (V003 is applied history);
+the migration reconciliation re-anchored to the constraint's current definition. **A 500
+and a 404 alike mark the honest `*_UNKNOWN` once and never fail** — the
+status-code-is-not-an-answer fold proven load-bearing where it pays. A fresh dispatch
+inside its bound is not even queried; one poisoned row fails alone (the rows behind it are
+other customers' money). The sweep is the **fourth** enumerated `enterSystem()` site.
 
 ### Eight mutations, all caught, restores `cmp`-verified
 
-The posting dropped from the extracted branch (`CAPTURED` beside no entry); the
-resolvable-state gates dropped (loud 500 where the evidence-only 204 belongs); the
-mapping's default made success (`AUTH_UNKNOWN` became `AUTHORIZED` — the
-most-expensive-mistake shape); declined dropped; the intent half of `failBoth` dropped in
-the extracted copy (the -010 survivor's shape re-guarded); `from` hardcoded (the resolution
-silently converged); the platform scope dropped (structural refusal); the lock-order
-reverted (eight 40P01s). **Verified by targeted tiers — `:payments:test` 108 /
-`:platform:test` 171 / `:app:test` 441 / the payment database suites 48 (schema 10,
-authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6, transitions 7),
-0 failures, fresh runs — the full battery deliberately skipped on the owner's instruction;
-no fleet-wide database or kafka counts claimed.**
+The **named** ambiguity-collapsed-into-the-licence (INDETERMINATE resolved to `FAILED` —
+the phase's most expensive direction, refused); the **named** bounds-ignored (the fresh
+dispatch swept into churn); the licence dropped; the reason swapped to `DECLINED`;
+operation-kind confusion (the query missed, nothing resolved); the platform scope dropped
+(structural refusal); `V007` hand-listed short (the reconciliation alone); the anti-stall
+catch removed (the poisoned row stalled the healthy one). **Verified by targeted tiers —
+`:payments:test` 108 / `:platform:test` 171 / `:app:test` 444 / the payment database
+suites 56 (schema 10, authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6,
+transitions 7, sweeper 8), 0 failures, fresh runs — the full battery deliberately skipped
+on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 ### Previously
 
-The per-task completion records behind this one — 116 blocks, from `P5-TSK-012` back to project
+The per-task completion records behind this one — 117 blocks, from `P5-TSK-013` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -297,8 +299,8 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1–M5.4 `CLOSED` (3+2+3+3), **M5.5 open at 2 of 3**:
-`P5-TSK-001`…`-013` complete. Next: `P5-TSK-014`, `READY` — the reconciliation-by-query sweeper.
+**Phase 5 is `IN_PROGRESS`** — M5.1–M5.5 `CLOSED` (3+2+3+3+2), **M5.6 open at 1 of 2**:
+`P5-TSK-001`…`-014` complete. Next: `P5-TST-001`, `READY` — the ambiguity demonstration.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of

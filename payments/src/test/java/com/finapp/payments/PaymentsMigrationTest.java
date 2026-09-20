@@ -75,9 +75,14 @@ class PaymentsMigrationTest {
     }
 
     @Test
-    @DisplayName("the failure-reason CHECK is generated from PaymentFailureReason")
+    @DisplayName("the failure-reason CHECK is generated from PaymentFailureReason - V007 holds"
+            + " the current definition (V003 is applied history)")
     void failureReasonCheckMatchesTheEnum() {
-        assertThat(migration(ATTEMPT))
+        // P5-TSK-014 widened the enum with the sweeper's NEVER_RECEIVED; V003 cannot be
+        // edited (ADR-0011, forward-only), so V007 REPLACES the constraint and this
+        // reconciliation follows the constraint to its current definition.
+        assertThat(migration(
+                        "db/migration/payments/V007__the_sweepers_failure_reason.sql"))
                 .contains("CHECK (failure_reason IN ("
                         + PaymentFailureReason.sqlValueList() + "))");
     }

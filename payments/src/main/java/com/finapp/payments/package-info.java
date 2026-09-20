@@ -47,8 +47,12 @@
  * ({@code P5-TSK-013}: {@code PaymentOutcomes} - the synchronous Tx2s, the webhook resolver
  * and the sweeper apply the same judgement through the same code, from their own source
  * states, with the capture's transition-posting-intent atomicity preserved by extraction
- * rather than re-decided - updated by the task that made the previous sentence stale, the
- * recurring class). The sweeper is {@code P5-TSK-014}, the refund command {@code P5-TSK-015}.
+ * rather than re-decided), and the reconciliation-by-query sweeper ({@code P5-TSK-014}:
+ * {@code PaymentSweeper} - no lease, no leader, by design; bounded candidates, the provider
+ * asked about our stored reference holding no connection, answers applied through the shared
+ * outcomes, an explicit UNRECOGNISED resolving to {@code FAILED(NEVER_RECEIVED)} and a 404
+ * never earning it - updated by the task that made the previous sentence stale, the
+ * recurring class). The refund command is {@code P5-TSK-015}.
  *
  * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
  * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and

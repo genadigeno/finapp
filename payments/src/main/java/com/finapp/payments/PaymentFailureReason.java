@@ -14,11 +14,12 @@ package com.finapp.payments;
  * The callers that perform those mappings are the commands and resolvers
  * ({@code P5-TSK-009}/{@code -010}/{@code -013}/{@code -014}).
  *
- * <p><strong>Deliberately absent</strong>: a value for the sweeper resolving a stranded dispatch
- * on an explicit {@link QueryAnswer.Verdict#UNRECOGNISED} — it arrives with its producer
- * ({@code P5-TSK-014}), whose design fixes its meaning (the deliberately-few licence, the
- * audit-action precedent in {@code package-info}); and any finer decline taxonomy — reason
- * vocabulary with no consumer ({@code ProviderAnswer}'s recorded refusal).
+ * <p><strong>Three values now</strong> — the sweeper's arrived with its producer exactly as
+ * promised ({@code P5-TSK-014}, the deliberately-few licence): {@link #NEVER_RECEIVED} is the
+ * resolution of an explicit {@link QueryAnswer.Verdict#UNRECOGNISED}, and only that — the
+ * provider answering in so many words that it never saw our reference. <strong>Deliberately
+ * absent still</strong>: any finer decline taxonomy — reason vocabulary with no consumer
+ * ({@code ProviderAnswer}'s recorded refusal).
  */
 public enum PaymentFailureReason {
 
@@ -30,7 +31,18 @@ public enum PaymentFailureReason {
      * happened ({@code PAYMENT_LIFECYCLES.md} §3). Never used for a timeout: silence is
      * ambiguity and commits {@code *_UNKNOWN}, not a failure ({@code INV-LIFE-03}).
      */
-    PROVIDER_UNAVAILABLE;
+    PROVIDER_UNAVAILABLE,
+
+    /**
+     * The provider explicitly answered a resolution query that it never saw our reference
+     * ({@code P5-TSK-014}: {@link QueryAnswer.Verdict#UNRECOGNISED}, the sweeper's licence) —
+     * the dispatched operation never reached the provider, so failing it destroys nothing.
+     * Never produced by a 404 or any other status code: only the parsed answer in so many
+     * words earns this, because a misrouted load balancer resolving a live operation to
+     * {@code FAILED} is the phase's most expensive mistake ({@code QueryAnswer}'s recorded
+     * rule, consumed here).
+     */
+    NEVER_RECEIVED;
 
     /**
      * The reasons as a SQL literal list — the one definition of the attempt table's

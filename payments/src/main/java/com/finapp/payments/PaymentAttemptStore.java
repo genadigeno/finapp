@@ -3,6 +3,7 @@ package com.finapp.payments;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.Money;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -27,6 +28,17 @@ public interface PaymentAttemptStore<T> {
 
     /** The attempt by its own identifier — the capture command's read ({@code P5-TSK-010}). */
     Optional<PaymentAttempt> findById(T unitOfWork, PaymentAttemptId attempt);
+
+    /**
+     * The sweeper's candidates (`P5-TSK-014`, ADR-0046 §4): attempts in a resolvable state
+     * whose state age has passed its bound — {@code *_DISPATCHED} past {@code dispatchedBefore}
+     * (birth for {@code AUTH_DISPATCHED}, the transition row for the capture's), and
+     * {@code *_UNKNOWN} past {@code unknownBefore}. Bounded ({@code limit}) and oldest first,
+     * the relay's batching posture. Stale answers are harmless: every resolution re-reads and
+     * applies conditionally.
+     */
+    List<PaymentAttempt> findSweepable(
+            T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
 
     /**
      * The attempt one of whose minted operation references is {@code reference} — the webhook

@@ -6187,7 +6187,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   claimed.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-EVENT`
 
-**P5-TSK-014 — The reconciliation-by-query sweeper** — `READY`
+**P5-TSK-014 — The reconciliation-by-query sweeper** — `COMPLETE` (2026-09-20)
 - **Scope**: ADR-0046 §4: every instance polls for `*_DISPATCHED`/`*_UNKNOWN` rows past
   their bounds (server-clock judged — the ADR-0014 discipline), queries the provider by
   our reference, applies outcomes through the standard outcome transactions. **No lease,
@@ -6199,9 +6199,51 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - **Deps**: `P5-TSK-010`. **Accept**: a stranded `AUTH_DISPATCHED` (crash mid-call) and an
   aged `CAPTURE_UNKNOWN` each resolve; **concurrent sweepers race to one winner counted**;
   a sweeper racing the webhook produces one effect.
+- **Gate evidence (2026-09-20)**: **every accept clause counted over the real chain**
+  (`PaymentSweeperDatabaseTest`, 8 tests, the capture-suite composition: real stores, real
+  cipher, real ledger, real adapter over the harness). The stranded `AUTH_DISPATCHED`
+  resolved to `AUTHORIZED` on an approved query with its `QUERY_RESULT` evidence attributed;
+  the aged `CAPTURE_UNKNOWN` resolved to `CAPTURED` + **one** posting + intent `SUCCEEDED`,
+  a second sweep changing nothing; **ten concurrent sweepers → one entry, one `CAPTURED`
+  transition row** (the winner counted where winners are counted — the tables; the tick's
+  tally renamed `applied`/`skipped` on the record after the race showed "resolved" would
+  lie about convergence); **a sweeper racing the REAL webhook resolver → one effect** (the
+  -013 accept's placeholder discharged against the real thing). **The licence and its
+  limit, both load-bearing**: an explicit `UNRECOGNISED` → `FAILED(NEVER_RECEIVED)` (the
+  third `PaymentFailureReason`, arriving with its producer exactly as `P5-TSK-007`'s
+  javadoc promised; `V007` regenerates the reason `CHECK` — V003 is applied history — and
+  `PaymentsMigrationTest`'s reconciliation re-anchored to the constraint's current
+  definition, so the write itself proves the schema half); a 500 **and a 404** each mark
+  the honest `*_UNKNOWN` once and never fail (`QueryAnswer`'s a-status-code-is-not-an-answer
+  fold proven load-bearing at the sweeper). A fresh dispatch inside its bound is left alone
+  — not even queried; one poisoned row fails alone and the rows behind it (other customers'
+  money) still resolve. **No lease, no leader, by design and checked**:
+  `PaymentSweeperSchedule` (the relay-schedule shape, `finapp.payments.sweeper.enabled`
+  matchIfMissing=true, the overlay opting tests out) is the second named exemption to
+  `nothingSchedulesAmbiently`, standing on the rule's OTHER half (idempotent per period),
+  with its own load-bearing check in the rule's suite and its own justification section in
+  `DISTRIBUTED_EXECUTION.md` §3 beside the relay's; the schedule's lifecycle has its own
+  hermetic suite (ticks invoke, a throwing tick continues, stop stops). The sweep runs as
+  the platform through the **fourth** enumerated `enterSystem()` site (a scheduled
+  resolution has no person at all), each row under a fresh correlation. Bounds explicit
+  (`dispatched-age` PT10M / `unknown-age` PT1M / `batch` 50), injected-server-clock judged
+  (ADR-0014). **Eight mutations, all caught by the intended assertion, restores
+  `cmp`-verified byte-identical**: the NAMED ambiguity-collapsed-into-the-licence
+  (INDETERMINATE resolved to `FAILED` — the phase's most expensive direction, refused by
+  the 500/404 probe); the NAMED bounds-ignored (the fresh dispatch swept into churn); the
+  licence dropped (UNRECOGNISED a no-op); the licence's reason swapped to `DECLINED` (the
+  reason-column probe); operation-kind confusion (capture rows asked about the auth
+  reference — the query missed and nothing resolved); the platform scope dropped
+  (structural refusal); `V007` hand-listed without `NEVER_RECEIVED` (the migration
+  reconciliation alone); the anti-stall catch removed (the poisoned row's exception
+  escaped and the healthy row behind it never resolved). Verified by targeted tiers —
+  `:payments:test` 108 / `:platform:test` 171 / `:app:test` 444 / the payment database
+  suites 56 (schema 10, authorization 8, capture 6, endpoints 10, unconfigured 1, webhook
+  6, transitions 7, sweeper 8), 0 failures, fresh runs — the full battery deliberately
+  skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-KERNEL`
 
-**P5-TST-001 — The ambiguity demonstration** — `TODO`
+**P5-TST-001 — The ambiguity demonstration** — `READY`
 - **Scope**: the phase's reason for existing, driven whole: the provider **succeeds while
   the response is lost** (the harness's received-before-lost mode) → `*_UNKNOWN`
   committed → the sweeper resolves → **exactly one financial effect**, counted in the

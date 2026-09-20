@@ -421,6 +421,13 @@ class PaymentConfirmationTest {
                 Connection uow, ProviderIdempotencyReference reference) {
             throw new UnsupportedOperationException("not exercised here");
         }
+
+        @Override
+        public java.util.List<PaymentAttempt> findSweepable(
+                Connection uow, java.time.Instant dispatchedBefore,
+                java.time.Instant unknownBefore, int limit) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
         final Map<UUID, PaymentAttempt> rows = new HashMap<>();
 
         PaymentAttempt single() {

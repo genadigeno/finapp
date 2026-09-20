@@ -10,6 +10,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -78,6 +80,47 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
             throw new PaymentsStorageException(
                     DatabaseFailure.describe(
                             "reading the attempt of intent " + intent, failure));
+        }
+    }
+
+    @Override
+    public List<PaymentAttempt> findSweepable(
+            Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
+        Objects.requireNonNull(dispatchedBefore, "dispatchedBefore must not be null");
+        Objects.requireNonNull(unknownBefore, "unknownBefore must not be null");
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive: " + limit);
+        }
+        // The four resolvable states, pinned as literals beside the machine's own exact
+        // values() pin (P5-TSK-007): no isSweepable() derivation exists, so a new machine
+        // state forces this list into review - recorded to the phase audit. State age is the
+        // latest transition row, with birth as the fallback (an attempt is BORN
+        // AUTH_DISPATCHED, so its dispatch age IS its birth age).
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt a"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM payments.payment_attempt_event e"
+                                + "   WHERE e.attempt_id = a.id) h ON true"
+                                + " WHERE (a.status IN ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED')"
+                                + "        AND COALESCE(h.entered, a.created_at) <= ?)"
+                                + "    OR (a.status IN ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN')"
+                                + "        AND COALESCE(h.entered, a.created_at) <= ?)"
+                                + " ORDER BY a.created_at, a.id"
+                                + " LIMIT ?")) {
+            read.setTimestamp(1, java.sql.Timestamp.from(dispatchedBefore));
+            read.setTimestamp(2, java.sql.Timestamp.from(unknownBefore));
+            read.setInt(3, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<PaymentAttempt> sweepable = new ArrayList<>();
+                while (rows.next()) {
+                    sweepable.add(rehydrate(rows));
+                }
+                return List.copyOf(sweepable);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading sweepable attempts", failure));
         }
     }
 

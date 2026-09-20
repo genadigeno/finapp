@@ -162,8 +162,8 @@ public final class PaymentOutcomes {
             }
         }
 
-        appendOutcomeAudit(uow, intentId, attemptId, verdict, committedAttempt, committedIntent,
-                platform, correlation, now);
+        appendOutcomeAudit(uow, intentId, attemptId, verdict.name(), committedAttempt,
+                committedIntent, platform, correlation, now);
         return new Applied(committedIntent, committedAttempt);
     }
 
@@ -267,9 +267,34 @@ public final class PaymentOutcomes {
             }
         }
 
-        appendOutcomeAudit(uow, intentId, attemptId, verdict, committedAttempt, committedIntent,
-                platform, correlation, now);
+        appendOutcomeAudit(uow, intentId, attemptId, verdict.name(), committedAttempt,
+                committedIntent, platform, correlation, now);
         return new Applied(committedIntent, committedAttempt);
+    }
+
+    /**
+     * The sweeper's licence, as one named method ({@code P5-TSK-014}): the provider explicitly
+     * answered a resolution query that it never saw our reference
+     * ({@link QueryAnswer.Verdict#UNRECOGNISED}), so the operation never happened and failing
+     * it destroys nothing — {@code FAILED(NEVER_RECEIVED)} on the attempt, {@code FAILED} on
+     * the intent, audited with the query verdict's own word. Fixed here so no caller composes
+     * the resolution ad hoc; a 404 or any status code never reaches this method
+     * ({@code QueryAnswer}'s fold is the guard one layer down).
+     */
+    public Applied applyUnrecognised(
+            Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttemptId attemptId,
+            PaymentAttemptStatus from,
+            Correlation correlation) {
+        Actor platform = SecurityContext.require();
+        Instant now = Instant.now(clock);
+        PaymentAttemptStatus committedAttempt =
+                failBoth(uow, intentId, attemptId, from, PaymentFailureReason.NEVER_RECEIVED,
+                        correlation, platform, now);
+        appendOutcomeAudit(uow, intentId, attemptId, QueryAnswer.Verdict.UNRECOGNISED.name(),
+                committedAttempt, PaymentIntentStatus.FAILED, platform, correlation, now);
+        return new Applied(PaymentIntentStatus.FAILED, committedAttempt);
     }
 
     /** The attempt fails with its mapped reason from {@code from}, and the intent with it. */
@@ -306,7 +331,7 @@ public final class PaymentOutcomes {
             Connection uow,
             PaymentIntentId intentId,
             PaymentAttemptId attemptId,
-            ProviderAnswer.Verdict verdict,
+            String verdict,
             PaymentAttemptStatus committedAttempt,
             PaymentIntentStatus committedIntent,
             Actor platform,

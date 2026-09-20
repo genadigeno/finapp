@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 116 "Previously" blocks, newest first, from `P5-TSK-012` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 117 "Previously" blocks, newest first, from `P5-TSK-013` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,46 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P5-TSK-013` — webhook-driven transitions: idempotent, order-blind** — `COMPLETE`
+(2026-09-20). **M5.5 CLOSES at 2 of 2: `INV-LIFE-03`'s question meets its first resolver.** *(Milestone count corrected at the `P5-TSK-014` gate: M5.5 is `P5-TSK-012`…`-013`, two items — the running narrative had miscounted it as "of 3".)* The
+scope's named extraction fired: **`PaymentOutcomes`**, the one money-bearing outcome
+application every resolver shares — the sync Tx2s became delegations (net −20 lines with a
+new component; the hermetic order pins proved the refactor behavior-preserving), the
+webhook's effect runs in `P5-TSK-012`'s inbox-handler seam through the same code, from the
+attempt's own source state (`from` as a parameter is the order-blindness), and the sweeper
+(`P5-TSK-014`) consumes it next.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Each ordering scenario counted | Seven end-to-end HTTP flows: the heal (`CAPTURE_UNKNOWN` → webhook → `SUCCEEDED`, balance moved, ONE entry, the customer's GET flipping honestly), duplicate-with-fresh-id converged, `AUTH_UNKNOWN` resolved then the confirm retry chained the capture (the recovery whole), declined failing both rows, the stranded `AUTH_DISPATCHED` healed, out-of-order/late evidence-only, the total mapping refusing unrecognised and unactionable |
+| The webhook-resolved capture posts exactly once, under the race | Ten concurrent resolvers, distinct event ids: one entry counted by reference, one transition, ten statements retained |
+
+### The race found a defect, and the task fixed it on the record
+
+Two concurrent deliveries **deadlocked (40P01)**: the evidence `INSERT`'s FK takes
+`FOR KEY SHARE` on the attempt row, and the outcome's UNIQUE-column `UPDATE` needs the full
+`FOR UPDATE` it blocks. Fixed by the **lock-order rule** — the effect's row lock before any
+`KEY SHARE`, in every resolver's transaction (both sync Tx2s included; the latent shape
+existed there too once a second resolver arrived) — with "evidence first" clarified as a
+COMMIT claim: evidence, dedupe and effect still commit together. Recorded in
+`DISTRIBUTED_EXECUTION.md`; the reverting mutation reproduced eight 40P01s.
+
+### Eight mutations, all caught, restores `cmp`-verified
+
+The posting dropped from the extracted branch (`CAPTURED` beside no entry); the
+resolvable-state gates dropped (loud 500 where the evidence-only 204 belongs); the
+mapping's default made success (`AUTH_UNKNOWN` became `AUTHORIZED` — the
+most-expensive-mistake shape); declined dropped; the intent half of `failBoth` dropped in
+the extracted copy (the -010 survivor's shape re-guarded); `from` hardcoded (the resolution
+silently converged); the platform scope dropped (structural refusal); the lock-order
+reverted (eight 40P01s). **Verified by targeted tiers — `:payments:test` 108 /
+`:platform:test` 171 / `:app:test` 441 / the payment database suites 48 (schema 10,
+authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6, transitions 7),
+0 failures, fresh runs — the full battery deliberately skipped on the owner's instruction;
+no fleet-wide database or kafka counts claimed.**
 
 ### Previously
 
