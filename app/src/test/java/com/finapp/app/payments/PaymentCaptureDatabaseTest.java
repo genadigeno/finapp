@@ -172,6 +172,19 @@ class PaymentCaptureDatabaseTest {
             assertThat(entriesReferencing(app, attempt)).isEqualTo(1);
             assertThat(lineCountFor(app, attempt)).isEqualTo(2);
 
+            // AND THE LINES LAND ON THE ACCOUNTS ADR-0048 NAMES (`P5-TST-002`): the wallet
+            // is credited against SETTLEMENT_CLEARING, never against settled cash and never
+            // against a suspense account. This is INV-SET-01 made checkable - "internal
+            // completion is not settlement" is a claim about WHICH position the money sits
+            // in, and counting two lines cannot see it. The audit found the gap by mutation:
+            // debiting SUSPENSE_UNMATCHED instead left all 80 payment database tests green,
+            // with the customer's wallet funded from the wrong operational account.
+            assertThat(linePurposes(app, attempt))
+                    .as("DR settlement clearing / CR the customer's wallet (ADR-0048,"
+                            + " INV-SET-01: captured is not settled)")
+                    .containsExactlyInAnyOrder(
+                            "DEBIT:SETTLEMENT_CLEARING", "CREDIT:CUSTOMER_WALLET");
+
             // INV-BAL-02 extends with no new mechanism: replay-from-zero explains the wallet.
             assertThat(
                             new JdbcBalanceDerivation()
@@ -534,6 +547,25 @@ class PaymentCaptureDatabaseTest {
             try (ResultSet result = count.executeQuery()) {
                 result.next();
                 return result.getInt(1);
+            }
+        }
+    }
+
+    /** Each line of the attempt's entry as {@code DIRECTION:PURPOSE} — never an amount. */
+    private static List<String> linePurposes(Connection app, PaymentAttemptId attempt)
+            throws SQLException {
+        try (PreparedStatement read = app.prepareStatement(
+                "SELECT line.direction, account.purpose FROM ledger.journal_line line"
+                        + " JOIN ledger.journal_entry entry ON entry.id = line.entry_id"
+                        + " JOIN ledger.ledger_account account ON account.id = line.ledger_account_id"
+                        + " WHERE entry.reference = ?")) {
+            read.setString(1, attempt.value().toString());
+            try (ResultSet rows = read.executeQuery()) {
+                List<String> lines = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    lines.add(rows.getString(1) + ":" + rows.getString(2));
+                }
+                return lines;
             }
         }
     }

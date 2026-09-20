@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TSK-017` — the meters and the dashboard row; **M5.8 opens at 1 of 3**, next `P5-TST-002`)
+Last updated: 2026-09-20 (`P5-TST-002` — the `Phase: 5` register rows; **M5.8 at 2 of 3**, next `P5-TST-003`)
 
 ---
 
@@ -229,56 +229,52 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TST-002` — the `Phase: 5` register rows** — `READY`.
-Every invariant the catalogue marks `Phase: 5` — token-parsed with the guard's own regex,
-eleven at planning time — carries a `MUTATION_TESTING.md` §2 row with its demonstration
-performed or honestly recorded from the owning task's sweep (the `P3-TST-003`/`P4-TST-002`
-posture: the audit finds what was not done and does it); the flip probed — Phase 5 simulated
-`COMPLETE`, battery green, one row removed to prove the demanded set grew — and restored
-byte-identical; §5 teeth re-proven. Accept: all guard checks green over the new rows; the
-probe's failure names the invariant. See the backlog entry.
+**`P5-TST-003` — conservation under concurrent captures and refunds** — `READY`.
+M5.8 closes with it: the composition storm (the `P3-TST-001`/`P4-TST-001` posture) — ten
+instances authorising, capturing and partially refunding continuously while the trial-balance
+and projection sweeps run, ended by the sweeper's floors; every sweep zero per currency; every
+verdict `CLEAN`/`IN_FLIGHT`; the clearing and wallet positions reconciling **exactly** to
+captured − refunded, counted from the tables and independently recomputed; no wallet negative
+through the refund holds. Accept: the three readings reconcile; the storm's amounts contest the
+availability boundary. See the backlog entry.
 
 ### Just completed
 
-**`P5-TSK-017` — the meters and the dashboard row** — `COMPLETE` (2026-09-20). **M5.8 opens
-at 1 of 3: the phase's six series land, and the plan's one-line counting discipline turned
-out to need the machine's own row count.** Four doors apply a payment judgement (the
-synchronous Tx2, the chained capture, the webhook, the sweeper) and under a race nine of them
-converge on a judgement they did not make — so `PaymentOutcomes` now reports **`acting`**,
-the conditional transition's row count, and the counters sit **at the doors, post-commit,
-acting only**. The provider timer is a decorator on the `PaymentProvider` port; the gauges
-are the `LedgerMetrics` stance one phase on (floored, fleet-wide `max()`, **NaN never zero**,
-attempts and refunds as one number because an operator asking "is money parked?" is not
-asking which machine parked it).
+**`P5-TST-002` — the `Phase: 5` register rows** — `COMPLETE` (2026-09-20). **M5.8 at 2 of 3,
+and the audit found a test that could not fail.** The catalogue's `Phase: 5` set is eleven;
+two carried rows, **five had none**, and **four carried only an earlier phase's row** — the
+class the guard structurally cannot demand, because it keys on the invariant identifier.
+Nine rows landed, plus `P5-TST-001`'s missing §4 item row.
 
-| Acceptance criterion | Evidence |
-|---|---|
-| A fresh instance publishes every series | The pinned Phase-5 guard, in a context with no database and **no provider configured** — the unconditional meter beans |
-| The mutation sweep over the counting discipline | Eight, all caught; the named pair is converged-counted-as-throughput and the gauge's false zero |
-| Queries resolve live | The Payments row's six panels against a real scrape (+140 lines, nothing removed) |
+**The finding**: `INV-SET-01` — *internal completion is not settlement* — had no test that
+could fail. Pointing the capture's debit at `SUSPENSE_UNMATCHED` left **all eighty payment
+database tests green** while a customer's wallet was funded from a suspense account: every
+test counted lines, entries and balances, and none asserted **which accounts** they land on
+(the trial balance cannot see it either — both are operational, so the books still balance).
+The probe was built before the row was written — each line as `DIRECTION:PURPOSE`, on the
+capture and the refund's inverse pair — and §3 records the lesson past this invariant: *a
+posting test that counts lines proves the entry exists, not that it is the right entry.*
 
-### Two findings by the gate, both fixed
+### The gate's own findings: four rows cited demonstrations nobody had performed
 
-An **unrecognised status word** — a provider saying something we do not understand about
-money we are holding — was counted as `processed`, hiding exactly the integration break
-`unmappable` exists to show; the classification now asks whether the total vocabulary
-understood the statement, and all four states are proven end to end. And the metric-tag
-enforcement of `INV-AUD-02` had **no register row at all** since `P1-TSK-029` built it —
-widening the tag vocabulary is when that stops being acceptable (`P1-TSK-024` repeating), so
-the row landed with both demonstrations performed. Three guards fired during implementation
-and each was answered rather than softened: the `provider` tag trips the forbidden-fragment
-rule on a spelling accident (*prov-**id**-er*), closed with a named exemption its own test
-bounds; `ResultSet.getDouble` violated `INV-MON-01`'s call rule, so the SQL returns
-`floor(...)::bigint` and no floating point exists in the path; the closed `@Tag` vocabulary
-refused a `unit` tag that does not exist here. **Verified by targeted tiers — `:payments:test`
-108 / `:platform:test` 171 / `:app:test` 454 / the payment database suites 80 / the telemetry
-database suites 11 / the executor's database suite 17, 0 failures, fresh runs — the full
-battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
-counts claimed.**
+The defect this register calls worse than a missing row, caught in its own deliverable.
+`INV-PAY-02` rested on `P5-TSK-005`, which recorded **no sweep at all** → the
+`payments → paymentmethods` compile edge was performed here (no Gradle cycle backs that
+refusal, so the isolation test is its only control). `INV-IDEM-01`'s takeover claim was
+performed here, and its observed shape recorded: the second dispatch never reached the
+one-hold assertion because **`V008`'s partial unique index refused the second row**.
+`INV-REV-02`'s trigger claim was dropped with its limit written down; `INV-PAY-03`'s
+decline-code clause was restated as the standing needle it is. §5 teeth re-proven; the flip
+probed — removing the new `INV-SET-01` row fails reporting *(currently 5)* and naming the
+invariant, and the item check correctly demands `P5-TST-003`, the guard working on a real
+absence. **No production code changed. Verified by targeted tiers — `:payments:test` 108 /
+`:platform:test` 171 / `:app:test` 454 / the payment database suites 80 / the telemetry
+database suites 11, 0 failures, fresh runs — the full battery deliberately skipped on the
+owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 ### Previously
 
-The per-task completion records behind this one — 121 blocks, from `P5-TSK-016` back to project
+The per-task completion records behind this one — 122 blocks, from `P5-TSK-017` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -292,9 +288,9 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1–M5.7 `CLOSED` (3+2+3+3+2+2+2), M5.8 open at 1 of 3:
-`P5-TSK-001`…`-017` and `P5-TST-001` complete. Next: `P5-TST-002`, `READY` — the
-`Phase: 5` register rows.
+**Phase 5 is `IN_PROGRESS`** — M5.1–M5.7 `CLOSED` (3+2+3+3+2+2+2), M5.8 at 2 of 3:
+`P5-TSK-001`…`-017`, `P5-TST-001` and `P5-TST-002` complete. Next: `P5-TST-003`, `READY` —
+conservation under concurrent captures and refunds, M5.8's close.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of

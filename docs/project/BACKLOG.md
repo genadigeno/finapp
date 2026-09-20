@@ -6510,7 +6510,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   path; the closed `@Tag` vocabulary refused a `unit` tag that does not exist.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
 
-**P5-TST-002 — The `Phase: 5` register rows** — `READY`
+**P5-TST-002 — The `Phase: 5` register rows** — `COMPLETE` (2026-09-20)
 - **Scope**: every invariant the catalogue marks `Phase: 5` — **token-parsed with the
   guard's own regex, eleven at planning time** — carries a `MUTATION_TESTING.md` §2 row
   with its demonstration performed or honestly recorded from the owning task's sweep (the
@@ -6519,12 +6519,66 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   demanded set grew — and restored byte-identical; §5 teeth re-proven.
 - **Deps**: `P5-TST-001` and the owning tasks. **Accept**: all guard checks green over the
   new rows; the probe's failure names the invariant.
+- **Gate evidence (2026-09-20)**: **both accept clauses met.** *All guard checks green over
+  the new rows*: nine `MutationDemonstrationTest` checks, over **nine new §2 rows** and two
+  §4 item rows, taking the register past every `Phase: 5` invariant. *The probe's failure
+  names the invariant*: under the simulated flip the demanded set really did grow — removing
+  the new `INV-SET-01` row failed reporting **_(currently 5)_** and naming
+  `["INV-SET-01"]`, and both files were restored byte-identical. **THE AUDIT FOUND WHAT IT
+  WAS WRITTEN TO LOOK FOR, and it was worse than a missing row**: `INV-SET-01` had no test
+  that could fail — pointing the capture's debit at `SUSPENSE_UNMATCHED` left **all eighty
+  payment database tests green** while a customer's wallet was funded from a suspense
+  account, because every test counted lines, entries and balances and **none asserted which
+  accounts the lines land on** (the trial balance cannot see it either: both are operational
+  accounts, so the books still balance). The probe was built first — each line as
+  `DIRECTION:PURPOSE`, on the capture **and** on the refund's inverse pair — the mutation
+  then failed naming `DEBIT:SUSPENSE_UNMATCHED` where `DEBIT:SETTLEMENT_CLEARING` belongs,
+  and §3 records the lesson past this invariant: *a posting test that counts lines proves
+  the entry exists, not that it is the right entry.* **THE GATE'S OWN FINDINGS — four rows
+  cited demonstrations nobody had performed**, which is the defect this register calls worse
+  than a missing row, and each was answered rather than softened: `INV-PAY-02`'s four claims
+  rested on `P5-TSK-005`, which **recorded no sweep at all** → the `payments → paymentmethods`
+  compile edge was **performed at this gate** (the sharp one: no Gradle cycle backs that
+  refusal, so the isolation test is its only control) and the structural limit written down;
+  `INV-IDEM-01`'s takeover claim was **performed at this gate**, with its observed shape
+  recorded — the second dispatch never reached the one-hold assertion because **`V008`'s
+  partial unique index refused the second row (`23505`)**, the schema standing behind the
+  convergence exactly as that migration claims; `INV-REV-02`'s trigger claim was **dropped**
+  and its limit recorded (`P5-TSK-008` recorded no sweep, and mutating a `BEFORE INSERT`
+  trigger needs a from-scratch database — what IS demonstrated is that the trigger is
+  present and effective for every writer); `INV-PAY-03`'s decline-code clause was **restated
+  as the standing needle it is**, not a mutation. **Four rows are the doctrine class the
+  guard structurally cannot demand** (the `P4-TST-002` finding repeating — it keys on the
+  invariant identifier): `INV-IDEM-01` (payments' two claims), `INV-IDEM-04` (webhooks),
+  `INV-HIST-02` (provider evidence), `INV-REV-02` (refunds), each of which carried only an
+  earlier phase's row. §5 teeth re-proven (one method reference corrupted; the guard failed
+  naming `INV-SET-01 -> PaymentCaptureDatabaseTest has no captureEndToEndPostsAtomicallyX`;
+  restored byte-identical). **`P5-TST-001`'s own §4 item row was missing and landed**; the
+  flip probe also showed the item check correctly demanding `P5-TST-003`, which is the guard
+  working on a real absence — a sharper demonstration than Phase 4 could give, since that
+  phase had no pending item to show it with. **No production code changed** (the
+  `P4-TST-002` posture): two test files gained the account assertions, one document gained
+  the rows. Verified by targeted tiers — `:payments:test` 108 / `:platform:test` 171 /
+  `:app:test` 454 / the payment database suites 80 / the telemetry database suites 11, 0
+  failures, fresh runs — the full battery deliberately skipped on the owner's instruction;
+  no fleet-wide database or kafka counts claimed.
+- **Implementation note (2026-09-20)**: the set read token-exactly with the guard's own
+  regex is **eleven**; two carried rows already (`INV-LIFE-03`, `INV-PAY-05`), **five had
+  none** (`INV-PAY-01/-02/-03/-04`, `INV-SET-01`) and **four carried only an earlier
+  phase's row** (`INV-IDEM-01`, `INV-IDEM-04`, `INV-HIST-02`, `INV-REV-02`) — the
+  `P4-TST-002` class the guard structurally cannot demand, since it keys on the invariant
+  identifier. Nine rows landed. **The audit found what it was written to look for**:
+  `INV-SET-01` had no test that could fail — pointing the capture's debit at
+  `SUSPENSE_UNMATCHED` left **all eighty payment database tests green**, because every one
+  counted lines and none asserted which accounts they land on — so the probe was built
+  first (each line as `DIRECTION:PURPOSE`, on the capture and the refund's inverse pair)
+  and the row written against it. `P5-TST-001`'s §4 item row was also missing and landed.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`
 - Note: the guard keys on invariant **identifiers**, so the payments-context rows for
   `INV-IDEM-01`/`INV-IDEM-04`/`INV-HIST-02`/`INV-REV-02` are owed by doctrine and the gate
   list, not by the build — the `P4-TST-002` finding, pre-applied.
 
-**P5-TST-003 — Conservation under concurrent captures and refunds** — `TODO`
+**P5-TST-003 — Conservation under concurrent captures and refunds** — `READY`
 - **Scope**: the composition storm (the `P3-TST-001`/`P4-TST-001` posture): ten instances
   authorising, capturing and partially refunding continuously while the trial-balance and
   projection sweeps run, ended by the sweeper's floors; every sweep zero per currency;

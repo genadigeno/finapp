@@ -635,6 +635,14 @@ class PaymentRefundDatabaseTest {
         assertThat(activeHoldCount(captured.wallet())).as("released with the posting").isZero();
         assertThat(refundEntryCount(captured.attempt())).isEqualTo(1);
         assertThat(settled(captured.wallet())).isEqualTo("7.00");
+        // The capture's inverse pair, on the accounts ADR-0048 §4 names (`P5-TST-002`,
+        // INV-SET-01): the customer's wallet is debited and the CLEARING position credited
+        // - the money goes back to where it came from, never out of settled cash. The
+        // capture's own probe found this gap by mutation; the refund gets the same rank.
+        assertThat(refundLinePurposes(captured.attempt()))
+                .as("DR the customer's wallet / CR settlement clearing")
+                .containsExactlyInAnyOrder(
+                        "DEBIT:CUSTOMER_WALLET", "CREDIT:SETTLEMENT_CLEARING");
         assertThat(refundEventCount(result.refund(), "payments.RefundCompleted"))
                 .as("the terminal fact, once, in the committing transaction")
                 .isEqualTo(1);
@@ -1215,6 +1223,29 @@ class PaymentRefundDatabaseTest {
                         + " WHERE e.reference IN"
                         + " (SELECT r.id::text FROM payments.refund r WHERE r.attempt_id = ?)",
                 attempt.value());
+    }
+
+    /** Each line of the attempt's refund entries as {@code DIRECTION:PURPOSE}. */
+    private static List<String> refundLinePurposes(PaymentAttemptId attempt)
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT l.direction, a.purpose FROM ledger.journal_line l"
+                                        + " JOIN ledger.journal_entry e ON e.id = l.entry_id"
+                                        + " JOIN ledger.ledger_account a"
+                                        + "   ON a.id = l.ledger_account_id"
+                                        + " WHERE e.reference IN (SELECT r.id::text"
+                                        + "   FROM payments.refund r WHERE r.attempt_id = ?)")) {
+            read.setObject(1, attempt.value());
+            try (ResultSet rows = read.executeQuery()) {
+                List<String> lines = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    lines.add(rows.getString(1) + ":" + rows.getString(2));
+                }
+                return lines;
+            }
+        }
     }
 
     private static long activeHoldCount(LedgerAccountId account) throws SQLException {

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 121 "Previously" blocks, newest first, from `P5-TSK-016` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 122 "Previously" blocks, newest first, from `P5-TSK-017` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,42 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P5-TSK-017` — the meters and the dashboard row** — `COMPLETE` (2026-09-20). **M5.8 opens
+at 1 of 3: the phase's six series land, and the plan's one-line counting discipline turned
+out to need the machine's own row count.** Four doors apply a payment judgement (the
+synchronous Tx2, the chained capture, the webhook, the sweeper) and under a race nine of them
+converge on a judgement they did not make — so `PaymentOutcomes` now reports **`acting`**,
+the conditional transition's row count, and the counters sit **at the doors, post-commit,
+acting only**. The provider timer is a decorator on the `PaymentProvider` port; the gauges
+are the `LedgerMetrics` stance one phase on (floored, fleet-wide `max()`, **NaN never zero**,
+attempts and refunds as one number because an operator asking "is money parked?" is not
+asking which machine parked it).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A fresh instance publishes every series | The pinned Phase-5 guard, in a context with no database and **no provider configured** — the unconditional meter beans |
+| The mutation sweep over the counting discipline | Eight, all caught; the named pair is converged-counted-as-throughput and the gauge's false zero |
+| Queries resolve live | The Payments row's six panels against a real scrape (+140 lines, nothing removed) |
+
+### Two findings by the gate, both fixed
+
+An **unrecognised status word** — a provider saying something we do not understand about
+money we are holding — was counted as `processed`, hiding exactly the integration break
+`unmappable` exists to show; the classification now asks whether the total vocabulary
+understood the statement, and all four states are proven end to end. And the metric-tag
+enforcement of `INV-AUD-02` had **no register row at all** since `P1-TSK-029` built it —
+widening the tag vocabulary is when that stops being acceptable (`P1-TSK-024` repeating), so
+the row landed with both demonstrations performed. Three guards fired during implementation
+and each was answered rather than softened: the `provider` tag trips the forbidden-fragment
+rule on a spelling accident (*prov-**id**-er*), closed with a named exemption its own test
+bounds; `ResultSet.getDouble` violated `INV-MON-01`'s call rule, so the SQL returns
+`floor(...)::bigint` and no floating point exists in the path; the closed `@Tag` vocabulary
+refused a `unit` tag that does not exist here. **Verified by targeted tiers — `:payments:test`
+108 / `:platform:test` 171 / `:app:test` 454 / the payment database suites 80 / the telemetry
+database suites 11 / the executor's database suite 17, 0 failures, fresh runs — the full
+battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+counts claimed.**
 
 **`P5-TSK-016` — the refund surface and events** — `COMPLETE` (2026-09-20). **M5.7 CLOSES at
 2 of 2: the refund is observable, publishable and asynchronously resolvable — and the schema
