@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 113 "Previously" blocks, newest first, from `P5-TSK-009` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 114 "Previously" blocks, newest first, from `P5-TSK-010` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,49 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P5-TSK-010` — the capture command: the ledger's first touch** — `COMPLETE`
+(2026-09-20). **M5.4 at 2 of 3: money moves.** The same dispatch-before-call choreography
+as the confirmation, with the genuinely new thing held at its centre: **the `CAPTURED`
+transition, the `payment-capture:<attemptId>` posting (DR clearing / CR wallet) and the
+intent's `SUCCEEDED` are one transaction** (ADR-0048) — proven, not described.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| One entry per attempt, ten-way race | One wire operation, nine converged, one journal entry counted by the attempt-id reference — the conditional dispatch's row count in front, the posting's idempotency claim as the third wall |
+| A rolled-back outcome leaves no posting, no transition | An injected event failure rolls Tx2 back and the rollback takes the posting, the `CAPTURED` and the `SUCCEEDED` with it — the atomicity probe, and the named posting-hoisted-out mutation's catcher |
+| The balance moves and is explainable | Replay-from-zero equals the captured amount over the real ledger — `INV-BAL-02` extended with no new mechanism |
+| A posting failure fails the outcome loudly | No savepoint, deliberately the transfer's inverse: the provider HAS captured, so no state that hides un-posted money may commit |
+
+### Decisions and registers
+
+**"PSP_CLEARING" is the chart's `SETTLEMENT_CLEARING`** — resolved on the record (the
+account P3-TSK-003 actually seeded per currency; a second clearing purpose would split
+the captured-but-unsettled position lifecycles §5 says this balance IS). Capture is the
+platform's act end to end (`PaymentCaptureDispatched` catalogued — ADR-0046 §1's
+initiation record, the platform's where the authorization's rode the person's confirm;
+one new `enterSystem()` enumeration). Ambiguity commits `CAPTURE_UNKNOWN` with nothing
+posted; declined and refused-connection fail both rows honestly (no retry policy until
+Phase 7). The real participant chain ran end to end — party → customer → wallet product →
+ledger wallet → instrument row — **paying `P5-TSK-009`'s recorded `JdbcPaymentParticipants`
+deferral**. Captured is not settled (`INV-SET-01`): nothing moves clearing onward.
+
+### Eight mutations — one survived its first run, and that is the battery working
+
+All eight ended caught, restores `cmp`-verified byte-identical: the **named
+posting-hoisted-out** (the hoisted entry survived the rollback — exactly the state the
+atomicity probe refuses); ambiguity-posts (the DB probe AND the hermetic no-database
+tripwire); the intent's `SUCCEEDED` dropped; the dispatch made unconditional (the ten-way
+race, the schema trigger erroring the losers); evidence dropped; **the intent half of
+declined dropped — SURVIVED round one**, exposing that the probe asserted the in-memory
+result and never the intent ROW; the gate strengthened the probe and the mutation then
+failed against it; the platform actor dropped (structural refusal); the
+reference-not-stored-before-send (caught by `P5-TSK-008`'s stage-facts `CHECK` — the
+layers meeting). **Verified by targeted tiers — `:payments:test` 86 / the payment
+database suites 24 / `:app:test` fresh green, 0 failures — the full battery deliberately
+skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 ### Previously
 

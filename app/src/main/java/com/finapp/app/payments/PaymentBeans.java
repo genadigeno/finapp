@@ -234,6 +234,37 @@ class PaymentBeans {
                 clock);
     }
 
+    /**
+     * The HTTP slice (`P5-TSK-011`) — the `P5-TSK-003` licence's named consumer arriving. The
+     * confirmation and capture arrive as {@code ObjectProvider}s because they exist only where
+     * a provider endpoint is configured; the service answers the honest 503 for their absence
+     * (the recorded decision above).
+     */
+    @Bean
+    PaymentService paymentService(
+            PaymentCreation paymentCreation,
+            PaymentCancellation paymentCancellation,
+            org.springframework.beans.factory.ObjectProvider<PaymentConfirmation>
+                    paymentConfirmation,
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PaymentCapture>
+                    paymentCapture,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            TransactionTemplate paymentTransactions,
+            DataSource dataSource) {
+        return new PaymentService(
+                paymentCreation,
+                paymentCancellation,
+                paymentConfirmation,
+                paymentCapture,
+                paymentIntentStore,
+                paymentAttemptStore,
+                identityStore,
+                paymentTransactions,
+                dataSource);
+    }
+
     @Bean
     PaymentCancellation paymentCancellation(
             PaymentIntentStore<Connection> paymentIntentStore,

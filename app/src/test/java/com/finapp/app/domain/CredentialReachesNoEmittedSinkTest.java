@@ -331,6 +331,14 @@ class CredentialReachesNoEmittedSinkTest {
                         // request body. The SuspensionRequest shape with the same bounds
                         // cited from the same constants.
                         "TransferReversalRequest",
+                        // P5-TSK-011. Carries the caller's own payment-method identifier, an
+                        // amount as an exact decimal string and an ISO currency code - no
+                        // secret (a method id is not the token: the PAN-adjacent value stays
+                        // behind the paymentmethods boundary, INV-PAY-02) - here because the
+                        // set is every schema REACHABLE from a request body. What creating a
+                        // payment stores is classified in payments.payment_intent's register
+                        // rows, not in this vocabulary.
+                        "PaymentCreateRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/

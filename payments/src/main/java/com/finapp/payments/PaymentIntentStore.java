@@ -2,6 +2,7 @@ package com.finapp.payments;
 
 import com.finapp.platform.security.Actor;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,6 +27,13 @@ public interface PaymentIntentStore<T> {
      * Not-yours and does-not-exist are one empty answer.
      */
     Optional<PaymentIntent> findOwned(T unitOfWork, PaymentIntentId intent, UUID partyId);
+
+    /**
+     * The party's intents, newest first (`P5-TSK-011`): the ownership predicate in the
+     * statement, same discipline as {@link #findOwned} — a party that owns nothing and a party
+     * that does not exist are one empty answer.
+     */
+    List<PaymentIntent> listFor(T unitOfWork, UUID partyId);
 
     /**
      * Moves {@code from → to} conditionally; {@code false} means another writer got there

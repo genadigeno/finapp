@@ -37,8 +37,11 @@
  * confined key, the first audit actions), and the capture ({@code P5-TSK-010}:
  * {@code PaymentCapture} - the ledger's first touch, the {@code CAPTURED} transition, the
  * {@code payment-capture:} posting and the intent's {@code SUCCEEDED} one transaction,
- * ADR-0048 - updated by the task that made the previous sentence stale, the recurring class).
- * The HTTP surface is {@code P5-TSK-011}, the refund command {@code P5-TSK-015}.
+ * ADR-0048), and the HTTP surface's vocabulary ({@code P5-TSK-011}: {@code PaymentsErrorCode}
+ * - the refusals only, a judged failure is a body fact, {@code INV-PAY-03} at the contract -
+ * with the controller and its capture-chaining service composed in {@code app}, where every
+ * surface lives - updated by the task that made the previous sentence stale, the recurring
+ * class). The refund command is {@code P5-TSK-015}.
  *
  * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
  * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and

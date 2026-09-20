@@ -287,6 +287,13 @@ class OpenApiContractTest {
                         // grant, INV-PAY-02), list, and the ownership-scoped detach.
                         ApiVersion.CURRENT_PREFIX + "/me/payment-methods",
                         ApiVersion.CURRENT_PREFIX + "/me/payment-methods/{id}",
+                        // P5-TSK-011: the payment surface - the keyed create, the
+                        // confirmation that answers the intent's real state (honestly
+                        // PROCESSING), the window-bounded cancel, and the ownership-scoped
+                        // reads (party_id = ?).
+                        ApiVersion.CURRENT_PREFIX + "/payments",
+                        ApiVersion.CURRENT_PREFIX + "/payments/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/payments/{id}/confirmation",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

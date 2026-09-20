@@ -84,8 +84,17 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(callerPartyId, "callerPartyId must not be null");
         Objects.requireNonNull(paymentMethodId, "paymentMethodId must not be null");
+        // The port's contract folds MALFORMED with unknown and not-yours (one empty answer),
+        // and a well-formed UUID that is not a v7 is malformed here: no platform identifier
+        // is ever a v4 (ADR-0013), so it names nothing - never our 500 (P5-TSK-011).
+        PaymentMethodId identifier;
+        try {
+            identifier = PaymentMethodId.of(paymentMethodId);
+        } catch (IllegalArgumentException notAPlatformIdentifier) {
+            return Optional.empty();
+        }
         return instruments
-                .findOwned(unitOfWork, PaymentMethodId.of(paymentMethodId), callerPartyId)
+                .findOwned(unitOfWork, identifier, callerPartyId)
                 .filter(method -> method.status() == PaymentMethodStatus.ACTIVE)
                 // The registered re-wrapping: off in one expression, wrapped again before it
                 // travels (INV-PAY-02) - the SecretsAreUnwrappedInOnePlaceTest entry.

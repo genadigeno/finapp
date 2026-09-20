@@ -6010,7 +6010,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - Note: named mutation — the posting hoisted **out** of the outcome transaction: the
   crash-between probe catches a `CAPTURED` state beside no entry.
 
-**P5-TSK-011 — The payment surface over HTTP** — `READY`
+**P5-TSK-011 — The payment surface over HTTP** — `COMPLETE` (2026-09-20)
 - **Scope**: `POST /v1/payments`, `POST /v1/payments/{id}/confirmation`,
   `DELETE /v1/payments/{id}`, `GET /v1/payments/{id}`, `GET /v1/payments` — session +
   ownership (the `/v1/me`-derived chain; one 404 across stranger's/unknown/malformed),
@@ -6023,9 +6023,57 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   create, confirm, the simulated provider authorises and captures, the wallet balance
   moves, the statement shows the entry, the chain walked by identifier; a retried create
   replays byte-for-byte; a changed request is the distinct 409.
+- **Gate evidence (2026-09-20)**: **the phase's acceptance chain demonstrated over real
+  HTTP** — `PaymentEndpointDatabaseTest` (10 tests: registration, login, wallet opening and
+  instrument attach all over their real endpoints, one `SimulatedProvider` playing both the
+  tokenisation provider and the card PSP): attach → create `201 REQUIRES_CONFIRMATION` →
+  confirm `200 SUCCEEDED` — **the surface chains the capture after the synchronous
+  `AUTHORIZED`** (`PaymentCapture`'s own recorded contract, and on the *converged* answer
+  too, so a client retry finishes an `AUTHORIZED` stranded by a crash between the confirm's
+  outcome and the chain) — the wallet balance moves (`settled 5.00` over the balance
+  endpoint), the statement shows the entry, **the chain walked by stored identifier both
+  ways** (intent → attempt → entry-by-reference → statement line). **A retried create
+  replays byte-for-byte even after the payment succeeded** (the view renders the recorded
+  judgement, never a re-read); a changed request is the distinct 409; keyless is the
+  interceptor's 422. The asynchronous-outcome shape held honestly TWICE: a lost
+  authorization response answers `200 PROCESSING` with `AUTH_UNKNOWN` beneath and nothing
+  chained, a lost capture response answers `200 PROCESSING` with `CAPTURE_UNKNOWN` and
+  **nothing posted, balance still `0.00`**. A declined authorization is `200 FAILED /
+  DECLINED` with the provider's planted decline code (`do_not_honor_51`) **asserted absent**
+  (`INV-PAY-03` at the contract, needle-tested). Cancellation wins only the confirmation
+  window (converge, `payments.NotConfirmable`, `payments.NotCancellable`). One 404 across
+  stranger's/unknown/malformed on the GET, the confirmation AND the cancellation,
+  byte-identical, owner as positive control; every instrument refusal one byte-identical
+  `payments.UnknownInstrument` with **nothing written** (the fold made total at the bridge:
+  a well-formed v4 is malformed here — found when the probe's 500 exposed the unguarded
+  `PaymentMethodId.of`, fixed in scope); no body shape our 500 (11 shapes); the
+  unconfigured deployment answers `503 payments.ProviderUnavailable`
+  (`PaymentSurfaceUnconfiguredDatabaseTest`, the `ObjectProvider` decision paid). Registers
+  fed: `PaymentsErrorCode` (6 codes) catalogued in `ERROR_CONTRACT.md` §3 and reconciled by
+  `ErrorCodeRegistryTest`; the contract baseline extended and reviewed — **393 added lines,
+  zero removed**, the 8 `BREAKING` labels all `required` flags on the brand-new
+  paths/schemas themselves; the three routes declared in the published-route pin;
+  `PaymentCreateRequest` classified in the request-schema register; the
+  `DISTRIBUTED_EXECUTION.md` commands row extended with the chain (no new arbitration).
+  **Eight mutations, all caught by the intended assertion, restores `cmp`-verified
+  byte-identical**: the NAMED capture-chain-dropped (the acceptance chain alone —
+  `SUCCEEDED` expected, the never-captured `PROCESSING` answered); the NAMED
+  replay-from-a-re-read (the post-success replay leaked the world's current state); the
+  GET's ownership predicate dropped (stranger read 200); the malformed-instrument fold
+  reverted (the uniform 422 became our 500 — proving the in-scope fix load-bearing); the
+  cancel window's 409 swallowed (a succeeded payment "cancelled" with 200); the
+  unconfigured 503 dropped (500); the chain made unconditional (capture commanded on
+  `AUTH_UNKNOWN` — the loud caller-defect 500 where the honest `PROCESSING` belongs); the
+  list's ownership predicate dropped (the stranger's payment listed). Verified by targeted
+  tiers — `:payments:test` 86 / the payment database suites 35 (schema 10, authorization 8,
+  capture 6, endpoints 10, unconfigured 1) / `:app:test` 438, 0 failures, fresh runs — the
+  full battery deliberately skipped on the owner's instruction; no fleet-wide database or
+  kafka counts claimed.
 - **Risk**: Medium. **Cx**: L. **DoD**: `DOD-API`, `DOD-FIN`
+- Note: named mutation — the capture chain dropped after the synchronous `AUTHORIZED`:
+  the acceptance chain catches it alone (no entry, no balance, no `SUCCEEDED`).
 
-**P5-TSK-012 — Webhook ingestion: authenticated, evidence-first, deduplicated** — `TODO`
+**P5-TSK-012 — Webhook ingestion: authenticated, evidence-first, deduplicated** — `READY`
 - **Scope**: ADR-0047's door: `POST /v1/providers/payments/webhooks` — HMAC over
   timestamp + raw bytes per provider key (through `P5-TSK-002`, confined), constant-time,
   **before parsing**; freshness window refusing stale messages; verbatim evidence row +

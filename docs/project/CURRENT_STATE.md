@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TSK-010` — the capture command; **M5.4 at 2 of 3**, next `P5-TSK-011`)
+Last updated: 2026-09-20 (`P5-TSK-011` — the payment surface over HTTP; **M5.4 CLOSES at 3 of 3**, next `P5-TSK-012`)
 
 ---
 
@@ -229,63 +229,66 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TSK-011` — the payment surface over HTTP** — `READY`.
-M5.4 concludes: `POST /v1/payments` (`@RequiresIdempotencyKey`, byte-for-byte replay),
-`POST /v1/payments/{id}/confirmation`, `DELETE /v1/payments/{id}`, `GET /v1/payments/{id}`
-and the list — session + ownership with one 404 across stranger's/unknown/malformed, the
-asynchronous-outcome contract shape (the answer may honestly be `PROCESSING`), payment
-error codes catalogued with **no provider vocabulary** (`INV-PAY-03` at the contract),
-contract baseline extended and reviewed. The accept is the phase's acceptance chain over
-real HTTP: attach → create → confirm → the simulated provider authorises and captures →
-the wallet balance moves → the statement shows the entry → the chain walked by
-identifier. See the backlog entry.
+**`P5-TSK-012` — webhook ingestion: authenticated, evidence-first, deduplicated** — `READY`.
+M5.5 opens: ADR-0047's door — `POST /v1/providers/payments/webhooks`, HMAC over
+timestamp + raw bytes per provider key (through `P5-TSK-002`'s confinement), constant-time,
+**before parsing**; a freshness window refusing stale messages; verbatim evidence row +
+inbox dedupe on (provider, event id) committed together before any state effect;
+2xx-after-commit; authentic-but-unmappable acknowledged with evidence retained;
+unauthenticated/stale writes **nothing** (`INV-PAY-01`). Named mutation: verification
+moved after parsing (the `P2-TSK-011` raw-bytes precedent). See the backlog entry.
 
 ### Just completed
 
-**`P5-TSK-010` — the capture command: the ledger's first touch** — `COMPLETE`
-(2026-09-20). **M5.4 at 2 of 3: money moves.** The same dispatch-before-call choreography
-as the confirmation, with the genuinely new thing held at its centre: **the `CAPTURED`
-transition, the `payment-capture:<attemptId>` posting (DR clearing / CR wallet) and the
-intent's `SUCCEEDED` are one transaction** (ADR-0048) — proven, not described.
+**`P5-TSK-011` — the payment surface over HTTP** — `COMPLETE` (2026-09-20).
+**M5.4 CLOSES at 3 of 3: the phase's machinery meets its customer.** Five endpoints on the
+established ceremonies — the keyed create with byte-for-byte replay, session + ownership
+with one 404 across stranger's/unknown/malformed on every `{id}` route, and the
+asynchronous-outcome contract shape held honestly — plus the one behavioral novelty the
+task owned: **the surface is the capture's chainer** after a synchronous `AUTHORIZED`
+(`PaymentCapture`'s own recorded contract), on the converged answer too, so a client
+retry finishes an `AUTHORIZED` stranded by a crash between the confirm's outcome and the
+chain. The chain adds no new arbitration — racing chainers are `P5-TSK-010`'s counted
+ten-way race.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| One entry per attempt, ten-way race | One wire operation, nine converged, one journal entry counted by the attempt-id reference — the conditional dispatch's row count in front, the posting's idempotency claim as the third wall |
-| A rolled-back outcome leaves no posting, no transition | An injected event failure rolls Tx2 back and the rollback takes the posting, the `CAPTURED` and the `SUCCEEDED` with it — the atomicity probe, and the named posting-hoisted-out mutation's catcher |
-| The balance moves and is explainable | Replay-from-zero equals the captured amount over the real ledger — `INV-BAL-02` extended with no new mechanism |
-| A posting failure fails the outcome loudly | No savepoint, deliberately the transfer's inverse: the provider HAS captured, so no state that hides un-posted money may commit |
+| The acceptance chain over real HTTP | attach → create → confirm → the simulated provider authorises and captures → `SUCCEEDED` in one customer-visible call → the balance moves → the statement shows the entry → the chain walked by stored identifier both ways |
+| A retried create replays byte-for-byte | Proven **after** the payment succeeded: the view renders the recorded judgement (`REQUIRES_CONFIRMATION`), never a re-read — the named mutation's catcher |
+| A changed request is the distinct 409 | `api.Conflict` (`INV-IDEM-03`); keyless the interceptor's 422 |
+| Honestly `PROCESSING` | Twice: a lost authorization response (`AUTH_UNKNOWN` beneath, nothing chained) and a lost capture response (`CAPTURE_UNKNOWN`, **nothing posted, balance `0.00`**) — both `200`s whose body tells the truth (`INV-LIFE-03` at the contract) |
 
 ### Decisions and registers
 
-**"PSP_CLEARING" is the chart's `SETTLEMENT_CLEARING`** — resolved on the record (the
-account P3-TSK-003 actually seeded per currency; a second clearing purpose would split
-the captured-but-unsettled position lifecycles §5 says this balance IS). Capture is the
-platform's act end to end (`PaymentCaptureDispatched` catalogued — ADR-0046 §1's
-initiation record, the platform's where the authorization's rode the person's confirm;
-one new `enterSystem()` enumeration). Ambiguity commits `CAPTURE_UNKNOWN` with nothing
-posted; declined and refused-connection fail both rows honestly (no retry policy until
-Phase 7). The real participant chain ran end to end — party → customer → wallet product →
-ledger wallet → instrument row — **paying `P5-TSK-009`'s recorded `JdbcPaymentParticipants`
-deferral**. Captured is not settled (`INV-SET-01`): nothing moves clearing onward.
+**`PaymentsErrorCode` is the refusals only** — a judged failure is a body fact
+(`200 FAILED` with the mapped reason; the provider's planted decline code asserted absent —
+`INV-PAY-03` needle-tested). `payments.ProviderUnavailable` (503) is the unconfigured
+deployment's honest answer (the `ObjectProvider` decision paid), distinct in kind from the
+in-body `FAILED(PROVIDER_UNAVAILABLE)`. The view carries **no ledger and no attempt
+identifiers** (recorded absence — the entry's reference IS the attempt id; `P5-TSK-016`'s
+derived-totals view owns any revisit). The instrument fold was made **total at the bridge**
+in scope: a well-formed v4 UUID is malformed here (ADR-0013) and answers the one empty —
+found when the probe's 500 exposed the unguarded `PaymentMethodId.of`. Contract baseline
+extended and reviewed: **393 added lines, zero removed**; the 8 `BREAKING` labels are all
+`required` flags on the brand-new paths/schemas themselves.
 
-### Eight mutations — one survived its first run, and that is the battery working
+### Eight mutations, all caught, restores `cmp`-verified
 
-All eight ended caught, restores `cmp`-verified byte-identical: the **named
-posting-hoisted-out** (the hoisted entry survived the rollback — exactly the state the
-atomicity probe refuses); ambiguity-posts (the DB probe AND the hermetic no-database
-tripwire); the intent's `SUCCEEDED` dropped; the dispatch made unconditional (the ten-way
-race, the schema trigger erroring the losers); evidence dropped; **the intent half of
-declined dropped — SURVIVED round one**, exposing that the probe asserted the in-memory
-result and never the intent ROW; the gate strengthened the probe and the mutation then
-failed against it; the platform actor dropped (structural refusal); the
-reference-not-stored-before-send (caught by `P5-TSK-008`'s stage-facts `CHECK` — the
-layers meeting). **Verified by targeted tiers — `:payments:test` 86 / the payment
-database suites 24 / `:app:test` fresh green, 0 failures — the full battery deliberately
-skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
+The **named capture-chain-dropped** (the acceptance chain alone: `SUCCEEDED` expected, the
+never-captured `PROCESSING` answered); the **named replay-from-a-re-read** (the
+post-success replay leaked the world's state); the GET's ownership predicate dropped; the
+malformed-instrument fold reverted (the uniform 422 became our 500 — the in-scope fix
+proven load-bearing); the cancel window's 409 swallowed; the unconfigured 503 dropped;
+the chain made unconditional (capture on `AUTH_UNKNOWN` — the loud 500 where the honest
+`PROCESSING` belongs); the list's ownership predicate dropped. **Verified by targeted
+tiers — `:payments:test` 86 / the payment database suites 35 (schema 10, authorization 8,
+capture 6, endpoints 10, unconfigured 1) / `:app:test` 438, 0 failures, fresh runs — the
+full battery deliberately skipped on the owner's instruction; no fleet-wide database or
+kafka counts claimed.**
 
 ### Previously
 
-The per-task completion records behind this one — 113 blocks, from `P5-TSK-009` back to project
+The per-task completion records behind this one — 114 blocks, from `P5-TSK-010` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -299,8 +302,8 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1–M5.3 `CLOSED` (3+2+3), **M5.4 open at 2 of 3**:
-`P5-TSK-001`…`-010` complete. Next: `P5-TSK-011`, `READY` — the surface over HTTP.
+**Phase 5 is `IN_PROGRESS`** — M5.1–M5.4 `CLOSED` (3+2+3+3): `P5-TSK-001`…`-011`
+complete. Next: `P5-TSK-012`, `READY` — webhook ingestion, M5.5's door.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of

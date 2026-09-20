@@ -269,6 +269,34 @@ unavailable cause. The 422 is an *explicit parsed refusal* of the caller's own g
 and retry. **There is deliberately no payment-method not-found code**: the detach's unknown,
 not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verbatim).
 
+### `payments` — `PaymentsErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `payments.NoWallet` | 422 | You have no account that can receive a payment. |
+| `payments.UnknownInstrument` | 422 | The payment method does not resolve to an active instrument of yours. |
+| `payments.CurrencyMismatch` | 422 | The payment currency must match your account's currency. |
+| `payments.NotConfirmable` | 409 | The payment is not awaiting confirmation. |
+| `payments.NotCancellable` | 409 | The payment can no longer be cancelled. |
+| `payments.ProviderUnavailable` | 503 | Payments are temporarily unavailable. |
+
+The payment surface's vocabulary (`P5-TSK-011`) is **the refusals only** — requests the
+platform declined to judge, with nothing written. A *judged* failure is never an error code: a
+declined card is a `200` whose body says `FAILED` with the **mapped** `failureReason`
+(`INV-PAY-03`: the provider's own vocabulary lives in the retained evidence and appears in no
+response — needle-tested). The three 422s are values the caller supplied or standing the
+caller owns, decided **before the idempotency claim is consumed**, so a corrected request
+retries under the same key. `payments.UnknownInstrument` is one code for unknown, not-yours,
+malformed *and detached-since-creation* alike — a split would make the payment endpoints an
+oracle over other people's instruments (the `transfers.UnknownSource` fold). The two 409s are
+named for the machine edge that is *checked*, never the commonest cause (the `NOT_ACTIVE`
+lesson), and the remedy for both is `GET /v1/payments/{id}`, whose view carries the state.
+`payments.ProviderUnavailable` (503) is the `paymentmethods.TokenisationUnavailable` decision
+verbatim: an **unconfigured deployment** declines to judge, distinct in kind from the in-body
+`FAILED(PROVIDER_UNAVAILABLE)` — a refused connection to a *configured* provider is knowledge,
+a judged outcome. **There is deliberately no payment not-found code**: unknown, not-yours and
+malformed on every `{id}` route are one `api.NotFound` (the `P1-TSK-016` reasoning).
+
 ### `ledger` — `LedgerErrorCode`
 
 | Code | Status | Meaning |

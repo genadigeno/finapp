@@ -11,6 +11,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -79,6 +81,30 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("reading an owned payment intent", failure));
+        }
+    }
+
+    @Override
+    public List<PaymentIntent> listFor(Connection unitOfWork, UUID partyId) {
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // party_id = ? IS the ownership check, in the statement (ADR-0031).
+                        // Newest first; the id (UUIDv7, time-ordered) breaks created_at ties
+                        // deterministically, so two instances render one order.
+                        "SELECT " + COLUMNS + " FROM payments.payment_intent"
+                                + " WHERE party_id = ? ORDER BY created_at DESC, id DESC")) {
+            read.setObject(1, partyId);
+            try (ResultSet rows = read.executeQuery()) {
+                List<PaymentIntent> intents = new ArrayList<>();
+                while (rows.next()) {
+                    intents.add(rehydrate(rows));
+                }
+                return List.copyOf(intents);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("listing a party's payment intents", failure));
         }
     }
 

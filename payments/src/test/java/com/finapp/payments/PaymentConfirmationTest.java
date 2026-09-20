@@ -333,6 +333,11 @@ class PaymentConfirmationTest {
         boolean refuseNextTransition;
 
         @Override
+        public java.util.List<PaymentIntent> listFor(Connection uow, UUID partyId) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
         public void insert(Connection uow, PaymentIntent fresh) {
             rows.put(fresh.id().value(), fresh);
         }
