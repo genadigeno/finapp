@@ -27,20 +27,21 @@
  *
  * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema floor
  * ({@code P5-TSK-001}), the provider port with its simulated card-PSP adapter
- * ({@code P5-TSK-003}: {@code PaymentProvider}, the answer types, the wire client), all three
- * aggregates with their machines - the intent ({@code P5-TSK-006}) and the attempt and refund
- * ({@code P5-TSK-007}) - and the schema's tables ({@code P5-TSK-008}: {@code V002}-{@code V005}
- * - intent, attempt, refund, their histories and the encrypted provider evidence, the machines'
- * {@code CHECK}s and triggers generated from the enums and reconciled by
- * {@code PaymentsMigrationTest}, the refund sum bound in-trigger under advisory-lock
- * namespace 3 - updated by the task that made the previous sentence stale, the recurring
- * class). The commands are {@code P5-TSK-009}/{@code -010}/{@code -015}, and the evidence
- * cipher arrives with the first writer ({@code P5-TSK-009}).
+ * ({@code P5-TSK-003}), all three aggregates with their machines
+ * ({@code P5-TSK-006}/{@code -007}), the schema ({@code P5-TSK-008}: {@code V002}-{@code V006},
+ * generated {@code CHECK}s and triggers reconciled by {@code PaymentsMigrationTest}, the
+ * refund sum bound in-trigger under advisory-lock namespace 3), and the authorization slice
+ * ({@code P5-TSK-009}: {@code PaymentCreation}/{@code PaymentConfirmation}/
+ * {@code PaymentCancellation} on the dispatch-before-call discipline, the stores, the
+ * {@code PaymentParticipants} port {@code app} implements, {@code EvidenceCipher} with its
+ * confined key, and the first audit actions - updated by the task that made the previous
+ * sentence stale, the recurring class). The capture command is {@code P5-TSK-010}, the HTTP
+ * surface {@code P5-TSK-011}, the refund command {@code P5-TSK-015}.
  *
- * <p><strong>Deliberately no audit-action enum yet</strong> (the deliberately-few licence,
- * {@code P4-TSK-001}'s precedent): the actions arrive with the commands whose designs fix their
- * meaning - confirmation and cancellation as the person ({@code P5-TSK-009}/{@code -011}),
- * outcome application as the platform ({@code P5-TSK-009}/{@code -014}), the refund with its
- * required reason ({@code P5-TSK-015}).
+ * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
+ * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and
+ * cancellation as the person, outcome application as the platform
+ * ({@code PaymentsAuditAction}). Still to come with their commands: the capture's action
+ * ({@code P5-TSK-010}) and the refund's, with its required reason ({@code P5-TSK-015}).
  */
 package com.finapp.payments;

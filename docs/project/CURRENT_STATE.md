@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TSK-008` — the payments schema; **M5.3 CLOSES at 3 of 3**, next `P5-TSK-009`)
+Last updated: 2026-09-20 (`P5-TSK-009` — the authorization command; **M5.4 opens at 1 of 3**, next `P5-TSK-010`)
 
 ---
 
@@ -229,79 +229,72 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TSK-009` — the authorization command: dispatch-before-call** — `READY`.
-M5.4 opens, on the money path for the first time: ADR-0046 as code — intent create (keyed
-`payment.create`) and confirm committing `PROCESSING` + the attempt at `AUTH_DISPATCHED`
-with its minted reference in ONE transaction, the provider call holding no connection,
-then the outcome transaction applying `AUTHORIZED`/`FAILED`/`AUTH_UNKNOWN` by conditional
-transition with verbatim evidence (the cipher and its KeySpec arrive here, beside their
-consumer). Cancel from `REQUIRES_CONFIRMATION` only. No ledger effect anywhere
-(ADR-0048). Named mutation owed: the dispatch commit moved AFTER the provider call. See
-the backlog entry.
+**`P5-TSK-010` — the capture command: the ledger's first touch** — `READY`.
+M5.4 continues: `AUTHORIZED → CAPTURE_DISPATCHED` commit → provider call → the outcome
+transaction committing `CAPTURED` **with the posting** — DR `PSP_CLEARING` / CR the
+customer wallet, key `payment-capture:<attemptId>` through `PostingService` on the same
+connection — and the intent's `PROCESSING → SUCCEEDED`, atomically (ADR-0048). Ambiguity
+commits `CAPTURE_UNKNOWN` with nothing posted; captured is not settled (`INV-SET-01`).
+Named mutation owed: the posting hoisted out of the outcome transaction. See the backlog
+entry.
 
 ### Just completed
 
-**`P5-TSK-008` — the payments schema: intent, attempt, refund, evidence** — `COMPLETE`
-(2026-09-20). **M5.3 CLOSES at 3 of 3: the three machines are pinned in code AND schema**
-— `V002`–`V005`: intent, attempt, refund, their append-only histories and the encrypted
-provider evidence, every generated artefact reconciled against its one definition by
-`PaymentsMigrationTest`, every constraint exercised against raw SQL from scratch by
-`PaymentsSchemaDatabaseTest` (10 tests, prepared statements only — exactly the writer the
-schema must bind, no store existing yet).
+**`P5-TSK-009` — the authorization command: dispatch-before-call** — `COMPLETE`
+(2026-09-20). **M5.4 opens at 1 of 3: ADR-0046 is production code, on the money path for
+the first time** — create (keyed `payment.create`, the actor in the fingerprint), confirm
+as the whole choreography in one method through the one `TransactionRunner` seam, cancel
+winning only the confirmation window, and the outcome applied as the platform through the
+module's first enumerated `enterSystem()` site.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Every constraint exercised against raw SQL | Every named coherence `CHECK` planted-and-refused `23514` **as the migrator** (the two-shapes `FAILED` rule and the stored over-capture included); edges and freezes refused `P0001` for both roles; the smuggled-edge probe refused by the `NULL → value` payload rule; evidence UPDATE/DELETE refused `42501`/app and `P0001`/migrator |
-| The reconciliations hold | Three machines × three status columns, exact trigger edge sets with terminal-absence halves, `ddl()`/`nullableDdl()` verbatim, reference shapes from the types' `MAX_LENGTH`s, `Refund.MAX_REASON_LENGTH`, `PspWireClient.MAX_EVIDENCE_BYTES`, the one-live predicate from `sqlTerminalValueList()`, every grant set pinned, the advisory namespace pinned |
-| The bound refuses an over-refund for every writer | To-the-penny accepted, one unit past refused for app AND migrator, non-`CAPTURED` subject refused, a `FAILED` refund frees its budget — and **ten concurrent partials of 300 against 1000 accept exactly 3**, the write-skew shape closed by `pg_advisory_xact_lock(3, hashtext(attempt_id))` in the `BEFORE INSERT` trigger |
+| The two-transaction shape, proven by a crash | The crash probe: a provider dying mid-call leaves the intent `PROCESSING` and the attempt `AUTH_DISPATCHED` with its stored reference — visible, nothing else — and the hermetic order pin sees Tx1 committed and no transaction active at the wire |
+| Every harness outcome drives its committed state | Approved → `AUTHORIZED` (promise recorded, trim-hostile body retained verbatim, decrypted and checksum-verified); declined → `FAILED(DECLINED)` + intent `FAILED` atomically; timeout/unknown-state → `AUTH_UNKNOWN`, intent honestly `PROCESSING`; connection-refused → `FAILED(PROVIDER_UNAVAILABLE)` — knowledge |
+| A retried confirm converges | Zero provider calls on the retry, the stranded dispatch left to the sweeper (`INV-PAY-04` end to end) |
+| Ten instances confirming produce one attempt | Counted in the table: one row, one wire operation, nine converged |
 
-### The grants are the design, and the aggregates' assertions arrived at the privilege
+### What the slice carried with it
 
-The intent's `UPDATE` grant is **one column** — P5-TSK-006's per-field assertion made
-privilege; the attempt's is status plus exactly the payload columns its doors carry —
-P5-TSK-007's recorded wider-grant statement reconciled, with the sharper trigger rule the
-grant cannot hold: **a recorded provider fact moves only from `NULL` to a value**, which
-is what refuses a capture-amount edit smuggled inside a legal edge. The evidence is
-append-only for every writer including the migrator (`INV-HIST-02`), ciphertext-shaped by
-`CHECK` (GCM tag arithmetic, nonce, key version — the `kyc_document` ceremony), with the
-cipher itself arriving beside its first writer (P5-TSK-009, the `ProviderApiKey`
-precedent). The unattributable webhook is retained with both subjects `NULL` — "we could
-not attribute it" is itself the fact an investigation starts from. Deliberate refusals
-recorded in the migration headers: no not-a-PAN `CHECK`s on reference columns (a
-provider's all-numeric reference is legitimate; the PCI boundary is `paymentmethods`'),
-plain provider-reference `UNIQUE`s until routing adds the provider column (Phase 7).
+The stores (conditional transitions with the machine's own legality check in the writer),
+the `PaymentParticipants` port and its app implementation (the registered
+TokenReference → InstrumentToken bridge, one expression), `EvidenceCipher` (the at-rest
+mechanism's third restatement) with credential six (`FINAPP_PAYMENT_EVIDENCE_KEY`,
+`EXACTLY_32`) and credential five (`ProviderApiKey`) finally consumed — both
+startup-guarded; four audit actions catalogued and emitted (outcome application as the
+platform — a provider's answer has no session); three events through the outbox in their
+facts' transactions; ten ownership-register entries with the stranger's one-empty-answer
+negative test named by method; `V006` — the gate-one-task-later finding: the P5-TSK-008
+histories carried `transfer_event`'s person-only `actor_id uuid` into a domain whose
+outcome transitions are the platform's (`'system'` is not a UUID), fixed by moving the
+three `*_event` tables to the `audit_record` actor model while provably empty.
 
 ### What deliberately did not arrive
 
-Stores, commands, endpoints, events, audit actions, meters (`P5-TSK-009`…`-017`); the
-evidence cipher and its `KeySpec` (with the first writer); the sweeper's aged-rows index
-(with its query, `P5-TSK-014`); the webhook inbox table (rides platform's, by plan).
-Registers fed by the task: 64 `DATA_CLASSIFICATION.md` rows at the ceiling
-(`ColumnClassificationTest` green, database tier), advisory-lock **namespace 3**
-registered, the `DISTRIBUTED_EXECUTION.md` §3 row for the schema's arbiters. Side
-deliveries with their own tests: `MoneyColumns.nullableDdl()` (platform — a monetary fact
-that arrives with a later transition), `Refund.MAX_REASON_LENGTH`,
-`PaymentFailureReason.sqlValueList()`. Phase 5 `MUTATION_TESTING.md` rows stay deferred
-to the phase audit per the guard's reached-phase rule.
+Capture (`P5-TSK-010`, next), endpoints (`-011`), webhooks (`-012`/`-013`), the sweeper
+(`-014`), refund command (`-015`), meters (`-017`). `JdbcPaymentParticipants`' real-chain
+exercise is `P5-TSK-011`'s end-to-end (a composition of already-proven reads); outbound
+request bytes are not captured by the port (evidence = everything received — ADR-0049's
+answer types; flagged to the phase audit rather than smuggled in as an adapter change).
+No ledger effect anywhere — the commands import no posting type, structurally (ADR-0048).
 
-### Eight schema mutations, all caught by the intended assertion, restores byte-identical
+### Eight mutations, all caught by the intended assertion, restores byte-identical
 
-The one-live index dropped (ten-way race + reconciliation); the index made total (freed
-slot + reconciliation); the sum check dropped (three tests — the acceptance mutation);
-**the advisory lock alone removed — caught by the ten-way race ALONE with every
-sequential test green, the P2-TSK-015 write-skew shape demonstrated live**; the
-`NULL → value` rule removed (the smuggled-edge probe alone); the intent grant widened
-(the `information_schema` sweep, which catches a widening without anyone remembering);
-the evidence trigger dropped (the migrator halves alone — the grants still bound the
-app); `AUTHORIZED → FAILED` smuggled into the trigger (the edge reconciliation alone).
-**Verified by targeted tiers — `:payments:test` 69 / `:platform:test` 171 / `:app:test`
-435 / `PaymentsSchemaDatabaseTest` 10 / `ColumnClassificationTest` 5, 0 failures, fresh
-runs — the full battery deliberately skipped on the owner's instruction; no fleet-wide
-database or kafka counts claimed.**
+**The named commit-after-call inversion** (the hermetic order pin AND the crash probe —
+nothing stranded); the conditional transition made unconditional (the ten-way race, with
+`V002`'s trigger turning the losers into errors — the layers meeting); timeout-as-failure
+(the verdict suite and the converge test); the outcome applied as the person (the history
+actor test); evidence retention dropped; the actor dropped from the fingerprint (**the
+gate's own stranger-replay probe, added when the gate found the binding asserted nowhere —
+caught alone**); the intent half of the failure dropped; the ownership predicate dropped.
+**Verified by targeted tiers — `:payments:test` 81 / `:platform:test` 171 / `:app:test`
+438 / the payment database suites 18, 0 failures, fresh runs — the full battery
+deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
+claimed.**
 
 ### Previously
 
-The per-task completion records behind this one — 111 blocks, from `P5-TSK-007` back to project
+The per-task completion records behind this one — 112 blocks, from `P5-TSK-008` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -315,8 +308,8 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1 `CLOSED` (3 of 3), M5.2 `CLOSED` (2 of 2), **M5.3 `CLOSED` (3 of 3)**:
-`P5-TSK-001`…`-008` complete. Next: `P5-TSK-009`, `READY` — **M5.4, money arrives**.
+**Phase 5 is `IN_PROGRESS`** — M5.1–M5.3 `CLOSED` (3+2+3), **M5.4 open at 1 of 3**:
+`P5-TSK-001`…`-009` complete. Next: `P5-TSK-010`, `READY` — the ledger's first touch.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of

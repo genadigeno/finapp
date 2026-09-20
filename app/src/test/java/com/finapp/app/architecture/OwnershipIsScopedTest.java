@@ -264,6 +264,95 @@ class OwnershipIsScopedTest {
                                         + " count folds not-yours and already-detached into"
                                         + " one indistinguishable false.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "Confirm and cancel (P5-TSK-009's commands; the surface is"
+                                        + " P5-TSK-011) - the identifier comes from the caller,"
+                                        + " and party_id = ? in the statement is the ownership"
+                                        + " check: not-yours and does-not-exist are one empty"
+                                        + " answer and will be one 404, never an oracle over"
+                                        + " other people's payments.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.findById",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
+                                    "The converge re-read after a lost conditional transition,"
+                                        + " inside the same command transaction that already"
+                                        + " passed findOwned - the identifier is never a"
+                                        + " request's. HTTP reads go through findOwned.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.transition",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
+                                    "The conditional status write (P5-TSK-009): the identifier"
+                                        + " was validated by findOwned in the same command, and"
+                                        + " the WHERE status = ? row count is the concurrency"
+                                        + " arbiter, with V002's trigger beneath.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.recordTransition",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
+                                    "The append-only history row, written beside the"
+                                        + " conditional transition it evidences, on the same"
+                                        + " validated identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.findForIntent",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
+                                    "The converged confirm's answer and the outcome flow's"
+                                        + " read: the intent identifier passed findOwned in"
+                                        + " the same command; the attempt is the intent's own"
+                                        + " row.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.authorize",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentConfirmation.confirm",
+                                    "The outcome's conditional write (P5-TSK-009): the attempt"
+                                        + " identifier was minted by this command's own Tx1 and"
+                                        + " carried across the provider call - never a"
+                                        + " request's - and the WHERE status = ? row count"
+                                        + " makes racing resolvers converge.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.fail",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentConfirmation.confirm",
+                                    "As JdbcPaymentAttemptStore.authorize - the same minted"
+                                        + " identifier, the failing edge.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.markAuthUnknown",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentConfirmation.confirm",
+                                    "As JdbcPaymentAttemptStore.authorize - the same minted"
+                                        + " identifier, the honest-ambiguity edge"
+                                        + " (INV-LIFE-03).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.recordTransition",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentConfirmation.confirm",
+                                    "The append-only history row beside the attempt's own"
+                                        + " conditional transition, on the same minted"
+                                        + " identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.payloadsFor",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
+                                    "The retained evidence of one attempt, decrypted and"
+                                        + " checksum-verified: attempt identifiers trace to"
+                                        + " the intent's owner-scoped read (findForIntent is"
+                                        + " keyed by the intent findOwned validated) - never"
+                                        + " a request's. Today's callers are the database"
+                                        + " suite and the coming reconciliation surface.")),
+                    Map.entry(
                             "com.finapp.transfers.JdbcBeneficiaryStore.remove",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -1021,37 +1110,51 @@ class OwnershipIsScopedTest {
      * owner-scoped operation with no named negative test fails the build.
      */
     private static final Map<String, String> NEGATIVE_TESTS =
-            Map.of(
-                    "com.finapp.identity.JdbcSessionStore.revokeOwned",
-                    "com.finapp.app.domain.SessionOwnershipDatabaseTest"
-                            + ".revocationIsRefusedForSomebodyElsesSession",
-                    "com.finapp.identity.JdbcSessionStore.revokeAll",
-                    "com.finapp.app.domain.SessionRevocationDatabaseTest"
-                            + ".revokeAllIsScopedToItsIdentity",
-                    "com.finapp.identity.JdbcContactChannelStore.findOwned",
-                    "com.finapp.app.domain.RecoveryAbuseDatabaseTest"
-                            + ".aChannelIsNotReadableByAnotherIdentity",
-                    "com.finapp.paymentmethods.JdbcPaymentMethodStore.findOwned",
-                    "com.finapp.app.paymentmethods.PaymentMethodEndpointDatabaseTest"
-                            + ".aStrangersPaymentMethodIdIsOne404OnDelete",
-                    "com.finapp.paymentmethods.JdbcPaymentMethodStore.detach",
-                    "com.finapp.app.paymentmethods.PaymentMethodDatabaseTest"
-                            + ".detachmentConvergesAndIsOwnershipScoped",
-                    "com.finapp.transfers.JdbcBeneficiaryStore.remove",
-                    "com.finapp.app.transfers.BeneficiaryDatabaseTest"
-                            + ".removalConvergesAndIsOwnershipScoped",
-                    "com.finapp.transfers.JdbcBeneficiaryStore.findOwned",
-                    "com.finapp.app.transfers.BeneficiaryEndpointDatabaseTest"
-                            + ".aStrangersBeneficiaryIdIsOne404OnDelete",
-                    "com.finapp.transfers.JdbcTransferStore.findOwned",
-                    "com.finapp.app.transfers.TransferEndpointDatabaseTest"
-                            + ".aStrangersTransferIdIsOne404",
-                    "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
-                    "com.finapp.app.domain.AccountEndpointDatabaseTest"
-                            + ".ownershipIsExactlyTheCallers",
-                    "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
-                    "com.finapp.app.domain.AccountEndpointDatabaseTest"
-                            + ".closingEndToEnd");
+            Map.ofEntries(
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
+                            "com.finapp.app.payments.PaymentAuthorizationDatabaseTest"
+                            + ".aStrangersPaymentIntentIsOneEmptyAnswer"),
+                    Map.entry(
+                            "com.finapp.identity.JdbcSessionStore.revokeOwned",
+                            "com.finapp.app.domain.SessionOwnershipDatabaseTest"
+                            + ".revocationIsRefusedForSomebodyElsesSession"),
+                    Map.entry(
+                            "com.finapp.identity.JdbcSessionStore.revokeAll",
+                            "com.finapp.app.domain.SessionRevocationDatabaseTest"
+                            + ".revokeAllIsScopedToItsIdentity"),
+                    Map.entry(
+                            "com.finapp.identity.JdbcContactChannelStore.findOwned",
+                            "com.finapp.app.domain.RecoveryAbuseDatabaseTest"
+                            + ".aChannelIsNotReadableByAnotherIdentity"),
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.findOwned",
+                            "com.finapp.app.paymentmethods.PaymentMethodEndpointDatabaseTest"
+                            + ".aStrangersPaymentMethodIdIsOne404OnDelete"),
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.detach",
+                            "com.finapp.app.paymentmethods.PaymentMethodDatabaseTest"
+                            + ".detachmentConvergesAndIsOwnershipScoped"),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcBeneficiaryStore.remove",
+                            "com.finapp.app.transfers.BeneficiaryDatabaseTest"
+                            + ".removalConvergesAndIsOwnershipScoped"),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcBeneficiaryStore.findOwned",
+                            "com.finapp.app.transfers.BeneficiaryEndpointDatabaseTest"
+                            + ".aStrangersBeneficiaryIdIsOne404OnDelete"),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcTransferStore.findOwned",
+                            "com.finapp.app.transfers.TransferEndpointDatabaseTest"
+                            + ".aStrangersTransferIdIsOne404"),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
+                            "com.finapp.app.domain.AccountEndpointDatabaseTest"
+                            + ".ownershipIsExactlyTheCallers"),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
+                            "com.finapp.app.domain.AccountEndpointDatabaseTest"
+                            + ".closingEndToEnd"));
 
     /**
      * The identity schema's owner column. (This said "one name, because one module owns every

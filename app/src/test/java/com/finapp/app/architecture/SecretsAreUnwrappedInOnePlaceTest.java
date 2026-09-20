@@ -179,7 +179,14 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // P5-TSK-005. The grant's one production caller: onto the exchange wire,
                     // which is the one place it legitimately goes - the SimulatedCardPspAdapter
                     // claim one boundary over, for a shorter-lived value.
-                    "com.finapp.paymentmethods.SimulatedTokenisationAdapter");
+                    "com.finapp.paymentmethods.SimulatedTokenisationAdapter",
+                    // P5-TSK-009. The registered bridge across the PCI boundary: the stored
+                    // TokenReference comes off in ONE expression and is immediately re-wrapped
+                    // as the InstrumentToken the provider port carries - the port app
+                    // implements because payments cannot see paymentmethods (INV-PAY-02).
+                    // Nothing is held bare, nothing is logged, and a second bridging site is
+                    // a review question by construction.
+                    "com.finapp.app.payments.JdbcPaymentParticipants");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

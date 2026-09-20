@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 111 "Previously" blocks, newest first, from `P5-TSK-007` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 112 "Previously" blocks, newest first, from `P5-TSK-008` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,67 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P5-TSK-008` — the payments schema: intent, attempt, refund, evidence** — `COMPLETE`
+(2026-09-20). **M5.3 CLOSES at 3 of 3: the three machines are pinned in code AND schema**
+— `V002`–`V005`: intent, attempt, refund, their append-only histories and the encrypted
+provider evidence, every generated artefact reconciled against its one definition by
+`PaymentsMigrationTest`, every constraint exercised against raw SQL from scratch by
+`PaymentsSchemaDatabaseTest` (10 tests, prepared statements only — exactly the writer the
+schema must bind, no store existing yet).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every constraint exercised against raw SQL | Every named coherence `CHECK` planted-and-refused `23514` **as the migrator** (the two-shapes `FAILED` rule and the stored over-capture included); edges and freezes refused `P0001` for both roles; the smuggled-edge probe refused by the `NULL → value` payload rule; evidence UPDATE/DELETE refused `42501`/app and `P0001`/migrator |
+| The reconciliations hold | Three machines × three status columns, exact trigger edge sets with terminal-absence halves, `ddl()`/`nullableDdl()` verbatim, reference shapes from the types' `MAX_LENGTH`s, `Refund.MAX_REASON_LENGTH`, `PspWireClient.MAX_EVIDENCE_BYTES`, the one-live predicate from `sqlTerminalValueList()`, every grant set pinned, the advisory namespace pinned |
+| The bound refuses an over-refund for every writer | To-the-penny accepted, one unit past refused for app AND migrator, non-`CAPTURED` subject refused, a `FAILED` refund frees its budget — and **ten concurrent partials of 300 against 1000 accept exactly 3**, the write-skew shape closed by `pg_advisory_xact_lock(3, hashtext(attempt_id))` in the `BEFORE INSERT` trigger |
+
+### The grants are the design, and the aggregates' assertions arrived at the privilege
+
+The intent's `UPDATE` grant is **one column** — P5-TSK-006's per-field assertion made
+privilege; the attempt's is status plus exactly the payload columns its doors carry —
+P5-TSK-007's recorded wider-grant statement reconciled, with the sharper trigger rule the
+grant cannot hold: **a recorded provider fact moves only from `NULL` to a value**, which
+is what refuses a capture-amount edit smuggled inside a legal edge. The evidence is
+append-only for every writer including the migrator (`INV-HIST-02`), ciphertext-shaped by
+`CHECK` (GCM tag arithmetic, nonce, key version — the `kyc_document` ceremony), with the
+cipher itself arriving beside its first writer (P5-TSK-009, the `ProviderApiKey`
+precedent). The unattributable webhook is retained with both subjects `NULL` — "we could
+not attribute it" is itself the fact an investigation starts from. Deliberate refusals
+recorded in the migration headers: no not-a-PAN `CHECK`s on reference columns (a
+provider's all-numeric reference is legitimate; the PCI boundary is `paymentmethods`'),
+plain provider-reference `UNIQUE`s until routing adds the provider column (Phase 7).
+
+### What deliberately did not arrive
+
+Stores, commands, endpoints, events, audit actions, meters (`P5-TSK-009`…`-017`); the
+evidence cipher and its `KeySpec` (with the first writer); the sweeper's aged-rows index
+(with its query, `P5-TSK-014`); the webhook inbox table (rides platform's, by plan).
+Registers fed by the task: 64 `DATA_CLASSIFICATION.md` rows at the ceiling
+(`ColumnClassificationTest` green, database tier), advisory-lock **namespace 3**
+registered, the `DISTRIBUTED_EXECUTION.md` §3 row for the schema's arbiters. Side
+deliveries with their own tests: `MoneyColumns.nullableDdl()` (platform — a monetary fact
+that arrives with a later transition), `Refund.MAX_REASON_LENGTH`,
+`PaymentFailureReason.sqlValueList()`. Phase 5 `MUTATION_TESTING.md` rows stay deferred
+to the phase audit per the guard's reached-phase rule.
+
+### Eight schema mutations, all caught by the intended assertion, restores byte-identical
+
+The one-live index dropped (ten-way race + reconciliation); the index made total (freed
+slot + reconciliation); the sum check dropped (three tests — the acceptance mutation);
+**the advisory lock alone removed — caught by the ten-way race ALONE with every
+sequential test green, the P2-TSK-015 write-skew shape demonstrated live**; the
+`NULL → value` rule removed (the smuggled-edge probe alone); the intent grant widened
+(the `information_schema` sweep, which catches a widening without anyone remembering);
+the evidence trigger dropped (the migrator halves alone — the grants still bound the
+app); `AUTHORIZED → FAILED` smuggled into the trigger (the edge reconciliation alone).
+**Verified by targeted tiers — `:payments:test` 69 / `:platform:test` 171 / `:app:test`
+435 / `PaymentsSchemaDatabaseTest` 10 / `ColumnClassificationTest` 5, 0 failures, fresh
+runs — the full battery deliberately skipped on the owner's instruction; no fleet-wide
+database or kafka counts claimed.**
+
 
 ### Previously
 

@@ -547,7 +547,8 @@ them are classified at the ceiling regardless.
 | `payment_intent_event` | `intent_id` | `INTERNAL` | An identifier of a thing |
 | `payment_intent_event` | `from_status` | `CONFIDENTIAL` | `payment_intent.status`'s reasoning — history is the same facts, older |
 | `payment_intent_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
-| `payment_intent_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `transfer_event.actor_id`'s reasoning |
+| `payment_intent_event` | `actor_id` | `RESTRICTED-PII` | The acting identity - a person's UUID as text, or `system` for the platform's own acts (`V006`, `P5-TSK-009`: an outcome is a provider's answer and has no session). `audit_record.actor_id`'s reasoning and its model |
+| `payment_intent_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in - `audit_record.actor_type`'s reasoning (`V006`) |
 | `payment_intent_event` | `occurred_at` | `CONFIDENTIAL` | Dates a person's financial act |
 | `payment_attempt` | `id` | `INTERNAL` | An aggregate identifier — the capture posting's key carries it (`payment-capture:<attemptId>`) |
 | `payment_attempt` | `intent_id` | `INTERNAL` | An identifier of a thing |
@@ -568,7 +569,8 @@ them are classified at the ceiling regardless.
 | `payment_attempt_event` | `attempt_id` | `INTERNAL` | An identifier of a thing |
 | `payment_attempt_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
 | `payment_attempt_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
-| `payment_attempt_event` | `actor_id` | `RESTRICTED-PII` | The acting identity |
+| `payment_attempt_event` | `actor_id` | `RESTRICTED-PII` | The acting identity - a person's UUID as text, or `system` for the platform's own acts (`V006`, `P5-TSK-009`: an outcome is a provider's answer and has no session). `audit_record.actor_id`'s reasoning and its model |
+| `payment_attempt_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in - `audit_record.actor_type`'s reasoning (`V006`) |
 | `payment_attempt_event` | `occurred_at` | `CONFIDENTIAL` | Dates a person's financial act |
 | `refund` | `id` | `INTERNAL` | An aggregate identifier — the refund posting's key carries it (`payment-refund:<refundId>`) |
 | `refund` | `attempt_id` | `INTERNAL` | An identifier of a thing |
@@ -585,7 +587,8 @@ them are classified at the ceiling regardless.
 | `refund_event` | `refund_id` | `INTERNAL` | An identifier of a thing |
 | `refund_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
 | `refund_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
-| `refund_event` | `actor_id` | `RESTRICTED-PII` | The acting identity |
+| `refund_event` | `actor_id` | `RESTRICTED-PII` | The acting identity - a person's UUID as text, or `system` for the platform's own acts (`V006`, `P5-TSK-009`: an outcome is a provider's answer and has no session). `audit_record.actor_id`'s reasoning and its model |
+| `refund_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in - `audit_record.actor_type`'s reasoning (`V006`) |
 | `refund_event` | `occurred_at` | `CONFIDENTIAL` | Dates a privileged act against a person's account |
 | `provider_evidence` | `id` | `INTERNAL` | An aggregate identifier |
 | `provider_evidence` | `attempt_id` | `INTERNAL` | An identifier of a thing |

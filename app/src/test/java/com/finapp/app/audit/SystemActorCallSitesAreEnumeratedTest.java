@@ -109,7 +109,18 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " (P2-TSK-009's reasoning, at the decision). The REVIEWER path in this"
                         + " same class never comes here - it takes the person the interceptor"
                         + " proved from the established scope, which is asserted by the"
-                        + " acceptance suite's decided_by and audit assertions.");
+                        + " acceptance suite's decided_by and audit assertions.",
+                    "com.finapp.payments.PaymentConfirmation.confirm",
+                    "The authorization outcome's transaction (P5-TSK-009, PHASE_5_PLAN.md"
+                        + " section 11's enumerated site in as many words): a provider's answer"
+                        + " has no session, and attributing AUTHORIZED/FAILED/AUTH_UNKNOWN to"
+                        + " the person who happened to carry the synchronous confirm would"
+                        + " record them as the author of the issuer's decision - and the same"
+                        + " outcome applied by the sweeper or a webhook (P5-TSK-013/-014) has"
+                        + " no person at all, so the attribution must not depend on which"
+                        + " resolver won the harmless race (ADR-0046). The person's own acts -"
+                        + " create, confirm, cancel - are audited as the person in their own"
+                        + " transactions; only the outcome application enters the platform.");
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

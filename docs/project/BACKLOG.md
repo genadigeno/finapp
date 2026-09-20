@@ -5895,7 +5895,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   or kafka counts claimed.
 - **Risk**: High (the phase's schema). **Cx**: L. **DoD**: `DOD-FIN`, `DOD-KERNEL`
 
-**P5-TSK-009 — The authorization command: dispatch-before-call** — `READY`
+**P5-TSK-009 — The authorization command: dispatch-before-call** — `COMPLETE` (2026-09-20)
 - **Objective**: ADR-0046 as code, on the money path for the first time.
 - **Scope**: intent create (keyed `payment.create`, fingerprint binding actor + wallet +
   instrument + amount + currency + scale) and confirm: one transaction commits
@@ -5911,12 +5911,53 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   crash injected between them (stranded `AUTH_DISPATCHED`, visible, nothing else); every
   harness outcome drives its committed state; a retried confirm converges; ten instances
   confirming one intent produce one attempt, counted.
+- **Gate evidence (2026-09-20)**: **every accept clause demonstrated** —
+  `PaymentAuthorizationDatabaseTest` (8 tests, real PostgreSQL + the P0-TSK-037 harness over
+  real HTTP) + `PaymentConfirmationTest` (5 hermetic, the recording fakes that see what no
+  database assertion can). **The two-transaction shape proven by the crash probe**: a provider
+  that dies mid-call leaves the intent `PROCESSING` and the attempt `AUTH_DISPATCHED` with its
+  stored reference — visible, nothing else, no evidence, and the retry CONVERGES with zero
+  provider calls (the sweeper's case, ADR-0046 §3). **Every harness outcome drives its
+  committed state**: approved → `AUTHORIZED` with the promise recorded and the trim-hostile
+  body retained verbatim (decrypted + checksum-verified); declined → `FAILED(DECLINED)` with
+  the intent failing atomically; timeout and unknown-state → `AUTH_UNKNOWN` with the intent
+  honestly `PROCESSING`; connection-refused → `FAILED(PROVIDER_UNAVAILABLE)` — knowledge, not
+  ambiguity. **A retried confirm converges; ten instances confirming one intent produce one
+  attempt** (counted in the table, one provider operation on the wire, nine converged).
+  **`P1-TSK-026` asserted at the wire**: the pool's held-connection count sampled INSIDE the
+  provider call is zero. The choreography is production code through the one
+  `TransactionRunner` seam, hermetically order-pinned. The gate added the missing
+  **stranger-replay probe** (the fingerprint's actor binding was asserted nowhere) and the
+  V006 finding is the design's own: the P5-TSK-008 histories carried a person-only actor
+  model into a domain whose outcome transitions are the platform's — fixed by moving the
+  three `*_event` tables to the `audit_record` actor model while provably empty. Registers
+  fed: 4 audit actions catalogued and emitted; the `enterSystem()` site enumerated with its
+  reasoning; 10 ownership-register entries with the negative test named by method; the
+  whitelist bridge entry (`JdbcPaymentParticipants`, TokenReference → InstrumentToken in one
+  expression); credentials five and six wired and startup-guarded
+  (`FINAPP_PAYMENT_EVIDENCE_KEY` new, `ProviderApiKey` consumed); classification rows for the
+  V006 columns; the `DISTRIBUTED_EXECUTION.md` commands row. **Eight mutations, all caught by
+  the intended assertion, restores `cmp`-verified byte-identical**: the named
+  commit-after-call inversion (the hermetic order pin AND the crash probe — nothing
+  stranded); the conditional transition made unconditional (the ten-way race, with V002's
+  trigger turning the losers into errors — the layers meeting); timeout-as-failure (the
+  verdict suite and the converge test); the outcome applied as the person (the history
+  actor test; the enumeration guard would also object); evidence retention dropped; the
+  actor dropped from the fingerprint (**the gate's own new probe, alone**); the intent half
+  of the failure dropped; the ownership predicate dropped (the register's negative test).
+  Deliberate absences recorded: no meters (P5-TSK-017), no endpoints (P5-TSK-011),
+  `JdbcPaymentParticipants`' real-chain exercise deferred to P5-TSK-011's end-to-end
+  (composition of already-proven reads), outbound request bytes not captured by the port
+  (evidence = everything received; flagged to the phase audit). Verified by targeted tiers —
+  `:payments:test` 81 / `:platform:test` 171 / `:app:test` 438 / the payment database suites
+  18, 0 failures, fresh runs — the full battery deliberately skipped on the owner's
+  instruction; no fleet-wide database or kafka counts claimed.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-API`
 - Note: named mutation for the register — the dispatch commit moved **after** the provider
   call (the discipline inverted): the crash probe and the stranded-state assertions catch
   it.
 
-**P5-TSK-010 — The capture command: the ledger's first touch** — `TODO`
+**P5-TSK-010 — The capture command: the ledger's first touch** — `READY`
 - **Scope**: `AUTHORIZED → CAPTURE_DISPATCHED` commit → provider call → outcome
   transaction committing `CAPTURED` **with the posting** — debit `PSP_CLEARING`, credit
   the customer wallet, key `payment-capture:<attemptId>` through `PostingService` on the

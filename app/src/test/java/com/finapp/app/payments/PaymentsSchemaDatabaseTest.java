@@ -444,11 +444,16 @@ class PaymentsSchemaDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             try (PreparedStatement event = app.prepareStatement(
+                    // The V006 actor model (P5-TSK-009): actor_id as text plus actor_type -
+                    // the audit_record vocabulary, because outcome transitions are the
+                    // platform's and 'system' is not a UUID.
                     "INSERT INTO payments.payment_intent_event"
-                            + " (intent_id, from_status, to_status, actor_id, occurred_at)"
-                            + " VALUES (?, 'REQUIRES_CONFIRMATION', 'PROCESSING', ?, ?)")) {
+                            + " (intent_id, from_status, to_status, actor_id, actor_type,"
+                            + " occurred_at)"
+                            + " VALUES (?, 'REQUIRES_CONFIRMATION', 'PROCESSING', ?, 'CUSTOMER',"
+                            + " ?)")) {
                 event.setObject(1, intent);
-                event.setObject(2, UUID.randomUUID());
+                event.setString(2, UUID.randomUUID().toString());
                 event.setTimestamp(3, Timestamp.from(Instant.now()));
                 assertThat(event.executeUpdate()).isEqualTo(1);
             }

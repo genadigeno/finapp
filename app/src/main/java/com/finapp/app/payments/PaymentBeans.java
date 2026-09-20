@@ -1,0 +1,217 @@
+package com.finapp.app.payments;
+
+import com.finapp.accounts.CustomerAccountStore;
+import com.finapp.app.security.DatabaseEndpoint;
+import com.finapp.ledger.LedgerAccountStore;
+import com.finapp.party.PartyStore;
+import com.finapp.paymentmethods.PaymentMethodStore;
+import com.finapp.payments.EvidenceCipher;
+import com.finapp.payments.JdbcPaymentAttemptStore;
+import com.finapp.payments.JdbcPaymentIntentStore;
+import com.finapp.payments.JdbcProviderEvidenceStore;
+import com.finapp.payments.PaymentAttemptStore;
+import com.finapp.payments.PaymentCancellation;
+import com.finapp.payments.PaymentConfirmation;
+import com.finapp.payments.PaymentCreation;
+import com.finapp.payments.PaymentIntentStore;
+import com.finapp.payments.PaymentParticipants;
+import com.finapp.payments.PaymentProvider;
+import com.finapp.payments.ProviderEvidenceStore;
+import com.finapp.payments.SimulatedCardPspAdapter;
+import com.finapp.payments.TransactionRunner;
+import com.finapp.platform.audit.AuditWriter;
+import com.finapp.platform.idempotency.IdempotentExecutor;
+import com.finapp.platform.outbox.OutboxWriter;
+import com.finapp.sharedkernel.id.IdGenerator;
+import java.security.SecureRandom;
+import java.sql.Connection;
+import java.time.Clock;
+import java.util.function.Function;
+import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.jdbc.datasource.DataSourceUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
+
+/**
+ * Wires the payment command slice (`P5-TSK-009`) — the {@code payments} stores and commands
+ * meeting their composition root, the `P5-TSK-003` unconsumed-wiring licence expiring on
+ * schedule. The HTTP consumer is `P5-TSK-011`'s controller (the licence's next named
+ * consumer); until it lands, the commands' consumers are the database suite and the beans
+ * themselves.
+ *
+ * <h2>The provider bean carries the whole ADR-0046 slice with it</h2>
+ *
+ * <p>{@code finapp.payments.provider.url} has <strong>no default</strong> (ADR-0008 simulates
+ * providers; the {@code KycBeans} shape, and the property name `P5-TSK-003` fixed in the
+ * adapter's javadoc so this task wired without a naming decision). {@link PaymentConfirmation}
+ * requires a provider by constructor — a confirm without a provider is not a degraded mode, it
+ * is unconfigurable — so the command bean shares the adapter's condition, and the surface task
+ * answers the honest 503 for its absence (the {@code ObjectProvider} decision recorded there).
+ */
+@Configuration
+class PaymentBeans {
+
+    @Bean
+    PaymentIntentStore<Connection> paymentIntentStore() {
+        return new JdbcPaymentIntentStore();
+    }
+
+    @Bean
+    PaymentAttemptStore<Connection> paymentAttemptStore() {
+        return new JdbcPaymentAttemptStore();
+    }
+
+    /**
+     * The evidence key, decoded through the confinement (`P5-TSK-002`): the marked local
+     * default is confined to loopback via {@link DatabaseEndpoint} — the {@code DocumentCipher}
+     * wiring, credential six.
+     */
+    @Bean
+    EvidenceCipher evidenceCipher(
+            @Value("${finapp.payments.evidence.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            @Value("${finapp.payments.evidence.key-version:1}") int keyVersion,
+            SecureRandom paymentsRandomness,
+            Environment environment) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        return new EvidenceCipher(
+                PaymentEvidenceKey.decode(configuredKey, loopback), keyVersion,
+                paymentsRandomness);
+    }
+
+    @Bean
+    SecureRandom paymentsRandomness() {
+        return new SecureRandom();
+    }
+
+    @Bean
+    ProviderEvidenceStore<Connection> providerEvidenceStore(
+            EvidenceCipher evidenceCipher, IdGenerator ids) {
+        return new JdbcProviderEvidenceStore(evidenceCipher, ids);
+    }
+
+    @Bean
+    PaymentParticipants<Connection> paymentParticipants(
+            PartyStore<Connection> partyStore,
+            CustomerAccountStore<Connection> customerAccountStore,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PaymentMethodStore<Connection> paymentMethodStore) {
+        return new JdbcPaymentParticipants(
+                partyStore, customerAccountStore, ledgerAccountStore, paymentMethodStore);
+    }
+
+    /**
+     * The payment transaction: {@code REQUIRES_NEW} and default isolation — every contended
+     * decision inside is a conditional {@code UPDATE}'s row count or a unique constraint
+     * (the {@code paymentMethodTransactions} recorded reasons).
+     */
+    @Bean
+    TransactionTemplate paymentTransactions(PlatformTransactionManager transactionManager) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_DEFAULT);
+        return template;
+    }
+
+    /**
+     * {@link TransactionRunner} over the template: the connection's lifetime is the call —
+     * bound inside, released before return — which is what makes "no connection is held
+     * during the provider call" a property of {@link PaymentConfirmation}'s code.
+     */
+    @Bean
+    TransactionRunner paymentTransactionRunner(
+            TransactionTemplate paymentTransactions, DataSource dataSource) {
+        return new TransactionRunner() {
+            @Override
+            public <R> R inTransaction(Function<Connection, R> work) {
+                return paymentTransactions.execute(
+                        status -> {
+                            Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+                            try {
+                                return work.apply(unitOfWork);
+                            } finally {
+                                DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                            }
+                        });
+            }
+        };
+    }
+
+    /**
+     * The simulated card PSP — present only where an endpoint is configured (ADR-0008; the
+     * timeout default is the adapter's own documented {@code PT2S}). The API key is credential
+     * five, decoded through the confinement `P5-TSK-003` prepared it for.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    PaymentProvider paymentProvider(
+            @Value("${finapp.payments.provider.url}") java.net.URI url,
+            @Value("${finapp.payments.provider.timeout:PT2S}") java.time.Duration timeout,
+            @Value("${finapp.payments.provider.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            Environment environment) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        return new SimulatedCardPspAdapter(
+                url, timeout, ProviderApiKey.decode(configuredKey, loopback));
+    }
+
+    @Bean
+    PaymentCreation paymentCreation(
+            IdempotentExecutor idempotentExecutor,
+            PaymentParticipants<Connection> paymentParticipants,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new PaymentCreation(
+                idempotentExecutor,
+                paymentParticipants,
+                paymentIntentStore,
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock);
+    }
+
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    PaymentConfirmation paymentConfirmation(
+            TransactionRunner paymentTransactionRunner,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            PaymentParticipants<Connection> paymentParticipants,
+            PaymentProvider paymentProvider,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new PaymentConfirmation(
+                paymentTransactionRunner,
+                paymentIntentStore,
+                paymentAttemptStore,
+                providerEvidenceStore,
+                paymentParticipants,
+                paymentProvider,
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock);
+    }
+
+    @Bean
+    PaymentCancellation paymentCancellation(
+            PaymentIntentStore<Connection> paymentIntentStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new PaymentCancellation(paymentIntentStore, auditWriter, ids, clock);
+    }
+}

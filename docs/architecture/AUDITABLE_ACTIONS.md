@@ -333,6 +333,26 @@ token and the display metadata (`RESTRICTED-PII` at the register) never in targe
 the act where an account takeover monetises and the reason the surface demands the enrolled
 identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbatim).
 
+### `payments` — `PaymentsAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `payments.PaymentIntentCreated` | No | A person created a payment intent; the record names the intent, the instrument and the wallet account by identifier, never an amount. |
+| `payments.PaymentConfirmed` | No | A person confirmed a payment intent; the dispatch committed before the provider call, and the record names the intent and the attempt, never an amount. |
+| `payments.PaymentCancelled` | No | A person cancelled a payment intent before confirmation; nothing was dispatched and nothing was posted. |
+| `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. |
+
+Declared with the commands whose designs fix their meaning (`P5-TSK-009`) — exactly as the
+module's `package-info` licence promised; the capture's and the refund's actions arrive with
+theirs (`P5-TSK-010`/`P5-TSK-015`, the refund's the phase's one reason-required action). The
+first three are a person's own acts with their own money (the `transfers.TransferExecuted`
+reasoning); **`payments.PaymentOutcomeApplied` is the platform's** — an enumerated
+`enterSystem()` site, because a provider's answer has no session (`PHASE_5_PLAN.md` §11) — and
+its summary carries the verdict and committed states as enumerated names, never provider
+vocabulary (`INV-PAY-03`) and never an amount (`INV-AUD-02`). Each is emitted by the acting
+call only: an idempotent replay, a converging retry and a losing racer moved nothing and
+record nothing.
+
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure
 in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today
