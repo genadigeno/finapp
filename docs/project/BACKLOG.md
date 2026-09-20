@@ -5957,7 +5957,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   call (the discipline inverted): the crash probe and the stranded-state assertions catch
   it.
 
-**P5-TSK-010 — The capture command: the ledger's first touch** — `READY`
+**P5-TSK-010 — The capture command: the ledger's first touch** — `COMPLETE` (2026-09-20)
 - **Scope**: `AUTHORIZED → CAPTURE_DISPATCHED` commit → provider call → outcome
   transaction committing `CAPTURED` **with the posting** — debit `PSP_CLEARING`, credit
   the customer wallet, key `payment-capture:<attemptId>` through `PostingService` on the
@@ -5971,11 +5971,46 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   and no transition; the wallet balance moves and is explainable (`INV-BAL-02` extends
   with no new mechanism); an injected posting failure fails the whole outcome transaction
   loudly.
+- **Gate evidence (2026-09-20)**: **every accept clause demonstrated over the real chain** —
+  `PaymentCaptureDatabaseTest` (6 tests: real party/customer rows, `AccountOpening` wallet, a
+  real `paymentmethods` row, the REAL `JdbcPaymentParticipants` — paying `P5-TSK-009`'s
+  recorded deferral — real `PostingService` against the seeded clearing account) +
+  `PaymentCaptureTest` (5 hermetic, with the no-database `PostingService` as a tripwire so
+  "nothing posted" is structural). **Exactly one entry per attempt under the ten-way race**
+  (one wire operation, nine converged, counted in the journal by the attempt-id reference);
+  **a rolled-back outcome leaves no posting and no transition** (an injected event failure
+  rolls Tx2 back and the rollback takes the posting, the `CAPTURED` transition and the
+  intent's `SUCCEEDED` with it); **the wallet balance moves and is explainable** —
+  replay-from-zero equals the captured amount, `INV-BAL-02` extended with no new mechanism;
+  **an injected posting failure fails the whole outcome transaction loudly** (no savepoint,
+  deliberately the transfer's inverse — recorded in the command's javadoc). Ambiguity commits
+  `CAPTURE_UNKNOWN` with nothing posted; declined and refused-connection fail both rows; a
+  crash mid-capture strands `CAPTURE_DISPATCHED` and the retry converges with zero wire
+  calls. **"PSP_CLEARING" resolved on the record to the chart's `SETTLEMENT_CLEARING`** (the
+  account P3-TSK-003 actually seeded; a second clearing purpose would split the
+  captured-but-unsettled position). Registers fed: `PaymentCaptureDispatched` catalogued and
+  emitted (ADR-0046 §1's initiation record, the platform's — unlike the authorization's,
+  which rode the person's confirm), the `PaymentCapture.capture` `enterSystem()` enumeration,
+  4 ownership entries, the `DISTRIBUTED_EXECUTION.md` row extended with the posting-claim
+  third wall. **Eight mutations, all caught by the intended assertion, restores
+  `cmp`-verified byte-identical**: the NAMED posting-hoisted-out (the atomicity probe — the
+  hoisted entry survived the rollback, exactly the state the probe refuses); ambiguity-posts
+  (the DB probe AND the hermetic tripwire); the intent's `SUCCEEDED` dropped; the dispatch
+  made unconditional (the ten-way race, the schema trigger erroring the losers); evidence
+  dropped; **the intent half of declined dropped — SURVIVED the first run**, exposing that
+  the test asserted the in-memory result and never the intent ROW: the gate strengthened the
+  probe and the mutation then failed against it (the battery finding a test gap, its whole
+  point); the platform actor dropped (structural refusal — no session to fall back on);
+  the reference-not-stored-before-send (caught by `P5-TSK-008`'s stage-facts `CHECK` — the
+  layers meeting, `INV-PAY-04` held by the schema when the store forgets). Verified by
+  targeted tiers — `:payments:test` 86 / the payment database suites 24 / `:app:test` fresh
+  green, 0 failures — the full battery deliberately skipped on the owner's instruction; no
+  fleet-wide database or kafka counts claimed.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`
 - Note: named mutation — the posting hoisted **out** of the outcome transaction: the
   crash-between probe catches a `CAPTURED` state beside no entry.
 
-**P5-TSK-011 — The payment surface over HTTP** — `TODO`
+**P5-TSK-011 — The payment surface over HTTP** — `READY`
 - **Scope**: `POST /v1/payments`, `POST /v1/payments/{id}/confirmation`,
   `DELETE /v1/payments/{id}`, `GET /v1/payments/{id}`, `GET /v1/payments` — session +
   ownership (the `/v1/me`-derived chain; one 404 across stranger's/unknown/malformed),

@@ -34,9 +34,11 @@
  * ({@code P5-TSK-009}: {@code PaymentCreation}/{@code PaymentConfirmation}/
  * {@code PaymentCancellation} on the dispatch-before-call discipline, the stores, the
  * {@code PaymentParticipants} port {@code app} implements, {@code EvidenceCipher} with its
- * confined key, and the first audit actions - updated by the task that made the previous
- * sentence stale, the recurring class). The capture command is {@code P5-TSK-010}, the HTTP
- * surface {@code P5-TSK-011}, the refund command {@code P5-TSK-015}.
+ * confined key, the first audit actions), and the capture ({@code P5-TSK-010}:
+ * {@code PaymentCapture} - the ledger's first touch, the {@code CAPTURED} transition, the
+ * {@code payment-capture:} posting and the intent's {@code SUCCEEDED} one transaction,
+ * ADR-0048 - updated by the task that made the previous sentence stale, the recurring class).
+ * The HTTP surface is {@code P5-TSK-011}, the refund command {@code P5-TSK-015}.
  *
  * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
  * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and

@@ -25,6 +25,27 @@ public interface PaymentAttemptStore<T> {
      */
     Optional<PaymentAttempt> findForIntent(T unitOfWork, PaymentIntentId intent);
 
+    /** The attempt by its own identifier — the capture command's read ({@code P5-TSK-010}). */
+    Optional<PaymentAttempt> findById(T unitOfWork, PaymentAttemptId attempt);
+
+    /**
+     * {@code AUTHORIZED → CAPTURE_DISPATCHED}, the capture's idempotency reference minted by
+     * this act and stored before anything is sent ({@code INV-PAY-04}, ADR-0046).
+     */
+    boolean dispatchCapture(
+            T unitOfWork, PaymentAttemptId attempt, ProviderIdempotencyReference reference);
+
+    /** {@code from → CAPTURED}, the capture pair arriving with the transition (ADR-0048). */
+    boolean capture(
+            T unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderReference providerReference,
+            Money capturedAmount);
+
+    /** {@code CAPTURE_DISPATCHED → CAPTURE_UNKNOWN} — the second {@code INV-LIFE-03} state. */
+    boolean markCaptureUnknown(T unitOfWork, PaymentAttemptId attempt);
+
     /** {@code from → AUTHORIZED}, the issuer's promise arriving with the transition. */
     boolean authorize(
             T unitOfWork,

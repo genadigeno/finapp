@@ -207,6 +207,34 @@ class PaymentBeans {
     }
 
     @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.PaymentCapture paymentCapture(
+            TransactionRunner paymentTransactionRunner,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            PaymentProvider paymentProvider,
+            com.finapp.ledger.PostingService postingService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.PaymentCapture(
+                paymentTransactionRunner,
+                paymentIntentStore,
+                paymentAttemptStore,
+                providerEvidenceStore,
+                paymentProvider,
+                postingService,
+                new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock);
+    }
+
+    @Bean
     PaymentCancellation paymentCancellation(
             PaymentIntentStore<Connection> paymentIntentStore,
             AuditWriter<Connection> auditWriter,

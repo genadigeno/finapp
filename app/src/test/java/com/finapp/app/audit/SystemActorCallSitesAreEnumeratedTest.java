@@ -120,7 +120,17 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " no person at all, so the attribution must not depend on which"
                         + " resolver won the harmless race (ADR-0046). The person's own acts -"
                         + " create, confirm, cancel - are audited as the person in their own"
-                        + " transactions; only the outcome application enters the platform.");
+                        + " transactions; only the outcome application enters the platform.",
+                    "com.finapp.payments.PaymentCapture.capture",
+                    "The capture, end to end (P5-TSK-010): the continuation of a confirmed"
+                        + " intent has no session whichever caller chains it - the surface"
+                        + " after a synchronous AUTHORIZED (P5-TSK-011) or a resolver"
+                        + " (P5-TSK-013/-014) - and the dispatch AND the outcome are both the"
+                        + " platform's acts (PHASE_5_PLAN.md section 11: capture and outcome"
+                        + " application as the platform). Attributing the ledger's first touch"
+                        + " to whichever person's request happened to carry the chain would"
+                        + " record them as the author of the provider's capture and of a"
+                        + " posting they never commanded.");
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

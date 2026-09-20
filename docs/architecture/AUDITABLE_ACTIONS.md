@@ -340,15 +340,19 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `payments.PaymentIntentCreated` | No | A person created a payment intent; the record names the intent, the instrument and the wallet account by identifier, never an amount. |
 | `payments.PaymentConfirmed` | No | A person confirmed a payment intent; the dispatch committed before the provider call, and the record names the intent and the attempt, never an amount. |
 | `payments.PaymentCancelled` | No | A person cancelled a payment intent before confirmation; nothing was dispatched and nothing was posted. |
+| `payments.PaymentCaptureDispatched` | No | The platform dispatched a capture for an authorized attempt; the reference was stored before the provider was asked, and the record names the attempt and the intent, never an amount. |
 | `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. |
 
-Declared with the commands whose designs fix their meaning (`P5-TSK-009`) — exactly as the
-module's `package-info` licence promised; the capture's and the refund's actions arrive with
-theirs (`P5-TSK-010`/`P5-TSK-015`, the refund's the phase's one reason-required action). The
-first three are a person's own acts with their own money (the `transfers.TransferExecuted`
-reasoning); **`payments.PaymentOutcomeApplied` is the platform's** — an enumerated
-`enterSystem()` site, because a provider's answer has no session (`PHASE_5_PLAN.md` §11) — and
-its summary carries the verdict and committed states as enumerated names, never provider
+Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
+dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's
+`package-info` licence promised; the refund's arrives with `P5-TSK-015`, the phase's one
+reason-required action. The first three are a person's own acts with their own money (the
+`transfers.TransferExecuted` reasoning); **`PaymentCaptureDispatched` and
+`PaymentOutcomeApplied` are the platform's** — enumerated `enterSystem()` sites, because the
+continuation of a confirmed intent and a provider's answer both have no session
+(`PHASE_5_PLAN.md` §11; ADR-0046 §1 requires the initiation's record, and capture's initiator
+is the platform where the authorization's dispatch rode the person's `PaymentConfirmed`).
+Summaries carry identifiers, verdicts and committed states as enumerated names, never provider
 vocabulary (`INV-PAY-03`) and never an amount (`INV-AUD-02`). Each is emitted by the acting
 call only: an idempotent replay, a converging retry and a losing racer moved nothing and
 record nothing.

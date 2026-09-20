@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 112 "Previously" blocks, newest first, from `P5-TSK-008` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 113 "Previously" blocks, newest first, from `P5-TSK-009` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,61 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P5-TSK-009` — the authorization command: dispatch-before-call** — `COMPLETE`
+(2026-09-20). **M5.4 opens at 1 of 3: ADR-0046 is production code, on the money path for
+the first time** — create (keyed `payment.create`, the actor in the fingerprint), confirm
+as the whole choreography in one method through the one `TransactionRunner` seam, cancel
+winning only the confirmation window, and the outcome applied as the platform through the
+module's first enumerated `enterSystem()` site.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The two-transaction shape, proven by a crash | The crash probe: a provider dying mid-call leaves the intent `PROCESSING` and the attempt `AUTH_DISPATCHED` with its stored reference — visible, nothing else — and the hermetic order pin sees Tx1 committed and no transaction active at the wire |
+| Every harness outcome drives its committed state | Approved → `AUTHORIZED` (promise recorded, trim-hostile body retained verbatim, decrypted and checksum-verified); declined → `FAILED(DECLINED)` + intent `FAILED` atomically; timeout/unknown-state → `AUTH_UNKNOWN`, intent honestly `PROCESSING`; connection-refused → `FAILED(PROVIDER_UNAVAILABLE)` — knowledge |
+| A retried confirm converges | Zero provider calls on the retry, the stranded dispatch left to the sweeper (`INV-PAY-04` end to end) |
+| Ten instances confirming produce one attempt | Counted in the table: one row, one wire operation, nine converged |
+
+### What the slice carried with it
+
+The stores (conditional transitions with the machine's own legality check in the writer),
+the `PaymentParticipants` port and its app implementation (the registered
+TokenReference → InstrumentToken bridge, one expression), `EvidenceCipher` (the at-rest
+mechanism's third restatement) with credential six (`FINAPP_PAYMENT_EVIDENCE_KEY`,
+`EXACTLY_32`) and credential five (`ProviderApiKey`) finally consumed — both
+startup-guarded; four audit actions catalogued and emitted (outcome application as the
+platform — a provider's answer has no session); three events through the outbox in their
+facts' transactions; ten ownership-register entries with the stranger's one-empty-answer
+negative test named by method; `V006` — the gate-one-task-later finding: the P5-TSK-008
+histories carried `transfer_event`'s person-only `actor_id uuid` into a domain whose
+outcome transitions are the platform's (`'system'` is not a UUID), fixed by moving the
+three `*_event` tables to the `audit_record` actor model while provably empty.
+
+### What deliberately did not arrive
+
+Capture (`P5-TSK-010`, next), endpoints (`-011`), webhooks (`-012`/`-013`), the sweeper
+(`-014`), refund command (`-015`), meters (`-017`). `JdbcPaymentParticipants`' real-chain
+exercise is `P5-TSK-011`'s end-to-end (a composition of already-proven reads); outbound
+request bytes are not captured by the port (evidence = everything received — ADR-0049's
+answer types; flagged to the phase audit rather than smuggled in as an adapter change).
+No ledger effect anywhere — the commands import no posting type, structurally (ADR-0048).
+
+### Eight mutations, all caught by the intended assertion, restores byte-identical
+
+**The named commit-after-call inversion** (the hermetic order pin AND the crash probe —
+nothing stranded); the conditional transition made unconditional (the ten-way race, with
+`V002`'s trigger turning the losers into errors — the layers meeting); timeout-as-failure
+(the verdict suite and the converge test); the outcome applied as the person (the history
+actor test); evidence retention dropped; the actor dropped from the fingerprint (**the
+gate's own stranger-replay probe, added when the gate found the binding asserted nowhere —
+caught alone**); the intent half of the failure dropped; the ownership predicate dropped.
+**Verified by targeted tiers — `:payments:test` 81 / `:platform:test` 171 / `:app:test`
+438 / the payment database suites 18, 0 failures, fresh runs — the full battery
+deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
+claimed.**
+
 
 ### Previously
 

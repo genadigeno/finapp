@@ -399,6 +399,31 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public Optional<PaymentAttempt> findById(Connection uow, PaymentAttemptId id) {
+            return Optional.ofNullable(rows.get(id.value()));
+        }
+
+        @Override
+        public boolean dispatchCapture(
+                Connection uow, PaymentAttemptId id, ProviderIdempotencyReference reference) {
+            return move(id, PaymentAttemptStatus.AUTHORIZED,
+                    row -> row.dispatchCapture(reference));
+        }
+
+        @Override
+        public boolean capture(
+                Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
+                ProviderReference reference, Money amount) {
+            return move(id, from, row -> row.capture(reference, amount));
+        }
+
+        @Override
+        public boolean markCaptureUnknown(Connection uow, PaymentAttemptId id) {
+            return move(id, PaymentAttemptStatus.CAPTURE_DISPATCHED,
+                    PaymentAttempt::captureOutcomeUnknown);
+        }
+
+        @Override
         public boolean authorize(
                 Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
                 ProviderReference reference, Money amount) {

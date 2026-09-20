@@ -309,6 +309,42 @@ class OwnershipIsScopedTest {
                                         + " the same command; the attempt is the intent's own"
                                         + " row.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.findById",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
+                                    "The capture command's read (P5-TSK-010): attempt"
+                                        + " identifiers come from the platform's own flows -"
+                                        + " the confirm that minted them behind the intent's"
+                                        + " owner-scoped read, or a resolver's sweep - never"
+                                        + " a request's. No HTTP path takes an attempt id.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.dispatchCapture",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentCapture.capture",
+                                    "The capture dispatch's conditional write (P5-TSK-010):"
+                                        + " AUTHORIZED -> CAPTURE_DISPATCHED with the minted"
+                                        + " reference, the row count arbitrating racing"
+                                        + " dispatchers - on the identifier the command just"
+                                        + " read and judged.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.capture",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentCapture.capture",
+                                    "The capture outcome's conditional write, atomic with the"
+                                        + " posting on the same connection (ADR-0048) - the"
+                                        + " same minted identifier, carried across the"
+                                        + " provider call.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.markCaptureUnknown",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentCapture.capture",
+                                    "As JdbcPaymentAttemptStore.capture - the honest-ambiguity"
+                                        + " edge, nothing posted (INV-LIFE-03).")),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentAttemptStore.authorize",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

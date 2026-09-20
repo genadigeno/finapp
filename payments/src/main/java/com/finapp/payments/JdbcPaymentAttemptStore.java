@@ -82,6 +82,90 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     }
 
     @Override
+    public Optional<PaymentAttempt> findById(Connection unitOfWork, PaymentAttemptId attempt) {
+        Objects.requireNonNull(attempt, "attempt must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt WHERE id = ?")) {
+            read.setObject(1, attempt.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading payment attempt " + attempt, failure));
+        }
+    }
+
+    @Override
+    public boolean dispatchCapture(
+            Connection unitOfWork, PaymentAttemptId attempt,
+            ProviderIdempotencyReference reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.payment_attempt SET status = ?, capture_reference = ?"
+                                + " WHERE id = ? AND status = ?")) {
+            update.setString(1, PaymentAttemptStatus.CAPTURE_DISPATCHED.name());
+            update.setString(2, reference.value());
+            update.setObject(3, attempt.value());
+            update.setString(4, PaymentAttemptStatus.AUTHORIZED.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "dispatching the capture of attempt " + attempt, failure));
+        }
+    }
+
+    @Override
+    public boolean capture(
+            Connection unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderReference providerReference,
+            Money capturedAmount) {
+        requireLegal(attempt, from, PaymentAttemptStatus.CAPTURED);
+        Objects.requireNonNull(providerReference, "providerReference must not be null");
+        Objects.requireNonNull(capturedAmount, "capturedAmount must not be null");
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.payment_attempt SET status = ?,"
+                                + " capture_provider_reference = ?, captured_amount_minor = ?,"
+                                + " captured_currency = ?, captured_scale = ?"
+                                + " WHERE id = ? AND status = ?")) {
+            update.setString(1, PaymentAttemptStatus.CAPTURED.name());
+            update.setString(2, providerReference.value());
+            update.setLong(3, capturedAmount.minorUnits());
+            update.setString(4, capturedAmount.currency().code());
+            update.setShort(5, (short) capturedAmount.scale());
+            update.setObject(6, attempt.value());
+            update.setString(7, from.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("capturing attempt " + attempt, failure));
+        }
+    }
+
+    @Override
+    public boolean markCaptureUnknown(Connection unitOfWork, PaymentAttemptId attempt) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.payment_attempt SET status = ?"
+                                + " WHERE id = ? AND status = ?")) {
+            update.setString(1, PaymentAttemptStatus.CAPTURE_UNKNOWN.name());
+            update.setObject(2, attempt.value());
+            update.setString(3, PaymentAttemptStatus.CAPTURE_DISPATCHED.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "marking the capture of attempt " + attempt + " unknown", failure));
+        }
+    }
+
+    @Override
     public boolean authorize(
             Connection unitOfWork,
             PaymentAttemptId attempt,

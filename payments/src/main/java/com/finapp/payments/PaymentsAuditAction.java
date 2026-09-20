@@ -45,6 +45,21 @@ public enum PaymentsAuditAction implements AuditableAction {
             false),
 
     /**
+     * The platform dispatched a capture for an authorized attempt ({@code P5-TSK-010}):
+     * {@code AUTHORIZED → CAPTURE_DISPATCHED} committed with the minted reference, before the
+     * provider is asked — ADR-0046 §1's required record of the initiation, and the initiator
+     * here is the <strong>platform</strong> (the continuation of a confirmed intent has no
+     * session), unlike the authorization's dispatch, which rode the person's
+     * {@code PaymentConfirmed}. Emitted by the winning dispatch only.
+     */
+    PAYMENT_CAPTURE_DISPATCHED(
+            "payments.PaymentCaptureDispatched",
+            "The platform dispatched a capture for an authorized attempt; the reference was"
+                    + " stored before the provider was asked, and the record names the attempt"
+                    + " and the intent, never an amount.",
+            false),
+
+    /**
      * The platform applied a provider's answer to a dispatched operation — as the
      * <strong>platform</strong>, through an enumerated {@code enterSystem()} site, because a
      * provider's answer has no session ({@code PHASE_5_PLAN.md} §11). The summary carries the
