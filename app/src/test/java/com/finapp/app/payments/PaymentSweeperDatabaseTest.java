@@ -353,14 +353,18 @@ class PaymentSweeperDatabaseTest {
         assertThat(attemptStatus(strandedBroken.id())).isEqualTo("AUTH_UNKNOWN");
         assertThat(transitionCount(strandedBroken.id(), "AUTH_UNKNOWN")).isEqualTo(1);
 
-        // A 404: a status code is not an answer - a misrouted load balancer must never
-        // resolve a live operation to FAILED (QueryAnswer's fold, proven load-bearing here).
+        // A 404 WITH A BODY: a status code is not an answer - a misrouted load balancer
+        // must never resolve a live operation to FAILED (QueryAnswer's fold, proven
+        // load-bearing here). The body matters: an empty 404 is already refused by the
+        // evidence bound, so only a bodied one reaches the status-code fold - the gap the
+        // P5-TST-001 battery's surviving mutation exposed, closed by this shape.
         Holder misrouted = holder();
         PaymentAttempt strandedMisrouted = strandedDispatch(misrouted);
-        psp.failsWith(
+        psp.succeedsWith(
                 SimulatedCardPspAdapter.OPERATIONS_PATH
                         + strandedMisrouted.authorizationReference().value(),
-                404);
+                404,
+                "<html><body>404 Not Found - gateway</body></html>");
         sweeper(Duration.ZERO, Duration.ZERO).sweep();
         assertThat(attemptStatus(strandedMisrouted.id())).isEqualTo("AUTH_UNKNOWN");
         assertThat(failureReason(strandedMisrouted.id())).isNull();

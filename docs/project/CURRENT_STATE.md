@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TSK-014` — the reconciliation-by-query sweeper; **M5.6 at 1 of 2**, next `P5-TST-001`)
+Last updated: 2026-09-20 (`P5-TST-001` — the ambiguity demonstration; **M5.6 CLOSES at 2 of 2**, next `P5-TSK-015`)
 
 ---
 
@@ -229,63 +229,58 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TST-001` — the ambiguity demonstration** — `READY`.
-M5.6 concludes with the phase's reason for existing, driven whole: the provider
-**succeeds while the response is lost** → `*_UNKNOWN` committed → the sweeper resolves →
-**exactly one financial effect**, counted in the journal and the payment tables; the same
-for timeout-then-success at authorization and at capture;
-provider-succeeds-after-we-resolved-failure lands as refused-edge evidence. Named
-mutations: timeout mapped to `FAILED` (the most-expensive-mistake shape) — caught by the
-demonstration; the sweeper's transition made unconditional — caught by the race. The
-register rows for `INV-LIFE-03` land here with the demonstrations performed. See the
-backlog entry.
+**`P5-TSK-015` — the refund command: hold, then post** — `READY`.
+M5.7 opens: `POST /v1/payments/{id}/refund` behind `PAYMENT_REFUND` (joins
+`LEDGER_OPERATOR` — one money-operating population; a permission is never a column),
+reason required (`INV-AUD-03`); dispatch transaction: the bound judged under lock-then-look
+on the attempt row, **the Phase 3 hold placed on the wallet inside the account lock**
+(ADR-0048 §4 — `P3-TSK-015`'s owed capture composition), `DISPATCHED` + provider reference
+committed; outcome transaction: completion releases-and-posts (debit wallet, credit
+clearing, key `payment-refund:<refundId>`) atomically, failure releases with nothing
+posted, ambiguity commits `UNKNOWN` with the hold standing. Partial refunds; concurrent
+partials bounded at both ranks (`INV-PAY-05`, `INV-REV-02`). Accept: ten concurrent
+partials accept exactly the bounded set, counted; the held funds are unspendable mid-flight
+(driven); the permissionless session refused with nothing written; the sum bound refuses
+raw SQL. See the backlog entry.
 
 ### Just completed
 
-**`P5-TSK-014` — the reconciliation-by-query sweeper** — `COMPLETE` (2026-09-20).
-**M5.6 opens at 1 of 2: ambiguity now resolves on the platform's own initiative.**
-`PaymentSweeper` polls for `*_DISPATCHED` rows past their bound and `*_UNKNOWN` rows past
-their patience, asks the provider about **our** stored reference holding no connection,
-and applies answers through `PaymentOutcomes` — the extraction built for exactly this
-consumer. **No lease, no leader, by design and checked**: `PaymentSweeperSchedule` is the
-second named exemption to `nothingSchedulesAmbiently`, standing on the rule's *other*
-half (idempotent per period), load-bearing-checked in the rule's own suite, registered in
-`DISTRIBUTED_EXECUTION.md` §3 beside the relay's lease-half.
+**`P5-TST-001` — the ambiguity demonstration** — `COMPLETE` (2026-09-20). **M5.6 CLOSES at
+2 of 2: the phase's promise, driven whole and counted.** Five scenarios over the real
+chain, all green first run: received-before-lost and timeout-then-success at both stages —
+the honest `*_UNKNOWN` commits (capture's with nothing posted), the mid-ambiguity retry
+converges with zero wire calls, the sweeper learns the truth, and the payment ends
+`SUCCEEDED` with **`requestCount == 1` per wire path and exactly one entry counted by
+reference**; and the contradiction — success claimed after the sweeper resolved
+`FAILED(NEVER_RECEIVED)` — lands as refused-edge evidence beside an untouched terminal.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| The stranded and the aged resolve | `AUTH_DISPATCHED` (crash mid-call) → `AUTHORIZED` on an approved query, evidence attributed; `CAPTURE_UNKNOWN` → `CAPTURED` + **one** posting + intent `SUCCEEDED`, a second sweep changing nothing |
-| Concurrent sweepers race to one winner counted | Ten sweepers → one entry, one `CAPTURED` transition row — counted in the tables; the tick's tally renamed `applied`/`skipped` on the record after the race showed "resolved" would lie about convergence |
-| A sweeper racing the webhook produces one effect | Driven against the REAL webhook resolver — the `P5-TSK-013` placeholder discharged |
+| Every scenario's effect counted, never inferred | One wire operation per path, one transition row per edge, one entry — or none where value never moved — asserted from the tables |
+| The `INV-LIFE-03` register rows land with demonstrations performed | The row names the suite, both named mutations, commands and observed results — performed at this gate, early against the phase guard |
 
-### The licence, its limit, and the third reason
+### Eight mutations — one survived its first run, and that is the battery working
 
-An explicit `UNRECOGNISED` — the provider answering *in so many words* — resolves to
-`FAILED(NEVER_RECEIVED)`: the third `PaymentFailureReason`, arriving with its producer
-exactly as promised, through `PaymentOutcomes.applyUnrecognised` (one named method, no ad
-hoc composition). `V007` regenerates the reason `CHECK` (V003 is applied history);
-the migration reconciliation re-anchored to the constraint's current definition. **A 500
-and a 404 alike mark the honest `*_UNKNOWN` once and never fail** — the
-status-code-is-not-an-answer fold proven load-bearing where it pays. A fresh dispatch
-inside its bound is not even queried; one poisoned row fails alone (the rows behind it are
-other customers' money). The sweep is the **fourth** enumerated `enterSystem()` site.
-
-### Eight mutations, all caught, restores `cmp`-verified
-
-The **named** ambiguity-collapsed-into-the-licence (INDETERMINATE resolved to `FAILED` —
-the phase's most expensive direction, refused); the **named** bounds-ignored (the fresh
-dispatch swept into churn); the licence dropped; the reason swapped to `DECLINED`;
-operation-kind confusion (the query missed, nothing resolved); the platform scope dropped
-(structural refusal); `V007` hand-listed short (the reconciliation alone); the anti-stall
-catch removed (the poisoned row stalled the healthy one). **Verified by targeted tiers —
+All eight ended caught, restores `cmp`-verified: the **named** timeout-mapped-to-`FAILED`
+(the most-expensive-mistake shape, refused by the demonstration while the harness held the
+provider's approval); the **named** sweeper's-transition-made-unconditional (a race
+loser's write refused by the schema beneath — the layers meeting);
+every-drop-as-`NOTHING_SENT`; the `*_UNKNOWN` marking dropped; the refused-edge gate
+dropped (the machine's legality exploded where quiet evidence belongs); sweep evidence
+dropped; the mid-ambiguity convergence dropped; and **the 404-fold-as-licence SURVIVED
+round one** — the probe's empty-bodied 404 died at the evidence bound before the
+status-code fold could matter — so the probe was strengthened to the bodied 404 the
+misrouted load balancer actually sends, and the mutation then failed against it. **No
+production changes — a pure demonstration task. Verified by targeted tiers —
 `:payments:test` 108 / `:platform:test` 171 / `:app:test` 444 / the payment database
-suites 56 (schema 10, authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6,
-transitions 7, sweeper 8), 0 failures, fresh runs — the full battery deliberately skipped
-on the owner's instruction; no fleet-wide database or kafka counts claimed.**
+suites 61 (schema 10, authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6,
+transitions 7, sweeper 8, ambiguity 5), 0 failures, fresh runs — the full battery
+deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
+claimed.**
 
 ### Previously
 
-The per-task completion records behind this one — 117 blocks, from `P5-TSK-013` back to project
+The per-task completion records behind this one — 118 blocks, from `P5-TSK-014` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -299,8 +294,8 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1–M5.5 `CLOSED` (3+2+3+3+2), **M5.6 open at 1 of 2**:
-`P5-TSK-001`…`-014` complete. Next: `P5-TST-001`, `READY` — the ambiguity demonstration.
+**Phase 5 is `IN_PROGRESS`** — M5.1–M5.6 `CLOSED` (3+2+3+3+2+2): `P5-TSK-001`…`-014` and
+`P5-TST-001` complete. Next: `P5-TSK-015`, `READY` — the refund command, M5.7's open.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of

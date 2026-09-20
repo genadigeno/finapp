@@ -6243,7 +6243,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-KERNEL`
 
-**P5-TST-001 — The ambiguity demonstration** — `READY`
+**P5-TST-001 — The ambiguity demonstration** — `COMPLETE` (2026-09-20)
 - **Scope**: the phase's reason for existing, driven whole: the provider **succeeds while
   the response is lost** (the harness's received-before-lost mode) → `*_UNKNOWN`
   committed → the sweeper resolves → **exactly one financial effect**, counted in the
@@ -6255,9 +6255,45 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - **Deps**: `P5-TSK-014`, `P5-TSK-013`. **Accept**: every scenario's effect counted, never
   inferred; the register rows for `INV-LIFE-03` land here with the demonstrations
   performed.
+- **Gate evidence (2026-09-20)**: **the phase's reason for existing, driven whole and
+  counted** (`PaymentAmbiguityDemonstrationDatabaseTest`, 5 scenarios over the real chain,
+  all green first run — the mechanisms held). Received-before-lost at authorization AND at
+  capture: the honest `*_UNKNOWN` commits (capture's with **nothing posted**), the
+  mid-ambiguity client retry converges with **zero wire calls**, the sweeper learns the
+  truth, and the payment ends `SUCCEEDED` with **one wire operation per path
+  (`requestCount == 1`) and exactly one journal entry counted by the attempt-id
+  reference** — never inferred. Timeout-then-success at both stages: the timeout code path
+  lands in the same honest state as the dropped connection (`failureReason` asserted
+  null), and the provider's completed operation still becomes the customer's money, once.
+  Provider-succeeds-after-we-resolved-failure: the sweeper's `UNRECOGNISED` licence lands
+  `FAILED(NEVER_RECEIVED)`, then the contradictory approved webhook is **refused-edge
+  evidence** — no transition, no entry, history counts unmoved, the statement retained
+  (the alert meter on this rate is plan §15's, with `P5-TSK-017`). **The `INV-LIFE-03`
+  register row landed with the demonstrations performed** (early — the phase guard would
+  demand it at the flip), naming the suite, both named mutations, commands and observed
+  results. **Eight mutations, all ENDING caught, restores `cmp`-verified byte-identical —
+  and one SURVIVED its first run, which is the battery working**: the NAMED
+  timeout-mapped-to-`FAILED` (the most-expensive-mistake shape — the demonstration refused
+  the committed lie while the harness held the provider's approval); the NAMED
+  sweeper's-transition-made-unconditional (the store's `WHERE status = ?` dropped — caught
+  by the ten-sweeper race, a loser's write refused by the schema beneath, the layers
+  meeting); every-drop-as-`NOTHING_SENT` (captured money hidden behind `FAILED` — refused);
+  the `*_UNKNOWN` marking dropped (the honest state never lands); the refused-edge gate
+  dropped (the machine's own legality exploded where quiet evidence belongs); the sweep's
+  evidence retention dropped; the mid-ambiguity convergence dropped (the retry became a
+  loud defect); and **the wire client's 404 fold turned into the licence — SURVIVED round
+  one**: the probe's empty-bodied 404 was refused by the evidence bound before the
+  status-code fold could matter, masking the mutation — the probe strengthened to a bodied
+  404 (the realistic misrouted-load-balancer shape, recorded in its comment) and the
+  mutation then failed against it. No production changes — a pure demonstration task, as
+  designed. Verified by targeted tiers — `:payments:test` 108 / `:platform:test` 171 /
+  `:app:test` 444 / the payment database suites 61 (schema 10, authorization 8, capture 6,
+  endpoints 10, unconfigured 1, webhook 6, transitions 7, sweeper 8, ambiguity 5),
+  0 failures, fresh runs — the full battery deliberately skipped on the owner's
+  instruction; no fleet-wide database or kafka counts claimed.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-FIN`
 
-**P5-TSK-015 — The refund command: hold, then post** — `TODO`
+**P5-TSK-015 — The refund command: hold, then post** — `READY`
 - **Scope**: `POST /v1/payments/{id}/refund` behind `PAYMENT_REFUND` (joins
   `LEDGER_OPERATOR` — one money-operating population; a permission is never a column),
   reason required (`INV-AUD-03`, the reversal precedent); dispatch transaction: the bound
