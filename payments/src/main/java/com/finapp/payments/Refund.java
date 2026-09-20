@@ -48,6 +48,15 @@ import java.util.Objects;
  */
 public final class Refund {
 
+    /**
+     * The reason's bound. The schema's {@code CHECK} is generated from this constant
+     * ({@code P5-TSK-008}'s reconciliation) and the privileged surface restates it where the
+     * operator is told ({@code P5-TSK-015}) — the {@code Transfer.MAX_REFERENCE_LENGTH}
+     * pattern: a bound the schema enforces that the domain does not share is a 500 at the
+     * last write on a value the domain accepted.
+     */
+    public static final int MAX_REASON_LENGTH = 200;
+
     private final RefundId id;
     private final PaymentAttemptId attemptId;
     private final Money amount;
@@ -88,6 +97,10 @@ public final class Refund {
             throw new IllegalArgumentException(
                     "a refund's reason must not be blank - the reason is part of the"
                             + " privileged act");
+        }
+        if (reason.length() > MAX_REASON_LENGTH) {
+            throw new IllegalArgumentException(
+                    "a refund's reason is bounded at " + MAX_REASON_LENGTH + " characters");
         }
         // Never zero, never negative - a negative refund is a charge wearing a refund's
         // clothes. The message names the fact and the currency, never the value (INV-AUD-02).

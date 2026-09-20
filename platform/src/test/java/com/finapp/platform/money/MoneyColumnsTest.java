@@ -61,6 +61,31 @@ class MoneyColumnsTest {
                 .contains("CHECK (gross_scale BETWEEN 0 AND " + Money.MAX_SUPPORTED_SCALE + ")");
     }
 
+    @Test
+    @DisplayName("the nullable DDL keeps the value CHECKs and adds the all-or-nothing rule")
+    void nullableDdlIsAllOrNothing() {
+        String ddl = MoneyColumns.columnsFor("authorized").nullableDdl();
+
+        // Nullable, same types - the fact arrives with a later transition (P5-TSK-008).
+        assertThat(ddl)
+                .contains("authorized_amount_minor BIGINT, ")
+                .contains("authorized_currency CHAR(3), ")
+                .contains("authorized_scale SMALLINT, ")
+                .doesNotContain("NOT NULL");
+
+        // The value CHECKs apply exactly when a value is present (a CHECK over NULL is not
+        // false), and ddl()'s uninterpretable-partial-amount reasoning moves into its own
+        // generated CHECK, NOT NULL no longer being there to carry it.
+        assertThat(ddl)
+                .contains("CHECK (authorized_currency ~ '^[A-Z]{3}$')")
+                .contains("CHECK (authorized_scale BETWEEN 0 AND " + Money.MAX_SUPPORTED_SCALE
+                        + ")")
+                .contains("CHECK ((authorized_amount_minor IS NULL)"
+                        + " = (authorized_currency IS NULL)"
+                        + " AND (authorized_amount_minor IS NULL)"
+                        + " = (authorized_scale IS NULL))");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"", "   "})
     @DisplayName("rejects a blank field name")

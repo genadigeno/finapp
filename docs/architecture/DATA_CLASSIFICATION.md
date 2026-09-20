@@ -521,6 +521,83 @@ instrument-linked data and never card data, there being no column that could hol
 | `payment_method` | `created_at` | `CONFIDENTIAL` | Dates a person's act of attaching an instrument — `consent_record.recorded_at`'s reasoning |
 | `payment_method` | `detached_at` | `CONFIDENTIAL` | As `created_at` |
 
+### `payments` — the intent, attempt, refund, their histories and the evidence — *added by `P5-TSK-008`*
+
+**The payment domain's rows** (ADR-0045): the customer's objective, the provider-facing try,
+the bounded return, their append-only histories, and the verbatim provider evidence. The
+amounts are `RESTRICTED-FINANCIAL` (`transfer.amount_minor`'s reasoning verbatim); the
+provider's operation references are deliberately **not** the token's level — each names one
+operation, already scoped to an approved amount, and unlike `payment_method.token_reference`
+it authorises nothing new even with the confined credential; the evidence rows that quote
+them are classified at the ceiling regardless.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `payment_intent` | `id` | `INTERNAL` | An aggregate identifier — and the capture posting's join value |
+| `payment_intent` | `party_id` | `CONFIDENTIAL` | The `payment_method.party_id` reasoning: the pairing is the fact — this person pays from a saved instrument |
+| `payment_intent` | `customer_id` | `INTERNAL` | The `customer_account.customer_id` reasoning: an identifier of a thing, not a fact about it |
+| `payment_intent` | `payment_method_id` | `INTERNAL` | An identifier of a thing; what it resolves to is `payment_method`'s to classify |
+| `payment_intent` | `wallet_account_id` | `INTERNAL` | A ledger-account identifier by value — `transfer.destination_account_id`'s reasoning |
+| `payment_intent` | `amount_minor` | `RESTRICTED-FINANCIAL` | A customer's commanded amount — `transfer.amount_minor`'s reasoning verbatim |
+| `payment_intent` | `currency` | `RESTRICTED-FINANCIAL` | Meaningless without the amount and meaning-giving with it |
+| `payment_intent` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape (`INV-MON-05`) |
+| `payment_intent` | `status` | `CONFIDENTIAL` | What happened to a person's payment — `transfer.status`'s reasoning |
+| `payment_intent` | `created_at` | `CONFIDENTIAL` | Dates a person's financial act |
+| `payment_intent_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `payment_intent_event` | `intent_id` | `INTERNAL` | An identifier of a thing |
+| `payment_intent_event` | `from_status` | `CONFIDENTIAL` | `payment_intent.status`'s reasoning — history is the same facts, older |
+| `payment_intent_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `payment_intent_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `transfer_event.actor_id`'s reasoning |
+| `payment_intent_event` | `occurred_at` | `CONFIDENTIAL` | Dates a person's financial act |
+| `payment_attempt` | `id` | `INTERNAL` | An aggregate identifier — the capture posting's key carries it (`payment-capture:<attemptId>`) |
+| `payment_attempt` | `intent_id` | `INTERNAL` | An identifier of a thing |
+| `payment_attempt` | `auth_reference` | `INTERNAL` | An operation reference the platform minted (`INV-PAY-04`) — an identifier of an operation, not a fact about a person |
+| `payment_attempt` | `capture_reference` | `INTERNAL` | As `auth_reference` |
+| `payment_attempt` | `auth_provider_reference` | `CONFIDENTIAL` | The provider's name for one operation on a person's instrument (the section header's recorded distinction from the token: scoped to its own operation, it authorises nothing new). A fact about a person's payment, handled like `status` |
+| `payment_attempt` | `capture_provider_reference` | `CONFIDENTIAL` | As `auth_provider_reference` |
+| `payment_attempt` | `authorized_amount_minor` | `RESTRICTED-FINANCIAL` | The issuer's promised amount — a customer amount |
+| `payment_attempt` | `authorized_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `payment_attempt` | `authorized_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `payment_attempt` | `captured_amount_minor` | `RESTRICTED-FINANCIAL` | The amount actually taken — the posting's own number |
+| `payment_attempt` | `captured_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `payment_attempt` | `captured_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `payment_attempt` | `failure_reason` | `CONFIDENTIAL` | `DECLINED` is a fact about a person's finances, not an enumeration technicality — `transfer.failure_reason`'s reasoning verbatim |
+| `payment_attempt` | `status` | `CONFIDENTIAL` | What happened to a person's payment operation |
+| `payment_attempt` | `created_at` | `CONFIDENTIAL` | Dates a person's financial act |
+| `payment_attempt_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `payment_attempt_event` | `attempt_id` | `INTERNAL` | An identifier of a thing |
+| `payment_attempt_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `payment_attempt_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `payment_attempt_event` | `actor_id` | `RESTRICTED-PII` | The acting identity |
+| `payment_attempt_event` | `occurred_at` | `CONFIDENTIAL` | Dates a person's financial act |
+| `refund` | `id` | `INTERNAL` | An aggregate identifier — the refund posting's key carries it (`payment-refund:<refundId>`) |
+| `refund` | `attempt_id` | `INTERNAL` | An identifier of a thing |
+| `refund` | `amount_minor` | `RESTRICTED-FINANCIAL` | Money returned to a person — a customer amount |
+| `refund` | `currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `refund` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `refund` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — an operator explains a refund in words that can name people and disputes — `transfer.reference`'s reasoning verbatim: content constrained by no type, handled at the ceiling |
+| `refund` | `hold_reference` | `INTERNAL` | A hold identifier by value; what it resolves to is `ledger.hold`'s to classify |
+| `refund` | `provider_idempotency_reference` | `INTERNAL` | An operation reference the platform minted (`INV-PAY-04`) |
+| `refund` | `provider_reference` | `CONFIDENTIAL` | As `payment_attempt.auth_provider_reference` |
+| `refund` | `status` | `CONFIDENTIAL` | What happened to a person's refund |
+| `refund` | `created_at` | `CONFIDENTIAL` | Dates a privileged act against a person's account — `transfer.reversed_at`'s reasoning |
+| `refund_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `refund_event` | `refund_id` | `INTERNAL` | An identifier of a thing |
+| `refund_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `refund_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `refund_event` | `actor_id` | `RESTRICTED-PII` | The acting identity |
+| `refund_event` | `occurred_at` | `CONFIDENTIAL` | Dates a privileged act against a person's account |
+| `provider_evidence` | `id` | `INTERNAL` | An aggregate identifier |
+| `provider_evidence` | `attempt_id` | `INTERNAL` | An identifier of a thing |
+| `provider_evidence` | `refund_id` | `INTERNAL` | An identifier of a thing |
+| `provider_evidence` | `kind` | `INTERNAL` | An enumeration of wire-artefact kinds — a fact about a message, not a person |
+| `provider_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The provider's raw payload about a person's payment.** Classified at the ceiling of what it decrypts to (ADR-0022): provider payloads may quote masked instrument data, names and issuer messages — `verification_evidence.content_ciphertext`'s reasoning verbatim, and the level is what governs handling if the encryption is ever broken, mis-keyed or stripped |
+| `provider_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
+| `provider_evidence` | `key_version` | `INTERNAL` | Which key wrote the row — operational metadata for rotation |
+| `provider_evidence` | `checksum_sha256` | `RESTRICTED-PII` | The possession oracle again: anyone holding a candidate payload can confirm this is what the provider sent about this person's payment. Classified with what it fingerprints — `kyc_document.checksum_sha256` |
+| `provider_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a decline body is longer than an approval's, so the length leaks the outcome's shape. Errs up, because ADR-0022 forbids reclassifying later |
+| `provider_evidence` | `recorded_at` | `CONFIDENTIAL` | Dates a person's payment traffic |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |

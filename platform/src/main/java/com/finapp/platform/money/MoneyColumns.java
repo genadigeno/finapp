@@ -170,5 +170,29 @@ public final class MoneyColumns {
                     // two cannot drift.
                     + "CHECK (" + scale + " BETWEEN 0 AND " + Money.MAX_SUPPORTED_SCALE + ")";
         }
+
+        /**
+         * The DDL fragment declaring these three columns <strong>nullable</strong>, for a
+         * monetary fact that arrives with a later transition rather than at birth — the payment
+         * attempt's authorized and captured amounts ({@code P5-TSK-008}), which its machine
+         * commits before the provider has answered. Same types and the same value {@code CHECK}s
+         * as {@link #ddl()} — a {@code CHECK} over {@code NULL} is not false, so the currency
+         * charset and scale bound apply exactly when a value is present — plus a generated
+         * all-or-nothing {@code CHECK}, because {@link #ddl()}'s reasoning still holds and
+         * {@code NOT NULL} can no longer carry it: a partially-populated monetary value is not a
+         * smaller amount of information, it is an uninterpretable one.
+         */
+        public String nullableDdl() {
+            return amountMinor
+                    + " BIGINT, "
+                    + currency
+                    + " CHAR(3), "
+                    + scale
+                    + " SMALLINT, "
+                    + "CHECK (" + currency + " ~ '^[A-Z]{3}$'), "
+                    + "CHECK (" + scale + " BETWEEN 0 AND " + Money.MAX_SUPPORTED_SCALE + "), "
+                    + "CHECK ((" + amountMinor + " IS NULL) = (" + currency + " IS NULL)"
+                    + " AND (" + amountMinor + " IS NULL) = (" + scale + " IS NULL))";
+        }
     }
 }

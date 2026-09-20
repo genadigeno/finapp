@@ -30,5 +30,16 @@ public enum PaymentFailureReason {
      * happened ({@code PAYMENT_LIFECYCLES.md} §3). Never used for a timeout: silence is
      * ambiguity and commits {@code *_UNKNOWN}, not a failure ({@code INV-LIFE-03}).
      */
-    PROVIDER_UNAVAILABLE
+    PROVIDER_UNAVAILABLE;
+
+    /**
+     * The reasons as a SQL literal list — the one definition of the attempt table's
+     * failure-reason {@code CHECK}, reconciled by {@code PaymentsMigrationTest}
+     * ({@code P5-TSK-008}; the {@code FailureReason.sqlValueList()} precedent).
+     */
+    public static String sqlValueList() {
+        return java.util.Arrays.stream(values())
+                .map(reason -> "'" + reason.name() + "'")
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
 }

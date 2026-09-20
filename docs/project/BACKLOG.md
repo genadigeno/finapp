@@ -5839,7 +5839,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   counts claimed.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
 
-**P5-TSK-008 — The payments schema: intent, attempt, refund, evidence** — `READY`
+**P5-TSK-008 — The payments schema: intent, attempt, refund, evidence** — `COMPLETE` (2026-09-20)
 - **Scope**: `V002`+ in `payments`: `payment_intent`, `payment_attempt`, `refund`, their
   history tables, and `provider_evidence` — the machines' `CHECK`s and every-writer
   transition triggers generated from the enums and reconciled by migration tests;
@@ -5853,9 +5853,49 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   ceiling. Raw-SQL refusals from scratch.
 - **Deps**: `P5-TSK-007`, `P5-TSK-002`. **Accept**: every constraint exercised against raw
   SQL; the reconciliations hold; the bound refuses an over-refund for every writer.
+- **Gate evidence (2026-09-20)**: **every accept clause demonstrated against a from-scratch
+  container** — `PaymentsSchemaDatabaseTest` (10 tests, app tier, prepared statements only:
+  exactly the writer the schema must bind, no store existing yet) + `PaymentsMigrationTest`
+  (12 reconciliations, hermetic). **Raw SQL exercised per constraint**: every named
+  coherence `CHECK` planted-and-refused `23514` by name as the *migrator* (the two-shapes
+  `FAILED` rule and the stored over-capture included); machine edges and freezes refused
+  `P0001` for app and migrator; the smuggled-edge probe (a payload edit inside a legal
+  edge) refused by the `NULL → value` rule; the intent's **one-column `UPDATE` grant**
+  swept per column from `information_schema` with the status update as positive control;
+  evidence UPDATE/DELETE refused `42501` for app AND `P0001` for the migrator; the
+  unattributable webhook retained (both subjects `NULL` legal). **The reconciliations
+  hold**: three machines' status `CHECK`s ×3 columns, trigger edge sets exact per state
+  with terminal-absence halves, `ddl()`/`nullableDdl()` verbatim, reference shapes from the
+  types' own `MAX_LENGTH`s, reason bound from `Refund.MAX_REASON_LENGTH`, evidence bound
+  from `PspWireClient.MAX_EVIDENCE_BYTES`, one-live predicate from
+  `sqlTerminalValueList()`, all grant sets pinned, advisory namespace pinned. **The bound
+  refuses an over-refund for every writer**: to-the-penny accepted, one minor unit past
+  refused for app and migrator, non-`CAPTURED` subject refused, currency/scale mismatch
+  refused, a `FAILED` refund frees its budget, and **ten concurrent partial refunds of 300
+  against 1000 accept exactly 3** — the write-skew shape closed by
+  `pg_advisory_xact_lock(3, hashtext(attempt_id))` in the trigger (namespace 3 registered;
+  `DISTRIBUTED_EXECUTION.md` §3 row added). **Eight schema mutations, all caught by the
+  intended assertion, migrations restored `cmp`-verified byte-identical**: the one-live
+  index dropped (ten-way race + reconciliation); the index made total (freed slot +
+  reconciliation); the sum check dropped (three tests — the acceptance mutation); **the
+  advisory lock alone removed (the ten-way race ALONE, every sequential test green — the
+  P2-TSK-015 write-skew demonstrated live)**; the `NULL → value` payload rule removed (the
+  smuggled-edge probe alone); the intent grant widened to a second column (the
+  `information_schema` sweep + the pin); the evidence append-only trigger dropped (the
+  migrator halves alone — the grants still bound the app); `AUTHORIZED → FAILED` smuggled
+  into the trigger (the edge reconciliation alone — a schema edge the machine does not
+  carry cannot arrive quietly). Side deliveries: `MoneyColumns.nullableDdl()` (platform,
+  own test), `Refund.MAX_REASON_LENGTH` (aggregate + test),
+  `PaymentFailureReason.sqlValueList()`, 64 `DATA_CLASSIFICATION.md` rows
+  (`ColumnClassificationTest` green over the new schema, database tier). Phase 5 register
+  rows deferred to the phase audit per the guard's reached-phase rule. Verified by
+  targeted tiers — `:payments:test` 69 / `:platform:test` 171 / `:app:test` 435 /
+  `PaymentsSchemaDatabaseTest` 10 / `ColumnClassificationTest` 5, 0 failures, fresh runs —
+  the full battery deliberately skipped on the owner's instruction; no fleet-wide database
+  or kafka counts claimed.
 - **Risk**: High (the phase's schema). **Cx**: L. **DoD**: `DOD-FIN`, `DOD-KERNEL`
 
-**P5-TSK-009 — The authorization command: dispatch-before-call** — `TODO`
+**P5-TSK-009 — The authorization command: dispatch-before-call** — `READY`
 - **Objective**: ADR-0046 as code, on the money path for the first time.
 - **Scope**: intent create (keyed `payment.create`, fingerprint binding actor + wallet +
   instrument + amount + currency + scale) and confirm: one transaction commits

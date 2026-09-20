@@ -186,6 +186,19 @@ class RefundTest {
                         HoldId.next(IDS), idem()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("reason");
+
+        // The bound is the schema's CHECK's one definition (P5-TSK-008): exactly the bound
+        // accepted, one character past it refused.
+        assertThat(Refund.create(
+                                IDS, CLOCK, captured, AMOUNT, Money.zero(EUR),
+                                "r".repeat(Refund.MAX_REASON_LENGTH), HoldId.next(IDS), idem())
+                        .reason())
+                .hasSize(Refund.MAX_REASON_LENGTH);
+        assertThatThrownBy(() -> Refund.create(
+                        IDS, CLOCK, captured, AMOUNT, Money.zero(EUR),
+                        "r".repeat(Refund.MAX_REASON_LENGTH + 1), HoldId.next(IDS), idem()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(String.valueOf(Refund.MAX_REASON_LENGTH));
     }
 
     @Test

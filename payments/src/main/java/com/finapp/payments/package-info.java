@@ -25,14 +25,17 @@
  * ({@code INV-PAY-02}, M7): the instrument resolves through a port {@code app} implements
  * ({@code P5-TSK-009}), and provider vocabulary stays behind the adapter ({@code INV-PAY-03}).
  *
- * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema
+ * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema floor
  * ({@code P5-TSK-001}), the provider port with its simulated card-PSP adapter
- * ({@code P5-TSK-003}: {@code PaymentProvider}, the answer types, the wire client), and all
- * three aggregates with their machines - the intent ({@code P5-TSK-006}) and the attempt and
- * refund ({@code P5-TSK-007}: {@code PaymentAttempt}, {@code Refund}, their status machines,
- * identifiers, transition exceptions and the mapped {@code PaymentFailureReason} - updated by
- * the task that made the previous sentence stale, the recurring class). The schema's tables
- * are {@code P5-TSK-008}; the commands {@code P5-TSK-009}/{@code -010}/{@code -015}.
+ * ({@code P5-TSK-003}: {@code PaymentProvider}, the answer types, the wire client), all three
+ * aggregates with their machines - the intent ({@code P5-TSK-006}) and the attempt and refund
+ * ({@code P5-TSK-007}) - and the schema's tables ({@code P5-TSK-008}: {@code V002}-{@code V005}
+ * - intent, attempt, refund, their histories and the encrypted provider evidence, the machines'
+ * {@code CHECK}s and triggers generated from the enums and reconciled by
+ * {@code PaymentsMigrationTest}, the refund sum bound in-trigger under advisory-lock
+ * namespace 3 - updated by the task that made the previous sentence stale, the recurring
+ * class). The commands are {@code P5-TSK-009}/{@code -010}/{@code -015}, and the evidence
+ * cipher arrives with the first writer ({@code P5-TSK-009}).
  *
  * <p><strong>Deliberately no audit-action enum yet</strong> (the deliberately-few licence,
  * {@code P4-TSK-001}'s precedent): the actions arrive with the commands whose designs fix their
