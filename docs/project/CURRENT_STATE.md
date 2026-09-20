@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TST-002` — the `Phase: 5` register rows; **M5.8 at 2 of 3**, next `P5-TST-003`)
+Last updated: 2026-09-21 (`P5-TST-003` — conservation under concurrent captures and refunds; **M5.8 CLOSES at 3 of 3**, next `P5-DOC-001`)
 
 ---
 
@@ -229,52 +229,53 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TST-003` — conservation under concurrent captures and refunds** — `READY`.
-M5.8 closes with it: the composition storm (the `P3-TST-001`/`P4-TST-001` posture) — ten
-instances authorising, capturing and partially refunding continuously while the trial-balance
-and projection sweeps run, ended by the sweeper's floors; every sweep zero per currency; every
-verdict `CLEAN`/`IN_FLIGHT`; the clearing and wallet positions reconciling **exactly** to
-captured − refunded, counted from the tables and independently recomputed; no wallet negative
-through the refund holds. Accept: the three readings reconcile; the storm's amounts contest the
-availability boundary. See the backlog entry.
+**`P5-DOC-001` — the Phase 5 review record** — `READY`.
+M5.9, and the phase's last item: the exit review per `PHASE_GATES.md` §4 and §5 Phase 5
+(the original bullets plus the transition's extension, **read from the gate at review
+time**), the F1–F8 supplement re-assessed, the ten-instances question answered over the
+phase's contended decisions, conducted in the assess → corrections → **flip** → battery
+order with the review's own verdict flipping the phase. Accept: the review's verdict is what
+flips the status; the post-flip battery green. See the backlog entry.
 
 ### Just completed
 
-**`P5-TST-002` — the `Phase: 5` register rows** — `COMPLETE` (2026-09-20). **M5.8 at 2 of 3,
-and the audit found a test that could not fail.** The catalogue's `Phase: 5` set is eleven;
-two carried rows, **five had none**, and **four carried only an earlier phase's row** — the
-class the guard structurally cannot demand, because it keys on the invariant identifier.
-Nine rows landed, plus `P5-TST-001`'s missing §4 item row.
+**`P5-TST-003` — conservation under concurrent captures and refunds** — `COMPLETE`
+(2026-09-21). **M5.8 CLOSES at 3 of 3: money entering by capture and leaving by refund,
+driven at once for the first time.** Ten movers — capturers, refunders and spenders — on two
+wallets while the trial-balance and projection sweeps run, ended by the sweeper's floors
+(25 sweeps / 150 commands, paced on committed work, no sleeps anywhere).
 
-**The finding**: `INV-SET-01` — *internal completion is not settlement* — had no test that
-could fail. Pointing the capture's debit at `SUSPENSE_UNMATCHED` left **all eighty payment
-database tests green** while a customer's wallet was funded from a suspense account: every
-test counted lines, entries and balances, and none asserted **which accounts** they land on
-(the trial balance cannot see it either — both are operational, so the books still balance).
-The probe was built before the row was written — each line as `DIRECTION:PURPOSE`, on the
-capture and the refund's inverse pair — and §3 records the lesson past this invariant: *a
-posting test that counts lines proves the entry exists, not that it is the right entry.*
+| Acceptance criterion | Evidence |
+|---|---|
+| The three readings reconcile | Wallets hold `captured − refunded − spent`; the clearing delta is exactly the capture/refund pair; no `DISPATCHED` refund, no standing hold, no over-refunded attempt |
+| The amounts contest the availability boundary | Asserted as a checked fact — both refusal kinds must occur — which is what forced the first finding |
 
-### The gate's own findings: four rows cited demonstrations nobody had performed
+### Two findings, and the second makes the suite's own claim true
 
-The defect this register calls worse than a missing row, caught in its own deliverable.
-`INV-PAY-02` rested on `P5-TSK-005`, which recorded **no sweep at all** → the
-`payments → paymentmethods` compile edge was performed here (no Gradle cycle backs that
-refusal, so the isolation test is its only control). `INV-IDEM-01`'s takeover claim was
-performed here, and its observed shape recorded: the second dispatch never reached the
-one-hold assertion because **`V008`'s partial unique index refused the second row**.
-`INV-REV-02`'s trigger claim was dropped with its limit written down; `INV-PAY-03`'s
-decline-code clause was restated as the standing needle it is. §5 teeth re-proven; the flip
-probed — removing the new `INV-SET-01` row fails reporting *(currently 5)* and naming the
-invariant, and the item check correctly demands `P5-TST-003`, the guard working on a real
-absence. **No production code changed. Verified by targeted tiers — `:payments:test` 108 /
-`:platform:test` 171 / `:app:test` 454 / the payment database suites 80 / the telemetry
+**The capture bound was making the availability bound unreachable.** Four rewrites failed the
+accept's assertion: a refund can only take money still in the wallet, so the sum of every
+in-flight hold is exactly the settled balance and `INV-BAL-04` has nothing to refuse. The
+storm gained the actor it was missing — a customer *spending* what a capture credited — and
+the spend had to leave the wallet **set** (a fee), because spends between its own wallets net
+to zero and drain nothing.
+
+**The lock-order claim was false until the gate probed it.** Inverting the refund's pinned
+attempt → account order **survived the entire storm**, because refunders drew subjects from a
+queue filled *after* `capture()` returned — so a capture and a refund never contended for one
+attempt row, the only interleaving that deadlocks. Refunders now discover attempts from the
+database, and the mutation fails with **`40P01`**. Five mutations: four caught, one survived
+correctly (the bound's lock, masked by the account lock and backed by the trigger — as
+`P5-TSK-015`'s row already records). The `P5-TST-003` §4 row landed, **and the flip probe
+`P5-TST-002` left deliberately red is now green** — all nine register checks pass with Phase 5
+simulated `COMPLETE`. **One `testFixtures` addition (a provider minting a distinct reference
+per operation); no production code changed. Verified by targeted tiers — `:payments:test` 108
+/ `:platform:test` 171 / `:app:test` 454 / the payment database suites 81 / the telemetry
 database suites 11, 0 failures, fresh runs — the full battery deliberately skipped on the
 owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 ### Previously
 
-The per-task completion records behind this one — 122 blocks, from `P5-TSK-017` back to project
+The per-task completion records behind this one — 123 blocks, from `P5-TST-002` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -288,9 +289,9 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1–M5.7 `CLOSED` (3+2+3+3+2+2+2), M5.8 at 2 of 3:
-`P5-TSK-001`…`-017`, `P5-TST-001` and `P5-TST-002` complete. Next: `P5-TST-003`, `READY` —
-conservation under concurrent captures and refunds, M5.8's close.
+**Phase 5 is `IN_PROGRESS`** — M5.1–M5.8 `CLOSED` (3+2+3+3+2+2+2+3): `P5-TSK-001`…`-017`
+and `P5-TST-001`…`-003` complete. Next: `P5-DOC-001`, `READY` — the phase review record,
+M5.9 and the phase's own gate.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of

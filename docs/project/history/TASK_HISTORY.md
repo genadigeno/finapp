@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 122 "Previously" blocks, newest first, from `P5-TSK-017` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 123 "Previously" blocks, newest first, from `P5-TST-002` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,38 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P5-TST-002` — the `Phase: 5` register rows** — `COMPLETE` (2026-09-20). **M5.8 at 2 of 3,
+and the audit found a test that could not fail.** The catalogue's `Phase: 5` set is eleven;
+two carried rows, **five had none**, and **four carried only an earlier phase's row** — the
+class the guard structurally cannot demand, because it keys on the invariant identifier.
+Nine rows landed, plus `P5-TST-001`'s missing §4 item row.
+
+**The finding**: `INV-SET-01` — *internal completion is not settlement* — had no test that
+could fail. Pointing the capture's debit at `SUSPENSE_UNMATCHED` left **all eighty payment
+database tests green** while a customer's wallet was funded from a suspense account: every
+test counted lines, entries and balances, and none asserted **which accounts** they land on
+(the trial balance cannot see it either — both are operational, so the books still balance).
+The probe was built before the row was written — each line as `DIRECTION:PURPOSE`, on the
+capture and the refund's inverse pair — and §3 records the lesson past this invariant: *a
+posting test that counts lines proves the entry exists, not that it is the right entry.*
+
+### The gate's own findings: four rows cited demonstrations nobody had performed
+
+The defect this register calls worse than a missing row, caught in its own deliverable.
+`INV-PAY-02` rested on `P5-TSK-005`, which recorded **no sweep at all** → the
+`payments → paymentmethods` compile edge was performed here (no Gradle cycle backs that
+refusal, so the isolation test is its only control). `INV-IDEM-01`'s takeover claim was
+performed here, and its observed shape recorded: the second dispatch never reached the
+one-hold assertion because **`V008`'s partial unique index refused the second row**.
+`INV-REV-02`'s trigger claim was dropped with its limit written down; `INV-PAY-03`'s
+decline-code clause was restated as the standing needle it is. §5 teeth re-proven; the flip
+probed — removing the new `INV-SET-01` row fails reporting *(currently 5)* and naming the
+invariant, and the item check correctly demands `P5-TST-003`, the guard working on a real
+absence. **No production code changed. Verified by targeted tiers — `:payments:test` 108 /
+`:platform:test` 171 / `:app:test` 454 / the payment database suites 80 / the telemetry
+database suites 11, 0 failures, fresh runs — the full battery deliberately skipped on the
+owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 **`P5-TSK-017` — the meters and the dashboard row** — `COMPLETE` (2026-09-20). **M5.8 opens
 at 1 of 3: the phase's six series land, and the plan's one-line counting discipline turned

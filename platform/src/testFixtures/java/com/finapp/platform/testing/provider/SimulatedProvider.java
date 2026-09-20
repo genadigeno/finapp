@@ -78,6 +78,15 @@ public final class SimulatedProvider implements AutoCloseable {
                                 // Port 0: the OS picks. A fixed port makes two tests running at
                                 // once a flake that looks like a provider fault.
                                 .dynamicPort()
+                                // Response templating, for the one thing a fixed body cannot
+                                // model: a provider that mints a DISTINCT reference per
+                                // operation (`P5-TST-003`). Every provider-reference column
+                                // is UNIQUE by design - one operation, one reference - so a
+                                // storm of captures against a fixed body collides on 23505
+                                // at the second one, which is a harness limit, not a platform
+                                // defect (`P5-TSK-015` recorded exactly this when its race
+                                // had to be reworked around it).
+                                .globalTemplating(true)
                                 .bindAddress("127.0.0.1"));
         server.start();
         return new SimulatedProvider(
@@ -103,6 +112,34 @@ public final class SimulatedProvider implements AutoCloseable {
                                         .withStatus(status)
                                         .withHeader("Content-Type", "application/json")
                                         .withBody(body)));
+    }
+
+    /**
+     * The provider works and <strong>mints a reference of its own per operation</strong>,
+     * derived from the idempotency reference we sent (`P5-TST-003`).
+     *
+     * <p>Needed because a storm is the first thing that asks the harness to behave like a
+     * real PSP in this respect: {@code auth_provider_reference},
+     * {@code capture_provider_reference} and {@code refund.provider_reference} are each
+     * {@code UNIQUE} - one operation, one reference - so a fixed body makes the SECOND
+     * concurrent capture a `23505`. Deriving the answer from the request keeps the mapping
+     * one-to-one and deterministic, which a random value would not.
+     *
+     * @param prefix distinguishes the operation in the answer, as a provider's own scheme
+     *     would ({@code psp_cap}, {@code psp_rfd})
+     */
+    public void succeedsWithMintedReference(String path, String prefix) {
+        server.stubFor(
+                any(urlEqualTo(path))
+                        .willReturn(
+                                aResponse()
+                                        .withStatus(200)
+                                        .withHeader("Content-Type", "application/json")
+                                        .withBody(
+                                                "{\"status\":\"approved\",\"reference\":\""
+                                                        + prefix
+                                                        + "-{{request.headers.Idempotency-Key}}"
+                                                        + "\"}")));
     }
 
     /**

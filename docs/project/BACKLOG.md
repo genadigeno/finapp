@@ -6578,7 +6578,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   `INV-IDEM-01`/`INV-IDEM-04`/`INV-HIST-02`/`INV-REV-02` are owed by doctrine and the gate
   list, not by the build — the `P4-TST-002` finding, pre-applied.
 
-**P5-TST-003 — Conservation under concurrent captures and refunds** — `READY`
+**P5-TST-003 — Conservation under concurrent captures and refunds** — `COMPLETE` (2026-09-21)
 - **Scope**: the composition storm (the `P3-TST-001`/`P4-TST-001` posture): ten instances
   authorising, capturing and partially refunding continuously while the trial-balance and
   projection sweeps run, ended by the sweeper's floors; every sweep zero per currency;
@@ -6587,9 +6587,61 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   recomputed; no wallet negative through the refund holds.
 - **Deps**: `P5-TSK-015`. **Accept**: the three readings reconcile; the storm's amounts
   contest the availability boundary (the `P4-TST-001` lesson, pre-applied).
+- **Gate evidence (2026-09-21)**: **both accept clauses met**, and the item found two
+  things its own design could not. *The three readings reconcile*: the wallets hold exactly
+  `captured − refunded − spent`, the clearing delta is exactly the capture/refund pair, and
+  the outcome tally leaves no `DISPATCHED` refund, no standing hold and no over-refunded
+  attempt — three accounts and three payment tables that never see each other, agreeing to
+  the minor unit, with the sign convention stated (each side read in its own normal-balance
+  direction, so a closed pair reads as equal magnitudes). *The amounts contest the
+  availability boundary*: asserted as a checked fact — **both** refusal kinds must have
+  occurred — which is what forced finding one. **FINDING 1, the accept's own assertion:**
+  the availability boundary was unreachable through four rewrites because *a refund can only
+  take money that is still in the wallet* (`INV-PAY-05` bounds it by its capture), so the
+  sum of every in-flight hold is exactly the settled balance and `INV-BAL-04` has nothing to
+  refuse — **the capture bound was making the availability bound unreachable**. The storm
+  gained the actor it was missing (a customer spending what a capture credited), and the
+  spend had to leave the wallet **set** — a fee — because spends between the storm's own
+  wallets net to zero and drain nothing. **FINDING 2, the gate's own probe, and the sharper
+  one:** the suite claimed that a wrong lock order would surface here, and **inverting the
+  refund's pinned attempt → account order SURVIVED the entire storm** — refunders drew their
+  subjects from a queue the capturers filled *after* `capture()` returned, so a capture and
+  a refund could never contend for one attempt row, which is the only interleaving that
+  deadlocks. Refunders now discover attempts **from the database**, whatever state they are
+  in (the operator's view), and the mutation then failed with SQLSTATE **`40P01`** — the
+  claim made true rather than asserted. **Five mutations: four caught, one survived
+  correctly** (the bound's lock-then-look reduced to a read — masked by the account lock and
+  backed by the advisory-locked trigger, exactly as `P5-TSK-015`'s row records), plus two
+  findings that were live failing runs rather than planted mutations (the polite amounts
+  above; a spender without the account lock drove a wallet negative — the storm finding its
+  own defect, since a posting is deliberately not availability-checked). The `P5-TST-003`
+  §4 row landed, **and the flip probe `P5-TST-002` left deliberately red is now green**:
+  Phase 5 simulated `COMPLETE`, all nine register checks pass, files restored byte-identical.
+  Floors raised at this gate from 20/60 to **25 sweeps / 150 commands** after observing the
+  storm stop the instant it met the lower one; three consecutive green runs at the new
+  floors, ~20s each. **One `testFixtures` addition** — a provider that mints a distinct
+  reference per operation, because every provider-reference column is `UNIQUE` and a fixed
+  stub body makes the second concurrent capture a `23505` — and **no production code
+  changed**. Verified by targeted tiers — `:payments:test` 108 / `:platform:test` 171 /
+  `:app:test` 454 / the payment database suites 81 / the telemetry database suites 11, 0
+  failures, fresh runs — the full battery deliberately skipped on the owner's instruction;
+  no fleet-wide database or kafka counts claimed.
+- **Implementation note (2026-09-21)**: `PaymentConservationDatabaseTest` — capturers,
+  refunders and **spenders** on two wallets while the trial-balance and projection sweeps
+  run, ended by the sweeper's floors. **The accept's own assertion found what the design
+  could not**: the availability boundary was unreachable through four rewrites, and the
+  reason is structural — *a refund can only take money that is still in the wallet*
+  (`INV-PAY-05` bounds it by its own capture), so the sum of what every in-flight refund may
+  hold is exactly the settled balance and `INV-BAL-04` has nothing to refuse. **The capture
+  bound was making the availability bound unreachable.** The storm therefore gained the
+  actor it was missing — a customer *spending* what a capture credited — and the spend had
+  to leave the wallet **set** (a fee) rather than move between its wallets, which nets to
+  zero and drains nothing. One harness capability was needed: a provider that mints a
+  **distinct reference per operation**, because every provider-reference column is `UNIQUE`
+  and a fixed stub body makes the second concurrent capture a `23505`.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-FIN`
 
-**P5-DOC-001 — Phase 5 review record** — `TODO`
+**P5-DOC-001 — Phase 5 review record** — `READY`
 - **Scope**: the exit review per `PHASE_GATES.md` §4 and §5 Phase 5 (original bullets plus
   the transition's extension, **read from the gate at review time**), the F1–F8 supplement
   re-assessed, the ten-instances question answered over the phase's contended decisions,
