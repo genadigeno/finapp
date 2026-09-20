@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 123 "Previously" blocks, newest first, from `P5-TST-002` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 124 "Previously" blocks, newest first, from `P5-TST-003` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,44 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P5-TST-003` — conservation under concurrent captures and refunds** — `COMPLETE`
+(2026-09-21). **M5.8 CLOSES at 3 of 3: money entering by capture and leaving by refund,
+driven at once for the first time.** Ten movers — capturers, refunders and spenders — on two
+wallets while the trial-balance and projection sweeps run, ended by the sweeper's floors
+(25 sweeps / 150 commands, paced on committed work, no sleeps anywhere).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The three readings reconcile | Wallets hold `captured − refunded − spent`; the clearing delta is exactly the capture/refund pair; no `DISPATCHED` refund, no standing hold, no over-refunded attempt |
+| The amounts contest the availability boundary | Asserted as a checked fact — both refusal kinds must occur — which is what forced the first finding |
+
+### Two findings, and the second makes the suite's own claim true
+
+**The capture bound was making the availability bound unreachable.** Four rewrites failed the
+accept's assertion: a refund can only take money still in the wallet, so the sum of every
+in-flight hold is exactly the settled balance and `INV-BAL-04` has nothing to refuse. The
+storm gained the actor it was missing — a customer *spending* what a capture credited — and
+the spend had to leave the wallet **set** (a fee), because spends between its own wallets net
+to zero and drain nothing.
+
+**The lock-order claim was false until the gate probed it.** Inverting the refund's pinned
+attempt → account order **survived the entire storm**, because refunders drew subjects from a
+queue filled *after* `capture()` returned — so a capture and a refund never contended for one
+attempt row, the only interleaving that deadlocks. Refunders now discover attempts from the
+database, and the mutation fails with **`40P01`**. Five mutations: four caught, one survived
+correctly (the bound's lock, masked by the account lock and backed by the trigger — as
+`P5-TSK-015`'s row already records). The `P5-TST-003` §4 row landed, **and the flip probe
+`P5-TST-002` left deliberately red is now green** — all nine register checks pass with Phase 5
+simulated `COMPLETE`. **One `testFixtures` addition (a provider minting a distinct reference
+per operation); no production code changed. Verified by targeted tiers — `:payments:test` 108
+/ `:platform:test` 171 / `:app:test` 454 / the payment database suites 81 / the telemetry
+database suites 11, 0 failures, fresh runs — the full battery deliberately skipped on the
+owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 ---
 

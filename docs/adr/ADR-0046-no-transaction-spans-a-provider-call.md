@@ -1,6 +1,6 @@
 # ADR-0046 — No transaction spans a provider call: dispatch-before-call, UNKNOWN, and reconciliation by query
 
-Status: Proposed
+Status: Accepted (2026-09-21, `P5-DOC-001` — read against the implementation at the phase review)
 Date: 2026-09-20
 Phase: 5
 Context: Payments

@@ -62,11 +62,11 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0042](ADR-0042-account-model-four-distinct-concepts.md) | Customer Account, Ledger Account, Wallet and Operational Account are four things | Accepted | 3 | Domain |
 | [0043](ADR-0043-transfer-and-posting-commit-together.md) | The transfer and its posting commit in one transaction; no internal saga | Accepted | 4 | Transfers |
 | [0044](ADR-0044-transfer-lifecycle-states-are-earned.md) | The transfer lifecycle: states are earned by their producers | Accepted | 4 | Transfers |
-| [0045](ADR-0045-payment-intent-and-attempt.md) | Payment intent and payment attempt: two aggregates, three machines | Proposed | 5 | Payments |
-| [0046](ADR-0046-no-transaction-spans-a-provider-call.md) | No transaction spans a provider call: dispatch-before-call, UNKNOWN, reconciliation by query | Proposed | 5 | Payments |
-| [0047](ADR-0047-webhook-ingestion.md) | Webhooks: authenticated, freshness-bounded, evidence-first, idempotent | Proposed | 5 | Payments |
-| [0048](ADR-0048-authorization-is-not-a-posting.md) | Authorization is a payment-domain fact; the ledger's first touch is capture | Proposed | 5 | Payments · Ledger |
-| [0049](ADR-0049-first-provider-simulated-card-psp.md) | The first provider is a simulated card-style PSP; nothing is final before settlement | Proposed | 5 | Payments |
+| [0045](ADR-0045-payment-intent-and-attempt.md) | Payment intent and payment attempt: two aggregates, three machines | Accepted | 5 | Payments |
+| [0046](ADR-0046-no-transaction-spans-a-provider-call.md) | No transaction spans a provider call: dispatch-before-call, UNKNOWN, reconciliation by query | Accepted | 5 | Payments |
+| [0047](ADR-0047-webhook-ingestion.md) | Webhooks: authenticated, freshness-bounded, evidence-first, idempotent | Accepted | 5 | Payments |
+| [0048](ADR-0048-authorization-is-not-a-posting.md) | Authorization is a payment-domain fact; the ledger's first touch is capture | Accepted | 5 | Payments · Ledger |
+| [0049](ADR-0049-first-provider-simulated-card-psp.md) | The first provider is a simulated card-style PSP; nothing is final before settlement | Accepted | 5 | Payments |
 
 ## Anticipated ADRs
 

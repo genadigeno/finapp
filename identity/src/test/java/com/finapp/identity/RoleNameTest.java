@@ -60,19 +60,27 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("LEDGER_OPERATOR grants exactly the three money-operating permissions")
-    void ledgerOperatorGrantsExactlyThree() {
-        // One role, three permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009): one
-        // money-operating population, and the vocabulary stays precise so the adjustment and
-        // reversal endpoints each check their own. Exact set, so the role quietly gaining
-        // ROLE_ASSIGN - the permission that grants permissions - is a failing test rather
-        // than a silent expansion.
+    @DisplayName("LEDGER_OPERATOR grants exactly the four money-operating permissions")
+    void ledgerOperatorGrantsExactlyFour() {
+        // One role, four permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009;
+        // PAYMENT_REFUND by P5-TSK-015): one money-operating population, and the vocabulary
+        // stays precise so the adjustment, reversal and refund endpoints each check their
+        // own. Exact set, so the role quietly gaining ROLE_ASSIGN - the permission that
+        // grants permissions - is a failing test rather than a silent expansion.
+        //
+        // THIS PIN WAS RED FROM P5-TSK-015 UNTIL P5-DOC-001's post-flip battery, which is
+        // the finding that battery exists to make: the phase verified by TARGETED tiers
+        // (`:payments:test`, `:platform:test`, `:app:test` and the payment database suites)
+        // never ran `:identity:test`, so widening the role passed every check the task
+        // itself ran. Recorded in the phase review's area 8 as the cost of the skip
+        // instruction, with the fleet-wide hermetic run as the thing that closes it.
         assertThat(RoleName.LEDGER_OPERATOR.permissions())
                 .as("operating the money is not managing identities or reviewing cases")
                 .containsExactlyInAnyOrder(
                         PermissionName.LEDGER_POST,
                         PermissionName.LEDGER_ADJUST,
-                        PermissionName.TRANSFER_REVERSE);
+                        PermissionName.TRANSFER_REVERSE,
+                        PermissionName.PAYMENT_REFUND);
     }
 
     @Test

@@ -181,11 +181,41 @@ new group needed for the second transition running. Deliberately the *easy* half
 money — both legs internal, no third party — so Phase 5 changes one variable at a time.
 
 **Phase 5 — Payment Infrastructure**
-Status: **`IN_PROGRESS`** — started 2026-09-20 with `P5-TSK-001`; entry gate passed the same day, all twelve criteria
-([`reviews/PHASE_4_TO_5_TRANSITION.md`](reviews/PHASE_4_TO_5_TRANSITION.md)). The external
+Status: ✅ **`COMPLETE`** (2026-09-21) — **all twelve universal criteria, all eight F1–F8
+supplement criteria, and all nineteen phase-specific criteria hold** (8 original + 11 added
+by the Phase 4 → 5 transition, counted from the gate at review time), ruled by the exit
+review ([`reviews/PHASE_5_REVIEW.md`](reviews/PHASE_5_REVIEW.md), `P5-DOC-001`). Entry gate
+passed 2026-09-20, all twelve criteria
+([`reviews/PHASE_4_TO_5_TRANSITION.md`](reviews/PHASE_4_TO_5_TRANSITION.md)); started the
+same day with `P5-TSK-001` and closed at **21 of 21** backlog items across nine milestones.
+
+**Two criteria were not free, and the review did the work rather than asserting it.**
+Criterion 10 demanded every ADR `Accepted` while ADR-0045…0049 all read `Proposed`, deferred
+across the phase with this audit named as owner: each was **read against the code that now
+exists** — ADR-0046's leaderless sweeper, ADR-0047's evidence-first door, ADR-0048 §4's
+hold-then-post down to the posting key — found to describe it, and accepted. Criterion 7
+cannot be met as written while the owner's standing instruction skips
+`build databaseTest kafkaTest`: assessed `PASS` **with the deviation recorded** — the
+hermetic tier run fleet-wide after the flip, the database and kafka tiers verified per task,
+and **no fleet-wide count claimed**.
+
+**The flip was the guarded act, and it surfaced nothing because three items pre-paid it**:
+`P5-TST-002` landed every `Phase: 5` invariant row and probed the flip, `P5-TSK-017` landed
+§15's meters behind a pinned guard the derived rule takes over with no edit, and
+`P5-TST-003` closed the one item the probe deliberately left red. Proven non-vacuous against
+the real status afterwards, not only the simulated one.
+
+**What the phase delivered**: money that enters and leaves through a party that can fail in
+every way a third party can — attach, pay, confirm, capture, refund, webhooks, and a
+leaderless reconciliation sweeper — with an honest `*_UNKNOWN` state, an idempotency
+reference stored before anything is sent, a bounded refund that reserves the customer's
+funds, and a ledger whose first touch is capture. 2 owning modules, 8 tables, 8 migrations,
+6 payment operations plus the machine-facing webhook door, 6 auditable actions, 9 error
+codes, 7 event types, 6 meters, 5 ADRs (`Accepted`), 11 `Phase: 5` invariants of the
+platform's 87, and **no raw PAN anywhere by construction**. The external
 world arrives: money movement whose outcome is decided by an unreliable third party, with
 `INV-LIFE-03` live for the first time. Planned in [`PHASE_5_PLAN.md`](PHASE_5_PLAN.md);
-decisions in ADR-0045–0049 (`Proposed`): the intent/attempt model and its three machines,
+decisions in ADR-0045–0049 (`Accepted` at the exit review): the intent/attempt model and its three machines,
 **no transaction spans a provider call** (dispatch-before-call, `UNKNOWN` modelled,
 reconciliation by query with no lease), webhooks (authenticated before parsing,
 freshness-bounded, evidence-first, order-blind), **authorization is a payment-domain fact
@@ -229,53 +259,54 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-DOC-001` — the Phase 5 review record** — `READY`.
-M5.9, and the phase's last item: the exit review per `PHASE_GATES.md` §4 and §5 Phase 5
-(the original bullets plus the transition's extension, **read from the gate at review
-time**), the F1–F8 supplement re-assessed, the ten-instances question answered over the
-phase's contended decisions, conducted in the assess → corrections → **flip** → battery
-order with the review's own verdict flipping the phase. Accept: the review's verdict is what
-flips the status; the post-flip battery green. See the backlog entry.
+**None in progress.** `P5-DOC-001` is `COMPLETE` and **Phase 5 is `COMPLETE` at 21 of 21
+items across nine milestones**, ruled by
+[`reviews/PHASE_5_REVIEW.md`](reviews/PHASE_5_REVIEW.md). Next is the **Phase 5 → Phase 6
+transition** — its own act, not a backlog task, and **no Phase 6 item exists until it has
+been conducted**.
 
 ### Just completed
 
-**`P5-TST-003` — conservation under concurrent captures and refunds** — `COMPLETE`
-(2026-09-21). **M5.8 CLOSES at 3 of 3: money entering by capture and leaving by refund,
-driven at once for the first time.** Ten movers — capturers, refunders and spenders — on two
-wallets while the trial-balance and projection sweeps run, ended by the sweeper's floors
-(25 sweeps / 150 commands, paced on committed work, no sleeps anywhere).
+**`P5-DOC-001` — the Phase 5 review record** — `COMPLETE` (2026-09-21). **M5.9 closes, and
+with it Phase 5.** The exit review per `PHASE_GATES.md` §4 and §5 — 8 areas, 12 universal
+criteria, the F1–F8 supplement re-assessed, **19** phase-specific criteria (the original 8
+plus the 11 the Phase 4 → 5 transition added, read from the gate rather than from the plan)
+— conducted in the order the item names: **assess → corrections → flip → battery**, so the
+review's own verdict is what carries the status rather than a status the review is written
+to justify.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| The three readings reconcile | Wallets hold `captured − refunded − spent`; the clearing delta is exactly the capture/refund pair; no `DISPATCHED` refund, no standing hold, no over-refunded attempt |
-| The amounts contest the availability boundary | Asserted as a checked fact — both refusal kinds must occur — which is what forced the first finding |
+| The review's verdict is what flips the status | [`reviews/PHASE_5_REVIEW.md`](reviews/PHASE_5_REVIEW.md) — 8 areas `PASS`, 12 universal `PASS`, 19 phase-specific `PASS`, ten-instances `PASS` over seven contended decisions; the flip written only after |
+| The post-flip battery green | **1323 hermetic tests across twelve modules, 0 failures**, re-run again after this gate's corrections |
 
-### Two findings, and the second makes the suite's own claim true
+### The battery found a red test, which is why it is run at the gate
 
-**The capture bound was making the availability bound unreachable.** Four rewrites failed the
-accept's assertion: a refund can only take money still in the wallet, so the sum of every
-in-flight hold is exactly the settled balance and `INV-BAL-04` has nothing to refuse. The
-storm gained the actor it was missing — a customer *spending* what a capture credited — and
-the spend had to leave the wallet **set** (a fee), because spends between its own wallets net
-to zero and drain nothing.
+`RoleNameTest` had pinned `LEDGER_OPERATOR` at **three** permissions since `P5-TSK-015` added
+`PAYMENT_REFUND` — and `:identity:test` was in none of the phase's targeted tiers, so it
+survived **four subsequent completion gates**. That is the standing skip instruction's cost,
+*measured* rather than argued: a targeted-tier regime cannot see a module the phase never
+touched, which is exactly what the fleet-wide battery at a phase gate exists to catch. The
+pin is corrected, and the episode is recorded in the test's own comment and in the review's
+area 8.
 
-**The lock-order claim was false until the gate probed it.** Inverting the refund's pinned
-attempt → account order **survived the entire storm**, because refunders drew subjects from a
-queue filled *after* `capture()` returned — so a capture and a refund never contended for one
-attempt row, the only interleaving that deadlocks. Refunders now discover attempts from the
-database, and the mutation fails with **`40P01`**. Five mutations: four caught, one survived
-correctly (the bound's lock, masked by the account lock and backed by the trigger — as
-`P5-TSK-015`'s row already records). The `P5-TST-003` §4 row landed, **and the flip probe
-`P5-TST-002` left deliberately red is now green** — all nine register checks pass with Phase 5
-simulated `COMPLETE`. **One `testFixtures` addition (a provider minting a distinct reference
-per operation); no production code changed. Verified by targeted tiers — `:payments:test` 108
-/ `:platform:test` 171 / `:app:test` 454 / the payment database suites 81 / the telemetry
-database suites 11, 0 failures, fresh runs — the full battery deliberately skipped on the
-owner's instruction; no fleet-wide database or kafka counts claimed.**
+**The gate then audited the review** — the discipline the review invokes, turned on the
+reviewer — **and found three defects in it**: area 1's inventory was counted from memory and
+four numbers were wrong (4 payment paths not 5; **10** event types not 7; 8 auditable actions
+and 11 error codes across both modules, not 6 and 9); criterion 4 cited *"the plan's §12"*
+with seven failure scenarios when the list is **§14 with fifteen**, all fifteen now assessed;
+and the flip had left the **BACKLOG's own phase header** reading `IN_PROGRESS` with `Proposed`
+ADRs — which criterion 8 would have failed on the reviewer's own act. **ADR-0045–0049 were
+read against the implementation and accepted** (criterion 10's deferral, owned by this audit
+since the phase began): the leaderless sweeper, the evidence-first webhook door and
+hold-then-post down to the posting key were found to describe the code that exists.
+Non-vacuity proven against the real status — one `Phase: 5` row removed → the build fails
+naming `INV-PAY-01` and reporting *(currently 5)*; restored byte-identical. **No production
+code changed by this item** beyond the one-line test pin the battery demanded.
 
 ### Previously
 
-The per-task completion records behind this one — 123 blocks, from `P5-TST-002` back to project
+The per-task completion records behind this one — 124 blocks, from `P5-TST-003` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -289,11 +320,16 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1–M5.8 `CLOSED` (3+2+3+3+2+2+2+3): `P5-TSK-001`…`-017`
-and `P5-TST-001`…`-003` complete. Next: `P5-DOC-001`, `READY` — the phase review record,
-M5.9 and the phase's own gate.
+**Phase 5 is `COMPLETE`** (2026-09-21) — all nine milestones `CLOSED`
+(3+2+3+3+2+2+2+3+1): `P5-TSK-001`…`-017`, `P5-TST-001`…`-003` and `P5-DOC-001`, twenty-one
+items. **No phase is `IN_PROGRESS`.** Next is the **Phase 5 → Phase 6 transition**, which has
+no backlog ID — see [§Next Task](#next-task).
 
-The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
+The last work performed was `P5-DOC-001`, the **Phase 5 exit review** (2026-09-21): the
+review's own verdict flipped the phase, ADR-0045–0049 were read against the code and
+`Accepted`, and the post-flip fleet-wide **hermetic** battery — 1323 tests across twelve
+modules, 0 failures — found `RoleNameTest` red since `P5-TSK-015`, a module no targeted tier
+covered. Before that, the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of
 the phase (1157 / 729 / 14, 0 failures — after finding and repairing the
 test-harness connection ceiling that had made the fleet-wide database tier
@@ -566,21 +602,51 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P5-TSK-001` — the `payments` and `paymentmethods` modules and schemas.**
-Phase 5's first task, first for the standing reason — the privilege floor is
-what every later grant claim rests on — and for the phase-specific one: the
-build-graph decisions (`payments → ledger` declared so postings are commanded
-and never written; `payments → paymentmethods` **refused** so the PCI
-boundary is a module nothing payment-facing can see) are the structure that
-keeps the phase's named risks unreachable before any payment code exists.
-Scope, acceptance and DoD profile in the backlog entry; the module registers
-in `MODULE_ARCHITECTURE.md` §3 already carry both modules' nine attributes.
+**The Phase 5 → Phase 6 transition.** Not a backlog task: a transition is its own act,
+performed under the constraint that **no application code is written**, and it is what makes
+Phase 6 `READY` rather than merely planned — the twelve entry-gate conditions in
+[`PHASE_GATES.md`](PHASE_GATES.md) §2, of which item 10 (backlog at task granularity with
+acceptance criteria) and item 11 (every decision needed to start, at least `Proposed`) are
+the ones that cannot be deferred into implementation.
 
-**What Phase 5 inherits, already scheduled**: the per-credential confinement
-generalisation (`P5-TSK-002` — the debt row that fired at `P2-TSK-011`), the
-`P3-TSK-015` hold-then-capture composition (the refund's mechanism,
-`P5-TSK-015`), and the provider harness built in `P0-TSK-037` meeting the
-caller it was built for (`P5-TSK-003`).
+It must produce what the five previous transitions produced: a completion audit of the closed
+phase conducted **independently** of the exit review (a gate assessed only by whoever finished
+the work is not two checks), a distributed-systems and security audit, `PHASE_6_PLAN.md`, the
+backlog elaborated to task granularity, and the decisions Phase 6 cannot start without —
+including, per §5's own precedent, whatever **extension** Phase 6's exit criteria need beyond
+the bullets written before the work was understood.
+
+**Phase 6 changes the variable this phase held fixed in the other direction**: Phase 5's money
+moved between the platform and a third party on **one** customer's behalf. Phase 6 introduces a
+**second commercial party** — the merchant — and with it the first place where one payment
+splits into two economic positions. The open questions below that come due are **8** (the fee
+model: who pays, when recognised, gross versus net settlement — **High**, because changing
+revenue recognition after postings exist is a restatement, and `P5-TST-003` already posts fees
+to `FEE_REVENUE` as a storm actor rather than as a modelled assessment) and **7** (whether
+`checkout` is its own module or part of `merchant` — Low, with a working position and a named
+merge trigger already recorded). Multi-tenant isolation is the phase's standing security
+theme, and it is the first phase where `INV-AUD-*` and the privilege floor meet an actor
+population the platform does not own.
+
+**What the transition inherits from this phase**: nothing that blocks it, which is area 8's
+only claim about Phase 6. The recorded items are seams with named owners — refund sweeping
+(an `UNKNOWN` refund is resolved by webhook, not yet by the sweeper; the standing hold is the
+loud symptom), `V004`'s trigger not being mutation-demonstrable without a from-scratch
+database, outbound request bytes not captured as evidence, and settlement itself, which is
+Phases 7–8. **One deviation is recorded rather than waived**, and this phase measured its
+cost for the first time: the owner's standing skip of `build databaseTest kafkaTest` meant
+`RoleNameTest` stayed red through four completion gates because `:identity:test` was in no
+targeted tier. The mitigation the review names — **run the fleet-wide hermetic tier at every
+phase gate** — is what found it, and the transition may choose to close the deviation
+outright by running one full battery.
+
+### Superseded: P5-TSK-001
+
+*(This section named `P5-TSK-001` from the Phase 4 → 5 transition until Phase 5 closed on
+2026-09-21. It was conducted, and the inheritance it stated — the per-credential confinement
+generalisation, the `P3-TSK-015` hold-then-capture composition, and the `P0-TSK-037` provider
+harness meeting its caller — was exercised by `P5-TSK-002`, `P5-TSK-015` and `P5-TSK-003`
+respectively.)*
 
 ### Superseded: the Phase 4 → 5 transition
 

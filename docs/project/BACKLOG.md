@@ -5440,10 +5440,11 @@ Observability and demonstration (`P4-TSK-011`, `P4-TST-001`, `P4-TST-002`) · M4
 
 # Phase 5 — Payment Infrastructure
 
-Status: `IN_PROGRESS` (started 2026-09-20 with `P5-TSK-001`) — entry gate passed the same day by the Phase 4 → 5 transition
+Status: ✅ `COMPLETE` (2026-09-21, ruled by [`reviews/PHASE_5_REVIEW.md`](reviews/PHASE_5_REVIEW.md) — `P5-DOC-001`) — entry gate passed 2026-09-20 by the Phase 4 → 5 transition
 ([`reviews/PHASE_4_TO_5_TRANSITION.md`](reviews/PHASE_4_TO_5_TRANSITION.md)), elaborated to
-task granularity by the same transition. The engineering plan is
-[`PHASE_5_PLAN.md`](PHASE_5_PLAN.md); decisions are ADR-0045…ADR-0049 (`Proposed`); the
+task granularity by the same transition, closed at 21 of 21 items across nine milestones. The engineering plan is
+[`PHASE_5_PLAN.md`](PHASE_5_PLAN.md); decisions are ADR-0045…ADR-0049 (`Accepted` at the
+review, each read against the code first); the
 domain statement is [`PAYMENT_LIFECYCLES.md`](../domain/PAYMENT_LIFECYCLES.md). The in-scope
 invariants are whatever the catalogue marks `Phase: 5` — **eleven at planning time**
 (`INV-HIST-02` providers, `INV-IDEM-01` payments, `INV-IDEM-04` webhooks, `INV-LIFE-03`,
@@ -6641,7 +6642,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   and a fixed stub body makes the second concurrent capture a `23505`.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-FIN`
 
-**P5-DOC-001 — Phase 5 review record** — `READY`
+**P5-DOC-001 — Phase 5 review record** — ✅ `COMPLETE` (2026-09-21)
 - **Scope**: the exit review per `PHASE_GATES.md` §4 and §5 Phase 5 (original bullets plus
   the transition's extension, **read from the gate at review time**), the F1–F8 supplement
   re-assessed, the ten-instances question answered over the phase's contended decisions,
@@ -6649,6 +6650,36 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   verdict flipping the phase.
 - **Deps**: everything above. **Accept**: the review's verdict is what flips the status;
   the post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
+- **Implementation note (2026-09-21)**:
+  [`reviews/PHASE_5_REVIEW.md`](reviews/PHASE_5_REVIEW.md) — 8 areas, 12 universal, F1–F8,
+  **19** phase-specific (8 + 11, counted from the gate), the ten-instances question over
+  seven contended decisions. Conducted assess → corrections → **flip** → battery →
+  finalise. Corrections: **ADR-0045…0049 read against the code and accepted** (criterion
+  10's deferral, owned by this audit since the phase began). **The post-flip fleet-wide
+  hermetic battery found a red test** — `RoleNameTest` had pinned `LEDGER_OPERATOR` at
+  three permissions since `P5-TSK-015` added `PAYMENT_REFUND`, and `:identity:test` was in
+  none of the targeted tiers, so it survived four subsequent completion gates. Pin
+  corrected, battery re-run: **1323 hermetic tests across twelve modules, 0 failures**.
+  Non-vacuity proven against the real status: one `Phase: 5` row removed → fails naming
+  `INV-PAY-01` and reporting *(currently 5)*; restored byte-identical.
+- **Gate (2026-09-21)**: `COMPLETE` — **both accept clauses met**: the review's own verdict
+  is what carries the status, and the post-flip battery is green. **The gate then audited
+  the review** — the discipline the review invokes, turned on the reviewer — **and found
+  three defects in it, each corrected on the record**: (1) area 1's inventory was counted
+  from memory rather than from the code, and four of its numbers were wrong (4 payment
+  paths, not 5; **10** event types, not 7; 8 auditable actions and 11 error codes across
+  both modules, not 6 and 9) — the review that certifies a phase may not itself be
+  approximate; (2) universal criterion 4 cited *“the plan's §12”* with seven failure
+  scenarios when the failure list is **§14 with fifteen** (§12 is Reconciliation) — all
+  fifteen are now assessed individually, with the two answered by earlier-phase machinery
+  named as such; (3) the flip had left the **BACKLOG's own phase header** reading
+  `IN_PROGRESS` with `Proposed` ADRs, which criterion 8 (documentation currency) would have
+  failed on the reviewer's own act. The **red `RoleNameTest`** above is recorded in the
+  test's own comment and in the review's area 8 as the *measured* cost of the standing skip
+  instruction: a targeted-tier regime cannot see a module the phase never touched, and the
+  fleet-wide battery at the phase gate is what exists to catch it. **No production code
+  changed by this item** — one test pin, one review record, five ADR acceptances and the
+  status flip.
 
 ---
 

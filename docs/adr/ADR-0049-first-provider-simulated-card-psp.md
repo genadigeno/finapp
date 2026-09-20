@@ -1,6 +1,6 @@
 # ADR-0049 — The first provider is a simulated card-style PSP, and nothing is final before settlement
 
-Status: Proposed
+Status: Accepted (2026-09-21, `P5-DOC-001` — read against the implementation at the phase review)
 Date: 2026-09-20
 Phase: 5
 Context: Payments

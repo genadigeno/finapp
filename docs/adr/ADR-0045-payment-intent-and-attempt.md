@@ -1,6 +1,6 @@
 # ADR-0045 — Payment intent and payment attempt: two aggregates, three machines
 
-Status: Proposed
+Status: Accepted (2026-09-21, `P5-DOC-001` — read against the implementation at the phase review)
 Date: 2026-09-20
 Phase: 5
 Context: Payments
