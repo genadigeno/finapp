@@ -317,6 +317,22 @@ only: the loser of a concurrent race writes nothing at all, and the ledger's own
 `ledger.JournalEntryPosted` record of the reversal entry sits beside it — two acts at two
 levels, the `P4-TSK-005` layering.
 
+### `paymentmethods` — `PaymentmethodsAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `paymentmethods.PaymentMethodAttached` | No | A party attached a tokenised payment instrument; the record names the payment method by identifier, never the token or the display metadata. |
+| `paymentmethods.PaymentMethodDetached` | No | A party detached a payment instrument; the detached row survives as evidence. |
+
+Declared with the surface whose design fixes their meaning (`P5-TSK-005`) rather than with the
+module skeleton — `P5-TSK-001`'s recorded decision, the `transfers` precedent one phase over.
+**Both are a person's own acts** — no reason, the beneficiary pair's reasoning — emitted by the
+acting call only (a converged attach or detach moved nothing and records nothing), with the
+token and the display metadata (`RESTRICTED-PII` at the register) never in target or summary:
+`paymentmethods.PaymentMethodAttached` is the trail attaching an instrument leaves, which is
+the act where an account takeover monetises and the reason the surface demands the enrolled
+identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbatim).
+
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure
 in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today

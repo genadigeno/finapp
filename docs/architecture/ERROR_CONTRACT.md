@@ -253,6 +253,22 @@ ledger's own `ledger.AccountNotPostable` (409) with nothing written — the reco
 transfers code, because the refusing mechanism is `V007`'s trigger and the vocabulary is the
 ledger's.
 
+### `paymentmethods` — `PaymentmethodsErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `paymentmethods.TokenisationUnavailable` | 503 | The instrument could not be tokenised right now; retry later. |
+| `paymentmethods.InstrumentNotTokenised` | 422 | The tokenisation grant was refused; obtain a fresh grant and retry. |
+
+The attach's two refusals, split by remedy (`P5-TSK-005`): the 503 is the platform's first —
+and deliberate — service-unavailable domain code, because a tokenisation outage is not the
+caller's fault (422 would blame their grant), not a state conflict (409), and not our defect
+(500 says *our* side broke, §3); the attach genuinely cannot proceed and **never falls back to
+holding raw detail** (`INV-PAY-02`), so retry-later is the honest answer, one code across every
+unavailable cause. The 422 is an *explicit parsed refusal* of the caller's own grant — renew
+and retry. **There is deliberately no payment-method not-found code**: the detach's unknown,
+not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verbatim).
+
 ### `ledger` — `LedgerErrorCode`
 
 | Code | Status | Meaning |

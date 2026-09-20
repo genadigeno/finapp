@@ -127,6 +127,56 @@ public final class JdbcPaymentMethodStore implements PaymentMethodStore<Connecti
     }
 
     @Override
+    public Optional<PaymentMethod> findOwned(
+            Connection unitOfWork, PaymentMethodId method, UUID partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(method, "method must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // party_id = ? IS the ownership check, in the statement (ADR-0031).
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE id = ? AND party_id = ?")) {
+            read.setObject(1, method.value());
+            read.setObject(2, partyId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
+        } catch (SQLException failure) {
+            throw new PaymentMethodsStorageException(
+                    DatabaseFailure.describe("reading an owned payment method", failure));
+        }
+    }
+
+    @Override
+    public java.util.List<PaymentMethod> listLiveFor(Connection unitOfWork, UUID partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE party_id = ? AND status NOT IN ("
+                                + PaymentMethodStatus.sqlTerminalValueList()
+                                + ") ORDER BY created_at, id")) {
+            read.setObject(1, partyId);
+            try (ResultSet rows = read.executeQuery()) {
+                java.util.List<PaymentMethod> live = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    live.add(rehydrate(rows));
+                }
+                return java.util.List.copyOf(live);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentMethodsStorageException(
+                    DatabaseFailure.describe(
+                            "listing the live payment methods of party " + partyId, failure));
+        }
+    }
+
+    @Override
     public boolean detach(
             Connection unitOfWork, PaymentMethodId method, UUID partyId, Instant at) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

@@ -5680,7 +5680,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-SEC`
 - Note: **not** `DOD-FIN` — an instrument reference moves no money.
 
-**P5-TSK-005 — The payment-method endpoints and the step-up point** — `READY`
+**P5-TSK-005 — The payment-method endpoints and the step-up point** — `COMPLETE` (2026-09-20)
 - **Scope**: `POST /v1/me/payment-methods` (attach — step-up required exactly when a
   factor is enrolled, the `P4-TSK-007` conditional domain check verbatim; the simulated
   tokenisation exchange fails the attach when unavailable, **nothing raw ever stored**),
@@ -5691,9 +5691,61 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - **Deps**: `P5-TSK-004`. **Accept**: the whole flow over real HTTP including the step-up
   refusal with nothing written; the outage attach fails clean; ownership one-404 asserted
   as an equality between causes.
+- **Gate evidence (2026-09-20)**: **every accept clause demonstrated over real HTTP**
+  against the `SimulatedProvider` wired through the deployment property
+  (`finapp.paymentmethods.tokenisation.url`, the `VerificationRunDatabaseTest` idiom) —
+  `PaymentMethodEndpointDatabaseTest`, 8 tests: the chain (attach 201 with
+  **provider-sourced** display metadata the client structurally cannot lie about — the
+  body carries only the grant — list, detach 204 with the row surviving `DETACHED`, the
+  repeat converging with the detach staying ONE act counted in `audit_record` and
+  `outbox_event`); the enrolled identity refused at `PASSWORD` (403
+  `identity.AssuranceRequired`, **zero rows and zero exchanges** — `requestCount` 0) and
+  succeeding at `MULTI_FACTOR` over the whole real MFA flow, audited as the **person**
+  with a null summary (nothing for the trail to leak); the outage the honest 503
+  (`paymentmethods.TokenisationUnavailable` — the platform's first 5xx domain code,
+  reasoned in `ERROR_CONTRACT.md`) with nothing written; the refused grant the actionable
+  422 (`paymentmethods.InstrumentNotTokenised`); a card-number-shaped `clientToken`
+  refused 422 naming the field, never echoing, **before any exchange** (`requestCount` 0
+  — `INV-PAY-02` at the surface, `TokenisationGrant`'s digits-and-separators rule); the
+  one-404 as an **equality between the causes** (stranger's/unknown/malformed,
+  `normalized()`); no body shape our 500 (8 shapes). The tokenisation port is **total**
+  (`TOKENISED`/`REFUSED`/`UNAVAILABLE`, default never success; a token
+  `TokenReference` refuses — a PAN-shaped one included — is `UNAVAILABLE`, never stored),
+  the adapter's wire confined to the module, **no credential on the exchange
+  deliberately** (the Phase 2 verification-adapter precedent, recorded in the javadoc);
+  the exchange holds **no database connection** between Tx1 (fail-fast step-up, read-only)
+  and Tx2 (**authoritative** step-up re-check → `attachOrConverge` → audit + event on the
+  created path only, one transaction — `INV-EVT-01`). The absent provider keeps a stable
+  contract: `ObjectProvider`, absent = the same 503 (recorded in `PaymentMethodBeans`).
+  **The contract classifier caught a real breaking change and it was withdrawn rather
+  than accepted**: a second `list` handler renamed the beneficiary surface's PUBLISHED
+  `operationId` to `list_1` — the `P2-TSK-006` `view_1` trap verbatim — fixed by naming
+  the new method `listPaymentMethods`; baseline then **+41 lines, zero removed**, the
+  three remaining `BREAKING` labels the classifier erring safe on the brand-new path's
+  own `required` members (reviewed, the standing precedent). **The platform's own guard
+  found the empty event**: `EventPayload.of()` with no field is refused by its own
+  invariant and every successful attach was our 500 — the payload now carries the
+  enumerated `status` (the sibling emitters' shape), caught by the suite before commit.
+  `secretsAreWrapped` fired on a `Pattern` named `TOKEN_FIELD` and got the
+  accurate-rename answer again (`REFERENCE_FIELD` — named for what it yields).
+  **Eight mutations, all caught by the intended assertion, restores verified
+  byte-identical**: both step-up checks neutralised (403 → 201); the Tx1 fail-fast alone
+  removed (**caught by `requestCount` 0 → 1 with the refusal still 403** — the two
+  halves proven genuinely two); the converged attach audited too (`Expected size: 1 but
+  was: 2`); the detach act dropped (1 → 0); the adapter's default branch made to
+  tokenise (caught by the **reference-carrying** unknown-status probe — the `P5-TSK-003`
+  lesson pre-applied); the grant's PAN-shape refusal dropped; the attach event dropped
+  (outbox count 1 → 0); the listing's live filter dropped (the detached row re-appearing
+  in the list). One cut on analysis and recorded: Tx2's authoritative re-check removed
+  **alone** is behaviourally invisible behind Tx1's fail-fast — its subject is the
+  enrol-during-exchange interleaving, held by the stated design (the `P3-TSK-014` class).
+  Verified by targeted tiers — `:app:test` 435, `:paymentmethods:test` 30,
+  `PaymentMethodEndpointDatabaseTest` 8, all 0 failures, fresh runs — **the full battery
+  deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+  counts claimed.**
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`
 
-**P5-TSK-006 — The `PaymentIntent` aggregate and machine** — `TODO`
+**P5-TSK-006 — The `PaymentIntent` aggregate and machine** — `READY`
 - **Scope**: ADR-0045's five-state machine (`REQUIRES_CONFIRMATION → {PROCESSING,
   CANCELLED}`, `PROCESSING → {SUCCEEDED, FAILED}`) on the enum with
   `sqlValueList()`/`sqlTerminalValueList()`; one constructor holding the coherence;

@@ -16,7 +16,7 @@ immediately below, and described canonically in
 ## Where the project is
 
 **Phases 0 through 4 are `COMPLETE`, and Phase 5 — Payment Infrastructure — is `IN_PROGRESS`**
-(started 2026-09-20 with `P5-TSK-001`; M5.1 open at 1 of 3): the
+(started 2026-09-20 with `P5-TSK-001`; M5.1 and M5.2 closed, 5 of 21 items): the
 Phase 4 → 5 transition was conducted the same day
 ([`docs/project/reviews/PHASE_4_TO_5_TRANSITION.md`](docs/project/reviews/PHASE_4_TO_5_TRANSITION.md)),
 confirming Phase 4 with an independent audit and a **fleet-wide full battery** — 1157 hermetic /
@@ -32,14 +32,14 @@ description of where the project is; this section is the summary of it.
 
 ```
 Programme    █████░░░░░░░░░░░░   5 of 17 phases complete
-Backlog      ████████████████░░  164 of 181 elaborated items complete
+Backlog      ████████████████░░  165 of 181 elaborated items complete
 Phase 4      ██████████████     14 of 14 items, 8 of 8 milestones closed
-Phase 5      ███░░░░░░░░░░░░░░░   4 of 21 items — M5.2 at 1 of 2, next P5-TSK-005
+Phase 5      ████░░░░░░░░░░░░░░   5 of 21 items — M5.1, M5.2 closed; next P5-TSK-006
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 5 in progress — the PCI boundary has its subject: the `PaymentMethod` aggregate and schema, where a PAN cannot physically be stored in any column. Next: **`P5-TSK-005`**, the payment-method endpoints and the step-up point |
+| 🔨 **Current work** | Phase 5 in progress — a person attaches, lists and detaches an instrument over HTTP through the tokenisation exchange, under the conditional step-up, with nothing raw ever stored. Next: **`P5-TSK-006`**, the `PaymentIntent` aggregate and machine |
 | 💰 **Business capability** | Money exists: accounts, a double-entry ledger, explainable balances, holds, and customer-visible internal transfers over HTTP |
 | 📐 **Decisions** | 49 ADRs — 44 `Accepted`, and ADR-0045–0049 `Proposed` by the Phase 4 → 5 transition for the phase they open |
 | 🔒 **Invariants** | 87 catalogued — the transition added `INV-PAY-01`–05, Phase 5's gate properties given stable IDs before code is written against prose; each in-scope one has a test *demonstrated to fail* when the invariant is broken |

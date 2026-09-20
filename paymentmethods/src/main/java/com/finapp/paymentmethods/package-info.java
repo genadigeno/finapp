@@ -24,8 +24,10 @@
  * made the previous sentence stale, the recurring class). The attach/detach/list surface with
  * its step-up point is {@code P5-TSK-005}.
  *
- * <p><strong>Deliberately no audit-action enum yet</strong> (the deliberately-few licence):
- * attach and detach are audited as the person by the surface whose design fixes them
- * ({@code P5-TSK-005}).
+ * <p>The audit actions arrived with their surface ({@code P5-TSK-005}, exactly as the
+ * deliberately-few licence recorded): {@code PaymentmethodsAuditAction} carries attach and
+ * detach, audited as the person by the acting call only — and the tokenisation boundary is now
+ * code, {@code TokenisationProvider} with its simulated adapter, an exchange that never falls
+ * back to holding raw detail.
  */
 package com.finapp.paymentmethods;

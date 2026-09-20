@@ -23,11 +23,10 @@ import java.util.UUID;
  * caller cannot tell "not yours" from "already detached", the one-404 surface shape prepared
  * at the port.
  *
- * <p><strong>The surface reads are deliberately deferred to their surface</strong>
- * (`P5-TSK-005`): {@code findOwned} — the DELETE's already-detached-versus-404 second half —
- * and the party's listing arrive with the endpoints whose disclosure decisions they carry (the
- * `P4-TSK-006` → `-007` split verbatim; {@code V002}'s by-party index is already named for the
- * listing).
+ * <p><strong>The surface reads arrived with their surface</strong> (`P5-TSK-005`, exactly as
+ * this javadoc deferred them): {@code findOwned} — the DELETE's already-detached-versus-404
+ * second half — and the party's live listing, the read {@code V002}'s by-party index was named
+ * for (the `P4-TSK-006` → `-007` split verbatim).
  */
 public interface PaymentMethodStore<T> {
 
@@ -47,6 +46,20 @@ public interface PaymentMethodStore<T> {
      * {@link PaymentMethodStatus#sqlTerminalValueList()} so it cannot disagree with the index.
      */
     Optional<PaymentMethod> findLive(T unitOfWork, UUID partyId, TokenReference token);
+
+    /**
+     * The identified payment method in <em>any</em> status, if it is the caller's —
+     * {@code party_id = ?} in the statement (ADR-0031). What the detach surface uses to tell
+     * "already detached, converge on 204" from "not yours or never existed, one 404"
+     * (`P5-TSK-005`) after {@link #detach} answered {@code false}.
+     */
+    Optional<PaymentMethod> findOwned(T unitOfWork, PaymentMethodId method, UUID partyId);
+
+    /**
+     * The party's live payment methods, oldest first — `P5-TSK-005`'s listing. Live only: a
+     * detached instrument is evidence, not something to pay with.
+     */
+    java.util.List<PaymentMethod> listLiveFor(T unitOfWork, UUID partyId);
 
     /**
      * Move the identified payment method {@code ACTIVE → DETACHED}, if it is the caller's and

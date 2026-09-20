@@ -337,7 +337,14 @@ class CredentialReachesNoEmittedSinkTest {
                         // currency - the first request body to carry amounts, as exact
                         // decimal strings (INV-MON-01 past the boundary, inbound). No secret;
                         // here because the set is every schema REACHABLE from a request body.
-                        "AdjustmentRequest");
+                        "AdjustmentRequest",
+                        // P5-TSK-005. Carries the one-time tokenisation grant - a genuinely
+                        // secret-ish value (a chargeable-instrument reference for its validity
+                        // window), which is why the field is Sensitive<String> and travels
+                        // wrapped end to end: the deserialiser at the boundary, the
+                        // TokenisationGrant type in the domain, one unwrap at the exchange
+                        // wire. Never persisted, never in the trail.
+                        "AttachPaymentMethodRequest");
     }
 
     @Test

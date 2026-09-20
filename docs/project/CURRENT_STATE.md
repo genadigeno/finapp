@@ -4,7 +4,7 @@
 Conversation history is not. Read this first in every session
 ([`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md) §Working Session Procedure).
 
-Last updated: 2026-09-20 (`P5-TSK-004` — the `PaymentMethod` aggregate and schema; M5.2 at 1 of 2, next `P5-TSK-005`)
+Last updated: 2026-09-20 (`P5-TSK-005` — the payment-method endpoints and the step-up point; **M5.2 CLOSES at 2 of 2**, next `P5-TSK-006`)
 
 ---
 
@@ -624,14 +624,70 @@ Remaining Phase 0 milestone:
 
 ## Current Task
 
-**`P5-TSK-005` — the payment-method endpoints and the step-up point** —
-`READY`. M5.2's second half: `POST /v1/me/payment-methods` (attach — the
-`P4-TSK-007` conditional step-up verbatim; the simulated tokenisation
-exchange failing the attach when unavailable, nothing raw ever stored),
-`DELETE`/`GET` under ownership, audit actions and events on arrival, the
-contract baseline extended. See the backlog entry.
+**`P5-TSK-006` — the `PaymentIntent` aggregate and machine** — `READY`.
+M5.3 opens: ADR-0045's five-state machine on the enum with the generated
+constraint ceremony, one constructor holding the coherence, the exhaustive
+cross-product sweep, `SUCCEEDED`'s no-outgoing-edge pinned as a machine
+property — hermetic only. See the backlog entry.
 
 ### Just completed
+
+**`P5-TSK-005` — the payment-method endpoints and the step-up point** — `COMPLETE`
+(2026-09-20). **M5.2 CLOSES at 2 of 2: a person can attach, list and detach an instrument
+over HTTP, and nothing raw ever touches the platform** — the body carries only the
+provider's one-time grant, display metadata is the provider's answer (a client
+structurally cannot lie about brand or last4), and a card-number-shaped grant is turned
+away at the boundary before any exchange (`INV-PAY-02` at the surface).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The whole flow over real HTTP | `PaymentMethodEndpointDatabaseTest` (8 tests) against the `SimulatedProvider` wired through the deployment property: attach 201 with provider-sourced metadata → listed → detach 204 with the row surviving `DETACHED` → the repeat converging, the detach staying **one act counted in `audit_record` and `outbox_event`** |
+| The step-up refusal with nothing written | The enrolled identity at `PASSWORD`: 403 `identity.AssuranceRequired`, **zero rows and zero exchanges** (`requestCount` 0 — the fail-fast runs before the wire); the positive control proves the factor over the whole real MFA flow and lands 201, audited as the **person** with a null summary |
+| The outage attach fails clean | The honest **503 `paymentmethods.TokenisationUnavailable`** — the platform's first 5xx domain code, reasoned in `ERROR_CONTRACT.md` (retryable, our side, no client remedy) — with nothing written; the refused grant the actionable 422 `paymentmethods.InstrumentNotTokenised` |
+| Ownership one-404 as an equality | `aStrangersPaymentMethodIdIsOne404OnDelete`: stranger's, unknown and malformed byte-identical under `normalized()`, the owner's row unmoved — the negative test the ownership register names by exact method |
+
+### The exchange sits between two transactions, and the step-up is checked in both
+
+Tx1 fails fast (party + conditional step-up, read-only — a refused caller costs no
+exchange, **proven by the mutation**: the fail-fast alone removed keeps the 403 and moves
+`requestCount` 0 → 1, so the two checks are genuinely two); the exchange holds **no
+database connection** (`P1-TSK-026`); Tx2 re-checks the step-up authoritatively, then
+`attachOrConverge` + audit + event in one transaction (`INV-EVT-01`), the created path
+only. The tokenisation port is **total** — `TOKENISED`/`REFUSED`/`UNAVAILABLE`, default
+never success, and an answer whose token `TokenReference` refuses (a PAN-shaped one
+included) is `UNAVAILABLE`, never stored. **No credential on the exchange, deliberately**
+(the Phase 2 verification-adapter precedent); the absent provider keeps a stable contract
+(`ObjectProvider`, absent = the same 503).
+
+### The classifier caught a real breaking change, and it was withdrawn
+
+A second `list` handler renamed the beneficiary surface's **published** `operationId` to
+`list_1` — the `P2-TSK-006` `view_1` trap verbatim, on an endpoint this task never
+touched. Fixed by naming the new method `listPaymentMethods`; the baseline is then
+**+41 lines, zero removed**, the three remaining `BREAKING` labels the classifier erring
+safe on the brand-new path's own `required` members (reviewed, the standing precedent).
+**And the platform's own guard found the empty event**: `EventPayload.of()` with no field
+is refused by its own invariant, so every successful attach was our 500 until the payload
+carried the enumerated `status` (the sibling emitters' shape) — caught by the suite
+before commit. `secretsAreWrapped` fired on a `Pattern` named `TOKEN_FIELD` and got the
+accurate-rename answer again (`REFERENCE_FIELD`, named for what it yields).
+
+### Eight mutations, all caught by the intended assertion, restores byte-identical
+
+Both step-up checks neutralised (403 → 201); the Tx1 fail-fast alone removed (caught by
+`requestCount`); the converged attach audited too (`1 but was: 2`); the detach act
+dropped (1 → 0); the adapter's default branch made to tokenise (**caught by the
+reference-carrying unknown-status probe** — the `P5-TSK-003` lesson pre-applied, the
+body carrying a usable instrument a trusting default would store); the grant's PAN-shape
+refusal dropped; the attach event dropped (outbox 1 → 0); the listing's live filter
+dropped (the detached row re-appearing). One cut on analysis and recorded: Tx2's
+re-check removed **alone** is invisible behind the fail-fast (the enrol-during-exchange
+interleaving, held by the stated design — the `P3-TSK-014` class). **Verified by
+targeted tiers — `:app:test` 435, `:paymentmethods:test` 30, the endpoint suite 8, all
+0 failures, fresh runs — the full battery deliberately skipped on the owner's
+instruction; no fleet-wide database or kafka counts claimed.**
+
+### Previously
 
 **`P5-TSK-004` — the `PaymentMethod` aggregate and schema** — `COMPLETE` (2026-09-20).
 **M5.2 opens at 1 of 2: the PCI boundary has its subject** — and the part genuinely this
@@ -9997,9 +10053,8 @@ Project initiation (2026-08-31):
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — 3 of 21; **M5.1 CLOSED** (2026-09-20, 3 of 3: the
-modules and floors, the one confinement, the provider port speaking every harness
-failure mode). Next: `P5-TSK-004`, `READY` — M5.2 opens, the instrument.
+**Phase 5 is `IN_PROGRESS`** — M5.1 `CLOSED` (3 of 3) and **M5.2 `CLOSED` (2 of 2)**:
+`P5-TSK-001`…`-005` complete. Next: `P5-TSK-006`, `READY` — M5.3 opens.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of
@@ -10422,6 +10477,7 @@ rather than left.)*
 
 | Date | Change |
 |------|--------|
+| 2026-09-20 | **`P5-TSK-005` complete — the payment-method endpoints and the step-up point; M5.2 CLOSES at 2 of 2.** The instrument surface over real HTTP against the `SimulatedProvider` wired through the deployment property: `POST /v1/me/payment-methods` attaches through the tokenisation exchange — the body carries only the one-time grant, display metadata is the PROVIDER's answer so a client structurally cannot lie about brand or last4, and a card-number-shaped `clientToken` is refused 422 naming the field before any exchange (`requestCount` 0 — `INV-PAY-02` at the surface, `TokenisationGrant`'s digits-and-separators rule); `GET` lists the live rows oldest first; `DELETE` converges with stranger's/unknown/malformed one 404 asserted as an equality between the causes (`aStrangersPaymentMethodIdIsOne404OnDelete`, the method the ownership register names). **The step-up is the `P4-TSK-007` conditional verbatim, checked in both transactions**: Tx1 fails fast (403 `identity.AssuranceRequired`, zero rows AND zero exchanges), the exchange holds no connection, Tx2 re-checks authoritatively then `attachOrConverge` + audit + event in one transaction (`INV-EVT-01`), created path only — and the fail-fast-alone mutation is caught by `requestCount` 0 → 1 with the refusal still 403, the two halves proven genuinely two. The tokenisation port is **total** (`TOKENISED`/`REFUSED`/`UNAVAILABLE`, default never success; an answer whose token `TokenReference` refuses — a PAN-shaped one included — is `UNAVAILABLE`, never stored), the wire confined to `SimulatedTokenisationAdapter`, **no credential on the exchange deliberately** (the Phase 2 verification-adapter precedent); the outage is the honest **503 `paymentmethods.TokenisationUnavailable`** — the platform's first 5xx domain code, reasoned in `ERROR_CONTRACT.md` — the refused grant the actionable 422 `paymentmethods.InstrumentNotTokenised`, and the absent provider keeps a stable contract (`ObjectProvider`, absent = the same 503, recorded in the beans). **The contract classifier caught a real breaking change, withdrawn rather than accepted**: a second `list` handler renamed the beneficiary surface's PUBLISHED `operationId` to `list_1` — the `P2-TSK-006` `view_1` trap verbatim — fixed by `listPaymentMethods`; baseline +41/−0, the three remaining `BREAKING` labels the classifier erring safe on the brand-new path's own `required` members (reviewed). **The platform's own guard found the empty event**: `EventPayload.of()` with no field is refused by its own invariant, so every successful attach was our 500 until the payload carried the enumerated `status` (the sibling emitters' shape) — caught by the suite before commit. `secretsAreWrapped` fired on a `Pattern` named `TOKEN_FIELD` and got the accurate-rename answer again (`REFERENCE_FIELD`). Registers fed by the task: both audit actions catalogued and emitted on arrival, both error codes in `ERROR_CONTRACT.md`, `AttachPaymentMethodRequest` in the credential-sink pinned set, `TokenisationGrant.expose()` a registered unwrapping method with the adapter its one production caller, `findOwned` `OWNER_SCOPED` with its negative test named by method. **Eight mutations, all caught by the intended assertion, restores verified byte-identical** — both step-up checks neutralised (403 → 201), the fail-fast alone removed, the converged attach audited too (1 vs 2), the detach act dropped, the adapter's default branch made to tokenise (caught by the reference-carrying unknown-status probe — the `P5-TSK-003` lesson pre-applied), the grant's PAN-shape refusal dropped, the attach event dropped (outbox 1 → 0), the listing's live filter dropped; one cut on analysis and recorded (Tx2's re-check alone, invisible behind the fail-fast — the `P3-TSK-014` class). Verified by targeted tiers — `:app:test` 435 / `:paymentmethods:test` 30 / the endpoint suite 8, 0 failures, fresh runs — **the full battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.** Next: `P5-TSK-006`. |
 | 2026-09-20 | **`P5-TSK-004` complete — the `PaymentMethod` aggregate and schema; M5.2 opens at 1 of 2.** The `Beneficiary`/`V003` ceremony's fifth performance, and the part genuinely this task's is **`INV-PAY-02` at `DB-CONSTRAINT` rank: a PAN cannot physically be stored in any column** (the `INV-IDN-01` `credential_derivation_is_encoded` pattern at the instrument boundary) — the token `CHECK` refuses digits-and-separators shapes, the brand's charset holds no digits, the suffix is exactly four (last4, PCI's own displayable bound), the expiry two range-checked integers — proven by **the PAN sweep**: every text column derived from `information_schema`, three card-number shapes planted per column, each refused `23514`, so a text column added later without a PAN-refusing shape fails the sweep. The aggregate on the established ceremony (one constructor, coherence both directions, rehydrate refusing corruption), the two-state machine pinned (nothing transitions TO `ACTIVE`), and the wrapped **`TokenReference`** — the `InstrumentToken` mechanism restated where the import is forbidden (the `DocumentCipher` precedent), `secret`-named component, `expose()` registered, two whitelist entries. **The token column is plaintext by recorded decision** (presented not compared, so unhashable; bounded by the confined API credential outside the database; encryption the recorded seam, reasoning in the migration header). `V002`: one-live (party, token) partial index as ten-way arbiter (one live row counted, nine converged onto the winner's id), freed slot with the detached row as evidence, every-writer freeze proven as the migrator including the **smuggled-edge probe**, grants `SELECT, INSERT` + `UPDATE (status, detached_at)` swept per column. **Registers fed by the task**: the `DISTRIBUTED_EXECUTION.md` §3 row (the decay class's fifth occurrence was this table's sibling never getting one — not repeated), ten classification rows at the ceiling, the ownership register's `detach` entry with its negative test. The plan's "expiry month" shorthand corrected on being met (month AND year). **Eight mutations, all caught by the intended assertion, restores byte-identical** — index dropped, index made total (caught twice), edge check removed, freeze removed (the smuggled edge), **not-a-PAN `CHECK` dropped (the acceptance mutation)**, ownership predicate dropped (caught twice), machine check removed, coherence dropped. Verified by targeted tiers — `:paymentmethods:test`, `:app:test`, `PaymentMethodDatabaseTest` (6 tests), `ColumnClassificationTest` — **the full battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.** Next: `P5-TSK-005`. |
 | 2026-09-20 | **`P5-TSK-003` complete — the provider port and the simulated card PSP adapter; M5.1 CLOSES at 3 of 3.** ADR-0049 as code: `PaymentProvider` in `payments` (`providerName`, authorize / capture / refund / **query by our reference**), every money-moving signature requiring the platform-minted `ProviderIdempotencyReference` so a dispatch without one does not compile (`INV-PAY-04` by signature), and the answer types as the total mapping's vocabulary — `APPROVED` (provider reference **required**: an approval the capture cannot act on is `INDETERMINATE`, coherence in the constructor), `DECLINED`, **`NOTHING_SENT`** (only a refused connection is knowledge — an RST means nothing was transmitted, so the caller commits `FAILED(PROVIDER_UNAVAILABLE)`; a connect timeout is silence, and silence is ambiguity), `INDETERMINATE` the default branch, plus the query's `UNRECOGNISED` earned **only by an explicit parsed answer** (a 404 is a status code, not an answer — a misrouted load balancer must not resolve a live operation to `FAILED`). Wire vocabulary confined to the package-private `PspWireClient` (`INV-PAY-03` by file layout); evidence verbatim byte-for-byte against a trim-hostile body, bound stated (1 MiB, `P5-TSK-008` reconciles). **Every harness mode drives a defined outcome** — the `P0-TSK-037` harness meeting the caller it was built for — including the reference-carrying unknown-state probe the mutation analysis demanded, because the harness's own unknown-state body carries no reference and a default-branch-approves mutation would have dodged the easy half. The harness gained `headerValues` (strings only), making the two wire facts assertable: **a re-dispatch presents the same `Idempotency-Key`**, and every dispatch carries the confined credential. **`secretsAreWrapped` fired four times and the rule won every time**: the token became `InstrumentToken` (the `RawPassword` idiom — `Sensitive<String> secret`, `expose()` a registered unwrapping method, two named whitelist entries, the only production caller being the adapter putting the token on the wire — `INV-PAY-02`'s one legitimate destination), and the client holds `byte[] key` (the `CallbackSignature` idiom) with the header built per request. `ProviderApiKey` — **the fifth credential as the one-line `KeySpec` `P5-TSK-002` built for it** (`FINAPP_PAYMENT_PROVIDER_KEY`, `/payment-provider`, `AT_LEAST_32`) with its own test (the `P2-TSK-011` no-test lesson). **No beans** (the unconsumed-wiring licence; `P5-TSK-009` wires with the property names fixed in the adapter's javadoc), no store, no events, no meters, **no `DISTRIBUTED_EXECUTION.md` §3 row — the adapter is stateless and the reference in the signature is what makes ten instances safe, not coordination**. **Seven mutations, all caught by the intended assertion, restores byte-identical** — default-branch-approves, timeout-as-knowledge, fresh-reference-per-dispatch, the `APPROVED` coherence dropped, non-200 evidence dropped, the credential dropped, the client rethrowing. Verified by targeted tiers — `:payments:test` 34 / `:app:test` 435 / `:platform:test` 170, 0 failures — **the full battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.** Next: `P5-TSK-004`. |
 | 2026-09-20 | **`P5-TSK-002` complete — the per-credential confinement, generalised; M5.1 is 2 of 3 and the `P2-TSK-011` debt row is paid.** Four hand-written copies of the ADR-0020 shape (`DatabaseCredentialGuard`, `MfaKey`, `DocumentKey`, `CallbackKey`) become one mechanism — `ConfinedCredential` + `KeySpec` in `app.security`, deliberately beside `DatabaseEndpoint` rather than in the `platform` module (every consumer past and planned is wired in the composition root, and the loopback answer stays `DatabaseEndpoint`'s, passed in — the beans changed not at all). The five axes the copies actually varied on became the spec — name, confinement name, environment variable, domain suffix, `EXACTLY_32`/`AT_LEAST_32`, refusal tail — and behaviour was preserved **byte for byte** (signatures, exception types, message texts, derived local bytes, MFA's suffix empty because its bytes predate the suffix idea), which is what lets **the four untouched suites be the equivalence proof**. **The generalisation found the drift it exists to prevent, already present**: the marker literal lived TWICE in Java — the guard's constant and `MfaKey`'s — under a javadoc claiming exactly one, with nothing reconciling them (the configuration rule covers YAML/Kotlin/SQL, not Java constants); one literal now, both public constants kept as references, the chain pinned by an `isSameAs` check whose drift mutation is caught twice. `ConfinedCredentialTest` covers only the next-consumer half: a fifth spec (shaped like the payment webhook key's) domain-separated pairwise from all three keys, inheriting the confinement naming its own variable, never echoing, both length rules. **Six mutations, all caught by the intended assertion, restores byte-identical** — the confinement removed (**the acceptance mutation: every consumer's confinement test fails at once**, which is the property that makes one definition better than four), the suffix dropped, exactly-32 relaxed (the AES-128 trap), at-least-32 tightened (the two rules proven genuinely two), the echo, the drifted reference. `:app:test` green with every security rule over the reshaped classes; **the full battery deliberately skipped on the owner's instruction; no fleet-wide counts claimed.** Next: `P5-TSK-003`. |

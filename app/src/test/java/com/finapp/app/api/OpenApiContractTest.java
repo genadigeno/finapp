@@ -282,6 +282,11 @@ class OpenApiContractTest {
                         // second person's approval, and the rejection/withdrawal.
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}",
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}/approval",
+                        // P5-TSK-005: the instrument surface - attach through the
+                        // tokenisation exchange (the body carries only the one-time
+                        // grant, INV-PAY-02), list, and the ownership-scoped detach.
+                        ApiVersion.CURRENT_PREFIX + "/me/payment-methods",
+                        ApiVersion.CURRENT_PREFIX + "/me/payment-methods/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

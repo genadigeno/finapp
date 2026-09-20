@@ -74,4 +74,9 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+
+    // The P0-TSK-037 provider harness: the tokenisation adapter's contract tests drive the
+    // exchange's failure modes through a real HTTP server (the payments-module precedent,
+    // line for line).
+    testImplementation(testFixtures(project(":platform")))
 }

@@ -241,6 +241,18 @@ class OwnershipIsScopedTest {
                                         + " unknown and malformed are one empty answer and one"
                                         + " 404.")),
                     Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "DELETE /v1/me/payment-methods/{id}'s second half"
+                                        + " (P5-TSK-005): after the conditional detach matched"
+                                        + " nothing, this any-status read - party_id = ? in"
+                                        + " the statement - is what tells the caller's own"
+                                        + " already-detached row (converge, 204) from unknown"
+                                        + " and not-yours (one 404). Without the predicate a"
+                                        + " stranger's DELETE of a live row would answer 204"
+                                        + " and read as theirs.")),
+                    Map.entry(
                             "com.finapp.paymentmethods.JdbcPaymentMethodStore.detach",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -1019,6 +1031,9 @@ class OwnershipIsScopedTest {
                     "com.finapp.identity.JdbcContactChannelStore.findOwned",
                     "com.finapp.app.domain.RecoveryAbuseDatabaseTest"
                             + ".aChannelIsNotReadableByAnotherIdentity",
+                    "com.finapp.paymentmethods.JdbcPaymentMethodStore.findOwned",
+                    "com.finapp.app.paymentmethods.PaymentMethodEndpointDatabaseTest"
+                            + ".aStrangersPaymentMethodIdIsOne404OnDelete",
                     "com.finapp.paymentmethods.JdbcPaymentMethodStore.detach",
                     "com.finapp.app.paymentmethods.PaymentMethodDatabaseTest"
                             + ".detachmentConvergesAndIsOwnershipScoped",

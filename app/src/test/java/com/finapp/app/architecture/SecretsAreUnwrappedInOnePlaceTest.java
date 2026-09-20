@@ -56,7 +56,8 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     "com.finapp.sharedkernel.security.Sensitive.expose()",
                     "com.finapp.identity.RawPassword.expose()",
                     "com.finapp.payments.InstrumentToken.expose()",
-                    "com.finapp.paymentmethods.TokenReference.expose()");
+                    "com.finapp.paymentmethods.TokenReference.expose()",
+                    "com.finapp.paymentmethods.TokenisationGrant.expose()");
 
     /**
      * The production classes permitted to unwrap a secret.
@@ -169,7 +170,16 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // the column and binding the converge read's parameter - the store IS
                     // where the stored token must exist bare, and DatabaseFailure.describe
                     // keeps it out of every failure message.
-                    "com.finapp.paymentmethods.JdbcPaymentMethodStore");
+                    "com.finapp.paymentmethods.JdbcPaymentMethodStore",
+                    // P5-TSK-005. The one-time tokenisation grant, wrapped end to end on the
+                    // same idiom: validates its shape - the card-number refusal included,
+                    // INV-PAY-02 at the surface - and re-exposes; its expose() is an
+                    // unwrapping method above, so every caller is an entry here.
+                    "com.finapp.paymentmethods.TokenisationGrant",
+                    // P5-TSK-005. The grant's one production caller: onto the exchange wire,
+                    // which is the one place it legitimately goes - the SimulatedCardPspAdapter
+                    // claim one boundary over, for a shorter-lived value.
+                    "com.finapp.paymentmethods.SimulatedTokenisationAdapter");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

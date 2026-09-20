@@ -1137,6 +1137,76 @@
           }
         }
       },
+      "paymentmethods.InstrumentNotTokenised": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "paymentmethods.InstrumentNotTokenised"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/paymentmethods.InstrumentNotTokenised"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The tokenisation grant was refused; obtain a fresh grant and retry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "paymentmethods.TokenisationUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "paymentmethods.TokenisationUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/paymentmethods.TokenisationUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The instrument could not be tokenised right now; retry later.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "transfers.NotReversible": {
         "content": {
           "application/problem+json": {
@@ -1323,6 +1393,17 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "AttachPaymentMethodRequest": {
+        "properties": {
+          "clientToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientToken"
+        ],
         "type": "object"
       },
       "AuthenticatedSession": {
@@ -1787,6 +1868,31 @@
           },
           "verificationPending": {
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentMethodView": {
+        "properties": {
+          "brand": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "displaySuffix": {
+            "type": "string"
+          },
+          "expiryMonth": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "expiryYear": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -3163,6 +3269,71 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/payment-methods": {
+      "get": {
+        "operationId": "listPaymentMethods",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentMethodView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "attach",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachPaymentMethodRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentMethodView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/payment-methods/{id}": {
+      "delete": {
+        "operationId": "detach",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
           }
         }
       }
