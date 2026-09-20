@@ -27,12 +27,12 @@
  *
  * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema
  * ({@code P5-TSK-001}), the provider port with its simulated card-PSP adapter
- * ({@code P5-TSK-003}: {@code PaymentProvider}, the answer types, the wire client), and the
- * intent aggregate and machine ({@code P5-TSK-006}: {@code PaymentIntent}, its status machine,
- * identifier and transition exception - updated by the task that made the previous sentence
- * stale, the recurring class). The attempt and refund aggregates and machines are
- * {@code P5-TSK-007}; the schema's tables {@code P5-TSK-008}; the commands
- * {@code P5-TSK-009}/{@code -010}/{@code -015}.
+ * ({@code P5-TSK-003}: {@code PaymentProvider}, the answer types, the wire client), and all
+ * three aggregates with their machines - the intent ({@code P5-TSK-006}) and the attempt and
+ * refund ({@code P5-TSK-007}: {@code PaymentAttempt}, {@code Refund}, their status machines,
+ * identifiers, transition exceptions and the mapped {@code PaymentFailureReason} - updated by
+ * the task that made the previous sentence stale, the recurring class). The schema's tables
+ * are {@code P5-TSK-008}; the commands {@code P5-TSK-009}/{@code -010}/{@code -015}.
  *
  * <p><strong>Deliberately no audit-action enum yet</strong> (the deliberately-few licence,
  * {@code P4-TSK-001}'s precedent): the actions arrive with the commands whose designs fix their

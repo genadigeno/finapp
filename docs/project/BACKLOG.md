@@ -5796,7 +5796,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   instruction; no fleet-wide database or kafka counts claimed.**
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
 
-**P5-TSK-007 — The `PaymentAttempt` and `Refund` aggregates and machines** — `READY`
+**P5-TSK-007 — The `PaymentAttempt` and `Refund` aggregates and machines** — `COMPLETE` (2026-09-20)
 - **Scope**: the seven-state attempt machine and four-state refund machine (ADR-0045,
   `PAYMENT_LIFECYCLES.md` §3–§4), same ceremony: per-outcome transition doors through one
   machine check, coherence both directions (mapped reason ⇔ `FAILED`; captured amount ⇔
@@ -5806,9 +5806,40 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - **Deps**: `P5-TSK-006`. **Accept**: exhaustive sweeps over both machines; the
   deliberately-absent states asserted absent (no state without a producer); coherence
   refused on rehydrate.
+- **Gate evidence (2026-09-20)**: **every accept clause demonstrated hermetically** —
+  `PaymentAttemptTest` (8 tests) + `RefundTest` (7 tests). The exhaustive sweeps: 7 states
+  × 6 doors and 4 states × 3 doors, expectation read from `permittedTransitions()`, all
+  31 + 7 illegal pairs refused at the aggregate (`INV-LIFE-02`), the 11 + 5 legal edges
+  landing where the machines say. **The deliberately-absent states asserted absent by
+  pinning `values()` exactly** (no `VOIDED`, `REQUIRES_ACTION`, `CLEARING`/`SETTLED`,
+  no `REQUESTED`/aggregate-refund states) plus `AUTHORIZED → CAPTURE_DISPATCHED` as the
+  ONLY exit by name (the `VOIDED` refusal as a machine property). **Coherence refused on
+  rehydrate, both directions everywhere the scope names it**: reason ⇔ `FAILED`, the
+  issuer's promise one fact, captured pair ⇔ `CAPTURED`, provider reference ⇔
+  `COMPLETED`, the unreachable FAILED-holding-a-promise-without-capture-dispatch shape
+  refused, stored over-capture refused with the `INV-AUD-02` needle (`98_76`/`98_77`
+  planted, currency named, values asserted absent). **`INV-PAY-05`'s domain half both
+  ways**: capture ≤ authorized in the one constructor (equal and partial legal, one minor
+  unit over refused); refund sum ≤ captured judged at `Refund.create` with the sibling sum
+  an explicit lock-then-look argument (to-the-penny legal, one unit past refused), the
+  cross-row concurrent half named to `P5-TSK-008`'s in-trigger bound. **Eight mutations,
+  all caught by the intended assertion, restores `cmp`-verified byte-identical**: the
+  machine check removed from a door (both sweeps); `CAPTURED` given an edge (the pin by
+  name — and unlike the intent, the coherence rules make even the derived sweep object,
+  a captured pair cannot survive into `FAILED`); `AUTHORIZED → FAILED` smuggled in
+  (the pin, plus the sweep failing on the FAILED-shape rule — that rule proven
+  load-bearing); the capture bound dropped (both bound tests); the bound moved to the
+  door only — trust-the-database (**the rehydrate case alone**, proving the constructor
+  placement); the refusal made to name the amounts (the needle alone, `Money`'s rendering
+  carrying the value again); the refund sum bound dropped (the creation-bound test); the
+  refund's reference ⇔ `COMPLETED` dropped (the rehydrate test alone). Phase 5 register
+  rows deferred to the phase audit per the guard's own reached-phase rule. Verified by
+  targeted tiers — `:payments:test` 56 / `:app:test` fresh green — the full battery
+  deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+  counts claimed.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN`
 
-**P5-TSK-008 — The payments schema: intent, attempt, refund, evidence** — `TODO`
+**P5-TSK-008 — The payments schema: intent, attempt, refund, evidence** — `READY`
 - **Scope**: `V002`+ in `payments`: `payment_intent`, `payment_attempt`, `refund`, their
   history tables, and `provider_evidence` — the machines' `CHECK`s and every-writer
   transition triggers generated from the enums and reconciled by migration tests;

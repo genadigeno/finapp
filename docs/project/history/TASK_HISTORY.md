@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 108 "Previously" blocks, newest first, from `P5-TSK-004` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 110 "Previously" blocks, newest first, from `P5-TSK-006` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,84 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P5-TSK-006` — the `PaymentIntent` aggregate and machine** — `COMPLETE`
+(2026-09-20). **M5.3 opens at 1 of 3: ADR-0045's intent machine is code** — five states,
+four edges, every state producer-earned and durably observable (unlike the transfer's
+`INITIATED`, creation commits `REQUIRES_CONFIRMATION`, which is what gives `CANCELLED`
+its producer), held at the aggregate by one constructor every path shares.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every invalid transition rejected | The cross-product sweep derived from `permittedTransitions()` — 5 states × 4 doors, all 16 illegal pairs refused by the aggregate itself (`INV-LIFE-02`), the 4 legal ones landing where the machine says |
+| Both terminals and the stable state swept | `CANCELLED`, `FAILED` and `SUCCEEDED` each refuse every door, swept separately by name — the accept's own wording is what the test says (`INV-LIFE-04`) |
+| `INV-AUD-02` needle-asserted on refusals | The positivity refusal names the fact and the currency, never the value (`9876`/`98.76` planted and asserted absent) — at birth and at rehydrate, because it is the same constructor |
+
+### The machine is pinned, and the SUCCEEDED mutation is why
+
+Each state's transition set is pinned exactly — `SUCCEEDED`'s **no outgoing edge by
+name** (the backlog's own property), nothing transitioning TO `REQUIRES_CONFIRMATION`
+(birth the only door), the terminal set exactly `{SUCCEEDED, FAILED, CANCELLED}` —
+because a sweep derived from the machine **follows the machine**: the mutation giving
+`SUCCEEDED` an edge (refund-state-on-the-intent, the exact mistake ADR-0045 refuses)
+left the cross-product sweep green and was caught by the pin, the stable-state sweep
+and the SQL-literal pin. **The one interpretive decision is on the record in the enum's
+javadoc**: `SUCCEEDED` is ADR-0045's *stable* state AND in the terminal set —
+`isTerminal()` stays the structural derivation (the `TransferStatus` idiom),
+`INV-LIFE-04`'s own text names refund as a new operation out of a terminal state, and
+nothing downstream wants a live/stable split (no one-live index on the intent, plan §8)
+— the inverse of `TransferStatus`'s recorded `COMPLETED` exclusion, argued where
+`P5-TSK-008`'s reviewer will meet it.
+
+### The intent's coherence is status-independent, and that is the design
+
+Every status-dependent payload lives where its fact lives — the mapped reason on the
+attempt (`PAYMENT_LIFECYCLES.md` §2), the capture's posting evidence on the attempt,
+refund totals on the refund rows — ADR-0045's one-fact-one-place applied to the field
+set. So nothing but `status` ever changes after birth (asserted per field), which is
+what lets `P5-TSK-008` narrow the `UPDATE` grant to that one column; what the one
+constructor holds is presence and strict positivity, at birth and on read-back alike.
+Typed `LedgerAccountId` for the wallet (the declared edge's purpose); party, customer
+and instrument raw `UUID`s — the instrument raw **because `payments` has no edge to the
+PCI module at all**, so the typed id is structurally unimportable (the `Transfer`
+precedent, sharpened). A **class rather than a record, load-bearing**: a record's
+generated `toString` renders `Money`, and payment amounts are `RESTRICTED-FINANCIAL`.
+The SQL fragments are pinned by literal until `P5-TSK-008`'s reconciliation consumes
+them — a generator nothing verifies is dead code carrying confident javadoc
+(`P1-TSK-013`).
+
+### What deliberately did not arrive
+
+The attempt and refund machines (`P5-TSK-007` — and with them every payments failure
+reason: the intent's `FAILED` carries no copy of the attempt's); the schema
+(`P5-TSK-008`); store, commands, endpoints, events, audit actions, meters
+(`P5-TSK-009`…`-017`, the licence in `package-info`, whose "what exists so far"
+paragraph this task updated — the recurring staleness class, paid by the task that
+caused it); amount-currency ⇔ wallet-currency agreement (the command's authoritative
+resolution and `P5-TSK-008`'s composite FK — an aggregate holding the account *id*
+structurally cannot check it). No `DISTRIBUTED_EXECUTION.md` §3 row, and the absence is
+the design: no runtime state of any kind (the `P4-TSK-003` precedent) — cross-instance
+arbitration is the schema's every-writer trigger and the commands' conditional row
+counts, named to their owners.
+
+### Eight mutations, all caught by the intended assertion, restores byte-identical
+
+The machine check removed from the door (the sweep, plus the terminal sweep);
+`SUCCEEDED` given an edge (**the pin — the derived sweep followed the machine**, which
+is the assertion's reason to exist); a terminal given an exit; the positivity refusal
+dropped (both needle tests); the refusal made to name the amount (the needle alone —
+which also proved `Money`'s rendering does carry the value); `sqlTerminalValueList`
+hand-listed without `SUCCEEDED` (the literal pin alone); positivity checked at birth
+only — trust-the-database (**caught by the rehydrate test ALONE**, proving it
+load-bearing beyond the dropped-check mutation); the birth status changed. Restores
+verified by `cmp` against backup copies, never `git checkout --`. **Verified by
+targeted tiers — `:payments:test` 41 and `:app:test` 435 with every guard green over
+the new types, 0 failures, fresh runs — the full battery deliberately skipped on the
+owner's instruction; no fleet-wide database or kafka counts claimed.**
+
+
 
 ### Previously
 
