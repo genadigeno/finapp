@@ -78,6 +78,8 @@ class DashboardQueriesResolveTest {
                     "by", "on", "without", "ignoring", "outcome", "le",
                     // P3-TSK-020: the trial-balance panel groups by currency.
                     "currency",
+                    // P5-TSK-017: the provider-latency panel groups by operation.
+                    "operation",
                     // The consent counters' tag key (P2-TSK-020) - a label, not a series.
                     "purpose");
 

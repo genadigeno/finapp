@@ -147,6 +147,13 @@ class PaymentBeans {
      * The simulated card PSP — present only where an endpoint is configured (ADR-0008; the
      * timeout default is the adapter's own documented {@code PT2S}). The API key is credential
      * five, decoded through the confinement `P5-TSK-003` prepared it for.
+     *
+     * <p><strong>Wrapped in the metering decorator</strong> (`P5-TSK-017`): every provider
+     * call is timed by provider and operation at the one interface they all pass through,
+     * with the exception propagating unchanged. Wrapping HERE rather than inside the adapter
+     * is what keeps {@code payments} free of a metrics library, and the decorator implements
+     * the port, so a fifth provider method cannot be added without a compiler error naming
+     * the decision.
      */
     @Bean
     @ConditionalOnProperty("finapp.payments.provider.url")
@@ -155,10 +162,15 @@ class PaymentBeans {
             @Value("${finapp.payments.provider.timeout:PT2S}") java.time.Duration timeout,
             @Value("${finapp.payments.provider.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
-            Environment environment) {
+            Environment environment,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters,
+            Clock clock) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new SimulatedCardPspAdapter(
-                url, timeout, ProviderApiKey.decode(configuredKey, loopback));
+        return new com.finapp.app.telemetry.MeteredPaymentProvider(
+                new SimulatedCardPspAdapter(
+                        url, timeout, ProviderApiKey.decode(configuredKey, loopback)),
+                paymentMeters,
+                clock);
     }
 
     @Bean
@@ -308,6 +320,7 @@ class PaymentBeans {
             PaymentIntentStore<Connection> paymentIntentStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
             com.finapp.payments.RefundStore<Connection> refundStore,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters,
             com.finapp.identity.IdentityStore<Connection> identityStore,
             TransactionTemplate paymentTransactions,
             DataSource dataSource) {
@@ -320,6 +333,7 @@ class PaymentBeans {
                 paymentIntentStore,
                 paymentAttemptStore,
                 refundStore,
+                paymentMeters,
                 identityStore,
                 paymentTransactions,
                 dataSource);
@@ -385,6 +399,7 @@ class PaymentBeans {
             PaymentAttemptStore<Connection> paymentAttemptStore,
             PaymentIntentStore<Connection> paymentIntentStore,
             com.finapp.payments.RefundStore<Connection> refundStore,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters,
             com.finapp.payments.PaymentOutcomes paymentOutcomes,
             com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer,
             tools.jackson.databind.ObjectMapper objectMapper,
@@ -397,6 +412,7 @@ class PaymentBeans {
                 paymentAttemptStore,
                 paymentIntentStore,
                 refundStore,
+                paymentMeters,
                 paymentOutcomes,
                 inboxConsumer,
                 objectMapper,
@@ -458,9 +474,10 @@ class PaymentBeans {
             com.finapp.payments.PaymentSweeper.class)
     PaymentSweeperSchedule paymentSweeperSchedule(
             com.finapp.payments.PaymentSweeper paymentSweeper,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters,
             @Value("${finapp.payments.sweeper.poll-interval:PT30S}")
                     java.time.Duration pollInterval) {
-        return new PaymentSweeperSchedule(paymentSweeper, pollInterval);
+        return new PaymentSweeperSchedule(paymentSweeper, paymentMeters, pollInterval);
     }
 
     @Bean

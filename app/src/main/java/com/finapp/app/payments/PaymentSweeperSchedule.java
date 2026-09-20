@@ -1,5 +1,6 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.telemetry.PaymentMeters;
 import com.finapp.payments.PaymentSweeper;
 import java.time.Duration;
 import java.util.Objects;
@@ -43,12 +44,15 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
     private static final Logger log = LoggerFactory.getLogger(PaymentSweeperSchedule.class);
 
     private final PaymentSweeper sweeper;
+    private final PaymentMeters meters;
     private final Duration pollInterval;
 
     private ScheduledExecutorService executor;
 
-    public PaymentSweeperSchedule(PaymentSweeper sweeper, Duration pollInterval) {
+    public PaymentSweeperSchedule(
+            PaymentSweeper sweeper, PaymentMeters meters, Duration pollInterval) {
         this.sweeper = Objects.requireNonNull(sweeper, "sweeper must not be null");
+        this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval must not be null");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
             throw new IllegalArgumentException("pollInterval must be positive: " + pollInterval);
@@ -74,6 +78,12 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
     private void sweepQuietly() {
         try {
             PaymentSweeper.SweepResult result = sweeper.sweep();
+            // The tick's acting judgements, counted after their per-row transactions
+            // committed (`P5-TSK-017`): the sweeper's own tally is telemetry and may
+            // overcount convergence, which is exactly why the METER reads the acting list
+            // instead - a swept resolution racing a webhook is counted by whichever won,
+            // once.
+            result.actingJudgements().forEach(this::count);
             if (result.candidates() > 0) {
                 // Counts only - identifiers live in the sweeper's own per-row lines.
                 log.info(
@@ -86,6 +96,20 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
         } catch (RuntimeException failure) {
             // The class only: a JDBC or provider message can name hosts and identifiers.
             log.warn("Payment sweep failed: {}", failure.getClass().getSimpleName());
+        }
+    }
+
+    /** The attempt machine's vocabulary; a dispatched state is no judgement (see the door). */
+    private void count(com.finapp.payments.PaymentAttemptStatus status) {
+        switch (status) {
+            case AUTHORIZED -> meters.attempt(PaymentMeters.Judgement.AUTHORIZED);
+            case CAPTURED -> meters.attempt(PaymentMeters.Judgement.CAPTURED);
+            case FAILED -> meters.attempt(PaymentMeters.Judgement.FAILED);
+            case AUTH_UNKNOWN, CAPTURE_UNKNOWN -> meters.attempt(PaymentMeters.Judgement.UNKNOWN);
+            case AUTH_DISPATCHED, CAPTURE_DISPATCHED -> {
+                // Mid-question: the sweeper never commits one, and counting it would be
+                // throughput for a decision nobody made.
+            }
         }
     }
 

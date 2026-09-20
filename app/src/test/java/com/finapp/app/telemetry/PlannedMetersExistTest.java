@@ -198,6 +198,36 @@ class PlannedMetersExistTest {
         assertThat(registeredMeters()).containsAll(planned);
     }
 
+    /**
+     * `P5-TSK-017`'s acceptance, performed ahead of the flip — the same shape a fourth time:
+     * every meter Phase 5's plan §15 names is registered in this context, which boots with
+     * nothing configured, no database and NO PROVIDER ENDPOINT, so it is exactly the
+     * "freshly started instance" the acceptance names. Between now and the flip this is the
+     * only thing holding the six series; after it, a harmless second reading of the same
+     * table. What this proves that no per-class test can: the counters, the provider timer
+     * and BOTH stuck-payment gauges exist <strong>without</strong>
+     * {@code finapp.payments.provider.url} — the unconditional {@code PaymentMeters} and
+     * {@code PaymentMetrics} beans, deliberately not sharing the command beans' condition,
+     * because a deployment that has not configured a provider still needs its alert to
+     * evaluate something.
+     */
+    @Test
+    @DisplayName("Phase 5's planned meters are already published, ahead of the phase flip")
+    void phase5PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        for (String line : read(repositoryFile("docs/project/PHASE_5_PLAN.md"))) {
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(planned)
+                .as("the Phase 5 plan's §15 table must parse, or this checks nothing")
+                .hasSizeGreaterThanOrEqualTo(6);
+
+        assertThat(registeredMeters()).containsAll(planned);
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

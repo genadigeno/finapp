@@ -110,9 +110,19 @@ public final class PaymentCapture {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
-    /** The states after this call — {@code CAPTURE_DISPATCHED} honestly included. */
+    /**
+     * The states after this call — {@code CAPTURE_DISPATCHED} honestly included.
+     *
+     * @param converged this call lost Tx1's conditional dispatch and never asked the provider
+     * @param acting this call's own outcome transition made the committed state
+     *     (`P5-TSK-017`): the ten-way race's nine losers report false, so the chained
+     *     capture is counted once however many chainers ran
+     */
     public record CaptureResult(
-            PaymentIntentStatus intent, PaymentAttemptStatus attempt, boolean converged) {}
+            PaymentIntentStatus intent,
+            PaymentAttemptStatus attempt,
+            boolean converged,
+            boolean acting) {}
 
     /** Tx1's yield, carried across the connectionless gap. */
     private record Dispatch(
@@ -237,7 +247,7 @@ public final class PaymentCapture {
                 intents.findById(uow, attempt.intentId())
                         .orElseThrow(UnknownPaymentException::new)
                         .status();
-        return new CaptureResult(intentStatus, attempt.status(), true);
+        return new CaptureResult(intentStatus, attempt.status(), true, false);
     }
 
     /**
@@ -277,6 +287,7 @@ public final class PaymentCapture {
                                         EvidenceKind.RESPONSE,
                                         bytes,
                                         Instant.now(clock)));
-        return new CaptureResult(applied.intent(), applied.attempt(), false);
+        return new CaptureResult(
+                applied.intent(), applied.attempt(), false, applied.acting());
     }
 }

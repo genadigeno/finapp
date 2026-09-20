@@ -658,6 +658,146 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "Payments \u2014 provider-decided money",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 75 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Payment judgements by outcome",
+      "description": "finapp.payments.attempt (P5-TSK-017): ACTING attempt judgements only - a replay, a converged retry and the losers of a racing resolution are never counted, whichever of the four resolvers applied the outcome. unknown is the honest state INV-LIFE-03 requires when a provider's answer is lost: a judgement, not a failure, settled later by a resolver.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 76 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_payments_attempt_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Provider latency by operation",
+      "description": "finapp.payments.provider.latency (P5-TSK-017): EVERY call to the payment provider - approvals, declines, timeouts and dropped connections alike, recorded in a finally. A rising max with a flat mean is the ambiguity window opening: the calls that time out are exactly the ones that strand payments in an unknown state.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 76 },
+      "targets": [
+        { "refId": "A", "expr": "max by (operation) (finapp_payments_provider_latency_seconds_max)", "legendFormat": "{{operation}} max" },
+        { "refId": "B", "expr": "sum(rate(finapp_payments_provider_latency_seconds_sum[5m])) / sum(rate(finapp_payments_provider_latency_seconds_count[5m]))", "legendFormat": "mean" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Refund judgements by outcome",
+      "description": "finapp.payments.refund (P5-TSK-017): acting refund judgements. completed released the customer's hold and posted the return; failed released with nothing posted; unknown left the funds visibly reserved until a resolver settles it.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 76 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_payments_refund_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Payments stranded in an unknown state",
+      "description": "finapp.payments.unknown.active (P5-TSK-017): attempts and refunds sitting in an honestly-unknown state, system-wide. Temporary by design - the sweeper and the webhook resolver settle them - so a sustained non-zero value means neither is getting there, and a refund among them is a customer's money behind a standing hold. Fleet-wide: max(), never sum(). No data here means UNREADABLE, never healthy: the gauge publishes NaN rather than a false zero.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 83 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_payments_unknown_active)", "legendFormat": "stranded" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest unknown payment",
+      "description": "finapp.payments.unknown.age (P5-TSK-017): how long the OLDEST unknown operation has been unknown, measured from the state's own entry the way the sweeper measures it. The stuck-payment alert's series: a flat count while this climbs is ambiguity that is not being resolved.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 83 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_payments_unknown_age)", "legendFormat": "oldest" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Webhook deliveries by outcome",
+      "description": "finapp.payments.webhook (P5-TSK-017): what became of each delivery at the door. processed applied an effect, duplicate was absorbed by the inbox (INV-IDEM-04), refused failed authentication or the evidence bound, unmappable was authentic but named no operation we minted. A rise in refused is somebody probing the door; a rise in unmappable is an integration break.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 83 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_payments_webhook_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

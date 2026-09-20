@@ -75,11 +75,26 @@ class MetricConventionTest {
                                 name, key)
                         .contains(key);
 
-                assertThat(MetricNames.FORBIDDEN_TAG_KEY_FRAGMENTS)
-                        .as("meter '%s' carries tag '%s', whose name implies an unbounded value", name, key)
-                        .noneSatisfy(fragment -> assertThat(key).contains(fragment));
+                if (!MetricNames.FRAGMENT_EXEMPT_TAG_KEYS.contains(key)) {
+                    assertThat(MetricNames.FORBIDDEN_TAG_KEY_FRAGMENTS)
+                            .as("meter '%s' carries tag '%s', whose name implies an unbounded value", name, key)
+                            .noneSatisfy(fragment -> assertThat(key).contains(fragment));
+                }
             }
         }
+    }
+
+    @Test
+    @DisplayName("the fragment exemption cannot excuse a key nobody decided on (P5-TSK-017)")
+    void theFragmentExemptionIsBoundedByTheAllowList() {
+        // An exemption from the spelling rule is not an exemption from the decision: every
+        // exempt key must already carry its own written argument in ALLOWED_TAG_KEYS, so the
+        // escape hatch cannot widen the tag vocabulary by itself.
+        assertThat(MetricNames.ALLOWED_TAG_KEYS)
+                .containsAll(MetricNames.FRAGMENT_EXEMPT_TAG_KEYS);
+        assertThat(MetricNames.FRAGMENT_EXEMPT_TAG_KEYS)
+                .as("an exemption list that grew past a handful is a rule being worked around")
+                .hasSizeLessThanOrEqualTo(2);
     }
 
     @Test

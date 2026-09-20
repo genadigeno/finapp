@@ -57,6 +57,19 @@ public interface PaymentAttemptStore<T> {
      * verified before this read runs — the {@code SIGNED_CALLBACK} reasoning; empty is the
      * unattributable webhook {@code V005} explicitly admits.
      */
+    /**
+     * How many attempts sit in an honestly-unknown state right now, and how long the oldest
+     * has been there (`P5-TSK-017`, {@code INV-LIFE-03}'s operational face).
+     *
+     * <p>Age is measured the sweeper's way — the latest transition row, with birth as the
+     * fallback — so the gauge and the resolver cannot disagree about what "stuck" means.
+     * Counts and seconds only, never an amount ({@code INV-AUD-02}).
+     */
+    UnknownReading unknownReading(T unitOfWork);
+
+    /** A count of unknown operations and the oldest one's age in seconds. */
+    record UnknownReading(long active, long oldestAgeSeconds) {}
+
     Optional<PaymentAttempt> findByOperationReference(
             T unitOfWork, ProviderIdempotencyReference reference);
 

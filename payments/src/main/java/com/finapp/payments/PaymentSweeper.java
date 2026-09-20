@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -115,8 +116,24 @@ public final class PaymentSweeper {
      * the singular effect is counted in the tables (the journal entry, the transition row),
      * which is where the accept counts it. {@code skipped} is a candidate whose row had moved
      * (or was already at its honest {@code *_UNKNOWN}) before this tick could ask.
+     *
+     * <p>{@code actingJudgements} is the exception to the sentence above and the reason it
+     * can be: each entry is a state some row's <strong>own conditional transition</strong>
+     * committed on this tick ({@code P5-TSK-017}), so a converged loser contributes nothing
+     * — which is what lets the schedule count throughput at the door without counting one
+     * judgement once per resolver that raced for it. Statuses only; no identifier leaves.
      */
-    public record SweepResult(int candidates, int applied, int skipped, int failedRows) {}
+    public record SweepResult(
+            int candidates,
+            int applied,
+            int skipped,
+            int failedRows,
+            List<PaymentAttemptStatus> actingJudgements) {
+
+        public SweepResult {
+            actingJudgements = List.copyOf(actingJudgements);
+        }
+    }
 
     /**
      * One sweep: bounded candidates, one provider query and one outcome transaction per row.
@@ -140,16 +157,19 @@ public final class PaymentSweeper {
         int applied = 0;
         int skipped = 0;
         int failedRows = 0;
+        List<PaymentAttemptStatus> acting = new ArrayList<>();
         for (PaymentAttempt candidate : candidates) {
             try (CorrelationContext.Scope flow =
                             CorrelationContext.enter(
                                     Correlation.startingWith(CorrelationId.generate(ids)));
                     SecurityContext.Scope actor = SecurityContext.enterSystem()) {
-                if (resolve(candidate)) {
+                Resolution resolution = resolve(candidate);
+                if (resolution.submitted()) {
                     applied++;
                 } else {
                     skipped++;
                 }
+                resolution.acting().ifPresent(acting::add);
             } catch (RuntimeException oneRowsFailure) {
                 // The anti-stall posture: the rows behind this one are other customers'
                 // money. Identifiers and class only - never provider bytes (INV-AUD-02).
@@ -161,11 +181,22 @@ public final class PaymentSweeper {
                         oneRowsFailure.getClass().getSimpleName());
             }
         }
-        return new SweepResult(candidates.size(), applied, skipped, failedRows);
+        return new SweepResult(candidates.size(), applied, skipped, failedRows, acting);
     }
 
-    /** True when an application was submitted; false when the row had already moved on. */
-    private boolean resolve(PaymentAttempt candidate) {
+    /**
+     * What one row's sweep did: whether an application was submitted, and — when this call's
+     * own conditional fired — the state it committed (`P5-TSK-017`'s counting seam).
+     */
+    private record Resolution(boolean submitted, Optional<PaymentAttemptStatus> acting) {
+
+        static Resolution skipped() {
+            return new Resolution(false, Optional.empty());
+        }
+    }
+
+    /** Submitted or skipped, and the judgement this call itself committed, if any. */
+    private Resolution resolve(PaymentAttempt candidate) {
         // Which operation the state is stranded in decides which reference we ask about.
         boolean authStage =
                 candidate.status() == PaymentAttemptStatus.AUTH_DISPATCHED
@@ -186,7 +217,7 @@ public final class PaymentSweeper {
                     PaymentAttempt current =
                             attempts.findById(uow, candidate.id()).orElse(null);
                     if (current == null || current.status() != candidate.status()) {
-                        return false;
+                        return Resolution.skipped();
                     }
                     PaymentIntent intent =
                             intents.findById(uow, current.intentId())
@@ -196,20 +227,21 @@ public final class PaymentSweeper {
                                                             "an attempt row's intent exists:"
                                                                     + " V003's foreign key"
                                                                     + " holds it"));
-                    boolean changed =
+                    Resolution changed =
                             switch (answer.verdict()) {
                                 case APPROVED, DECLINED ->
                                         applyStage(
                                                 uow, authStage, current, intent,
                                                 answer, correlation);
                                 case UNRECOGNISED -> {
-                                    outcomes.applyUnrecognised(
-                                            uow,
-                                            intent.id(),
-                                            current.id(),
-                                            current.status(),
-                                            correlation);
-                                    yield true;
+                                    PaymentOutcomes.Applied applied =
+                                            outcomes.applyUnrecognised(
+                                                    uow,
+                                                    intent.id(),
+                                                    current.id(),
+                                                    current.status(),
+                                                    correlation);
+                                    yield submitted(applied);
                                 }
                                 case INDETERMINATE -> {
                                     // Ambiguity is never a failure: a DISPATCHED moves into
@@ -235,7 +267,13 @@ public final class PaymentSweeper {
                 });
     }
 
-    private boolean applyStage(
+    /** The acting judgement, when this call's own conditional made it (`P5-TSK-017`). */
+    private static Resolution submitted(PaymentOutcomes.Applied applied) {
+        return new Resolution(
+                true, applied.acting() ? Optional.of(applied.attempt()) : Optional.empty());
+    }
+
+    private Resolution applyStage(
             Connection uow,
             boolean authStage,
             PaymentAttempt current,
@@ -247,35 +285,35 @@ public final class PaymentSweeper {
                         ? ProviderAnswer.Verdict.APPROVED
                         : ProviderAnswer.Verdict.DECLINED;
         if (authStage) {
-            outcomes.applyAuthorization(
-                    uow,
-                    intent.id(),
-                    current.id(),
-                    current.status(),
-                    verdict,
-                    answer.providerReference(),
-                    // The issuer approved the dispatched ask: the intent's amount, the same
-                    // promise every other resolver carries.
-                    intent.amount(),
-                    correlation);
-        } else {
-            outcomes.applyCapture(
-                    uow,
-                    intent.id(),
-                    current.id(),
-                    current.status(),
-                    verdict,
-                    answer.providerReference(),
-                    intent.walletAccount(),
-                    // The capture is the authorized promise, in full (one attempt, no
-                    // partial capture until its producer exists - ADR-0045 §4).
-                    current.authorizedAmount(),
-                    correlation);
+            return submitted(
+                    outcomes.applyAuthorization(
+                            uow,
+                            intent.id(),
+                            current.id(),
+                            current.status(),
+                            verdict,
+                            answer.providerReference(),
+                            // The issuer approved the dispatched ask: the intent's amount,
+                            // the same promise every other resolver carries.
+                            intent.amount(),
+                            correlation));
         }
-        return true;
+        return submitted(
+                outcomes.applyCapture(
+                        uow,
+                        intent.id(),
+                        current.id(),
+                        current.status(),
+                        verdict,
+                        answer.providerReference(),
+                        intent.walletAccount(),
+                        // The capture is the authorized promise, in full (one attempt, no
+                        // partial capture until its producer exists - ADR-0045 §4).
+                        current.authorizedAmount(),
+                        correlation));
     }
 
-    private boolean markUnknown(
+    private Resolution markUnknown(
             Connection uow,
             boolean authStage,
             PaymentAttempt current,
@@ -285,30 +323,30 @@ public final class PaymentSweeper {
                 current.status() == PaymentAttemptStatus.AUTH_DISPATCHED
                         || current.status() == PaymentAttemptStatus.CAPTURE_DISPATCHED;
         if (!dispatched) {
-            return false;
+            return Resolution.skipped();
         }
         if (authStage) {
-            outcomes.applyAuthorization(
-                    uow,
-                    intent.id(),
-                    current.id(),
-                    current.status(),
-                    ProviderAnswer.Verdict.INDETERMINATE,
-                    Optional.empty(),
-                    intent.amount(),
-                    correlation);
-        } else {
-            outcomes.applyCapture(
-                    uow,
-                    intent.id(),
-                    current.id(),
-                    current.status(),
-                    ProviderAnswer.Verdict.INDETERMINATE,
-                    Optional.empty(),
-                    intent.walletAccount(),
-                    current.authorizedAmount(),
-                    correlation);
+            return submitted(
+                    outcomes.applyAuthorization(
+                            uow,
+                            intent.id(),
+                            current.id(),
+                            current.status(),
+                            ProviderAnswer.Verdict.INDETERMINATE,
+                            Optional.empty(),
+                            intent.amount(),
+                            correlation));
         }
-        return true;
+        return submitted(
+                outcomes.applyCapture(
+                        uow,
+                        intent.id(),
+                        current.id(),
+                        current.status(),
+                        ProviderAnswer.Verdict.INDETERMINATE,
+                        Optional.empty(),
+                        intent.walletAccount(),
+                        current.authorizedAmount(),
+                        correlation));
     }
 }

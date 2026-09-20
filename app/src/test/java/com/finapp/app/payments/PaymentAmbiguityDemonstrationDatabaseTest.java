@@ -463,6 +463,13 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                 Duration.ZERO, Duration.ZERO, 50);
     }
 
+    /** A registry of this suite's own: the meters' wiring is the telemetry suites'. */
+    private static com.finapp.app.telemetry.PaymentMeters meters() {
+        return new com.finapp.app.telemetry.PaymentMeters(
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+                SimulatedCardPspAdapter.NAME);
+    }
+
     private PaymentOutcomes outcomes() {
         return new PaymentOutcomes(
                 intents,
@@ -516,6 +523,7 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                         attempts,
                         intents,
                         new com.finapp.payments.JdbcRefundStore(),
+                        meters(),
                         outcomes(),
                         new InboxConsumer<>(new JdbcInboxRecordStore(), CLOCK, Duration.ofDays(14)),
                         new tools.jackson.databind.ObjectMapper(),

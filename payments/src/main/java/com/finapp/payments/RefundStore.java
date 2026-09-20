@@ -27,6 +27,13 @@ public interface RefundStore<T> {
     Optional<Refund> findById(T unitOfWork, RefundId refund);
 
     /**
+     * The refunds sitting {@code UNKNOWN} right now, and the oldest one's age in seconds
+     * (`P5-TSK-017`) — the attempt store's reading, for the machine that strands money
+     * behind a standing hold. Counts and seconds only ({@code INV-AUD-02}).
+     */
+    PaymentAttemptStore.UnknownReading unknownReading(T unitOfWork);
+
+    /**
      * The newest refund carrying {@code dispatchKey} (`P5-TSK-016`): the takeover re-run's
      * convergence lookup. Newest first because a key can legitimately reappear after the
      * claim's retention has swept it — the caller judges the row's facts before converging.

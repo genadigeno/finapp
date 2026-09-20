@@ -71,6 +71,36 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
     }
 
     @Override
+    public PaymentAttemptStore.UnknownReading unknownReading(Connection unitOfWork) {
+        // The attempt store's reading, one machine across: refunds strand with a STANDING
+        // HOLD behind them, so an operator watching parked money needs them in the same
+        // series (P5-TSK-016's UNKNOWN, P5-TSK-017's gauge).
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*),"
+                                // floor()::bigint, never a double: the age is a
+                                // whole number of seconds and EXTRACT would hand
+                                // JDBC a floating-point value to round for us
+                                // (INV-MON-01 is about signatures, and this is the
+                                // discipline behind it - the rule caught it here).
+                                + " COALESCE(floor(EXTRACT(EPOCH FROM now()"
+                                + "   - min(COALESCE(h.entered, r.created_at))))::bigint, 0)"
+                                + " FROM payments.refund r"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM payments.refund_event e"
+                                + "   WHERE e.refund_id = r.id) h ON true"
+                                + " WHERE r.status = 'UNKNOWN'");
+                ResultSet row = read.executeQuery()) {
+            row.next();
+            return new PaymentAttemptStore.UnknownReading(
+                    row.getLong(1), row.getLong(2));
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading the unknown-refund gauge", failure));
+        }
+    }
+
+    @Override
     public Optional<Refund> findByDispatchKey(Connection unitOfWork, String dispatchKey) {
         Objects.requireNonNull(dispatchKey, "dispatchKey must not be null");
         try (PreparedStatement read =

@@ -117,8 +117,16 @@ public final class PaymentRefund {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
-    /** What the operator learns — the status honestly, {@code UNKNOWN} included. */
-    public record RefundResult(RefundId refund, RefundStatus status, boolean replayed) {}
+    /**
+     * What the operator learns — the status honestly, {@code UNKNOWN} included.
+     *
+     * @param replayed the recorded judgement was rendered; no wire call happened
+     * @param acting this call's own conditional made the committed status (`P5-TSK-017`) —
+     *     false for a replay and for a takeover that found the crashed flight already
+     *     resolved by another resolver, so the door counts throughput once per judgement
+     */
+    public record RefundResult(
+            RefundId refund, RefundStatus status, boolean replayed, boolean acting) {}
 
     /** Tx1's yield, carried across the connectionless gap. */
     private record Dispatch(Refund refund, PaymentIntentId intent, LedgerAccountId wallet,
@@ -205,7 +213,7 @@ public final class PaymentRefund {
                         // which case this call converges with the truth and applies nothing.
                         Refund current =
                                 refunds.findById(uow, dispatch.refund().id()).orElseThrow();
-                        RefundStatus committed =
+                        PaymentOutcomes.RefundApplied applied =
                                 resolvable(current.status())
                                         ? outcomes.applyRefund(
                                                 uow,
@@ -216,7 +224,9 @@ public final class PaymentRefund {
                                                 answer.providerReference(),
                                                 dispatch.wallet(),
                                                 correlation)
-                                        : current.status();
+                                        : new PaymentOutcomes.RefundApplied(
+                                                current.status(), false);
+                        RefundStatus committed = applied.status();
                         // Whatever the mapping said, what arrived is retained (INV-HIST-02) -
                         // AFTER the outcome's row lock (the P5-TSK-013 lock-order rule).
                         answer.evidence()
@@ -239,7 +249,8 @@ public final class PaymentRefund {
                                 StoredResponse.of(
                                         renderedForm(dispatch.refund().id(), committed),
                                         "text/plain"));
-                        return new RefundResult(dispatch.refund().id(), committed, false);
+                        return new RefundResult(
+                                dispatch.refund().id(), committed, false, applied.acting());
                     });
         }
     }
@@ -268,7 +279,8 @@ public final class PaymentRefund {
         return new RefundResult(
                 RefundId.of(UUID.fromString(body.substring(0, separator))),
                 RefundStatus.valueOf(body.substring(separator + 1)),
-                true);
+                true,
+                false);
     }
 
     /**

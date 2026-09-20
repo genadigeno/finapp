@@ -142,6 +142,35 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     }
 
     @Override
+    public UnknownReading unknownReading(Connection unitOfWork) {
+        // One aggregate over the two honestly-unknown states, aged the sweeper's way (the
+        // findSweepable expression: the latest transition, birth as the fallback). The
+        // server's clock decides the age - never an instance's (ADR-0014).
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*),"
+                                // floor()::bigint, never a double: the age is a
+                                // whole number of seconds and EXTRACT would hand
+                                // JDBC a floating-point value to round for us
+                                // (INV-MON-01 is about signatures, and this is the
+                                // discipline behind it - the rule caught it here).
+                                + " COALESCE(floor(EXTRACT(EPOCH FROM now()"
+                                + "   - min(COALESCE(h.entered, a.created_at))))::bigint, 0)"
+                                + " FROM payments.payment_attempt a"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM payments.payment_attempt_event e"
+                                + "   WHERE e.attempt_id = a.id) h ON true"
+                                + " WHERE a.status IN ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN')");
+                ResultSet row = read.executeQuery()) {
+            row.next();
+            return new UnknownReading(row.getLong(1), row.getLong(2));
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading the unknown-attempt gauge", failure));
+        }
+    }
+
+    @Override
     public Optional<PaymentAttempt> findByOperationReference(
             Connection unitOfWork, ProviderIdempotencyReference reference) {
         Objects.requireNonNull(reference, "reference must not be null");

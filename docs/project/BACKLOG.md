@@ -6438,7 +6438,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   database or kafka counts claimed.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-EVENT`
 
-**P5-TSK-017 — The meters and the dashboard row** — `READY`
+**P5-TSK-017 — The meters and the dashboard row** — `COMPLETE` (2026-09-20)
 - **Scope**: `PHASE_5_PLAN.md` §15 real: the six meters, eager from a plain context
   (pinned Phase-5 guard until the flip — the established shape), counted from judgements'
   own vocabulary post-commit (replays/converges never throughput); `provider` and
@@ -6447,9 +6447,70 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   the *Payments* dashboard row resolving against a live scrape.
 - **Deps**: `P5-TSK-011`, `P5-TSK-014`. **Accept**: a fresh instance publishes every
   series; the mutation sweep over the counting discipline; queries resolve live.
+- **Gate evidence (2026-09-20)**: **all three accept clauses hold.** *A fresh instance
+  publishes every series*: the pinned Phase-5 guard (the fourth instance of the
+  established until-the-flip shape) passes in a context with **no database and no provider
+  configured** — the deliberately unconditional `PaymentMeters`/`PaymentMetrics` beans, so
+  a deployment that has not configured a PSP still publishes healthy zeros an alert can
+  evaluate. *Queries resolve live*: the Payments dashboard row (six panels, +140 lines,
+  nothing removed) resolves against a real scrape. *The mutation sweep over the counting
+  discipline*: eight, below. **The design question the plan leaves open — where is a
+  judgement counted when four doors apply it? — is answered at the doors, post-commit,
+  acting only**, which required the conditional transition's row count to leave
+  `PaymentOutcomes` for the first time (`Applied.acting`, `RefundApplied`, both command
+  results, the sweeper's acting list): a converged loser and an acting winner return
+  identical states by design, so a counter that could not tell them apart reports one
+  payment ten times under a race. Proven at composition: **ten concurrent refund webhooks
+  → one entry, one transition, one fact, and `refund{completed} == 1` beside
+  `webhook{processed} == 10`** — the judgement counted once, the door counted ten times,
+  which is the whole distinction. The provider timer is a **decorator on the port**, and
+  the compiler proved that choice during implementation by refusing a decorator that had
+  not handled `providerName()`. **THE GATE'S OWN FINDINGS, both fixed**: (1) an
+  unrecognised status word — a provider saying something we do not understand about money
+  we are holding, which is precisely the integration break §15 says `unmappable` exists to
+  show — was being counted as `processed`, hiding the rise; the classification now asks
+  whether the total vocabulary understood the statement, and the four states are proven end
+  to end (processed, duplicate under a repeated event id, unmappable twice — bad word and
+  unminted operation — and refused unmoved); (2) the metric-tag enforcement of
+  `INV-AUD-02` had **no `MUTATION_TESTING.md` row at all** since `P1-TSK-029` built it, and
+  widening the tag vocabulary is exactly when that stops being acceptable (the `P1-TSK-024`
+  finding repeating) — the row landed with both demonstrations performed. Three guards
+  fired during implementation and each was answered rather than softened: the `provider`
+  tag trips the forbidden-fragment rule on a spelling accident (*prov-**id**-er*), closed
+  with a named `FRAGMENT_EXEMPT_TAG_KEYS` entry whose own test refuses to let it excuse a
+  key nobody argued for; `ResultSet.getDouble` in the gauge reads violated `INV-MON-01`'s
+  call rule, so the SQL returns `floor(...)::bigint` and **no floating point exists in the
+  path at all**; the closed `@Tag` vocabulary refused a `unit` tag that does not exist here.
+  **Eight mutations, all caught by the intended assertion, restores `cmp`-verified
+  byte-identical**: the NAMED converged-counted-as-throughput (ten judgements where one
+  customer was refunded — the race probe); the NAMED gauge-reports-zero-when-unreadable
+  (the stuck-payment alert silenced at the moment the platform is least healthy); a counter
+  born on first increment (the fresh-instance probe); the timer's `finally` dropped (a
+  provider timing out — the phase's most expensive condition — recorded nowhere); a
+  request-influenced tag value (`MetricConventionTest`); the unmappable classification
+  reverted (the gate's own finding, re-proven load-bearing); the refresh floor removed (a
+  query per scrape per instance); a dashboard query renamed to a series nobody publishes
+  ("No data", which during an incident reads exactly like a quiet system). Verified by
+  targeted tiers — `:payments:test` 108 / `:platform:test` 171 / `:app:test` 454 / the
+  payment database suites 80 / the telemetry database suites 11 / the executor's database
+  suite 17, 0 failures, fresh runs — the full battery deliberately skipped on the owner's
+  instruction; no fleet-wide database or kafka counts claimed.
+- **Implementation note (2026-09-20)**: all six series land, and the design question the
+  plan does not answer — *where is a judgement counted, when four doors apply it?* — is
+  answered **at the doors, post-commit, acting only**, which required the conditional
+  transition's row count to leave `PaymentOutcomes` for the first time (`Applied.acting`,
+  `RefundApplied`, both command results and the sweeper's tally). The provider timer is a
+  **decorator** on the port rather than a `PostingObserver`-style port, and the compiler
+  proved the choice during implementation: a port method the decorator did not handle
+  failed the build. Three guards fired on the way and each was answered rather than
+  softened — the `provider` tag trips the forbidden-fragment rule on a spelling accident
+  (*prov-**id**-er*), closed with a named `FRAGMENT_EXEMPT_TAG_KEYS` entry bounded by its
+  own test; `ResultSet.getDouble` in the gauge reads violated `INV-MON-01`'s call rule, so
+  the SQL now returns `floor(...)::bigint` and no floating point exists anywhere in the
+  path; the closed `@Tag` vocabulary refused a `unit` tag that does not exist.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
 
-**P5-TST-002 — The `Phase: 5` register rows** — `TODO`
+**P5-TST-002 — The `Phase: 5` register rows** — `READY`
 - **Scope**: every invariant the catalogue marks `Phase: 5` — **token-parsed with the
   guard's own regex, eleven at planning time** — carries a `MUTATION_TESTING.md` §2 row
   with its demonstration performed or honestly recorded from the owning task's sweep (the

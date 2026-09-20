@@ -66,7 +66,15 @@
  * resolver completing UNKNOWN refunds through the same shared outcomes, and the refund as the
  * platform's first two-transaction keyed command: the claim held IN_PROGRESS across the wire,
  * completed with the judged response in Tx2, replayed byte-for-byte from then on, the
- * takeover re-run converging by {@code V008}'s dispatch key).
+ * takeover re-run converging by {@code V008}'s dispatch key), and the observability the
+ * phase plan's §15 promised ({@code P5-TSK-017}: this module gained no metrics library and
+ * no meter — what it gained is the <strong>acting bit</strong> on every outcome result
+ * ({@code Applied}, {@code RefundApplied}, the two command results and the sweeper's own
+ * tally), because a conditional transition's row count is the only place the answer to "did
+ * THIS call judge it?" exists, and a counter that could not tell an acting winner from a
+ * converged loser would report one payment N times under a race. The meters themselves, the
+ * provider-timing decorator and the stuck-payment gauges live in {@code app}, where every
+ * composition decision lives).
  *
  * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
  * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and

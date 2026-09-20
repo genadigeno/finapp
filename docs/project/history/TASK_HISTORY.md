@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 120 "Previously" blocks, newest first, from `P5-TSK-015` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 121 "Previously" blocks, newest first, from `P5-TSK-016` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,46 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P5-TSK-016` — the refund surface and events** — `COMPLETE` (2026-09-20). **M5.7 CLOSES at
+2 of 2: the refund is observable, publishable and asynchronously resolvable — and the schema
+corrected the design before a line landed.** The sketched rewrite-the-stored-response
+collided with platform `V003`'s freeze (`INV-LIFE-04`: a terminal claim's response IS what a
+replay renders), so the invariant stood and the design adapted: **the platform's first
+two-transaction keyed command** — `IdempotentExecutor.begin`/`complete` +
+`DispatchCommand`, Tx1 committing the dispatch beside the claim held `IN_PROGRESS`, Tx2
+completing it with the judged `refundId|status`, `V008`'s `dispatch_key` making the takeover
+re-run converge (the reconstructed-crash test: no second hold, the wire re-driven with the
+STORED reference, byte-for-byte thereafter). The webhook completes UNKNOWN refunds through
+the shared `applyRefund` under the ONE enumerated site; the facts publish inside the
+conditionals (`RefundInitiated`/`RefundCompleted`/`RefundFailed`, no amounts — needle-
+tested; `UNKNOWN` publishes nothing, the standing hold its visible record); the view's
+`refunded`/`refundPending` derive from the rows (ADR-0045).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The acceptance chain over HTTP | Operator 201 → webhook heal through the real door → the customer's GET moves; the no-500 sweep beside it |
+| The derived totals reconcile with the rows | Independent SQL, with a FAILED refund in the picture — freed budget in neither total |
+| A replayed refund key replays byte-for-byte | The sharpest form: original UNKNOWN, webhook completes, replay answers the original bytes while the GET shows the heal |
+
+### Eight mutations — one survived its first run, and that is the battery working
+
+All eight ended caught, restores `cmp`-verified: the NAMED replay-from-a-re-read (the healed
+`COMPLETED` leaked — the byte-equality probe refused it); the NAMED
+webhook-default-made-success; **the fact-outside-the-conditional SURVIVED round one** — the
+resolver's own from-state gate absorbs sequential terminal re-reports before `applyRefund`,
+masking the sequential-duplicate probe (two absorption layers, blind in different
+directions — the battery's own observation, recorded) — caught by the TEN-WAY RACE: ten
+facts where one belongs; `RefundInitiated` dropped; the claim never completed (the replay
+answered `IdempotencyInProgress` where the recorded bytes belong); the attribution dropped;
+the from-state gate dropped (the loud illegal edge where quiet evidence belongs); the
+freed-budget lie. **Verified by targeted tiers — `:payments:test` 108 / `:platform:test`
+171 / `:app:test` 444 / the payment database suites 80 (schema 10, authorization 8, capture
+6, endpoints 10, unconfigured 1, webhook 6, transitions 7, sweeper 8, ambiguity 5, refund
+13, refund endpoints 6) / the executor's database suite 17, 0 failures, fresh runs — the
+full battery deliberately skipped on the owner's instruction; no fleet-wide database or
+kafka counts claimed.** Refund sweeping stays a recorded deferral: the webhook is the
+resolver, the standing hold the loud symptom, the sweep extension the phase audit's.
 
 **`P5-TSK-015` — the refund command: hold, then post** — `COMPLETE` (2026-09-20). **M5.7
 opens at 1 of 2: the phase's money goes both ways, and `P3-TSK-015`'s owed composition

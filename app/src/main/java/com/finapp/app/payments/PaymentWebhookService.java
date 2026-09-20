@@ -90,6 +90,7 @@ public class PaymentWebhookService {
     private final PaymentAttemptStore<Connection> attempts;
     private final PaymentIntentStore<Connection> intents;
     private final RefundStore<Connection> refunds;
+    private final com.finapp.app.telemetry.PaymentMeters meters;
     private final PaymentOutcomes outcomes;
     private final InboxConsumer<Connection> inbox;
     private final ObjectMapper json;
@@ -103,6 +104,7 @@ public class PaymentWebhookService {
             PaymentAttemptStore<Connection> paymentAttemptStore,
             PaymentIntentStore<Connection> paymentIntentStore,
             RefundStore<Connection> refundStore,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters,
             PaymentOutcomes paymentOutcomes,
             InboxConsumer<Connection> inboxConsumer,
             ObjectMapper objectMapper,
@@ -119,6 +121,7 @@ public class PaymentWebhookService {
         this.intents =
                 Objects.requireNonNull(paymentIntentStore, "paymentIntentStore must not be null");
         this.refunds = Objects.requireNonNull(refundStore, "refundStore must not be null");
+        this.meters = Objects.requireNonNull(paymentMeters, "paymentMeters must not be null");
         this.outcomes = Objects.requireNonNull(paymentOutcomes, "paymentOutcomes must not be null");
         this.inbox = Objects.requireNonNull(inboxConsumer, "inboxConsumer must not be null");
         this.json = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
@@ -149,7 +152,10 @@ public class PaymentWebhookService {
         Objects.requireNonNull(rawBody, "rawBody must not be null");
         if (!signature.matches(presentedTimestamp, rawBody, presentedSignature)) {
             // Missing, malformed, wrong, stale and future-skewed are ONE refusal, and nothing
-            // is written (INV-PAY-01): an unauthenticated stranger grows no table.
+            // is written (INV-PAY-01): an unauthenticated stranger grows no table. The METER
+            // may count what the byte-identical 401 hides (`P1-TSK-029`: a meter is invisible
+            // to the caller): a rise here is somebody probing the door.
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.REFUSED);
             throw new ApiException(
                     PlatformErrorCode.UNAUTHENTICATED,
                     "A payment webhook failed signature or freshness verification");
@@ -157,6 +163,7 @@ public class PaymentWebhookService {
         if (rawBody.length == 0 || rawBody.length > ProviderEvidenceStore.MAX_PAYLOAD_BYTES) {
             // The evidence bound, enforced where the caller is told rather than discovered at
             // the insert (the PspWireClient reasoning, inbound).
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.REFUSED);
             throw new ApiException(
                     PlatformErrorCode.PAYLOAD_TOO_LARGE,
                     "A payment webhook body was empty or exceeded the evidence bound");
@@ -175,6 +182,7 @@ public class PaymentWebhookService {
                         retain(unitOfWork, Optional.empty(), Optional.empty(), rawBody);
                         return null;
                     });
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.UNMAPPABLE);
             log.warn(
                     "An authenticated payment webhook was unparseable or carried no usable"
                             + " event id; its bytes are retained as evidence and it is"
@@ -184,6 +192,7 @@ public class PaymentWebhookService {
 
         Optional<ProviderIdempotencyReference> operation =
                 parsed.flatMap(payload -> mintedShape(payload.operation()));
+        Judged judged = new Judged();
         Delivered delivered =
                 inOneTransaction(
                         unitOfWork -> {
@@ -232,7 +241,8 @@ public class PaymentWebhookService {
                                                             subject,
                                                             refundSubject,
                                                             operation,
-                                                            parsed.get()));
+                                                            parsed.get(),
+                                                            judged));
                             retain(unitOfWork,
                                     subject.map(PaymentAttempt::id),
                                     refundSubject.map(Refund::id),
@@ -251,6 +261,25 @@ public class PaymentWebhookService {
                     "A payment webhook is being processed by another instance; asking the"
                             + " provider to redeliver");
         }
+        // The judgement this delivery's own conditional made, if any - counted here, after
+        // the commit, and never for a resolver that converged (`P5-TSK-017`).
+        judged.countInto(meters);
+
+        // Counted after the delivery transaction committed (`P5-TSK-017`), in ADR-0047's
+        // own four states: a rolled-back delivery counts nothing, and the CONTENDED path
+        // above threw before reaching here - unacknowledged is not a delivery that happened.
+        if (delivered.consumed() == InboxConsumer.Outcome.SKIPPED_DUPLICATE) {
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.DUPLICATE);
+        } else if (delivered.attributed() && !judged.isUnmappable()) {
+            // Understood and handled - including the late report a terminal state refuses,
+            // which is ordering, not breakage (INV-LIFE-04's evidence-only path).
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.PROCESSED);
+        } else {
+            // Named no operation we minted, OR carried a word the total mapping refuses:
+            // both are the integration break this series exists to make visible.
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.UNMAPPABLE);
+        }
+
         if (!delivered.attributed()) {
             // Authentic but unmappable: acknowledged with the evidence retained. The rate is
             // plan §15's webhook meter (P5-TSK-017); until then this line is the alert's raw
@@ -292,7 +321,8 @@ public class PaymentWebhookService {
             Optional<PaymentAttempt> attemptSubject,
             Optional<Refund> refundSubject,
             Optional<ProviderIdempotencyReference> operation,
-            WebhookPayload payload) {
+            WebhookPayload payload,
+            Judged judged) {
         if (attemptSubject.isEmpty() && refundSubject.isEmpty()) {
             return;
         }
@@ -301,9 +331,10 @@ public class PaymentWebhookService {
         // provider's unsolicited statement has no session whichever machine it names.
         try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
             if (attemptSubject.isPresent()) {
-                attemptEffect(uow, attemptSubject.get(), operation.orElseThrow(), payload);
+                attemptEffect(
+                        uow, attemptSubject.get(), operation.orElseThrow(), payload, judged);
             } else {
-                refundEffect(uow, refundSubject.get(), payload);
+                refundEffect(uow, refundSubject.get(), payload, judged);
             }
         }
     }
@@ -312,9 +343,11 @@ public class PaymentWebhookService {
             Connection uow,
             PaymentAttempt attempt,
             ProviderIdempotencyReference operation,
-            WebhookPayload payload) {
+            WebhookPayload payload,
+            Judged judged) {
         Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
         if (verdict.isEmpty()) {
+            judged.unmappable();
             log.warn(
                     "An authenticated payment webhook for attempt {} carried a status the"
                             + " total mapping refuses to act on; retained as evidence,"
@@ -333,7 +366,8 @@ public class PaymentWebhookService {
                                                     "an attempt row's intent exists: V003's"
                                                             + " foreign key holds it"));
             if (authOperation && authResolvable(attempt.status())) {
-                outcomes.applyAuthorization(
+                judged.attempt(
+                        outcomes.applyAuthorization(
                         uow,
                         intent.id(),
                         attempt.id(),
@@ -343,9 +377,10 @@ public class PaymentWebhookService {
                         // The issuer approved the dispatched ask: the intent's amount, the
                         // same promise the synchronous path carries from its Tx1.
                         intent.amount(),
-                        correlation);
+                        correlation));
             } else if (!authOperation && captureResolvable(attempt.status())) {
-                outcomes.applyCapture(
+                judged.attempt(
+                        outcomes.applyCapture(
                         uow,
                         intent.id(),
                         attempt.id(),
@@ -356,7 +391,7 @@ public class PaymentWebhookService {
                         // The capture is the authorized promise, in full (one attempt, no
                         // partial capture until its producer exists - ADR-0045 §4).
                         attempt.authorizedAmount(),
-                        correlation);
+                        correlation));
             } else {
                 log.info(
                         "A payment webhook reported on attempt {} in state {} which its"
@@ -378,9 +413,11 @@ public class PaymentWebhookService {
      * the caller's platform scope — one enumerated site, whichever machine the statement
      * names.
      */
-    private void refundEffect(Connection uow, Refund refund, WebhookPayload payload) {
+    private void refundEffect(
+            Connection uow, Refund refund, WebhookPayload payload, Judged judged) {
         Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
         if (verdict.isEmpty()) {
+            judged.unmappable();
             log.warn(
                     "An authenticated payment webhook for refund {} carried a status the"
                             + " total mapping refuses to act on; retained as evidence,"
@@ -411,15 +448,95 @@ public class PaymentWebhookService {
                                         new IllegalStateException(
                                                 "an attempt row's intent exists: V003's"
                                                         + " foreign key holds it"));
-        outcomes.applyRefund(
-                uow,
-                intent.id(),
-                refund,
-                refund.status(),
-                verdict.get(),
-                providerReference(payload),
-                intent.walletAccount(),
-                PaymentCreation.resolvedCorrelation());
+        judged.refund(
+                outcomes.applyRefund(
+                        uow,
+                        intent.id(),
+                        refund,
+                        refund.status(),
+                        verdict.get(),
+                        providerReference(payload),
+                        intent.walletAccount(),
+                        PaymentCreation.resolvedCorrelation()));
+    }
+
+    /**
+     * What this delivery's effect committed, carried out of the transaction so the door can
+     * count it <strong>after the commit</strong> (`P5-TSK-017`): a resolver that lost the
+     * conditional reports nothing, so ten deliveries racing one operation count one
+     * judgement — and an effect whose transaction rolled back counts none at all.
+     */
+    private static final class Judged {
+
+        private PaymentAttemptStatus attempt;
+        private com.finapp.payments.RefundStatus refund;
+        private boolean unreadable;
+
+        /**
+         * The statement was authentic and named one of our operations, but carried a status
+         * word the total mapping refuses ({@code INV-PAY-03}). That is an INTEGRATION BREAK
+         * — the provider saying something we do not understand about money we are holding —
+         * and counting it as {@code processed} would hide exactly the rise the plan's own
+         * §15 note says {@code unmappable} exists to show.
+         */
+        void unmappable() {
+            unreadable = true;
+        }
+
+        boolean isUnmappable() {
+            return unreadable;
+        }
+
+        void attempt(PaymentOutcomes.Applied applied) {
+            if (applied.acting()) {
+                attempt = applied.attempt();
+            }
+        }
+
+        void refund(PaymentOutcomes.RefundApplied applied) {
+            if (applied.acting()) {
+                refund = applied.status();
+            }
+        }
+
+        void countInto(com.finapp.app.telemetry.PaymentMeters meters) {
+            if (attempt != null) {
+                switch (attempt) {
+                    case AUTHORIZED ->
+                            meters.attempt(
+                                    com.finapp.app.telemetry.PaymentMeters.Judgement.AUTHORIZED);
+                    case CAPTURED ->
+                            meters.attempt(
+                                    com.finapp.app.telemetry.PaymentMeters.Judgement.CAPTURED);
+                    case FAILED ->
+                            meters.attempt(
+                                    com.finapp.app.telemetry.PaymentMeters.Judgement.FAILED);
+                    case AUTH_UNKNOWN, CAPTURE_UNKNOWN ->
+                            meters.attempt(
+                                    com.finapp.app.telemetry.PaymentMeters.Judgement.UNKNOWN);
+                    case AUTH_DISPATCHED, CAPTURE_DISPATCHED -> {
+                        // A webhook never commits one: nothing was judged.
+                    }
+                }
+            }
+            if (refund != null) {
+                switch (refund) {
+                    case COMPLETED ->
+                            meters.refund(
+                                    com.finapp.app.telemetry.PaymentMeters.RefundOutcome
+                                            .COMPLETED);
+                    case FAILED ->
+                            meters.refund(
+                                    com.finapp.app.telemetry.PaymentMeters.RefundOutcome.FAILED);
+                    case UNKNOWN ->
+                            meters.refund(
+                                    com.finapp.app.telemetry.PaymentMeters.RefundOutcome.UNKNOWN);
+                    case DISPATCHED -> {
+                        // As above.
+                    }
+                }
+            }
+        }
     }
 
     private static boolean refundResolvable(RefundStatus status) {

@@ -91,11 +91,19 @@ public final class PaymentConfirmation {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
-    /** What the caller learns — statuses honestly, {@code PROCESSING} included (ADR-0046). */
+    /**
+     * What the caller learns — statuses honestly, {@code PROCESSING} included (ADR-0046).
+     *
+     * @param converged this call lost Tx1's conditional dispatch and never asked the provider
+     * @param acting this call's own outcome transition made the committed state
+     *     (`P5-TSK-017`) — false for a converged answer AND for a Tx2 that lost to a resolver
+     *     which got there first, so the surface counts one judgement once
+     */
     public record ConfirmationResult(
             PaymentIntentStatus intent,
             Optional<PaymentAttemptStatus> attempt,
-            boolean converged) {}
+            boolean converged,
+            boolean acting) {}
 
     /** Tx1's yield: what the call needs, carried across the connectionless gap. */
     private record Dispatch(PaymentAttempt attempt, InstrumentToken token, Money amount) {}
@@ -235,7 +243,9 @@ public final class PaymentConfirmation {
                 attempts.findForIntent(uow, intent.id()).map(PaymentAttempt::status);
         return new Tx1Outcome(
                 Optional.empty(),
-                Optional.of(new ConfirmationResult(intent.status(), attemptStatus, true)));
+                Optional.of(
+                        new ConfirmationResult(
+                                intent.status(), attemptStatus, true, false)));
     }
 
     /**
@@ -277,6 +287,7 @@ public final class PaymentConfirmation {
                                         EvidenceKind.RESPONSE,
                                         bytes,
                                         Instant.now(clock)));
-        return new ConfirmationResult(applied.intent(), Optional.of(applied.attempt()), false);
+        return new ConfirmationResult(
+                applied.intent(), Optional.of(applied.attempt()), false, applied.acting());
     }
 }

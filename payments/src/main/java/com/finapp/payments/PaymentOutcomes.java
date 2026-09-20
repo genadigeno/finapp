@@ -109,8 +109,22 @@ public final class PaymentOutcomes {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
-    /** What committed (or was found committed by the loser of a harmless race). */
-    public record Applied(PaymentIntentStatus intent, PaymentAttemptStatus attempt) {}
+    /**
+     * What committed (or was found committed by the loser of a harmless race).
+     *
+     * @param acting whether <strong>this</strong> call's conditional transition fired
+     *     (`P5-TSK-017`). The row count is the only place the answer exists: a converged
+     *     loser and an acting winner return identical states by design, and telemetry that
+     *     could not tell them apart would count one judgement N times under a race — the
+     *     plan's own "replays/converges never throughput". Never financial truth: the rows
+     *     are the record, and an acting call can still be rolled back by the transaction's
+     *     owner, which is why the counting seam is the door, post-commit.
+     */
+    public record Applied(
+            PaymentIntentStatus intent, PaymentAttemptStatus attempt, boolean acting) {}
+
+    /** The refund's committed status, and whether this call's conditional made it so. */
+    public record RefundApplied(RefundStatus status, boolean acting) {}
 
     /**
      * Applies an authorization outcome from {@code from} — {@code AUTH_DISPATCHED} or
@@ -133,10 +147,14 @@ public final class PaymentOutcomes {
 
         PaymentAttemptStatus committedAttempt;
         PaymentIntentStatus committedIntent = PaymentIntentStatus.PROCESSING;
+        boolean acting;
         switch (verdict) {
             case APPROVED -> {
-                if (attempts.authorize(
-                        uow, attemptId, from, providerReference.orElseThrow(), promisedAmount)) {
+                acting =
+                        attempts.authorize(
+                                uow, attemptId, from, providerReference.orElseThrow(),
+                                promisedAmount);
+                if (acting) {
                     attempts.recordTransition(
                             uow, attemptId, from, PaymentAttemptStatus.AUTHORIZED, platform, now);
                     announce(uow, AUTHORIZED_EVENT_TYPE, intentId, "AUTHORIZED",
@@ -145,23 +163,28 @@ public final class PaymentOutcomes {
                 committedAttempt = PaymentAttemptStatus.AUTHORIZED;
             }
             case DECLINED -> {
-                committedAttempt =
+                Failed failed =
                         failBoth(uow, intentId, attemptId, from, PaymentFailureReason.DECLINED,
                                 correlation, platform, now);
+                committedAttempt = failed.status();
+                acting = failed.acting();
                 committedIntent = PaymentIntentStatus.FAILED;
             }
             case NOTHING_SENT -> {
-                committedAttempt =
+                Failed failed =
                         failBoth(uow, intentId, attemptId, from,
                                 PaymentFailureReason.PROVIDER_UNAVAILABLE, correlation,
                                 platform, now);
+                committedAttempt = failed.status();
+                acting = failed.acting();
                 committedIntent = PaymentIntentStatus.FAILED;
             }
             default -> {
                 // INDETERMINATE: we do not know is the answer, and it commits (INV-LIFE-03).
                 // Only a DISPATCHED source can become UNKNOWN - the conditional refuses the
                 // rest, which is what makes an already-unknown attempt converge here.
-                if (attempts.markAuthUnknown(uow, attemptId)) {
+                acting = attempts.markAuthUnknown(uow, attemptId);
+                if (acting) {
                     attempts.recordTransition(
                             uow,
                             attemptId,
@@ -178,7 +201,7 @@ public final class PaymentOutcomes {
 
         appendOutcomeAudit(uow, intentId, attemptId, verdict.name(), committedAttempt,
                 committedIntent, platform, correlation, now);
-        return new Applied(committedIntent, committedAttempt);
+        return new Applied(committedIntent, committedAttempt, acting);
     }
 
     /**
@@ -203,10 +226,13 @@ public final class PaymentOutcomes {
 
         PaymentAttemptStatus committedAttempt;
         PaymentIntentStatus committedIntent = PaymentIntentStatus.PROCESSING;
+        boolean acting;
         switch (verdict) {
             case APPROVED -> {
-                if (attempts.capture(
-                        uow, attemptId, from, providerReference.orElseThrow(), amount)) {
+                acting =
+                        attempts.capture(
+                                uow, attemptId, from, providerReference.orElseThrow(), amount);
+                if (acting) {
                     attempts.recordTransition(
                             uow, attemptId, from, PaymentAttemptStatus.CAPTURED, platform, now);
 
@@ -251,22 +277,27 @@ public final class PaymentOutcomes {
                 committedIntent = PaymentIntentStatus.SUCCEEDED;
             }
             case DECLINED -> {
-                committedAttempt =
+                Failed failed =
                         failBoth(uow, intentId, attemptId, from, PaymentFailureReason.DECLINED,
                                 correlation, platform, now);
+                committedAttempt = failed.status();
+                acting = failed.acting();
                 committedIntent = PaymentIntentStatus.FAILED;
             }
             case NOTHING_SENT -> {
-                committedAttempt =
+                Failed failed =
                         failBoth(uow, intentId, attemptId, from,
                                 PaymentFailureReason.PROVIDER_UNAVAILABLE, correlation,
                                 platform, now);
+                committedAttempt = failed.status();
+                acting = failed.acting();
                 committedIntent = PaymentIntentStatus.FAILED;
             }
             default -> {
                 // INDETERMINATE: CAPTURE_UNKNOWN commits with NOTHING POSTED (INV-LIFE-03) -
                 // the posting arrives only with a resolved CAPTURED.
-                if (attempts.markCaptureUnknown(uow, attemptId)) {
+                acting = attempts.markCaptureUnknown(uow, attemptId);
+                if (acting) {
                     attempts.recordTransition(
                             uow,
                             attemptId,
@@ -283,7 +314,7 @@ public final class PaymentOutcomes {
 
         appendOutcomeAudit(uow, intentId, attemptId, verdict.name(), committedAttempt,
                 committedIntent, platform, correlation, now);
-        return new Applied(committedIntent, committedAttempt);
+        return new Applied(committedIntent, committedAttempt, acting);
     }
 
     /**
@@ -303,12 +334,12 @@ public final class PaymentOutcomes {
             Correlation correlation) {
         Actor platform = SecurityContext.require();
         Instant now = Instant.now(clock);
-        PaymentAttemptStatus committedAttempt =
+        Failed failed =
                 failBoth(uow, intentId, attemptId, from, PaymentFailureReason.NEVER_RECEIVED,
                         correlation, platform, now);
         appendOutcomeAudit(uow, intentId, attemptId, QueryAnswer.Verdict.UNRECOGNISED.name(),
-                committedAttempt, PaymentIntentStatus.FAILED, platform, correlation, now);
-        return new Applied(PaymentIntentStatus.FAILED, committedAttempt);
+                failed.status(), PaymentIntentStatus.FAILED, platform, correlation, now);
+        return new Applied(PaymentIntentStatus.FAILED, failed.status(), failed.acting());
     }
 
     /**
@@ -325,7 +356,7 @@ public final class PaymentOutcomes {
      * <p>The refund's outbox events are deliberately absent until `P5-TSK-016` (the scope
      * that names them) — the announce seam here is that task's, the `P5-TSK-012` precedent.
      */
-    public RefundStatus applyRefund(
+    public RefundApplied applyRefund(
             Connection uow,
             PaymentIntentId intentId,
             Refund refund,
@@ -338,9 +369,11 @@ public final class PaymentOutcomes {
         Instant now = Instant.now(clock);
 
         RefundStatus committed;
+        boolean acting;
         switch (verdict) {
             case APPROVED -> {
-                if (refunds.complete(uow, refund.id(), from, providerReference.orElseThrow())) {
+                acting = refunds.complete(uow, refund.id(), from, providerReference.orElseThrow());
+                if (acting) {
                     refunds.recordTransition(
                             uow, refund.id(), from, RefundStatus.COMPLETED, platform, now);
                     holds.release(uow, refund.holdReference());
@@ -378,7 +411,8 @@ public final class PaymentOutcomes {
                 committed = RefundStatus.COMPLETED;
             }
             case DECLINED, NOTHING_SENT -> {
-                if (refunds.fail(uow, refund.id(), from)) {
+                acting = refunds.fail(uow, refund.id(), from);
+                if (acting) {
                     refunds.recordTransition(
                             uow, refund.id(), from, RefundStatus.FAILED, platform, now);
                     // The customer's money is theirs again, and the freed budget is the sum
@@ -395,7 +429,8 @@ public final class PaymentOutcomes {
             default -> {
                 // INDETERMINATE: UNKNOWN commits and the HOLD STANDS - nothing released,
                 // nothing posted, the parked money visible (INV-LIFE-03).
-                if (refunds.markUnknown(uow, refund.id())) {
+                acting = refunds.markUnknown(uow, refund.id());
+                if (acting) {
                     refunds.recordTransition(
                             uow,
                             refund.id(),
@@ -424,11 +459,14 @@ public final class PaymentOutcomes {
                                 "refund=" + refund.id()
                                         + ", verdict=" + verdict
                                         + ", refundStatus=" + committed)));
-        return committed;
+        return new RefundApplied(committed, acting);
     }
 
     /** The attempt fails with its mapped reason from {@code from}, and the intent with it. */
-    private PaymentAttemptStatus failBoth(
+    /** The failing edge's answer: the committed status, and whether this call made it. */
+    private record Failed(PaymentAttemptStatus status, boolean acting) {}
+
+    private Failed failBoth(
             Connection uow,
             PaymentIntentId intentId,
             PaymentAttemptId attemptId,
@@ -437,7 +475,8 @@ public final class PaymentOutcomes {
             Correlation correlation,
             Actor platform,
             Instant now) {
-        if (attempts.fail(uow, attemptId, from, reason)) {
+        boolean acting = attempts.fail(uow, attemptId, from, reason);
+        if (acting) {
             attempts.recordTransition(
                     uow, attemptId, from, PaymentAttemptStatus.FAILED, platform, now);
             if (intents.transition(
@@ -453,7 +492,7 @@ public final class PaymentOutcomes {
             announce(uow, FAILED_EVENT_TYPE, intentId, "FAILED", Optional.of(reason),
                     correlation, now);
         }
-        return PaymentAttemptStatus.FAILED;
+        return new Failed(PaymentAttemptStatus.FAILED, acting);
     }
 
     /** Verdict and committed states as enumerated names — never an amount, never provider vocabulary. */

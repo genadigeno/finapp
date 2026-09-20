@@ -140,6 +140,45 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The payment surface's meters (`P5-TSK-017`), eager for the same reason — and
+     * <strong>unconditional</strong>, deliberately: the command beans are conditional on a
+     * configured provider, but a deployment that has not configured one still publishes
+     * healthy zeros rather than absences an alert cannot evaluate (the {@code KycMetrics}
+     * precedent, which the pinned planned-meters guard proves by booting with nothing
+     * configured at all). The provider tag is the adapter's own compile-time constant.
+     */
+    @Bean
+    PaymentMeters paymentMeters(MeterRegistry registry) {
+        return new PaymentMeters(registry, com.finapp.payments.SimulatedCardPspAdapter.NAME);
+    }
+
+    /**
+     * The stuck-payment gauges (`P5-TSK-017`): the {@code LedgerMetrics} stance verbatim —
+     * the scrape is the schedule, one floored read-only pair of aggregates per instance, no
+     * leader, no ambient schedule, nothing written, and NaN rather than a false zero when the
+     * database cannot be read. The stores are constructed here like the ledger's hold store,
+     * because nothing else in this context consumes them as beans.
+     */
+    @Bean
+    PaymentMetrics paymentMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
+        com.finapp.payments.PaymentAttemptStore<java.sql.Connection> attempts =
+                new com.finapp.payments.JdbcPaymentAttemptStore();
+        com.finapp.payments.RefundStore<java.sql.Connection> refunds =
+                new com.finapp.payments.JdbcRefundStore();
+        return new PaymentMetrics(
+                connection -> reading(attempts.unknownReading(connection)),
+                connection -> reading(refunds.unknownReading(connection)),
+                dataSource::getConnection,
+                clock,
+                registry);
+    }
+
+    private static PaymentMetrics.Reading reading(
+            com.finapp.payments.PaymentAttemptStore.UnknownReading stored) {
+        return new PaymentMetrics.Reading(stored.active(), stored.oldestAgeSeconds());
+    }
+
+    /**
      * Wraps the auto-configured connection pool so acquiring a connection is visible in a trace.
      *
      * <p><strong>A {@code BeanPostProcessor} because a {@code @Bean} cannot do this.</strong>

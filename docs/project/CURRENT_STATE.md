@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TSK-016` — the refund surface and events; **M5.7 CLOSES at 2 of 2**, next `P5-TSK-017`)
+Last updated: 2026-09-20 (`P5-TSK-017` — the meters and the dashboard row; **M5.8 opens at 1 of 3**, next `P5-TST-002`)
 
 ---
 
@@ -229,61 +229,56 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TSK-017` — the meters and the dashboard row** — `READY`.
-M5.8 opens with it: `PHASE_5_PLAN.md` §15 real — the six meters, eager from a plain context
-(pinned Phase-5 guard until the flip, the established shape), counted from judgements' own
-vocabulary post-commit (replays/converges never throughput); `provider` and `operation` join
-`ALLOWED_TAG_KEYS` as bounded compile-time sets, the decision recorded;
-`unknown.active`/`unknown.age` as database gauges, NaN never zero, `max()` fleet-wide; the
-*Payments* dashboard row resolving against a live scrape. Accept: a fresh instance publishes
-every series; the mutation sweep over the counting discipline; queries resolve live. See the
-backlog entry.
+**`P5-TST-002` — the `Phase: 5` register rows** — `READY`.
+Every invariant the catalogue marks `Phase: 5` — token-parsed with the guard's own regex,
+eleven at planning time — carries a `MUTATION_TESTING.md` §2 row with its demonstration
+performed or honestly recorded from the owning task's sweep (the `P3-TST-003`/`P4-TST-002`
+posture: the audit finds what was not done and does it); the flip probed — Phase 5 simulated
+`COMPLETE`, battery green, one row removed to prove the demanded set grew — and restored
+byte-identical; §5 teeth re-proven. Accept: all guard checks green over the new rows; the
+probe's failure names the invariant. See the backlog entry.
 
 ### Just completed
 
-**`P5-TSK-016` — the refund surface and events** — `COMPLETE` (2026-09-20). **M5.7 CLOSES at
-2 of 2: the refund is observable, publishable and asynchronously resolvable — and the schema
-corrected the design before a line landed.** The sketched rewrite-the-stored-response
-collided with platform `V003`'s freeze (`INV-LIFE-04`: a terminal claim's response IS what a
-replay renders), so the invariant stood and the design adapted: **the platform's first
-two-transaction keyed command** — `IdempotentExecutor.begin`/`complete` +
-`DispatchCommand`, Tx1 committing the dispatch beside the claim held `IN_PROGRESS`, Tx2
-completing it with the judged `refundId|status`, `V008`'s `dispatch_key` making the takeover
-re-run converge (the reconstructed-crash test: no second hold, the wire re-driven with the
-STORED reference, byte-for-byte thereafter). The webhook completes UNKNOWN refunds through
-the shared `applyRefund` under the ONE enumerated site; the facts publish inside the
-conditionals (`RefundInitiated`/`RefundCompleted`/`RefundFailed`, no amounts — needle-
-tested; `UNKNOWN` publishes nothing, the standing hold its visible record); the view's
-`refunded`/`refundPending` derive from the rows (ADR-0045).
+**`P5-TSK-017` — the meters and the dashboard row** — `COMPLETE` (2026-09-20). **M5.8 opens
+at 1 of 3: the phase's six series land, and the plan's one-line counting discipline turned
+out to need the machine's own row count.** Four doors apply a payment judgement (the
+synchronous Tx2, the chained capture, the webhook, the sweeper) and under a race nine of them
+converge on a judgement they did not make — so `PaymentOutcomes` now reports **`acting`**,
+the conditional transition's row count, and the counters sit **at the doors, post-commit,
+acting only**. The provider timer is a decorator on the `PaymentProvider` port; the gauges
+are the `LedgerMetrics` stance one phase on (floored, fleet-wide `max()`, **NaN never zero**,
+attempts and refunds as one number because an operator asking "is money parked?" is not
+asking which machine parked it).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| The acceptance chain over HTTP | Operator 201 → webhook heal through the real door → the customer's GET moves; the no-500 sweep beside it |
-| The derived totals reconcile with the rows | Independent SQL, with a FAILED refund in the picture — freed budget in neither total |
-| A replayed refund key replays byte-for-byte | The sharpest form: original UNKNOWN, webhook completes, replay answers the original bytes while the GET shows the heal |
+| A fresh instance publishes every series | The pinned Phase-5 guard, in a context with no database and **no provider configured** — the unconditional meter beans |
+| The mutation sweep over the counting discipline | Eight, all caught; the named pair is converged-counted-as-throughput and the gauge's false zero |
+| Queries resolve live | The Payments row's six panels against a real scrape (+140 lines, nothing removed) |
 
-### Eight mutations — one survived its first run, and that is the battery working
+### Two findings by the gate, both fixed
 
-All eight ended caught, restores `cmp`-verified: the NAMED replay-from-a-re-read (the healed
-`COMPLETED` leaked — the byte-equality probe refused it); the NAMED
-webhook-default-made-success; **the fact-outside-the-conditional SURVIVED round one** — the
-resolver's own from-state gate absorbs sequential terminal re-reports before `applyRefund`,
-masking the sequential-duplicate probe (two absorption layers, blind in different
-directions — the battery's own observation, recorded) — caught by the TEN-WAY RACE: ten
-facts where one belongs; `RefundInitiated` dropped; the claim never completed (the replay
-answered `IdempotencyInProgress` where the recorded bytes belong); the attribution dropped;
-the from-state gate dropped (the loud illegal edge where quiet evidence belongs); the
-freed-budget lie. **Verified by targeted tiers — `:payments:test` 108 / `:platform:test`
-171 / `:app:test` 444 / the payment database suites 80 (schema 10, authorization 8, capture
-6, endpoints 10, unconfigured 1, webhook 6, transitions 7, sweeper 8, ambiguity 5, refund
-13, refund endpoints 6) / the executor's database suite 17, 0 failures, fresh runs — the
-full battery deliberately skipped on the owner's instruction; no fleet-wide database or
-kafka counts claimed.** Refund sweeping stays a recorded deferral: the webhook is the
-resolver, the standing hold the loud symptom, the sweep extension the phase audit's.
+An **unrecognised status word** — a provider saying something we do not understand about
+money we are holding — was counted as `processed`, hiding exactly the integration break
+`unmappable` exists to show; the classification now asks whether the total vocabulary
+understood the statement, and all four states are proven end to end. And the metric-tag
+enforcement of `INV-AUD-02` had **no register row at all** since `P1-TSK-029` built it —
+widening the tag vocabulary is when that stops being acceptable (`P1-TSK-024` repeating), so
+the row landed with both demonstrations performed. Three guards fired during implementation
+and each was answered rather than softened: the `provider` tag trips the forbidden-fragment
+rule on a spelling accident (*prov-**id**-er*), closed with a named exemption its own test
+bounds; `ResultSet.getDouble` violated `INV-MON-01`'s call rule, so the SQL returns
+`floor(...)::bigint` and no floating point exists in the path; the closed `@Tag` vocabulary
+refused a `unit` tag that does not exist here. **Verified by targeted tiers — `:payments:test`
+108 / `:platform:test` 171 / `:app:test` 454 / the payment database suites 80 / the telemetry
+database suites 11 / the executor's database suite 17, 0 failures, fresh runs — the full
+battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+counts claimed.**
 
 ### Previously
 
-The per-task completion records behind this one — 120 blocks, from `P5-TSK-015` back to project
+The per-task completion records behind this one — 121 blocks, from `P5-TSK-016` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -297,9 +292,9 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1–M5.7 `CLOSED` (3+2+3+3+2+2+2): `P5-TSK-001`…`-016` and
-`P5-TST-001` complete. Next: `P5-TSK-017`, `READY` — the meters and the dashboard row,
-M5.8's open.
+**Phase 5 is `IN_PROGRESS`** — M5.1–M5.7 `CLOSED` (3+2+3+3+2+2+2), M5.8 open at 1 of 3:
+`P5-TSK-001`…`-017` and `P5-TST-001` complete. Next: `P5-TST-002`, `READY` — the
+`Phase: 5` register rows.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of

@@ -606,7 +606,9 @@ class PaymentRefundDatabaseTest {
         assertThat(refundEventCount(result.refund(), "payments.RefundCompleted")).isZero();
 
         // The provider's unsolicited statement, quoting OUR minted reference (INV-PAY-04).
-        PaymentWebhookService webhooks = webhookService();
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        PaymentWebhookService webhooks = webhookService(registry);
         String reference = refundReference(result.refund());
 
         // A word outside the total vocabulary first: retained, acknowledged, NOTHING moves
@@ -618,6 +620,11 @@ class PaymentRefundDatabaseTest {
                         + "\",\"status\":\"pending_review\",\"reference\":\"psp_x\"}");
         assertThat(refundStatus(result.refund())).isEqualTo("UNKNOWN");
         assertThat(refundEntryCount(captured.attempt())).isZero();
+        // And the METER calls it what it is (`P5-TSK-017`): a provider saying something we
+        // do not understand about money we are holding is an INTEGRATION BREAK, not a
+        // processed delivery - the plan's §15 note names this series for exactly that rise.
+        assertThat(webhookCount(registry, "unmappable")).isEqualTo(1);
+        assertThat(webhookCount(registry, "processed")).isZero();
 
         deliverWebhook(
                 webhooks,
@@ -636,6 +643,37 @@ class PaymentRefundDatabaseTest {
                 .doesNotContain("5.00")
                 .doesNotContain("500")
                 .doesNotContain("psp_rfd-wh");
+
+        assertThat(webhookCount(registry, "processed"))
+                .as("understood and handled")
+                .isEqualTo(1);
+
+        // THE SAME EVENT ID AGAIN: the inbox absorbs it, and the meter says duplicate -
+        // counting a redelivery as throughput would make an at-least-once provider look
+        // like traffic (INV-IDEM-04 at the meter).
+        String repeated = "rfd-evt-" + UUID.randomUUID();
+        String body =
+                "{\"eventId\":\"" + repeated + "\",\"operation\":\"" + reference
+                        + "\",\"status\":\"approved\",\"reference\":\"psp_rfd-wh\"}";
+        deliverWebhook(webhooks, body);
+        deliverWebhook(webhooks, body);
+        assertThat(webhookCount(registry, "duplicate"))
+                .as("the second delivery of one event id is a duplicate, never throughput")
+                .isEqualTo(1);
+        assertThat(refundEntryCount(captured.attempt()))
+                .as("and it moved nothing, as every other rank already proved")
+                .isEqualTo(1);
+
+        // An authentic delivery naming an operation NOBODY minted: unmappable too.
+        deliverWebhook(
+                webhooks,
+                "{\"eventId\":\"rfd-evt-" + UUID.randomUUID()
+                        + "\",\"operation\":\"rfd-nobody-minted-this\",\"status\":\"approved\","
+                        + "\"reference\":\"psp_y\"}");
+        assertThat(webhookCount(registry, "unmappable")).isEqualTo(2);
+        assertThat(webhookCount(registry, "refused"))
+                .as("nothing here failed authentication")
+                .isZero();
 
         // Distinct-id duplicate: past the inbox by design, absorbed by the machine - no
         // second posting, no second fact (INV-IDEM-04 at both ranks).
@@ -701,7 +739,9 @@ class PaymentRefundDatabaseTest {
                                 "raced completion",
                                 "whr-" + UUID.randomUUID());
         assertThat(result.status()).isEqualTo(RefundStatus.UNKNOWN);
-        PaymentWebhookService webhooks = webhookService();
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        PaymentWebhookService webhooks = webhookService(registry);
         String reference = refundReference(result.refund());
 
         int resolvers = 10;
@@ -749,6 +789,26 @@ class PaymentRefundDatabaseTest {
         assertThat(refundEventCount(result.refund(), "payments.RefundCompleted")).isEqualTo(1);
         assertThat(activeHoldCount(captured.wallet())).isZero();
         assertThat(settled(captured.wallet())).isEqualTo("7.00");
+
+        // AND THE METER COUNTS ONE (`P5-TSK-017`): nine resolvers converged on a judgement
+        // they did not make, and throughput that counted them would report ten refunds
+        // where one customer got their money back. The acting bit is the conditional
+        // transition's own row count, and this is where it earns its place.
+        assertThat(
+                        registry.find("finapp.payments.refund")
+                                .tag("outcome", "completed")
+                                .counter()
+                                .count())
+                .as("one judgement, counted once, however many resolvers raced for it")
+                .isEqualTo(1.0);
+        assertThat(
+                        registry.find("finapp.payments.webhook")
+                                .tag("outcome", "processed")
+                                .counter()
+                                .count())
+                .as("every delivery that committed IS a processed delivery - the webhook"
+                        + " counter measures the door, not the judgement")
+                .isEqualTo(10.0);
     }
 
     @Test
@@ -971,6 +1031,21 @@ class PaymentRefundDatabaseTest {
                 PostingObserver.NONE);
     }
 
+    /** A registry of this suite's own: the meters' wiring is the telemetry suites'. */
+    private static com.finapp.app.telemetry.PaymentMeters meters() {
+        return new com.finapp.app.telemetry.PaymentMeters(
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+                SimulatedCardPspAdapter.NAME);
+    }
+
+    /** The webhook resolver over a registry THIS test can read (`P5-TSK-017`). */
+    private PaymentWebhookService webhookService(
+            io.micrometer.core.instrument.simple.SimpleMeterRegistry registry) {
+        return webhookService(
+                new com.finapp.app.telemetry.PaymentMeters(
+                        registry, SimulatedCardPspAdapter.NAME));
+    }
+
     private PaymentOutcomes outcomes() {
         return new PaymentOutcomes(
                 intents,
@@ -992,6 +1067,11 @@ class PaymentRefundDatabaseTest {
 
     /** The REAL webhook resolver, composed as the beans compose it (the sweeper-suite idiom). */
     private PaymentWebhookService webhookService() {
+        return webhookService(meters());
+    }
+
+    private PaymentWebhookService webhookService(
+            com.finapp.app.telemetry.PaymentMeters paymentMeters) {
         org.springframework.jdbc.datasource.DriverManagerDataSource dataSource =
                 new org.springframework.jdbc.datasource.DriverManagerDataSource(
                         DatabaseRoles.required("finapp.db.url"),
@@ -1009,6 +1089,7 @@ class PaymentRefundDatabaseTest {
                 attempts,
                 intents,
                 refunds,
+                paymentMeters,
                 outcomes(),
                 new com.finapp.platform.inbox.InboxConsumer<>(
                         new com.finapp.platform.inbox.JdbcInboxRecordStore(),
@@ -1058,6 +1139,11 @@ class PaymentRefundDatabaseTest {
     // -----------------------------------------------------------------
     // Counters - in the tables, never inferred
     // -----------------------------------------------------------------
+
+    private static double webhookCount(
+            io.micrometer.core.instrument.simple.SimpleMeterRegistry registry, String outcome) {
+        return registry.find("finapp.payments.webhook").tag("outcome", outcome).counter().count();
+    }
 
     private static String refundReference(RefundId refund) throws SQLException {
         return oneString(

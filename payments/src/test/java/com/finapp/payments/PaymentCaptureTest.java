@@ -371,6 +371,11 @@ class PaymentCaptureTest {
         }
 
         @Override
+        public UnknownReading unknownReading(Connection uow) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
         public java.util.List<PaymentAttempt> findSweepable(
                 Connection uow, java.time.Instant dispatchedBefore,
                 java.time.Instant unknownBefore, int limit) {

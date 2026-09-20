@@ -1,5 +1,6 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.telemetry.PaymentMeters;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.payments.IllegalPaymentIntentTransitionException;
@@ -85,6 +86,7 @@ public final class PaymentService {
     private final PaymentIntentStore<Connection> intents;
     private final PaymentAttemptStore<Connection> attempts;
     private final com.finapp.payments.RefundStore<Connection> refunds;
+    private final com.finapp.app.telemetry.PaymentMeters meters;
     private final IdentityStore<Connection> identities;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
@@ -98,6 +100,7 @@ public final class PaymentService {
             PaymentIntentStore<Connection> intents,
             PaymentAttemptStore<Connection> attempts,
             com.finapp.payments.RefundStore<Connection> refunds,
+            com.finapp.app.telemetry.PaymentMeters meters,
             IdentityStore<Connection> identities,
             TransactionTemplate paymentTransactions,
             DataSource dataSource) {
@@ -109,6 +112,7 @@ public final class PaymentService {
         this.intents = Objects.requireNonNull(intents, "intents must not be null");
         this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
         this.refunds = Objects.requireNonNull(refunds, "refunds must not be null");
+        this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.identities = Objects.requireNonNull(identities, "identities must not be null");
         this.transactions =
                 Objects.requireNonNull(paymentTransactions, "paymentTransactions must not be null");
@@ -230,6 +234,12 @@ public final class PaymentService {
                             + " and only a payment awaiting confirmation can be confirmed.");
         }
 
+        // The judgement this call itself committed, counted AFTER the command's own
+        // transaction returned (`P5-TSK-017`): a converged answer and a Tx2 that lost to a
+        // resolver both report acting=false, so one judgement is counted once however many
+        // callers raced for it. An outcome that rolled back never reaches here.
+        countAttempt(confirmed.acting(), confirmed.attempt().orElse(null));
+
         // The chain (PaymentCapture's own contract: "chained by the surface after a
         // synchronous AUTHORIZED") - on the converged answer too, which is what makes a
         // client retry the recovery path for an AUTHORIZED stranded by a crash here.
@@ -253,7 +263,8 @@ public final class PaymentService {
                                                                             + " exists")));
             // A concurrent chainer is harmless: the capture converges (P5-TSK-010's counted
             // ten-way race - one wire operation, one journal entry, the rest converged).
-            capturing.capture(attempt.id());
+            PaymentCapture.CaptureResult captured = capturing.capture(attempt.id());
+            countAttempt(captured.acting(), captured.attempt());
         }
 
         // The answer is the CURRENT state - what confirm promises is the truth, not an echo:
@@ -346,11 +357,49 @@ public final class PaymentService {
                     PaymentsErrorCode.REFUND_UNFUNDED,
                     "A refund could not reserve the customer's funds (INV-BAL-04)");
         }
+        countRefund(result);
         return new RefundView(
                 result.refund().value().toString(),
                 result.status().name(),
                 amount.toBigDecimal().toPlainString(),
                 amount.currency().code());
+    }
+
+    /**
+     * The acting attempt judgement, in the machine's own vocabulary (`P5-TSK-017`). A
+     * dispatched-but-unanswered state is no judgement at all and counts nothing: what the
+     * plan's counter measures is what was DECIDED, and {@code *_DISPATCHED} is the platform
+     * mid-question. {@code *_UNKNOWN} is a decision — the honest one ({@code INV-LIFE-03}).
+     */
+    private void countAttempt(boolean acting, PaymentAttemptStatus status) {
+        if (!acting || status == null) {
+            return;
+        }
+        switch (status) {
+            case AUTHORIZED -> meters.attempt(PaymentMeters.Judgement.AUTHORIZED);
+            case CAPTURED -> meters.attempt(PaymentMeters.Judgement.CAPTURED);
+            case FAILED -> meters.attempt(PaymentMeters.Judgement.FAILED);
+            case AUTH_UNKNOWN, CAPTURE_UNKNOWN ->
+                    meters.attempt(PaymentMeters.Judgement.UNKNOWN);
+            case AUTH_DISPATCHED, CAPTURE_DISPATCHED -> {
+                // Mid-question: nothing has been judged yet.
+            }
+        }
+    }
+
+    /** The acting refund judgement — a replay and a converged takeover count nothing. */
+    private void countRefund(PaymentRefund.RefundResult result) {
+        if (!result.acting()) {
+            return;
+        }
+        switch (result.status()) {
+            case COMPLETED -> meters.refund(PaymentMeters.RefundOutcome.COMPLETED);
+            case FAILED -> meters.refund(PaymentMeters.RefundOutcome.FAILED);
+            case UNKNOWN -> meters.refund(PaymentMeters.RefundOutcome.UNKNOWN);
+            case DISPATCHED -> {
+                // Mid-question, as above.
+            }
+        }
     }
 
     /** The caller's payments, newest first. */

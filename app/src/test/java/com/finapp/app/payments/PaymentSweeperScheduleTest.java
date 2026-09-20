@@ -23,7 +23,7 @@ class PaymentSweeperScheduleTest {
     void ticksInvokeTheSweeper() {
         AtomicInteger ticks = new AtomicInteger();
         PaymentSweeperSchedule schedule =
-                new PaymentSweeperSchedule(ticking(ticks, false), Duration.ofMillis(50));
+                new PaymentSweeperSchedule(ticking(ticks, false), meters(), Duration.ofMillis(50));
         schedule.start();
         try {
             assertThat(schedule.isRunning()).isTrue();
@@ -41,7 +41,7 @@ class PaymentSweeperScheduleTest {
     void aThrowingTickDoesNotKillTheSchedule() {
         AtomicInteger ticks = new AtomicInteger();
         PaymentSweeperSchedule schedule =
-                new PaymentSweeperSchedule(ticking(ticks, true), Duration.ofMillis(50));
+                new PaymentSweeperSchedule(ticking(ticks, true), meters(), Duration.ofMillis(50));
         schedule.start();
         try {
             await().atMost(Duration.ofSeconds(5)).until(() -> ticks.get() >= 3);
@@ -55,13 +55,19 @@ class PaymentSweeperScheduleTest {
     void aNonPositiveIntervalIsRefused() {
         AtomicInteger ticks = new AtomicInteger();
         assertThatThrownBy(
-                        () -> new PaymentSweeperSchedule(ticking(ticks, false), Duration.ZERO))
+                        () -> new PaymentSweeperSchedule(ticking(ticks, false), meters(), Duration.ZERO))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
                                 new PaymentSweeperSchedule(
-                                        ticking(ticks, false), Duration.ofMillis(-1)))
+                                        ticking(ticks, false), meters(), Duration.ofMillis(-1)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static com.finapp.app.telemetry.PaymentMeters meters() {
+        return new com.finapp.app.telemetry.PaymentMeters(
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+                com.finapp.payments.SimulatedCardPspAdapter.NAME);
     }
 
     /**
