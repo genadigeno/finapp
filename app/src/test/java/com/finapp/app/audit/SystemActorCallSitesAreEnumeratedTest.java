@@ -50,24 +50,27 @@ class SystemActorCallSitesAreEnumeratedTest {
 
     /** Where the platform claims to be the acting party, and why that is the honest answer. */
     private static final Map<String, String> ENUMERATED_SITES =
-            Map.of(
-                    "com.finapp.app.registration.RegistrationService.register",
+            Map.ofEntries(
+                    Map.entry(
+                            "com.finapp.app.registration.RegistrationService.register",
                     "POST /v1/registrations is UNAUTHENTICATED, so there is no proven actor."
                         + " Attributing the action to the Party it creates was considered and"
                         + " rejected: it is circular, and it is unavailable on the refusal path"
                         + " where nothing was created - an actor that differs between success and"
                         + " failure is worse than a uniform honest one. What carries the information"
                         + " is the audit record's TARGET, the attempted login identifier, on both"
-                        + " paths. Recorded in SECURITY_ARCHITECTURE.md as a site that STAYS.",
-                    "com.finapp.app.authentication.AuthenticationService.attempt",
+                        + " paths. Recorded in SECURITY_ARCHITECTURE.md as a site that STAYS."),
+                    Map.entry(
+                            "com.finapp.app.authentication.AuthenticationService.attempt",
                     "The FAILURE BRANCH of POST /v1/authentications. There may be no identity at all"
                         + " - the login identifier may name nobody - so there is nothing to"
                         + " attribute to, and naming a guessed identity would put an unproven claim"
                         + " in a permanent record. The SUCCESS BRANCH of this same method"
                         + " establishes Actor(identityId, CUSTOMER) from the identity it just"
                         + " proved, which is asserted separately below because this enumeration is"
-                        + " at METHOD granularity and cannot see which branch called.",
-                    "com.finapp.app.recovery.RecoveryApplicationService.inAFlowAsThePlatform",
+                        + " at METHOD granularity and cannot see which branch called."),
+                    Map.entry(
+                            "com.finapp.app.recovery.RecoveryApplicationService.inAFlowAsThePlatform",
                     "Recovery initiation, recovery completion and channel verification. All three"
                         + " are reached by somebody who CANNOT LOG IN - that is what recovery is"
                         + " for - so there is no proven identity to attribute the action to, and"
@@ -76,8 +79,9 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " 'where does recovery claim to be the platform?' reads one method."
                         + " Adding a channel does NOT come through here - it requires a session, so"
                         + " the interceptor has already established a real actor, and that asymmetry"
-                        + " is what makes the first move in a takeover cost a stolen password.",
-                    "com.finapp.app.kyc.CheckOutcomeTrail.record",
+                        + " is what makes the first move in a takeover cost a stolen password."),
+                    Map.entry(
+                            "com.finapp.app.kyc.CheckOutcomeTrail.record",
                     "A check outcome is recorded (P2-TSK-009; the site MOVED here from"
                         + " VerificationRunService.audit when P2-TSK-011 gave outcomes a second"
                         + " door - one site whichever door, because two copies of this sentence"
@@ -87,8 +91,9 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " authenticated caller, and attributing the outcome to the customer"
                         + " under verification would record them as having assessed themselves."
                         + " What ties the record to the flow is the CORRELATION, and the TARGET"
-                        + " names the check, whose case names the customer.",
-                    "com.finapp.kyc.CustomerOpenedOpensCase.handle",
+                        + " names the check, whose case names the customer."),
+                    Map.entry(
+                            "com.finapp.kyc.CustomerOpenedOpensCase.handle",
                     "The platform's first production CONSUMER (P2-TSK-007): a registration event"
                         + " opens a KYC case. A consumer has no authenticated caller - the person"
                         + " whose registration caused this is not present, and the registration's"
@@ -97,8 +102,9 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " what ties the record to the person is the CORRELATION (the producing"
                         + " flow's, entered by the consumer shell from the message envelope) and"
                         + " the TARGET, which names the customer. The class of site every future"
-                        + " consumer with an audited effect will be: each comes here and says so.",
-                    "com.finapp.app.kyc.DecisionRecording.automatically",
+                        + " consumer with an audited effect will be: each comes here and says so."),
+                    Map.entry(
+                            "com.finapp.app.kyc.DecisionRecording.automatically",
                     "The AUTOMATIC decision (P2-TSK-013): the platform applying its own stated"
                         + " policy to an all-clear case - INV-KYC-02's second actor case in the"
                         + " invariant's own words, 'the platform under a stated automatic"
@@ -109,8 +115,9 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " (P2-TSK-009's reasoning, at the decision). The REVIEWER path in this"
                         + " same class never comes here - it takes the person the interceptor"
                         + " proved from the established scope, which is asserted by the"
-                        + " acceptance suite's decided_by and audit assertions.",
-                    "com.finapp.payments.PaymentConfirmation.confirm",
+                        + " acceptance suite's decided_by and audit assertions."),
+                    Map.entry(
+                            "com.finapp.payments.PaymentConfirmation.confirm",
                     "The authorization outcome's transaction (P5-TSK-009, PHASE_5_PLAN.md"
                         + " section 11's enumerated site in as many words): a provider's answer"
                         + " has no session, and attributing AUTHORIZED/FAILED/AUTH_UNKNOWN to"
@@ -120,8 +127,9 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " no person at all, so the attribution must not depend on which"
                         + " resolver won the harmless race (ADR-0046). The person's own acts -"
                         + " create, confirm, cancel - are audited as the person in their own"
-                        + " transactions; only the outcome application enters the platform.",
-                    "com.finapp.payments.PaymentCapture.capture",
+                        + " transactions; only the outcome application enters the platform."),
+                    Map.entry(
+                            "com.finapp.payments.PaymentCapture.capture",
                     "The capture, end to end (P5-TSK-010): the continuation of a confirmed"
                         + " intent has no session whichever caller chains it - the surface"
                         + " after a synchronous AUTHORIZED (P5-TSK-011) or a resolver"
@@ -130,8 +138,9 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " application as the platform). Attributing the ledger's first touch"
                         + " to whichever person's request happened to carry the chain would"
                         + " record them as the author of the provider's capture and of a"
-                        + " posting they never commanded.",
-                    "com.finapp.app.payments.PaymentWebhookService.effect",
+                        + " posting they never commanded."),
+                    Map.entry(
+                            "com.finapp.app.payments.PaymentWebhookService.effect",
                     "The webhook-driven outcome application (P5-TSK-013, ADR-0047 section 4):"
                         + " a provider's unsolicited statement has no session at all - there is"
                         + " no person in the flow to mis-attribute to, and the same outcome"
@@ -139,15 +148,27 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " act already (the P5-TSK-009 reasoning, third occurrence), so the"
                         + " attribution must not depend on which resolver wins the harmless"
                         + " race. The scope wraps only the effect: authentication, evidence and"
-                        + " dedupe run before it and claim nothing.",
-                    "com.finapp.payments.PaymentSweeper.sweep",
+                        + " dedupe run before it and claim nothing."),
+                    Map.entry(
+                            "com.finapp.payments.PaymentSweeper.sweep",
                     "The swept resolution (P5-TSK-014, ADR-0046 section 4): a scheduled"
                         + " reconciliation query has no person at all - the cleanest case of"
                         + " the P5-TSK-009 attribution reasoning, fourth occurrence - and the"
                         + " same outcome applied by the synchronous response or a webhook is"
                         + " already the platform's act, so attribution must not depend on"
                         + " which resolver wins the harmless race. The scope wraps each row's"
-                        + " query-and-resolve; the candidate read before it claims nothing.");
+                        + " query-and-resolve; the candidate read before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.payments.PaymentRefund.refund",
+                            "The refund outcome's transaction (P5-TSK-015): the operator's dispatch -"
+                                + " the hold placed, the wire call commanded - is audited as the operator"
+                                + " in Tx1, but the provider's answer has no session (the P5-TSK-009"
+                                + " reasoning, fifth occurrence), and the same outcome a later resolver"
+                                + " may apply is already the platform's act, so attributing"
+                                + " COMPLETED/FAILED/UNKNOWN - and the release-and-post that rides on"
+                                + " COMPLETED - to the operator would record them as the author of the"
+                                + " provider's decision. The scope wraps only Tx2, the outcome"
+                                + " application."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

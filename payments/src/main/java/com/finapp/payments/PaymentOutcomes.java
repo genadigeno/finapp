@@ -69,6 +69,8 @@ public final class PaymentOutcomes {
 
     private final PaymentIntentStore<Connection> intents;
     private final PaymentAttemptStore<Connection> attempts;
+    private final RefundStore<Connection> refunds;
+    private final com.finapp.ledger.HoldService holds;
     private final PostingService postings;
     private final ChartOfAccounts<Connection> chart;
     private final AuditWriter<Connection> audit;
@@ -79,6 +81,8 @@ public final class PaymentOutcomes {
     public PaymentOutcomes(
             PaymentIntentStore<Connection> intents,
             PaymentAttemptStore<Connection> attempts,
+            RefundStore<Connection> refunds,
+            com.finapp.ledger.HoldService holds,
             PostingService postings,
             ChartOfAccounts<Connection> chart,
             AuditWriter<Connection> audit,
@@ -87,6 +91,8 @@ public final class PaymentOutcomes {
             Clock clock) {
         this.intents = Objects.requireNonNull(intents, "intents must not be null");
         this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
+        this.refunds = Objects.requireNonNull(refunds, "refunds must not be null");
+        this.holds = Objects.requireNonNull(holds, "holds must not be null");
         this.postings = Objects.requireNonNull(postings, "postings must not be null");
         this.chart = Objects.requireNonNull(chart, "chart must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
@@ -295,6 +301,112 @@ public final class PaymentOutcomes {
         appendOutcomeAudit(uow, intentId, attemptId, QueryAnswer.Verdict.UNRECOGNISED.name(),
                 committedAttempt, PaymentIntentStatus.FAILED, platform, correlation, now);
         return new Applied(PaymentIntentStatus.FAILED, committedAttempt);
+    }
+
+    /**
+     * Applies a refund outcome from {@code from} — {@code DISPATCHED} or {@code UNKNOWN}
+     * (`P5-TSK-015`, ADR-0048 §4). <strong>Completion releases-and-posts atomically</strong>:
+     * the {@code COMPLETED} transition, the hold's release and the
+     * {@code payment-refund:<refundId>} posting (DR wallet / CR clearing — the capture's exact
+     * inverse pair) are one commit, no savepoint, the capture's recorded stance in refund
+     * form. Failure releases with nothing posted — the customer's money is theirs again.
+     * Ambiguity commits {@code UNKNOWN} <strong>with the hold standing</strong>
+     * ({@code INV-LIFE-03} with money visibly parked on it): the provider may yet have
+     * refunded, so the reservation must survive until an outcome does.
+     *
+     * <p>The refund's outbox events are deliberately absent until `P5-TSK-016` (the scope
+     * that names them) — the announce seam here is that task's, the `P5-TSK-012` precedent.
+     */
+    public RefundStatus applyRefund(
+            Connection uow,
+            PaymentIntentId intentId,
+            Refund refund,
+            RefundStatus from,
+            ProviderAnswer.Verdict verdict,
+            Optional<ProviderReference> providerReference,
+            LedgerAccountId wallet,
+            Correlation correlation) {
+        Actor platform = SecurityContext.require();
+        Instant now = Instant.now(clock);
+
+        RefundStatus committed;
+        switch (verdict) {
+            case APPROVED -> {
+                if (refunds.complete(uow, refund.id(), from, providerReference.orElseThrow())) {
+                    refunds.recordTransition(
+                            uow, refund.id(), from, RefundStatus.COMPLETED, platform, now);
+                    holds.release(uow, refund.holdReference());
+
+                    // THE POSTING - same connection, atomically with the transition and the
+                    // release (ADR-0048 §4): DR the customer's wallet, CR clearing - the
+                    // capture's inverse pair; the key makes any duplicate outcome
+                    // structurally unable to post twice.
+                    LedgerAccount clearing =
+                            chart.resolve(
+                                    uow,
+                                    AccountPurpose.SETTLEMENT_CLEARING,
+                                    refund.amount().currency());
+                    LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+                    postings.post(
+                            uow,
+                            new PostingCommand(
+                                    "payment-refund:" + refund.id().value(),
+                                    today,
+                                    today,
+                                    refund.id().value().toString(),
+                                    List.of(
+                                            new JournalLine(
+                                                    wallet, Direction.DEBIT, refund.amount()),
+                                            new JournalLine(
+                                                    clearing.id(),
+                                                    Direction.CREDIT,
+                                                    refund.amount()))));
+                }
+                committed = RefundStatus.COMPLETED;
+            }
+            case DECLINED, NOTHING_SENT -> {
+                if (refunds.fail(uow, refund.id(), from)) {
+                    refunds.recordTransition(
+                            uow, refund.id(), from, RefundStatus.FAILED, platform, now);
+                    // The customer's money is theirs again, and the freed budget is the sum
+                    // bound's own arithmetic (a FAILED refund no longer counts).
+                    holds.release(uow, refund.holdReference());
+                }
+                committed = RefundStatus.FAILED;
+            }
+            default -> {
+                // INDETERMINATE: UNKNOWN commits and the HOLD STANDS - nothing released,
+                // nothing posted, the parked money visible (INV-LIFE-03).
+                if (refunds.markUnknown(uow, refund.id())) {
+                    refunds.recordTransition(
+                            uow,
+                            refund.id(),
+                            RefundStatus.DISPATCHED,
+                            RefundStatus.UNKNOWN,
+                            platform,
+                            now);
+                }
+                committed = RefundStatus.UNKNOWN;
+            }
+        }
+
+        audit.append(
+                uow,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        platform,
+                        now,
+                        PaymentsAuditAction.PAYMENT_OUTCOME_APPLIED,
+                        PaymentCreation.TARGET_TYPE,
+                        intentId.value().toString(),
+                        Optional.empty(),
+                        AuditOutcome.SUCCEEDED,
+                        correlation.correlationId(),
+                        Optional.of(
+                                "refund=" + refund.id()
+                                        + ", verdict=" + verdict
+                                        + ", refundStatus=" + committed)));
+        return committed;
     }
 
     /** The attempt fails with its mapped reason from {@code from}, and the intent with it. */

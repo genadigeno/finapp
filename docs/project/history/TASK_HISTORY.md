@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 118 "Previously" blocks, newest first, from `P5-TSK-014` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 119 "Previously" blocks, newest first, from `P5-TST-001` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,39 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P5-TST-001` — the ambiguity demonstration** — `COMPLETE` (2026-09-20). **M5.6 CLOSES at
+2 of 2: the phase's promise, driven whole and counted.** Five scenarios over the real
+chain, all green first run: received-before-lost and timeout-then-success at both stages —
+the honest `*_UNKNOWN` commits (capture's with nothing posted), the mid-ambiguity retry
+converges with zero wire calls, the sweeper learns the truth, and the payment ends
+`SUCCEEDED` with **`requestCount == 1` per wire path and exactly one entry counted by
+reference**; and the contradiction — success claimed after the sweeper resolved
+`FAILED(NEVER_RECEIVED)` — lands as refused-edge evidence beside an untouched terminal.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every scenario's effect counted, never inferred | One wire operation per path, one transition row per edge, one entry — or none where value never moved — asserted from the tables |
+| The `INV-LIFE-03` register rows land with demonstrations performed | The row names the suite, both named mutations, commands and observed results — performed at this gate, early against the phase guard |
+
+### Eight mutations — one survived its first run, and that is the battery working
+
+All eight ended caught, restores `cmp`-verified: the **named** timeout-mapped-to-`FAILED`
+(the most-expensive-mistake shape, refused by the demonstration while the harness held the
+provider's approval); the **named** sweeper's-transition-made-unconditional (a race
+loser's write refused by the schema beneath — the layers meeting);
+every-drop-as-`NOTHING_SENT`; the `*_UNKNOWN` marking dropped; the refused-edge gate
+dropped (the machine's legality exploded where quiet evidence belongs); sweep evidence
+dropped; the mid-ambiguity convergence dropped; and **the 404-fold-as-licence SURVIVED
+round one** — the probe's empty-bodied 404 died at the evidence bound before the
+status-code fold could matter — so the probe was strengthened to the bodied 404 the
+misrouted load balancer actually sends, and the mutation then failed against it. **No
+production changes — a pure demonstration task. Verified by targeted tiers —
+`:payments:test` 108 / `:platform:test` 171 / `:app:test` 444 / the payment database
+suites 61 (schema 10, authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6,
+transitions 7, sweeper 8, ambiguity 5), 0 failures, fresh runs — the full battery
+deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
+claimed.**
 
 **`P5-TSK-014` — the reconciliation-by-query sweeper** — `COMPLETE` (2026-09-20).
 **M5.6 opens at 1 of 2: ambiguity now resolves on the platform's own initiative.**

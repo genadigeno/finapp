@@ -294,6 +294,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/payments",
                         ApiVersion.CURRENT_PREFIX + "/payments/{id}",
                         ApiVersion.CURRENT_PREFIX + "/payments/{id}/confirmation",
+                        // P5-TSK-015: the privileged refund - PAYMENT_REFUND at the boundary,
+                        // the reason and the key required, hold-then-post beneath.
+                        ApiVersion.CURRENT_PREFIX + "/payments/{id}/refund",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

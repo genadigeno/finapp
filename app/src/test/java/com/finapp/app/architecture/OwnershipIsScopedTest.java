@@ -276,12 +276,20 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.payments.JdbcPaymentIntentStore.findById",
                             new Entry(
-                                    Scope.AUTHORITATIVE_ID,
-                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
-                                    "The converge re-read after a lost conditional transition,"
-                                        + " inside the same command transaction that already"
-                                        + " passed findOwned - the identifier is never a"
-                                        + " request's. HTTP reads go through findOwned.")),
+                                    Scope.ADMINISTERED,
+                                    "Two callers. The converge re-read after a lost conditional"
+                                        + " transition, inside the same command transaction that"
+                                        + " already passed findOwned - authoritative there. And,"
+                                        + " since P5-TSK-015, the refund command's read: the"
+                                        + " identifier comes from the URL of"
+                                        + " POST /v1/payments/{id}/refund and names SOMEBODY"
+                                        + " ELSE'S payment - the operation, not a defect (the"
+                                        + " P1-TSK-028 class). What stands in for the missing"
+                                        + " ownership predicate:"
+                                        + " @RequiresPermission(PAYMENT_REFUND) at the boundary,"
+                                        + " asserted with nothing written by"
+                                        + " PaymentRefundEndpointDatabaseTest's permissionless"
+                                        + " refusal. Customer HTTP reads go through findOwned.")),
                     Map.entry(
                             "com.finapp.payments.JdbcPaymentIntentStore.transition",
                             new Entry(
@@ -388,6 +396,78 @@ class OwnershipIsScopedTest {
                                         + " keyed by the intent findOwned validated) - never"
                                         + " a request's. Today's callers are the database"
                                         + " suite and the coming reconciliation surface.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.lockById",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The refund dispatch's serialisation point (P5-TSK-015):"
+                                        + " FOR UPDATE on the attempt row, taken FIRST in the"
+                                        + " pinned attempt-then-account lock order. The"
+                                        + " identifier is the command's own findForIntent"
+                                        + " result behind the ADMINISTERED intent read - never"
+                                        + " a request's; no HTTP path takes an attempt id.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.findById",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The replay re-read (P5-TSK-015): the refund identifier"
+                                        + " comes from the idempotency claim's own recorded"
+                                        + " body, minted by the platform on the creating call -"
+                                        + " never a request's. No HTTP path takes a refund"
+                                        + " id.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.listFor",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The refunds of one attempt: the attempt identifier is the"
+                                        + " command's own findForIntent result (as lockById),"
+                                        + " never a request's. Today's callers are the"
+                                        + " database suite; the P5-TSK-016 view will walk the"
+                                        + " same platform-held chain.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.sumNonFailedFor",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The bound's lock-then-look read (P5-TSK-015): summed"
+                                        + " under the attempt row lock the command just took,"
+                                        + " on the same platform-held attempt identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.complete",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The refund outcome's conditional write, atomic with the"
+                                        + " hold release and the posting (ADR-0048 section 4) -"
+                                        + " the refund identifier was minted by this command's"
+                                        + " own Tx1 and carried across the provider call, and"
+                                        + " the WHERE status = ? row count makes racing"
+                                        + " resolvers converge.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.fail",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "As JdbcRefundStore.complete - the failing edge, the hold"
+                                        + " released, nothing posted.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.markUnknown",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "As JdbcRefundStore.complete - the honest-ambiguity edge:"
+                                        + " the hold STANDS, nothing posted (INV-LIFE-03).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.recordTransition",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The append-only history row beside the refund's own"
+                                        + " conditional transition, on the same minted"
+                                        + " identifier.")),
                     Map.entry(
                             "com.finapp.transfers.JdbcBeneficiaryStore.remove",
                             new Entry(

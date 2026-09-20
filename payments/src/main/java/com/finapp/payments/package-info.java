@@ -52,12 +52,18 @@
  * asked about our stored reference holding no connection, answers applied through the shared
  * outcomes, an explicit UNRECOGNISED resolving to {@code FAILED(NEVER_RECEIVED)} and a 404
  * never earning it - updated by the task that made the previous sentence stale, the
- * recurring class). The refund command is {@code P5-TSK-015}.
+ * recurring class), and the refund command ({@code P5-TSK-015}: {@code PaymentRefund} -
+ * hold-then-post per ADR-0048 §4: the dispatch takes the attempt row lock FIRST (the pinned
+ * attempt-then-account order), judges the two-rank bound (lock-then-look over
+ * {@code sumNonFailedFor}, {@code V004}'s trigger beneath), places the hold and commits
+ * before the wire call; completion releases-and-posts atomically keyed
+ * {@code payment-refund:<refundId>}, failure releases with nothing posted, ambiguity leaves
+ * the hold standing - the customer's funds visibly reserved, never silently spendable).
  *
  * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
  * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and
- * cancellation as the person, outcome application as the platform
- * ({@code PaymentsAuditAction}). Still to come with their commands: the capture's action
- * ({@code P5-TSK-010}) and the refund's, with its required reason ({@code P5-TSK-015}).
+ * cancellation as the person, outcome application as the platform, the capture's dispatch
+ * ({@code P5-TSK-010}) and the refund's, with its required reason ({@code P5-TSK-015}) -
+ * {@code PaymentsAuditAction}.
  */
 package com.finapp.payments;

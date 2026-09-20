@@ -437,6 +437,15 @@ class PaymentCaptureDatabaseTest {
                                     adapter(),
                                     new com.finapp.payments.PaymentOutcomes(
                                             intents, attempts,
+                                            new com.finapp.payments.JdbcRefundStore(),
+                                            new com.finapp.ledger.HoldService(
+                                                    ledgerAccounts,
+                                                    new com.finapp.ledger.JdbcBalanceDerivation(),
+                                                    new com.finapp.ledger.JdbcHoldStore(),
+                                                    new JdbcBalanceProjection(),
+                                                    new JdbcAuditWriter(),
+                                                    new JdbcOutboxWriter(),
+                                                    IDS, CLOCK),
                                             new PostingService(
                                                     executor(),
                                                     new JdbcJournalEntryStore(IDS),
@@ -475,6 +484,15 @@ class PaymentCaptureDatabaseTest {
                 new com.finapp.payments.PaymentOutcomes(
                         intents,
                         attempts,
+                        new com.finapp.payments.JdbcRefundStore(),
+                        new com.finapp.ledger.HoldService(
+                                ledgerAccounts,
+                                new com.finapp.ledger.JdbcBalanceDerivation(),
+                                new com.finapp.ledger.JdbcHoldStore(),
+                                new JdbcBalanceProjection(),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                IDS, CLOCK),
                         new PostingService(
                                 executor(),
                                 new JdbcJournalEntryStore(IDS),

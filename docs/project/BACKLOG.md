@@ -6293,7 +6293,7 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
   instruction; no fleet-wide database or kafka counts claimed.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-FIN`
 
-**P5-TSK-015 — The refund command: hold, then post** — `READY`
+**P5-TSK-015 — The refund command: hold, then post** — `COMPLETE` (2026-09-20)
 - **Scope**: `POST /v1/payments/{id}/refund` behind `PAYMENT_REFUND` (joins
   `LEDGER_OPERATOR` — one money-operating population; a permission is never a column),
   reason required (`INV-AUD-03`, the reversal precedent); dispatch transaction: the bound
@@ -6307,9 +6307,67 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 - **Deps**: `P5-TSK-010`, `P5-TSK-008`. **Accept**: ten concurrent partials accept exactly
   the bounded set, counted; the held funds are unspendable mid-flight (driven); the
   permissionless session refused with nothing written; the sum bound refuses raw SQL.
+- **Gate evidence (2026-09-20)**: **every accept clause counted over the real chain**
+  (`PaymentRefundDatabaseTest`, 9 tests, the capture-suite composition — real stores, real
+  ledger, real `HoldService` in its **first production composition**, real adapter over the
+  harness; `PaymentRefundEndpointDatabaseTest`, 3 tests over real HTTP). Ten concurrent
+  partials of 4.00 against a captured 12.00 **accept exactly three, counted in the tables**
+  (3 rows, 3 standing holds, sum 12.00, zero entries — the race dispatches into ambiguity
+  deliberately: one shared stub reference for three completions would trip `V004`'s
+  provider-reference UNIQUE, a harness artifact recorded in the test's own comment), the 7
+  refusals each the bound's clean shape, **and one more cent is unspendable** — the whole
+  capture reserved (`INV-BAL-04`). The held funds unspendable mid-flight driven whole:
+  ambiguity commits `UNKNOWN`, **the hold stands**, a competing 1-cent spend refused
+  (`INV-LIFE-03` with money visibly parked on it). The permissionless session's 403 with
+  refund and hold counts unmoved; the operator's 201 with **the dispatch audited as the
+  operator, the required reason verbatim** (`INV-AUD-03`); the sum bound refuses raw SQL
+  (`23514 payments_refund_is_bounded` — the schema's own rank). Completion
+  releases-and-posts atomically (`payment-refund:<refundId>`, DR wallet / CR clearing — the
+  capture's inverse; settled drops, the hold gone, exactly one entry, the freed room
+  holdable again); declined releases with **nothing posted** and the freed budget refunds
+  to the penny with one more minor unit refused; unfunded-after-real-spend the honest
+  `REFUND_UNFUNDED` 409 with nothing written; uncaptured `NotRefundable` with **no state
+  invented** (the no-attempt refusal carries no fabricated status — fixed on the record when
+  the gate found the branch claiming `AUTH_DISPATCHED` of an attempt that never existed);
+  the replay converges (same refund id, `requestCount == 1`, **one hold ever placed**).
+  **The two-rank bound with the pinned lock order**: `FOR UPDATE` on the attempt row FIRST
+  (attempt → account, the `P5-TSK-013` 40P01 lesson applied in advance), the sibling sum
+  under it, the honest 422 **before any hold is placed**; `V004`'s advisory-locked trigger
+  beneath for writers that never ran this code. The outcome applies through
+  `PaymentOutcomes.applyRefund` (the `P5-TSK-013` extraction meeting its fourth consumer)
+  as the platform through the **fifth** enumerated `enterSystem()` site; the ownership
+  register gained the refund's eight methods and `JdbcPaymentIntentStore.findById`
+  **reclassified `ADMINISTERED`** (the refund made "the identifier is never a request's"
+  false — the `P1-TSK-028` class, the permission at the boundary standing in, asserted by
+  the permissionless refusal). Contract: the route in the pin, baseline +191 lines added-only
+  (the 6 BREAKING labels the required-flags on the brand-new path and schema — the
+  `P5-TSK-005` shape); `RefundRequest` classified in the request-schema register (a REASON,
+  RESTRICTED-FINANCIAL, no secret); `ERROR_CONTRACT.md` §3 +3 codes with the
+  409-vs-422-vs-409 reasoning; `AUDITABLE_ACTIONS.md` +`PaymentRefundDispatched`
+  (requiresReason **Yes**). **Eight mutations, all ENDED caught by the intended assertion,
+  restores `cmp`-verified byte-identical — AND ONE SURVIVED ITS FIRST RUN, which is the
+  battery working**: the NAMED hold-dropped (funds spendable mid-flight — the driven
+  UNSPENDABLE probe refused it); the NAMED release-dropped-from-completion (the posted
+  money still held — the 7.00-hold-placeable-after probe); the posting dropped (`COMPLETED`
+  beside no entry); the domain bound dropped (caught by the declined test's exception-type
+  probe — observed: **the layers are three deep**, the hold refused the overrun before the
+  trigger could, the trigger's own rank held by the raw-SQL test); **the attempt lock
+  dropped — SURVIVED ROUND ONE**: with the wallet holding exactly the capture, the hold
+  placements serialize on the ACCOUNT lock and `INV-BAL-04` masked the mutation entirely —
+  so the battery added the funded-wallet race (a real customer's wallet holds other money;
+  the account lock can no longer arbitrate) and the mutation then failed against it as the
+  trigger's `23514` where the honest 422 belongs, the gap closed where it was found and
+  recorded in the probe's own comment; the permission dropped (403 became 201 — the
+  boundary test); DECLINED-falls-to-ambiguity (`FAILED` expected, `UNKNOWN` answered); the
+  fail-path release dropped (the freed-budget refund refused by the standing hold).
+  Verified by targeted tiers — `:payments:test` 108 / `:platform:test` 171 / `:app:test`
+  444 / the payment database suites 73 (schema 10, authorization 8, capture 6, endpoints
+  10, unconfigured 1, webhook 6, transitions 7, sweeper 8, ambiguity 5, refund 9, refund
+  endpoints 3), 0 failures, fresh runs — the full battery deliberately skipped on the
+  owner's instruction; no fleet-wide database or kafka counts claimed.
 - **Risk**: High. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-SEC`
 
-**P5-TSK-016 — The refund surface and events** — `TODO`
+**P5-TSK-016 — The refund surface and events** — `READY`
 - **Scope**: the refund view on the payment surface (refund totals derived from the rows —
   the intent has no refund state, ADR-0045), `RefundInitiated`/`RefundCompleted`/
   `RefundFailed` through the outbox, audit naming the operator with the reason, the

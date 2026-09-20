@@ -74,7 +74,10 @@ public enum RoleName {
             EnumSet.of(
                     PermissionName.LEDGER_POST,
                     PermissionName.LEDGER_ADJUST,
-                    PermissionName.TRANSFER_REVERSE));
+                    PermissionName.TRANSFER_REVERSE,
+                    // P5-TSK-015: the refund joins the one money-operating population - the
+                    // same reasoning as the reversal's arrival, restated not re-argued.
+                    PermissionName.PAYMENT_REFUND));
 
     private final Set<PermissionName> permissions;
 

@@ -1,6 +1,8 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
+import com.finapp.identity.PermissionName;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.identity.Session;
 import com.finapp.payments.PaymentIntentId;
@@ -99,6 +101,25 @@ public class PaymentController {
     public PaymentService.PaymentView cancelPayment(
             @PathVariable("id") String id, HttpServletRequest request) {
         return payments.cancel(current(request), parsedOrAbsent(id));
+    }
+
+    /**
+     * Refunds the payment as the acting operator (`P5-TSK-015`) — the privileged handler on
+     * this surface: {@code @RequiresPermission(PAYMENT_REFUND)} beside the class's
+     * {@code @RequiresSession} (the reversal precedent), the reason required, the key
+     * required. Answers {@code 201} with the refund's honest state — {@code COMPLETED},
+     * {@code FAILED}, or {@code UNKNOWN} with the customer's funds visibly reserved until
+     * the provider answers.
+     */
+    @PostMapping(path = "/{id}/refund", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.PAYMENT_REFUND)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public PaymentService.RefundView refundPayment(
+            @PathVariable("id") String id,
+            @Valid @RequestBody RefundRequest body,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
+        return payments.refundPayment(parsedOrAbsent(id), body, idempotencyKey);
     }
 
     /** The caller's payment — its current state, the mapped reason included when it failed. */

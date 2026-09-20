@@ -16,6 +16,9 @@ import com.finapp.payments.PaymentIntent;
 import com.finapp.payments.PaymentIntentId;
 import com.finapp.payments.PaymentIntentStatus;
 import com.finapp.payments.PaymentIntentStore;
+import com.finapp.payments.PaymentNotRefundableException;
+import com.finapp.payments.PaymentRefund;
+import com.finapp.payments.RefundExceedsCaptureException;
 import com.finapp.payments.PaymentsErrorCode;
 import com.finapp.payments.UnknownPaymentException;
 import com.finapp.payments.UnknownPaymentInstrumentException;
@@ -78,6 +81,7 @@ public final class PaymentService {
     private final PaymentCancellation cancellation;
     private final ObjectProvider<PaymentConfirmation> confirmation;
     private final ObjectProvider<PaymentCapture> capture;
+    private final ObjectProvider<PaymentRefund> refund;
     private final PaymentIntentStore<Connection> intents;
     private final PaymentAttemptStore<Connection> attempts;
     private final IdentityStore<Connection> identities;
@@ -89,6 +93,7 @@ public final class PaymentService {
             PaymentCancellation cancellation,
             ObjectProvider<PaymentConfirmation> confirmation,
             ObjectProvider<PaymentCapture> capture,
+            ObjectProvider<PaymentRefund> refund,
             PaymentIntentStore<Connection> intents,
             PaymentAttemptStore<Connection> attempts,
             IdentityStore<Connection> identities,
@@ -98,6 +103,7 @@ public final class PaymentService {
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation must not be null");
         this.confirmation = Objects.requireNonNull(confirmation, "confirmation must not be null");
         this.capture = Objects.requireNonNull(capture, "capture must not be null");
+        this.refund = Objects.requireNonNull(refund, "refund must not be null");
         this.intents = Objects.requireNonNull(intents, "intents must not be null");
         this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
         this.identities = Objects.requireNonNull(identities, "identities must not be null");
@@ -284,6 +290,59 @@ public final class PaymentService {
         return inOneTransaction(
                 unitOfWork ->
                         currentView(unitOfWork, intentId, partyOf(unitOfWork, current)));
+    }
+
+    /**
+     * The operator's rendered refund — the status honestly, {@code UNKNOWN} included. Lean by
+     * scope: the customer-facing refund view with derived totals is `P5-TSK-016`'s.
+     */
+    public record RefundView(String id, String status, String amount, String currency) {}
+
+    /**
+     * Dispatches (or replays) the operator's refund (`P5-TSK-015`) — the operator surface
+     * shape: the URL names somebody else's payment, the standing checks are
+     * {@code @RequiresPermission(PAYMENT_REFUND)} at the boundary plus the actor the
+     * {@code SecurityContext} carries into the command and its audit record.
+     */
+    public RefundView refundPayment(
+            PaymentIntentId intentId, RefundRequest body, String idempotencyKey) {
+        Objects.requireNonNull(intentId, "intentId must not be null");
+        Objects.requireNonNull(body, "body must not be null");
+        PaymentRefund command = refund.getIfAvailable();
+        if (command == null) {
+            throw providerUnavailable();
+        }
+        Money amount = parsedAmount(body.amount(), body.currency());
+        PaymentRefund.RefundResult result;
+        try {
+            // NOT wrapped in a transaction: the command runs its own Tx1 / provider call /
+            // Tx2 choreography (ADR-0046) - the confirm's discipline, refund form.
+            result = command.refund(intentId, amount, body.reason(), idempotencyKey);
+        } catch (UnknownPaymentException unknown) {
+            throw paymentNotFound();
+        } catch (PaymentNotRefundableException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_REFUNDABLE,
+                    "A refund was refused by the attempt's state",
+                    refused.status() == null
+                            ? "the payment was never dispatched and only a captured payment"
+                                    + " can be refunded."
+                            : "the payment is " + refused.status()
+                                    + " and only a captured payment can be refunded.");
+        } catch (RefundExceedsCaptureException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.REFUND_EXCEEDS_CAPTURED,
+                    "A refund was refused by the capture bound (INV-PAY-05)");
+        } catch (com.finapp.ledger.HoldExceedsAvailableBalanceException unfunded) {
+            throw new ApiException(
+                    PaymentsErrorCode.REFUND_UNFUNDED,
+                    "A refund could not reserve the customer's funds (INV-BAL-04)");
+        }
+        return new RefundView(
+                result.refund().value().toString(),
+                result.status().name(),
+                amount.toBigDecimal().toPlainString(),
+                amount.currency().code());
     }
 
     /** The caller's payments, newest first. */

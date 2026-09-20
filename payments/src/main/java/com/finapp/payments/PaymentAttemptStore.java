@@ -30,6 +30,16 @@ public interface PaymentAttemptStore<T> {
     Optional<PaymentAttempt> findById(T unitOfWork, PaymentAttemptId attempt);
 
     /**
+     * The attempt, locked {@code FOR UPDATE} — the refund bound's lock-then-look
+     * (`P5-TSK-015`): the sibling sum {@link RefundStore#sumNonFailedFor} reads is current
+     * only under this lock, because two dispatchers summing without it is the `P2-TSK-015`
+     * write-skew shape the schema trigger refuses for everyone else. Taken BEFORE the wallet
+     * account's lock, always — the attempt→account order every money path shares, so the
+     * refund dispatch and the capture outcome cannot deadlock each other.
+     */
+    Optional<PaymentAttempt> lockById(T unitOfWork, PaymentAttemptId attempt);
+
+    /**
      * The sweeper's candidates (`P5-TSK-014`, ADR-0046 §4): attempts in a resolvable state
      * whose state age has passed its bound — {@code *_DISPATCHED} past {@code dispatchedBefore}
      * (birth for {@code AUTH_DISPATCHED}, the transition row for the capture's), and

@@ -101,7 +101,47 @@ public enum PaymentsErrorCode implements ErrorCode {
     PROVIDER_UNAVAILABLE(
             "payments.ProviderUnavailable",
             503,
-            "Payments are temporarily unavailable.");
+            "Payments are temporarily unavailable."),
+
+    /**
+     * The intent has no {@code CAPTURED} attempt to refund against (`P5-TSK-015`,
+     * {@code INV-PAY-05}: only a captured attempt has anything to return).
+     *
+     * <p>A {@code 409}, named for the machine fact that is checked (the {@code NOT_ACTIVE}
+     * lesson): one code for never-captured, failed and still-processing alike — the remedy is
+     * the same, {@code GET /v1/payments/'{id}'} carries the state.
+     */
+    NOT_REFUNDABLE(
+            "payments.NotRefundable",
+            409,
+            "The payment has no captured amount to refund."),
+
+    /**
+     * The refund would take the non-{@code FAILED} sum past the captured amount
+     * (`P5-TSK-015`, {@code INV-PAY-05}/{@code INV-REV-02}).
+     *
+     * <p>A {@code 422}: an amount the operator supplied and can correct, decided under the
+     * attempt-row lock with nothing written and no hold placed. The refusal names no amounts
+     * ({@code INV-AUD-02}).
+     */
+    REFUND_EXCEEDS_CAPTURED(
+            "payments.RefundExceedsCaptured",
+            422,
+            "The refund would exceed the captured amount."),
+
+    /**
+     * The customer's wallet cannot fund the return right now ({@code INV-BAL-04} at the
+     * refund's dispatch, `P5-TSK-015`): the hold the flight requires would make available
+     * balance negative — the customer has spent the money.
+     *
+     * <p>A {@code 409}, not a {@code 422}: the request is well formed and the wallet's
+     * <em>state</em> refuses it — the remedies are a smaller partial refund or the account
+     * topping up, both state changes rather than request corrections.
+     */
+    REFUND_UNFUNDED(
+            "payments.RefundUnfunded",
+            409,
+            "The account cannot fund this refund right now.");
 
     private final String code;
     private final int status;

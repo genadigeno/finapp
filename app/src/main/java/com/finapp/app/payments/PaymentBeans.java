@@ -180,6 +180,35 @@ class PaymentBeans {
                 clock);
     }
 
+    @Bean
+    com.finapp.payments.RefundStore<Connection> refundStore() {
+        return new com.finapp.payments.JdbcRefundStore();
+    }
+
+    /**
+     * The Phase 3 hold machinery meets its owed production consumer (`P3-TSK-015` →
+     * `P5-TSK-015`, ADR-0048 §4): the refund's dispatch reserves the customer's funds inside
+     * the account-row lock, so the composition that was built and proven two phases ago is
+     * wired the day its caller arrives.
+     */
+    @Bean
+    com.finapp.ledger.HoldService holdService(
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.ledger.HoldService(
+                ledgerAccountStore,
+                new com.finapp.ledger.JdbcBalanceDerivation(),
+                new com.finapp.ledger.JdbcHoldStore(),
+                new com.finapp.ledger.JdbcBalanceProjection(),
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock);
+    }
+
     /**
      * The one shared outcome application (`P5-TSK-013`, ADR-0047 §4): the synchronous Tx2s,
      * the webhook resolver and the sweeper (`P5-TSK-014`) all apply judgements through this
@@ -189,6 +218,8 @@ class PaymentBeans {
     com.finapp.payments.PaymentOutcomes paymentOutcomes(
             PaymentIntentStore<Connection> paymentIntentStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
+            com.finapp.ledger.HoldService holdService,
             com.finapp.ledger.PostingService postingService,
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
             AuditWriter<Connection> auditWriter,
@@ -198,6 +229,8 @@ class PaymentBeans {
         return new com.finapp.payments.PaymentOutcomes(
                 paymentIntentStore,
                 paymentAttemptStore,
+                refundStore,
+                holdService,
                 postingService,
                 new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
                 auditWriter,
@@ -270,6 +303,8 @@ class PaymentBeans {
                     paymentConfirmation,
             org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PaymentCapture>
                     paymentCapture,
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PaymentRefund>
+                    paymentRefundCommand,
             PaymentIntentStore<Connection> paymentIntentStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
             com.finapp.identity.IdentityStore<Connection> identityStore,
@@ -280,11 +315,46 @@ class PaymentBeans {
                 paymentCancellation,
                 paymentConfirmation,
                 paymentCapture,
+                paymentRefundCommand,
                 paymentIntentStore,
                 paymentAttemptStore,
                 identityStore,
                 paymentTransactions,
                 dataSource);
+    }
+
+    /**
+     * The refund command (`P5-TSK-015`): hold, then post — provider-conditional like every
+     * consumer of the wire.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.PaymentRefund paymentRefund(
+            TransactionRunner paymentTransactionRunner,
+            IdempotentExecutor idempotentExecutor,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            com.finapp.ledger.HoldService holdService,
+            PaymentProvider paymentProvider,
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.PaymentRefund(
+                paymentTransactionRunner,
+                idempotentExecutor,
+                paymentIntentStore,
+                paymentAttemptStore,
+                refundStore,
+                providerEvidenceStore,
+                holdService,
+                paymentProvider,
+                paymentOutcomes,
+                auditWriter,
+                ids,
+                clock);
     }
 
     /**

@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TST-001` — the ambiguity demonstration; **M5.6 CLOSES at 2 of 2**, next `P5-TSK-015`)
+Last updated: 2026-09-20 (`P5-TSK-015` — the refund command: hold, then post; **M5.7 opens at 1 of 2**, next `P5-TSK-016`)
 
 ---
 
@@ -229,58 +229,62 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TSK-015` — the refund command: hold, then post** — `READY`.
-M5.7 opens: `POST /v1/payments/{id}/refund` behind `PAYMENT_REFUND` (joins
-`LEDGER_OPERATOR` — one money-operating population; a permission is never a column),
-reason required (`INV-AUD-03`); dispatch transaction: the bound judged under lock-then-look
-on the attempt row, **the Phase 3 hold placed on the wallet inside the account lock**
-(ADR-0048 §4 — `P3-TSK-015`'s owed capture composition), `DISPATCHED` + provider reference
-committed; outcome transaction: completion releases-and-posts (debit wallet, credit
-clearing, key `payment-refund:<refundId>`) atomically, failure releases with nothing
-posted, ambiguity commits `UNKNOWN` with the hold standing. Partial refunds; concurrent
-partials bounded at both ranks (`INV-PAY-05`, `INV-REV-02`). Accept: ten concurrent
-partials accept exactly the bounded set, counted; the held funds are unspendable mid-flight
-(driven); the permissionless session refused with nothing written; the sum bound refuses
-raw SQL. See the backlog entry.
+**`P5-TSK-016` — the refund surface and events** — `READY`.
+M5.7 closes with it: the refund view on the payment surface (refund totals derived from the
+rows — the intent has no refund state, ADR-0045), `RefundInitiated`/`RefundCompleted`/
+`RefundFailed` through the outbox, audit naming the operator with the reason, the refund's
+no-500 sweep, contract baseline. The webhook-completed refund proven (the provider reports
+completion asynchronously). Accept: the acceptance chain over HTTP; the derived totals
+reconcile with the rows; a replayed refund key replays byte-for-byte. See the backlog entry.
 
 ### Just completed
 
-**`P5-TST-001` — the ambiguity demonstration** — `COMPLETE` (2026-09-20). **M5.6 CLOSES at
-2 of 2: the phase's promise, driven whole and counted.** Five scenarios over the real
-chain, all green first run: received-before-lost and timeout-then-success at both stages —
-the honest `*_UNKNOWN` commits (capture's with nothing posted), the mid-ambiguity retry
-converges with zero wire calls, the sweeper learns the truth, and the payment ends
-`SUCCEEDED` with **`requestCount == 1` per wire path and exactly one entry counted by
-reference**; and the contradiction — success claimed after the sweeper resolved
-`FAILED(NEVER_RECEIVED)` — lands as refused-edge evidence beside an untouched terminal.
+**`P5-TSK-015` — the refund command: hold, then post** — `COMPLETE` (2026-09-20). **M5.7
+opens at 1 of 2: the phase's money goes both ways, and `P3-TSK-015`'s owed composition
+fired.** `PaymentRefund` behind `PAYMENT_REFUND` (joined `LEDGER_OPERATOR` — a permission is
+never a column), the reason required (`INV-AUD-03`, asserted verbatim in the operator's own
+audit record over HTTP): the dispatch takes the attempt row `FOR UPDATE` FIRST (the pinned
+attempt → account order — the `P5-TSK-013` 40P01 lesson applied in advance), judges the
+two-rank bound (lock-then-look over `sumNonFailedFor`, the honest 422 **before any hold**;
+`V004`'s advisory-locked trigger beneath), places the Phase 3 hold — **`HoldService`'s first
+production composition** — and commits before the wire call; completion releases-and-posts
+atomically (`payment-refund:<refundId>`, the capture's inverse pair); failure releases with
+nothing posted; **ambiguity commits `UNKNOWN` with the hold standing** (`INV-LIFE-03` with
+money visibly parked on it), all through `PaymentOutcomes.applyRefund` — the extraction's
+fourth consumer — as the platform through the fifth enumerated `enterSystem()` site.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Every scenario's effect counted, never inferred | One wire operation per path, one transition row per edge, one entry — or none where value never moved — asserted from the tables |
-| The `INV-LIFE-03` register rows land with demonstrations performed | The row names the suite, both named mutations, commands and observed results — performed at this gate, early against the phase guard |
+| Ten concurrent partials accept exactly the bounded set, counted | 3 rows, 3 standing holds, sum 12.00, zero entries, one more cent unspendable — dispatched into ambiguity deliberately (the shared-stub-reference 23505 is a harness artifact, recorded) |
+| Held funds unspendable mid-flight (driven) | `UNKNOWN` committed, the hold stands, a competing 1-cent spend refused by `INV-BAL-04` |
+| Permissionless session refused with nothing written | 403 over real HTTP, refund and hold counts unmoved |
+| The sum bound refuses raw SQL | `23514 payments_refund_is_bounded`, the schema's own rank |
 
 ### Eight mutations — one survived its first run, and that is the battery working
 
-All eight ended caught, restores `cmp`-verified: the **named** timeout-mapped-to-`FAILED`
-(the most-expensive-mistake shape, refused by the demonstration while the harness held the
-provider's approval); the **named** sweeper's-transition-made-unconditional (a race
-loser's write refused by the schema beneath — the layers meeting);
-every-drop-as-`NOTHING_SENT`; the `*_UNKNOWN` marking dropped; the refused-edge gate
-dropped (the machine's legality exploded where quiet evidence belongs); sweep evidence
-dropped; the mid-ambiguity convergence dropped; and **the 404-fold-as-licence SURVIVED
-round one** — the probe's empty-bodied 404 died at the evidence bound before the
-status-code fold could matter — so the probe was strengthened to the bodied 404 the
-misrouted load balancer actually sends, and the mutation then failed against it. **No
-production changes — a pure demonstration task. Verified by targeted tiers —
-`:payments:test` 108 / `:platform:test` 171 / `:app:test` 444 / the payment database
-suites 61 (schema 10, authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6,
-transitions 7, sweeper 8, ambiguity 5), 0 failures, fresh runs — the full battery
-deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
-claimed.**
+All eight ended caught, restores `cmp`-verified: the NAMED hold-dropped; the NAMED
+release-dropped-from-completion; the posting dropped (`COMPLETED` beside no entry); the
+domain bound dropped (observed: **the layers are three deep** — the hold refused the
+sequential overrun before the trigger could; the trigger's rank held by the raw-SQL probe);
+**the attempt lock dropped SURVIVED round one** — with the wallet holding exactly the
+capture, hold placements serialize on the ACCOUNT lock and `INV-BAL-04` masked the mutation
+— so the funded-wallet race was added (the account lock can no longer arbitrate) and the
+mutation then failed as the trigger's `23514` where the honest 422 belongs, the gap closed
+where it was found; the permission dropped; DECLINED-falls-to-ambiguity; the fail-path
+release dropped. The `INV-PAY-05` register row landed with the demonstrations performed. The
+gate also found and fixed the no-attempt refusal **inventing a state** (`AUTH_DISPATCHED` of
+an attempt that never existed — the refusal now carries none), and reclassified
+`JdbcPaymentIntentStore.findById` **`ADMINISTERED`** (the refund made "the identifier is
+never a request's" false — the `P1-TSK-028` class). **Verified by targeted tiers —
+`:payments:test` 108 / `:platform:test` 171 / `:app:test` 444 / the payment database suites
+73 (schema 10, authorization 8, capture 6, endpoints 10, unconfigured 1, webhook 6,
+transitions 7, sweeper 8, ambiguity 5, refund 9, refund endpoints 3), 0 failures, fresh runs
+— the full battery deliberately skipped on the owner's instruction; no fleet-wide database
+or kafka counts claimed.**
 
 ### Previously
 
-The per-task completion records behind this one — 118 blocks, from `P5-TSK-014` back to project
+The per-task completion records behind this one — 119 blocks, from `P5-TST-001` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -294,8 +298,9 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1–M5.6 `CLOSED` (3+2+3+3+2+2): `P5-TSK-001`…`-014` and
-`P5-TST-001` complete. Next: `P5-TSK-015`, `READY` — the refund command, M5.7's open.
+**Phase 5 is `IN_PROGRESS`** — M5.1–M5.6 `CLOSED` (3+2+3+3+2+2), M5.7 open at 1 of 2:
+`P5-TSK-001`…`-015` and `P5-TST-001` complete. Next: `P5-TSK-016`, `READY` — the refund
+surface and events, M5.7's close.
 
 The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of

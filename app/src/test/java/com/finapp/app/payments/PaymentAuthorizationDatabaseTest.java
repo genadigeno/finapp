@@ -471,6 +471,16 @@ class PaymentAuthorizationDatabaseTest {
         return new com.finapp.payments.PaymentOutcomes(
                 intents,
                 attempts,
+                new com.finapp.payments.JdbcRefundStore(),
+                new com.finapp.ledger.HoldService(
+                        new com.finapp.ledger.JdbcLedgerAccountStore(),
+                        new com.finapp.ledger.JdbcBalanceDerivation(),
+                        new com.finapp.ledger.JdbcHoldStore(),
+                        new com.finapp.ledger.JdbcBalanceProjection(),
+                        new JdbcAuditWriter(),
+                        new JdbcOutboxWriter(),
+                        IDS,
+                        CLOCK),
                 new com.finapp.ledger.PostingService(
                         new com.finapp.platform.idempotency.IdempotentExecutor(
                                 new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore(),

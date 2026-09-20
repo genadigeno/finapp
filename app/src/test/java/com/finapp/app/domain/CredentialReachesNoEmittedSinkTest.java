@@ -339,6 +339,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // payment stores is classified in payments.payment_intent's register
                         // rows, not in this vocabulary.
                         "PaymentCreateRequest",
+                        // P5-TSK-015. Carries an amount as an exact decimal string, an ISO
+                        // currency code, and a REASON (free prose by an operator, bound for
+                        // the audit record's reason column and payments.refund's reason
+                        // column - RESTRICTED-FINANCIAL, never rendered by any toString). No
+                        // secret; here because the set is every schema REACHABLE from a
+                        // request body. The TransferReversalRequest shape, at the refund.
+                        "RefundRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/

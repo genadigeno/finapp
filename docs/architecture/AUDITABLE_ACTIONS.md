@@ -342,6 +342,7 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `payments.PaymentCancelled` | No | A person cancelled a payment intent before confirmation; nothing was dispatched and nothing was posted. |
 | `payments.PaymentCaptureDispatched` | No | The platform dispatched a capture for an authorized attempt; the reference was stored before the provider was asked, and the record names the attempt and the intent, never an amount. |
 | `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. |
+| `payments.PaymentRefundDispatched` | **Yes** | An operator dispatched a bounded refund of a captured payment, with the required reason; the record names the refund, the attempt and the intent, never an amount. |
 
 Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
 dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's

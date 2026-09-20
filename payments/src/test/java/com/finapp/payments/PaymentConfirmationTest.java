@@ -108,6 +108,16 @@ class PaymentConfirmationTest {
         return new PaymentOutcomes(
                 intents,
                 attempts,
+                new com.finapp.payments.JdbcRefundStore(),
+                new com.finapp.ledger.HoldService(
+                        new com.finapp.ledger.JdbcLedgerAccountStore(),
+                        new com.finapp.ledger.JdbcBalanceDerivation(),
+                        new com.finapp.ledger.JdbcHoldStore(),
+                        new com.finapp.ledger.JdbcBalanceProjection(),
+                        (uow, record) -> {},
+                        (uow, envelope, payload, mediaType) -> {},
+                        IDS,
+                        CLOCK),
                 new com.finapp.ledger.PostingService(
                         new com.finapp.platform.idempotency.IdempotentExecutor(
                                 new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore(),
@@ -426,6 +436,12 @@ class PaymentConfirmationTest {
         public java.util.List<PaymentAttempt> findSweepable(
                 Connection uow, java.time.Instant dispatchedBefore,
                 java.time.Instant unknownBefore, int limit) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.Optional<PaymentAttempt> lockById(
+                Connection uow, PaymentAttemptId attempt) {
             throw new UnsupportedOperationException("not exercised here");
         }
         final Map<UUID, PaymentAttempt> rows = new HashMap<>();

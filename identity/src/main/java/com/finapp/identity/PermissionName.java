@@ -113,5 +113,17 @@ public enum PermissionName {
      * Unlike its two ledger siblings it ships with its real check site,
      * {@code POST /v1/transfers/'{id}'/reversal}.
      */
-    TRANSFER_REVERSE
+    TRANSFER_REVERSE,
+
+    /**
+     * Command a refund of a captured payment (`P5-TSK-015`): a privileged, reasoned return of
+     * captured value — {@code INV-AUD-03}'s regime, the reversal precedent applied to the
+     * provider-decided rail. Distinct from {@link #TRANSFER_REVERSE} because the operations
+     * and their bounds differ (a refund is bounded by its capture and decided by a third
+     * party); joins {@code LEDGER_OPERATOR} rather than minting a role, because a role exists
+     * when a distinct trust decision does and there is one money-operating population
+     * (`P4-TSK-009`'s recorded sentence). Ships with its real check site,
+     * {@code POST /v1/payments/'{id}'/refund}.
+     */
+    PAYMENT_REFUND
 }

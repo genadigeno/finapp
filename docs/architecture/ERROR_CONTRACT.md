@@ -279,6 +279,9 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `payments.NotConfirmable` | 409 | The payment is not awaiting confirmation. |
 | `payments.NotCancellable` | 409 | The payment can no longer be cancelled. |
 | `payments.ProviderUnavailable` | 503 | Payments are temporarily unavailable. |
+| `payments.NotRefundable` | 409 | The payment has no captured amount to refund. |
+| `payments.RefundExceedsCaptured` | 422 | The refund would exceed the captured amount. |
+| `payments.RefundUnfunded` | 409 | The account cannot fund this refund right now. |
 
 The payment surface's vocabulary (`P5-TSK-011`) is **the refusals only** — requests the
 platform declined to judge, with nothing written. A *judged* failure is never an error code: a
@@ -296,6 +299,18 @@ verbatim: an **unconfigured deployment** declines to judge, distinct in kind fro
 `FAILED(PROVIDER_UNAVAILABLE)` — a refused connection to a *configured* provider is knowledge,
 a judged outcome. **There is deliberately no payment not-found code**: unknown, not-yours and
 malformed on every `{id}` route are one `api.NotFound` (the `P1-TSK-016` reasoning).
+
+The refund's three (`P5-TSK-015`) are the privileged surface's refusals, decided **before the
+wire call** with nothing dispatched. `payments.NotRefundable` (409) is the machine edge — no
+`CAPTURED` attempt exists to refund against, whatever the commonest cause. `payments.
+RefundExceedsCaptured` (422) is the domain bound (`INV-PAY-05`): the requested amount
+plus every non-`FAILED` refund of the attempt would exceed the captured amount — judged under
+the attempt row lock, with `V004`'s trigger beneath, so a *sequential* over-refund is this
+honest 422 and never the schema's own `23514`. `payments.RefundUnfunded` (409) is
+`INV-BAL-04` at the surface: the hold that reserves the customer's funds cannot be placed
+because the available balance no longer covers it — a conflict with the account's *current
+state*, retriable when funds return, which is why it is a 409 and not a 422. The refund's 404
+folds into `api.NotFound` exactly as above; the operator learns nothing a customer would not.
 
 ### `ledger` — `LedgerErrorCode`
 

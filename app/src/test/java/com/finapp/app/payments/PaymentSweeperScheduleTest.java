@@ -100,6 +100,16 @@ class PaymentSweeperScheduleTest {
                 new com.finapp.payments.PaymentOutcomes(
                         new com.finapp.payments.JdbcPaymentIntentStore(),
                         new com.finapp.payments.JdbcPaymentAttemptStore(),
+                        new com.finapp.payments.JdbcRefundStore(),
+                        new com.finapp.ledger.HoldService(
+                                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                                new com.finapp.ledger.JdbcBalanceDerivation(),
+                                new com.finapp.ledger.JdbcHoldStore(),
+                                new com.finapp.ledger.JdbcBalanceProjection(),
+                                (uow, record) -> {},
+                                (uow, envelope, payload, mediaType) -> {},
+                                ids(),
+                                java.time.Clock.systemUTC()),
                         new com.finapp.ledger.PostingService(
                                 new com.finapp.platform.idempotency.IdempotentExecutor(
                                         new com.finapp.platform.idempotency

@@ -71,7 +71,21 @@ public enum PaymentsAuditAction implements AuditableAction {
             "The platform applied a provider outcome to a dispatched payment operation through"
                     + " a conditional transition; the record names the operation and the"
                     + " committed states, never an amount or a provider code.",
-            false);
+            false),
+
+    /**
+     * An operator dispatched a refund of a captured payment (`P5-TSK-015`) — the privileged,
+     * reasoned act {@code INV-AUD-03} is about: the reason is <strong>required</strong> (the
+     * reversal precedent), the actor is the operator holding {@code PAYMENT_REFUND}, and the
+     * record commits with the {@code DISPATCHED} row and its hold in the same transaction.
+     * The outcome that follows is the platform's ({@link #PAYMENT_OUTCOME_APPLIED}).
+     */
+    PAYMENT_REFUND_DISPATCHED(
+            "payments.PaymentRefundDispatched",
+            "An operator dispatched a bounded refund of a captured payment, with the required"
+                    + " reason; the record names the refund, the attempt and the intent, never"
+                    + " an amount.",
+            true);
 
     private final String code;
     private final String description;

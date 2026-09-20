@@ -84,6 +84,23 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     }
 
     @Override
+    public Optional<PaymentAttempt> lockById(Connection unitOfWork, PaymentAttemptId attempt) {
+        Objects.requireNonNull(attempt, "attempt must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt"
+                                + " WHERE id = ? FOR UPDATE")) {
+            read.setObject(1, attempt.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("locking attempt " + attempt, failure));
+        }
+    }
+
+    @Override
     public List<PaymentAttempt> findSweepable(
             Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
         Objects.requireNonNull(dispatchedBefore, "dispatchedBefore must not be null");
