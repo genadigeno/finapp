@@ -1,3 +1,13 @@
+---
+paths:
+  - "**/api/**"
+  - "**/*Controller.java"
+  - "**/*Request.java"
+  - "**/*Response.java"
+  - "**/*View.java"
+  - "**/openapi.json"
+---
+
 # API Design Rules
 
 For API code:

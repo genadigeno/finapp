@@ -17,21 +17,31 @@ Optimize for:
 
 ## Source of Truth
 
-Persistent project knowledge lives in repository documentation, not in conversation history.
+Persistent project knowledge lives in repository documentation, not in conversation history —
+and **not in this file's context budget**. Nothing below is auto-loaded. Read what the task
+needs, and read the *section* you need rather than the whole document.
 
-Read before significant work:
-- @docs/product/PRODUCT_VISION.md
-- @docs/product/CAPABILITY_MAP.md
-- @docs/architecture/BOUNDED_CONTEXTS.md
-- @docs/architecture/SYSTEM_ARCHITECTURE.md
-- @docs/domain/DOMAIN_MODEL.md
-- @docs/domain/FINANCIAL_INVARIANTS.md
-- @docs/project/CURRENT_STATE.md
-- @docs/project/DECISIONS.md
+| Question | Read |
+|---|---|
+| Where is the project right now? | `docs/project/CURRENT_STATE.md` — §Current Phase, §Current Task, §Next Task |
+| What is the next task, and its scope/acceptance/DoD? | `docs/project/BACKLOG.md` — grep the task ID |
+| How is work conducted? | `docs/project/EXECUTION_PROTOCOL.md` |
+| When is work done? | `docs/project/DEFINITION_OF_DONE.md` |
+| What must never be violated? | `docs/domain/FINANCIAL_INVARIANTS.md` — the `INV-*` catalogue |
+| What has been decided, and why? | `docs/adr/README.md` → the specific ADR; `docs/project/DECISIONS.md` for the index |
+| Which module owns this? | `docs/architecture/MODULE_ARCHITECTURE.md`, `docs/architecture/BOUNDED_CONTEXTS.md` |
+| What does this term mean? | `docs/domain/GLOSSARY.md` |
+| What is the stack and why? | `docs/architecture/SYSTEM_ARCHITECTURE.md` |
+| Multi-instance rules and the component register | `docs/architecture/DISTRIBUTED_EXECUTION.md` |
+| Phase gates and exit criteria | `docs/project/PHASE_GATES.md`, `docs/project/PHASE_<n>_PLAN.md` |
+| What happened before? | `docs/project/history/` — task, milestone, capability and change records |
+| Product scope and capabilities | `docs/product/PRODUCT_VISION.md`, `docs/product/CAPABILITY_MAP.md`, `docs/product/ROADMAP.md` |
 
-For domain-specific work, read the relevant domain document and applicable `.claude/rules/` path-scoped rules.
+Domain-specific work also loads the applicable path-scoped rules in `.claude/rules/`
+automatically; the procedures for working a backlog task are skills in `.claude/skills/`.
 
 Do not infer undocumented architecture when the repository can answer the question.
+Do not re-read a document already read in this session.
 
 ## Non-Negotiable Financial Rules
 
@@ -185,22 +195,21 @@ Financial correctness must survive these conditions.
 
 ## Implementation Workflow
 
-Before significant implementation:
-1. Read the relevant architecture/domain docs and current state.
-2. Identify bounded context and aggregate/entity.
-3. Identify invariants and lifecycle transitions.
-4. Identify transaction/consistency boundaries.
-5. Identify idempotency behavior.
-6. Identify external dependencies and failure modes.
-7. Identify security, audit, and reconciliation implications.
-8. Inspect existing code and tests.
-9. Make the smallest coherent change.
-10. Run relevant tests.
-11. Update documentation when behavior or architecture changes.
-12. Update `docs/project/CURRENT_STATE.md` after meaningful work.
-13. Create/update an ADR when an architectural decision changes.
+Work is conducted through the phase-gated protocol in
+[`docs/project/EXECUTION_PROTOCOL.md`](docs/project/EXECUTION_PROTOCOL.md), whose Ten Rules and
+Working Session Procedure are binding. Every backlog task runs the three-command loop —
+design, implement, completion gate — in `.claude/skills/`.
 
-Do not silently redesign unrelated subsystems.
+Before significant implementation, establish and state: bounded context and aggregate ·
+invariants (`INV-*`) and lifecycle transitions · transaction and consistency boundaries ·
+idempotency behaviour · external dependencies and their failure modes · security, audit and
+reconciliation implications. Inspect existing code and tests before writing anything.
+
+Then: make the smallest coherent change · run the relevant tests · update documentation and
+ADRs where behaviour or architecture changed · update `docs/project/CURRENT_STATE.md`.
+
+Do not silently redesign unrelated subsystems. Do not implement future-phase functionality.
+Do not skip or informally pass a phase gate.
 
 ## Working Style
 
@@ -214,18 +223,14 @@ Challenge designs that violate financial, security, domain, or distributed-syste
 
 ## Definition of Done
 
-A significant feature is not complete merely because it compiles.
+A significant feature is not complete merely because it compiles, and a task is complete only
+when its completion gate says so.
 
-Review:
-- domain correctness
-- financial invariants
-- persistence
-- transaction boundaries
-- idempotency
-- failure handling
-- security
-- auditability
-- reconciliation
-- observability
-- tests
-- documentation
+The binding criteria are the thirteen dimensions and the task-type profiles
+(`DOD-FIN`, `DOD-SEC`, `DOD-API`, …) in
+[`docs/project/DEFINITION_OF_DONE.md`](docs/project/DEFINITION_OF_DONE.md): domain correctness ·
+financial invariants · persistence · transaction boundaries · consistency · idempotency ·
+failure handling · security · audit · reconciliation · observability · testing · documentation.
+
+Each backlog task names the profiles that apply to it. Every one of them must hold, and the
+multi-instance question above must be answered `PASS` — `FAIL` or `UNKNOWN` is not complete.

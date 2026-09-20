@@ -83,9 +83,13 @@ Every session follows this sequence.
 
 ### Before work
 1. Read `CURRENT_STATE.md` — it, not conversation history, defines where the project is.
+   Read the **sections** you need (§Current Phase, §Current Task, §Next Task), not the
+   whole file, and not the archives under `docs/project/history/`.
 2. Confirm the active phase and its status.
 3. Confirm the task is in the current phase's backlog and its dependencies are met.
-4. Read the relevant architecture/domain docs and the applicable `.claude/rules/` files.
+4. Read the relevant architecture/domain docs — the sections the task needs, not whole
+   documents, and never a document already read in this session. Path-scoped
+   `.claude/rules/` files load themselves when matching files are touched.
 5. Identify: bounded context, aggregate, invariants (`INV-*`), lifecycle transitions,
    transaction boundary, consistency boundary, idempotency behaviour, external
    dependencies and their failure modes, security/audit/reconciliation implications.
