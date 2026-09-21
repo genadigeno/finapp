@@ -34,26 +34,33 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-09-20).** **Phases 0 through 4 are `COMPLETE`.** Phase 4 closed on
-its exit review (`P4-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met,
-16 phase-specific criteria, the ten-instances question over six contended decisions) and was
-confirmed by the Phase 4 → 5 transition's independent audit — which also produced **the
-first genuinely fleet-wide full battery of the phase**: 1157 hermetic / 729 database / 14
-kafka tests, 0 failures, closing the review's one recorded deviation (and finding, then
-repairing, the test-harness connection ceiling that had made the fleet-wide database tier
-structurally unable to run). **Money moves between customers**: 14 of 14 backlog items, 2
-ADRs `Accepted`, 83 mutations all caught, and the reversal, seams, meters and conservation
-storms all landed before the gate rather than at it.
+**Current position (2026-09-21).** **Phases 0 through 5 are `COMPLETE`.** Phase 5 closed on
+its exit review (`P5-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met,
+19 phase-specific criteria, the ten-instances question over seven contended decisions,
+ADR-0045–0049 read against the code and `Accepted`) and was confirmed by the Phase 5 → 6
+transition's independent audit, whose fleet-wide full battery — **1323 hermetic / 829
+database / 14 kafka tests** — found and repaired one register gap (`refund.dispatch_key`
+unclassified) and is green. **Money enters and leaves against an unreliable third party**:
+21 of 21 backlog items, 5 ADRs `Accepted`, the dispatch-before-call discipline, the honest
+`UNKNOWN`, webhooks, refunds as hold-then-post, and conservation proven under the
+capture/refund storm.
 
-**Phase 5 is `IN_PROGRESS`** (started 2026-09-20 with `P5-TSK-001`; entry gate passed the same day, all twelve criteria —
-[`PHASE_4_TO_5_TRANSITION.md`](../project/reviews/PHASE_4_TO_5_TRANSITION.md)). Planned in
-full in `PHASE_5_PLAN.md`, with ADR-0045–0049 `Proposed` — the intent/attempt machines, the
-no-transaction-spans-a-provider-call discipline with `UNKNOWN` and reconciliation-by-query,
-webhook ingestion, the accounting treatment of authorization vs capture (unresolved
-question 6 closed) and the first simulated provider with its finality semantics (question 9
-closed) — plus the new `INV-PAY-01`–05 group taking the catalogue to **87 invariants**, 21
-backlog items across nine milestones, and `PAYMENT_LIFECYCLES.md` rewritten from its stub.
-`P5-TSK-001` landed the two modules and their privilege floors the same day; M5.1 is open at 1 of 3, next `P5-TSK-002`.
+**Phase 6 — Checkout and Merchant Platform — is `READY`** (entry gate passed 2026-09-21,
+all twelve criteria —
+[`PHASE_5_TO_6_TRANSITION.md`](../project/reviews/PHASE_5_TO_6_TRANSITION.md)). Planned in
+full in `PHASE_6_PLAN.md`, with ADR-0050–0053 `Proposed` — the fee model (question 8
+closed: gross capture to the payable, fee assessed in the same entry, net payout), payout
+accounting (hold-then-dispatch on the payable), merchant API identity (keys + tenancy in
+the statement) and the checkout session/order model (question 7 confirmed closed) — plus
+the new `INV-MER-01`–06 group taking the catalogue to **93 invariants**, 16 backlog items
+across seven milestones, and `CHECKOUT_MERCHANT_LIFECYCLES.md` written. First task:
+`P6-TSK-001`, `READY`.
+
+*(This section was found frozen at 2026-09-20 — Phase 5 "IN_PROGRESS at M5.1" — by the
+Phase 5 → 6 transition, through twenty task gates and the phase flip: the stale-second-copy
+class this section already fell to once, at the Phase 4 → 5 transition. Corrected here;
+the class now has two occurrences in this file and its repair remains a named
+transition-audit step.)*
 
 **Phase 4 was the first customer-visible money movement** — and deliberately the *easy* half
 of moving money: both legs internal, one database, one transaction, no third party. Its job

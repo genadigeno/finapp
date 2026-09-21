@@ -288,6 +288,48 @@ or the register — the things this phase's review will be judged on:*
 - Payout destination change requires step-up authorization, four-eyes and is audited.
 - Fee schedule version used is pinned per transaction and recorded.
 
+*Extended by the Phase 5 → 6 transition (2026-09-21): the original list predates
+ADR-0050…0053 and said nothing measurable about the fee split's conservation, the payout's
+bound and ambiguity handling, the late-completion race, the tenancy mechanism, the
+four-eyes primitive's shape, or the register — the things this phase's review will be
+judged on:*
+
+- **The merchant-bound capture is one entry**: gross to the payable and the fee to revenue
+  commit atomically with the attempt's `CAPTURED` transition (the `DIRECTION:PURPOSE`
+  account assertions, not line counts — the `P5-TST-002` lesson applied from day one), and
+  fee + net equals the capture to the minor unit for every assessment in the high-volume
+  batch, zero cumulative residual (`INV-MER-04`).
+- **The payable reconciles as arithmetic**: captured − fees − refunds − payouts equals the
+  payable ledger position under the merchant conservation storm, against the trial-balance
+  and projection sweeps, counted in the tables (`INV-MER-02`).
+- **The payout bound holds under a ten-way race**: concurrent payouts against one payable
+  dispatch exactly the affordable set — the bound judged inside the payable account's lock
+  with in-flight amounts held; a sequential overrun is the honest domain refusal
+  (`INV-MER-05`).
+- **Payout ambiguity is the standing hold**: a payout provider timeout commits `UNKNOWN`
+  with the hold standing and alertable; query resolution lands on conditional transitions;
+  a retry after timeout converges on the committed dispatch and drives **one** wire
+  operation with the stored reference (`INV-PAY-04`'s discipline outbound).
+- **The expiry-vs-capture race is driven both ways**: expiry winning refuses new dispatch;
+  the capture winning after expiry lands `EXPIRED → COMPLETED_LATE` with the merchant
+  credited, the order created, and the edge counted (`INV-MER-06`) — never dropped, never
+  auto-reversed.
+- **Tenancy is in the statement**: every merchant-scoped query carries `merchant_id = ?`
+  derived from the authenticated key (verified by review of the store layer), and the
+  negative tests assert the one refusal **and zero rows touched** (`INV-MER-01`).
+- **The four-eyes primitive is real**: proposer ≠ approver enforced in the statement, the
+  cooling-off gate proven by a dispatch during the window using the prior destination, and
+  the approve-by-proposer refusal negatively tested (`INV-AUD-04`'s first subject).
+- **Fee determinism is reproducible**: recomputing any assessment under its pinned
+  schedule version reproduces the amount to the minor unit; a mid-flight schedule change
+  prices nothing already dispatched (`INV-MER-03`).
+- The phase's meters are published by a freshly started instance, the stuck-payout age is
+  alertable (NaN-never-zero), and the chain session ↔ order ↔ intent ↔ entry ↔ payable ↔
+  payout is traceable identifier-to-identifier with no timestamp join.
+- Every `Phase: 6` invariant in `FINANCIAL_INVARIANTS.md` — **read from the catalogue, not
+  from the phase plan** — has a mutation-register row, the `INV-MER` group and
+  `INV-AUD-04` included.
+
 ### Phase 7 — Cards, Wallets, A2A and Instant Payments
 - At least two rails with materially different finality semantics are implemented.
 - Reversal attempted on an irrevocable rail is rejected by the domain, not attempted and

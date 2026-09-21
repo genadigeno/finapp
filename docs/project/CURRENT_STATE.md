@@ -199,6 +199,20 @@ cannot be met as written while the owner's standing instruction skips
 hermetic tier run fleet-wide after the flip, the database and kafka tiers verified per task,
 and **no fleet-wide count claimed**.
 
+*(The deviation was then **closed by the Phase 5 → 6 transition** the same day: the full
+battery ran fleet-wide — 1323 hermetic / 829 database / 14 kafka, 0 failures after one
+repair — so Phase 5, like Phase 4, ends with a genuine fleet-wide count after all.)*
+
+**Phase 6 — Checkout and Merchant Platform**
+Status: **`READY`** (2026-09-21) — entry gate passed, all twelve criteria
+([`reviews/PHASE_5_TO_6_TRANSITION.md`](reviews/PHASE_5_TO_6_TRANSITION.md)): ADR-0050–0053
+`Proposed` (the fee model — question 8, the standing High — decided **before** any posting
+exists; payout accounting; merchant API identity; checkout session and order — question 7
+confirmed), the `INV-MER-01`…06 group catalogued (**93 invariants**, with `INV-AUD-04`
+gaining its first subject), `PHASE_6_PLAN.md`, 16 backlog items across seven milestones,
+`CHECKOUT_MERCHANT_LIFECYCLES.md`, the glossary and §5 gate extension. Not started; first
+task `P6-TSK-001`, `READY`.
+
 **The flip was the guarded act, and it surfaced nothing because three items pre-paid it**:
 `P5-TST-002` landed every `Phase: 5` invariant row and probed the flip, `P5-TSK-017` landed
 §15's meters behind a pinned guard the derived rule takes over with no edit, and
@@ -259,11 +273,13 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**None in progress.** `P5-DOC-001` is `COMPLETE` and **Phase 5 is `COMPLETE` at 21 of 21
-items across nine milestones**, ruled by
-[`reviews/PHASE_5_REVIEW.md`](reviews/PHASE_5_REVIEW.md). Next is the **Phase 5 → Phase 6
-transition** — its own act, not a backlog task, and **no Phase 6 item exists until it has
-been conducted**.
+**`P6-TSK-001` — the `merchant` and `checkout` modules and schemas** — `READY`.
+Phase 6's first task: two guarded modules on the documented boundary decisions
+(`merchant → ledger` declared; `checkout → payments` and both `checkout ↔ merchant` edges
+refused), schemas `merchant` and `checkout` at the default-deny floor with **no balance
+column anywhere in `merchant`** (`INV-MER-02`), and — this transition's own lesson — the
+`DATA_CLASSIFICATION.md` §4 rows landing **in the same task** as the columns. Scope,
+acceptance and DoD profiles in the backlog entry; decisions in ADR-0050…0053 (`Proposed`).
 
 ### Just completed
 
@@ -320,16 +336,22 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `COMPLETE`** (2026-09-21) — all nine milestones `CLOSED`
-(3+2+3+3+2+2+2+3+1): `P5-TSK-001`…`-017`, `P5-TST-001`…`-003` and `P5-DOC-001`, twenty-one
-items. **No phase is `IN_PROGRESS`.** Next is the **Phase 5 → Phase 6 transition**, which has
-no backlog ID — see [§Next Task](#next-task).
+**Phase 5 is `COMPLETE`** (2026-09-21) — 21 of 21 items across nine milestones, ruled by
+`P5-DOC-001`'s exit review and confirmed by the transition's independent audit.
+**Phase 6 is `READY`** (entry gate passed 2026-09-21, all twelve criteria) — 16 items
+across seven milestones, next `P6-TSK-001`.
 
-The last work performed was `P5-DOC-001`, the **Phase 5 exit review** (2026-09-21): the
-review's own verdict flipped the phase, ADR-0045–0049 were read against the code and
-`Accepted`, and the post-flip fleet-wide **hermetic** battery — 1323 tests across twelve
-modules, 0 failures — found `RoleNameTest` red since `P5-TSK-015`, a module no targeted tier
-covered. Before that, the **Phase 4 → Phase 5 transition** (2026-09-20):
+The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
+Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
+(**1323 hermetic / 829 database / 14 kafka, 0 failures** — after finding and repairing the
+one failure in 2,166: `refund.dispatch_key` unclassified in `DATA_CLASSIFICATION.md` §4
+since `P5-TSK-016`, the guard living in a tier no targeted run covers — the `RoleNameTest`
+class recurring within a day of being written down), ADR-0050–0053 `Proposed`, the
+`INV-MER` group catalogued (**93 invariants**), `PHASE_6_PLAN.md` and 16 backlog items
+across seven milestones, `CHECKOUT_MERCHANT_LIFECYCLES.md` written, the glossary and gate
+extended, and questions **7 and 8 closed** (the fee model decided before any posting
+exists — the restatement risk retired). Before that, `P5-DOC-001`, the **Phase 5 exit
+review** (2026-09-21), and the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of
 the phase (1157 / 729 / 14, 0 failures — after finding and repairing the
 test-harness connection ceiling that had made the fleet-wide database tier
@@ -551,11 +573,19 @@ it begins.
 
 | # | Question | Must resolve by | Risk if unresolved |
 |---|----------|-----------------|--------------------|
-| 7 | Whether `checkout` is its own module or part of `merchant` | Phase 6 | Low — **working position recorded** (own module, §3 M2) with a named merge trigger |
-| 8 | Fee model: who pays, when recognised, gross vs net settlement | Phase 6 | High — changing revenue recognition after postings exist is a restatement |
 | 11 | Fail-safe policy for risk evaluation: block or allow on unavailability | Phase 13 | High — a wrong default is either an outage or an open door |
 
 Resolved since:
+- ~~8. Fee model: who pays, when recognised, gross vs net settlement~~ →
+  [ADR-0050](../adr/ADR-0050-fee-model-gross-capture-net-payable.md) (Phase 5 → 6
+  transition, 2026-09-21). The merchant pays; revenue recognised at capture; **gross to
+  the books, net to the merchant, in one journal entry** — with the fee computed once and
+  the net derived by subtraction so no rounding residual can exist (`INV-MER-04`), and the
+  schedule version pinned per assessment (`INV-MER-03`)
+- ~~7. Whether `checkout` is its own module or part of `merchant`~~ →
+  [ADR-0053](../adr/ADR-0053-checkout-session-and-order.md) (same transition). The working
+  position confirmed: own module — the order outlives everything, so M2's merge trigger is
+  demonstrably not met; the trigger stays recorded as the watchdog
 - ~~6. Accounting treatment of authorization (memo/hold) vs capture (posting)~~ →
   [ADR-0048](../adr/ADR-0048-authorization-is-not-a-posting.md) (Phase 4 → 5 transition,
   2026-09-20). Authorization is a payment-domain fact with **no ledger effect** — the
@@ -602,43 +632,35 @@ Resolved during initiation:
 
 ## Next Task
 
-**The Phase 5 → Phase 6 transition.** Not a backlog task: a transition is its own act,
-performed under the constraint that **no application code is written**, and it is what makes
-Phase 6 `READY` rather than merely planned — the twelve entry-gate conditions in
-[`PHASE_GATES.md`](PHASE_GATES.md) §2, of which item 10 (backlog at task granularity with
-acceptance criteria) and item 11 (every decision needed to start, at least `Proposed`) are
-the ones that cannot be deferred into implementation.
+**`P6-TSK-001` — the `merchant` and `checkout` modules and schemas.**
+Phase 6's first task, first for the standing reason — the privilege floor is
+what every later grant claim rests on — and for the phase-specific one: the
+build-graph decisions (`merchant → ledger` declared so payable reads and payout
+postings are commanded and never written; `checkout → payments` **refused** so
+the purchase-experience module cannot reach provider machinery; both
+`checkout ↔ merchant` edges refused) are the structure that keeps the phase's
+named risks — a stored merchant balance, a god-orchestrator checkout, tenancy
+as an afterthought — unreachable before any merchant code exists. Scope,
+acceptance and DoD profiles in the backlog entry; the module registers in
+`MODULE_ARCHITECTURE.md` §3 already carry both modules' nine attributes, M2's
+provisional status confirmed by ADR-0053.
 
-It must produce what the five previous transitions produced: a completion audit of the closed
-phase conducted **independently** of the exit review (a gate assessed only by whoever finished
-the work is not two checks), a distributed-systems and security audit, `PHASE_6_PLAN.md`, the
-backlog elaborated to task granularity, and the decisions Phase 6 cannot start without —
-including, per §5's own precedent, whatever **extension** Phase 6's exit criteria need beyond
-the bullets written before the work was understood.
+**What Phase 6 inherits, already scheduled**: the refund-sweep deferral finds
+its sibling in the payout sweep (`P6-TSK-012`'s query resolution — the recorded
+owner "Phase 6 or a sweeper extension" now has a phase); `INV-AUD-04` — in the
+catalogue since initiation, subjectless for five phases — goes live on the
+payout destination (`P6-TSK-011`); and the `refund.dispatch_key` lesson is in
+`P6-TSK-001`'s own scope: classification rows land in the task that creates the
+columns.
 
-**Phase 6 changes the variable this phase held fixed in the other direction**: Phase 5's money
-moved between the platform and a third party on **one** customer's behalf. Phase 6 introduces a
-**second commercial party** — the merchant — and with it the first place where one payment
-splits into two economic positions. The open questions below that come due are **8** (the fee
-model: who pays, when recognised, gross versus net settlement — **High**, because changing
-revenue recognition after postings exist is a restatement, and `P5-TST-003` already posts fees
-to `FEE_REVENUE` as a storm actor rather than as a modelled assessment) and **7** (whether
-`checkout` is its own module or part of `merchant` — Low, with a working position and a named
-merge trigger already recorded). Multi-tenant isolation is the phase's standing security
-theme, and it is the first phase where `INV-AUD-*` and the privilege floor meet an actor
-population the platform does not own.
+### Superseded: the Phase 5 → 6 transition
 
-**What the transition inherits from this phase**: nothing that blocks it, which is area 8's
-only claim about Phase 6. The recorded items are seams with named owners — refund sweeping
-(an `UNKNOWN` refund is resolved by webhook, not yet by the sweeper; the standing hold is the
-loud symptom), `V004`'s trigger not being mutation-demonstrable without a from-scratch
-database, outbound request bytes not captured as evidence, and settlement itself, which is
-Phases 7–8. **One deviation is recorded rather than waived**, and this phase measured its
-cost for the first time: the owner's standing skip of `build databaseTest kafkaTest` meant
-`RoleNameTest` stayed red through four completion gates because `:identity:test` was in no
-targeted tier. The mitigation the review names — **run the fleet-wide hermetic tier at every
-phase gate** — is what found it, and the transition may choose to close the deviation
-outright by running one full battery.
+*(This section described the transition until it was conducted on 2026-09-21.
+Its stated inheritance — the deviation the transition "may choose to close by
+running one full battery" — was exercised: the transition ran the full battery,
+which failed on exactly one of 2,166 tests — a `V008` column unclassified in the
+data-classification register, the guard living in a tier no targeted run covers —
+repaired, and green fleet-wide: 1323 / 829 / 14.)*
 
 ### Superseded: P5-TSK-001
 

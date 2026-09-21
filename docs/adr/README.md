@@ -67,6 +67,10 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0047](ADR-0047-webhook-ingestion.md) | Webhooks: authenticated, freshness-bounded, evidence-first, idempotent | Accepted | 5 | Payments |
 | [0048](ADR-0048-authorization-is-not-a-posting.md) | Authorization is a payment-domain fact; the ledger's first touch is capture | Accepted | 5 | Payments · Ledger |
 | [0049](ADR-0049-first-provider-simulated-card-psp.md) | The first provider is a simulated card-style PSP; nothing is final before settlement | Accepted | 5 | Payments |
+| [0050](ADR-0050-fee-model-gross-capture-net-payable.md) | The fee model: gross capture to the payable, fee assessed in the same entry, net payout | Proposed | 6 | Merchant · Checkout · Payments · Ledger |
+| [0051](ADR-0051-merchant-payout-accounting.md) | Merchant payout: hold-then-dispatch on the payable, nothing final before settlement | Proposed | 6 | Merchant · Ledger |
+| [0052](ADR-0052-merchant-api-identity.md) | Merchant API identity: scoped API keys, tenancy in the statement | Proposed | 6 | Merchant · Identity |
+| [0053](ADR-0053-checkout-session-and-order.md) | Checkout session and order: two aggregates, expiry gates dispatch, landed money always wins | Proposed | 6 | Checkout · Merchant · Payments |
 
 ## Anticipated ADRs
 
@@ -85,8 +89,6 @@ Recorded so the decisions are not made implicitly. Each is written at its phase'
 | 5 | Payment intent vs attempt modelling |
 | 5 | Unknown-state handling and reconciliation-by-query sweeper |
 | 5 | Webhook ingestion, signature verification and deduplication |
-| 6 | Fee model and revenue recognition timing |
-| 6 | Merchant payout accounting |
 | 7 | Rail abstraction and per-rail finality semantics |
 | 7 | Dispute and chargeback financial treatment |
 | 8 | Matching strategy, rule versioning and tolerance model |

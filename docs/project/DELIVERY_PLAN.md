@@ -614,7 +614,10 @@ completion callback, merchant payout initiation, merchant transaction reporting.
 
 ### 8. Event work
 `MerchantOnboarded`, `CheckoutSessionCreated`, `CheckoutSessionExpired`, `OrderPaid`,
-`FeeAssessed`, `MerchantPayoutInitiated`.
+`FeeAssessed`, `MerchantPayoutInitiated`, `MerchantPayoutCompleted`, `MerchantPayoutFailed`
+*(the completion/failure pair added by the Phase 5 → 6 transition, 2026-09-21: terminal
+facts publish — ADR-0044's doctrine, the `RefundFailed` precedent — and a payout under
+ADR-0051's dispatch-before-call has terminal facts its `Initiated` cannot carry)*.
 
 ### 9. Security work
 Merchant API authentication distinct from customer authentication; strict tenant isolation

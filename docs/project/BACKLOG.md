@@ -6683,13 +6683,257 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 
 ---
 
-# Phases 6–16 — Epics
+# Phase 6 — Checkout and Merchant Platform
+
+Status: `READY` — entry gate passed 2026-09-21 by the Phase 5 → 6 transition
+([`reviews/PHASE_5_TO_6_TRANSITION.md`](reviews/PHASE_5_TO_6_TRANSITION.md)), elaborated to
+task granularity by the same transition. The engineering plan is
+[`PHASE_6_PLAN.md`](PHASE_6_PLAN.md); decisions are ADR-0050…ADR-0053 (`Proposed`); the
+domain statement is
+[`CHECKOUT_MERCHANT_LIFECYCLES.md`](../domain/CHECKOUT_MERCHANT_LIFECYCLES.md). The
+in-scope invariants are whatever the catalogue marks `Phase: 6` — **eight at planning
+time** (the transition's new `INV-MER-01`…06, `INV-HIST-04`'s fees element, and
+`INV-AUD-04` live for the first time) —
+**read from the catalogue at the gate, never from this file**. The financial supplement
+F1–F8 binds; every task that can affect money carries `DOD-FIN`.
+
+**Milestones**: M6.1 Foundations (`P6-TSK-001`…`-003`) · M6.2 Fee economics
+(`P6-TSK-004`, `-005`) · M6.3 Checkout (`P6-TSK-006`…`-008`) · M6.4 The merchant surface
+(`P6-TSK-009`, `-010`) · M6.5 Payouts (`P6-TSK-011`, `-012`) · M6.6 Observability and
+demonstration (`P6-TSK-013`, `P6-TST-001`, `P6-TST-002`) · M6.7 The gate (`P6-DOC-001`).
+Acceptance per milestone in `PHASE_6_PLAN.md` §16.
+
+**P6-TSK-001 — The `merchant` and `checkout` modules and schemas** — `READY`
+- **Objective**: the module shape's seventh and eighth performances; the phase's boundary
+  decisions as build-graph facts. Bounded contexts 11 and 12; M2's provisional status
+  confirmed by ADR-0053 §2.
+- **Scope**: two guarded modules. `merchant → ledger` declared (payable reads and payout
+  postings are commanded, never written — `INV-LED-04`); `checkout → payments` **refused**
+  (payment execution through a port `app` implements — ADR-0053; the isolation test is the
+  control); `checkout ↔ merchant` both refused (references by identifier). Schemas
+  `merchant` and `checkout` with the default-deny privilege floor first, tables per
+  `PHASE_6_PLAN.md` §8 — **no balance column anywhere in `merchant`** (`INV-MER-02`'s
+  schema half), generated status `CHECK`s, every-writer transition triggers, append-only
+  histories, frozen columns, grants per table in the creating migration. Classification
+  rows for every column in `DATA_CLASSIFICATION.md` §4 **in the same task** (the
+  `refund.dispatch_key` lesson: the register guard lives in a tier phase work rarely runs).
+- **Deps**: Phase 5 `COMPLETE`. **Accept**: module isolation green both ways; raw-SQL
+  schema tests prove floors, triggers and `CHECK`s from scratch; the classification guard
+  green fleet-wide. **Risk**: Low. **Cx**: M. **DoD**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`
+
+**P6-TSK-002 — Merchant identity: the API key and tenant scoping** — `PLANNED`
+- **Objective**: ADR-0052 made real — the platform's fourth authentication vocabulary and
+  the tenancy primitive every merchant surface will stand on. Bounded context 12 with
+  Identity.
+- **Scope**: the key credential under the full regime (`INV-IDN-01/-02`: hashed, derivation
+  parameters recorded, shown once, prefix lookup, immediate revocation); `ActorType.MERCHANT`
+  joining the audit vocabulary; the authentication filter resolving key → merchant; the
+  statement-scoping primitive (`merchant_id = ?` from the authenticated context —
+  `INV-MER-01`) as the store-layer discipline with its ownership register rows; operator
+  issuance/revocation (`MERCHANT_ADMINISTER`) audited, negatively tested.
+- **Deps**: `P6-TSK-001`. **Accept**: a merchant authenticates and reaches only its own
+  rows (negative per surface, zero rows touched); a revoked key refuses immediately
+  cross-instance; no secret recoverable; issuance audited with actor and key id.
+- **Risk**: Medium (new actor population). **Cx**: M. **DoD**: `DOD-SEC`, `DOD-API`
+
+**P6-TSK-003 — Merchant onboarding and the payable account** — `PLANNED`
+- **Objective**: the merchant exists as a commercial counterparty with its books ready —
+  the KYB gate reused, the payable account seeded. Bounded context 12.
+- **Scope**: onboard (operator, `MERCHANT_ONBOARD`, keyed `INV-IDEM-01`) refusing any party
+  whose KYB case is not approved (the Phase 2 decision consumed by id, never re-verified
+  here); the `MERCHANT_PAYABLE` ledger account created per merchant per currency in the
+  onboarding transaction (the customer-wallet precedent); the merchant machine
+  (`ACTIVE`/`SUSPENDED`/`CLOSED`) three-layer enforced; suspension gating new dispatches
+  only (`CHECKOUT_MERCHANT_LIFECYCLES.md` §5); `MerchantOnboarded` in the transaction;
+  audit per act with reason on suspension.
+- **Deps**: `P6-TSK-002`. **Accept**: onboard end to end over HTTP; the KYB refusal writes
+  nothing; ten concurrent onboards with one key produce one merchant and one account set,
+  counted; suspension refuses a new session while landed money still lands.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`
+
+**P6-TSK-004 — The versioned fee schedule** — `PLANNED`
+- **Objective**: fees as immutable, versioned configuration — `INV-MER-03`'s subject.
+  Bounded context 12.
+- **Scope**: `FeeSchedule`/version aggregates (rate, fixed part, rounding mode, refund-fee
+  policy — ADR-0050's attributes); versions immutable once effective (frozen by trigger,
+  raw SQL refused); effective-forward change semantics; merchant assignment; operator CRUD
+  (`FEE_ADMINISTER`) audited; the pure fee arithmetic on `Money` with named rounding
+  (`INV-MON-03`) — **fee computed once, net by subtraction** (`INV-MER-04`'s mechanism) —
+  property-tested across 0/2/3-minor-unit currencies before anything posts it.
+- **Deps**: `P6-TSK-003`. **Accept**: recomputation under a pinned version reproduces to
+  the minor unit; a new version reprices nothing; the split conserves by property test;
+  mutation of the frozen version refused at the database.
+- **Risk**: Medium (the arithmetic every capture will trust). **Cx**: M. **DoD**:
+  `DOD-FIN`, `DOD-DOMAIN`
+
+**P6-TSK-005 — Fee assessment at capture: the merchant-bound posting** — `PLANNED`
+- **Objective**: ADR-0050 §3's one entry — the phase's financial heart. Bounded contexts
+  12 with 9 (through the seam only).
+- **Scope**: the composition seam (`app`) supplying a checkout-created intent's posting
+  lines: DR `SETTLEMENT_CLEARING` gross / CR `MERCHANT_PAYABLE` gross / DR payable fee /
+  CR `FEE_REVENUE` fee, priced by the version **pinned at intent creation**; `payments`
+  stays merchant-blind (the boundary review); the assessment recorded with its version
+  (`INV-HIST-04`); `FeeAssessed` in the capture's transaction; Phase 5's wallet top-up
+  path byte-identical after (the regression pin).
+- **Deps**: `P6-TSK-004`; `P6-TSK-006` for the intent's checkout provenance (may land
+  against a test-composed intent first). **Accept**: the `DIRECTION:PURPOSE` probe asserts
+  all four lines on the right accounts; fee + net = captured to the minor unit; the
+  ten-way duplicate-outcome race posts once (`payment-capture:<attemptId>` standing); a
+  mid-flight version change prices with the pinned version; the wallet top-up suite
+  untouched.
+- **Risk**: High (the restatement risk question 8 carried). **Cx**: L. **DoD**: `DOD-FIN`
+
+**P6-TSK-006 — The checkout session and order: aggregates, machines, schemas** — `PLANNED`
+- **Objective**: ADR-0053's two aggregates with the six-state machine. Bounded context 11.
+- **Scope**: `CheckoutSession` (six states incl. `COMPLETED_LATE`, expiry as data,
+  single-purpose token hashed at rest, pinned schedule version, one intent reference) and
+  `Order` (one per session `UNIQUE`, append-only, refund standing derived at read);
+  three-layer enforcement; hermetic sweeps; schema tests from raw SQL.
+- **Deps**: `P6-TSK-001`. **Accept**: every invalid transition refused at aggregate and
+  database; the token never stored in clear; `INV-AUD-02` needles on refusals.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOMAIN`
+- **Out of scope**: fulfilment states; inventory; anything the merchant's shop owns.
+
+**P6-TSK-007 — The session's payment: create, confirm, complete** — `PLANNED`
+- **Objective**: the customer pays a merchant end to end — the phase's first whole flow.
+  Bounded contexts 11, 12, 9 through ports.
+- **Scope**: session create (merchant key, keyed per merchant); confirm (session token +
+  customer session) creating the intent through the port with the ADR-0050 line
+  composition and moving `OPEN → PAYMENT_PENDING` conditionally; the payment outcome
+  reaching the session's conditional edge (`COMPLETED`), birthing the order and `OrderPaid`
+  in the outcome's transaction; ten instances completing one session converge on one order
+  (counted); the one-404 tenancy oracle on every read.
+- **Deps**: `P6-TSK-005`, `-006`. **Accept**: end to end over real HTTP through the
+  simulated provider: create → confirm → capture → payable credited gross-with-fee →
+  order exists; the duplicate-completion race counted to one; replay renders the create's
+  stored response byte-for-byte.
+- **Risk**: Medium. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-API`
+
+**P6-TSK-008 — Expiry: the sweeper and the late-completion race** — `PLANNED`
+- **Objective**: `INV-MER-06` made real — the clock modelled, the race decided the way
+  ADR-0053 §5 rules. Bounded context 11.
+- **Scope**: the expiry sweep on the registered leaderless pattern (`PaymentSweeperSchedule`
+  precedent — conditional writes, no lease, floors); `EXPIRED` earned by the sweeper;
+  expiry gating dispatch (confirm refused on an expired row, counted); the capture arriving
+  at an `EXPIRED` session landing `COMPLETED_LATE` with the merchant credited and the
+  order created; `CheckoutSessionExpired` conditional; the `completed_late` meter; the
+  abandoned edge.
+- **Deps**: `P6-TSK-007`. **Accept**: the race driven both ways, counted in the tables;
+  concurrent sweepers converge; no landed cent unexplained in either ordering.
+- **Risk**: Medium (the phase's named race). **Cx**: M. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
+
+**P6-TSK-009 — The merchant transaction surface** — `PLANNED`
+- **Objective**: the merchant sees its business — tenant-isolated, ledger-consistent.
+  Bounded context 12.
+- **Scope**: `GET /v1/merchant/transactions` (sessions/orders/captures/refunds/fees joined
+  by stored identifiers, paginated, tenant in the statement) and the session read;
+  contract baseline; the one-404 discipline; no other tenant's identifier in any response
+  or error.
+- **Deps**: `P6-TSK-007`. **Accept**: negative per endpoint (merchant A on B's ids: the
+  one refusal, zero rows); the report reconciles against the journal for a seeded book.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`
+
+**P6-TSK-010 — The payable view** — `PLANNED`
+- **Objective**: `INV-MER-02` as a surface — what the platform owes, derived, explainable.
+  Bounded context 12.
+- **Scope**: `GET /v1/merchant/payable` reading the payable ledger position per currency
+  (captured − fees − refunds − payouts as the drill-down the response can name);
+  reconciliation against independent SQL with a refund and a failed payout in the picture;
+  no stored figure anywhere (schema sweep pinned).
+- **Deps**: `P6-TSK-009`; `P6-TSK-012` completes the drill-down's payout term (lands
+  before the gate, extended then). **Accept**: the view equals the ledger position to the
+  minor unit under live traffic; the schema sweep finds no balance column.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-FIN`, `DOD-API`
+
+**P6-TSK-011 — The payout destination: step-up, four-eyes, cooling-off** — `PLANNED`
+- **Objective**: the platform's **first four-eyes primitive** (`INV-AUD-04` live) on the
+  action that redirects merchant money. Bounded context 12 with Identity.
+- **Scope**: the proposal flow (`CHECKOUT_MERCHANT_LIFECYCLES.md` §6): propose (keyed) →
+  approve (a **different** authenticated actor, refused in the statement otherwise;
+  step-up on both sides when a factor is enrolled — the `P4-TSK-007` pattern) → effective
+  after cooling-off; one `EFFECTIVE` per merchant (partial index); supersession atomic;
+  every step audited with actor, reason, correlation; destination details tokenised/masked
+  at the ceiling; the pending-proposal gauge.
+- **Deps**: `P6-TSK-003`. **Accept**: approve-by-proposer refused and audited; a dispatch
+  during cooling-off uses the prior destination (proven); the concurrent
+  propose/approve/supersede races counted to one effective row.
+- **Risk**: High (a wrong destination is money to an attacker). **Cx**: L. **DoD**:
+  `DOD-SEC`, `DOD-DOMAIN`
+
+**P6-TSK-012 — The payout: hold-then-dispatch on the payable** — `PLANNED`
+- **Objective**: ADR-0051 whole — money leaves the platform under Phase 5's disciplines
+  pointed outward. Bounded context 12.
+- **Scope**: initiate (merchant key or operator, keyed) → the bound judged inside the
+  payable account's lock with in-flight holds cumulative (`INV-MER-05`) → hold placed →
+  `DISPATCHED` + our minted reference committed before the wire (ADR-0046 outbound; the
+  two-transaction keyed command — `P5-TSK-016`'s contract with `dispatch_key`
+  convergence); the simulated payout provider behind its own narrow port (enumerated
+  verdicts, verbatim evidence, no vocabulary escape); completion releases-and-posts
+  `merchant-payout:<payoutId>` (DR payable / CR `PAYOUT_CLEARING`); failure releases;
+  `UNKNOWN` leaves the hold standing, query-resolvable through the sweep extension;
+  `MerchantPayoutInitiated`/`Completed`/`Failed` per doctrine; audit per act.
+- **Deps**: `P6-TSK-010`, `-011`. **Accept**: ten concurrent payouts against one payable
+  dispatch exactly the affordable set (counted: rows, holds, entries); the timeout →
+  standing hold → query-resolved flow end to end; retry-after-timeout converges to one
+  wire operation; the insufficient-payable refusal commits nothing; the permissionless and
+  cross-tenant refusals leave counts unmoved.
+- **Risk**: High (outbound money). **Cx**: XL. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`
+
+**P6-TSK-013 — The meters and the dashboard row** — `PLANNED`
+- **Objective**: `PHASE_6_PLAN.md` §15's six series, the established conventions.
+- **Scope**: session outcomes (acting only), conversion age, fee assessments (counts,
+  never amounts), payout outcomes, stuck-payout gauges (NaN-never-zero, floored,
+  fleet-wide `max()`), pending destinations; eager from a plain context; the dashboard
+  row resolving against a live scrape; the derived guard takes §15's table at the flip.
+- **Deps**: `P6-TSK-012`. **Accept**: all six from a freshly started instance with no
+  database; the tag vocabulary walks the designed path if it widens at all.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
+
+**P6-TST-001 — The tenancy and fee-conservation battery** — `PLANNED`
+- **Objective**: the two gate properties that decay silently, demonstrated in bulk.
+- **Scope**: the cross-tenant negative battery (every merchant endpoint, merchant A on B's
+  world: one refusal, zero rows — mechanised so a new endpoint cannot dodge it); the
+  high-volume fee batch (hundreds of assessments across amounts, rates and 0/2/3-minor
+  currencies: cumulative residual exactly zero, trial balance zero per currency —
+  `INV-MER-04` at volume); `Phase: 6` register rows for what these suites demonstrate.
+- **Deps**: `P6-TSK-009`, `-005`. **Accept**: both batteries green from fresh runs; the
+  register rows land with performed demonstrations. **Risk**: Medium. **Cx**: M.
+  **DoD**: `DOD-TEST`, `DOD-FIN`, `DOD-SEC`
+
+**P6-TST-002 — The merchant conservation storm** — `PLANNED`
+- **Objective**: the phase's composition demonstration — checkouts, captures-with-fees,
+  refunds and payouts at once, conservation as arithmetic (`P5-TST-003`'s discipline on
+  the merchant book).
+- **Scope**: concurrent movers on multiple merchants while the trial-balance and
+  projection sweeps run (verifier floors, no sleeps); the three readings: payables equal
+  captured − fees − refunds − payouts to the minor unit; `PAYOUT_CLEARING` delta equals
+  completed payouts; the outcome tally leaves no `DISPATCHED` payout, no standing hold
+  unaccounted, no over-paid merchant; the payable bound contested (a drained payable
+  refusing — the availability-boundary lesson from `P5-TST-003` applied at design time:
+  the storm must include the drain); remaining `Phase: 6` register rows.
+- **Deps**: `P6-TSK-012`, `P6-TST-001`. **Accept**: the readings reconcile under load;
+  both refusal kinds occur as checked facts; every `Phase: 6` invariant row demanded by
+  the guard is present.
+- **Risk**: Medium. **Cx**: L. **DoD**: `DOD-TEST`, `DOD-FIN`
+
+**P6-DOC-001 — Phase 6 review record** — `PLANNED`
+- **Scope**: the exit review per `PHASE_GATES.md` §4 and §5 Phase 6 (original bullets plus
+  the transition's extension, **read from the gate at review time**), F1–F8 re-assessed,
+  the ten-instances question over the phase's contended decisions, assess → corrections →
+  **flip** → battery, the review's own verdict flipping the phase.
+- **Deps**: everything above. **Accept**: the review's verdict flips the status; the
+  post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
+
+---
+
+# Phases 7–16 — Epics
 
 Status: `PLANNED` — capabilities elaborated at each phase's entry gate.
+*(The Phase 6 row was elaborated to the section above by the Phase 5 → 6 transition,
+2026-09-21 — the epic wording superseded by the task decomposition.)*
 
 | Phase | Epics |
 |-------|-------|
-| 6 Checkout and Merchant | Merchant onboarding and KYB integration; merchant accounts; checkout session; order; fee schedule and assessment; merchant payable accounting; merchant payout; merchant reporting; multi-tenant isolation |
 | 7 Cards, Wallets, A2A, Instant | Rail abstraction and capability model; card rail; wallet rail; A2A rail; instant-payment rail; rail routing policy; finality and irrevocability handling; dispute lifecycle; chargeback and representment; dispute accounting |
 | 8 Settlement and Reconciliation | Settlement expectation tracking; settlement file ingestion; evidence retention; matching engine; tolerance and rule versioning; break classification; break lifecycle and investigation; four-eyes resolution; suspense management; reconciliation reporting |
 | 9 FX and Cross-Border | Rate sourcing and staleness; quote lifecycle and rate lock; spread and margin recognition; conversion execution; multi-currency accounting and FX position; rounding residual handling; corridor policy; cross-border payment workflow; FX reconciliation |

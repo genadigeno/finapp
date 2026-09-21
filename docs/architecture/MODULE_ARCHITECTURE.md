@@ -106,7 +106,7 @@ evidence says otherwise.
 | 8 | Transfers | `transfers` | 4 | Added by this task. See M6 |
 | 9 | Payments | `payments` | 5 | |
 | 10 | Payment Methods | `paymentmethods` | 5 | Separate for PCI scope. See M7 |
-| 11 | Checkout | `checkout` | 6 | **Provisional.** See M2 |
+| 11 | Checkout | `checkout` | 6 | Confirmed by ADR-0053 (2026-09-21); M2's merge trigger stands as watchdog |
 | 12 | Merchant | `merchant` | 6 | |
 | 13 | Settlement | `settlement` | 8 | |
 | 14 | Reconciliation | `reconciliation` | 8 | Separate from `settlement`. See M8 |
@@ -357,7 +357,7 @@ phases must satisfy, not a description of code.
 - **Transaction:** own; payout initiation requests ledger postings.
 - **Consistency:** strong for merchant state. **Payable is derived from `ledger` postings and never stored** — a stored payable would be a second balance authority.
 - **APIs:** merchant CRUD (privileged), payout initiation, merchant transaction reporting. Strict tenant scoping on every call.
-- **Events:** `MerchantOnboarded`, `FeeAssessed`, `MerchantPayoutInitiated`.
+- **Events:** `MerchantOnboarded`, `FeeAssessed`, `MerchantPayoutInitiated`, `MerchantPayoutCompleted`, `MerchantPayoutFailed` *(pair added by the Phase 5 → 6 transition — terminal facts publish, the `RefundFailed` precedent)*.
 - **Failure:** a payout against insufficient payable is a domain rejection; duplicate payout initiation produces one effect; the fee schedule version is pinned per transaction so a mid-flight change cannot reprice history (`INV-HIST-04`).
 - **Security:** merchant authentication distinct from customer authentication; cross-tenant access impossible; payout destination change requires step-up, four-eyes and a cooling-off period.
 - **Operations:** fee accrual, payout volume and age, per-merchant error rates, chargeback ratio (regulatory-relevant).

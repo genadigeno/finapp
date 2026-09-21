@@ -580,7 +580,13 @@ approver distinct from the initiator.
 exposure.
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` (approver ≠ initiator).
 **Verify:** Self-approval rejection tests.
-**Phase:** 3, 8, 10, 13, 14
+**Phase:** 3, 6, 8, 10, 13, 14
+
+*(The list read "3, 8, 10, 13, 14" until the 2026-09-21 transition into the checkout phase:
+the statement has named "payout destination changes" — that phase's subject — since this
+row was written, while the phase list omitted it; the first implemented four-eyes subject
+is `P6-TSK-011`. The note lives on its own line because the register guard token-parses
+the Phase line — prose digits there would change which phases demand this row.)*
 
 ---
 
@@ -952,6 +958,92 @@ payment domain rather than the journal).
 
 ---
 
+# Merchants and checkout — `INV-MER`
+
+*Catalogued by the Phase 5 → 6 transition (2026-09-21) — the `INV-PAY` precedent: Phase 6's
+gate properties given stable IDs before any merchant code exists, so the register can demand
+their demonstrations by identifier rather than by prose. Decisions in ADR-0050…0053.*
+
+### INV-MER-01 — A merchant reads and writes only its own data
+**Statement:** Every merchant-scoped read and write derives its tenant from the
+authenticated merchant credential and carries it **in the SQL statement** (`merchant_id =
+?`), never as a post-filter. A cross-tenant row is unreadable and unwritable; addressing
+another merchant's resource is indistinguishable from addressing one that does not exist.
+**Why:** The first actor population the platform does not own. A tenant leak is another
+company's revenue, customers and dispute posture disclosed — commercially fatal and, unlike
+a bug, unforgivable.
+**Enforce:** `DOMAIN` — the statement-scoping discipline (ADR-0031's shape at the tenant
+boundary, ADR-0052); no merchant-facing query path without the predicate.
+**Verify:** Negative tests per endpoint: authenticate as merchant A, address merchant B's
+resource, assert the one refusal and zero rows touched.
+**Phase:** 6
+
+### INV-MER-02 — The merchant payable is derived from postings, never stored
+**Statement:** What the platform owes a merchant is the merchant's payable ledger account
+position — captured minus fees minus payouts — and exists nowhere else. No table stores a
+merchant balance; every payout decision derives the available payable inside the account
+lock.
+**Why:** A stored payable is a second balance authority (`INV-BAL-01`'s reasoning at the
+merchant boundary); two authorities drift, and drift in a liability to a counterparty is a
+dispute the books cannot win.
+**Enforce:** `DOMAIN` + schema review — no payable column exists to mutate.
+**Verify:** The payable reconciles against independent SQL over the payment, fee and payout
+records; schema sweep asserts no stored-balance column in `merchant`.
+**Phase:** 6
+
+### INV-MER-03 — Fees are deterministic and version-pinned
+**Statement:** Every fee assessment records the fee schedule version that produced it;
+recomputing under that version reproduces the amount to the minor unit; schedules are
+immutable once effective — change creates a new version effective forward, repricing
+nothing.
+**Why:** `INV-HIST-04` with money attached: an unpinned fee makes revenue unexplainable and
+merchant statements unreproducible, and a repriced history is a restatement.
+**Enforce:** `DOMAIN` (immutable versions) + `DB-CONSTRAINT` (assessment rows carry the
+version `NOT NULL`; schedule versions frozen by trigger).
+**Verify:** Recomputation tests per rounding mode; a schedule-change-mid-flight test
+proving the pinned version priced the capture.
+**Phase:** 6
+
+### INV-MER-04 — A fee split conserves the captured amount exactly
+**Statement:** For every merchant-bound capture, fee + net credited to the payable equals
+the captured amount to the minor unit, per currency, for every assessment in any batch. The
+fee is computed once; the net is derived by subtraction, never rounded independently.
+**Why:** Two independent roundings can create or destroy a cent per transaction —
+`INV-BAL-03` violated at volume, invisibly, one minor unit at a time.
+**Enforce:** `DOMAIN` — the split is subtraction by construction (ADR-0050 §4); the
+one-entry posting makes the journal reject any drift (`INV-LED-01`).
+**Verify:** Property tests across amounts, rates and 0/2/3-minor-unit currencies; the
+high-volume batch asserting zero cumulative residual.
+**Phase:** 6
+
+### INV-MER-05 — A payout is bounded by the payable
+**Statement:** The sum of in-flight and completed payouts never exceeds the merchant's
+ledger-derived payable — judged inside the payable account's lock at dispatch, with
+in-flight payouts held so the bound is cumulative. A payout against insufficient payable is
+a committed domain refusal.
+**Why:** An over-payout is the platform giving away money it is not holding for that
+merchant — value destroyed against `INV-BAL-03`, discovered only at settlement.
+**Enforce:** `DOMAIN` (lock-then-look on the payable account) + the hold mechanism
+(`INV-BAL-04` doing payout duty, ADR-0051 §2).
+**Verify:** Concurrent payout races counted in the tables; the funded-then-drained probe;
+sequential overrun refused with the honest domain error.
+**Phase:** 6
+
+### INV-MER-06 — Landed money is never orphaned by checkout expiry
+**Statement:** A payment outcome that arrives after its checkout session expired lands in a
+modelled, countable state that credits the merchant and completes the order late — never
+dropped, never silently absorbed, never auto-reversed by a clock.
+**Why:** The provider answers on its own schedule (ADR-0046); a session's expiry is the
+platform's clock, not the money's. Money whose commercial fact is decided by a race between
+a webhook and a sweeper is money the books cannot explain.
+**Enforce:** `DOMAIN` — the `EXPIRED → COMPLETED_LATE` edge (ADR-0053 §5), conditional like
+every transition.
+**Verify:** The expiry-vs-capture race driven both ways; the late completion counted in a
+meter and visible to an operator view.
+**Phase:** 6
+
+---
+
 # Invariant Index
 
 | Group | IDs | Concern |
@@ -975,6 +1067,7 @@ payment domain rather than the journal).
 | `INV-KYC` | 01–06 | Verification and case management |
 | `INV-CNS` | 01–04 | Consent |
 | `INV-PAY` | 01–05 | Payments and providers |
+| `INV-MER` | 01–06 | Merchants and checkout |
 
-**87 invariants.** Every one must be enforced and verified before the phase that owns it can
+**93 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate.
