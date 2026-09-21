@@ -68,6 +68,11 @@ dependencies {
     // cannot vouch for the other's coverage.
     implementation(project(":payments"))
     implementation(project(":paymentmethods"))
+    // The Phase 6 commercial modules (P6-TSK-001), on the classpath for the same reason: a
+    // module not on app's classpath is a module ProductionModules sweeps no rule over. The
+    // planted-double probe runs once per module, as always.
+    implementation(project(":checkout"))
+    implementation(project(":merchant"))
 
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)

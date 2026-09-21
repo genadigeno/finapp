@@ -1,4 +1,4 @@
-package com.finapp.paymentmethods;
+package com.finapp.checkout;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -11,27 +11,32 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The structural guarantees the {@code paymentmethods} module exists to provide (P5-TSK-001).
+ * The structural guarantees the {@code checkout} module exists to provide (P6-TSK-001).
  *
  * <p>Assertions about the <strong>build</strong>, not about behaviour — the
- * {@code PartyModuleIsolationTest} idiom.
+ * {@code PartyModuleIsolationTest} idiom, and the moment they fail is the moment the damage is
+ * cheap to undo.
  *
- * <p><strong>This is the most isolated business module on the platform, deliberately.</strong>
- * It is the PCI boundary ({@code INV-PAY-02}, {@code MODULE_ARCHITECTURE.md} M7): the one place
- * a tokenised instrument reference lives, and the one surface a reviewer must read to know that
- * no raw card data crosses the line. Every business sibling is forbidden in <em>both</em>
- * directions — this test holds this side; every sibling's isolation test (and
- * {@code PaymentsModuleIsolationTest} most importantly, since the {@code payments} refusal has
- * no Gradle cycle behind it) holds the other. A PCI boundary that depended on business siblings
- * would have the whole dependency ball as its review surface; one that business siblings could
- * import would have its instrument types compiled into the modules that talk to providers.
+ * <p><strong>No business-sibling edge at all — and none of the refusals that matter has a cycle
+ * behind it.</strong> The {@code paymentmethods} posture for a different reason: this module is
+ * isolated so the purchase experience cannot grow into a god-orchestrator
+ * ({@code PHASE_6_PLAN.md} §18's named risk). Three refusals are load-bearing and rest entirely
+ * on this test, because adding any of the three edges would configure and compile cleanly:
+ * {@code checkout -> payments} (ADR-0053: the module that owns the purchase experience must not
+ * see provider machinery — payment execution resolves through a port {@code app} implements),
+ * {@code checkout -> merchant} (a session references its merchant by identifier; the purchase
+ * experience must not own or be shaped by the counterparty's lifecycle), and every other
+ * sibling for the established reasons. The order's refund standing is derived from the
+ * payment's rows at read time <em>by the composition layer</em> — this module never learns to
+ * read them itself.
  */
 @Tag("architecture")
-@DisplayName("paymentmethods module isolation (P5-TSK-001)")
-class PaymentmethodsModuleIsolationTest {
+@DisplayName("checkout module isolation (P6-TSK-001)")
+class CheckoutModuleIsolationTest {
 
     @Test
-    @DisplayName("paymentmethods sees no business sibling at all, and not the composition root")
+    @DisplayName("checkout sees no business sibling at all — payments and merchant included, "
+            + "whose refusals have no cycle behind them — and not the composition root")
     void seesNoSiblingAndNoCompositionRoot() {
         for (String forbidden :
                 List.of(
@@ -43,23 +48,23 @@ class PaymentmethodsModuleIsolationTest {
                         "accounts",
                         "transfers",
                         "payments",
-                        "checkout",
+                        "paymentmethods",
                         "merchant",
                         "app")) {
             assertThat(classpathEntries())
-                    .as("paymentmethods must not depend on %s", forbidden)
+                    .as("checkout must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));
         }
     }
 
     @Test
-    @DisplayName("paymentmethods does depend on platform and sharedkernel — the documented direction")
+    @DisplayName("checkout does depend on platform and sharedkernel — the documented direction")
     void dependsOnPlatformAndSharedkernel() {
-        // The non-vacuity half — without it, the forbidden-list assertion passes over a
-        // classpath containing nothing at all.
+        // The non-vacuity half of the guard above — without it, the forbidden-list assertion
+        // passes over a classpath containing nothing at all.
         for (String required : List.of("platform", "sharedkernel")) {
             assertThat(classpathEntries())
-                    .as("paymentmethods must depend on %s", required)
+                    .as("checkout must depend on %s", required)
                     .anyMatch(entry -> isBuildOutputOf(entry, required));
         }
     }

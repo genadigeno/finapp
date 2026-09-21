@@ -94,4 +94,20 @@ include("transfers")
 include("paymentmethods")
 include("payments")
 
+// The Phase 6 commercial modules (P6-TSK-001). `checkout` first: the customer-facing purchase
+// experience - the CheckoutSession and Order aggregates (ADR-0053) - with NO business-sibling
+// edge at all, the `paymentmethods` posture: payment execution, merchant resolution and the
+// posting composition all reach it through ports `app` implements, so the module that owns the
+// purchase experience cannot compile against provider machinery (`checkout -> payments` refused,
+// PHASE_6_PLAN.md §3) or against the merchant's lifecycle (`checkout <-> merchant` both refused;
+// references travel by identifier). None of those three refusals has a Gradle cycle behind it -
+// the isolation tests are the only controls, which is exactly why they exist. `merchant` second,
+// after `ledger` for the same structural reason as `accounts`, `transfers` and `payments`:
+// merchant -> ledger is its one permitted sibling edge (the payable is a LEDGER POSITION and
+// nothing else - INV-MER-02 - read and posted to through the ledger's APIs, never stored or
+// written here; ADR-0050, ADR-0051), so with this edge declared, `ledger -> merchant` is a
+// Gradle dependency cycle and the build refuses it outright.
+include("checkout")
+include("merchant")
+
 include("app")

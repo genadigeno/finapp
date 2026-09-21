@@ -6703,25 +6703,75 @@ F1–F8 binds; every task that can affect money carries `DOD-FIN`.
 demonstration (`P6-TSK-013`, `P6-TST-001`, `P6-TST-002`) · M6.7 The gate (`P6-DOC-001`).
 Acceptance per milestone in `PHASE_6_PLAN.md` §16.
 
-**P6-TSK-001 — The `merchant` and `checkout` modules and schemas** — `READY`
+**P6-TSK-001 — The `merchant` and `checkout` modules and schemas** — `COMPLETE` (2026-09-21)
 - **Objective**: the module shape's seventh and eighth performances; the phase's boundary
   decisions as build-graph facts. Bounded contexts 11 and 12; M2's provisional status
   confirmed by ADR-0053 §2.
-- **Scope**: two guarded modules. `merchant → ledger` declared (payable reads and payout
-  postings are commanded, never written — `INV-LED-04`); `checkout → payments` **refused**
-  (payment execution through a port `app` implements — ADR-0053; the isolation test is the
-  control); `checkout ↔ merchant` both refused (references by identifier). Schemas
-  `merchant` and `checkout` with the default-deny privilege floor first, tables per
-  `PHASE_6_PLAN.md` §8 — **no balance column anywhere in `merchant`** (`INV-MER-02`'s
-  schema half), generated status `CHECK`s, every-writer transition triggers, append-only
-  histories, frozen columns, grants per table in the creating migration. Classification
-  rows for every column in `DATA_CLASSIFICATION.md` §4 **in the same task** (the
-  `refund.dispatch_key` lesson: the register guard lives in a tier phase work rarely runs).
-- **Deps**: Phase 5 `COMPLETE`. **Accept**: module isolation green both ways; raw-SQL
-  schema tests prove floors, triggers and `CHECK`s from scratch; the classification guard
-  green fleet-wide. **Risk**: Low. **Cx**: M. **DoD**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`
+- **Scope** *(corrected at design, 2026-09-21 — the transition's entry over-reached)*: two
+  guarded modules and their **privilege floors only** — the `P5-TSK-001` precedent, whose
+  entry rules "*Out of scope: every table, aggregate, bean and endpoint*" for the standing
+  reason: the three-layer discipline generates each table's `CHECK`s and transition
+  triggers **from its aggregate's `permittedTransitions()`**, so a table cannot honestly
+  precede its machine. The §8 tables land with their owners — merchant and key
+  `P6-TSK-002`/`-003`, fee tables `P6-TSK-004`, session/order `P6-TSK-006`, destination
+  `P6-TSK-011`, payout `P6-TSK-012` — **each carrying its `DATA_CLASSIFICATION.md` §4 rows
+  in the task that creates the columns** (the `refund.dispatch_key` lesson binds every
+  creating task, not this one alone). What this task delivers: `merchant → ledger`
+  declared (the payable is a ledger position — `INV-MER-02` — commanded, never written,
+  `INV-LED-04`; the reverse edge now a Gradle cycle); `checkout → payments` **refused**
+  (ADR-0053 — no cycle backs it, the isolation test is the only control);
+  `checkout ↔ merchant` both refused (references by identifier); `V001` in each schema:
+  owner `finapp_migrator`, `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no
+  tables, no `ALTER DEFAULT PRIVILEGES`; every sibling isolation test gains both modules;
+  both modules join `app`'s classpath so `ProductionModules` sweeps them.
+- **Deps**: Phase 5 `COMPLETE`. **Out of scope**: every table, aggregate, bean, endpoint,
+  permission and event; `P6-TSK-002`'s credential. **Accept**: build green with both
+  modules; both floors proven live; both isolation asymmetries demonstrated; the planted
+  probes caught. **Risk**: Low. **Cx**: S. **DoD**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`
+- **Implementation note (2026-09-21)**: `settings.gradle.kts` gains both modules with the
+  phase comment (`checkout` first — the no-edges module, the `paymentmethods` posture for
+  a new reason: a god-orchestrator checkout is the plan's named risk); the two
+  `build.gradle.kts` files on the sibling templates (per-schema Flyway — ADR-0006/0011's
+  no-central-runner rule — `merchant` with the one `ledger` edge, `checkout` with none;
+  neither carries the provider-harness fixture it does not yet use, so both lockfiles are
+  strict subsets of their siblings'); `V001` floors verbatim on the `payments` shape with
+  each schema's own reasoning in its comment; `CheckoutModuleIsolationTest` (11 forbidden,
+  2 required) and `MerchantModuleIsolationTest` (10 forbidden, 3 required incl. the
+  `ledger` positive half); nine sibling isolation tests gain `checkout`, `merchant`.
+  **The floor proven live** on a throwaway `postgres:18.6` with the real role script:
+  migrate → validate → re-migrate idempotent for both schemas; owner `finapp_migrator`;
+  ACL exactly `{finapp_migrator=UC, finapp_app=U}` with **no `PUBLIC` entry**; `USAGE` and
+  **not** `CREATE` for the app role; **zero application tables** (each schema holding only
+  Flyway's own history: the schema marker plus `V001`, both successful). **Hermetic fleet
+  green: 1327 tests across 14 modules, 0 failures** — the +4 the two isolation tests' own
+  methods, fresh run.
+- **Gate evidence (2026-09-21)**: hermetic fleet green with both modules — **1327 tests
+  across 14 modules, 0 failures**, the +4 the two isolation tests' own methods (the
+  `P5-TSK-001` +4 shape exactly). **Six probes, all caught by the intended control,
+  restores verified byte-identical by `cmp`**: a planted `double` in each module caught
+  **naming that module** (`field com.finapp.checkout.Planted.amount is double
+  (INV-MON-01)`, then the merchant twin — once per module deliberately, because one
+  module's catch cannot vouch for the other's coverage); `checkout → payments` caught and
+  `checkout → merchant` caught — **with the observed shape recorded**: the failure names
+  `ledger` first, because the planted sibling arrives with its transitive `ledger` and the
+  forbidden-list assertion trips on the first name in list order — the leak is refused
+  whichever name trips first, and the shape matches the sibling idiom; `merchant →
+  checkout` caught **naming the planted edge itself** (`merchant must not depend on
+  checkout` — checkout carries no forbidden transitives, the sharpest of the three
+  no-cycle refusals); `ledger → merchant` refused by **Gradle configuration outright**
+  (`Circular dependency: :ledger:compileJava → :merchant:compileJava →
+  :ledger:compileJava`) — the declared-edge asymmetry proven structural. **The gate also
+  re-checked the `P1-TSK-003` stale-name class against this task's additions and found the
+  controls held**: CI's flyway steps are unqualified (every schema-owning module covered
+  without listing), and the test harness discovers both new schemas from the repository
+  layout — the floor demonstration exercised exactly that discovery. Post-battery fresh
+  runs green (29 targeted tests, 0 failures); `gradle/verification-metadata.xml` unchanged
+  (no new artefact); no register row owed (§4 rows are `TST`-item rows — the sibling
+  performances carry none). Verified by targeted tiers — the fleet-wide hermetic `test`
+  task and the live floor checks — **the full battery deliberately skipped on the owner's
+  instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TSK-002 — Merchant identity: the API key and tenant scoping** — `PLANNED`
+**P6-TSK-002 — Merchant identity: the API key and tenant scoping** — `READY`
 - **Objective**: ADR-0052 made real — the platform's fourth authentication vocabulary and
   the tenancy primitive every merchant surface will stand on. Bounded context 12 with
   Identity.

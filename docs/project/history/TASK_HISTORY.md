@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 124 "Previously" blocks, newest first, from `P5-TST-003` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 125 "Previously" blocks, newest first, from `P5-DOC-001` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,47 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P5-DOC-001` — the Phase 5 review record** — `COMPLETE` (2026-09-21). **M5.9 closes, and
+with it Phase 5.** The exit review per `PHASE_GATES.md` §4 and §5 — 8 areas, 12 universal
+criteria, the F1–F8 supplement re-assessed, **19** phase-specific criteria (the original 8
+plus the 11 the Phase 4 → 5 transition added, read from the gate rather than from the plan)
+— conducted in the order the item names: **assess → corrections → flip → battery**, so the
+review's own verdict is what carries the status rather than a status the review is written
+to justify.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The review's verdict is what flips the status | [`reviews/PHASE_5_REVIEW.md`](reviews/PHASE_5_REVIEW.md) — 8 areas `PASS`, 12 universal `PASS`, 19 phase-specific `PASS`, ten-instances `PASS` over seven contended decisions; the flip written only after |
+| The post-flip battery green | **1323 hermetic tests across twelve modules, 0 failures**, re-run again after this gate's corrections |
+
+### The battery found a red test, which is why it is run at the gate
+
+`RoleNameTest` had pinned `LEDGER_OPERATOR` at **three** permissions since `P5-TSK-015` added
+`PAYMENT_REFUND` — and `:identity:test` was in none of the phase's targeted tiers, so it
+survived **four subsequent completion gates**. That is the standing skip instruction's cost,
+*measured* rather than argued: a targeted-tier regime cannot see a module the phase never
+touched, which is exactly what the fleet-wide battery at a phase gate exists to catch. The
+pin is corrected, and the episode is recorded in the test's own comment and in the review's
+area 8.
+
+**The gate then audited the review** — the discipline the review invokes, turned on the
+reviewer — **and found three defects in it**: area 1's inventory was counted from memory and
+four numbers were wrong (4 payment paths not 5; **10** event types not 7; 8 auditable actions
+and 11 error codes across both modules, not 6 and 9); criterion 4 cited *"the plan's §12"*
+with seven failure scenarios when the list is **§14 with fifteen**, all fifteen now assessed;
+and the flip had left the **BACKLOG's own phase header** reading `IN_PROGRESS` with `Proposed`
+ADRs — which criterion 8 would have failed on the reviewer's own act. **ADR-0045–0049 were
+read against the implementation and accepted** (criterion 10's deferral, owned by this audit
+since the phase began): the leaderless sweeper, the evidence-first webhook door and
+hold-then-post down to the posting key were found to describe the code that exists.
+Non-vacuity proven against the real status — one `Phase: 5` row removed → the build fails
+naming `INV-PAY-01` and reporting *(currently 5)*; restored byte-identical. **No production
+code changed by this item** beyond the one-line test pin the battery demanded.
 
 ---
 

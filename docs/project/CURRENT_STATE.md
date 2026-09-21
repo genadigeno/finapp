@@ -204,14 +204,14 @@ battery ran fleet-wide — 1323 hermetic / 829 database / 14 kafka, 0 failures a
 repair — so Phase 5, like Phase 4, ends with a genuine fleet-wide count after all.)*
 
 **Phase 6 — Checkout and Merchant Platform**
-Status: **`READY`** (2026-09-21) — entry gate passed, all twelve criteria
+Status: **`IN_PROGRESS`** (2026-09-21) — entry gate passed, all twelve criteria
 ([`reviews/PHASE_5_TO_6_TRANSITION.md`](reviews/PHASE_5_TO_6_TRANSITION.md)): ADR-0050–0053
 `Proposed` (the fee model — question 8, the standing High — decided **before** any posting
 exists; payout accounting; merchant API identity; checkout session and order — question 7
 confirmed), the `INV-MER-01`…06 group catalogued (**93 invariants**, with `INV-AUD-04`
 gaining its first subject), `PHASE_6_PLAN.md`, 16 backlog items across seven milestones,
-`CHECKOUT_MERCHANT_LIFECYCLES.md`, the glossary and §5 gate extension. Not started; first
-task `P6-TSK-001`, `READY`.
+`CHECKOUT_MERCHANT_LIFECYCLES.md`, the glossary and §5 gate extension. Started the same day
+with `P6-TSK-001` (the modules and floors, complete); M6.1 open at 1 of 3.
 
 **The flip was the guarded act, and it surfaced nothing because three items pre-paid it**:
 `P5-TST-002` landed every `Phase: 5` invariant row and probed the flip, `P5-TSK-017` landed
@@ -273,56 +273,43 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-001` — the `merchant` and `checkout` modules and schemas** — `READY`.
-Phase 6's first task: two guarded modules on the documented boundary decisions
-(`merchant → ledger` declared; `checkout → payments` and both `checkout ↔ merchant` edges
-refused), schemas `merchant` and `checkout` at the default-deny floor with **no balance
-column anywhere in `merchant`** (`INV-MER-02`), and — this transition's own lesson — the
-`DATA_CLASSIFICATION.md` §4 rows landing **in the same task** as the columns. Scope,
-acceptance and DoD profiles in the backlog entry; decisions in ADR-0050…0053 (`Proposed`).
+**`P6-TSK-002` — merchant identity: the API key and tenant scoping** — `READY`.
+ADR-0052 made real: the platform's fourth authentication vocabulary (the key under the full
+credential regime — `INV-IDN-01/-02`), `ActorType.MERCHANT`, and the statement-scoping
+primitive (`merchant_id = ?` from the authenticated context — `INV-MER-01`) every merchant
+surface will stand on. Scope, acceptance and DoD profiles in the backlog entry.
 
 ### Just completed
 
-**`P5-DOC-001` — the Phase 5 review record** — `COMPLETE` (2026-09-21). **M5.9 closes, and
-with it Phase 5.** The exit review per `PHASE_GATES.md` §4 and §5 — 8 areas, 12 universal
-criteria, the F1–F8 supplement re-assessed, **19** phase-specific criteria (the original 8
-plus the 11 the Phase 4 → 5 transition added, read from the gate rather than from the plan)
-— conducted in the order the item names: **assess → corrections → flip → battery**, so the
-review's own verdict is what carries the status rather than a status the review is written
-to justify.
+**`P6-TSK-001` — the `merchant` and `checkout` modules and schemas** — `COMPLETE`
+(2026-09-21). **M6.1 opens at 1 of 3: the module shape's seventh and eighth performances,
+and Phase 6's boundary decisions as build-graph facts.** `merchant → ledger` declared (the
+payable is a ledger position — `INV-MER-02`; the reverse edge now a demonstrated Gradle
+cycle); `checkout → payments` and both `checkout ↔ merchant` edges refused with the
+isolation tests as the only controls (no cycle backs any of the three); `V001` floors in
+both schemas proven live on a throwaway PostgreSQL — ACL exactly
+`{finapp_migrator=UC, finapp_app=U}`, no `PUBLIC` entry, `USAGE` not `CREATE`, zero
+application tables, re-migration idempotent.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| The review's verdict is what flips the status | [`reviews/PHASE_5_REVIEW.md`](reviews/PHASE_5_REVIEW.md) — 8 areas `PASS`, 12 universal `PASS`, 19 phase-specific `PASS`, ten-instances `PASS` over seven contended decisions; the flip written only after |
-| The post-flip battery green | **1323 hermetic tests across twelve modules, 0 failures**, re-run again after this gate's corrections |
+| Build green with both modules | Hermetic fleet **1327 tests / 14 modules / 0 failures**, the +4 the isolation tests' own methods |
+| Floors proven live | The throwaway-container demonstration above |
+| Isolation asymmetries demonstrated | Six probes, all caught, restores byte-identical — incl. the cycle refused at Gradle configuration |
+| Planted probes caught | `INV-MON-01` naming each module; the three no-cycle edges each refused |
 
-### The battery found a red test, which is why it is run at the gate
-
-`RoleNameTest` had pinned `LEDGER_OPERATOR` at **three** permissions since `P5-TSK-015` added
-`PAYMENT_REFUND` — and `:identity:test` was in none of the phase's targeted tiers, so it
-survived **four subsequent completion gates**. That is the standing skip instruction's cost,
-*measured* rather than argued: a targeted-tier regime cannot see a module the phase never
-touched, which is exactly what the fleet-wide battery at a phase gate exists to catch. The
-pin is corrected, and the episode is recorded in the test's own comment and in the review's
-area 8.
-
-**The gate then audited the review** — the discipline the review invokes, turned on the
-reviewer — **and found three defects in it**: area 1's inventory was counted from memory and
-four numbers were wrong (4 payment paths not 5; **10** event types not 7; 8 auditable actions
-and 11 error codes across both modules, not 6 and 9); criterion 4 cited *"the plan's §12"*
-with seven failure scenarios when the list is **§14 with fifteen**, all fifteen now assessed;
-and the flip had left the **BACKLOG's own phase header** reading `IN_PROGRESS` with `Proposed`
-ADRs — which criterion 8 would have failed on the reviewer's own act. **ADR-0045–0049 were
-read against the implementation and accepted** (criterion 10's deferral, owned by this audit
-since the phase began): the leaderless sweeper, the evidence-first webhook door and
-hold-then-post down to the posting key were found to describe the code that exists.
-Non-vacuity proven against the real status — one `Phase: 5` row removed → the build fails
-naming `INV-PAY-01` and reporting *(currently 5)*; restored byte-identical. **No production
-code changed by this item** beyond the one-line test pin the battery demanded.
+**Scope corrected at design with provenance**: the transition's entry over-reached
+("tables per §8"); the `P5-TSK-001` precedent rules — floors only, because a table's
+`CHECK`s and triggers are generated from its aggregate's `permittedTransitions()` and
+cannot honestly precede the machine. The §8 tables land with their owners, each carrying
+its classification rows in the task that creates the columns (the `refund.dispatch_key`
+lesson as standing scope, not a one-time fix). One observed control shape recorded: a
+planted sibling edge fails naming its transitive `ledger` first — the leak is refused
+whichever name trips first.
 
 ### Previously
 
-The per-task completion records behind this one — 124 blocks, from `P5-TST-003` back to project
+The per-task completion records behind this one — 125 blocks, from `P5-DOC-001` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -338,8 +325,8 @@ archived verbatim in
 
 **Phase 5 is `COMPLETE`** (2026-09-21) — 21 of 21 items across nine milestones, ruled by
 `P5-DOC-001`'s exit review and confirmed by the transition's independent audit.
-**Phase 6 is `READY`** (entry gate passed 2026-09-21, all twelve criteria) — 16 items
-across seven milestones, next `P6-TSK-001`.
+**Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
+same day, all twelve criteria) — M6.1 open at 1 of 3, next `P6-TSK-002`.
 
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
