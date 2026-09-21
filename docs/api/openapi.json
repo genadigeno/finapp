@@ -1102,6 +1102,111 @@
           }
         }
       },
+      "merchant.IllegalTransition": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.IllegalTransition"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.IllegalTransition"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The merchant's current status does not permit this change.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.NotEligible": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.NotEligible"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.NotEligible"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The party cannot be onboarded as a merchant.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.UnsupportedCurrency": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.UnsupportedCurrency"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.UnsupportedCurrency"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The settlement currency is not supported.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "party.RegistrationRefused": {
         "content": {
           "application/problem+json": {
@@ -2089,6 +2194,36 @@
         },
         "type": "object"
       },
+      "MerchantStandingRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "MerchantView": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "settlementCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MfaConfirmationRequest": {
         "properties": {
           "code": {
@@ -2117,6 +2252,35 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "OnboardMerchantRequest": {
+        "properties": {
+          "displayName": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "legalName": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "partyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "settlementCurrency": {
+            "pattern": "^[A-Z]{3}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "legalName",
+          "partyId",
+          "settlementCurrency"
+        ],
         "type": "object"
       },
       "OrganisationRegistrationRequest": {
@@ -2544,7 +2708,8 @@
             "enum": [
               "ADMINISTRATOR",
               "KYC_REVIEWER",
-              "LEDGER_OPERATOR"
+              "LEDGER_OPERATOR",
+              "MERCHANT_ADMINISTRATOR"
             ],
             "type": "string"
           }
@@ -3745,6 +3910,181 @@
         "responses": {
           "204": {
             "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants": {
+      "post": {
+        "operationId": "onboard",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardMerchantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{id}": {
+      "get": {
+        "operationId": "viewMerchant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{id}/closure": {
+      "post": {
+        "operationId": "close",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantStandingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{id}/reinstatement": {
+      "post": {
+        "operationId": "reinstate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantStandingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{id}/suspension": {
+      "post": {
+        "operationId": "suspend",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantStandingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

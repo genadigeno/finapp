@@ -291,6 +291,51 @@ class OwnershipIsScopedTest {
                                         + " PaymentRefundEndpointDatabaseTest's permissionless"
                                         + " refusal. Customer HTTP reads go through findOwned.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcMerchantStore.read",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-003. The one read behind findById and"
+                                        + " findByIdForUpdate - the method that actually carries"
+                                        + " the identifier into the statement, which is what this"
+                                        + " register classifies. The identifier comes from the URL"
+                                        + " of GET /v1/operator/merchants/{id} and the three"
+                                        + " standing moves, and it names a COUNTERPARTY, not the"
+                                        + " caller: there is no ownership predicate to check and"
+                                        + " there should not be one (the P1-TSK-028 class). What"
+                                        + " stands in for it: @RequiresPermission at the boundary"
+                                        + " - MERCHANT_ADMINISTER - asserted with nothing written"
+                                        + " by MerchantEndpointDatabaseTest's permissionless AND"
+                                        + " wrong-population refusals, plus the required reason on"
+                                        + " every move (INV-AUD-03). FOR UPDATE is the"
+                                        + " serialization point, never an ownership check - said"
+                                        + " here so a later reader cannot mistake the lock for a"
+                                        + " predicate. When P6-TSK-002 adds the merchant-facing"
+                                        + " surface, its reads carry merchant_id = ? from the"
+                                        + " authenticated key (INV-MER-01) and are OWNER_SCOPED -"
+                                        + " a different entry, not a widening of this one.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-003, and the label is the guard's correction rather"
+                                        + " than this task's first answer: AUTHORITATIVE_ID citing"
+                                        + " read was REFUSED, because read is ADMINISTERED and"
+                                        + " every operation citing an unowned provenance inherits"
+                                        + " the gap (the P1-TSK-030 rule, working). The honest"
+                                        + " account: the identifier's chain begins at a URL, so"
+                                        + " what stands in for the missing predicate is the same"
+                                        + " substitute read names - MERCHANT_ADMINISTER at the"
+                                        + " boundary with the required reason. The history row for"
+                                        + " a move that just landed:"
+                                        + " the identifier was validated by the locking read in"
+                                        + " the same transaction, and the conditional"
+                                        + " WHERE status = ? row count already refused the write"
+                                        + " if another writer had moved the row - so this insert"
+                                        + " records a transition that provably happened."
+                                        + " Append-only at the privilege; no owner predicate"
+                                        + " exists because a history row belongs to the merchant"
+                                        + " it names.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentIntentStore.transition",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

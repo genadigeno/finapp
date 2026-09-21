@@ -283,6 +283,21 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `payments.RefundExceedsCaptured` | 422 | The refund would exceed the captured amount. |
 | `payments.RefundUnfunded` | 409 | The account cannot fund this refund right now. |
 
+### `merchant.*` — the counterparty surface (`P6-TSK-003`)
+
+| Code | Status | Meaning |
+|---|---|---|
+| `merchant.NotEligible` | 422 | The party cannot be onboarded as a merchant. |
+| `merchant.IllegalTransition` | 409 | The merchant's current status does not permit this change. |
+| `merchant.UnsupportedCurrency` | 422 | The settlement currency is not supported. |
+
+`merchant.NotEligible` deliberately conflates its causes — no such party, a person party, no
+customer relationship, one still under verification — because an onboarding surface that
+distinguishes them is an oracle over parties and their compliance standing (the
+`INV-IDN-07` reasoning at a new boundary). There is no merchant not-found code: unknown,
+malformed and — when `P6-TSK-002`'s tenant scoping arrives — another-tenant's are the one
+`api.NotFound` (`INV-MER-01`).
+
 The payment surface's vocabulary (`P5-TSK-011`) is **the refusals only** — requests the
 platform declined to judge, with nothing written. A *judged* failure is never an error code: a
 declined card is a `200` whose body says `FAILED` with the **mapped** `failureReason`

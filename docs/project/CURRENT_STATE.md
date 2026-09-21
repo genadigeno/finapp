@@ -274,42 +274,60 @@ since M0.1". Moved, not edited.)*
 ## Current Task
 
 **`P6-TSK-002` — merchant identity: the API key and tenant scoping** — `READY`.
-ADR-0052 made real: the platform's fourth authentication vocabulary (the key under the full
-credential regime — `INV-IDN-01/-02`), `ActorType.MERCHANT`, and the statement-scoping
-primitive (`merchant_id = ?` from the authenticated context — `INV-MER-01`) every merchant
-surface will stand on. Scope, acceptance and DoD profiles in the backlog entry.
+ADR-0052 made real, now that its subject exists: the key credential under the full regime
+(`INV-IDN-01/-02` — hashed, derivation parameters recorded, shown once, prefix lookup,
+immediate revocation), `ActorType.MERCHANT` joining the audit vocabulary, and the
+statement-scoping primitive (`merchant_id = ?` from the authenticated context — `INV-MER-01`)
+that every merchant-facing surface will stand on. Scope, acceptance and DoD profiles in the
+backlog entry.
 
 ### Just completed
 
-**`P6-TSK-001` — the `merchant` and `checkout` modules and schemas** — `COMPLETE`
-(2026-09-21). **M6.1 opens at 1 of 3: the module shape's seventh and eighth performances,
-and Phase 6's boundary decisions as build-graph facts.** `merchant → ledger` declared (the
-payable is a ledger position — `INV-MER-02`; the reverse edge now a demonstrated Gradle
-cycle); `checkout → payments` and both `checkout ↔ merchant` edges refused with the
-isolation tests as the only controls (no cycle backs any of the three); `V001` floors in
-both schemas proven live on a throwaway PostgreSQL — ACL exactly
-`{finapp_migrator=UC, finapp_app=U}`, no `PUBLIC` entry, `USAGE` not `CREATE`, zero
-application tables, re-migration idempotent.
+**`P6-TSK-003` — merchant onboarding and the payable account** — `COMPLETE` (2026-09-21).
+**M6.1 at 2 of 3: the commercial counterparty exists, with its books.** The `Merchant`
+aggregate and its machine (`ACTIVE ⇄ SUSPENDED → CLOSED`, every state earned, `CLOSED`
+reachable from `ACTIVE` only), `merchant` `V002` with the machine's `CHECK`s and trigger
+edges generated from `permittedTransitions()`, and the two commands: **onboarding keyed at
+the financial boundary**, gated on the KYB projection, opening the merchant's
+`MERCHANT_PAYABLE` ledger account in the same transaction; and the three **reasoned**
+standing moves under lock-then-conditional-write.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Build green with both modules | Hermetic fleet **1327 tests / 14 modules / 0 failures**, the +4 the isolation tests' own methods |
-| Floors proven live | The throwaway-container demonstration above |
-| Isolation asymmetries demonstrated | Six probes, all caught, restores byte-identical — incl. the cycle refused at Gradle configuration |
-| Planted probes caught | `INV-MON-01` naming each module; the three no-cycle edges each refused |
+| Onboard end to end over HTTP | `201` with the merchant, its payable account, audit and event counted in four tables |
+| The KYB refusal writes nothing | Person party, unverified organisation and unknown party — one refusal each, both counts unmoved |
+| Ten concurrent onboards, one key | One merchant, one account, one audit record, one event — counted |
+| Suspension refuses new business | The machine fact landed; its consumers (session create, payout) arrive with their tasks |
 
-**Scope corrected at design with provenance**: the transition's entry over-reached
-("tables per §8"); the `P5-TSK-001` precedent rules — floors only, because a table's
-`CHECK`s and triggers are generated from its aggregate's `permittedTransitions()` and
-cannot honestly precede the machine. The §8 tables land with their owners, each carrying
-its classification rows in the task that creates the columns (the `refund.dispatch_key`
-lesson as standing scope, not a one-time fix). One observed control shape recorded: a
-planted sibling edge fails naming its transitive `ledger` first — the leak is refused
-whichever name trips first.
+**The ledger gained its seventh purpose and fourth owner kind.** `MERCHANT_PAYABLE(MERCHANT)`
+could not simply be added: `V002` is applied history and cannot follow its enums, so `V011`
+**recreates the four constraints the two widened enums feed**, the reconciliation test now
+reads those four from `V011` and the rest from `V002`, and `V002`'s hand-written
+`(owner_kind = 'CUSTOMER') = (owner_ref IS NOT NULL)` became the **generated**
+`OwnerKind.sqlOwnerRefRule()` — correct while exactly one kind had an owner, a generated rule
+the moment a second did. The chart-seed guard's `!= CUSTOMER` predicate fell to the same
+assumption and became `requiresOwnerRef()`.
+
+### Three findings, and the sharpest was not in the code I wrote
+
+**`OpenApiContractTest` caught a real break in two endpoints nobody touched.** A controller
+method named `view` collided with two existing `view` handlers, and springdoc renumbered
+*their* `operationId`s. Generated clients key method names off `operationId` — so a name
+chosen in a new file broke `/v1/me/kyb` and `/v1/ledger/adjustments/{id}`. Renamed
+`viewMerchant`; the reason lives at the method, because the next person to type `view` will
+not otherwise know.
+
+**The ownership register refused this task's first answer** — `appendHistory` as
+`AUTHORITATIVE_ID` citing an `ADMINISTERED` read, which inherits the gap (`P1-TSK-030`'s rule)
+— reclassified with the substitute check named. And **the mutation battery forced a probe into
+existence**: dropping the conditional `WHERE status = ?` survived, because the `FOR UPDATE`
+lock masks it; the clause binds the caller who reads *without* the lock, so a **stale-snapshot
+probe** now drives the store's contract directly and the mutation fails against it.
+**8 probes, all ended caught, restores byte-identical.**
 
 ### Previously
 
-The per-task completion records behind this one — 125 blocks, from `P5-DOC-001` back to project
+The per-task completion records behind this one — 126 blocks, from `P6-TSK-001` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -326,7 +344,7 @@ archived verbatim in
 **Phase 5 is `COMPLETE`** (2026-09-21) — 21 of 21 items across nine milestones, ruled by
 `P5-DOC-001`'s exit review and confirmed by the transition's independent audit.
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
-same day, all twelve criteria) — M6.1 open at 1 of 3, next `P6-TSK-002`.
+same day, all twelve criteria) — M6.1 open at 2 of 3, next `P6-TSK-002`.
 
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase

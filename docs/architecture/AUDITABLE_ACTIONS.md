@@ -343,6 +343,10 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `payments.PaymentCaptureDispatched` | No | The platform dispatched a capture for an authorized attempt; the reference was stored before the provider was asked, and the record names the attempt and the intent, never an amount. |
 | `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. |
 | `payments.PaymentRefundDispatched` | **Yes** | An operator dispatched a bounded refund of a captured payment, with the required reason; the record names the refund, the attempt and the intent, never an amount. |
+| `merchant.MerchantOnboarded` | No | An operator onboarded a merchant; the record names the merchant, its organisation party and its payable ledger account by identifier. |
+| `merchant.MerchantSuspended` | **Yes** | An operator suspended a merchant - new dispatches refuse, landed money still lands; the reason is required. |
+| `merchant.MerchantReinstated` | **Yes** | An operator reinstated a suspended merchant; the reason is required. |
+| `merchant.MerchantClosed` | **Yes** | An operator closed a merchant - terminal; the payable position and its history remain; the reason is required. |
 
 Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
 dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's

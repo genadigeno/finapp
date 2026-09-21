@@ -24,6 +24,17 @@ public enum OwnerKind {
     /** Owned by a customer account (the product). {@code owner_ref} names it — required. */
     CUSTOMER,
 
+    /**
+     * Owned by a merchant — the platform's liability to a commercial counterparty
+     * ({@code P6-TSK-003}, ADR-0050/0051). {@code owner_ref} names the merchant, by value and
+     * opaque, exactly as {@code CUSTOMER} names the customer account: the ledger does not know
+     * what a Merchant is ({@code ADR-0042}'s reasoning at the new boundary). Deliberately not
+     * {@code CUSTOMER}: a merchant's money is owed <em>to a counterparty the platform pays
+     * out to</em>, not held <em>for a person who spends it</em> — folding the two together is
+     * how a payout draws on customer funds without anyone writing that sentence.
+     */
+    MERCHANT,
+
     /** The platform's own position: clearing, fees, FX, rounding. No owner, ever. */
     OPERATIONAL,
 
@@ -35,9 +46,9 @@ public enum OwnerKind {
      */
     SUSPENSE;
 
-    /** True when an account of this kind names the customer account it belongs to. */
+    /** True when an account of this kind names the owner it belongs to. */
     public boolean requiresOwnerRef() {
-        return this == CUSTOMER;
+        return this == CUSTOMER || this == MERCHANT;
     }
 
     /** The kinds as a SQL literal list, for the {@code CHECK} constraint. */
@@ -45,5 +56,22 @@ public enum OwnerKind {
         return Arrays.stream(values())
                 .map(kind -> "'" + kind.name() + "'")
                 .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * The owner-ref presence rule as a SQL predicate, for the coherence {@code CHECK} — one
+     * definition, two artefacts ({@link AccountPurpose#sqlOwnerKindRule()}'s pattern). Replaces
+     * `V002`'s hand-written {@code (owner_kind = 'CUSTOMER') = (owner_ref IS NOT NULL)}, which
+     * was correct while exactly one kind had an owner and became a generated rule the moment a
+     * second did (`P6-TSK-003`) — the equality form keeps both defect directions caught: an
+     * ownerless owned account, and an owner smuggled onto a platform account.
+     */
+    public static String sqlOwnerRefRule() {
+        String owned =
+                Arrays.stream(values())
+                        .filter(OwnerKind::requiresOwnerRef)
+                        .map(kind -> "'" + kind.name() + "'")
+                        .collect(Collectors.joining(", "));
+        return "(owner_kind IN (" + owned + ")) = (owner_ref IS NOT NULL)";
     }
 }

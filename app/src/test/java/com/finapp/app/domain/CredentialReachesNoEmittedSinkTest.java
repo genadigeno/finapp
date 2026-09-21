@@ -359,7 +359,19 @@ class CredentialReachesNoEmittedSinkTest {
                         // wrapped end to end: the deserialiser at the boundary, the
                         // TokenisationGrant type in the domain, one unwrap at the exchange
                         // wire. Never persisted, never in the trail.
-                        "AttachPaymentMethodRequest");
+                        "AttachPaymentMethodRequest",
+                        // P6-TSK-003. Carries the operator's assertion of a party identifier,
+                        // two business NAMES and an ISO currency code - no secret, and no
+                        // person's name (PartyKind.ORGANISATION gates onboarding). Here
+                        // because the set is every schema REACHABLE from a request body; what
+                        // onboarding stores is classified in merchant.merchant's register
+                        // rows, not in this vocabulary.
+                        "OnboardMerchantRequest",
+                        // P6-TSK-003. Carries ONE field: a REASON (free prose by an operator,
+                        // bound for the audit record's reason column - RESTRICTED-FINANCIAL,
+                        // never rendered by any toString), on all three standing moves. No
+                        // secret; the TransferReversalRequest shape, at the counterparty.
+                        "MerchantStandingRequest");
     }
 
     @Test

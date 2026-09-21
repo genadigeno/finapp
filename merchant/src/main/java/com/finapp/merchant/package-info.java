@@ -26,6 +26,12 @@
  * only control on the {@code checkout} refusal; no cycle backs it.
  *
  * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema
- * ({@code P6-TSK-001}).
+ * ({@code P6-TSK-001}), and the aggregate with its schema and its two commands
+ * ({@code P6-TSK-003}: the {@code ACTIVE ⇄ SUSPENDED → CLOSED} machine, `V002`'s every-writer
+ * trigger and frozen identity, the KYB-gated keyed onboarding that opens the merchant's
+ * {@code MERCHANT_PAYABLE} ledger account in the same transaction, and the three reasoned
+ * standing moves behind {@code MERCHANT_ADMINISTRATOR} — updated by the task that made the
+ * previous sentence stale, the recurring class). The API key and tenant scoping are
+ * {@code P6-TSK-002}'s.
  */
 package com.finapp.merchant;

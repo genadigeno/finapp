@@ -6772,6 +6772,10 @@ Acceptance per milestone in `PHASE_6_PLAN.md` §16.
   instruction; no fleet-wide database or kafka counts claimed.**
 
 **P6-TSK-002 — Merchant identity: the API key and tenant scoping** — `READY`
+*(Ordering corrected at `P6-TSK-003`'s design, 2026-09-21: the transition sequenced the key
+before its subject — a credential cannot precede the aggregate it authenticates as, or the
+filter resolves keys to dangling identifiers and the suspended-merchant refusal has nothing
+to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
 - **Objective**: ADR-0052 made real — the platform's fourth authentication vocabulary and
   the tenancy primitive every merchant surface will stand on. Bounded context 12 with
   Identity.
@@ -6781,12 +6785,12 @@ Acceptance per milestone in `PHASE_6_PLAN.md` §16.
   statement-scoping primitive (`merchant_id = ?` from the authenticated context —
   `INV-MER-01`) as the store-layer discipline with its ownership register rows; operator
   issuance/revocation (`MERCHANT_ADMINISTER`) audited, negatively tested.
-- **Deps**: `P6-TSK-001`. **Accept**: a merchant authenticates and reaches only its own
-  rows (negative per surface, zero rows touched); a revoked key refuses immediately
+- **Deps**: `P6-TSK-003`. **Accept**: a merchant authenticates and reaches only its own
+  rows; a suspended merchant's keys refuse (negative per surface, zero rows touched); a revoked key refuses immediately
   cross-instance; no secret recoverable; issuance audited with actor and key id.
 - **Risk**: Medium (new actor population). **Cx**: M. **DoD**: `DOD-SEC`, `DOD-API`
 
-**P6-TSK-003 — Merchant onboarding and the payable account** — `PLANNED`
+**P6-TSK-003 — Merchant onboarding and the payable account** — `COMPLETE` (2026-09-21)
 - **Objective**: the merchant exists as a commercial counterparty with its books ready —
   the KYB gate reused, the payable account seeded. Bounded context 12.
 - **Scope**: onboard (operator, `MERCHANT_ONBOARD`, keyed `INV-IDEM-01`) refusing any party
@@ -6796,10 +6800,84 @@ Acceptance per milestone in `PHASE_6_PLAN.md` §16.
   (`ACTIVE`/`SUSPENDED`/`CLOSED`) three-layer enforced; suspension gating new dispatches
   only (`CHECKOUT_MERCHANT_LIFECYCLES.md` §5); `MerchantOnboarded` in the transaction;
   audit per act with reason on suspension.
-- **Deps**: `P6-TSK-002`. **Accept**: onboard end to end over HTTP; the KYB refusal writes
+- **Deps**: `P6-TSK-001` *(was `-002`; the ordering correction above)*. **Accept**: onboard end to end over HTTP; the KYB refusal writes
   nothing; ten concurrent onboards with one key produce one merchant and one account set,
   counted; suspension refuses a new session while landed money still lands.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`
+- **Implementation note (2026-09-21)**: the merchant aggregate (`ACTIVE ⇄ SUSPENDED →
+  CLOSED`, every state earned, `CLOSED` terminal from `ACTIVE` only — the
+  `CustomerAccountStatus` rule), `merchant` `V002` (the machine's `CHECK`s and trigger edges
+  generated from `permittedTransitions()`, identity frozen for every writer, grants narrowed
+  to `status`/`status_changed_at`, history append-only, **no balance column and none ever** —
+  `INV-MER-02`'s schema half), and the two commands: **onboarding keyed at the financial
+  boundary** with the payable ledger account created in the same transaction, and the three
+  **reasoned** standing moves under lock-then-conditional-write. **The ledger gained its
+  seventh purpose and fourth owner kind** — `MERCHANT_PAYABLE(OwnerKind.MERCHANT)` — which
+  `V011` landed by **recreating the four constraints the two widened enums feed**, because
+  `V002` is applied history (ADR-0011) and cannot follow its enums; `LedgerAccountMigrationTest`
+  now reconciles those four against `V011` and the rest against `V002`, and `V002`'s
+  hand-written `(owner_kind = 'CUSTOMER') = (owner_ref IS NOT NULL)` became the **generated**
+  `OwnerKind.sqlOwnerRefRule()` — correct while exactly one kind had an owner, a generated rule
+  the moment a second did. Identity gained `MERCHANT_ONBOARD`/`MERCHANT_ADMINISTER` and the
+  **fourth role** `MERCHANT_ADMINISTRATOR` (a distinct trust decision: administering
+  counterparties is neither managing identities, nor reviewing the KYB decision this role
+  *consumes*, nor operating the money), with `V015` admitting it and the pairwise-disjoint
+  assertions extended. The KYB gate is the `AccountHolderVerification` port shape with the
+  `ORGANISATION` predicate added — Phase 2's projection consumed, never recomputed.
+  **Ordering corrected at design**: this task now precedes `P6-TSK-002`, because a credential
+  cannot precede the aggregate it authenticates as.
+- **Gate evidence (2026-09-21)**: **every accept clause demonstrated** — onboard end to end
+  over real HTTP (`201`, the merchant and its `MERCHANT_PAYABLE` account committed together,
+  audit and event counted); the KYB refusal writing **nothing** for a person party, an
+  unverified organisation and an unknown party alike, counted in both tables; **ten instances
+  with one key producing one merchant, one payable account, one audit record and one event**,
+  counted in four tables; the reused key with a different request as the distinct conflict;
+  the three standing moves with the operator's reason recorded **verbatim** and each retry
+  converging; the machine refusing illegal edges at the aggregate **and** at `V002`'s trigger
+  for the migrator; the live-schema sweep finding no balance column. Suites:
+  `MerchantOnboardingDatabaseTest` 9, `MerchantEndpointDatabaseTest` 6, `MerchantTest` 5,
+  `MerchantMigrationTest` 6, `LedgerAccountMigrationTest` 6.
+  **Eight probes, all ended caught by the intended assertion, restores verified byte-identical
+  by `cmp` — and one survived its first run, which is the battery working**: the KYB gate
+  dropped (a person party onboarded); the payable creation dropped (a merchant with no books,
+  caught twice); the idempotency claim bypassed (ten merchants where one belongs);
+  **`V002`'s trigger disabled — probed against the MIGRATOR deliberately**, because the app
+  role's narrowed grant already refuses and only the unbindable writer proves the
+  every-writer claim; **THE CONDITIONAL `WHERE status = ?` DROPPED — SURVIVED**: the
+  `FOR UPDATE` lock masks it, since a racer blocks, re-reads the committed state and converges
+  before the clause can matter, so the suite gained the **stale-snapshot probe** that drives
+  the store's own convergence contract directly — the mutation then failed against it
+  (a move from a state the row had left landed, writing phantom history), the gap closed where
+  it was found, the `P5-TSK-015` shape; the required reason dropped (the register
+  reconciliation); the permission dropped — caught, **with its observed shape recorded**: an
+  undeclared route fails *closed* (deny-by-default refuses everyone), so the positive
+  assertions catch it and the **sharper form** was run instead — gating onboarding on
+  `LEDGER_POST`, caught by the named negative when a ledger operator onboarded a merchant;
+  and `V011`'s generated owner-ref rule reverted to `V002`'s CUSTOMER-only form, **caught at
+  both ranks** — the reconciliation in text and `SQLState 23514` at the database refusing
+  every merchant payable account.
+  **THE GATE'S OWN THREE FINDINGS, ALL FIXED ON THE RECORD.** (1) **`OpenApiContractTest`
+  caught a real breaking change to two shipped endpoints**: a controller method named `view`
+  collided with two existing `view` handlers and springdoc renumbered *their* `operationId`s
+  (`/v1/me/kyb` `view → view_1`, `/v1/ledger/adjustments/{id}` `view_1 → view_2`) — generated
+  clients key method names off `operationId`, so a name chosen here broke two surfaces nobody
+  touched; renamed `viewMerchant`, the renumbering gone, the reason written at the method.
+  The remaining 15 `BREAKING` labels are required-flags on paths and schemas that did not
+  previously exist plus the role-enum widening — the `P5-TSK-015` recorded shape; baseline
+  +341 lines, the one removed line being `"LEDGER_OPERATOR"` gaining a trailing comma.
+  (2) **The ownership register demanded the new store's classification** and then **refused
+  this task's first answer**: `appendHistory` as `AUTHORITATIVE_ID` citing `read` was rejected
+  because `read` is `ADMINISTERED` and every operation citing an unowned provenance inherits
+  the gap (the `P1-TSK-030` rule, working) — reclassified `ADMINISTERED` with the substitute
+  named, and the entries moved onto the methods that actually carry the identifier into a
+  statement rather than the delegating public ones. (3) **`CredentialReachesNoEmittedSinkTest`
+  demanded both new request bodies** be named in the reachable-schema pin. Registers landed:
+  `ERROR_CONTRACT` +3 codes, `AUDITABLE_ACTIONS` +4 actions (three reason-required),
+  `DATA_CLASSIFICATION` +15 rows **in this task** (the standing `refund.dispatch_key` lesson),
+  `DISTRIBUTED_EXECUTION` §3 +1 row, `V015` admitting the fourth role. Verified by targeted
+  tiers — the fleet-wide hermetic `test` task and the touched database suites — **the full
+  battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+  counts claimed.**
 
 **P6-TSK-004 — The versioned fee schedule** — `PLANNED`
 - **Objective**: fees as immutable, versioned configuration — `INV-MER-03`'s subject.

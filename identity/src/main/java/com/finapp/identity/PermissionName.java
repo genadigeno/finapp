@@ -125,5 +125,28 @@ public enum PermissionName {
      * (`P4-TSK-009`'s recorded sentence). Ships with its real check site,
      * {@code POST /v1/payments/'{id}'/refund}.
      */
-    PAYMENT_REFUND
+    PAYMENT_REFUND,
+
+    /**
+     * Onboard a merchant (`P6-TSK-003`): create the commercial counterparty and its payable
+     * ledger account, gated on the KYB decision's projection ({@code INV-KYC-05} consumed).
+     * Not a money-operating permission - onboarding opens books and moves nothing through
+     * them - so it does NOT join {@code LEDGER_OPERATOR}: administering counterparties is a
+     * distinct trust decision (`P2-TSK-004`'s rule), held by
+     * {@link RoleName#MERCHANT_ADMINISTRATOR}. Names {@code merchant.MerchantOnboarded};
+     * ships with its real check site, {@code POST /v1/operator/merchants}.
+     */
+    MERCHANT_ONBOARD,
+
+    /**
+     * Administer an onboarded merchant (`P6-TSK-003`): suspend, reinstate and close - each a
+     * reasoned judgement about a counterparty ({@code INV-AUD-03}) - and, from `P6-TSK-002`,
+     * issue and revoke the merchant's API keys. Distinct from {@link #MERCHANT_ONBOARD}
+     * because the checks differ per surface (the state moves demand recorded reasons; the
+     * onboarding demands the KYB gate), while one role holds both - one
+     * merchant-administering population until a trust decision splits it, the
+     * {@code LEDGER_OPERATOR} reasoning. Ships with its real check sites, the
+     * {@code /v1/operator/merchants/'{id}'/*} state moves.
+     */
+    MERCHANT_ADMINISTER
 }

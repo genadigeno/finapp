@@ -28,6 +28,15 @@ public enum AccountPurpose {
     /** A customer's stored value. The only customer-owned purpose in Phase 3. */
     CUSTOMER_WALLET(OwnerKind.CUSTOMER),
 
+    /**
+     * What the platform owes one merchant: captured minus fees minus refunds minus payouts —
+     * and the <em>only</em> place that figure exists ({@code INV-MER-02}; ADR-0050's capture
+     * credits it gross with the fee in the same entry, ADR-0051's payout debits it under a
+     * hold). Added by `P6-TSK-003` with the capability needing it — the member's own doctrine
+     * above — beside a new `V011` regenerating the four constraints this list feeds.
+     */
+    MERCHANT_PAYABLE(OwnerKind.MERCHANT),
+
     /** Value in flight between the platform and an external counterparty. Phase 8's seam. */
     SETTLEMENT_CLEARING(OwnerKind.OPERATIONAL),
 

@@ -602,6 +602,31 @@ them are classified at the ceiling regardless.
 | `provider_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a decline body is longer than an approval's, so the length leaks the outcome's shape. Errs up, because ADR-0022 forbids reclassifying later |
 | `provider_evidence` | `recorded_at` | `CONFIDENTIAL` | Dates a person's payment traffic |
 
+### `merchant` — the counterparty and its history — *added by `P6-TSK-003`*
+
+The first tables whose subject is a commercial counterparty rather than a person — and the
+classification does not relax for it: which organisations the platform does business with,
+and what standing they hold, is commercially sensitive in both directions. **No balance
+column exists here and none ever will** (`INV-MER-02`); the payable is the ledger position.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `merchant` | `id` | `INTERNAL` | A generated identifier — the payable account's opaque `owner_ref` and the future tenant key (`INV-MER-01`) |
+| `merchant` | `party_ref` | `INTERNAL` | An identifier of a thing (`party.party` by value, ADR-0029) |
+| `merchant` | `legal_name` | `CONFIDENTIAL` | An organisation's legal identity — not a person's name (`PartyKind.ORGANISATION` gates onboarding), but who the platform banks is a commercial fact both sides treat as non-public |
+| `merchant` | `display_name` | `CONFIDENTIAL` | As `legal_name` — customer-facing at checkout one task on, but *whose* checkout it appears on is the sensitive part |
+| `merchant` | `settlement_currency` | `INTERNAL` | An enumeration; part of the monetary shape with no amount beside it |
+| `merchant` | `status` | `CONFIDENTIAL` | A merchant's standing — a suspension is a judgement about a counterparty |
+| `merchant` | `created_at` | `CONFIDENTIAL` | When a commercial relationship began — `party.registered_at`'s reasoning |
+| `merchant` | `status_changed_at` | `CONFIDENTIAL` | Dates a standing judgement |
+| `merchant_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `merchant_event` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `merchant_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `merchant_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model |
+| `merchant_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in — `audit_record.actor_type`'s reasoning |
+| `merchant_event` | `occurred_at` | `CONFIDENTIAL` | Dates a standing judgement against a counterparty |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |

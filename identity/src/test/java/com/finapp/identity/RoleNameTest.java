@@ -84,6 +84,21 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("MERCHANT_ADMINISTRATOR grants exactly the two counterparty permissions")
+    void merchantAdministratorGrantsExactlyTwo() {
+        // One role, two permissions (P6-TSK-003): one merchant-administering population -
+        // the LEDGER_OPERATOR bundling reasoning - while the vocabulary stays precise so the
+        // onboarding endpoint and the reasoned state moves each check their own. Exact set,
+        // so the role quietly gaining a money-operating or identity permission is a failing
+        // test, held pairwise below as well.
+        assertThat(RoleName.MERCHANT_ADMINISTRATOR.permissions())
+                .as("administering counterparties is neither operating money nor managing"
+                        + " identities")
+                .containsExactlyInAnyOrder(
+                        PermissionName.MERCHANT_ONBOARD, PermissionName.MERCHANT_ADMINISTER);
+    }
+
+    @Test
     @DisplayName("every pair of grants is disjoint, so the populations really are separate")
     void theGrantsArePairwiseDisjoint() {
         // No exact-set assertion alone says the SETS do not overlap - each pins its own role.
@@ -139,6 +154,8 @@ class RoleNameTest {
         // made load-bearing, where PermissionName's identical method was deleted as dead - the
         // P1-TSK-013 disposition, where isLiveAt was kept and idleBoundAfterUseAt removed.
         assertThat(RoleName.sqlValueList())
-                .isEqualTo("'ADMINISTRATOR', 'KYC_REVIEWER', 'LEDGER_OPERATOR'");
+                .isEqualTo(
+                        "'ADMINISTRATOR', 'KYC_REVIEWER', 'LEDGER_OPERATOR',"
+                                + " 'MERCHANT_ADMINISTRATOR'");
     }
 }

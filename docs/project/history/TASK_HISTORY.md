@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 125 "Previously" blocks, newest first, from `P5-DOC-001` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 126 "Previously" blocks, newest first, from `P6-TSK-001` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,36 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-001` — the `merchant` and `checkout` modules and schemas** — `COMPLETE`
+(2026-09-21). **M6.1 opens at 1 of 3: the module shape's seventh and eighth performances,
+and Phase 6's boundary decisions as build-graph facts.** `merchant → ledger` declared (the
+payable is a ledger position — `INV-MER-02`; the reverse edge now a demonstrated Gradle
+cycle); `checkout → payments` and both `checkout ↔ merchant` edges refused with the
+isolation tests as the only controls (no cycle backs any of the three); `V001` floors in
+both schemas proven live on a throwaway PostgreSQL — ACL exactly
+`{finapp_migrator=UC, finapp_app=U}`, no `PUBLIC` entry, `USAGE` not `CREATE`, zero
+application tables, re-migration idempotent.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Build green with both modules | Hermetic fleet **1327 tests / 14 modules / 0 failures**, the +4 the isolation tests' own methods |
+| Floors proven live | The throwaway-container demonstration above |
+| Isolation asymmetries demonstrated | Six probes, all caught, restores byte-identical — incl. the cycle refused at Gradle configuration |
+| Planted probes caught | `INV-MON-01` naming each module; the three no-cycle edges each refused |
+
+**Scope corrected at design with provenance**: the transition's entry over-reached
+("tables per §8"); the `P5-TSK-001` precedent rules — floors only, because a table's
+`CHECK`s and triggers are generated from its aggregate's `permittedTransitions()` and
+cannot honestly precede the machine. The §8 tables land with their owners, each carrying
+its classification rows in the task that creates the columns (the `refund.dispatch_key`
+lesson as standing scope, not a one-time fix). One observed control shape recorded: a
+planted sibling edge fails naming its transitive `ledger` first — the leak is refused
+whichever name trips first.
 
 ---
 

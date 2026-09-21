@@ -77,7 +77,25 @@ public enum RoleName {
                     PermissionName.TRANSFER_REVERSE,
                     // P5-TSK-015: the refund joins the one money-operating population - the
                     // same reasoning as the reversal's arrival, restated not re-argued.
-                    PermissionName.PAYMENT_REFUND));
+                    PermissionName.PAYMENT_REFUND)),
+
+    /**
+     * Administers commercial counterparties and nothing else (`P6-TSK-003`): onboards
+     * merchants and rules on their standing over the surfaces that check
+     * {@link PermissionName#MERCHANT_ONBOARD} and {@link PermissionName#MERCHANT_ADMINISTER}.
+     *
+     * <p><strong>A new role, because this IS a distinct trust decision</strong>: deciding who
+     * the platform does business with is neither managing identities
+     * ({@link #ADMINISTRATOR}), nor reviewing verification cases ({@link #KYC_REVIEWER} - the
+     * KYB decision is an input this role consumes, never one it makes), nor operating the
+     * money ({@link #LEDGER_OPERATOR} - onboarding opens books and moves nothing through
+     * them; the payout, when it arrives, is commanded over ITS OWN permission). Holds none of
+     * the other populations' permissions and they hold neither of these, asserted pairwise
+     * and over HTTP in both directions ({@code INV-AUD-03}).
+     */
+    MERCHANT_ADMINISTRATOR(
+            EnumSet.of(
+                    PermissionName.MERCHANT_ONBOARD, PermissionName.MERCHANT_ADMINISTER));
 
     private final Set<PermissionName> permissions;
 
