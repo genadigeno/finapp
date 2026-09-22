@@ -70,7 +70,7 @@ class CheckoutSessionTokenTest {
     @DisplayName("nothing renders the token: toString is masked and the value stays wrapped")
     void nothingRendersTheToken() {
         CheckoutSessionToken token = CheckoutSessionToken.issue(randomness);
-        String plaintext = token.plaintext().expose();
+        String plaintext = token.presentedOnce().expose();
 
         assertThat(token.toString())
                 .contains(Sensitive.MASK)
@@ -78,6 +78,6 @@ class CheckoutSessionTokenTest {
         assertThat(token.hash().toString())
                 .as("the hash is wrapped too - in a log it identifies one live checkout")
                 .doesNotContain(token.hash().expose());
-        assertThat(token.plaintext().toString()).doesNotContain(plaintext);
+        assertThat(token.presentedOnce().toString()).doesNotContain(plaintext);
     }
 }

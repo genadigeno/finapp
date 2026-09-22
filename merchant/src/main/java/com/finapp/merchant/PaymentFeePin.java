@@ -63,4 +63,26 @@ public record PaymentFeePin(
         Objects.requireNonNull(pinnedAt, "pinnedAt must not be null");
         Objects.requireNonNull(pinnedBy, "pinnedBy must not be null");
     }
+
+    /**
+     * Whether this pin and {@code other} name the <strong>same price for the same payment</strong>
+     * -- the question {@code MerchantSettlement.pin} asks when the primary key refuses a second
+     * insert (`P6-TSK-007`).
+     *
+     * <p>Four fields, and deliberately not six: the payment, the merchant, the version and the
+     * gross are the <em>decision</em>. {@code pinnedAt} and {@code pinnedBy} are its
+     * <em>provenance</em>, and two instances racing to record one decision necessarily differ in
+     * both -- comparing them would turn a duplicate into a repricing alarm, which is the one
+     * alarm that must never cry wolf ({@code INV-MER-03}).
+     *
+     * <p>{@code Money}'s equality is currency- and scale-aware, so a gross of 100.00 EUR and one
+     * of 100.00 USD do not pass as one another here.
+     */
+    public boolean pricesTheSameAs(PaymentFeePin other) {
+        Objects.requireNonNull(other, "other must not be null");
+        return paymentIntentRef.equals(other.paymentIntentRef)
+                && merchantId.equals(other.merchantId)
+                && versionId.equals(other.versionId)
+                && gross.equals(other.gross);
+    }
 }

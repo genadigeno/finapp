@@ -19,12 +19,24 @@ import java.util.UUID;
 public interface PaymentFeePinStore<T> {
 
     /**
-     * Records the pin. Commits with the intent it prices, or neither exists.
+     * Records the pin if this intent has none. Commits with the intent it prices, or neither
+     * exists.
      *
-     * @throws MerchantStorageException if a pin already exists for this intent — a second
-     *     price for one payment, refused by the primary key rather than by a read-then-write
+     * <p><strong>The primary key is the arbiter and the queue</strong>
+     * ({@code JdbcFeeScheduleStore.insertVersionIfNumberIsFree}'s shape at a second table): ten
+     * instances racing to price one payment all attempt the insert, exactly one writes, and the
+     * rest are told {@code false} by the key rather than by a read-then-write that two of them
+     * could pass. A losing attempt writes nothing and — behind its savepoint — costs one
+     * statement rather than the whole transaction, which matters because the intent this pin
+     * prices was created in that same transaction.
+     *
+     * <p>{@code false} is <strong>not</strong> "already correct": it says only that a pin is
+     * there. Whether it is the <em>same</em> decision is {@link PaymentFeePin#pricesTheSameAs}'s
+     * question, and {@code MerchantSettlement.pin} is where it is asked ({@code INV-MER-03}).
+     *
+     * @return {@code true} if this call wrote the pin; {@code false} if one was already there
      */
-    void insert(T unitOfWork, PaymentFeePin pin);
+    boolean insertIfAbsent(T unitOfWork, PaymentFeePin pin);
 
     /**
      * The pin for this intent, or empty when the payment is nobody's merchant's — which is how

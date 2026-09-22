@@ -377,6 +377,24 @@ class OwnershipIsScopedTest {
                                         + " exists because a history row belongs to the merchant"
                                         + " it names.")),
                     Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P6-TSK-007. The merchant's own read, and the tenant predicate is IN THE"
+                                        + " STATEMENT: id = ? AND merchant_ref = ?, so an unknown session, a"
+                                        + " malformed identifier and a COMPETITOR'S are one empty answer produced"
+                                        + " by the database. A different KIND of owner from party_id (P6-TSK-002's"
+                                        + " distinction): a missing party_id discloses one person's data, a missing"
+                                        + " merchant_ref discloses a competitor's pricing and what their customers"
+                                        + " bought. THIS ENTRY IS THE GATE'S OWN FINDING - the read was first"
+                                        + " written as findById(...).filter(session -> ...merchantRef equals...),"
+                                        + " which is correct today and invisible to this register tomorrow, because"
+                                        + " what it classifies is the method that carries an identifier into a"
+                                        + " STATEMENT. P6-TSK-004's survivor is the recorded lesson: a predicate"
+                                        + " that only appears to scope is the one that stops scoping quietly."
+                                        + " Negative: CheckoutFlowDatabaseTest#aMerchantReadsOnlyItsOwnSession"
+                                        + " establishes a real second merchant with a real session of its own.")),
+                    Map.entry(
                             "com.finapp.checkout.JdbcCheckoutSessionStore.read",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -1451,6 +1469,10 @@ class OwnershipIsScopedTest {
     private static final Map<String, String> NEGATIVE_TESTS =
             Map.ofEntries(
                     Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
+                            "com.finapp.app.checkout.CheckoutFlowDatabaseTest"
+                                    + ".aMerchantReadsOnlyItsOwnSession"),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantApiKeyStore.findOwnedForUpdate",
                             "com.finapp.app.merchant.MerchantApiKeyDatabaseTest"
                                     + ".anotherMerchantsKeyIsTheSame404"),
@@ -1538,6 +1560,13 @@ class OwnershipIsScopedTest {
      * company's credential ({@code INV-MER-01}). The rule is the same and the consequence of
      * losing it is larger: a missing {@code party_id} discloses one person's data, a missing
      * {@code merchant_id} discloses a competitor's.
+     *
+     * <p>{@code merchant_ref = ?} is <strong>the same tenant predicate spelled the way a module
+     * that cannot see {@code merchant} must spell it</strong> (`P6-TSK-007`). ADR-0029 has
+     * cross-module references travel by value, so {@code checkout} holds a merchant as a bare
+     * {@code uuid} column named {@code _ref} rather than a typed {@code _id} — the isolation
+     * showing up in the schema. Two spellings for one rule is a cost worth naming; the
+     * alternative is a module depending on another module to say whose row this is.
      */
     private static final Set<String> OWNERSHIP_PREDICATES =
             Set.of(
@@ -1545,7 +1574,8 @@ class OwnershipIsScopedTest {
                     "token_hash = ?",
                     "customer_id = ?",
                     "party_id = ?",
-                    "merchant_id = ?");
+                    "merchant_id = ?",
+                    "merchant_ref = ?");
 
     private record Entry(Scope scope, String authoritativeRead, String reason) {
         Entry(Scope scope, String reason) {

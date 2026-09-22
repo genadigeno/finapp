@@ -273,47 +273,63 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-007` — the session's payment: create, confirm, complete** — `READY`.
-**The phase's first whole flow**: a customer pays a merchant end to end. Session create behind
-the merchant key and keyed per merchant; confirm (session token + customer session) creating the
-intent through the port with ADR-0050's line composition and moving `OPEN → PAYMENT_PENDING`
-conditionally; the payment outcome reaching the session's conditional edge, birthing the order
-and `OrderPaid` in the outcome's own transaction. Scope, acceptance and DoD profiles in the
-backlog entry.
+**`P6-TSK-008` — expiry: the sweeper and the late-completion race** — `READY`.
+**The phase's named race, made real.** `INV-MER-06` decided the way ADR-0053 §5 rules: the
+expiry sweep on the registered leaderless pattern (`PaymentSweeperSchedule`'s precedent —
+conditional writes, no lease, floors); `EXPIRED` earned by a producer rather than filtered for;
+expiry gating dispatch; and the capture arriving at an `EXPIRED` session landing
+`COMPLETED_LATE` with the merchant credited and the order created. Scope, acceptance and DoD
+profiles in the backlog entry.
 
 ### Just completed
 
-**`P6-TSK-006` — the checkout session and order** — `COMPLETE` (2026-09-22). **M6.3 opens:
-the purchase experience exists as two aggregates, and the race that defines the phase has its
-edges.**
+**`P6-TSK-007` — the session's payment: create, confirm, complete** — `COMPLETE` (2026-09-22).
+**The phase's first whole flow: a customer pays a merchant, end to end, over real HTTP, through
+the simulated provider, against the real ledger.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Every invalid transition refused | At the aggregate **and** at the trigger, both swept from the machine's own cross-product |
-| The token never stored in clear | Swept across every text column in every schema — needle reconstructed from the randomness the test supplied |
-| `INV-AUD-02` needles on refusals | States only: no identifier, no amount, no token |
+| create → confirm → capture | `CheckoutFlowDatabaseTest`, real HTTP, 12 tests |
+| the payable credited gross minus fee | **96.80 of a 100.00 purchase**, derived from the postings |
+| the order exists, naming its entry | order → `captured_entry_ref` → the four lines → the payable |
+| duplicate completion counted to one | ten racers, one order, one payable movement |
+| replay renders no token | the clause corrected at design: `INV-IDN-01` over byte-for-byte replay |
 
-### Three collapses refused, and one design point worth reading twice
+### The assertion that matters most, and why
 
-**An offer is not an order**: a session that dies unpaid leaves no order row at all — the
-platform does not manufacture commercial facts out of silence. **An order is barely a machine**:
-no status column, because an order that exists is paid and refund standing is derived at read.
-**Three edges are absent on purpose** — `PAYMENT_PENDING → ABANDONED` (cancelling would leave
-money moving with no commercial home), any failure state (a declined payment is the *payment's*
-state), and `EXPIRED → COMPLETED` (the honest condition stays countable).
+Orchestration does not fail loudly — it fails by **silently skipping a step**. Every skipped
+step shows up in one number: the merchant's *derived* payable position. No fee pin and it is the
+gross; no completion and there is no order; a wrong credit account and it is zero. That is why
+the whole-flow test asserts a position computed from journal lines rather than a status field.
 
-**Expiry is a state the sweeper earns *and* a clock the aggregate checks** — different
-questions, not two answers to one. The state makes expiry countable and audited; the clock makes
-the refusal timely, because a sweeper one minute behind is a minute in which money lands on a
-dead offer.
+### The suite found two real defects, both in this task's own new code
 
-### Eleven probes caught, and two findings no probe made
+**Ten concurrent confirmations answered `500` nine times.** The payment creation is keyed on the
+session, so all ten converge on one intent — and then all ten reach the fee pin with the same
+decision, where the primary key refused nine as a *storage failure*. The pin now converges on an
+identical decision behind a savepoint and **throws on a different one**: converging is what
+keeps a retry from being an error, refusing is what keeps it from being a silent repricing.
 
-`EXPIRED` made terminal was caught at **three ranks**; the plaintext-for-hash swap at two. The
-gate's own findings: **the set-once rule was loud at the trigger and silent in the store** —
-`COALESCE` quietly discarded a conflicting intent while reporting success, now refused — and the
-one-token-one-session claim had been asserted against the migration's *text* and never against
-the database. **A guard that makes a write a no-op is not the same as a guard that refuses it.**
+**A retried confirmation of a purchase that succeeded answered `409`.** The capture is chained
+synchronously, so the first confirm returns `COMPLETED` and every retry hit `NotConfirmable` —
+to a customer who holds only a token and has no read surface to ask. A paid session now
+converges, with the payer re-established first so a second token holder still gets the one
+`404`. ADR-0053 amended with both.
+
+### Three gate findings, none made by a probe
+
+**A demonstration that cannot execute is not a demonstration**: the token's every-column sweep
+was the last assertion of the replay test, so the probe that makes the claim store the response
+never reached it. **And the sweep could not have seen that column anyway** — `bytea::text`
+renders hex, so a `LIKE` over a printable needle never matched, and
+`platform.idempotency_record.response_body` is exactly that type. Three suites shared the
+blindness; all three now cast with `encode(col, 'escape')`. **The merchant's tenant predicate
+was a Java filter over an unscoped read** — correct today, invisible to `OwnershipIsScopedTest`
+tomorrow; moved into the statement, where the probe is now caught at two ranks.
+
+**A build rule changed the design**: `CredentialReachesNoEmittedSinkTest` refused the checkout
+token in the URL path, on its own reasoning that a secret in a URL is in every access log. The
+token travels in a `Sensitive`-wrapped request body instead.
 
 ### Previously
 

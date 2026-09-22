@@ -512,17 +512,62 @@ class MerchantCaptureDatabaseTest {
     }
 
     @Test
-    @DisplayName("a second pin for one payment is refused by the primary key - one price per"
-            + " payment, total")
-    void aSecondPinIsRefused() throws Exception {
+    @DisplayName("a second pin of the SAME decision converges and writes nothing - one price"
+            + " per payment, and a retry is not a repricing (P6-TSK-007)")
+    void anIdenticalSecondPinConverges() throws Exception {
+        // FOUND BY THE P6-TSK-007 FLOW SUITE, and it is the sharper half of this pair. Ten
+        // instances confirming one checkout all converge on ONE payment intent (the claim is
+        // keyed on the session), and then all ten arrive HERE with the same merchant, the same
+        // version and the same gross. Treating the primary key's refusal as a storage failure
+        // made nine of them a 500 on a purchase that worked.
         Merchant merchant = onboardedMerchant("0.029", 30L);
         UUID intentRef = IDS.next();
         runner.inTransaction(uow -> pin(uow, merchant, intentRef, AMOUNT));
+
+        runner.inTransaction(uow -> pin(uow, merchant, intentRef, AMOUNT));
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(
+                            count(
+                                    app,
+                                    "SELECT count(*) FROM merchant.payment_fee_pin"
+                                            + " WHERE payment_intent_ref = ?",
+                                    intentRef))
+                    .as("converged, not written twice - the key still admits exactly one row")
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("INV-MER-03: a second pin at a DIFFERENT price is REFUSED, and the pinned row"
+            + " is the first one - a payment has one agreed price")
+    void aSecondPinAtADifferentPriceIsRefused() throws Exception {
+        Merchant merchant = onboardedMerchant("0.029", 30L);
+        UUID intentRef = IDS.next();
+        runner.inTransaction(uow -> pin(uow, merchant, intentRef, AMOUNT));
+
+        // The convergence above must NOT extend to this: converging here would silently keep
+        // whichever price was written first and report success to a caller that asked for a
+        // different one, which is a repricing that leaves no trace. It throws instead, failing
+        // the caller's whole transaction.
+        Money different = AMOUNT.plus(Money.ofMinorUnits(1L, AMOUNT.currency()));
         assertThatThrownBy(
                         () ->
                                 runner.inTransaction(
-                                        uow -> pin(uow, merchant, intentRef, AMOUNT)))
-                .hasMessageContaining("pinning a payment");
+                                        uow -> pin(uow, merchant, intentRef, different)))
+                .isInstanceOf(MerchantSettlementException.class)
+                .hasMessageContaining("one agreed price");
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(
+                            count(
+                                    app,
+                                    "SELECT gross_amount_minor FROM merchant.payment_fee_pin"
+                                            + " WHERE payment_intent_ref = ?",
+                                    intentRef))
+                    .as("the standing price is untouched - a refused pin writes nothing")
+                    .isEqualTo(AMOUNT.minorUnits());
+        }
     }
 
     @Test
@@ -837,7 +882,10 @@ class MerchantCaptureDatabaseTest {
 
     /** The production seam — the same construction {@code MerchantBeans} performs. */
     private CaptureComposition<Connection> composition() {
-        return new MerchantBoundCaptureComposition(settlement(), new WalletTopUpComposition());
+        // No completion: this suite's payments belong to no checkout session, and the
+        // production consumer is wired in CheckoutBeans (P6-TSK-007's seam).
+        return new MerchantBoundCaptureComposition(
+                settlement(), new WalletTopUpComposition(), landed -> {});
     }
 
     private com.finapp.merchant.MerchantOnboarding onboarding() {

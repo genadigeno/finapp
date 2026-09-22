@@ -255,27 +255,28 @@ public final class PaymentOutcomes {
                             chart.resolve(
                                     uow, AccountPurpose.SETTLEMENT_CLEARING, amount.currency());
                     LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
-                    postings.post(
-                            uow,
-                            new PostingCommand(
-                                    // ONE key, whatever the shape of the entry: a duplicate
-                                    // outcome from any resolver posts once, and four lines
-                                    // inherit that guarantee wholesale because they are ONE
-                                    // entry under it (INV-IDEM-01's kernel, unchanged).
-                                    "payment-capture:" + attemptId.value(),
-                                    today,
-                                    today,
-                                    attemptId.value().toString(),
-                                    composition.settle(
-                                            uow,
-                                            new CaptureSettlement(
-                                                    intentId,
-                                                    attemptId,
-                                                    clearing.id(),
-                                                    wallet,
-                                                    amount,
-                                                    correlation,
-                                                    now))));
+                    CaptureSettlement settlement =
+                            new CaptureSettlement(
+                                    intentId, attemptId, clearing.id(), wallet, amount,
+                                    correlation, now);
+                    com.finapp.ledger.PostingResult posted =
+                            postings.post(
+                                    uow,
+                                    new PostingCommand(
+                                            // ONE key, whatever the shape of the entry: a
+                                            // duplicate outcome from any resolver posts once,
+                                            // and four lines inherit that guarantee wholesale
+                                            // because they are ONE entry under it
+                                            // (INV-IDEM-01's kernel, unchanged).
+                                            "payment-capture:" + attemptId.value(),
+                                            today,
+                                            today,
+                                            attemptId.value().toString(),
+                                            composition.settle(uow, settlement)));
+                    // THE SEAM'S SECOND MOMENT (P6-TSK-007): the entry exists and its id is
+                    // known, so the composing flow can record what it means - a checkout
+                    // order carrying the entry that paid for it - in THIS transaction.
+                    composition.settled(uow, settlement, posted.entryId().value());
 
                     if (intents.transition(
                             uow,

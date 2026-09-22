@@ -7201,7 +7201,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
   counts claimed.**
 
-**P6-TSK-007 — The session's payment: create, confirm, complete** — `READY`
+**P6-TSK-007 — The session's payment: create, confirm, complete** — `COMPLETE` (2026-09-22)
 - **Objective**: the customer pays a merchant end to end — the phase's first whole flow.
   Bounded contexts 11, 12, 9 through ports.
 - **Scope**: session create (merchant key, keyed per merchant); confirm (session token +
@@ -7215,8 +7215,88 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   order exists; the duplicate-completion race counted to one; replay renders the create's
   stored response byte-for-byte.
 - **Risk**: Medium. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-API`
+- **Delivered (2026-09-22)**: the flow end to end — `POST /v1/checkout/sessions` behind the
+  merchant key and keyed per merchant; `POST /v1/checkout/sessions/confirmation` taking the
+  token **in the body**; the intent opened through the port under a key derived from the
+  session, the fee pinned and the session moved `OPEN → PAYMENT_PENDING` in one transaction;
+  the capture's own transaction completing the session and birthing the order through the
+  composition seam's **second moment** (`CaptureComposition.settled`, added here because an
+  order references the journal entry and the entry does not exist when the lines are composed).
+- **Accept clauses, all driven** (`CheckoutFlowDatabaseTest`, 12 tests, real HTTP through the
+  simulated provider): create → confirm → capture; ADR-0050 §3's four lines on the accounts
+  the ADR names; **the payable credited 96.80 of a 100.00 purchase** — the assertion that
+  matters most, because orchestration fails by silently skipping a step and every skipped step
+  shows up in the derived payable position; the order existing and naming the entry that paid
+  for it; the duplicate-completion race counted to one order and one payable movement; the
+  duplicate-create race counted to one session and **one token**.
+  **The replay clause was corrected at design and the correction held**: it cannot render the
+  create's stored response byte-for-byte, because that response carries a live credential. The
+  claim records the session id alone and a replay answers `alreadyCreated` with no token —
+  `INV-IDN-01` over the replay discipline, the `P6-TSK-002` decision taken again at a second
+  credential.
+- **THE SUITE FOUND TWO REAL DEFECTS, both in code this task had just written, and both are
+  the reason an end-to-end suite exists** (2026-09-22). (1) **Ten concurrent confirmations
+  answered `500` nine times.** The payment creation is keyed on the session, so all ten
+  converge on one intent — and then all ten arrive at `MerchantSettlement.pin` with the same
+  decision, where the primary key refused nine as a *storage failure*. The pin now converges on
+  an identical decision behind a savepoint (`insertIfAbsent`, `JdbcFeeScheduleStore`'s shape at
+  a second table) and **throws on a different one**: two halves of `INV-MER-03`, because
+  converging is what keeps a retry from being an error and refusing is what keeps it from being
+  a silent repricing. (2) **A retried confirmation of a purchase that SUCCEEDED answered `409`.**
+  The capture is chained synchronously, so the first confirm returns `COMPLETED` and every
+  retry hit `NotConfirmable` — to a customer who holds only a token and has no read surface to
+  ask. A paid session now converges, rendering the outcome and writing nothing, with the payer
+  re-established against the intent first so a second token holder still gets the one `404`.
+  ADR-0053 amended with both.
+- **Six probes, all caught by the intended assertion, restores verified byte-identical by
+  `cmp`, three at two ranks**: the pin's repricing refusal neutralised; the pin's savepoint
+  rollback neutralised (**caught with the original defect's own signature — a `500` where an
+  answer belongs**); the claim taught to re-show the token on a replay (caught by the replay
+  assertion **and** by the race's one-token count); the claim taught to *store* the token while
+  still rendering none (caught by the every-column sweep, naming
+  `platform.idempotency_record.response_body`); the tenant predicate neutralised in the
+  statement (caught behaviourally **and** by `OwnershipIsScopedTest`); the paid-session
+  convergence removed (caught twice); its payer re-establishment weakened to an unscoped read.
+- **THREE GATE FINDINGS, NONE MADE BY A PROBE** (2026-09-22). (1) **A demonstration that cannot
+  execute is not a demonstration**: the token's every-column sweep was the *last* assertion of
+  the replay test, so under the probe that makes the claim store the response it never ran —
+  split into its own test. (2) **The sweep could not have seen that column anyway.**
+  `bytea::text` renders `\x7365…`, so a `LIKE` over a printable needle never matched, and
+  `platform.idempotency_record.response_body` — the one column a credential most plausibly
+  leaks into — is exactly that type. Now cast with `encode(col, 'escape')` in all three suites
+  that shared the blindness (`CheckoutFlowDatabaseTest`, `MerchantApiKeyDatabaseTest`,
+  `CheckoutSessionDatabaseTest`); the probe is then caught, naming the column. (3) **The merchant's
+  tenant predicate was a Java filter over an unscoped read** — correct today and invisible to
+  `OwnershipIsScopedTest` tomorrow, because what that register classifies is the method carrying
+  an identifier into a *statement*. Moved into SQL as `JdbcCheckoutSessionStore.findOwnedBy`
+  (`id = ? AND merchant_ref = ?`), classified `OWNER_SCOPED` with its named negative, and
+  `merchant_ref = ?` added to the predicate vocabulary with its reason: ADR-0029 has
+  cross-module references travel by value, so a module that cannot see `merchant` must spell
+  the same tenancy rule differently.
+- **Also found by the build rules and fixed rather than exempted**: `secretsAreWrapped` flagged
+  `sessionId` — `sessionid` is credential-adjacent vocabulary because one *meaning* of it is an
+  identity session (ADR-0019), so the views and the event payload key are `checkoutId` rather
+  than four exemptions that would reopen the hole for the sensitive meaning; and
+  `CredentialReachesNoEmittedSinkTest` **refused the token in the URL path**, on its own
+  recorded reasoning that a secret in a URL is in every access log, proxy log and browser
+  history — so the route is `/v1/checkout/sessions/confirmation` and the token travels in a
+  `Sensitive`-wrapped request body. **A build rule changed the design rather than merely
+  admitting it.** Registers: `AUDITABLE_ACTIONS` +3 actions, `ERROR_CONTRACT` +4 codes (with
+  `checkout.NotTrading` described honestly as the *race's* refusal — a suspended merchant's key
+  does not authenticate at all, so the ordinary answer is `401`), `MUTATION_TESTING` +6 rows,
+  `DISTRIBUTED_EXECUTION` §3 +1 row, `OwnershipIsScopedTest` +1 classification and +1 predicate
+  spelling, `SecretsAreUnwrappedInOnePlaceTest` +1, `NoUnwrappedSecretRulesTest` +2 exemptions,
+  `CredentialReachesNoEmittedSinkTest` +1 emitted schema and +2 request bodies.
+  **No `DATA_CLASSIFICATION` rows: this task creates no columns** — `P6-TSK-006` created them
+  all, which is the milestone's sequencing working. Contract baseline 58 → 61 paths, **0 keys
+  removed, 0 changed**, 85 added.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1439 tests across 14 modules, 0 failures**, and **169 targeted database tests across 20
+  suites, 0 failures** (checkout, merchant, payments, and the credential-leak sweep). **The full
+  battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+  counts claimed.**
 
-**P6-TSK-008 — Expiry: the sweeper and the late-completion race** — `PLANNED`
+**P6-TSK-008 — Expiry: the sweeper and the late-completion race** — `READY`
 - **Objective**: `INV-MER-06` made real — the clock modelled, the race decided the way
   ADR-0053 §5 rules. Bounded context 11.
 - **Scope**: the expiry sweep on the registered leaderless pattern (`PaymentSweeperSchedule`

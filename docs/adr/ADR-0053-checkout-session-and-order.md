@@ -73,3 +73,39 @@ nobody.
   phase.
 - `COMPLETED_LATE` is a distinct state so the honest condition is countable (a meter and
   an operator view), rather than laundered into `COMPLETED`.
+
+## Amendment — `P6-TSK-007`: what a retry of the confirmation answers
+
+Implementing §3 and §5 made a gap in them visible, and the correction belongs here rather than
+only in code.
+
+**Every state that can be converged on, is.** This ADR said duplicate completion "converges on
+the machine", and the implementation first read that as: a session mid-payment continues on the
+intent the first call opened. That is right, and it is not enough. The capture is chained
+synchronously, so the first confirmation normally returns `COMPLETED` — which left every retry
+of a *successful purchase* answering `409 checkout.NotConfirmable`, to a customer who has no
+other way to learn the outcome: the checkout read surface is the merchant's, key-authenticated,
+and the customer holds only a token.
+
+A lost response is the ordinary failure of a payment flow, not an exceptional one. So a
+confirmation of a session that is already **paid** (`COMPLETED` or `COMPLETED_LATE`) renders the
+session and writes nothing — it confirms no payment and chains no capture, because the order was
+created in the capture's own transaction and a paid session means the money has landed.
+
+Two constraints on that convergence, both load-bearing:
+
+- **The payer is re-established first**, against the intent the session names, so a *second*
+  holder of the token learns neither the payment intent nor the order — it gets the same one
+  `404` an unknown session gets. The `PAYMENT_PENDING` branch does not repeat this check because
+  `payments` performs it at the confirmation; the paid branch must, precisely because it skips
+  that surface.
+- **It does not extend to a session that left the flow unpaid.** Abandoned, or expired with
+  nothing captured, still refuses: there is no outcome to converge on.
+
+**And one price per payment means converging on a duplicate, refusing a difference.** Because
+the confirmation's payment creation is keyed on the session, concurrent confirmations converge
+on one intent and then all arrive at the fee pin with the same decision. A pin that treated its
+own primary key as a storage failure failed nine of ten purchases that had worked. The pin now
+converges when the merchant, the version and the gross all match, and throws when any of them
+does not — the two halves of `INV-MER-03` at this level: converging is what keeps a retry from
+being an error, and refusing is what keeps it from being a silent repricing.

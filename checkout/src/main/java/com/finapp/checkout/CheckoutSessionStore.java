@@ -1,6 +1,7 @@
 package com.finapp.checkout;
 
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Persistence port for {@link CheckoutSession} (`P6-TSK-006`). A port on ADR-0033's recorded
@@ -26,6 +27,16 @@ public interface CheckoutSessionStore<T> {
     Optional<CheckoutSession> findByIdForUpdate(T unitOfWork, CheckoutSessionId id);
 
     /**
+     * A session <strong>this merchant's</strong>, by identifier — the tenant-scoped read
+     * (`P6-TSK-007`, {@code INV-MER-01}).
+     *
+     * <p>The predicate is in the statement, so an unknown session, a malformed identifier and
+     * another merchant's are one empty answer produced by the database rather than by a check
+     * a caller has to remember. That is the difference between a tenancy rule and a habit.
+     */
+    Optional<CheckoutSession> findOwnedBy(T unitOfWork, UUID merchantRef, CheckoutSessionId id);
+
+    /**
      * The session a token opens, or empty.
      *
      * <p>Looked up <strong>by hash</strong> — there is no token column to scan (the unique index
@@ -34,6 +45,16 @@ public interface CheckoutSessionStore<T> {
      * become an oracle over other people's purchases ({@code INV-IDN-07}'s reasoning).
      */
     Optional<CheckoutSession> findByToken(T unitOfWork, CheckoutSessionToken presented);
+
+    /**
+     * The session a payment intent belongs to, or empty — <strong>the completion's own
+     * lookup</strong> (`P6-TSK-007`).
+     *
+     * <p>The reference points one way, from checkout INTO payments (ADR-0053 §3), so this is
+     * the only direction the link can be followed: {@code payments} does not know sessions and
+     * must not. Locked, because the caller is about to transition the row it finds.
+     */
+    Optional<CheckoutSession> findByIntentForUpdate(T unitOfWork, java.util.UUID intentRef);
 
     /**
      * Applies {@code transitioned}'s status conditionally ({@code WHERE status = ?} on the

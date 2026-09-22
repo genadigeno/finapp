@@ -96,6 +96,18 @@ public enum CheckoutSessionStatus {
         return this == OPEN;
     }
 
+    /**
+     * Whether the offer was <strong>paid</strong> — the money landed and an order exists.
+     *
+     * <p>Both states mean the same commercial fact and differ only in whether the deadline had
+     * passed when the capture arrived ({@code COMPLETED_LATE} keeps that honest rather than
+     * laundering it). Anything asking "did this purchase happen" must treat them alike; only
+     * something counting late completions should tell them apart.
+     */
+    public boolean isPaid() {
+        return this == COMPLETED || this == COMPLETED_LATE;
+    }
+
     /** The states as a SQL literal list, for the {@code CHECK} constraint. */
     public static String sqlValueList() {
         return Arrays.stream(values())

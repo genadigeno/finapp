@@ -148,9 +148,13 @@ public class MerchantBeans {
      */
     @Bean
     com.finapp.payments.CaptureComposition<Connection> captureComposition(
-            com.finapp.merchant.MerchantSettlement merchantSettlement) {
+            com.finapp.merchant.MerchantSettlement merchantSettlement,
+            java.util.function.Consumer<MerchantBoundCaptureComposition.Completion>
+                            captureCompletion) {
         return new MerchantBoundCaptureComposition(
-                merchantSettlement, new com.finapp.payments.WalletTopUpComposition());
+                merchantSettlement,
+                new com.finapp.payments.WalletTopUpComposition(),
+                captureCompletion);
     }
 
     @Bean

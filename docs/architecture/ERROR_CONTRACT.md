@@ -294,6 +294,42 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `merchant.FeeScheduleNotForward` | 422 | A fee schedule version takes effect forward; it cannot be backdated. |
 | `merchant.FeeCurrencyMismatch` | 422 | The fee schedule's currency does not match. |
 
+### `checkout.*` — the purchase experience (`P6-TSK-007`)
+
+| Code | Status | Meaning |
+|---|---|---|
+| `checkout.NotPriceable` | 422 | This merchant has no fee schedule, so a checkout cannot be priced. |
+| `checkout.NotTrading` | 409 | This merchant cannot open new checkout sessions. |
+| `checkout.SessionExpired` | 409 | This checkout session has expired. |
+| `checkout.NotConfirmable` | 409 | This checkout session is not awaiting confirmation. |
+
+`checkout.NotPriceable` and `checkout.NotTrading` are refused **at session creation** rather
+than discovered at the capture. That is the whole reason they exist as codes: an unpriced or
+untraded session would fail inside the transaction that moves money, *after* the customer had
+paid — the difference between a merchant fixing their configuration and a customer's money
+needing a refund.
+
+**`checkout.NotTrading` is the race's refusal, not the ordinary one**, and the distinction is
+worth stating because a reader will otherwise expect to see it. A suspended or closed merchant's
+API key does not authenticate at all: the key lookup carries the merchant's standing *in the
+join* (`P6-TSK-002`), so the ordinary answer to a suspended merchant is `401`, with no tenant
+resolved and therefore no tenant to refuse. What `NotTrading` guards is the interleaving where a
+suspension commits **between** that authentication read and the command's own authoritative one
+— which is exactly why the command reads standing again rather than trusting the credential
+that got it here. It is proved by driving the command directly, because HTTP cannot produce the
+interleaving on demand.
+
+`checkout.SessionExpired` and `checkout.NotConfirmable` are deliberately distinct, because
+they say different things to the customer looking at the page: one means *too late*, the
+other means *already done*. Expiry is answered whether the sweeper has arrived or not — the
+aggregate checks the clock as well as the state (ADR-0053 §5).
+
+**There is no checkout not-found code.** An unknown session id, a malformed one, another
+merchant's, and a token that opens nothing are one `api.NotFound`. For the merchant surface
+that is `INV-MER-01`'s tenancy oracle; for the customer it is stronger still, because a
+checkout token is *guessed at* rather than typed, and telling a guesser that a session exists
+but is not theirs is the only bit they need.
+
 `merchant.FeeScheduleNotForward` is `INV-MER-03`'s refusal, and it is the one an operator
 actually meets: *"make this effective from the first of the month"* is a natural thing to type
 on the second of the month, and it is a repricing of every capture in between. A `422` rather

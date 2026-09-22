@@ -352,6 +352,19 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `merchant.FeeScheduleCreated` | No | An operator created a fee schedule; the record names the schedule by identifier with its name and currency. |
 | `merchant.FeeScheduleVersionCreated` | **Yes** | An operator created a fee schedule version - immutable, effective forward; the record names the version by identifier with its terms; the reason is required. |
 | `merchant.MerchantFeeScheduleAssigned` | **Yes** | An operator assigned a merchant to a fee schedule; the record names the merchant and both schedules by identifier; the reason is required. |
+| `checkout.CheckoutSessionCreated` | No | A merchant opened a checkout session; the record names the session and the merchant by identifier, never the token and never what was bought. |
+| `checkout.CheckoutSessionConfirmed` | No | A customer confirmed a checkout session; the record names the session and the payment intent by identifier. |
+| `checkout.OrderCreated` | No | A capture completed a checkout session and produced its order; the record names the order, the session and the journal entry that paid for it. |
+
+**None of the three checkout actions requires a reason**, and the uniformity is the argument
+(`P6-TSK-007`): every act here is somebody doing the ordinary thing the surface exists for — a
+merchant making an offer, a customer paying, a capture landing. `INV-AUD-03` asks for a reason
+where a *judgement* is made about somebody else, and demanding one here would make it a field
+callers fill with noise, which is worse than not asking.
+
+`checkout.OrderCreated` names the **journal entry that paid for the order**, which is what
+closes the traceable chain in the trail itself: order → entry → ADR-0050 §3's four lines → the
+merchant's payable position.
 
 The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
 `MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**

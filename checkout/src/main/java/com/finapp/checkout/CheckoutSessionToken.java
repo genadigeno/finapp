@@ -97,14 +97,21 @@ public final class CheckoutSessionToken {
     }
 
     /**
-     * The freshly minted plaintext, still <strong>wrapped</strong> — handed to the response that
-     * shows it once and to nothing else.
+     * The freshly minted plaintext, still <strong>wrapped</strong> — handed to the response
+     * that shows it once and to nothing else.
      *
-     * <p>Package-private and wrapped, for {@code MerchantApiKeySecret.plaintext()}'s recorded
-     * reason: the creating command never holds a bare token, so the set of components permitted
-     * to unwrap a secret stays as small as it is.
+     * <p><strong>Public where {@code MerchantApiKeySecret.plaintext()} is package-private, and
+     * the difference is forced rather than chosen.</strong> That one's issuing command lives in
+     * {@code merchant}, so package-privacy expresses the restriction exactly. This token's
+     * creating command lives in {@code app}, because opening a session needs the merchant's
+     * standing and its fee schedule and this module can see neither — so package-privacy cannot
+     * express the restriction here, and the type says it in words instead.
+     *
+     * <p>What does not change is the property that matters: the value is <strong>wrapped</strong>,
+     * so the creating command never holds a bare token and the set of components permitted to
+     * unwrap one does not grow ({@code SecretsAreUnwrappedInOnePlaceTest}'s regime).
      */
-    Sensitive<String> plaintext() {
+    public Sensitive<String> presentedOnce() {
         return value;
     }
 

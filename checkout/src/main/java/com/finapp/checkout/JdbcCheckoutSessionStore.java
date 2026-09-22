@@ -28,6 +28,13 @@ import java.util.UUID;
  * <p><strong>The token is never selected.</strong> {@link #findByToken} hashes what was
  * presented and looks the hash up by its unique index — so authentication is one row by index
  * and the stored value never travels back out ({@code INV-IDN-01}).
+ *
+ * <p><strong>The tenant predicate is in the statement</strong> ({@link #findOwnedBy}), not in a
+ * filter over an unscoped read (`P6-TSK-007`). The outcome of the two is the same today — one
+ * row, discarded either way — and the difference is everything the register cares about: a
+ * predicate in SQL is a thing {@code OwnershipIsScopedTest} can classify and a later refactor
+ * cannot quietly drop, which is the recorded lesson of `P6-TSK-004`'s survivor
+ * ({@code INV-MER-01}).
  */
 public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Connection> {
 
@@ -88,6 +95,24 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
     }
 
     @Override
+    public Optional<CheckoutSession> findOwnedBy(
+            Connection unitOfWork, UUID merchantRef, CheckoutSessionId id) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM checkout.checkout_session"
+                                + " WHERE id = ? AND merchant_ref = ?")) {
+            select.setObject(1, id.value());
+            select.setObject(2, merchantRef);
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next() ? Optional.of(sessionFrom(rows)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new CheckoutStorageException(
+                    DatabaseFailure.describe("reading a merchant's checkout session", failure));
+        }
+    }
+
+    @Override
     public Optional<CheckoutSession> findByToken(
             Connection unitOfWork, CheckoutSessionToken presented) {
         try (PreparedStatement select =
@@ -101,6 +126,23 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
         } catch (SQLException failure) {
             throw new CheckoutStorageException(
                     DatabaseFailure.describe("resolving a checkout session token", failure));
+        }
+    }
+
+    @Override
+    public Optional<CheckoutSession> findByIntentForUpdate(
+            Connection unitOfWork, UUID intentRef) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM checkout.checkout_session"
+                                + " WHERE payment_intent_ref = ? FOR UPDATE")) {
+            select.setObject(1, intentRef);
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next() ? Optional.of(sessionFrom(rows)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new CheckoutStorageException(
+                    DatabaseFailure.describe("reading a payment's checkout session", failure));
         }
     }
 

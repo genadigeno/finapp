@@ -86,6 +86,40 @@ class CheckoutSessionTest {
     }
 
     @Test
+    @DisplayName("the PAID states are the two completions, and the properties are swept: every"
+            + " paid state is terminal, and no state that accepts work is paid (P6-TSK-007)")
+    void thePaidStatesAreTheTwoCompletions() {
+        Set<CheckoutSessionStatus> paid =
+                EnumSet.copyOf(
+                        java.util.Arrays.stream(CheckoutSessionStatus.values())
+                                .filter(CheckoutSessionStatus::isPaid)
+                                .toList());
+        assertThat(paid)
+                .as("both mean one commercial fact and differ only in WHEN the capture arrived")
+                .containsExactlyInAnyOrder(
+                        CheckoutSessionStatus.COMPLETED, CheckoutSessionStatus.COMPLETED_LATE);
+
+        // A PAID session is over: the order was created in the capture's own transaction, so
+        // there is nothing left for the offer to become. Swept, so a later state cannot be
+        // added to isPaid() without being terminal.
+        assertThat(paid).allMatch(CheckoutSessionStatus::isTerminal);
+        assertThat(java.util.Arrays.stream(CheckoutSessionStatus.values())
+                        .filter(CheckoutSessionStatus::acceptsNewWork)
+                        .toList())
+                .noneMatch(CheckoutSessionStatus::isPaid);
+
+        // THE DISTINCTION THAT MATTERS MOST, because a confirmation's convergence branch turns
+        // on it: money IN FLIGHT is not money LANDED. A PAYMENT_PENDING session's payment may
+        // still decline, and treating it as paid would answer a customer that their purchase
+        // succeeded while the provider had not yet said so.
+        assertThat(CheckoutSessionStatus.PAYMENT_PENDING.isPaid()).isFalse();
+
+        // ABANDONED is terminal too and is NOT a purchase - the reason isPaid() cannot simply
+        // be isTerminal().
+        assertThat(CheckoutSessionStatus.ABANDONED.isPaid()).isFalse();
+    }
+
+    @Test
     @DisplayName("EXPIRED is NOT terminal - landed money always wins (INV-MER-06)")
     void expiredIsNotTerminal() {
         // The edge the whole race rule rests on. If EXPIRED were terminal, a capture that

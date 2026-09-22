@@ -381,6 +381,18 @@ class OpenApiContractTest {
                         // a tenant (INV-MER-01, ADR-0031's defect at the multi-tenant
                         // boundary).
                         ApiVersion.CURRENT_PREFIX + "/merchant/me",
+                        // P6-TSK-007: the phase's first whole flow. The merchant's two
+                        // routes take their tenant from the API KEY, so the create body names
+                        // no merchant and the read answers one 404 for unknown, malformed and
+                        // another-tenant's alike (INV-MER-01). The confirmation is the one
+                        // route on this platform demanding TWO credentials - the customer's
+                        // session proves who is paying, the token IN THE BODY proves which
+                        // offer, and neither alone is enough. The token is in the body rather
+                        // than the path because CredentialReachesNoEmittedSinkTest refused the
+                        // path: a secret in a URL is in every access log.
+                        ApiVersion.CURRENT_PREFIX + "/checkout/sessions",
+                        ApiVersion.CURRENT_PREFIX + "/checkout/sessions/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/checkout/sessions/confirmation",
                         // P6-TSK-004: what the platform charges, behind FEE_ADMINISTER -
                         // its own permission because pricing is a commercial trust decision
                         // and standing is a risk one, held today by the one

@@ -201,9 +201,58 @@ public final class MerchantSettlement {
         return Optional.of(List.copyOf(lines));
     }
 
-    /** Records the pin. Commits with the intent it prices, or neither exists. */
+    /**
+     * Records the price this payment will be charged at. Commits with the intent it prices, or
+     * neither exists.
+     *
+     * <h2>A duplicate converges; a DIFFERENT price does not (`P6-TSK-007`)</h2>
+     *
+     * <p>The caller that creates the intent is keyed, so a retried creation converges on one
+     * intent -- and then arrives <em>here</em> a second time, carrying the same decision again.
+     * That is the ordinary shape of a retry on this platform, not an error: ten instances
+     * racing to complete one checkout all reach this method with the same merchant, the same
+     * version and the same gross, and the primary key lets exactly one of them write. The
+     * other nine are <strong>converged</strong>, because a second record of a decision already
+     * made is nothing to record.
+     *
+     * <p>What is emphatically not converged is a second attempt naming a <em>different</em>
+     * price. That is a payment being repriced after it was agreed, which is the whole of what
+     * {@code INV-MER-03} forbids, and it throws -- failing the caller's transaction rather than
+     * silently keeping whichever price happened to be written first. The distinction is
+     * {@link PaymentFeePin#pricesTheSameAs}'s, and it deliberately ignores who pinned and when.
+     *
+     * <p>This is the fourth checked assumption, and the only one reachable today: the three in
+     * {@link #compose} guard a capture, and this one guards the agreement the capture will be
+     * settled against.
+     *
+     * @throws MerchantSettlementException this intent is already pinned to a different price
+     */
     public void pin(Connection unitOfWork, PaymentFeePin pin) {
-        pins.insert(unitOfWork, pin);
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(pin, "pin must not be null");
+        if (pins.insertIfAbsent(unitOfWork, pin)) {
+            return;
+        }
+        PaymentFeePin standing =
+                pins.findFor(unitOfWork, pin.paymentIntentRef())
+                        .orElseThrow(
+                                () ->
+                                        new MerchantSettlementException(
+                                                "payment " + pin.paymentIntentRef()
+                                                        + " refused a second fee pin and then"
+                                                        + " had none; the primary key and the"
+                                                        + " row disagree about whether this"
+                                                        + " payment is priced"));
+        if (!standing.pricesTheSameAs(pin)) {
+            throw new MerchantSettlementException(
+                    "payment " + pin.paymentIntentRef() + " is pinned to version "
+                            + standing.versionId() + " at " + standing.gross()
+                            + " for merchant " + standing.merchantId()
+                            + ", and this call would price it at " + pin.gross()
+                            + " under version " + pin.versionId() + " for merchant "
+                            + pin.merchantId()
+                            + "; a payment has one agreed price (INV-MER-03)");
+        }
     }
 
     /** The pin for an intent — the merchant statement's provenance read. */

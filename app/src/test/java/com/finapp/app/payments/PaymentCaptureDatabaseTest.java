@@ -479,7 +479,10 @@ class PaymentCaptureDatabaseTest {
                                                             new ChartOfAccounts<>(ledgerAccounts),
                                                             new JdbcOutboxWriter(),
                                                             IDS),
-                                                    new com.finapp.payments.WalletTopUpComposition()),
+                                                    new com.finapp.payments.WalletTopUpComposition(),
+                        // No completion: these suites' payments belong to no checkout
+                        // session, and the production consumer is wired in CheckoutBeans.
+                        landed -> {}),
                                             new JdbcAuditWriter(), new JdbcOutboxWriter(),
                                             IDS, CLOCK),
                                     new JdbcAuditWriter(),
@@ -541,7 +544,10 @@ class PaymentCaptureDatabaseTest {
                                         new ChartOfAccounts<>(ledgerAccounts),
                                         new JdbcOutboxWriter(),
                                         IDS),
-                                new com.finapp.payments.WalletTopUpComposition()),
+                                new com.finapp.payments.WalletTopUpComposition(),
+                        // No completion: these suites' payments belong to no checkout
+                        // session, and the production consumer is wired in CheckoutBeans.
+                        landed -> {}),
                         new JdbcAuditWriter(),
                         outbox,
                         IDS,

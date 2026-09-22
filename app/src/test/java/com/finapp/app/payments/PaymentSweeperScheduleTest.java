@@ -143,7 +143,10 @@ class PaymentSweeperScheduleTest {
                                         new com.finapp.ledger.ChartOfAccounts<>(new com.finapp.ledger.JdbcLedgerAccountStore()),
                                         new com.finapp.platform.outbox.JdbcOutboxWriter(),
                                         ids()),
-                                new com.finapp.payments.WalletTopUpComposition()),
+                                new com.finapp.payments.WalletTopUpComposition(),
+                        // No completion: these suites' payments belong to no checkout
+                        // session, and the production consumer is wired in CheckoutBeans.
+                        landed -> {}),
                         (uow, record) -> {},
                         (uow, envelope, payload, mediaType) -> {},
                         ids(),

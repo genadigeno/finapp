@@ -607,23 +607,40 @@ class CheckoutSessionDatabaseTest {
             List<String[]> columns = new ArrayList<>();
             try (PreparedStatement read =
                             app.prepareStatement(
-                                    "SELECT table_schema, table_name, column_name FROM"
-                                            + " information_schema.columns WHERE data_type IN"
-                                            + " ('text', 'character varying', 'bytea') AND"
+                                    "SELECT table_schema, table_name, column_name, data_type"
+                                            + " FROM information_schema.columns WHERE data_type"
+                                            + " IN ('text', 'character varying', 'bytea') AND"
                                             + " table_schema NOT IN ('pg_catalog',"
                                             + " 'information_schema')");
                     ResultSet rows = read.executeQuery()) {
                 while (rows.next()) {
                     columns.add(
-                            new String[] {rows.getString(1), rows.getString(2), rows.getString(3)});
+                            new String[] {
+                                rows.getString(1),
+                                rows.getString(2),
+                                rows.getString(3),
+                                rows.getString(4)
+                            });
                 }
             }
             for (String[] column : columns) {
                 String qualified = "\"" + column[0] + "\".\"" + column[1] + "\"";
+                // A BYTEA COLUMN NEEDS A DIFFERENT CAST, and this is the P6-TSK-007 gate's
+                // finding: `bytea::text` renders `\x7365...`, so a `LIKE` over it can never
+                // match a printable needle. The one column on this platform that a credential
+                // most plausibly leaks into -- platform.idempotency_record.response_body, the
+                // stored response of a keyed command -- is exactly that type, so the sweep was
+                // blind in precisely the place it most needed to see. `encode(col, 'escape')`
+                // renders printable ASCII as itself and, unlike convert_from, never throws on
+                // bytes that are not valid UTF-8.
+                String readable =
+                        "bytea".equals(column[3])
+                                ? "encode(\"" + column[2] + "\", 'escape')"
+                                : "\"" + column[2] + "\"::text";
                 try (PreparedStatement probe =
                         app.prepareStatement(
-                                "SELECT count(*) FROM " + qualified + " WHERE \"" + column[2]
-                                        + "\"::text = ?")) {
+                                "SELECT count(*) FROM " + qualified + " WHERE " + readable
+                                        + " = ?")) {
                     probe.setString(1, value);
                     try (ResultSet row = probe.executeQuery()) {
                         if (row.next() && row.getLong(1) > 0) {

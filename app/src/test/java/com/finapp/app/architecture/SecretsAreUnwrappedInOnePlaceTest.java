@@ -125,10 +125,12 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // Writes the hash - not the token - to its column, hashes a presented one
                     // to look it up by index, and re-wraps on read. JdbcSessionStore's role.
                     "com.finapp.checkout.JdbcCheckoutSessionStore",
-                    // NOTHING IN `app` IS NAMED FOR THIS TOKEN, and that is the design: the
-                    // boundary that shows a freshly minted checkout token once arrives with
-                    // `P6-TSK-007`, and this task deliberately ships no surface. Three entries
-                    // rather than four, for the second credential running.
+                    // Unwraps ONCE, at the boundary that must transmit the freshly minted
+                    // token in the creation's response (`P6-TSK-007`) - MerchantApiKeyOperations'
+                    // role at a fourth door, and the only place a checkout token's plaintext
+                    // leaves its wrapper. The creating command never holds a bare one: it
+                    // carries the value WRAPPED through CheckoutSessionToken.presentedOnce().
+                    "com.finapp.app.checkout.CheckoutService",
                     // Derives and verifies. The only component that must see the plaintext at all.
                     "com.finapp.identity.Argon2PasswordDeriver",
                     // Writes the derivation - not the password - to its column.

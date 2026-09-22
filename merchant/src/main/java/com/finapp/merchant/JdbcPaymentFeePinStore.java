@@ -6,6 +6,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.sql.Timestamp;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,10 +16,19 @@ import java.util.UUID;
  *
  * <p>Two statements, and there will never be a third of a different kind: an {@code UPDATE}
  * here would be a repricing, and the application role holds no grant for one.
+ *
+ * <p>The insert arbitrates on the primary key behind a savepoint (`P6-TSK-007`) --
+ * {@link JdbcFeeScheduleStore#insertVersionIfNumberIsFree}'s shape, for the same reason and
+ * with one difference worth naming. There, a loser re-reads and retries with a new number;
+ * here there is nothing to retry, because one payment has exactly one price: the loser's
+ * answer is {@code false}, and what it means is the caller's question.
  */
 public final class JdbcPaymentFeePinStore implements PaymentFeePinStore<Connection> {
 
     private static final MoneyColumns.ColumnNames GROSS = MoneyColumns.columnsFor("gross");
+
+    /** SQLState 23505. The arbiter's answer, not a failure. */
+    private static final String UNIQUE_VIOLATION = "23505";
 
     private static final String COLUMNS =
             "payment_intent_ref, merchant_id, fee_schedule_version_id,"
@@ -26,7 +36,18 @@ public final class JdbcPaymentFeePinStore implements PaymentFeePinStore<Connecti
                     + ", pinned_at, pinned_by";
 
     @Override
-    public void insert(Connection unitOfWork, PaymentFeePin pin) {
+    public boolean insertIfAbsent(Connection unitOfWork, PaymentFeePin pin) {
+        // The savepoint is what keeps a lost race cheap: a unique violation poisons the
+        // transaction, and this pin shares its transaction with the payment intent it prices
+        // and that intent's audit record. Without the savepoint a duplicate pin would destroy
+        // a payment that was created correctly.
+        Savepoint attempt;
+        try {
+            attempt = unitOfWork.setSavepoint("payment_fee_pin");
+        } catch (SQLException failure) {
+            throw new MerchantStorageException(
+                    DatabaseFailure.describe("preparing a payment fee pin insert", failure));
+        }
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO merchant.payment_fee_pin (" + COLUMNS + ")"
@@ -40,9 +61,25 @@ public final class JdbcPaymentFeePinStore implements PaymentFeePinStore<Connecti
             insert.setTimestamp(7, Timestamp.from(pin.pinnedAt()));
             insert.setString(8, pin.pinnedBy());
             insert.executeUpdate();
+            unitOfWork.releaseSavepoint(attempt);
+            return true;
         } catch (SQLException failure) {
+            if (UNIQUE_VIOLATION.equals(failure.getSQLState())) {
+                // This payment is already priced. Not an error - the primary key answering.
+                rollbackTo(unitOfWork, attempt);
+                return false;
+            }
             throw new MerchantStorageException(
                     DatabaseFailure.describe("pinning a payment's fee schedule version", failure));
+        }
+    }
+
+    private static void rollbackTo(Connection unitOfWork, Savepoint attempt) {
+        try {
+            unitOfWork.rollback(attempt);
+        } catch (SQLException failure) {
+            throw new MerchantStorageException(
+                    DatabaseFailure.describe("abandoning a lost payment fee pin race", failure));
         }
     }
 

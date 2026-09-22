@@ -347,7 +347,13 @@ class NoUnwrappedSecretRulesTest {
                     // than wider: this field is null on a replay, because the secret is never
                     // stored. The other two can be re-derived from a live session row; this
                     // one exists in memory for one response and nowhere else (INV-IDN-01).
-                    "com.finapp.app.merchant.MerchantApiKeyOperations$IssuedKeyView.secret");
+                    "com.finapp.app.merchant.MerchantApiKeyOperations$IssuedKeyView.secret",
+                    // P6-TSK-007: the checkout session's token, in the ONE response that shows
+                    // it. Same exemption as the merchant key's above and for the same reason -
+                    // a wire type must carry the value as a String because that is what a
+                    // client reads, and the discipline that makes it safe is that it appears
+                    // here ONCE and the claim records the session id alone.
+                    "com.finapp.app.checkout.CheckoutService$CreatedSessionView.sessionToken");
 
     /** The accessors of {@link #PERMITTED_FIELDS}, for the same reason and no other. */
     private static final Set<String> PERMITTED_ACCESSORS =
@@ -355,7 +361,8 @@ class NoUnwrappedSecretRulesTest {
                     "com.finapp.app.mfa.ElevatedSession.sessionToken()",
                     "com.finapp.app.authentication.AuthenticatedSession.sessionToken()",
                     // P6-TSK-002, the field exemption's accessor half - see PERMITTED_FIELDS.
-                    "com.finapp.app.merchant.MerchantApiKeyOperations$IssuedKeyView.secret()");
+                    "com.finapp.app.merchant.MerchantApiKeyOperations$IssuedKeyView.secret()",
+                    "com.finapp.app.checkout.CheckoutService$CreatedSessionView.sessionToken()");
 
     @org.junit.jupiter.api.Test
     @org.junit.jupiter.api.DisplayName("every exemption still names a field the rule would otherwise flag")

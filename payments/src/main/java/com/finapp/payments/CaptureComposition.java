@@ -46,4 +46,25 @@ public interface CaptureComposition<T> {
      *     capture transaction, on purpose
      */
     List<JournalLine> settle(T unitOfWork, CaptureSettlement settlement);
+
+    /**
+     * The entry landed, and here is its identifier — the composing flow's chance to record
+     * what that means, <strong>in the same transaction</strong> (`P6-TSK-007`).
+     *
+     * <p><strong>Why a second moment rather than one.</strong> {@link #settle} runs BEFORE the
+     * posting, because its answer is what gets posted; but a flow whose consequence references
+     * the entry — a checkout order carrying the journal entry that paid for it — cannot know
+     * the identifier until afterwards. Folding both into one call would mean either composing
+     * after the fact (impossible) or recording against an entry that does not exist yet
+     * (wrong). Two moments, one transaction, and {@code payments} still names nothing it
+     * cannot see: it says <em>these lines</em>, then <em>that entry</em>.
+     *
+     * <p>Runs on the caller's connection, inside the capture's own transaction, after the
+     * conditional transition has been won — so exactly once per capture however many
+     * resolvers raced. It may write; it must not swallow a failure, for {@link #settle}'s
+     * reason.
+     *
+     * @param entryRef the journal entry the posting produced or converged on
+     */
+    void settled(T unitOfWork, CaptureSettlement settlement, java.util.UUID entryRef);
 }

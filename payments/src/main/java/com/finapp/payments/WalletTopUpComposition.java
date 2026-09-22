@@ -28,4 +28,18 @@ public final class WalletTopUpComposition implements CaptureComposition<Connecti
                 new JournalLine(settlement.clearing(), Direction.DEBIT, settlement.captured()),
                 new JournalLine(settlement.credit(), Direction.CREDIT, settlement.captured()));
     }
+
+    /**
+     * Nothing. A wallet top-up's consequence <em>is</em> the posting — the customer's money
+     * became the customer's balance, and there is no commercial fact beside it to record.
+     *
+     * <p>An empty implementation rather than an absent one, because the port's second moment
+     * is not optional: a composition that needed it and forgot would be a silent omission,
+     * while this is a stated one.
+     */
+    @Override
+    public void settled(
+            Connection unitOfWork, CaptureSettlement settlement, java.util.UUID entryRef) {
+        // Deliberately empty; see the javadoc.
+    }
 }

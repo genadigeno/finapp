@@ -372,6 +372,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // never rendered by any toString), on all three standing moves. No
                         // secret; the TransferReversalRequest shape, at the counterparty.
                         "MerchantStandingRequest",
+                        // P6-TSK-007. Carries the checkout session's TOKEN - a real bearer
+                        // credential, wrapped in Sensitive from the moment it is deserialised
+                        // (P1-TSK-010's shape) - and a payment method identifier. It is in
+                        // this set rather than in EMITTED_SECRET_SCHEMAS because the guard's
+                        // precise property is that a secret may be SENT and never returned:
+                        // this is the sending half, and the reason the token left the URL.
+                        "ConfirmSessionRequest",
                         // P6-TSK-004. Carries a schedule NAME (the platform's own vocabulary,
                         // not anyone's data) and an ISO currency code. No secret; here because
                         // the set is every schema REACHABLE from a request body.
@@ -385,7 +392,13 @@ class CredentialReachesNoEmittedSinkTest {
                         "CreateFeeScheduleVersionRequest",
                         // P6-TSK-004. Carries a schedule identifier and a REASON, on the
                         // pointer move. No secret; the MerchantStandingRequest shape.
-                        "AssignFeeScheduleRequest");
+                        "AssignFeeScheduleRequest",
+                        // P6-TSK-007. Carries an amount, an ISO currency code and a LINE
+                        // SUMMARY - display text about what one person is buying, classified
+                        // RESTRICTED-PII at its column for that reason. No secret; here
+                        // because the set is every schema REACHABLE from a request body, and
+                        // no merchant identifier either: the tenant comes from the API key.
+                        "CreateSessionRequest");
     }
 
     @Test
@@ -525,7 +538,20 @@ class CredentialReachesNoEmittedSinkTest {
                     // way - IssuedKeyView overrides toString. Unlike the two above, it is
                     // NULL on a replay: the secret is never stored, so there is nothing to
                     // re-show (INV-IDN-01 winning over the replay discipline).
-                    "IssuedKeyView");
+                    "IssuedKeyView",
+                    // P6-TSK-007. The checkout session's creation response: the TOKEN is the
+                    // one value whose whole purpose is to be transmitted, exactly once, to the
+                    // merchant who will hand it to a customer. Like IssuedKeyView and unlike
+                    // the two session entries, it is NULL on a replay - the claim records the
+                    // session id alone, so there is nothing to re-show (INV-IDN-01 winning
+                    // over the replay discipline, for the second credential).
+                    //
+                    // THIS GUARD ALSO CHANGED THE DESIGN rather than merely admitting it: the
+                    // confirmation's token was in the URL path, and the guard refused it on
+                    // its own reasoning that a secret in a URL reaches every access log. It
+                    // now travels in a request body, which is why ConfirmSessionRequest
+                    // appears in the bounded set below rather than here.
+                    "CreatedSessionView");
 
     private static List<String> secretNamedMembersOutsideRequestBodiesIn(String document) {
         tools.jackson.databind.JsonNode root =

@@ -34,11 +34,18 @@ public final class MerchantBoundCaptureComposition implements CaptureComposition
 
     private final MerchantSettlement settlement;
     private final CaptureComposition<Connection> walletTopUp;
+    private final java.util.function.Consumer<Completion> completion;
+
+    /** What a landed entry means to the flow that created the intent (`P6-TSK-007`). */
+    public record Completion(Connection unitOfWork, CaptureSettlement capture, java.util.UUID entryRef) {}
 
     public MerchantBoundCaptureComposition(
-            MerchantSettlement settlement, CaptureComposition<Connection> walletTopUp) {
+            MerchantSettlement settlement,
+            CaptureComposition<Connection> walletTopUp,
+            java.util.function.Consumer<Completion> completion) {
         this.settlement = Objects.requireNonNull(settlement, "settlement must not be null");
         this.walletTopUp = Objects.requireNonNull(walletTopUp, "walletTopUp must not be null");
+        this.completion = Objects.requireNonNull(completion, "completion must not be null");
     }
 
     @Override
@@ -53,5 +60,22 @@ public final class MerchantBoundCaptureComposition implements CaptureComposition
                         capture.correlation(),
                         capture.at())
                 .orElseGet(() -> walletTopUp.settle(unitOfWork, capture));
+    }
+
+    /**
+     * The entry landed — so the flow that created the intent records what that means, in this
+     * same transaction (`P6-TSK-007`).
+     *
+     * <p>For a checkout payment that is the session completing and its order being born; for a
+     * wallet top-up it is nothing. <strong>Called unconditionally rather than only for
+     * merchant-bound captures</strong>, and the difference matters: whether a payment belongs
+     * to a checkout is the checkout module's question, not this class's, and asking it here
+     * would put a second, drifting copy of that decision in the one place that must not hold
+     * one.
+     */
+    @Override
+    public void settled(
+            Connection unitOfWork, CaptureSettlement capture, java.util.UUID entryRef) {
+        completion.accept(new Completion(unitOfWork, capture, entryRef));
     }
 }

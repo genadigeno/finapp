@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 130 "Previously" blocks, newest first, from `P6-TSK-005` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 131 "Previously" blocks, newest first, from `P6-TSK-006` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,42 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-006` — the checkout session and order** — `COMPLETE` (2026-09-22). **M6.3 opens:
+the purchase experience exists as two aggregates, and the race that defines the phase has its
+edges.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every invalid transition refused | At the aggregate **and** at the trigger, both swept from the machine's own cross-product |
+| The token never stored in clear | Swept across every text column in every schema — needle reconstructed from the randomness the test supplied |
+| `INV-AUD-02` needles on refusals | States only: no identifier, no amount, no token |
+
+### Three collapses refused, and one design point worth reading twice
+
+**An offer is not an order**: a session that dies unpaid leaves no order row at all — the
+platform does not manufacture commercial facts out of silence. **An order is barely a machine**:
+no status column, because an order that exists is paid and refund standing is derived at read.
+**Three edges are absent on purpose** — `PAYMENT_PENDING → ABANDONED` (cancelling would leave
+money moving with no commercial home), any failure state (a declined payment is the *payment's*
+state), and `EXPIRED → COMPLETED` (the honest condition stays countable).
+
+**Expiry is a state the sweeper earns *and* a clock the aggregate checks** — different
+questions, not two answers to one. The state makes expiry countable and audited; the clock makes
+the refusal timely, because a sweeper one minute behind is a minute in which money lands on a
+dead offer.
+
+### Eleven probes caught, and two findings no probe made
+
+`EXPIRED` made terminal was caught at **three ranks**; the plaintext-for-hash swap at two. The
+gate's own findings: **the set-once rule was loud at the trigger and silent in the store** —
+`COALESCE` quietly discarded a conflicting intent while reporting success, now refused — and the
+one-token-one-session claim had been asserted against the migration's *text* and never against
+the database. **A guard that makes a write a no-op is not the same as a guard that refuses it.**
 
 ---
 
