@@ -95,7 +95,15 @@ public enum RoleName {
      */
     MERCHANT_ADMINISTRATOR(
             EnumSet.of(
-                    PermissionName.MERCHANT_ONBOARD, PermissionName.MERCHANT_ADMINISTER));
+                    PermissionName.MERCHANT_ONBOARD,
+                    PermissionName.MERCHANT_ADMINISTER,
+                    // P6-TSK-004: pricing joins the one counterparty-administering population
+                    // - the PAYMENT_REFUND arrival restated, not re-argued. Its OWN permission
+                    // because a commercial desk setting prices and a risk desk ruling on
+                    // standing are a real future split; one role because nothing has yet taken
+                    // that decision, and a role for a split nobody has made is a trust
+                    // decision nobody took.
+                    PermissionName.FEE_ADMINISTER));
 
     private final Set<PermissionName> permissions;
 

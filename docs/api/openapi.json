@@ -1102,6 +1102,76 @@
           }
         }
       },
+      "merchant.FeeCurrencyMismatch": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.FeeCurrencyMismatch"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.FeeCurrencyMismatch"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The fee schedule's currency does not match.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.FeeScheduleNotForward": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.FeeScheduleNotForward"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.FeeScheduleNotForward"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A fee schedule version takes effect forward; it cannot be backdated.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "merchant.IllegalTransition": {
         "content": {
           "application/problem+json": {
@@ -1850,6 +1920,24 @@
         },
         "type": "object"
       },
+      "AssignFeeScheduleRequest": {
+        "properties": {
+          "feeScheduleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "feeScheduleId",
+          "reason"
+        ],
+        "type": "object"
+      },
       "AttachPaymentMethodRequest": {
         "properties": {
           "clientToken": {
@@ -2081,6 +2169,65 @@
         ],
         "type": "object"
       },
+      "CreateFeeScheduleRequest": {
+        "properties": {
+          "currency": {
+            "pattern": "^[A-Z]{3}$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateFeeScheduleVersionRequest": {
+        "properties": {
+          "effectiveFrom": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fixedAmountMinor": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rate": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "refundFeePolicy": {
+            "maxLength": 50,
+            "minLength": 0,
+            "type": "string"
+          },
+          "roundingPolicy": {
+            "maxLength": 50,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "fixedAmountMinor",
+          "rate",
+          "reason",
+          "refundFeePolicy",
+          "roundingPolicy"
+        ],
+        "type": "object"
+      },
       "DecisionRequest": {
         "properties": {
           "outcome": {
@@ -2154,6 +2301,71 @@
             "type": "string"
           },
           "sessionToken": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FeeScheduleDetailView": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "feeScheduleId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/FeeScheduleVersionView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "FeeScheduleVersionView": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "feeScheduleVersionId": {
+            "type": "string"
+          },
+          "fixedAmountMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "refundFeePolicy": {
+            "type": "string"
+          },
+          "roundingPolicy": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "FeeScheduleView": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "feeScheduleId": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           }
         },
@@ -2255,6 +2467,17 @@
             "type": "string"
           },
           "direction": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MerchantFeeScheduleView": {
+        "properties": {
+          "feeScheduleId": {
+            "type": "string"
+          },
+          "merchantId": {
             "type": "string"
           }
         },
@@ -4014,6 +4237,115 @@
         }
       }
     },
+    "/v1/operator/fee-schedules": {
+      "get": {
+        "operationId": "listFeeSchedules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeeScheduleView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createFeeSchedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFeeScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeScheduleView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/fee-schedules/{id}": {
+      "get": {
+        "operationId": "viewFeeSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeScheduleDetailView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fee-schedules/{id}/versions": {
+      "post": {
+        "operationId": "createFeeScheduleVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFeeScheduleVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeScheduleVersionView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/operator/merchants": {
       "post": {
         "operationId": "onboard",
@@ -4282,6 +4614,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MerchantView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{merchantId}/fee-schedule": {
+      "get": {
+        "operationId": "viewMerchantFeeSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantFeeScheduleView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "assignFeeSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignFeeScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantFeeScheduleView"
                 }
               }
             },

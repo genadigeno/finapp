@@ -59,7 +59,35 @@ public enum MerchantErrorCode implements ErrorCode {
     NOT_KEYABLE(
             "merchant.NotKeyable",
             409,
-            "A closed merchant cannot be issued an API key.");
+            "A closed merchant cannot be issued an API key."),
+
+    /**
+     * A fee schedule version would take effect before it was created (`P6-TSK-004`). A
+     * {@code 422}: the request is coherent and the remedy is the caller's — pick an instant
+     * that is not in the past.
+     *
+     * <p>This is {@code INV-MER-03}'s refusal, and it is the one an operator is most likely to
+     * meet: "make this effective from the first of the month" is a natural thing to type on
+     * the second of the month, and it is a repricing of every capture in between.
+     */
+    FEE_SCHEDULE_NOT_FORWARD(
+            "merchant.FeeScheduleNotForward",
+            422,
+            "A fee schedule version takes effect forward; it cannot be backdated."),
+
+    /**
+     * A fee schedule was asked to price, or to be assigned to, a currency it does not hold
+     * (`P6-TSK-004`). A {@code 422}: coherent request, refused by the currencies involved.
+     *
+     * <p>One code for both boundaries — a version whose fixed part is in the wrong currency,
+     * and an assignment to a merchant that settles in another — because both say the same
+     * thing to the same reader: this schedule does not price that money. Cross-currency fees
+     * are Phase 9's.
+     */
+    FEE_CURRENCY_MISMATCH(
+            "merchant.FeeCurrencyMismatch",
+            422,
+            "The fee schedule's currency does not match.");
 
     private final String code;
     private final int status;

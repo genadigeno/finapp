@@ -84,18 +84,26 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("MERCHANT_ADMINISTRATOR grants exactly the two counterparty permissions")
-    void merchantAdministratorGrantsExactlyTwo() {
-        // One role, two permissions (P6-TSK-003): one merchant-administering population -
-        // the LEDGER_OPERATOR bundling reasoning - while the vocabulary stays precise so the
-        // onboarding endpoint and the reasoned state moves each check their own. Exact set,
-        // so the role quietly gaining a money-operating or identity permission is a failing
-        // test, held pairwise below as well.
+    @DisplayName("MERCHANT_ADMINISTRATOR grants exactly the three counterparty permissions")
+    void merchantAdministratorGrantsExactlyThree() {
+        // One role, three permissions (P6-TSK-003; FEE_ADMINISTER by P6-TSK-004): one
+        // merchant-administering population - the LEDGER_OPERATOR bundling reasoning - while
+        // the vocabulary stays precise so the onboarding endpoint, the reasoned state moves
+        // and the pricing surfaces each check their own. Exact set, so the role quietly
+        // gaining a money-operating or identity permission is a failing test, held pairwise
+        // below as well.
+        //
+        // UPDATED IN THE TASK THAT WIDENED THE ROLE, deliberately. The same pin on
+        // LEDGER_OPERATOR above was left red by P5-TSK-015 and stayed red through four
+        // completion gates because `:identity:test` was in none of that phase's targeted
+        // tiers. A role widened here is a pin edited here, in the same change.
         assertThat(RoleName.MERCHANT_ADMINISTRATOR.permissions())
                 .as("administering counterparties is neither operating money nor managing"
                         + " identities")
                 .containsExactlyInAnyOrder(
-                        PermissionName.MERCHANT_ONBOARD, PermissionName.MERCHANT_ADMINISTER);
+                        PermissionName.MERCHANT_ONBOARD,
+                        PermissionName.MERCHANT_ADMINISTER,
+                        PermissionName.FEE_ADMINISTER);
     }
 
     @Test

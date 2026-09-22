@@ -273,61 +273,60 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-004` — the versioned fee schedule** — `READY`.
-M6.2 opens: fees as immutable, versioned configuration (`INV-MER-03`) — rate, fixed part,
-rounding mode and refund-fee policy, frozen once effective, with the pure arithmetic that
-**computes the fee once and derives the net by subtraction** (`INV-MER-04`'s mechanism),
-property-tested across 0/2/3-minor-unit currencies before anything posts it. Scope,
-acceptance and DoD profiles in the backlog entry.
+**`P6-TSK-005` — fee assessment at capture: the merchant-bound posting** — `READY`.
+**The phase's financial heart**: ADR-0050 §3's single journal entry — DR `SETTLEMENT_CLEARING`
+gross / CR `MERCHANT_PAYABLE` gross / DR payable fee / CR `FEE_REVENUE` fee — composed in
+`app` and posted atomically with the attempt's `CAPTURED` transition, priced by the version
+**pinned at intent creation**, with `payments` staying merchant-blind behind the composition
+seam. Scope, acceptance and DoD profiles in the backlog entry.
 
 ### Just completed
 
-**`P6-TSK-002` — merchant identity: the API key and tenant scoping** — `COMPLETE`
-(2026-09-22). **M6.1 CLOSES at 3 of 3: the platform has a fourth authentication vocabulary,
-and its first caller the platform does not own.** The key credential under the full regime —
-hashed, derivation recorded, shown once, constant-time verification, never recoverable — with
-`ActorType.MERCHANT` (platform `V010`), `@RequiresMerchantKey` as the fifth authorization
-declaration, and `GET /v1/merchant/me` as the first key-authenticated surface.
+**`P6-TSK-004` — the versioned fee schedule** — `COMPLETE` (2026-09-22). **M6.2 opens, and
+the platform can say what it charges — before anything charges it.** Fees as immutable,
+versioned configuration with pure, conserving arithmetic: `FeeSchedule` as the stable
+commercial identity a merchant is *assigned* to, `FeeScheduleVersion` as the priced content an
+assessment *pins* (`INV-HIST-04`'s **first subject** in five phases), `FEE_ADMINISTER` as the
+platform's ninth permission, and `V004`'s four tables.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| A merchant reaches only its own rows | Its own record, with no identifier to address another by; `merchant_id = ?` in every key statement |
-| A suspended merchant's keys refuse | The standing is **in the lookup's join** — the next request, everywhere, nothing revoked and nothing invalidated |
-| A revoked key refuses immediately | Terminal, reasoned, audited; the repeat converges with no second history row |
-| No secret recoverable | Not from the list, not from a replay, not from any text column in any schema |
-| Issuance audited with actor and key id | And never the secret — which is why the key id is public |
+| Recomputation under a pinned version reproduces to the minor unit | From the stored row, twice — the row can never change, so it reproduces forever |
+| A new version reprices nothing | The pinned assessment is untouched; captures after the change get the new version |
+| The split conserves | By **property test** over amounts × rates × six policies × 0/2/3-minor-unit currencies |
+| Mutation of a frozen version is refused at the database | Withheld grant for the app role; unconditional trigger for the **migrator** |
 
-### The design changed while it was being written, and that was the point
+### Three things this task decided rather than inherited
 
-**An API key has none of the controls a session gets from being short-lived** — no expiry, no
-browser to close, no human at a keyboard — so each was replaced deliberately: the lookup is
-authoritative per request and **joins the merchant's standing**, so suspension and revocation
-bite everywhere at once with nothing to invalidate. The probe that caches that lookup — the
-most tempting change available here — fails *both* the revocation and the suspension
-assertions.
+**No `DRAFT` state, and no editable window.** A version is a fact the moment it is written, so
+`V004`'s trigger is `RAISE EXCEPTION` on *every* `UPDATE` and `DELETE`. Editable-until-effective
+buys only what superseding already buys, and costs a trigger that must reason about which column
+may move in which state — the one place such reasoning can be subtly wrong. A mistake is
+corrected by a **later version**, and **ties on `effective_from` are legal**, so an operator who
+catches a mistyped future rate supersedes it at the same instant rather than leaving a second of
+wrong pricing.
 
-**Show-once had to beat the replay discipline.** The approved design said the idempotency
-claim should record the issuance response, as every other keyed command does. Writing it made
-the consequence visible: that stores a live credential in
-`platform.idempotency_record.response_body`, recoverable for the claim's whole retention. The
-claim now records the key id alone and a replay renders no secret. The probe that restores the
-original design is caught by the column sweep — so the test would have found what reasoning
-found.
+**No idempotency key, stated rather than omitted.** Every keyed command here is keyed because a
+duplicate produces a duplicate *effect*. A duplicated version creation produces two versions
+with identical content that price identically — the harm does not exist. Assignment converges
+instead, writing nothing when it changes nothing.
 
-**Nine issues found during implementation, seven in this task's own work**, including the
-`operationId` collision class recurring one task later (now a mechanism: no suffixed
-`operationId`, with the two already-published collisions grandfathered by name) and the
-merchant module becoming **the first outside `identity` to handle a credential** — answered by
-narrowing the unwrap set to three rather than widening it to four.
+**A schedule row cannot be locked, and that is the same fact as its immutability.** PostgreSQL
+requires the `UPDATE` privilege to take a row lock; `V004` withholds it. Granting `UPDATE` to
+make a lock takeable would buy a lock on a table nothing may write twice, at the cost of the
+grant no longer saying *immutable*. The arbiter is the unique index on
+`(fee_schedule_id, version)` — which is also the queue — with the writer retrying behind a
+savepoint. Found by the suite, at SQLState 42501.
 
-**The gate's own finding**: asserting that issuance names its operator revealed that every
-session actor is audited as `CUSTOMER`, operators included — platform-wide, pre-existing,
-recorded as debt owned by Phase 15. **8 probes, all caught, four at two ranks, restores
-byte-identical.**
+**The gate's survivor**: neutralising the tenant predicate left the suite green, because its
+only negative was *an unassigned merchant resolves empty* — which an unscoped query also
+answers when nothing else is assigned. **An empty assertion is not a tenant negative.** Closed
+with a three-tenant test; the mutation then failed. **9 probes, 8 caught first time, four at
+two ranks, restores byte-identical.**
 
 ### Previously
 
-The per-task completion records behind this one — 127 blocks, from `P6-TSK-003` back to project
+The per-task completion records behind this one — 128 blocks, from `P6-TSK-002` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -344,7 +343,7 @@ archived verbatim in
 **Phase 5 is `COMPLETE`** (2026-09-21) — 21 of 21 items across nine milestones, ruled by
 `P5-DOC-001`'s exit review and confirmed by the transition's independent audit.
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
-same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; M6.2 opens, next `P6-TSK-004`.
+same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; M6.2 open at 1 of 3, next `P6-TSK-005`.
 
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase

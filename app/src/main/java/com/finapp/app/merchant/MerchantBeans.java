@@ -103,6 +103,26 @@ public class MerchantBeans {
     }
 
     @Bean
+    com.finapp.merchant.FeeSchedules feeSchedules(
+            AuditWriter<Connection> auditWriter, IdGenerator ids, Clock clock) {
+        return new com.finapp.merchant.FeeSchedules(
+                new com.finapp.merchant.JdbcFeeScheduleStore(),
+                new JdbcMerchantStore(),
+                auditWriter,
+                ids,
+                clock);
+    }
+
+    @Bean
+    FeeScheduleOperations feeScheduleOperations(
+            com.finapp.merchant.FeeSchedules feeSchedules,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource) {
+        return new FeeScheduleOperations(
+                feeSchedules, new TransactionTemplate(transactionManager), dataSource);
+    }
+
+    @Bean
     MerchantOperations merchantOperations(
             MerchantOnboarding merchantOnboarding,
             MerchantAdministration merchantAdministration,

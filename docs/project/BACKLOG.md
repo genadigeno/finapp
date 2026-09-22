@@ -6945,7 +6945,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
   counts claimed.**
 
-**P6-TSK-004 — The versioned fee schedule** — `READY`
+**P6-TSK-004 — The versioned fee schedule** — `COMPLETE` (2026-09-22)
 - **Objective**: fees as immutable, versioned configuration — `INV-MER-03`'s subject.
   Bounded context 12.
 - **Scope**: `FeeSchedule`/version aggregates (rate, fixed part, rounding mode, refund-fee
@@ -6959,8 +6959,83 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   mutation of the frozen version refused at the database.
 - **Risk**: Medium (the arithmetic every capture will trust). **Cx**: M. **DoD**:
   `DOD-FIN`, `DOD-DOMAIN`
+- **Implementation note (2026-09-22)**: `FeeSchedule` (the stable commercial identity a
+  merchant is *assigned* to) and `FeeScheduleVersion` (the priced content an assessment
+  *pins*) — the distinction is the design: were merchants assigned to versions, every price
+  change would mean re-assigning every merchant, and the first one missed would leave two
+  merchants on "the same deal" priced differently with nothing saying so. `FeeCalculation` is
+  **pure** — `fee = round(gross × rate) + fixed`, **one** rounding under the version's named
+  policy, `net = gross − fee` by subtraction — so `INV-MER-04` holds algebraically rather
+  than by test, and the property is proved over amounts × rates × six policies ×
+  **0/2/3-minor-unit currencies**. `FEE_ADMINISTER` is a new permission joining the existing
+  `MERCHANT_ADMINISTRATOR` role (the `PAYMENT_REFUND` shape: pricing and standing are a real
+  future trust split, and the permission makes it a one-line change when a phase takes it) —
+  `RoleNameTest`'s pin updated **in the task that widened the role**, which is the
+  `P5-DOC-001` lesson applied.
+- **NO STATE MACHINE, and no `DRAFT` state** (2026-09-22): a version is immutable from birth,
+  so `V004`'s trigger is `RAISE EXCEPTION` on **every** `UPDATE` and `DELETE`,
+  unconditionally. An editable-until-effective window buys only what superseding already buys
+  and costs a trigger that must reason about which column may move in which state — the one
+  place such reasoning can be subtly wrong. A mistake is corrected by a **later version**, and
+  **ties on `effective_from` are legal**, broken by the greater version number, so an operator
+  who catches a mistyped future rate supersedes it at the same instant rather than leaving a
+  second of wrong pricing.
+- **Two defects found by the suite, both fixed in the design rather than in the test**
+  (2026-09-22): (1) **a schedule row cannot be locked.** PostgreSQL requires the `UPDATE`
+  privilege to take a row lock, and `V004` deliberately withholds it — so the version-minting
+  `SELECT … FOR UPDATE` failed with SQLState 42501. The immutability and the absence of a lock
+  are *one fact stated twice*; granting `UPDATE` to make a lock takeable would buy a lock on a
+  table nothing may write twice, at the cost of the grant no longer saying "immutable", which
+  is the only thing it is there to say. The arbiter is now the unique index on
+  `(fee_schedule_id, version)` — which is **also the queue** — with the writer re-reading and
+  retrying behind a savepoint, bounded at 16. (2) **a caller could not express "effective
+  now".** The server stamps `created_at` after the round trip, so any instant a client
+  computes beforehand is already past and is correctly refused as a backdating. `effectiveFrom`
+  is now **optional, and omitting it means immediately** — exact, where widening the `CHECK` by
+  a tolerance would have put a fudge factor inside `INV-MER-03` itself.
+- **Gate evidence (2026-09-22)**: **all four accept clauses demonstrated against the real
+  schema** — recomputation under a pinned version reproduces to the minor unit *from what the
+  database holds*, twice; a new version reprices nothing while new captures price at the new
+  rate; the split conserves across seven amounts from the stored version, and **by property
+  test** over amounts × rates × six rounding policies × **0/2/3-minor-unit currencies**; and
+  mutation of a frozen version is refused at the database — for the application role by a
+  withheld grant, for the **migrator** by the trigger, on `UPDATE` and `DELETE` and on both
+  fee tables. Suites: `FeeScheduleDatabaseTest` 18, `FeeCalculationTest` 14,
+  `FeeScheduleVersionTest` 12, `FeeScheduleMigrationTest` 13.
+  **Nine probes; eight caught by the intended assertion first time, four of them at two
+  ranks; one SURVIVED and its gap was closed** — restores verified byte-identical by `cmp`
+  with no `MUTATION` markers left. Caught: the net computed and rounded independently (the
+  property test *and* `FeeAssessment`'s own constructor); the domain's backdating refusal
+  dropped (**the database refused with SQLState 23514** — the `CHECK` holding when the domain
+  does not); the `effective_from >= created_at` `CHECK` weakened in `V004` (the register
+  reconciliation); the immutability trigger made a no-op (probed against the **migrator**,
+  the only writer the grants cannot bind); the version-minting `UNIQUE` dropped **and** the
+  writer's retry removed — both halves of the arbiter, separately; the rounding policy
+  defaulted instead of read from the version; and the surface gated on `LEDGER_POST` (caught
+  by the named negative when a ledger operator set the platform's prices).
+  **THE SURVIVOR, recorded because the shape recurs**: neutralising `merchant_id = ?` in the
+  pricing resolution left the suite green, because its only negative was *an unassigned
+  merchant resolves empty* — which an unscoped query also answers whenever no other
+  assignment happens to be committed at that moment. **An EMPTY assertion is not a tenant
+  negative.** Closed where it was found: `pricingIsResolvedPerTenant` establishes three
+  tenants in one run — two assigned to differently-priced schedules, one unassigned — so the
+  unscoped query has something wrong to return and must return it; the mutation then failed
+  against it. Register rows landed with their demonstrations performed: `INV-MER-03` ×3,
+  `INV-MER-04`, `INV-MON-03`, `INV-MER-01`, and **`INV-HIST-04`'s first row on this platform**
+  — five phases after the invariant was written, the fee schedule version is the first
+  versioned artefact any decision pins.
+  Registers: `AUDITABLE_ACTIONS` +3 actions (two reason-required), `ERROR_CONTRACT` +2 codes,
+  `DATA_CLASSIFICATION` §4 **+30 rows in this task** (the standing `refund.dispatch_key`
+  lesson — and this schema's first `RESTRICTED-FINANCIAL` rows, three of which are not
+  amounts: a rate beside a capture *is* revenue, and a schedule identifier beside its versions
+  *is* what one counterparty pays), `DISTRIBUTED_EXECUTION` §3 +1 row, `OwnershipIsScopedTest`
+  +9 classifications, `CredentialReachesNoEmittedSinkTest` +3 reachable schemas. Contract
+  baseline **+394 lines with nothing removed and nothing changed** (54 → 58 paths, verified
+  key-by-key against the committed document). Verified by targeted tiers from fresh runs —
+  **the full battery deliberately skipped on the owner's instruction; no fleet-wide database
+  or kafka counts claimed.**
 
-**P6-TSK-005 — Fee assessment at capture: the merchant-bound posting** — `PLANNED`
+**P6-TSK-005 — Fee assessment at capture: the merchant-bound posting** — `READY`
 - **Objective**: ADR-0050 §3's one entry — the phase's financial heart. Bounded contexts
   12 with 9 (through the seam only).
 - **Scope**: the composition seam (`app`) supplying a checkout-created intent's posting

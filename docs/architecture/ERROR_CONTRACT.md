@@ -291,6 +291,19 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `merchant.IllegalTransition` | 409 | The merchant's current status does not permit this change. |
 | `merchant.UnsupportedCurrency` | 422 | The settlement currency is not supported. |
 | `merchant.NotKeyable` | 409 | A closed merchant cannot be issued an API key. |
+| `merchant.FeeScheduleNotForward` | 422 | A fee schedule version takes effect forward; it cannot be backdated. |
+| `merchant.FeeCurrencyMismatch` | 422 | The fee schedule's currency does not match. |
+
+`merchant.FeeScheduleNotForward` is `INV-MER-03`'s refusal, and it is the one an operator
+actually meets: *"make this effective from the first of the month"* is a natural thing to type
+on the second of the month, and it is a repricing of every capture in between. A `422` rather
+than a `409`, because the request is coherent and the remedy is the caller's.
+
+`merchant.FeeCurrencyMismatch` covers **both** boundaries — a version whose fixed part is in
+the wrong currency, and an assignment to a merchant that settles in another — because both say
+the same thing to the same reader: this schedule does not price that money. Cross-currency fees
+are Phase 9's. There is no fee-schedule not-found code: unknown and malformed identifiers are
+one `api.NotFound`, the merchant surface's standing rule.
 
 `merchant.NotKeyable` refuses only a **closed** merchant. A `SUSPENDED` one may still be
 issued keys: suspension is reversible, its keys already refuse at authentication because the

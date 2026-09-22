@@ -73,6 +73,44 @@ public enum MerchantAuditAction implements AuditableAction {
             "merchant.MerchantClosed",
             "An operator closed a merchant - terminal; the payable position and its history"
                     + " remain; the reason is required.",
+            true),
+
+    /**
+     * An operator created a named pricing identity (`P6-TSK-004`). No reason required: a named
+     * container carries no price, and the judgement worth reasoning about is the
+     * {@link #FEE_SCHEDULE_VERSION_CREATED version} — the {@code MERCHANT_API_KEY_ISSUED}
+     * split, for the same reason.
+     */
+    FEE_SCHEDULE_CREATED(
+            "merchant.FeeScheduleCreated",
+            "An operator created a fee schedule; the record names the schedule by identifier"
+                    + " with its name and currency.",
+            false),
+
+    /**
+     * An operator set what the platform charges, effective forward (`P6-TSK-004`, ADR-0050).
+     * <strong>Reasoned, always</strong> ({@code INV-AUD-03}): a price change is a commercial
+     * judgement, it is irreversible in the sense that matters — the version can never be
+     * edited, only superseded — and an unexplained one is exactly what a reviewer reading a
+     * disputed merchant statement needs explained.
+     */
+    FEE_SCHEDULE_VERSION_CREATED(
+            "merchant.FeeScheduleVersionCreated",
+            "An operator created a fee schedule version - immutable, effective forward; the"
+                    + " record names the version by identifier with its terms; the reason is"
+                    + " required.",
+            true),
+
+    /**
+     * An operator changed which schedule prices a merchant (`P6-TSK-004`). Reasoned: it
+     * changes a counterparty's commercial terms. Emitted by the moving call only — an
+     * assignment that converges on the schedule the merchant is already on changed nothing,
+     * and records nothing.
+     */
+    MERCHANT_FEE_SCHEDULE_ASSIGNED(
+            "merchant.MerchantFeeScheduleAssigned",
+            "An operator assigned a merchant to a fee schedule; the record names the merchant"
+                    + " and both schedules by identifier; the reason is required.",
             true);
 
     private final String code;

@@ -348,16 +348,59 @@ class MerchantOnboardingDatabaseTest {
                 .isEqualTo(0);
     }
 
+    /**
+     * Monetary columns in the {@code merchant} schema that are permitted, each named so that
+     * widening this set is a visible act ({@code P6-TSK-004}).
+     *
+     * <p><strong>A PRICE IS NOT A POSITION.</strong> The sweep below flags any column whose
+     * name suggests a stored balance, and it caught {@code fee_schedule_version}'s fixed fee
+     * part the moment that table arrived — correctly, because the pattern cannot tell the two
+     * apart by name. What settles it is meaning: {@code INV-MER-02} forbids storing what the
+     * platform <em>owes</em> a merchant, because that would be a second balance authority
+     * beside the ledger. A fee schedule's flat charge is a term of an agreement — immutable,
+     * owed to nobody, and unchanged by any payment.
+     *
+     * <p>{@code %balance%}, {@code %payable%} and {@code %owed%} have no exemptions and never
+     * will: there is no reading of those words that is not a position.
+     */
+    private static final java.util.Set<String> PERMITTED_MONETARY_COLUMNS =
+            java.util.Set.of(
+                    "fee_schedule_version.fixed_amount_minor",
+                    "fee_schedule_version.fixed_currency",
+                    "fee_schedule_version.fixed_scale");
+
     @Test
     @DisplayName("no balance column exists in the live merchant schema (INV-MER-02's sweep)")
     void noBalanceColumnExistsInTheLiveSchema() throws Exception {
+        java.util.List<String> found = new java.util.ArrayList<>();
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT table_name, column_name FROM"
+                                        + " information_schema.columns WHERE table_schema ="
+                                        + " 'merchant' AND (column_name ILIKE '%balance%' OR"
+                                        + " column_name ILIKE '%payable%' OR column_name ILIKE"
+                                        + " '%owed%' OR column_name ILIKE '%amount%')");
+                ResultSet rows = read.executeQuery()) {
+            while (rows.next()) {
+                found.add(rows.getString(1) + "." + rows.getString(2));
+            }
+        }
+        assertThat(found)
+                .as("the payable is a ledger position and exists nowhere else; a new monetary"
+                        + " column in this schema must be named in PERMITTED_MONETARY_COLUMNS"
+                        + " with its reason, or it is INV-MER-02's defect")
+                .isSubsetOf(PERMITTED_MONETARY_COLUMNS);
+
+        // The exemption is a LIST, not a pattern: the words that can only mean a position stay
+        // absolutely forbidden, exemptions or not.
         assertThat(
                         count(
                                 "SELECT count(*) FROM information_schema.columns WHERE"
                                         + " table_schema = 'merchant' AND (column_name ILIKE"
                                         + " '%balance%' OR column_name ILIKE '%payable%' OR"
-                                        + " column_name ILIKE '%amount%')"))
-                .as("the payable is a ledger position and exists nowhere else")
+                                        + " column_name ILIKE '%owed%')"))
+                .as("no exemption exists, or ever will, for a column that says POSITION")
                 .isEqualTo(0);
     }
 

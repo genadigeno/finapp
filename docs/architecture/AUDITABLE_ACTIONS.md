@@ -349,6 +349,17 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `merchant.MerchantClosed` | **Yes** | An operator closed a merchant - terminal; the payable position and its history remain; the reason is required. |
 | `merchant.MerchantApiKeyIssued` | No | An operator issued an API key to a merchant; the record names the key by its public id and the merchant by identifier, never the secret. |
 | `merchant.MerchantApiKeyRevoked` | **Yes** | An operator revoked a merchant's API key - terminal, never reinstated; the reason is required. |
+| `merchant.FeeScheduleCreated` | No | An operator created a fee schedule; the record names the schedule by identifier with its name and currency. |
+| `merchant.FeeScheduleVersionCreated` | **Yes** | An operator created a fee schedule version - immutable, effective forward; the record names the version by identifier with its terms; the reason is required. |
+| `merchant.MerchantFeeScheduleAssigned` | **Yes** | An operator assigned a merchant to a fee schedule; the record names the merchant and both schedules by identifier; the reason is required. |
+
+The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
+`MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**
+— a container carries no price — while **setting what the platform charges does**, because a
+version can never be edited, only superseded, and an unexplained price change is precisely
+what a reviewer reading a disputed merchant statement needs explained (`INV-AUD-03`).
+`MerchantFeeScheduleAssigned` is emitted by the **moving** call only: an assignment that
+converges on the schedule the merchant is already on changed nothing, and records nothing.
 
 Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
 dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's

@@ -148,5 +148,26 @@ public enum PermissionName {
      * {@code LEDGER_OPERATOR} reasoning. Ships with its real check sites, the
      * {@code /v1/operator/merchants/'{id}'/*} state moves.
      */
-    MERCHANT_ADMINISTER
+    MERCHANT_ADMINISTER,
+
+    /**
+     * Administer the platform's pricing (`P6-TSK-004`, ADR-0050): create fee schedules and
+     * their immutable versions, and assign a merchant to one. Names
+     * {@code merchant.FeeScheduleVersionCreated} and its siblings; ships with its real check
+     * sites, {@code /v1/operator/fee-schedules} and
+     * {@code PUT /v1/operator/merchants/'{id}'/fee-schedule}.
+     *
+     * <p><strong>Its own permission, because pricing is not standing.</strong> Deciding what
+     * the platform charges is a commercial act; deciding whether a counterparty may trade is a
+     * risk act. In most organisations those are different desks, and this permission is what
+     * makes splitting them a one-line change rather than a refactor — the
+     * {@link #PAYMENT_REFUND} shape.
+     *
+     * <p><strong>Held by {@link RoleName#MERCHANT_ADMINISTRATOR} today</strong>, because a
+     * role exists when a distinct trust decision does and nothing has yet taken the decision
+     * to separate pricing from counterparty administration (`P4-TSK-009`'s recorded sentence).
+     * Precise vocabulary, coarse bundling — and when a phase does separate them, the
+     * separation is expressible without inventing a permission after the fact.
+     */
+    FEE_ADMINISTER
 }

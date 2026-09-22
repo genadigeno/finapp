@@ -381,6 +381,19 @@ class OpenApiContractTest {
                         // a tenant (INV-MER-01, ADR-0031's defect at the multi-tenant
                         // boundary).
                         ApiVersion.CURRENT_PREFIX + "/merchant/me",
+                        // P6-TSK-004: what the platform charges, behind FEE_ADMINISTER -
+                        // its own permission because pricing is a commercial trust decision
+                        // and standing is a risk one, held today by the one
+                        // merchant-administering population. THERE IS NO PUT AND NO DELETE ON
+                        // A SCHEDULE OR A VERSION, and that is the contract rather than an
+                        // omission: a version is immutable (INV-MER-03), so a price change is
+                        // a POST of a new version effective forward. The assignment IS a PUT,
+                        // because it is a pointer with one value, and it converges.
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedules",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedules/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedules/{id}/versions",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/fee-schedule",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

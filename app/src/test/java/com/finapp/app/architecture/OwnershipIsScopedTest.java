@@ -377,6 +377,116 @@ class OwnershipIsScopedTest {
                                         + " exists because a history row belongs to the merchant"
                                         + " it names.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.readSchedule",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004. The platform's OWN pricing, addressed by its own identifier: there"
+                                        + " is no owner to scope by, because a fee schedule belongs to the platform"
+                                        + " rather than to any merchant. What stands in for a predicate:"
+                                        + " @RequiresPermission(FEE_ADMINISTER) at the boundary, asserted with nothing"
+                                        + " written by FeeScheduleDatabaseTest's permissionless AND wrong-population"
+                                        + " refusals - a LEDGER_OPERATOR commands the money and still cannot set its"
+                                        + " prices. Reads only; the rows cannot be changed by anyone at all (V004's"
+                                        + " unconditional trigger and the withheld UPDATE grant).")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.findVersion",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004. THE RECOMPUTATION READ (INV-MER-03): given what an assessment"
+                                        + " pinned, this returns exactly what priced it. Addressed by the version's own"
+                                        + " identifier, which is the platform's pricing rather than anyone's data, so"
+                                        + " there is no owner to scope by; FEE_ADMINISTER stands in at the boundary."
+                                        + " The row is immutable, so this read cannot see a value that has changed since"
+                                        + " the pin - which is the whole of the invariant's promise.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.listVersions",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004. The platform's OWN pricing, addressed by its own identifier: there"
+                                        + " is no owner to scope by, because a fee schedule belongs to the platform"
+                                        + " rather than to any merchant. What stands in for a predicate:"
+                                        + " @RequiresPermission(FEE_ADMINISTER) at the boundary, asserted with nothing"
+                                        + " written by FeeScheduleDatabaseTest's permissionless AND wrong-population"
+                                        + " refusals - a LEDGER_OPERATOR commands the money and still cannot set its"
+                                        + " prices. Reads only; the rows cannot be changed by anyone at all (V004's"
+                                        + " unconditional trigger and the withheld UPDATE grant).")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.findEffectiveVersion",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004. The platform's OWN pricing, addressed by its own identifier: there"
+                                        + " is no owner to scope by, because a fee schedule belongs to the platform"
+                                        + " rather than to any merchant. What stands in for a predicate:"
+                                        + " @RequiresPermission(FEE_ADMINISTER) at the boundary, asserted with nothing"
+                                        + " written by FeeScheduleDatabaseTest's permissionless AND wrong-population"
+                                        + " refusals - a LEDGER_OPERATOR commands the money and still cannot set its"
+                                        + " prices. Reads only; the rows cannot be changed by anyone at all (V004's"
+                                        + " unconditional trigger and the withheld UPDATE grant).")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.nextVersionNumber",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004. Not a resource read at all but the version-minting COUNT - an"
+                                        + " optimistic one, with NO LOCK BEHIND IT and that absence is the design. A"
+                                        + " schedule row cannot be locked, because PostgreSQL requires the UPDATE"
+                                        + " privilege to take a row lock and V004 withholds it from a table nothing"
+                                        + " may ever update: the immutability and the choice of arbiter are one fact"
+                                        + " stated twice. What makes this read safe is the unique index on"
+                                        + " (fee_schedule_id, version), which refuses a taken number and is also the"
+                                        + " queue - a racer waits on the index and re-reads. No ownership predicate"
+                                        + " because a schedule belongs to the platform; FEE_ADMINISTER stands in.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.findAssignment",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004, and the honest account of a predicate that is the right SHAPE but"
+                                        + " not yet an ownership check. The statement carries merchant_id = ? - what the"
+                                        + " platform charges one counterparty is commercially sensitive to every other,"
+                                        + " so the predicate belongs in the SQL for exactly INV-MER-01's reason. What it"
+                                        + " is NOT today is an OWNERSHIP check: the identifier comes from the URL of an"
+                                        + " operator route and names a COUNTERPARTY, not the caller, so labelling it"
+                                        + " OWNER_SCOPED would claim a control nobody exercises (the P1-TSK-030 rule)."
+                                        + " The substitute is FEE_ADMINISTER at the boundary with the required reason"
+                                        + " (INV-AUD-03). When P6-TSK-007 resolves pricing for a merchant it"
+                                        + " AUTHENTICATED, that caller's read is OWNER_SCOPED - and that is a"
+                                        + " reclassification made with its own negative test, not a widening assumed here.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.findEffectiveVersionFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004, and the honest account of a predicate that is the right SHAPE but"
+                                        + " not yet an ownership check. The statement carries merchant_id = ? - what the"
+                                        + " platform charges one counterparty is commercially sensitive to every other,"
+                                        + " so the predicate belongs in the SQL for exactly INV-MER-01's reason. What it"
+                                        + " is NOT today is an OWNERSHIP check: the identifier comes from the URL of an"
+                                        + " operator route and names a COUNTERPARTY, not the caller, so labelling it"
+                                        + " OWNER_SCOPED would claim a control nobody exercises (the P1-TSK-030 rule)."
+                                        + " The substitute is FEE_ADMINISTER at the boundary with the required reason"
+                                        + " (INV-AUD-03). When P6-TSK-007 resolves pricing for a merchant it"
+                                        + " AUTHENTICATED, that caller's read is OWNER_SCOPED - and that is a"
+                                        + " reclassification made with its own negative test, not a widening assumed here.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.assign",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004. The pointer write, under the MERCHANT row's FOR UPDATE lock taken"
+                                        + " by the command in the same transaction - which is what lets the first"
+                                        + " assignment and a later move share one path without the primary key having to"
+                                        + " refuse nine concurrent first-assignments. merchant_id = ? is in the statement"
+                                        + " for the tenant reason above; the identifier's provenance is an operator's URL,"
+                                        + " so FEE_ADMINISTER and the required reason are the substitute. No DELETE"
+                                        + " exists: unassigning is not modelled.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.appendAssignmentHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004. The append-only history row, written beside the pointer move it"
+                                        + " evidences, on the identifier the locking read validated in the same"
+                                        + " transaction. Append-only at the privilege; no owner predicate exists because"
+                                        + " a history row belongs to the merchant it names (the JdbcMerchantStore"
+                                        + " .appendHistory reasoning, and ADMINISTERED for the same reason - a provenance"
+                                        + " that is itself unowned cannot be cited as AUTHORITATIVE_ID).")),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentIntentStore.transition",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

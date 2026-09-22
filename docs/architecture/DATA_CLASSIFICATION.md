@@ -642,6 +642,46 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `merchant_api_key_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s model |
 | `merchant_api_key_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
 | `merchant_api_key_event` | `occurred_at` | `CONFIDENTIAL` | Dates a security judgement |
+| `fee_schedule` | `id` | `INTERNAL` | An identifier of a thing |
+| `fee_schedule` | `name` | `CONFIDENTIAL` | The platform's own pricing vocabulary — "Enterprise" beside "Standard" discloses that tiers exist and what they are called, which is competitive information about how the platform sells |
+| `fee_schedule` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape with no amount beside it (`merchant.settlement_currency`'s reasoning) |
+| `fee_schedule` | `created_at` | `CONFIDENTIAL` | When a pricing tier was introduced |
+| `fee_schedule` | `created_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model |
+| `fee_schedule_version` | `id` | `INTERNAL` | An identifier of a thing — **the value an assessment pins** (`INV-HIST-04`), which is why it is an identifier rather than the terms themselves |
+| `fee_schedule_version` | `fee_schedule_id` | `INTERNAL` | An identifier of a thing |
+| `fee_schedule_version` | `version` | `INTERNAL` | An ordinal within a schedule |
+| `fee_schedule_version` | `rate` | `RESTRICTED-FINANCIAL` | **What the platform charges.** Not an amount, and classified at the financial ceiling anyway: a rate plus a capture *is* an amount, so a log line carrying this and a gross discloses revenue. It is also the single most commercially sensitive number in this schema — what one merchant is charged, in a competitor's hands, is a negotiating position |
+| `fee_schedule_version` | `fixed_amount_minor` | `RESTRICTED-FINANCIAL` | The flat charge — an amount, and the `MoneyColumns` triple's own classification (`journal_line.amount_minor`'s reasoning). **A price, not a position**: `INV-MER-02` forbids storing what the platform *owes*, and this is what it *charges* |
+| `fee_schedule_version` | `fixed_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
+| `fee_schedule_version` | `fixed_scale` | `INTERNAL` | As `fixed_currency` |
+| `fee_schedule_version` | `rounding_policy` | `INTERNAL` | A fixed vocabulary (`RoundingPolicy`); publishing it says only what the code already says. Required and never defaulted (`INV-MON-03`), which is a correctness property rather than a confidentiality one |
+| `fee_schedule_version` | `refund_fee_policy` | `CONFIDENTIAL` | A term of a commercial agreement — whether the platform returns its fee on a refund is what a merchant negotiated |
+| `fee_schedule_version` | `effective_from` | `CONFIDENTIAL` | When a price starts applying; with `rate` it dates a repricing |
+| `fee_schedule_version` | `created_at` | `CONFIDENTIAL` | When the repricing was decided — and, with `effective_from`, the notice period |
+| `fee_schedule_version` | `created_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s model |
+| `merchant_fee_schedule` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_fee_schedule` | `fee_schedule_id` | `RESTRICTED-FINANCIAL` | **An identifier that is also a price.** On its own it names a row; joined to `fee_schedule_version` it says what this counterparty pays, which is exactly the disclosure `INV-MER-01` exists to prevent. Classified at the ceiling for `audit_record.target_id`'s reason — an identifier inherits the sensitivity of what it resolves to |
+| `merchant_fee_schedule` | `assigned_at` | `CONFIDENTIAL` | When commercial terms last changed for this counterparty |
+| `merchant_fee_schedule` | `assigned_by` | `RESTRICTED-PII` | The acting operator's identity |
+| `merchant_fee_schedule_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `merchant_fee_schedule_event` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_fee_schedule_event` | `from_fee_schedule_id` | `RESTRICTED-FINANCIAL` | History is the same facts, older — `merchant_fee_schedule.fee_schedule_id`'s reasoning, and a *pair* of them discloses the direction a negotiation went |
+| `merchant_fee_schedule_event` | `to_fee_schedule_id` | `RESTRICTED-FINANCIAL` | As `from_fee_schedule_id` |
+| `merchant_fee_schedule_event` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — an operator explains a repricing in words that can name people, deals and negotiations; `merchant_api_key_event.reason`'s reasoning verbatim: content constrained by no type, handled at the ceiling |
+| `merchant_fee_schedule_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s model |
+| `merchant_fee_schedule_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `merchant_fee_schedule_event` | `occurred_at` | `CONFIDENTIAL` | Dates a commercial judgement |
+
+**The fee tables are this schema's first `RESTRICTED-FINANCIAL` rows** (`P6-TSK-004`), and
+three of them are not amounts. A rate is a ratio; a schedule identifier is a UUID. They are at
+the financial ceiling because of what they *resolve to*: a rate beside a capture is revenue,
+and a schedule identifier beside `fee_schedule_version` is what one counterparty pays. That is
+`audit_record.target_id`'s rule — an identifier inherits the sensitivity of what it names —
+applied where the thing named is a price rather than an account.
+
+**These rows landed in the task that created the columns.** The standing scope since the
+Phase 5 → 6 transition found `refund.dispatch_key` unclassified for a whole phase, because
+`ColumnClassificationTest` lives in `:platform:databaseTest` — a tier no targeted run covers.
 
 **There is no plaintext column here, and that is the point** (`INV-IDN-01`): the secret exists
 for the length of one issuance response and reaches no storage at all — not this table, and

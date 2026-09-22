@@ -371,7 +371,21 @@ class CredentialReachesNoEmittedSinkTest {
                         // bound for the audit record's reason column - RESTRICTED-FINANCIAL,
                         // never rendered by any toString), on all three standing moves. No
                         // secret; the TransferReversalRequest shape, at the counterparty.
-                        "MerchantStandingRequest");
+                        "MerchantStandingRequest",
+                        // P6-TSK-004. Carries a schedule NAME (the platform's own vocabulary,
+                        // not anyone's data) and an ISO currency code. No secret; here because
+                        // the set is every schema REACHABLE from a request body.
+                        "CreateFeeScheduleRequest",
+                        // P6-TSK-004. Carries the terms of a price: a RATE as an exact decimal
+                        // (never a double - a rate bound through one would misprice every
+                        // capture), a fixed part in minor units, two policy NAMES, an instant,
+                        // and a REASON (free prose by an operator, bound for the audit record's
+                        // reason column - RESTRICTED-FINANCIAL, never rendered by any
+                        // toString). No secret; the AdjustmentRequest shape, at the price.
+                        "CreateFeeScheduleVersionRequest",
+                        // P6-TSK-004. Carries a schedule identifier and a REASON, on the
+                        // pointer move. No secret; the MerchantStandingRequest shape.
+                        "AssignFeeScheduleRequest");
     }
 
     @Test

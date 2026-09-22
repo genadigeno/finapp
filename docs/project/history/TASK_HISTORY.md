@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 127 "Previously" blocks, newest first, from `P6-TSK-003` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 128 "Previously" blocks, newest first, from `P6-TSK-002` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,53 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-002` — merchant identity: the API key and tenant scoping** — `COMPLETE`
+(2026-09-22). **M6.1 CLOSES at 3 of 3: the platform has a fourth authentication vocabulary,
+and its first caller the platform does not own.** The key credential under the full regime —
+hashed, derivation recorded, shown once, constant-time verification, never recoverable — with
+`ActorType.MERCHANT` (platform `V010`), `@RequiresMerchantKey` as the fifth authorization
+declaration, and `GET /v1/merchant/me` as the first key-authenticated surface.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A merchant reaches only its own rows | Its own record, with no identifier to address another by; `merchant_id = ?` in every key statement |
+| A suspended merchant's keys refuse | The standing is **in the lookup's join** — the next request, everywhere, nothing revoked and nothing invalidated |
+| A revoked key refuses immediately | Terminal, reasoned, audited; the repeat converges with no second history row |
+| No secret recoverable | Not from the list, not from a replay, not from any text column in any schema |
+| Issuance audited with actor and key id | And never the secret — which is why the key id is public |
+
+### The design changed while it was being written, and that was the point
+
+**An API key has none of the controls a session gets from being short-lived** — no expiry, no
+browser to close, no human at a keyboard — so each was replaced deliberately: the lookup is
+authoritative per request and **joins the merchant's standing**, so suspension and revocation
+bite everywhere at once with nothing to invalidate. The probe that caches that lookup — the
+most tempting change available here — fails *both* the revocation and the suspension
+assertions.
+
+**Show-once had to beat the replay discipline.** The approved design said the idempotency
+claim should record the issuance response, as every other keyed command does. Writing it made
+the consequence visible: that stores a live credential in
+`platform.idempotency_record.response_body`, recoverable for the claim's whole retention. The
+claim now records the key id alone and a replay renders no secret. The probe that restores the
+original design is caught by the column sweep — so the test would have found what reasoning
+found.
+
+**Nine issues found during implementation, seven in this task's own work**, including the
+`operationId` collision class recurring one task later (now a mechanism: no suffixed
+`operationId`, with the two already-published collisions grandfathered by name) and the
+merchant module becoming **the first outside `identity` to handle a credential** — answered by
+narrowing the unwrap set to three rather than widening it to four.
+
+**The gate's own finding**: asserting that issuance names its operator revealed that every
+session actor is audited as `CUSTOMER`, operators included — platform-wide, pre-existing,
+recorded as debt owned by Phase 15. **8 probes, all caught, four at two ranks, restores
+byte-identical.**
 
 ---
 
