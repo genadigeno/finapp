@@ -81,4 +81,29 @@ public class CheckoutSessionController {
         AuthenticatedMerchant merchant = MerchantKeyAuthenticationInterceptor.require(request);
         return checkout.view(merchant, id);
     }
+
+    /**
+     * Withdraws the merchant's own offer before anybody has paid for it (`P6-TSK-008`) — the
+     * producer of {@code ABANDONED}, and the reason is required.
+     *
+     * <p>A {@code POST} to a sub-resource rather than a {@code DELETE} on the session, and the
+     * choice is the {@code /suspension} and {@code /closure} shape this platform already uses:
+     * nothing is deleted. The session stays, in a state that says what happened to it, with its
+     * history and its audit record — which is what {@code INV-HIST-01} means when applied to an
+     * offer rather than to money.
+     *
+     * <p>{@code 409 checkout.NotAbandonable} when the session cannot be withdrawn — above all
+     * when its payment is already in flight, which the machine has no edge for at all. A retried
+     * withdrawal converges on {@code ABANDONED} with the same {@code 200}, so a client that lost
+     * a response is not told it did something wrong.
+     */
+    @PostMapping(path = "/{id}/abandonment", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresMerchantKey
+    public CheckoutService.SessionView abandonCheckoutSession(
+            HttpServletRequest request,
+            @PathVariable("id") String id,
+            @Valid @RequestBody AbandonSessionRequest body) {
+        AuthenticatedMerchant merchant = MerchantKeyAuthenticationInterceptor.require(request);
+        return checkout.abandon(merchant, id, body);
+    }
 }

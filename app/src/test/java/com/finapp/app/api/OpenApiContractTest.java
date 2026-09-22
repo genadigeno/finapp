@@ -392,6 +392,10 @@ class OpenApiContractTest {
                         // path: a secret in a URL is in every access log.
                         ApiVersion.CURRENT_PREFIX + "/checkout/sessions",
                         ApiVersion.CURRENT_PREFIX + "/checkout/sessions/{id}",
+                        // P6-TSK-008: the producer of ABANDONED. A POST to a sub-resource
+                        // rather than a DELETE on the session, the /suspension shape - nothing
+                        // is deleted, the session stays in a state that says what happened.
+                        ApiVersion.CURRENT_PREFIX + "/checkout/sessions/{id}/abandonment",
                         ApiVersion.CURRENT_PREFIX + "/checkout/sessions/confirmation",
                         // P6-TSK-004: what the platform charges, behind FEE_ADMINISTER -
                         // its own permission because pricing is a commercial trust decision

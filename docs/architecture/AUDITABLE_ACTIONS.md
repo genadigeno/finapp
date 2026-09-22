@@ -355,12 +355,24 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `checkout.CheckoutSessionCreated` | No | A merchant opened a checkout session; the record names the session and the merchant by identifier, never the token and never what was bought. |
 | `checkout.CheckoutSessionConfirmed` | No | A customer confirmed a checkout session; the record names the session and the payment intent by identifier. |
 | `checkout.OrderCreated` | No | A capture completed a checkout session and produced its order; the record names the order, the session and the journal entry that paid for it. |
+| `checkout.CheckoutSessionExpired` | No | The expiry sweeper ended a checkout session whose offer had run out; the record names the session and the state it expired from. |
+| `checkout.CheckoutSessionAbandoned` | **Yes** | A merchant withdrew a checkout session before it was paid; the record names the session and the merchant, and the reason is required. |
 
-**None of the three checkout actions requires a reason**, and the uniformity is the argument
-(`P6-TSK-007`): every act here is somebody doing the ordinary thing the surface exists for — a
-merchant making an offer, a customer paying, a capture landing. `INV-AUD-03` asks for a reason
-where a *judgement* is made about somebody else, and demanding one here would make it a field
-callers fill with noise, which is worse than not asking.
+**Four of the five checkout actions require no reason, and the fifth does** — the split is
+`INV-AUD-03` working rather than an inconsistency (`P6-TSK-007`, `P6-TSK-008`). Creating,
+confirming, producing an order and expiring are somebody, or *nobody*, doing the ordinary thing
+the surface exists for: a merchant making an offer, a customer paying, a capture landing, a
+deadline passing. Demanding a reason for those would make it a field callers fill with noise,
+which is worse than not asking — and for the expiry there is not even anybody to ask, because
+the sweeper acts as the platform.
+
+`checkout.CheckoutSessionAbandoned` earns its reason: a merchant withdrawing an offer it already
+made is a **judgement about somebody else's purchase**, the suspension and revocation shape. The
+customer looking at the page finds their checkout gone, and the trail must be able to say why.
+
+`checkout.CheckoutSessionExpired` records **the state the session expired from**, because `OPEN`
+(nobody paid) and `PAYMENT_PENDING` (a payment that never landed) are different operational
+facts and an auditor must be able to tell them apart.
 
 `checkout.OrderCreated` names the **journal entry that paid for the order**, which is what
 closes the traceable chain in the trail itself: order → entry → ADR-0050 §3's four lines → the

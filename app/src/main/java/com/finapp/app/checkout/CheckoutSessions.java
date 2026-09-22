@@ -1,8 +1,10 @@
 package com.finapp.app.checkout;
 
+import com.finapp.app.telemetry.CheckoutMeters;
 import com.finapp.checkout.CheckoutAuditAction;
 import com.finapp.checkout.CheckoutSession;
 import com.finapp.checkout.CheckoutSessionId;
+import com.finapp.checkout.CheckoutSessionStatus;
 import com.finapp.checkout.CheckoutSessionStore;
 import com.finapp.checkout.CheckoutSessionToken;
 import com.finapp.checkout.Order;
@@ -101,6 +103,7 @@ public final class CheckoutSessions {
     private final IdGenerator ids;
     private final Clock clock;
     private final SecureRandom randomness;
+    private final CheckoutMeters meters;
 
     public CheckoutSessions(
             CheckoutSessionStore<Connection> sessions,
@@ -112,7 +115,8 @@ public final class CheckoutSessions {
             OutboxWriter<Connection> outbox,
             IdGenerator ids,
             Clock clock,
-            SecureRandom randomness) {
+            SecureRandom randomness,
+            CheckoutMeters meters) {
         this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
         this.orders = Objects.requireNonNull(orders, "orders must not be null");
         this.merchants = Objects.requireNonNull(merchants, "merchants must not be null");
@@ -123,6 +127,7 @@ public final class CheckoutSessions {
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+        this.meters = Objects.requireNonNull(meters, "meters must not be null");
     }
 
     // ----------------------------------------------------------------- create
@@ -363,7 +368,89 @@ public final class CheckoutSessions {
                                         + ", entry=" + capturedEntryRef
                                         + ", completedAs=" + moved.get().status())));
         announceOrder(unitOfWork, order, session, correlation);
+        // ON THE ACTING TRANSITION ONLY: the conditional above already returned for every
+        // racer that lost, so ten instances applying one capture outcome count ONE ending.
+        // Inside the transaction rather than after it, and CheckoutMeters says why.
+        meters.session(
+                moved.get().status() == CheckoutSessionStatus.COMPLETED_LATE
+                        ? CheckoutMeters.Outcome.COMPLETED_LATE
+                        : CheckoutMeters.Outcome.COMPLETED);
         return Optional.of(order);
+    }
+
+    // ----------------------------------------------------------------- abandon
+
+    /**
+     * A merchant withdraws its own offer: {@code OPEN → ABANDONED} (`P6-TSK-008`).
+     *
+     * <h2>What it cannot reach, and why that is the design rather than a gap</h2>
+     *
+     * <p>There is no {@code PAYMENT_PENDING → ABANDONED} edge in the machine. A session whose
+     * payment is in flight has money moving toward it, and withdrawing the offer would leave
+     * that money with no commercial home — the state {@code INV-MER-06} exists to prevent. The
+     * aggregate refuses it, the trigger refuses it, and the surface turns the refusal into
+     * {@code checkout.NotAbandonable}. A merchant who needs the money back refunds it, through
+     * the existing human-decided path, once the order exists.
+     *
+     * <h2>Tenant first, then lock</h2>
+     *
+     * <p>The tenant-scoped read decides the {@code 404} with the predicate <em>in the
+     * statement</em> ({@code INV-MER-01}); the locking read by identifier then serializes the
+     * transition. Two reads rather than one, and the order is safe because {@code merchant_ref}
+     * is frozen for every writer by `V002`'s trigger — the tenant a row belongs to cannot
+     * change between them.
+     *
+     * <p><strong>Converges on a session already abandoned</strong> and writes nothing, the
+     * {@code MerchantAdministration} shape: a retry that finds the state it wanted is not an
+     * error. Any other terminal or pending state is the caller's refusal.
+     *
+     * @return {@code true} when this call's own conditional transition fired
+     * @throws UnknownCheckoutSessionException unknown, malformed or another merchant's — one
+     *     answer, so the surface never becomes an oracle over a competitor's offers
+     * @throws IllegalCheckoutSessionTransitionException the session cannot be withdrawn
+     */
+    public boolean abandon(
+            Connection unitOfWork, MerchantId merchant, CheckoutSessionId id, String reason) {
+        Objects.requireNonNull(reason, "reason must not be null");
+        Correlation correlation = resolvedCorrelation();
+        Actor actor = SecurityContext.require();
+
+        sessions.findOwnedBy(unitOfWork, merchant.value(), id)
+                .orElseThrow(UnknownCheckoutSessionException::new);
+        CheckoutSession current =
+                sessions.findByIdForUpdate(unitOfWork, id)
+                        .orElseThrow(UnknownCheckoutSessionException::new);
+        if (current.status() == CheckoutSessionStatus.ABANDONED) {
+            return false;
+        }
+
+        // Throws IllegalCheckoutSessionTransitionException for every state that cannot get
+        // here - PAYMENT_PENDING above all. The aggregate is the judge; this class does not
+        // re-list the edges (a second list is a second thing to get wrong).
+        CheckoutSession abandoned = current.abandon(clock);
+        if (!sessions.transition(unitOfWork, current, abandoned)) {
+            return false;
+        }
+
+        audit.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        actor,
+                        Instant.now(clock),
+                        CheckoutAuditAction.CHECKOUT_SESSION_ABANDONED,
+                        SESSION_TARGET_TYPE,
+                        current.id().value().toString(),
+                        // THE ONE CHECKOUT ACTION WITH A REASON (INV-AUD-03): a merchant
+                        // withdrawing an offer it already made is a judgement about somebody
+                        // else's purchase, and the customer looking at the page finds their
+                        // checkout gone.
+                        Optional.of(reason),
+                        AuditOutcome.SUCCEEDED,
+                        correlation.correlationId(),
+                        Optional.of(
+                                "session=" + current.id() + ", merchant=" + merchant)));
+        return true;
     }
 
     /** {@code PAYMENT_PENDING → COMPLETED}, or {@code EXPIRED → COMPLETED_LATE}. */

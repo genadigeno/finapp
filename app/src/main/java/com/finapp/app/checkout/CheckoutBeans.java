@@ -42,7 +42,8 @@ public class CheckoutBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            com.finapp.app.telemetry.CheckoutMeters checkoutMeters) {
         return new CheckoutSessions(
                 new JdbcCheckoutSessionStore(),
                 new JdbcOrderStore(),
@@ -55,7 +56,8 @@ public class CheckoutBeans {
                 clock,
                 // One SecureRandom for the application, seeded by the platform: the token's
                 // entropy IS the security argument (CheckoutSessionToken).
-                new java.security.SecureRandom());
+                new java.security.SecureRandom(),
+                checkoutMeters);
     }
 
     /**
@@ -79,9 +81,69 @@ public class CheckoutBeans {
                         landed.capture().correlation());
     }
 
+    /**
+     * The expiry sweeper (`P6-TSK-008`): the producer of {@code EXPIRED}, and unlike every
+     * other bean here it is NOT conditional on the payment surface. A deployment with no
+     * provider can still have sessions that were opened and never paid, and an offer nothing
+     * can ever end is exactly the stuck row ADR-0044's doctrine exists to prevent.
+     *
+     * <p>{@code payment-grace} is the safety margin the store's own javadoc argues for: a
+     * PAYMENT_PENDING session is given longer than its deadline because a provider answers on
+     * its own schedule, and expiring it at the instant of the deadline would make
+     * COMPLETED_LATE the ordinary case instead of the countable exception.
+     */
+    @Bean
+    com.finapp.checkout.CheckoutExpirySweeper checkoutExpirySweeper(
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource,
+            @org.springframework.beans.factory.annotation.Value(
+                            "${finapp.checkout.sweeper.payment-grace:PT10M}")
+                    java.time.Duration paymentGrace,
+            @org.springframework.beans.factory.annotation.Value(
+                            "${finapp.checkout.sweeper.batch:50}")
+                    int batchSize) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        return new com.finapp.checkout.CheckoutExpirySweeper(
+                new CheckoutTransactions(template, dataSource),
+                new JdbcCheckoutSessionStore(),
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock,
+                paymentGrace,
+                batchSize);
+    }
+
+    /**
+     * The schedule — the {@code PaymentSweeperSchedule} gate shape for the identical reason: a
+     * background worker expiring sessions under every {@code @SpringBootTest} would race
+     * assertions, so the app test overlay disables it and the database suite drives
+     * {@code sweep()} directly. {@code matchIfMissing = true}, because a deployment that forgets
+     * the sweeper strands every unpaid offer for ever.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "finapp.checkout.sweeper.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    CheckoutExpirySweeperSchedule checkoutExpirySweeperSchedule(
+            com.finapp.checkout.CheckoutExpirySweeper checkoutExpirySweeper,
+            com.finapp.app.telemetry.CheckoutMeters checkoutMeters,
+            @org.springframework.beans.factory.annotation.Value(
+                            "${finapp.checkout.sweeper.poll-interval:PT30S}")
+                    java.time.Duration pollInterval) {
+        return new CheckoutExpirySweeperSchedule(
+                checkoutExpirySweeper, checkoutMeters, pollInterval);
+    }
+
     @Bean
     CheckoutService checkoutService(
             CheckoutSessions checkoutSessions,
+            com.finapp.app.telemetry.CheckoutMeters checkoutMeters,
             MerchantSettlement merchantSettlement,
             ObjectProvider<PaymentService> paymentService,
             PaymentParticipants<Connection> paymentParticipants,
@@ -95,6 +157,7 @@ public class CheckoutBeans {
             DataSource dataSource) {
         return new CheckoutService(
                 checkoutSessions,
+                checkoutMeters,
                 merchantSettlement,
                 paymentService.getObject(),
                 paymentParticipants,

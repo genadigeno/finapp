@@ -7,6 +7,7 @@ import com.finapp.app.checkout.CheckoutSessions;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
+import com.finapp.checkout.CheckoutSessionId;
 import com.finapp.merchant.MerchantId;
 import com.finapp.paymentmethods.SimulatedTokenisationAdapter;
 import com.finapp.payments.SimulatedCardPspAdapter;
@@ -91,6 +92,22 @@ class CheckoutFlowDatabaseTest {
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
     @Autowired private CheckoutSessions sessions;
+
+    // The PRODUCTION beans, assembled into a sweeper with zero bounds: what the race must
+    // prove is the path production takes, so the composition seam, the outcome application
+    // and the completion are all the wired ones. Only the bounds and the clock are the
+    // test's, because a suite that waited ten minutes is a suite nobody runs.
+    @Autowired private com.finapp.payments.TransactionRunner paymentTransactionRunner;
+    @Autowired private com.finapp.payments.PaymentAttemptStore<java.sql.Connection> attempts;
+    @Autowired private com.finapp.payments.PaymentIntentStore<java.sql.Connection> intents;
+    @Autowired private com.finapp.payments.ProviderEvidenceStore<java.sql.Connection> evidence;
+    @Autowired private com.finapp.payments.PaymentProvider paymentProvider;
+    @Autowired private com.finapp.payments.PaymentOutcomes paymentOutcomes;
+    @Autowired private com.finapp.platform.audit.AuditWriter<java.sql.Connection> auditWriter;
+    @Autowired private com.finapp.platform.outbox.OutboxWriter<java.sql.Connection> outboxWriter;
+    @Autowired private javax.sql.DataSource dataSource;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     @BeforeAll
     static void startProvider() {
@@ -401,6 +418,129 @@ class CheckoutFlowDatabaseTest {
         }
     }
 
+    /** The payments sweeper, with no patience at all — the production outcome path. */
+    private com.finapp.payments.PaymentSweeper paymentSweeper() {
+        return new com.finapp.payments.PaymentSweeper(
+                paymentTransactionRunner,
+                attempts,
+                intents,
+                evidence,
+                paymentProvider,
+                paymentOutcomes,
+                IDS,
+                CLOCK,
+                java.time.Duration.ZERO,
+                java.time.Duration.ZERO,
+                50);
+    }
+
+    /** The expiry sweeper at a chosen clock — the offer window is thirty minutes. */
+    private com.finapp.checkout.CheckoutExpirySweeper expirySweeper(
+            Clock clock, java.time.Duration grace) {
+        return new com.finapp.checkout.CheckoutExpirySweeper(
+                new CheckoutTransactions(
+                        new org.springframework.transaction.support.TransactionTemplate(
+                                transactions),
+                        dataSource),
+                new com.finapp.checkout.JdbcCheckoutSessionStore(),
+                auditWriter,
+                outboxWriter,
+                IDS,
+                clock,
+                grace,
+                50);
+    }
+
+    private HttpResponse<String> abandon(Merchant merchant, String id, String reason)
+            throws Exception {
+        return post(
+                "/v1/checkout/sessions/" + id + "/abandonment",
+                "{\"reason\":\"" + reason + "\"}",
+                merchant.apiKey(),
+                null);
+    }
+
+    private static String sessionStatus(String checkoutId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT status FROM checkout.checkout_session WHERE id = ?")) {
+            read.setObject(1, UUID.fromString(checkoutId));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
+
+    private static String attemptIdForSession(String checkoutId) throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            return attemptIdForSession(app, checkoutId);
+        }
+    }
+
+    private static String captureReference(String attemptId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT capture_reference FROM payments.payment_attempt"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, UUID.fromString(attemptId));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
+
+    private static long historyRow(Connection app, String checkoutId, String from, String to)
+            throws SQLException {
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT count(*) FROM checkout.checkout_session_event"
+                                + " WHERE session_id = ? AND from_status = ? AND to_status = ?")) {
+            read.setObject(1, UUID.fromString(checkoutId));
+            read.setString(2, from);
+            read.setString(3, to);
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    private static String auditReasonFor(Connection app, String checkoutId) throws SQLException {
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT reason FROM platform.audit_record WHERE target_id = ?"
+                                + " AND operation = 'checkout.CheckoutSessionAbandoned'")) {
+            read.setString(1, checkoutId);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
+
+    /** Drives the withdrawal command itself, past the surface's own tenant-scoped render. */
+    private boolean abandonDirectly(MerchantId merchant, CheckoutSessionId id) throws Exception {
+        try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try {
+                boolean acted = sessions.abandon(app, merchant, id, "driven at the command");
+                app.commit();
+                return acted;
+            } catch (RuntimeException refused) {
+                app.rollback();
+                throw refused;
+            }
+        }
+    }
+
     /** Drives the command itself, past the surface that would refuse first. */
     private void openDirectly(Merchant merchant, CheckoutSessions.OpenSessionCommand command)
             throws Exception {
@@ -459,6 +599,224 @@ class CheckoutFlowDatabaseTest {
         }
 
         assertThat(sessionCount(merchant)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("THE TENANT PREDICATE IS THE COMMAND'S OWN: a stranger's merchant id cannot"
+            + " withdraw somebody else's offer, driven at the command (INV-MER-01)")
+    void theWithdrawalCommandIsTenantScoped() throws Exception {
+        // FOUND BY THE MUTATION BATTERY, and closed where it was found. Over HTTP the stranger
+        // already gets a 404 and the row stays OPEN - but BOTH of those come from the RENDER,
+        // which is tenant-scoped and shares the command's transaction, so its refusal rolls
+        // the withdrawal back. That made the predicate inside the command unreachable by any
+        // behavioural test, and a predicate no test can reach is one a later refactor removes:
+        // render outside the transaction, or answer 204, and cross-tenant withdrawal is live.
+        // So the command is driven DIRECTLY, which is the only place the rule is stated at the
+        // write (the P6-TSK-003 survivor's lesson, applied at a second command).
+        Merchant owner = tradingMerchant("0.029", 30L);
+        Merchant stranger = tradingMerchant("0.029", 30L);
+        String checkoutId =
+                field(createSession(owner, AMOUNT_MINOR, someKey()).body(), "checkoutId");
+
+        assertThatThrownBy(
+                        () ->
+                                abandonDirectly(
+                                        MerchantId.of(UUID.fromString(stranger.id())),
+                                        CheckoutSessionId.of(UUID.fromString(checkoutId))))
+                .isInstanceOf(UnknownCheckoutSessionException.class);
+        assertThat(sessionStatus(checkoutId)).isEqualTo("OPEN");
+
+        assertThat(
+                        abandonDirectly(
+                                MerchantId.of(UUID.fromString(owner.id())),
+                                CheckoutSessionId.of(UUID.fromString(checkoutId))))
+                .as("the positive control: the owner withdraws its own offer")
+                .isTrue();
+        assertThat(sessionStatus(checkoutId)).isEqualTo("ABANDONED");
+    }
+
+    // ----------------------------------------------------------------- the phase's race
+
+    @Test
+    @DisplayName("INV-MER-06, THE RACE THE OTHER WAY: the offer expires while the capture is"
+            + " in flight, and the money still lands - COMPLETED_LATE, the merchant credited"
+            + " GROSS MINUS FEE, the order created")
+    void aCaptureLandingAfterExpiryStillProducesTheOrder() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+
+        // THE ORDERING THAT MAKES THIS THE PHASE'S NAMED RACE, produced the way production
+        // produces it rather than by editing a row: the capture is DISPATCHED and the
+        // provider's answer is LOST. The customer sees the honest PROCESSING (INV-LIFE-03),
+        // the session stays PAYMENT_PENDING, and nothing is posted.
+        double lateBefore = sessionMeter("completed_late");
+        providerAuthorises();
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.CAPTURES_PATH);
+        HttpResponse<String> confirmed = confirm(customer, field(created, "sessionToken"));
+        assertThat(confirmed.statusCode()).isEqualTo(200);
+        assertThat(field(confirmed.body(), "status")).isEqualTo("PAYMENT_PENDING");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePositionMinor(app, merchant))
+                    .as("an ambiguous capture posts NOTHING")
+                    .isZero();
+        }
+
+        // THE CLOCK RUNS OUT while the provider is still thinking. Grace ZERO, because what
+        // this test is about is the edge, not the margin (the margin is
+        // CheckoutExpiryDatabaseTest's).
+        expirySweeper(Clock.offset(CLOCK, Duration.ofMinutes(31)), Duration.ZERO).sweep();
+        assertThat(sessionStatus(checkoutId)).isEqualTo("EXPIRED");
+
+        // AND THEN THE PROVIDER ANSWERS. The payments sweeper resolves the stranded capture
+        // through the SAME PaymentOutcomes every resolver shares, which reaches checkout
+        // through the composition seam - so the late completion is production's own path.
+        String attemptId = attemptIdForSession(checkoutId);
+        String captureRef = captureReference(attemptId);
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + captureRef,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"" + captureRef + "\"}");
+        paymentSweeper().sweep();
+
+        try (Connection app = DatabaseRoles.application()) {
+            // LANDED MONEY IS NEVER ORPHANED BY A CLOCK - the whole of INV-MER-06, and every
+            // consequence of it in one place:
+            assertThat(sessionStatus(checkoutId))
+                    .as("countable, not laundered into the ordinary completion")
+                    .isEqualTo("COMPLETED_LATE");
+            assertThat(linePurposes(app, attemptId))
+                    .as("ADR-0050 section 3's four lines, unchanged by the lateness")
+                    .containsExactlyInAnyOrder(
+                            "DEBIT:SETTLEMENT_CLEARING",
+                            "CREDIT:MERCHANT_PAYABLE",
+                            "DEBIT:MERCHANT_PAYABLE",
+                            "CREDIT:FEE_REVENUE");
+            assertThat(payablePositionMinor(app, merchant))
+                    .as("NO LANDED CENT UNEXPLAINED: the same 96.80 the timely ordering pays")
+                    .isEqualTo(96_80L);
+            assertThat(orderCountFor(app, merchant))
+                    .as("the commercial fact exists - an order born from an expired offer")
+                    .isEqualTo(1);
+            assertThat(historyRow(app, checkoutId, "EXPIRED", "COMPLETED_LATE"))
+                    .as("the late edge is in history, named, once")
+                    .isEqualTo(1);
+        }
+
+        // THE METER, THROUGH THE WIRED PATH (PHASE_6_PLAN section 15): finapp.checkout.session
+        // by outcome, one increment per ENDING, on the conditional that actually committed.
+        // completed_late is the number this whole task exists to make visible - if it is not
+        // rare, either the offer window is too short or the provider is too slow, and an
+        // operator cannot decide either without the figure.
+        assertThat(sessionMeter("completed_late") - lateBefore)
+                .as("the late completion, counted once")
+                .isEqualTo(1.0d);
+        // The `expired` counter is the SCHEDULE's to increment, from the tick's own tally
+        // after each row's transaction committed, and this test drives the sweeper directly.
+        // Its wiring is CheckoutExpirySweeperScheduleTest's, where the schedule is the
+        // subject - asserting it here would assert a path this test does not take.
+    }
+
+    /** The counter for one outcome, read from the application's own registry. */
+    private double sessionMeter(String outcome) {
+        io.micrometer.core.instrument.Counter counter =
+                meterRegistry.find("finapp.checkout.session").tag("outcome", outcome).counter();
+        return counter == null ? 0.0d : counter.count();
+    }
+
+    @Test
+    @DisplayName("a customer cannot re-drive an EXPIRED session - the late completion is the"
+            + " resolver's to make, and the surface says SessionExpired")
+    void anExpiredSessionRefusesAFreshConfirmation() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        expirySweeper(Clock.offset(CLOCK, Duration.ofMinutes(31)), Duration.ZERO).sweep();
+        assertThat(sessionStatus(field(created, "checkoutId"))).isEqualTo("EXPIRED");
+
+        HttpResponse<String> refused = confirm(customer, field(created, "sessionToken"));
+
+        // Not NotConfirmable: the two say different things to the customer looking at the
+        // page - one means TOO LATE, the other means ALREADY DONE.
+        assertThat(refused.statusCode()).isEqualTo(409);
+        assertThat(refused.body()).contains("checkout.SessionExpired");
+    }
+
+    // ----------------------------------------------------------------- abandonment
+
+    @Test
+    @DisplayName("a merchant withdraws its own unpaid offer - ABANDONED, reasoned, and a"
+            + " retry converges on the same 200")
+    void aMerchantWithdrawsItsOwnOffer() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        String checkoutId = field(createSession(merchant, AMOUNT_MINOR, someKey()).body(),
+                "checkoutId");
+
+        HttpResponse<String> withdrawn = abandon(merchant, checkoutId, "the basket changed");
+        assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(200);
+        assertThat(field(withdrawn.body(), "status")).isEqualTo("ABANDONED");
+
+        HttpResponse<String> again = abandon(merchant, checkoutId, "the basket changed");
+        assertThat(again.statusCode())
+                .as("a retried withdrawal is not an error - it converges")
+                .isEqualTo(200);
+        assertThat(field(again.body(), "status")).isEqualTo("ABANDONED");
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(historyRow(app, checkoutId, "OPEN", "ABANDONED"))
+                    .as("converged, so exactly one transition however many calls")
+                    .isEqualTo(1);
+            assertThat(auditReasonFor(app, checkoutId))
+                    .as("THE ONE CHECKOUT ACTION WITH A REASON (INV-AUD-03), recorded verbatim")
+                    .isEqualTo("the basket changed");
+        }
+    }
+
+    @Test
+    @DisplayName("a merchant CANNOT withdraw an offer whose payment is in flight - the edge"
+            + " the machine does not have, at the surface (INV-MER-06's neighbour)")
+    void aPaymentInFlightCannotBeWithdrawn() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        providerAuthorises();
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.CAPTURES_PATH);
+        assertThat(field(confirm(customer, field(created, "sessionToken")).body(), "status"))
+                .isEqualTo("PAYMENT_PENDING");
+
+        HttpResponse<String> refused =
+                abandon(merchant, field(created, "checkoutId"), "changed my mind");
+
+        // Withdrawing here would leave money moving toward a purchase with no commercial
+        // home. The merchant's remedy is a REFUND, after the order exists.
+        assertThat(refused.statusCode()).isEqualTo(409);
+        assertThat(refused.body()).contains("checkout.NotAbandonable");
+        assertThat(sessionStatus(field(created, "checkoutId"))).isEqualTo("PAYMENT_PENDING");
+    }
+
+    @Test
+    @DisplayName("withdrawal is tenant-scoped and reasoned: another merchant's session is the"
+            + " same 404, and a blank reason is the boundary's 400")
+    void withdrawalIsScopedAndReasoned() throws Exception {
+        Merchant owner = tradingMerchant("0.029", 30L);
+        Merchant stranger = tradingMerchant("0.029", 30L);
+        String checkoutId = field(createSession(owner, AMOUNT_MINOR, someKey()).body(),
+                "checkoutId");
+
+        assertThat(abandon(stranger, checkoutId, "not mine").statusCode())
+                .as("a competitor's offer is indistinguishable from one that does not exist")
+                .isEqualTo(404);
+        assertThat(abandon(owner, UUID.randomUUID().toString(), "unknown").statusCode())
+                .isEqualTo(404);
+        assertThat(abandon(owner, "not-a-uuid", "malformed").statusCode()).isEqualTo(404);
+        assertThat(abandon(owner, checkoutId, "").statusCode())
+                .as("a reason nobody wrote is worse than none: it makes the field look answered")
+                .isEqualTo(422);
+
+        assertThat(sessionStatus(checkoutId))
+                .as("every refusal wrote nothing")
+                .isEqualTo("OPEN");
     }
 
     // ----------------------------------------------------------------- fixtures

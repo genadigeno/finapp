@@ -66,7 +66,28 @@ public enum CheckoutErrorCode implements ErrorCode {
     NOT_CONFIRMABLE(
             "checkout.NotConfirmable",
             409,
-            "This checkout session is not awaiting confirmation.");
+            "This checkout session is not awaiting confirmation."),
+
+    /**
+     * The merchant cannot withdraw this offer (`P6-TSK-008`). A {@code 409}: the remedy is to
+     * read the session and see what happened to it.
+     *
+     * <p><strong>The case that matters is `PAYMENT_PENDING`</strong>, and it is a refusal rather
+     * than an oversight: a session whose payment is in flight has money moving toward it, and
+     * withdrawing the offer would leave that money with no commercial home — which is exactly
+     * the state {@code INV-MER-06} exists to prevent. The machine has no
+     * {@code PAYMENT_PENDING → ABANDONED} edge at all, so this code is what that absence looks
+     * like at the surface. A merchant who needs the money back refunds it, through the
+     * existing human-decided path, after the order exists.
+     *
+     * <p>It is also the answer for a session already expired, abandoned or paid — terminal
+     * states with nothing left to withdraw. One code for all of them, because the remedy is
+     * the same read.
+     */
+    NOT_ABANDONABLE(
+            "checkout.NotAbandonable",
+            409,
+            "This checkout session cannot be withdrawn.");
 
     private final String code;
     private final int status;

@@ -7296,7 +7296,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
   counts claimed.**
 
-**P6-TSK-008 — Expiry: the sweeper and the late-completion race** — `READY`
+**P6-TSK-008 — Expiry: the sweeper and the late-completion race** — `COMPLETE` (2026-09-22)
 - **Objective**: `INV-MER-06` made real — the clock modelled, the race decided the way
   ADR-0053 §5 rules. Bounded context 11.
 - **Scope**: the expiry sweep on the registered leaderless pattern (`PaymentSweeperSchedule`
@@ -7308,6 +7308,66 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
 - **Deps**: `P6-TSK-007`. **Accept**: the race driven both ways, counted in the tables;
   concurrent sweepers converge; no landed cent unexplained in either ordering.
 - **Risk**: Medium (the phase's named race). **Cx**: M. **DoD**: `DOD-FIN`, `DOD-DOMAIN`
+- **Delivered (2026-09-22)**: `CheckoutExpirySweeper` in `checkout` on the registered leaderless
+  pattern (conditional writes, no lease, one transaction per row, bounded and deterministically
+  ordered candidates), its `SmartLifecycle` schedule in `app`, the `finapp.checkout.session`
+  meter by outcome, `checkout.CheckoutSessionExpired`, and
+  `POST /v1/checkout/sessions/{id}/abandonment` — the producer of `ABANDONED`, tenant-scoped
+  and **reasoned**. **Every state in ADR-0053's machine now has a producer.**
+- **Accept clauses, all driven**: the race **both ways**, end to end through production's own
+  path — the timely ordering is `P6-TSK-007`'s, and the late one is produced the way production
+  produces it: the capture's provider response LOST, the offer expiring while the payment is in
+  flight, the payments sweeper then resolving through the same `PaymentOutcomes` every resolver
+  shares. `EXPIRED → COMPLETED_LATE`, ADR-0050 §3's four lines unchanged by the lateness, and
+  **the same 96.80 of a 100.00 purchase the timely ordering pays** — no landed cent unexplained
+  in either ordering (`INV-MER-06`). Concurrent sweepers converge: ten on one overdue offer
+  produce one `EXPIRED`, one history row, one audit record and one event, counted in the tables.
+- **The design decision worth reading twice**: **`PAYMENT_PENDING` expires too, and it is not
+  optional.** ADR-0053 gave checkout no failure state on purpose — a declined payment is the
+  *payment's* state and the customer retries on the same intent — so a customer who is declined
+  and then closes the tab leaves a row **nothing else can ever end**. This is its only terminal
+  escape, and it is also what makes ADR-0053 §5's own scenario reachable at all. It is protected
+  by a **grace**, because expiring a payment in flight at the instant of the deadline is
+  harmless to the money and destroys the meaning: `COMPLETED_LATE` would count ordinary provider
+  latency instead of the honest exception it exists to make countable.
+- **Five probes, four caught by the intended assertion, TWO SURVIVORS — and the survivors are
+  the battery working** (restores verified byte-identical by `cmp`). Caught: the grace reverted
+  to the query only (**the mutation IS the defect the suite found**); `PAYMENT_PENDING` removed
+  from the candidate query; the state check under the lock removed; the `EXPIRED` arm removed
+  from the confirmation's refusal ladder. **Survivor 1 — recorded rather than patched**: the
+  conditional transition's row count, ignored, changes nothing, because the `FOR UPDATE` lock
+  serializes every racer and a loser re-reads `EXPIRED` and finds the edge absent first (the
+  `P6-TSK-003` shape); the clause still binds a caller reading *without* the lock, which the
+  store's own stale-snapshot test drives. **Survivor 2 — closed where it was found**: the
+  withdrawal's tenant predicate, weakened to an unscoped read, left every HTTP assertion green,
+  because the `404` **and** the untouched row both came from the tenant-scoped RENDER sharing
+  the command's transaction. A predicate no test can reach is one a later refactor removes, so
+  the command is now driven directly and the mutation then failed against it.
+- **Two gate findings, neither made by a probe.** (1) **The state and the clock were telling the
+  same customer different things about the same dead offer** — `SessionExpired` before the
+  sweeper ran, `NotConfirmable` after — so the answer depended on whether a background job had
+  ticked. The `EXPIRED` state now answers `SessionExpired` on both sides of the tick, which also
+  restores `NotConfirmable` to its documented meaning (*already done*, i.e. abandoned). (2) **The
+  grace was applied at the query and not at the decision**: a row read as `OPEN` and confirmed by
+  a customer before the sweeper took its lock was expired as `PAYMENT_PENDING` with a payment one
+  second old, because it was never selected *as* a pending row. The state a row is in **when the
+  decision is made** is the state whose deadline applies.
+- **Registers**: `AUDITABLE_ACTIONS` +2 actions (**the checkout module's first reasoned action**
+  — a merchant withdrawing an offer it already made is a judgement about somebody else's
+  purchase; the expiry has no reason because there is nobody to ask), `ERROR_CONTRACT` +1 code
+  (`checkout.NotAbandonable`, which is what a *missing edge* looks like at the surface),
+  `MUTATION_TESTING` +6 rows including `INV-MER-06`'s first, `DISTRIBUTED_EXECUTION` §3 +1 row,
+  `NoSingleInstanceAssumptionRulesTest` +1 scheduler exemption with its own justification,
+  `SystemActorCallSitesAreEnumeratedTest` +1 site (**the cleanest case on the platform** — not
+  merely a flow with no session but an act with no requester at all), and
+  `CredentialReachesNoEmittedSinkTest` +1 request body. **No `DATA_CLASSIFICATION` rows and no
+  migration: this task creates no columns**, because `P6-TSK-006` built both `EXPIRED` edges and
+  the trigger's generated edge set a milestone ahead. Contract baseline 61 → 62 paths, **0 keys
+  removed, 0 changed**, 21 added.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1443 tests across 14 modules, 0 failures**, and **178 targeted database tests across 20
+  suites, 0 failures** (checkout, merchant and payments). **The full battery deliberately
+  skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 **P6-TSK-009 — The merchant transaction surface** — `PLANNED`
 - **Objective**: the merchant sees its business — tenant-isolated, ledger-consistent.
@@ -7376,7 +7436,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   database; the tag vocabulary walks the designed path if it widens at all.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
 
-**P6-TSK-014 — The merchant refund: gross out of the payable, fee per the pinned policy** — `PLANNED`
+**P6-TSK-014 — The merchant refund: gross out of the payable, fee per the pinned policy** — `READY`
 - **Objective**: give `refundFeePolicy` its consumer. ADR-0050's consequences say a refund of
   a merchant-bound capture reverses the same shape — gross out of the payable, the fee
   **retained or returned per the schedule version pinned on the original payment**. Bounded

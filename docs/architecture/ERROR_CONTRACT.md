@@ -302,6 +302,7 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `checkout.NotTrading` | 409 | This merchant cannot open new checkout sessions. |
 | `checkout.SessionExpired` | 409 | This checkout session has expired. |
 | `checkout.NotConfirmable` | 409 | This checkout session is not awaiting confirmation. |
+| `checkout.NotAbandonable` | 409 | This checkout session cannot be withdrawn. |
 
 `checkout.NotPriceable` and `checkout.NotTrading` are refused **at session creation** rather
 than discovered at the capture. That is the whole reason they exist as codes: an unpriced or
@@ -323,6 +324,14 @@ interleaving on demand.
 they say different things to the customer looking at the page: one means *too late*, the
 other means *already done*. Expiry is answered whether the sweeper has arrived or not — the
 aggregate checks the clock as well as the state (ADR-0053 §5).
+
+`checkout.NotAbandonable` (`P6-TSK-008`) is what a missing edge looks like at the surface. A
+merchant may withdraw an offer nobody has paid for; it may **not** withdraw one whose payment is
+already in flight, because that would leave money moving toward a purchase with no commercial
+home — the state `INV-MER-06` exists to prevent. The machine has no
+`PAYMENT_PENDING → ABANDONED` edge at all, so the aggregate refuses it, the transition trigger
+refuses it, and this code is the third rank. The same code answers a session already expired,
+abandoned or paid, because the remedy for all of them is the same read.
 
 **There is no checkout not-found code.** An unknown session id, a malformed one, another
 merchant's, and a token that opens nothing are one `api.NotFound`. For the merchant surface

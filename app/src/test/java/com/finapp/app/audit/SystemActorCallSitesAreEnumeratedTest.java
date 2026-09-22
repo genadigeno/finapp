@@ -168,7 +168,19 @@ class SystemActorCallSitesAreEnumeratedTest {
                                 + " COMPLETED/FAILED/UNKNOWN - and the release-and-post that rides on"
                                 + " COMPLETED - to the operator would record them as the author of the"
                                 + " provider's decision. The scope wraps only Tx2, the outcome"
-                                + " application."));
+                                + " application."),
+                    Map.entry(
+                            "com.finapp.checkout.CheckoutExpirySweeper.sweep",
+                    "The expiry sweep (P6-TSK-008, ADR-0053 section 4): a deadline passing is"
+                        + " the CLEANEST case on the platform of the P5-TSK-009 reasoning,"
+                        + " sixth occurrence - not merely a flow with no session, but an act"
+                        + " with no requester at all. Nobody asks for an expiry; the clock"
+                        + " arrives. Attributing it to the merchant who made the offer would"
+                        + " record them as having withdrawn it, which is a DIFFERENT act with"
+                        + " its own state (ABANDONED) and its own required reason, and the two"
+                        + " must stay distinguishable in the trail. The scope wraps the whole"
+                        + " tick because the candidate read is the platform's too - there is no"
+                        + " other actor anywhere in this path to claim it."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

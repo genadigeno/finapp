@@ -4,15 +4,21 @@ import com.finapp.platform.audit.AuditableAction;
 
 /**
  * The checkout module's auditable actions ({@code AUDITABLE_ACTIONS.md}), arriving with the
- * commands whose designs fix their meaning (`P6-TSK-007`) — the deliberately-few licence. The
- * expiry sweep's action arrives with `P6-TSK-008`.
+ * commands whose designs fix their meaning (`P6-TSK-007`, `P6-TSK-008`) — the deliberately-few
+ * licence.
  *
- * <p><strong>None requires a reason</strong>, and the absence is uniform for one reason: every
- * act here is somebody doing the ordinary thing the surface exists for — a merchant making an
- * offer, a customer paying, a capture landing. {@code INV-AUD-03} asks for a reason where a
- * <em>judgement</em> is made about somebody else (a suspension, a revocation, a repricing), and
- * demanding one here would make it a field callers fill with noise, which is worse than not
- * asking.
+ * <h2>Four need no reason and one does, and the split is the whole of {@code INV-AUD-03}</h2>
+ *
+ * <p>Creating, confirming, producing an order and expiring are somebody — or nobody — doing
+ * the ordinary thing the surface exists for: a merchant making an offer, a customer paying, a
+ * capture landing, a deadline passing. Demanding a reason for those would make it a field
+ * callers fill with noise, which is worse than not asking; and for the expiry there is not even
+ * anybody to ask, because the sweeper acts as the platform.
+ *
+ * <p>{@link #CHECKOUT_SESSION_ABANDONED} is the exception, and it earns it: a merchant
+ * withdrawing an offer it already made is a <em>judgement about somebody else's purchase</em> —
+ * the suspension and revocation shape. The customer looking at the page finds their checkout
+ * gone, and the trail must be able to say why.
  */
 public enum CheckoutAuditAction implements AuditableAction {
 
@@ -47,7 +53,37 @@ public enum CheckoutAuditAction implements AuditableAction {
             "checkout.OrderCreated",
             "A capture completed a checkout session and produced its order; the record names"
                     + " the order, the session and the journal entry that paid for it.",
-            false);
+            false),
+
+    /**
+     * A deadline passed and the sweeper ended the offer. The record names the session and the
+     * state it came from — {@code OPEN} (nobody paid) and {@code PAYMENT_PENDING} (a payment
+     * that never landed) are different operational facts and an auditor must be able to tell
+     * them apart.
+     *
+     * <p>The actor is the platform: a scheduled expiry has no person at all, which is the
+     * cleanest case of the `P5-TSK-009` attribution reasoning.
+     */
+    CHECKOUT_SESSION_EXPIRED(
+            "checkout.CheckoutSessionExpired",
+            "The expiry sweeper ended a checkout session whose offer had run out; the record"
+                    + " names the session and the state it expired from.",
+            false),
+
+    /**
+     * A merchant withdrew its own offer before anybody paid for it. <strong>The one checkout
+     * action that requires a reason</strong> — see the type javadoc.
+     *
+     * <p>It cannot reach a session whose payment is in flight: the machine has no
+     * {@code PAYMENT_PENDING → ABANDONED} edge, which is exactly the guard that stops a
+     * merchant withdrawing an offer whose money is already moving ({@code INV-MER-06}'s
+     * neighbour).
+     */
+    CHECKOUT_SESSION_ABANDONED(
+            "checkout.CheckoutSessionAbandoned",
+            "A merchant withdrew a checkout session before it was paid; the record names the"
+                    + " session and the merchant, and the reason is required.",
+            true);
 
     private final String code;
     private final String description;

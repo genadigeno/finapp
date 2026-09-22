@@ -372,6 +372,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // never rendered by any toString), on all three standing moves. No
                         // secret; the TransferReversalRequest shape, at the counterparty.
                         "MerchantStandingRequest",
+                        // P6-TSK-008. Carries ONE field: a REQUIRED reason, in a merchant's own
+                        // words, bound for the audit record's reason column. The checkout
+                        // module's only reasoned action (INV-AUD-03), and the MerchantStanding
+                        // shape at a third surface. No secret, and nothing about the customer:
+                        // a merchant withdrawing an offer names the session by identifier.
+                        "AbandonSessionRequest",
                         // P6-TSK-007. Carries the checkout session's TOKEN - a real bearer
                         // credential, wrapped in Sensitive from the moment it is deserialised
                         // (P1-TSK-010's shape) - and a payment method identifier. It is in

@@ -1,12 +1,14 @@
 package com.finapp.app.checkout;
 
 import com.finapp.app.payments.PaymentService;
+import com.finapp.app.telemetry.CheckoutMeters;
 import com.finapp.checkout.CheckoutErrorCode;
 import com.finapp.checkout.CheckoutSession;
 import com.finapp.checkout.CheckoutSessionExpiredException;
 import com.finapp.checkout.CheckoutSessionId;
 import com.finapp.checkout.CheckoutSessionStatus;
 import com.finapp.checkout.CheckoutSessionToken;
+import com.finapp.checkout.IllegalCheckoutSessionTransitionException;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.ledger.LedgerAccountStore;
@@ -101,6 +103,7 @@ public class CheckoutService {
             boolean alreadyCreated) {}
 
     private final CheckoutSessions checkout;
+    private final CheckoutMeters meters;
     private final MerchantSettlement settlement;
 
     /**
@@ -125,6 +128,7 @@ public class CheckoutService {
 
     public CheckoutService(
             CheckoutSessions checkout,
+            CheckoutMeters meters,
             MerchantSettlement settlement,
             PaymentService payments,
             PaymentParticipants<Connection> instruments,
@@ -138,6 +142,7 @@ public class CheckoutService {
             TransactionTemplate transactions,
             DataSource dataSource) {
         this.checkout = Objects.requireNonNull(checkout, "checkout must not be null");
+        this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.settlement = Objects.requireNonNull(settlement, "settlement must not be null");
         this.payments = Objects.requireNonNull(payments, "payments must not be null");
         this.instruments = Objects.requireNonNull(instruments, "instruments must not be null");
@@ -207,6 +212,57 @@ public class CheckoutService {
                                 .map(session -> render(unitOfWork, session))
                                 .orElseThrow(CheckoutService::sessionNotFound));
     }
+
+    /**
+     * The merchant withdraws its own offer (`P6-TSK-008`): {@code OPEN → ABANDONED}, reasoned.
+     *
+     * <p>Answers the session as it now stands rather than a bare {@code 204}, because the
+     * merchant's next question is always "so what happened to it" and a body that says
+     * {@code ABANDONED} answers it without a second round trip.
+     *
+     * <p>The meter is incremented <strong>after the transaction returned</strong> and only when
+     * this call's own conditional fired — so a retried abandonment, which converges silently,
+     * is not a second ending.
+     */
+    public SessionView abandon(
+            AuthenticatedMerchant merchant, String rawId, AbandonSessionRequest body) {
+        Objects.requireNonNull(body, "body must not be null");
+        CheckoutSessionId id = parsedOrAbsent(rawId);
+        Abandonment outcome;
+        try {
+            outcome =
+                    inOneTransaction(
+                            unitOfWork -> {
+                                boolean acted =
+                                        checkout.abandon(
+                                                unitOfWork,
+                                                merchant.merchantId(),
+                                                id,
+                                                body.reason());
+                                return new Abandonment(
+                                        acted,
+                                        checkout
+                                                .ownedBy(unitOfWork, merchant.merchantId(), id)
+                                                .map(session -> render(unitOfWork, session))
+                                                .orElseThrow(CheckoutService::sessionNotFound));
+                            });
+        } catch (UnknownCheckoutSessionException unknown) {
+            throw sessionNotFound();
+        } catch (IllegalCheckoutSessionTransitionException refused) {
+            throw new ApiException(
+                    CheckoutErrorCode.NOT_ABANDONABLE,
+                    "A withdrawal was refused by the session's state (" + refused.from() + ")",
+                    "this checkout session is " + refused.from()
+                            + " and cannot be withdrawn.");
+        }
+        if (outcome.acted()) {
+            meters.session(CheckoutMeters.Outcome.ABANDONED);
+        }
+        return outcome.view();
+    }
+
+    /** Whether this call ended the offer, and the offer as it now stands. */
+    private record Abandonment(boolean acted, SessionView view) {}
 
     // ----------------------------------------------------------------- customer surface
 
@@ -307,12 +363,24 @@ public class CheckoutService {
                     .orElseThrow(UnknownCheckoutSessionException::new);
             return new Opened(session.id(), intent, true);
         }
+        if (session.status() == CheckoutSessionStatus.EXPIRED) {
+            // THE STATE AND THE CLOCK MUST SAY THE SAME THING, and `P6-TSK-008`'s suite is
+            // what noticed they did not. Before the sweeper arrives, a past-deadline session
+            // still reads OPEN and the clock check below answers SessionExpired; after it
+            // arrives, the row reads EXPIRED. Falling through to the generic refusal below
+            // would tell the SAME customer about the SAME dead offer a different thing
+            // depending on whether a background job had run yet - "too late" or "already
+            // done". One question, one answer, whichever side of the tick it arrives on.
+            throw new CheckoutSessionExpiredException();
+        }
         if (!session.acceptsNewWork()) {
+            // What is left is ABANDONED - the merchant withdrew the offer - which is exactly
+            // what NotConfirmable's own contract says it covers.
             throw new CheckoutSessionNotOpenException(session.status());
         }
         if (session.hasExpired(clock)) {
             // The clock as well as the state: a sweeper one minute behind is not a minute in
-            // which the platform honours a dead offer (ADR-0053 §5).
+            // which the platform honours a dead offer (ADR-0053 section 5).
             throw new CheckoutSessionExpiredException();
         }
 

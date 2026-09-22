@@ -153,6 +153,17 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The checkout surface's meters (`P6-TSK-008`): how the platform's offers END. Eager and
+     * unconditional for the reason above — a deployment with no checkout traffic publishes
+     * four healthy zeros rather than four absences, and {@code completed_late} is precisely a
+     * number an operator wants to alert on BEFORE it has ever been non-zero.
+     */
+    @Bean
+    CheckoutMeters checkoutMeters(MeterRegistry registry) {
+        return new CheckoutMeters(registry);
+    }
+
+    /**
      * The stuck-payment gauges (`P5-TSK-017`): the {@code LedgerMetrics} stance verbatim —
      * the scrape is the schedule, one floored read-only pair of aggregates per instance, no
      * leader, no ambient schedule, nothing written, and NaN rather than a false zero when the

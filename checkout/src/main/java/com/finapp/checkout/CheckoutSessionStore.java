@@ -66,5 +66,28 @@ public interface CheckoutSessionStore<T> {
      * the caller re-reads rather than assumes ({@code INV-CON-01}). This is the arbiter
      * ADR-0053 §5 names, and it is the only one this phase needs.
      */
+    /**
+     * Sessions whose offer has run out and that nothing has ended (`P6-TSK-008`) — the
+     * sweeper's candidate list, bounded and deterministically ordered.
+     *
+     * <p><strong>Two bounds, because the two states deserve different patience.</strong> An
+     * {@code OPEN} session expires at its own deadline: nobody is paying and nothing is in
+     * flight. A {@code PAYMENT_PENDING} session has a payment with a provider, and the provider
+     * answers on its own schedule (ADR-0046) — expiring it at the same instant would be
+     * <em>harmless</em> (the {@code EXPIRED → COMPLETED_LATE} edge catches the late capture)
+     * but would turn ordinary provider latency into {@code COMPLETED_LATE} churn and destroy
+     * the point of that state being countable. The grace is a safety margin, not the
+     * correctness ({@code PaymentSweeper}'s recorded phrasing, inherited).
+     *
+     * <p>The candidates are a <em>suggestion</em>: each is re-read and re-judged under its own
+     * lock, because another writer may have moved it since the list was taken.
+     *
+     * @param openBefore an {@code OPEN} session with {@code expires_at} at or before this is
+     *     overdue
+     * @param pendingBefore the same for {@code PAYMENT_PENDING}, already reduced by the grace
+     */
+    java.util.List<CheckoutSession> findExpirable(
+            T unitOfWork, java.time.Instant openBefore, java.time.Instant pendingBefore, int limit);
+
     boolean transition(T unitOfWork, CheckoutSession before, CheckoutSession transitioned);
 }

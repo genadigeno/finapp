@@ -133,7 +133,15 @@ class NoSingleInstanceAssumptionRulesTest {
                     // the rule states is idempotent-per-period OR a lease, and each entry's
                     // register row in DISTRIBUTED_EXECUTION.md section 3 names which half
                     // it stands on.
-                    "com.finapp.app.payments.PaymentSweeperSchedule");
+                    "com.finapp.app.payments.PaymentSweeperSchedule",
+                    // P6-TSK-008: the same half again, and the cleanest instance of it - the
+                    // checkout expiry sweeper makes NO EXTERNAL CALL AT ALL. Its only writes
+                    // are conditional transitions taken under a row lock, so N schedules on
+                    // one overdue offer produce one EXPIRED between them, counted by the row
+                    // count rather than by anything process-local. Its register row in
+                    // DISTRIBUTED_EXECUTION.md section 3 names that justification, and
+                    // CheckoutExpiryDatabaseTest drives the N-way race that proves it.
+                    "com.finapp.app.checkout.CheckoutExpirySweeperSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

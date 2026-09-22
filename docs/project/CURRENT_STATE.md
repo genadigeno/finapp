@@ -273,63 +273,57 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-008` — expiry: the sweeper and the late-completion race** — `READY`.
-**The phase's named race, made real.** `INV-MER-06` decided the way ADR-0053 §5 rules: the
-expiry sweep on the registered leaderless pattern (`PaymentSweeperSchedule`'s precedent —
-conditional writes, no lease, floors); `EXPIRED` earned by a producer rather than filtered for;
-expiry gating dispatch; and the capture arriving at an `EXPIRED` session landing
-`COMPLETED_LATE` with the merchant credited and the order created. Scope, acceptance and DoD
-profiles in the backlog entry.
+**`P6-TSK-014` — the merchant refund: gross out of the payable, fee per the pinned policy** —
+`READY`. **The last item in M6.3, and the one that closes fee economics.** `refundFeePolicy` is
+pinned and versioned by `P6-TSK-004` and read by nothing: a refund of a merchant-bound capture
+returns the gross out of the payable (the right direction) while a `RETURNED` policy owes the
+merchant its fee back and no code returns it. Found by `P6-TSK-005`'s completion gate, which is
+the provenance worth keeping. Scope, acceptance and DoD profiles in the backlog entry.
 
 ### Just completed
 
-**`P6-TSK-007` — the session's payment: create, confirm, complete** — `COMPLETE` (2026-09-22).
-**The phase's first whole flow: a customer pays a merchant, end to end, over real HTTP, through
-the simulated provider, against the real ledger.**
+**`P6-TSK-008` — expiry: the sweeper and the late-completion race** — `COMPLETE` (2026-09-22).
+**The phase's named race, decided in both orderings — and every state in ADR-0053's machine now
+has a producer.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| create → confirm → capture | `CheckoutFlowDatabaseTest`, real HTTP, 12 tests |
-| the payable credited gross minus fee | **96.80 of a 100.00 purchase**, derived from the postings |
-| the order exists, naming its entry | order → `captured_entry_ref` → the four lines → the payable |
-| duplicate completion counted to one | ten racers, one order, one payable movement |
-| replay renders no token | the clause corrected at design: `INV-IDN-01` over byte-for-byte replay |
+| The race driven both ways | The late ordering produced the way production produces it, not by editing a row |
+| Counted in the tables | One `EXPIRED`, one history row, one audit record, one event |
+| Concurrent sweepers converge | Ten on one offer; nine honest skips |
+| No landed cent unexplained | **96.80 of a 100.00 purchase in either ordering** |
 
-### The assertion that matters most, and why
+### Why `PAYMENT_PENDING` expires, and why it is not optional
 
-Orchestration does not fail loudly — it fails by **silently skipping a step**. Every skipped
-step shows up in one number: the merchant's *derived* payable position. No fee pin and it is the
-gross; no completion and there is no order; a wrong credit account and it is zero. That is why
-the whole-flow test asserts a position computed from journal lines rather than a status field.
+ADR-0053 gave checkout **no failure state**, on purpose: a declined payment is the *payment's*
+state and the customer retries on the same intent. So a customer who is declined and then closes
+the tab leaves a `PAYMENT_PENDING` row that **nothing else can ever end**. This edge is its only
+terminal escape — and it is also what makes ADR-0053 §5's own scenario reachable, because "the
+capture completes after the session expired" requires a session to be `EXPIRED` while a payment
+is in flight.
 
-### The suite found two real defects, both in this task's own new code
+It is protected by a **grace**, and the grace is a safety margin rather than the correctness:
+expiring a payment in flight is harmless to the money (the late edge catches the capture) and
+corrosive to the meaning, because `COMPLETED_LATE` would then count ordinary provider latency
+instead of the honest exception it exists to make countable.
 
-**Ten concurrent confirmations answered `500` nine times.** The payment creation is keyed on the
-session, so all ten converge on one intent — and then all ten reach the fee pin with the same
-decision, where the primary key refused nine as a *storage failure*. The pin now converges on an
-identical decision behind a savepoint and **throws on a different one**: converging is what
-keeps a retry from being an error, refusing is what keeps it from being a silent repricing.
+### Two survivors, and both were the battery working
 
-**A retried confirmation of a purchase that succeeded answered `409`.** The capture is chained
-synchronously, so the first confirm returns `COMPLETED` and every retry hit `NotConfirmable` —
-to a customer who holds only a token and has no read surface to ask. A paid session now
-converges, with the payer re-established first so a second token holder still gets the one
-`404`. ADR-0053 amended with both.
+The conditional transition's row count, ignored, changes nothing here — the `FOR UPDATE` lock
+serializes every racer and a loser re-reads `EXPIRED` first. **Recorded rather than patched**,
+with the sharper form (removing the state check) run instead and caught. The withdrawal's tenant
+predicate, weakened, left every HTTP assertion green, because the `404` *and* the untouched row
+both came from the tenant-scoped **render** sharing the command's transaction. **A predicate no
+test can reach is one a later refactor removes**, so the command is now driven directly.
 
-### Three gate findings, none made by a probe
+### Two gate findings, neither made by a probe
 
-**A demonstration that cannot execute is not a demonstration**: the token's every-column sweep
-was the last assertion of the replay test, so the probe that makes the claim store the response
-never reached it. **And the sweep could not have seen that column anyway** — `bytea::text`
-renders hex, so a `LIKE` over a printable needle never matched, and
-`platform.idempotency_record.response_body` is exactly that type. Three suites shared the
-blindness; all three now cast with `encode(col, 'escape')`. **The merchant's tenant predicate
-was a Java filter over an unscoped read** — correct today, invisible to `OwnershipIsScopedTest`
-tomorrow; moved into the statement, where the probe is now caught at two ranks.
-
-**A build rule changed the design**: `CredentialReachesNoEmittedSinkTest` refused the checkout
-token in the URL path, on its own reasoning that a secret in a URL is in every access log. The
-token travels in a `Sensitive`-wrapped request body instead.
+**The state and the clock were telling the same customer different things about the same dead
+offer** — `SessionExpired` before the sweeper ran, `NotConfirmable` after. One question, one
+answer, whichever side of the tick it arrives on. And **the grace was applied at the query and
+not at the decision**: a row read as `OPEN` and confirmed before the lock was expired as
+`PAYMENT_PENDING` with a payment one second old. The state a row is in *when the decision is
+made* is the state whose deadline applies.
 
 ### Previously
 

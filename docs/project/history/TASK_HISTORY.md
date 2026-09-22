@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 131 "Previously" blocks, newest first, from `P6-TSK-006` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 132 "Previously" blocks, newest first, from `P6-TSK-007` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,58 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-007` — the session's payment: create, confirm, complete** — `COMPLETE` (2026-09-22).
+**The phase's first whole flow: a customer pays a merchant, end to end, over real HTTP, through
+the simulated provider, against the real ledger.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| create → confirm → capture | `CheckoutFlowDatabaseTest`, real HTTP, 12 tests |
+| the payable credited gross minus fee | **96.80 of a 100.00 purchase**, derived from the postings |
+| the order exists, naming its entry | order → `captured_entry_ref` → the four lines → the payable |
+| duplicate completion counted to one | ten racers, one order, one payable movement |
+| replay renders no token | the clause corrected at design: `INV-IDN-01` over byte-for-byte replay |
+
+### The assertion that matters most, and why
+
+Orchestration does not fail loudly — it fails by **silently skipping a step**. Every skipped
+step shows up in one number: the merchant's *derived* payable position. No fee pin and it is the
+gross; no completion and there is no order; a wrong credit account and it is zero. That is why
+the whole-flow test asserts a position computed from journal lines rather than a status field.
+
+### The suite found two real defects, both in this task's own new code
+
+**Ten concurrent confirmations answered `500` nine times.** The payment creation is keyed on the
+session, so all ten converge on one intent — and then all ten reach the fee pin with the same
+decision, where the primary key refused nine as a *storage failure*. The pin now converges on an
+identical decision behind a savepoint and **throws on a different one**: converging is what
+keeps a retry from being an error, refusing is what keeps it from being a silent repricing.
+
+**A retried confirmation of a purchase that succeeded answered `409`.** The capture is chained
+synchronously, so the first confirm returns `COMPLETED` and every retry hit `NotConfirmable` —
+to a customer who holds only a token and has no read surface to ask. A paid session now
+converges, with the payer re-established first so a second token holder still gets the one
+`404`. ADR-0053 amended with both.
+
+### Three gate findings, none made by a probe
+
+**A demonstration that cannot execute is not a demonstration**: the token's every-column sweep
+was the last assertion of the replay test, so the probe that makes the claim store the response
+never reached it. **And the sweep could not have seen that column anyway** — `bytea::text`
+renders hex, so a `LIKE` over a printable needle never matched, and
+`platform.idempotency_record.response_body` is exactly that type. Three suites shared the
+blindness; all three now cast with `encode(col, 'escape')`. **The merchant's tenant predicate
+was a Java filter over an unscoped read** — correct today, invisible to `OwnershipIsScopedTest`
+tomorrow; moved into the statement, where the probe is now caught at two ranks.
+
+**A build rule changed the design**: `CredentialReachesNoEmittedSinkTest` refused the checkout
+token in the URL path, on its own reasoning that a secret in a URL is in every access log. The
+token travels in a `Sensitive`-wrapped request body instead.
 
 ---
 

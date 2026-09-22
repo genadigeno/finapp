@@ -13,6 +13,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -143,6 +144,48 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
         } catch (SQLException failure) {
             throw new CheckoutStorageException(
                     DatabaseFailure.describe("reading a payment's checkout session", failure));
+        }
+    }
+
+    @Override
+    public java.util.List<CheckoutSession> findExpirable(
+            Connection unitOfWork, Instant openBefore, Instant pendingBefore, int limit) {
+        Objects.requireNonNull(openBefore, "openBefore must not be null");
+        Objects.requireNonNull(pendingBefore, "pendingBefore must not be null");
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive: " + limit);
+        }
+        // THE TWO EXPIRABLE STATES, PINNED AS LITERALS beside the machine's own exact edge set
+        // (the P5-TSK-007 idiom): there is deliberately no isExpirable() derivation, so a new
+        // state forces this list into review rather than silently joining or missing the sweep.
+        //
+        // PAYMENT_PENDING is here because it is the ONLY terminal escape for a session whose
+        // payment failed: ADR-0053 gave checkout no failure state (a declined payment is the
+        // PAYMENT's state and the customer retries on the same intent), so a customer who is
+        // declined and then closes the tab leaves a row nothing else can ever end.
+        //
+        // Ordered by the deadline then the id - deterministic, so N sweepers walk the same
+        // queue in the same order and contend on the oldest row rather than scattering.
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM checkout.checkout_session"
+                                + " WHERE (status = 'OPEN' AND expires_at <= ?)"
+                                + "    OR (status = 'PAYMENT_PENDING' AND expires_at <= ?)"
+                                + " ORDER BY expires_at, id"
+                                + " LIMIT ?")) {
+            select.setTimestamp(1, Timestamp.from(openBefore));
+            select.setTimestamp(2, Timestamp.from(pendingBefore));
+            select.setInt(3, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                java.util.List<CheckoutSession> expirable = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    expirable.add(sessionFrom(rows));
+                }
+                return java.util.List.copyOf(expirable);
+            }
+        } catch (SQLException failure) {
+            throw new CheckoutStorageException(
+                    DatabaseFailure.describe("reading expirable checkout sessions", failure));
         }
     }
 
