@@ -273,61 +273,61 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-002` — merchant identity: the API key and tenant scoping** — `READY`.
-ADR-0052 made real, now that its subject exists: the key credential under the full regime
-(`INV-IDN-01/-02` — hashed, derivation parameters recorded, shown once, prefix lookup,
-immediate revocation), `ActorType.MERCHANT` joining the audit vocabulary, and the
-statement-scoping primitive (`merchant_id = ?` from the authenticated context — `INV-MER-01`)
-that every merchant-facing surface will stand on. Scope, acceptance and DoD profiles in the
-backlog entry.
+**`P6-TSK-004` — the versioned fee schedule** — `READY`.
+M6.2 opens: fees as immutable, versioned configuration (`INV-MER-03`) — rate, fixed part,
+rounding mode and refund-fee policy, frozen once effective, with the pure arithmetic that
+**computes the fee once and derives the net by subtraction** (`INV-MER-04`'s mechanism),
+property-tested across 0/2/3-minor-unit currencies before anything posts it. Scope,
+acceptance and DoD profiles in the backlog entry.
 
 ### Just completed
 
-**`P6-TSK-003` — merchant onboarding and the payable account** — `COMPLETE` (2026-09-21).
-**M6.1 at 2 of 3: the commercial counterparty exists, with its books.** The `Merchant`
-aggregate and its machine (`ACTIVE ⇄ SUSPENDED → CLOSED`, every state earned, `CLOSED`
-reachable from `ACTIVE` only), `merchant` `V002` with the machine's `CHECK`s and trigger
-edges generated from `permittedTransitions()`, and the two commands: **onboarding keyed at
-the financial boundary**, gated on the KYB projection, opening the merchant's
-`MERCHANT_PAYABLE` ledger account in the same transaction; and the three **reasoned**
-standing moves under lock-then-conditional-write.
+**`P6-TSK-002` — merchant identity: the API key and tenant scoping** — `COMPLETE`
+(2026-09-22). **M6.1 CLOSES at 3 of 3: the platform has a fourth authentication vocabulary,
+and its first caller the platform does not own.** The key credential under the full regime —
+hashed, derivation recorded, shown once, constant-time verification, never recoverable — with
+`ActorType.MERCHANT` (platform `V010`), `@RequiresMerchantKey` as the fifth authorization
+declaration, and `GET /v1/merchant/me` as the first key-authenticated surface.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Onboard end to end over HTTP | `201` with the merchant, its payable account, audit and event counted in four tables |
-| The KYB refusal writes nothing | Person party, unverified organisation and unknown party — one refusal each, both counts unmoved |
-| Ten concurrent onboards, one key | One merchant, one account, one audit record, one event — counted |
-| Suspension refuses new business | The machine fact landed; its consumers (session create, payout) arrive with their tasks |
+| A merchant reaches only its own rows | Its own record, with no identifier to address another by; `merchant_id = ?` in every key statement |
+| A suspended merchant's keys refuse | The standing is **in the lookup's join** — the next request, everywhere, nothing revoked and nothing invalidated |
+| A revoked key refuses immediately | Terminal, reasoned, audited; the repeat converges with no second history row |
+| No secret recoverable | Not from the list, not from a replay, not from any text column in any schema |
+| Issuance audited with actor and key id | And never the secret — which is why the key id is public |
 
-**The ledger gained its seventh purpose and fourth owner kind.** `MERCHANT_PAYABLE(MERCHANT)`
-could not simply be added: `V002` is applied history and cannot follow its enums, so `V011`
-**recreates the four constraints the two widened enums feed**, the reconciliation test now
-reads those four from `V011` and the rest from `V002`, and `V002`'s hand-written
-`(owner_kind = 'CUSTOMER') = (owner_ref IS NOT NULL)` became the **generated**
-`OwnerKind.sqlOwnerRefRule()` — correct while exactly one kind had an owner, a generated rule
-the moment a second did. The chart-seed guard's `!= CUSTOMER` predicate fell to the same
-assumption and became `requiresOwnerRef()`.
+### The design changed while it was being written, and that was the point
 
-### Three findings, and the sharpest was not in the code I wrote
+**An API key has none of the controls a session gets from being short-lived** — no expiry, no
+browser to close, no human at a keyboard — so each was replaced deliberately: the lookup is
+authoritative per request and **joins the merchant's standing**, so suspension and revocation
+bite everywhere at once with nothing to invalidate. The probe that caches that lookup — the
+most tempting change available here — fails *both* the revocation and the suspension
+assertions.
 
-**`OpenApiContractTest` caught a real break in two endpoints nobody touched.** A controller
-method named `view` collided with two existing `view` handlers, and springdoc renumbered
-*their* `operationId`s. Generated clients key method names off `operationId` — so a name
-chosen in a new file broke `/v1/me/kyb` and `/v1/ledger/adjustments/{id}`. Renamed
-`viewMerchant`; the reason lives at the method, because the next person to type `view` will
-not otherwise know.
+**Show-once had to beat the replay discipline.** The approved design said the idempotency
+claim should record the issuance response, as every other keyed command does. Writing it made
+the consequence visible: that stores a live credential in
+`platform.idempotency_record.response_body`, recoverable for the claim's whole retention. The
+claim now records the key id alone and a replay renders no secret. The probe that restores the
+original design is caught by the column sweep — so the test would have found what reasoning
+found.
 
-**The ownership register refused this task's first answer** — `appendHistory` as
-`AUTHORITATIVE_ID` citing an `ADMINISTERED` read, which inherits the gap (`P1-TSK-030`'s rule)
-— reclassified with the substitute check named. And **the mutation battery forced a probe into
-existence**: dropping the conditional `WHERE status = ?` survived, because the `FOR UPDATE`
-lock masks it; the clause binds the caller who reads *without* the lock, so a **stale-snapshot
-probe** now drives the store's contract directly and the mutation fails against it.
-**8 probes, all ended caught, restores byte-identical.**
+**Nine issues found during implementation, seven in this task's own work**, including the
+`operationId` collision class recurring one task later (now a mechanism: no suffixed
+`operationId`, with the two already-published collisions grandfathered by name) and the
+merchant module becoming **the first outside `identity` to handle a credential** — answered by
+narrowing the unwrap set to three rather than widening it to four.
+
+**The gate's own finding**: asserting that issuance names its operator revealed that every
+session actor is audited as `CUSTOMER`, operators included — platform-wide, pre-existing,
+recorded as debt owned by Phase 15. **8 probes, all caught, four at two ranks, restores
+byte-identical.**
 
 ### Previously
 
-The per-task completion records behind this one — 126 blocks, from `P6-TSK-001` back to project
+The per-task completion records behind this one — 127 blocks, from `P6-TSK-003` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -344,7 +344,7 @@ archived verbatim in
 **Phase 5 is `COMPLETE`** (2026-09-21) — 21 of 21 items across nine milestones, ruled by
 `P5-DOC-001`'s exit review and confirmed by the transition's independent audit.
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
-same day, all twelve criteria) — M6.1 open at 2 of 3, next `P6-TSK-002`.
+same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; M6.2 opens, next `P6-TSK-004`.
 
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
@@ -536,6 +536,7 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
+| **Every session actor is audited as `CUSTOMER`, including operators.** `SessionAuthenticationInterceptor` enters `new Actor(identityId, ActorType.CUSTOMER)` for every authenticated session, so an operator's privileged acts — a manual adjustment, a transfer reversal, a refund, a merchant suspension, an API-key revocation — are recorded with the wrong actor TYPE. Found at `P6-TSK-002`'s implementation, while asserting that issuance names its operator: the test expected `EMPLOYEE` and the trail said `CUSTOMER` | The identifier is right — `actor_id` is the acting identity, so every record still names the person and `INV-AUD-01`'s attributability holds. What is wrong is the vocabulary that says which POPULATION acted, which is the field an auditor filters on to answer *what did staff do*. Correcting it means deriving the type from the identity's roles at authentication time and touches every audited session path on the platform — not a merchant task's to change, and not a change to make without its own negative tests | **Bounded but real**: no record is missing and none names the wrong person; a report separating staff activity from customers' cannot be built from `actor_type` alone today, and `ActorType.EMPLOYEE`'s own javadoc (*a human acting in an operational or administrative capacity*) describes a value nothing currently produces | An audit-completeness review, or the first report that must distinguish staff from customers | Phase 15 (audit completeness verification) |
 | ~~**Broker adapter behind `EventPublisher`.**~~ - **closed 2026-09-09** by `P2-TSK-001`. `KafkaEventPublisher` publishes every outbox event to Kafka - payload bytes verbatim, envelope as record headers, aggregate as the record key, one topic per producing module - and `OutboxRelaySchedule` polls on every instance, safely, because the per-aggregate advisory lock is the lease (`DISTRIBUTED_EXECUTION.md` §3). Delivery is at-least-once with `finapp.eventId` as the consumer dedupe key, and the crash duplicate is DEMONSTRATED in `KafkaOutboxDeliveryKafkaTest` rather than hidden. | - | - | - | - |
 | **Outbox retention.** Published rows are never deleted | `V005` says a published row may be deleted once retained long enough for diagnosis; the sweep is a scheduled job with its own cluster-safety question, and no task owned it | Unbounded table growth. The partial pending index does **not** grow with it — published rows leave it — so the cost is storage and vacuum, not relay latency | Table size becoming operationally material | Phase 15 (data retention and deletion) |
 | ~~**Relay metrics.**~~ - **paid in full 2026-09-09** (`P0-TSK-029` the gauges, `P2-TSK-001` the counters): `finapp.outbox.publication` by outcome (published, failed, deadlettered), registered eagerly and fed from `RelayPollResult` by the schedule that now actually runs. The eager series is asserted before any flow in `OutboxRelayScheduleKafkaTest` | Nothing schedules a relay, so those meters would be structurally always zero - which reads as "nothing is failing" rather than "nothing is running" | The remaining risk is narrower: a relay that is running but failing is visible as a growing backlog, not as a failure count | A scheduled relay | Phase 3 |

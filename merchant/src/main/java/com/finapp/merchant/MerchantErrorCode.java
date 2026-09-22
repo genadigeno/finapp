@@ -45,7 +45,21 @@ public enum MerchantErrorCode implements ErrorCode {
     UNSUPPORTED_CURRENCY(
             "merchant.UnsupportedCurrency",
             422,
-            "The settlement currency is not supported.");
+            "The settlement currency is not supported."),
+
+    /**
+     * An API key was requested for a {@code CLOSED} merchant (`P6-TSK-002`). A {@code 409}:
+     * the resource's own state refuses, and the remedy is to read it. A credential for a
+     * relationship that ended is a door nobody goes looking for until it is used.
+     *
+     * <p>A {@code SUSPENDED} merchant is deliberately NOT refused here: suspension is
+     * reversible, its keys already refuse at authentication through the lookup's join, and
+     * refusing issuance too would make an operator repeat the step when the suspension lifts.
+     */
+    NOT_KEYABLE(
+            "merchant.NotKeyable",
+            409,
+            "A closed merchant cannot be issued an API key.");
 
     private final String code;
     private final int status;

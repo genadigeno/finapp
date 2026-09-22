@@ -626,6 +626,29 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `merchant_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model |
 | `merchant_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in — `audit_record.actor_type`'s reasoning |
 | `merchant_event` | `occurred_at` | `CONFIDENTIAL` | Dates a standing judgement against a counterparty |
+| `merchant_api_key` | `id` | `INTERNAL` | **Public by design** — it is the lookup prefix of `<keyId>.<secret>` (ADR-0052) and the value audit records name. Knowing it achieves nothing without the secret |
+| `merchant_api_key` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_api_key` | `secret_hash` | `CONFIDENTIAL` | A SHA-256 digest of 32 random bytes — **not crackable**, so not `RESTRICTED`; classified here for `session.token_hash`'s reason: in a log it is a precise identifier of one merchant's live credential, which is the single most useful thing to an attacker reading log archives |
+| `merchant_api_key` | `algorithm` | `INTERNAL` | What produced the hash (`INV-IDN-02`) — a fixed vocabulary, and publishing it tells an attacker only what the code already says |
+| `merchant_api_key` | `status` | `CONFIDENTIAL` | Whether a counterparty's integration is live |
+| `merchant_api_key` | `issued_at` | `CONFIDENTIAL` | Dates a credential's life — correlates with an integration going live |
+| `merchant_api_key` | `issued_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model |
+| `merchant_api_key` | `revoked_at` | `CONFIDENTIAL` | Dates a security judgement |
+| `merchant_api_key_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `merchant_api_key_event` | `key_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_api_key_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `merchant_api_key_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `merchant_api_key_event` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — an operator explains a revocation in words that can name people and incidents; `refund.reason`'s reasoning verbatim: content constrained by no type, handled at the ceiling |
+| `merchant_api_key_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s model |
+| `merchant_api_key_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `merchant_api_key_event` | `occurred_at` | `CONFIDENTIAL` | Dates a security judgement |
+
+**There is no plaintext column here, and that is the point** (`INV-IDN-01`): the secret exists
+for the length of one issuance response and reaches no storage at all — not this table, and
+deliberately **not `platform.idempotency_record.response_body`** either, which is why the
+issuance claim records the key id alone rather than the response bytes every other keyed
+command records (`P6-TSK-002`; the database suite asserts it by sweeping every text column in
+every schema for the issued secret).
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 

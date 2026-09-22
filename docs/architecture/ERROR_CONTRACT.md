@@ -290,6 +290,17 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `merchant.NotEligible` | 422 | The party cannot be onboarded as a merchant. |
 | `merchant.IllegalTransition` | 409 | The merchant's current status does not permit this change. |
 | `merchant.UnsupportedCurrency` | 422 | The settlement currency is not supported. |
+| `merchant.NotKeyable` | 409 | A closed merchant cannot be issued an API key. |
+
+`merchant.NotKeyable` refuses only a **closed** merchant. A `SUSPENDED` one may still be
+issued keys: suspension is reversible, its keys already refuse at authentication because the
+lookup joins the merchant's standing (`P6-TSK-002`), and refusing issuance too would make an
+operator repeat the step when the suspension lifts. There is no merchant-API-key not-found
+code either — unknown, malformed and *another merchant's* key are one `api.NotFound`, because
+the tenant rides in the statement (`INV-MER-01`) and all three produce the same empty answer.
+**Authentication failures are one `api.Unauthenticated`**: unknown key, wrong secret, revoked
+key, suspended merchant and malformed credential are indistinguishable, because a door that
+says which is an oracle over other companies' integrations.
 
 `merchant.NotEligible` deliberately conflates its causes — no such party, a person party, no
 customer relationship, one still under verification — because an onboarding surface that

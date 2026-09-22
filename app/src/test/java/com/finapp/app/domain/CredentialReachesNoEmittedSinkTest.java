@@ -502,7 +502,16 @@ class CredentialReachesNoEmittedSinkTest {
      * value whose purpose is to leave.
      */
     private static final java.util.Set<String> EMITTED_SECRET_SCHEMAS =
-            java.util.Set.of("ElevatedSession", "AuthenticatedSession");
+            java.util.Set.of(
+                    "ElevatedSession",
+                    "AuthenticatedSession",
+                    // P6-TSK-002. The merchant API key's issuance response: the SECRET is the
+                    // one value whose whole purpose is to be transmitted, exactly once, and a
+                    // Sensitive would render as the mask. The logging half is closed the same
+                    // way - IssuedKeyView overrides toString. Unlike the two above, it is
+                    // NULL on a replay: the secret is never stored, so there is nothing to
+                    // re-show (INV-IDN-01 winning over the replay discipline).
+                    "IssuedKeyView");
 
     private static List<String> secretNamedMembersOutsideRequestBodiesIn(String document) {
         tools.jackson.databind.JsonNode root =

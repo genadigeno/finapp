@@ -291,6 +291,47 @@ class OwnershipIsScopedTest {
                                         + " PaymentRefundEndpointDatabaseTest's permissionless"
                                         + " refusal. Customer HTTP reads go through findOwned.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcMerchantApiKeyStore.findLiveFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-002. THE AUTHENTICATING LOOKUP - and the one entry"
+                                        + " in this register whose identifier comes from an"
+                                        + " UNAUTHENTICATED caller, because it is what"
+                                        + " establishes the tenant in the first place. There is"
+                                        + " no ownership predicate available and there cannot"
+                                        + " be: the request has no owner yet. What stands in"
+                                        + " for it is the credential itself - the row is"
+                                        + " selected by the PUBLIC key id and then the"
+                                        + " presented secret is verified in constant time"
+                                        + " against that row's hash, which the aggregate never"
+                                        + " surrenders; and the query JOINS merchant.merchant"
+                                        + " requiring ACTIVE, so a revoked key or a suspended"
+                                        + " merchant is refused by the lookup rather than"
+                                        + " after it. Every failure is one 401 with its causes"
+                                        + " conflated.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantApiKeyStore.listFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P6-TSK-002. merchant_id = ? in the statement, from the"
+                                        + " operator's path variable today and from the"
+                                        + " authenticated tenant when the merchant-facing"
+                                        + " surfaces arrive (INV-MER-01). No key of another"
+                                        + " merchant can appear in the result, whatever the"
+                                        + " caller asked for - which is why the predicate is in"
+                                        + " the SQL rather than in a filter afterwards.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantApiKeyStore.findOwnedForUpdate",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P6-TSK-002. The revocation's locking read: id = ? AND"
+                                        + " merchant_id = ? together, so naming another"
+                                        + " merchant's key and naming one that does not exist"
+                                        + " are ONE empty answer and one 404 - the surface is"
+                                        + " not an oracle over other companies' credentials"
+                                        + " (INV-MER-01). FOR UPDATE is the serialization"
+                                        + " point, never the ownership check.")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantStore.read",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -1273,6 +1314,14 @@ class OwnershipIsScopedTest {
     private static final Map<String, String> NEGATIVE_TESTS =
             Map.ofEntries(
                     Map.entry(
+                            "com.finapp.merchant.JdbcMerchantApiKeyStore.findOwnedForUpdate",
+                            "com.finapp.app.merchant.MerchantApiKeyDatabaseTest"
+                                    + ".anotherMerchantsKeyIsTheSame404"),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantApiKeyStore.listFor",
+                            "com.finapp.app.merchant.MerchantApiKeyDatabaseTest"
+                                    + ".noSecretIsRecoverable"),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
                             "com.finapp.app.payments.PaymentAuthorizationDatabaseTest"
                             + ".aStrangersPaymentIntentIsOneEmptyAnswer"),
@@ -1343,8 +1392,23 @@ class OwnershipIsScopedTest {
     /** What a {@link Scope#BEARER_SCOPED} statement must carry. */
     private static final String BEARER_PREDICATE = "token_hash = ?";
 
+    /**
+     * What an {@link Scope#OWNER_SCOPED} statement must carry — one of these, in the SQL.
+     *
+     * <p>{@code merchant_id = ?} joins them at `P6-TSK-002`, and it is a different KIND of
+     * owner from the four above: those name a person or their relationship, this names a
+     * <strong>tenant</strong> — a company whose rows must be unreachable from another
+     * company's credential ({@code INV-MER-01}). The rule is the same and the consequence of
+     * losing it is larger: a missing {@code party_id} discloses one person's data, a missing
+     * {@code merchant_id} discloses a competitor's.
+     */
     private static final Set<String> OWNERSHIP_PREDICATES =
-            Set.of(OWNER_PREDICATE, "token_hash = ?", "customer_id = ?", "party_id = ?");
+            Set.of(
+                    OWNER_PREDICATE,
+                    "token_hash = ?",
+                    "customer_id = ?",
+                    "party_id = ?",
+                    "merchant_id = ?");
 
     private record Entry(Scope scope, String authoritativeRead, String reason) {
         Entry(Scope scope, String reason) {

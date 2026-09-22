@@ -1172,6 +1172,41 @@
           }
         }
       },
+      "merchant.NotKeyable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.NotKeyable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.NotKeyable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A closed merchant cannot be issued an API key.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "merchant.UnsupportedCurrency": {
         "content": {
           "application/problem+json": {
@@ -2124,6 +2159,37 @@
         },
         "type": "object"
       },
+      "IssuedKeyView": {
+        "properties": {
+          "alreadyIssued": {
+            "type": "boolean"
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "KeyView": {
+        "properties": {
+          "issuedAt": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "KybCaseResponse": {
         "properties": {
           "owners": {
@@ -2718,6 +2784,23 @@
           "reason",
           "role"
         ],
+        "type": "object"
+      },
+      "SelfView": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "settlementCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "SessionSummary": {
@@ -3914,6 +3997,23 @@
         }
       }
     },
+    "/v1/merchant/me": {
+      "get": {
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/merchants": {
       "post": {
         "operationId": "onboard",
@@ -3974,6 +4074,107 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{id}/api-keys": {
+      "get": {
+        "operationId": "listApiKeys",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KeyView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "issue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedKeyView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{id}/api-keys/{keyId}": {
+      "delete": {
+        "operationId": "revoke",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "keyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantStandingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
           }
         }
       }

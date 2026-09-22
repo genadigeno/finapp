@@ -109,6 +109,13 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         if (annotation(handlerMethod, Unauthenticated.class) != null) {
             return true;
         }
+        // A merchant route authenticates at its own door (`P6-TSK-002`): this interceptor
+        // establishes no session for it and does not refuse it either - the declaration is a
+        // legitimate fifth rule, and the contradiction check above has already refused any
+        // handler that claims it alongside a session rule.
+        if (annotation(handlerMethod, com.finapp.app.merchant.RequiresMerchantKey.class) != null) {
+            return true;
+        }
         refuseIfUndeclared(handlerMethod);
 
         // Thrown, not returned: this must reach the error contract, and there is nothing to commit
@@ -288,6 +295,26 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
      * standing beside its opposite.
      */
     private static void refuseIfDeclarationIsContradictory(HandlerMethod handlerMethod) {
+        // A merchant route beside ANY session rule is the same defect as @Unauthenticated
+        // beside one, and worse in effect: the populations are disjoint by design
+        // (`P6-TSK-002`, ADR-0052), and a handler claiming both would be reachable by a
+        // customer's session AND a counterparty's key. Refused rather than resolved.
+        if (annotation(handlerMethod, com.finapp.app.merchant.RequiresMerchantKey.class) != null
+                && (annotation(handlerMethod, RequiresSession.class) != null
+                        || annotation(handlerMethod, RequiresAssurance.class) != null
+                        || annotation(handlerMethod, RequiresPermission.class) != null
+                        || annotation(handlerMethod, Unauthenticated.class) != null)) {
+            LOGGER.error(
+                    "Refusing {}: it declares @RequiresMerchantKey AND another rule. The"
+                        + " authentication populations are disjoint - a route belongs to a"
+                        + " customer, an operator, a provider or a merchant, never two.",
+                    handlerMethod.getBeanType().getName()
+                            + "."
+                            + handlerMethod.getMethod().getName());
+            throw new ApiException(
+                    PlatformErrorCode.FORBIDDEN,
+                    "A handler declared contradictory authorization rules");
+        }
         if (annotation(handlerMethod, Unauthenticated.class) == null) {
             return;
         }
@@ -321,7 +348,8 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
      * defect and only the operator can fix it.
      */
     private static void refuseIfUndeclared(HandlerMethod handlerMethod) {
-        if (annotation(handlerMethod, RequiresSession.class) != null
+        if (annotation(handlerMethod, com.finapp.app.merchant.RequiresMerchantKey.class) != null
+                || annotation(handlerMethod, RequiresSession.class) != null
                 || annotation(handlerMethod, RequiresAssurance.class) != null
                 || annotation(handlerMethod, RequiresPermission.class) != null) {
             return;

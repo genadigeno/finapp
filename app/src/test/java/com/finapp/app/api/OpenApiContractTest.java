@@ -234,6 +234,67 @@ class OpenApiContractTest {
         }
     }
 
+    /**
+     * The two collisions that were <strong>already published</strong> when this rule arrived
+     * (`P6-TSK-002`) — grandfathered, not tolerated.
+     *
+     * <p>Renaming them now is exactly the breaking change the rule exists to prevent: their
+     * {@code operationId}s are in the committed contract, and a client generated against it
+     * has methods named for them. ADR-0015 is explicit that a breaking change is not
+     * published under version 1, and "we broke it to stop ourselves breaking it" is not an
+     * exception. So they are named here, with their partners, and the rule refuses every NEW
+     * one — which is the property that was missing.
+     *
+     * <p>{@code view_1} shares {@code view} with {@code GET /v1/me/kyb};
+     * {@code register_1} shares {@code register} with {@code POST /v1/registrations}. Both
+     * are reviewed candidates for the next contract version, not for a quiet fix.
+     */
+    private static final java.util.List<String> ALREADY_PUBLISHED_SUFFIXES =
+            java.util.List.of(
+                    "get /v1/ledger/adjustments/{id} -> view_1",
+                    "post /v1/me/organisations -> register_1");
+
+    @Test
+    @DisplayName("no NEW operationId carries a disambiguating suffix - two handlers with one"
+            + " method name renumber EACH OTHER's published identity")
+    void noOperationIdIsSuffixed() throws Exception {
+        // FOUND TWICE IN TWO TASKS, which is why it is a rule rather than a third comment.
+        // springdoc derives operationId from the handler's method name and appends _1, _2 to
+        // break collisions - and the numbering is assignment-ordered, so adding a THIRD
+        // handler named `view` renumbered the two that already existed (P6-TSK-003), and
+        // adding a second named `list` renumbered /v1/beneficiaries (P6-TSK-002). A
+        // generated client keys its method names off operationId: that is a breaking change
+        // to endpoints nobody touched, caused by a name chosen in an unrelated file.
+        //
+        // The contract diff already catches it, but only as collateral damage - the failure
+        // names the VICTIM endpoint, not the collision. This names the cause, and it fails on
+        // the first suffix rather than on the second handler's arrival.
+        JsonNode paths = OpenApiDocument.parse(publishedDocument()).path("paths");
+        java.util.List<String> suffixed = new java.util.ArrayList<>();
+        paths.propertyNames()
+                .forEach(
+                        path ->
+                                paths.get(path)
+                                        .propertyNames()
+                                        .forEach(
+                                                method -> {
+                                                    String id =
+                                                            paths.get(path)
+                                                                    .path(method)
+                                                                    .path("operationId")
+                                                                    .asString("");
+                                                    if (id.matches(".*_[0-9]+$")) {
+                                                        suffixed.add(
+                                                                method + " " + path + " -> " + id);
+                                                    }
+                                                }));
+        assertThat(suffixed)
+                .as("rename the handler method: a suffixed operationId means two handlers"
+                        + " share a method name, and which one keeps the unsuffixed identity"
+                        + " is decided by assignment order rather than by anybody")
+                .containsExactlyInAnyOrderElementsOf(ALREADY_PUBLISHED_SUFFIXES);
+    }
+
     @Test
     @DisplayName("the published contract contains no test fixture")
     void noProbeRouteIsPublished() throws Exception {
@@ -307,6 +368,19 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/suspension",
                         ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/reinstatement",
                         ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/closure",
+                        // P6-TSK-002: the merchant's API credential. Issuance and revocation
+                        // are OPERATOR acts behind MERCHANT_ADMINISTER - a key that could
+                        // mint further keys would make one disclosed secret
+                        // self-perpetuating. The 201 carries the secret exactly once; the
+                        // list carries metadata only; no read can produce it.
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/api-keys",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/api-keys/{keyId}",
+                        // P6-TSK-002: the platform's FIRST key-authenticated surface, and the
+                        // one that makes the tenancy primitive real. /me rather than an
+                        // id-addressed route deliberately: a tenant a caller can name is not
+                        // a tenant (INV-MER-01, ADR-0031's defect at the multi-tenant
+                        // boundary).
+                        ApiVersion.CURRENT_PREFIX + "/merchant/me",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

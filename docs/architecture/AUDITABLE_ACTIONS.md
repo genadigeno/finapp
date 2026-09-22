@@ -347,6 +347,8 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `merchant.MerchantSuspended` | **Yes** | An operator suspended a merchant - new dispatches refuse, landed money still lands; the reason is required. |
 | `merchant.MerchantReinstated` | **Yes** | An operator reinstated a suspended merchant; the reason is required. |
 | `merchant.MerchantClosed` | **Yes** | An operator closed a merchant - terminal; the payable position and its history remain; the reason is required. |
+| `merchant.MerchantApiKeyIssued` | No | An operator issued an API key to a merchant; the record names the key by its public id and the merchant by identifier, never the secret. |
+| `merchant.MerchantApiKeyRevoked` | **Yes** | An operator revoked a merchant's API key - terminal, never reinstated; the reason is required. |
 
 Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
 dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's

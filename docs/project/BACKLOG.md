@@ -6771,7 +6771,7 @@ Acceptance per milestone in `PHASE_6_PLAN.md` §16.
   task and the live floor checks — **the full battery deliberately skipped on the owner's
   instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TSK-002 — Merchant identity: the API key and tenant scoping** — `READY`
+**P6-TSK-002 — Merchant identity: the API key and tenant scoping** — `COMPLETE` (2026-09-22)
 *(Ordering corrected at `P6-TSK-003`'s design, 2026-09-21: the transition sequenced the key
 before its subject — a credential cannot precede the aggregate it authenticates as, or the
 filter resolves keys to dangling identifiers and the suspended-merchant refusal has nothing
@@ -6789,6 +6789,72 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   rows; a suspended merchant's keys refuse (negative per surface, zero rows touched); a revoked key refuses immediately
   cross-instance; no secret recoverable; issuance audited with actor and key id.
 - **Risk**: Medium (new actor population). **Cx**: M. **DoD**: `DOD-SEC`, `DOD-API`
+- **Implementation note (2026-09-22)**: `ActorType.MERCHANT` with platform `V010` recreating
+  `V009`'s actor-type `CHECK` (the applied-history ceremony's **third** instance this phase,
+  after ledger `V011` and identity `V015`); `MerchantApiKey` with its two-state machine
+  (`ACTIVE → REVOKED`, terminal — a credential whose secret may have been disclosed is never
+  reinstated) and `merchant` `V003`; the secret as 32 random bytes hashed **SHA-256, not
+  Argon2** — `SessionToken`'s recorded argument inherited at a new door, because a work factor
+  buys nothing against 32 bytes of entropy and would cost ~46 ms on every merchant request —
+  verified in constant time; the authenticating lookup **joining `merchant.merchant` and
+  requiring `ACTIVE`**, so a suspension refuses on every instance's next request with nothing
+  to invalidate; `@RequiresMerchantKey` as the platform's **fifth** declaration, admitted
+  inside the deny-by-default rule with a contradiction check refusing it beside any session
+  rule; `GET /v1/merchant/me` as the first key-authenticated surface — `/me` rather than an
+  id-addressed route, because a tenant a caller can name is not a tenant; and the operator's
+  issue/list/revoke routes behind `MERCHANT_ADMINISTER`.
+- **Design corrected while implementing (2026-09-22)**: the approved design said the
+  idempotency claim should record the issuance response so a replay renders the original
+  bytes — the discipline every other keyed command follows. Writing it made the consequence
+  visible: that persists a **live merchant credential** in
+  `platform.idempotency_record.response_body`, recoverable for the claim's whole retention,
+  which is exactly what `INV-IDN-01` forbids and what `V003`'s own comment claims is
+  impossible. The claim now records the **key id alone**; a replay converges on the same
+  credential and answers `alreadyIssued` with no secret. **Show-once means once**, and the
+  platform's byte-for-byte replay discipline yields to the stronger invariant rather than
+  being quietly bent — the database suite asserts it by sweeping every text column in every
+  schema for the issued secret.
+- **Gate evidence (2026-09-22)**: **every accept clause demonstrated over real HTTP** —
+  a merchant authenticates and sees its own record with no identifier to address another by;
+  a **suspended** merchant's key refuses on the very next request and works again when the
+  suspension lifts, the key never touched; a **revoked** key refuses immediately, reasoned,
+  audited and terminal, with the repeat converging and writing no second history row; **no
+  secret recoverable** from the list, from a replay, or from any text column in any schema
+  (the sweep derived from `information_schema`); issuance audited with the acting operator
+  and the key id and never the secret. Suites: `MerchantApiKeyDatabaseTest` 11,
+  `MerchantApiKeySecretTest` 5, `MerchantApiKeyMigrationTest` 7, `AuditEnumMigrationTest` 7.
+  **Eight probes, all caught by the intended assertion, restores verified byte-identical by
+  `cmp`** — four of them at **two ranks**: the merchant-status join dropped (a suspended
+  merchant's key kept working); the revocation check dropped; **the tenant predicate dropped**
+  — caught behaviourally *and* by `OwnershipIsScopedTest`'s build rule, which is the sharper
+  half because it fails without anybody writing a test for the next tenant-scoped read;
+  **the key lookup cached** — the change this design's javadoc names as the most tempting one
+  available, caught by *both* the revocation and suspension assertions; the secret comparison
+  made unconditional (caught hermetically and over HTTP); **the issuance claim storing the
+  response bytes** — the defect found by reasoning at implementation time, and the probe
+  proves the column sweep would have caught it anyway, which is the only evidence that
+  matters; issuance gated on `LEDGER_POST` (caught by the named negative when a ledger
+  operator minted a merchant credential); and `V010`'s recreated `CHECK` reverted — caught by
+  the reconciliation **and** by the database refusing a `MERCHANT` audit record.
+  **Register rows landed with their demonstrations performed**: `INV-MER-01` ×2 (its **first**
+  rows — the tenancy primitive this task creates), `INV-IDN-01` ×2 (the **fifth** enforcement,
+  and the first for a credential outside `identity`), `INV-IDN-02`, `INV-AUD-03` — each with
+  its recorded limit, including that SHA-256 has no cost factors so `P1-TSK-007`'s
+  parameter-nulling mutation has no analogue.
+  **THE GATE'S FINDING, RECORDED AS DEBT WITH AN OWNER**: asserting that issuance names its
+  operator revealed that **`SessionAuthenticationInterceptor` stamps every session actor as
+  `ActorType.CUSTOMER`** — so an operator's privileged acts across the whole platform (manual
+  adjustments, reversals, refunds, merchant suspensions) are audited with the wrong actor
+  *type*. The identifier is right and `INV-AUD-01` holds; what is wrong is the field an
+  auditor filters on to separate staff from customers, and `ActorType.EMPLOYEE` describes a
+  value nothing currently produces. Pre-existing, platform-wide, and not a merchant task's to
+  change — recorded in `CURRENT_STATE.md` §Known Architectural Debt, owned by Phase 15's
+  audit-completeness verification, with the suite asserting the behaviour that EXISTS so it
+  tells the truth. **Nine issues found and fixed during implementation, seven in this task's
+  own work** (see the note above and the five register/guard extensions). Verified by targeted
+  tiers — the fleet-wide hermetic `test` task and the merchant database suites — **the full
+  battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+  counts claimed.**
 
 **P6-TSK-003 — Merchant onboarding and the payable account** — `COMPLETE` (2026-09-21)
 - **Objective**: the merchant exists as a commercial counterparty with its books ready —
@@ -6879,7 +6945,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
   counts claimed.**
 
-**P6-TSK-004 — The versioned fee schedule** — `PLANNED`
+**P6-TSK-004 — The versioned fee schedule** — `READY`
 - **Objective**: fees as immutable, versioned configuration — `INV-MER-03`'s subject.
   Bounded context 12.
 - **Scope**: `FeeSchedule`/version aggregates (rate, fixed part, rounding mode, refund-fee

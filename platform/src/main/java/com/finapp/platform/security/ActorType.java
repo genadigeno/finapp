@@ -46,7 +46,24 @@ public enum ActorType {
      * server did this on their credential" are different answers to the same question, and
      * only one of them has a counterparty to ask about it.
      */
-    SERVICE;
+    SERVICE,
+
+    /**
+     * A merchant acting on its own API key (`P6-TSK-002`, ADR-0052).
+     *
+     * <p>Distinct from {@link #SERVICE}, and the distinction is the reason this member exists:
+     * a {@code SERVICE} is a named external system acting through an integration credential
+     * <em>we provisioned for our own purposes</em>; a {@code MERCHANT} is a
+     * <strong>commercial counterparty</strong> acting on its own behalf, with money owed to it
+     * and a contract behind it. "Our integration did this" and "the merchant did this" are
+     * different answers to the same question, and only one of them has a payable position to
+     * argue about.
+     *
+     * <p>The actor identifier is the merchant's own id, so every merchant-API audit record
+     * names the counterparty rather than the key - the key id travels in the record's detail
+     * ({@code INV-AUD-02}: identifiers, never the secret).
+     */
+    MERCHANT;
 
     /**
      * The types as a SQL literal list, for the {@code CHECK} constraint.

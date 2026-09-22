@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 126 "Previously" blocks, newest first, from `P6-TSK-001` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 127 "Previously" blocks, newest first, from `P6-TSK-003` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,52 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-003` — merchant onboarding and the payable account** — `COMPLETE` (2026-09-21).
+**M6.1 at 2 of 3: the commercial counterparty exists, with its books.** The `Merchant`
+aggregate and its machine (`ACTIVE ⇄ SUSPENDED → CLOSED`, every state earned, `CLOSED`
+reachable from `ACTIVE` only), `merchant` `V002` with the machine's `CHECK`s and trigger
+edges generated from `permittedTransitions()`, and the two commands: **onboarding keyed at
+the financial boundary**, gated on the KYB projection, opening the merchant's
+`MERCHANT_PAYABLE` ledger account in the same transaction; and the three **reasoned**
+standing moves under lock-then-conditional-write.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Onboard end to end over HTTP | `201` with the merchant, its payable account, audit and event counted in four tables |
+| The KYB refusal writes nothing | Person party, unverified organisation and unknown party — one refusal each, both counts unmoved |
+| Ten concurrent onboards, one key | One merchant, one account, one audit record, one event — counted |
+| Suspension refuses new business | The machine fact landed; its consumers (session create, payout) arrive with their tasks |
+
+**The ledger gained its seventh purpose and fourth owner kind.** `MERCHANT_PAYABLE(MERCHANT)`
+could not simply be added: `V002` is applied history and cannot follow its enums, so `V011`
+**recreates the four constraints the two widened enums feed**, the reconciliation test now
+reads those four from `V011` and the rest from `V002`, and `V002`'s hand-written
+`(owner_kind = 'CUSTOMER') = (owner_ref IS NOT NULL)` became the **generated**
+`OwnerKind.sqlOwnerRefRule()` — correct while exactly one kind had an owner, a generated rule
+the moment a second did. The chart-seed guard's `!= CUSTOMER` predicate fell to the same
+assumption and became `requiresOwnerRef()`.
+
+### Three findings, and the sharpest was not in the code I wrote
+
+**`OpenApiContractTest` caught a real break in two endpoints nobody touched.** A controller
+method named `view` collided with two existing `view` handlers, and springdoc renumbered
+*their* `operationId`s. Generated clients key method names off `operationId` — so a name
+chosen in a new file broke `/v1/me/kyb` and `/v1/ledger/adjustments/{id}`. Renamed
+`viewMerchant`; the reason lives at the method, because the next person to type `view` will
+not otherwise know.
+
+**The ownership register refused this task's first answer** — `appendHistory` as
+`AUTHORITATIVE_ID` citing an `ADMINISTERED` read, which inherits the gap (`P1-TSK-030`'s rule)
+— reclassified with the substitute check named. And **the mutation battery forced a probe into
+existence**: dropping the conditional `WHERE status = ?` survived, because the `FOR UPDATE`
+lock masks it; the clause binds the caller who reads *without* the lock, so a **stale-snapshot
+probe** now drives the store's contract directly and the mutation fails against it.
+**8 probes, all ended caught, restores byte-identical.**
 
 ---
 

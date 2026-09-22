@@ -59,6 +59,50 @@ public class MerchantBeans {
     }
 
     @Bean
+    com.finapp.merchant.MerchantApiKeys merchantApiKeys(
+            IdempotentExecutor idempotentExecutor,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.merchant.MerchantApiKeys(
+                new com.finapp.merchant.JdbcMerchantApiKeyStore(),
+                new JdbcMerchantStore(),
+                idempotentExecutor,
+                auditWriter,
+                ids,
+                clock,
+                // One SecureRandom for the application, seeded by the platform: the key
+                // secret's entropy IS the security argument (MerchantApiKeySecret), so where
+                // it comes from is not an implementation detail.
+                new java.security.SecureRandom());
+    }
+
+    @Bean
+    MerchantApiKeyOperations merchantApiKeyOperations(
+            com.finapp.merchant.MerchantApiKeys merchantApiKeys,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource) {
+        return new MerchantApiKeyOperations(
+                merchantApiKeys, new TransactionTemplate(transactionManager), dataSource);
+    }
+
+    @Bean
+    MerchantKeyAuthenticationInterceptor merchantKeyAuthenticationInterceptor(
+            PlatformTransactionManager transactionManager, DataSource dataSource) {
+        return new MerchantKeyAuthenticationInterceptor(
+                new com.finapp.merchant.JdbcMerchantApiKeyStore(),
+                new TransactionTemplate(transactionManager),
+                dataSource);
+    }
+
+    @Bean
+    MerchantSelfView merchantSelfView(
+            PlatformTransactionManager transactionManager, DataSource dataSource) {
+        return new MerchantSelfView(
+                new JdbcMerchantStore(), new TransactionTemplate(transactionManager), dataSource);
+    }
+
+    @Bean
     MerchantOperations merchantOperations(
             MerchantOnboarding merchantOnboarding,
             MerchantAdministration merchantAdministration,

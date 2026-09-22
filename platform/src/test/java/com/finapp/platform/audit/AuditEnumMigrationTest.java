@@ -31,12 +31,43 @@ class AuditEnumMigrationTest {
 
     private static final String MIGRATION = "db/migration/platform/V009__create_audit_record.sql";
 
+    /**
+     * Where the actor-type constraint lives NOW: {@code V010} recreated it when
+     * {@code ActorType.MERCHANT} arrived (`P6-TSK-002`), because {@code V009} is applied
+     * history and cannot follow its enum. The reconciliation follows the LATEST definition —
+     * an actor type added without a fresh recreation migration fails here, which is the whole
+     * point and exactly what {@code V009}'s own comment asks for.
+     */
+    private static final String LATEST_ACTOR_TYPES =
+            "db/migration/platform/V010__audit_trail_admits_the_merchant.sql";
+
     @Test
-    @DisplayName("the migration's actor-type constraint lists exactly the types the enum declares")
+    @DisplayName("the LATEST definition of the actor-type constraint matches the enum exactly")
     void actorTypesAgree() {
-        assertThat(readMigration())
-                .as("V009's CHECK must match ActorType exactly")
+        assertThat(readMigration(LATEST_ACTOR_TYPES))
+                .as("the newest migration defining audit_record_actor_type_known must match"
+                        + " ActorType exactly")
                 .contains("CHECK (actor_type IN (" + ActorType.sqlValueList() + "))");
+    }
+
+    @Test
+    @DisplayName("V009's original constraint is untouched history")
+    void theOriginalActorConstraintIsHistory() {
+        // The other half of forward-only migrations (ADR-0011), the RoleAssignmentMigrationTest
+        // shape: the derivation above frees the enum to grow, and THIS pins what V009 said on
+        // the day it was applied.
+        assertThat(readMigration())
+                .contains("CHECK (actor_type IN ('SYSTEM', 'CUSTOMER', 'EMPLOYEE', 'SERVICE'))");
+    }
+
+    @Test
+    @DisplayName("V010 recreates the constraint it drops")
+    void theRecreationDropsWhatItAdds() {
+        // A DROP that forgets its ADD silently removes the constraint - the direction this
+        // assertion exists for (the ledger V011 reasoning).
+        assertThat(readMigration(LATEST_ACTOR_TYPES))
+                .contains("DROP CONSTRAINT audit_record_actor_type_known")
+                .contains("ADD CONSTRAINT audit_record_actor_type_known");
     }
 
     @Test
@@ -52,7 +83,8 @@ class AuditEnumMigrationTest {
     void listsAreQuoted() {
         // Pinned, so a change to the generator that produced valid-looking but different SQL -
         // dropping the quotes, say - fails here rather than at the next migration.
-        assertThat(ActorType.sqlValueList()).isEqualTo("'SYSTEM', 'CUSTOMER', 'EMPLOYEE', 'SERVICE'");
+        assertThat(ActorType.sqlValueList())
+                .isEqualTo("'SYSTEM', 'CUSTOMER', 'EMPLOYEE', 'SERVICE', 'MERCHANT'");
         assertThat(AuditOutcome.sqlValueList()).isEqualTo("'SUCCEEDED', 'FAILED', 'DENIED'");
     }
 
@@ -85,14 +117,18 @@ class AuditEnumMigrationTest {
     }
 
     private static String readMigration() {
+        return readMigration(MIGRATION);
+    }
+
+    private static String readMigration(String resource) {
         try (InputStream source =
-                AuditEnumMigrationTest.class.getClassLoader().getResourceAsStream(MIGRATION)) {
+                AuditEnumMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
             // Failing loudly rather than skipping: a test that cannot find the migration and
             // quietly passes would report agreement without comparing anything.
-            assertThat(source).as("migration %s must be on the classpath", MIGRATION).isNotNull();
+            assertThat(source).as("migration %s must be on the classpath", resource).isNotNull();
             return new String(source.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new UncheckedIOException("Could not read " + MIGRATION, e);
+            throw new UncheckedIOException("Could not read " + resource, e);
         }
     }
 }

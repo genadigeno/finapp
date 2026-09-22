@@ -33,12 +33,15 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 class ApiVersionConfiguration implements WebMvcConfigurer {
 
     private final SessionAuthenticationInterceptor sessionAuthentication;
+    private final com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantKey;
 
     ApiVersionConfiguration(
-            SessionAuthenticationInterceptor sessionAuthentication) {
+            SessionAuthenticationInterceptor sessionAuthentication,
+            com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantKey) {
         this.sessionAuthentication =
                 Objects.requireNonNull(
                         sessionAuthentication, "sessionAuthentication must not be null");
+        this.merchantKey = Objects.requireNonNull(merchantKey, "merchantKey must not be null");
     }
 
     /**
@@ -82,5 +85,14 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
         // annotations today, so this is a decision recorded before it can matter rather than one
         // anybody currently observes.
         registry.addInterceptor(sessionAuthentication);
+
+        // The merchant key's door (`P6-TSK-002`), registered AFTER the session interceptor so
+        // that interceptor's deny-by-default and contradiction checks run first on every
+        // handler - including merchant ones, which it now recognises and passes through
+        // rather than refusing. This one does nothing for a handler that does not declare
+        // @RequiresMerchantKey, so it is registered for every path rather than a list of
+        // them: the decision lives in the declaration, and a path list here would be a second
+        // copy of it that goes stale (the reasoning above, verbatim).
+        registry.addInterceptor(merchantKey);
     }
 }
