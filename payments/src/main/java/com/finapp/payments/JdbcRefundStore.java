@@ -188,6 +188,29 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
     }
 
     @Override
+    public Money sumCompletedFor(
+            Connection unitOfWork, PaymentAttemptId attempt, CurrencyCode currency) {
+        Objects.requireNonNull(attempt, "attempt must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // COMPLETED only - see the port's javadoc: reserved is not returned,
+                        // and a sibling refund in flight can still fail.
+                        "SELECT COALESCE(SUM(amount_minor), 0) FROM payments.refund"
+                                + " WHERE attempt_id = ? AND status = 'COMPLETED'")) {
+            read.setObject(1, attempt.value());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return Money.ofMinorUnits(row.getLong(1), currency);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "summing completed refunds of attempt " + attempt, failure));
+        }
+    }
+
+    @Override
     public boolean complete(
             Connection unitOfWork,
             RefundId refund,

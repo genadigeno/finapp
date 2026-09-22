@@ -7369,7 +7369,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   suites, 0 failures** (checkout, merchant and payments). **The full battery deliberately
   skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TSK-009 — The merchant transaction surface** — `PLANNED`
+**P6-TSK-009 — The merchant transaction surface** — `READY`
 - **Objective**: the merchant sees its business — tenant-isolated, ledger-consistent.
   Bounded context 12.
 - **Scope**: `GET /v1/merchant/transactions` (sessions/orders/captures/refunds/fees joined
@@ -7436,7 +7436,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   database; the tag vocabulary walks the designed path if it widens at all.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
 
-**P6-TSK-014 — The merchant refund: gross out of the payable, fee per the pinned policy** — `READY`
+**P6-TSK-014 — The merchant refund: gross out of the payable, fee per the pinned policy** — `COMPLETE` (2026-09-22)
 - **Objective**: give `refundFeePolicy` its consumer. ADR-0050's consequences say a refund of
   a merchant-bound capture reverses the same shape — gross out of the payable, the fee
   **retained or returned per the schedule version pinned on the original payment**. Bounded
@@ -7459,6 +7459,58 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   prices neither refund; the wallet-refund suite untouched.
 - **Risk**: High (it moves money out of a counterparty's position). **Cx**: M. **DoD**:
   `DOD-FIN`
+- **Delivered (2026-09-22)**: `RefundComposition` + `RefundSettlement` in `payments` mirroring
+  the capture's seam; `WalletRefundComposition` holding Phase 5's two lines **moved rather than
+  rewritten**; `MerchantSettlement.refund` composing the reversal under the ORIGINAL capture's
+  pin; `FeeCalculation.returnedFee`; `merchant.FeeReturned`; `RefundStore.sumCompletedFor`; and
+  `MerchantBoundRefundComposition` as the join. **`refundFeePolicy` finally has a consumer** —
+  the gap `P6-TSK-005`'s own completion gate found and this task was created to close.
+- **The arithmetic, and why it needed inventing rather than copying**: a proportional share
+  rounded once per refund does not add up. `returnedFee` differences a **cumulative
+  allocation** — `cum(after) − cum(before)`, one rounding under the version's own policy — so
+  any sequence of partial refunds **telescopes** to `cum(total refunded)`, and a fully refunded
+  capture gives `cum(gross)` = `round(fee × 1)` = **exactly the assessed fee**. "Two partial
+  refunds summing to the capture return exactly the assessed fee and no more" is an identity
+  here, not a bound anybody checks; and nothing is clamped, which is what keeps `INV-MER-03`'s
+  recomputation clause honest.
+- **Accept clauses, all driven**: `RETAINED` returns the gross and leaves `FEE_REVENUE`
+  untouched, the merchant ending **down by the fee** (they received 96.80 and returned 100.00 —
+  the policy working, not a defect); `RETURNED` returns gross and the proportional fee with the
+  payable cancelling to **exactly zero**; two partial refunds return exactly the assessed fee; a
+  version created after the capture prices neither refund; and **Phase 5's wallet-refund suite
+  is untouched**, proved through the production seam rather than around it — every payments
+  suite now composes its refunds through `MerchantBoundRefundComposition` and falls back.
+- **Four probes, three caught, ONE SURVIVOR** (restores verified byte-identical by `cmp`).
+  Caught: the naive per-refund share (**a one-cent fee refunded in two halves returns TWO cents
+  naively** — caught by the 1800-case property sweep and at the database); the refund priced by
+  today's schedule instead of the pin; the `RETURNED` branch neutralised, which restores exactly
+  the gap `P6-TSK-005` named. **A probe also exposed a weak assertion of this task's own**: the
+  database partial-refund test first used 33.33/66.67 of an odd fee — a split the naive formula
+  happens to get right — so it survived until the split was chosen to *discriminate* rather
+  than merely to look uneven.
+- **THE SURVIVOR, recorded rather than patched**: `applyRefund` reading the budget's non-failed
+  sum instead of `sumCompletedFor` changes nothing in any test. The two sums are proven to
+  differ, but nothing drives `applyRefund` with a sibling refund **in flight**, so the caller's
+  choice between them is unbound. What the analysis does establish is that the failure mode is
+  **loud**: an inflated `refundedBefore` pushes the cumulative total past the capture and
+  `returnedFee` throws, failing the refund, rather than quietly returning a wrong share. The
+  interleaving that binds it arrives with `P6-TST-002`'s concurrent-refund storm, which now
+  inherits a stated question instead of discovering one.
+- **Two findings beyond the probes.** (1) **Both of the merchant module's announcements assumed
+  a caller-resolved causation** (`cause().orElseThrow()`) — true of every caller that exists and
+  a landmine for the next, which is exactly what `P6-TSK-008` hit in the expiry sweeper one task
+  earlier. A root flow now causes itself, stated once. (2) `OwnershipIsScopedTest` demanded the
+  new read's classification and got the honest one: `sumCompletedFor` is `AUTHORITATIVE_ID` on
+  the same locked attempt as its sibling, and the entry says why **completed** is a different
+  question rather than a stricter version of the same one.
+- **Registers**: `MUTATION_TESTING` +4 rows (including the survivor, with its reason),
+  `DISTRIBUTED_EXECUTION` §3 +1 row, `OwnershipIsScopedTest` +1 classification. **No
+  `DATA_CLASSIFICATION` rows, no migration and no contract change: this task creates no columns
+  and no endpoint** — it is arithmetic and a seam.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1450 tests across 14 modules, 0 failures**, and **183 targeted database tests across 20
+  suites, 0 failures** (merchant, payments and checkout). **The full battery deliberately
+  skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 **P6-TST-001 — The tenancy and fee-conservation battery** — `PLANNED`
 - **Objective**: the two gate properties that decay silently, demonstrated in bulk.

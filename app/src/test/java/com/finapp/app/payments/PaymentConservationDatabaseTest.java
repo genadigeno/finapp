@@ -802,6 +802,19 @@ class PaymentConservationDatabaseTest {
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
                         landed -> {}),
+                // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own for the same
+                // reason: every refund in this suite falls back to Phase 5's two lines, and
+                // proving that through the real composition is what makes "byte-identical"
+                // a claim about production rather than about a double.
+                new com.finapp.app.merchant.MerchantBoundRefundComposition(
+                        new com.finapp.merchant.MerchantSettlement(
+                                new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                                new com.finapp.merchant.JdbcFeeScheduleStore(),
+                                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                                new com.finapp.ledger.ChartOfAccounts<>(new com.finapp.ledger.JdbcLedgerAccountStore()),
+                                new JdbcOutboxWriter(),
+                                IDS),
+                        new com.finapp.payments.WalletRefundComposition()),
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(), IDS, CLOCK);
     }

@@ -132,6 +132,8 @@ class PaymentCaptureTest {
                         // The wallet top-up composition, which is what this suite's intents
                         // are: the two lines PaymentOutcomes used to write inline (P6-TSK-005).
                         new WalletTopUpComposition(),
+                        // And its refund mirror (P6-TSK-014), unchanged from Phase 5's pair.
+                        new WalletRefundComposition(),
                         (uow, record) -> auditTrail.add(record),
                         (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS,

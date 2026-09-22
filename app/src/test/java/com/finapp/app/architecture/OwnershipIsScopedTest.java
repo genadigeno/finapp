@@ -669,6 +669,19 @@ class OwnershipIsScopedTest {
                                         + " database suite; the P5-TSK-016 view will walk the"
                                         + " same platform-held chain.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.sumCompletedFor",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "P6-TSK-014. The sibling above, on the same platform-held"
+                                        + " attempt identifier and under the same lock - and"
+                                        + " COMPLETED rather than non-failed, which is a"
+                                        + " different question rather than a stricter version"
+                                        + " of the same one: the bound asks what may still be"
+                                        + " returned, this asks what HAS been, because a fee"
+                                        + " returned against a refund still in flight would be"
+                                        + " returned against money that may never leave.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcRefundStore.sumNonFailedFor",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

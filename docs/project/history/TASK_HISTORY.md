@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 132 "Previously" blocks, newest first, from `P6-TSK-007` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 133 "Previously" blocks, newest first, from `P6-TSK-008` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,53 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-008` — expiry: the sweeper and the late-completion race** — `COMPLETE` (2026-09-22).
+**The phase's named race, decided in both orderings — and every state in ADR-0053's machine now
+has a producer.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The race driven both ways | The late ordering produced the way production produces it, not by editing a row |
+| Counted in the tables | One `EXPIRED`, one history row, one audit record, one event |
+| Concurrent sweepers converge | Ten on one offer; nine honest skips |
+| No landed cent unexplained | **96.80 of a 100.00 purchase in either ordering** |
+
+### Why `PAYMENT_PENDING` expires, and why it is not optional
+
+ADR-0053 gave checkout **no failure state**, on purpose: a declined payment is the *payment's*
+state and the customer retries on the same intent. So a customer who is declined and then closes
+the tab leaves a `PAYMENT_PENDING` row that **nothing else can ever end**. This edge is its only
+terminal escape — and it is also what makes ADR-0053 §5's own scenario reachable, because "the
+capture completes after the session expired" requires a session to be `EXPIRED` while a payment
+is in flight.
+
+It is protected by a **grace**, and the grace is a safety margin rather than the correctness:
+expiring a payment in flight is harmless to the money (the late edge catches the capture) and
+corrosive to the meaning, because `COMPLETED_LATE` would then count ordinary provider latency
+instead of the honest exception it exists to make countable.
+
+### Two survivors, and both were the battery working
+
+The conditional transition's row count, ignored, changes nothing here — the `FOR UPDATE` lock
+serializes every racer and a loser re-reads `EXPIRED` first. **Recorded rather than patched**,
+with the sharper form (removing the state check) run instead and caught. The withdrawal's tenant
+predicate, weakened, left every HTTP assertion green, because the `404` *and* the untouched row
+both came from the tenant-scoped **render** sharing the command's transaction. **A predicate no
+test can reach is one a later refactor removes**, so the command is now driven directly.
+
+### Two gate findings, neither made by a probe
+
+**The state and the clock were telling the same customer different things about the same dead
+offer** — `SessionExpired` before the sweeper ran, `NotConfirmable` after. One question, one
+answer, whichever side of the tick it arrives on. And **the grace was applied at the query and
+not at the decision**: a row read as `OPEN` and confirmed before the lock was expired as
+`PAYMENT_PENDING` with a payment one second old. The state a row is in *when the decision is
+made* is the state whose deadline applies.
 
 ---
 

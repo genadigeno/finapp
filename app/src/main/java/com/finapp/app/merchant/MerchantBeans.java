@@ -146,6 +146,19 @@ public class MerchantBeans {
      * HERE rather than in {@code PaymentBeans}, because the reason it exists is that
      * {@code payments} cannot name the type it delegates to.
      */
+    /**
+     * The refund's mirror seam (`P6-TSK-014`): the capture got one a task earlier and the
+     * refund did not, which is why `refundFeePolicy` was pinned, versioned and read by
+     * nothing. Same ordering as the capture's - ask the merchant module, fall back to Phase
+     * 5's two lines - so the presence of a fee pin is what decides, per refund.
+     */
+    @Bean
+    com.finapp.payments.RefundComposition<Connection> refundComposition(
+            com.finapp.merchant.MerchantSettlement merchantSettlement) {
+        return new MerchantBoundRefundComposition(
+                merchantSettlement, new com.finapp.payments.WalletRefundComposition());
+    }
+
     @Bean
     com.finapp.payments.CaptureComposition<Connection> captureComposition(
             com.finapp.merchant.MerchantSettlement merchantSettlement,

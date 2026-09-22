@@ -483,6 +483,17 @@ class PaymentCaptureDatabaseTest {
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
                         landed -> {}),
+                                            // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own: every
+                                            // refund here falls back to Phase 5's two lines.
+                                            new com.finapp.app.merchant.MerchantBoundRefundComposition(
+                                                    new com.finapp.merchant.MerchantSettlement(
+                                                            new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                                                            new com.finapp.merchant.JdbcFeeScheduleStore(),
+                                                            ledgerAccounts,
+                                                            new ChartOfAccounts<>(ledgerAccounts),
+                                                            new JdbcOutboxWriter(),
+                                                            IDS),
+                                                    new com.finapp.payments.WalletRefundComposition()),
                                             new JdbcAuditWriter(), new JdbcOutboxWriter(),
                                             IDS, CLOCK),
                                     new JdbcAuditWriter(),
@@ -548,6 +559,17 @@ class PaymentCaptureDatabaseTest {
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
                         landed -> {}),
+                        // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own: every
+                        // refund here falls back to Phase 5's two lines.
+                        new com.finapp.app.merchant.MerchantBoundRefundComposition(
+                                new com.finapp.merchant.MerchantSettlement(
+                                        new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                                        new com.finapp.merchant.JdbcFeeScheduleStore(),
+                                        ledgerAccounts,
+                                        new ChartOfAccounts<>(ledgerAccounts),
+                                        new JdbcOutboxWriter(),
+                                        IDS),
+                                new com.finapp.payments.WalletRefundComposition()),
                         new JdbcAuditWriter(),
                         outbox,
                         IDS,

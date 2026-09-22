@@ -474,41 +474,96 @@ class MerchantCaptureDatabaseTest {
     }
 
     @Test
-    @DisplayName("A GATE FINDING, PINNED: a refund of a merchant-bound capture returns the"
-            + " GROSS and applies NO fee treatment - the pinned refundFeePolicy has no"
-            + " consumer yet")
-    void aMerchantRefundAppliesNoFeeTreatmentYet() throws Exception {
-        // FOUND BY THIS TASK'S COMPLETION GATE, and recorded here rather than only in a
-        // document, because a gap that lives only in prose is a gap nobody trips over.
-        //
-        // The CAPTURE now composes its lines through a seam; the REFUND still writes its own
-        // two inline (PaymentOutcomes.applyRefund: DR the credit account / CR clearing). For a
-        // merchant-bound payment that returns the gross out of the payable - the right
-        // DIRECTION - but ADR-0050's consequences say the fee follows the schedule's
-        // refundFeePolicy, RETAINED or RETURNED, and NOTHING READS THAT ATTRIBUTE. A RETURNED
-        // policy therefore owes the merchant its fee back and no code returns it.
-        //
-        // Unreachable in production today: only a test can create a merchant-bound intent
-        // (P6-TSK-007 brings the first real one). Owned by P6-TSK-014, which this gate added
-        // to the backlog - without it, P6-TST-002's "payables equal captured - fees - refunds
-        // - payouts" is an identity nothing produces the terms for.
-        //
-        // THIS TEST PINS THE BEHAVIOUR THAT EXISTS so the suite tells the truth, and so that
-        // the task which fixes it must CHANGE this test rather than discover the question.
-        assertThat(feeTreatmentOnRefundExists())
-                .as("when this becomes true, P6-TSK-014 has landed and this test is its"
-                        + " assertion to rewrite")
-                .isFalse();
+    @DisplayName("RETAINED: the refund returns the GROSS out of the payable and leaves"
+            + " FEE_REVENUE untouched - the platform keeps what it charged")
+    void aRetainedRefundReturnsTheGrossAndKeepsTheFee() throws Exception {
+        // THE GATE FINDING FROM P6-TSK-005, NOW CLOSED. That task gave the CAPTURE a
+        // composition seam and left the refund writing its own two lines inline, so
+        // refundFeePolicy was pinned, versioned and read by nothing. The test that stood here
+        // asserted the ABSENCE and named this task as the one that must rewrite it.
+        Merchant merchant = onboardedMerchant("0.029", 30L, RefundFeePolicy.RETAINED);
+        Payment payment = merchantBoundPayment(merchant, AMOUNT);
+        capturedAttempt(payment);
+
+        postRefund(merchant, payment, AMOUNT, ZERO);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePosition(app, merchant).minorUnits())
+                    .as("the merchant ends DOWN BY THE FEE: they received 96.80 and returned"
+                            + " 100.00, and the platform keeps the 3.20 it charged for"
+                            + " processing a payment that DID happen. The policy working,"
+                            + " not a defect")
+                    .isEqualTo(-3_20L);
+        }
     }
 
-    /**
-     * Whether any production code reads a schedule's refund-fee policy. Asserted structurally
-     * rather than behaviourally: the gap is an ABSENCE, and the honest way to pin an absence
-     * is to look for the thing that is not there.
-     */
-    private static boolean feeTreatmentOnRefundExists() {
-        return java.util.Arrays.stream(MerchantSettlement.class.getDeclaredMethods())
-                .anyMatch(method -> method.getName().toLowerCase().contains("refund"));
+    @Test
+    @DisplayName("RETURNED: a full refund returns the gross AND the whole assessed fee, so"
+            + " the merchant's position cancels to EXACTLY ZERO")
+    void aReturnedFullRefundReversesEverything() throws Exception {
+        Merchant merchant = onboardedMerchant("0.029", 30L, RefundFeePolicy.RETURNED);
+        Payment payment = merchantBoundPayment(merchant, AMOUNT);
+        PaymentAttemptId attempt = capturedAttempt(payment);
+
+        postRefund(merchant, payment, AMOUNT, ZERO);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePosition(app, merchant).minorUnits())
+                    .as("96.80 in at the capture, 100.00 out and 3.20 back at the refund:"
+                            + " EXACTLY ZERO, to the minor unit (INV-MER-04)")
+                    .isZero();
+            assertThat(linePurposes(app, attempt))
+                    .as("and the CAPTURE's own entry is untouched by any of it")
+                    .hasSize(4);
+        }
+    }
+
+    @Test
+    @DisplayName("INV-MER-04 ACROSS THE REFUND BOUNDARY: a ONE-CENT fee refunded in two"
+            + " halves returns ONE cent, not two - the split that discriminates")
+    void twoPartialRefundsReturnExactlyTheAssessedFee() throws Exception {
+        // A ONE-CENT fee refunded in two halves - chosen because it is the split that
+        // DISCRIMINATES, which the first draft of this test's 33.33/66.67 did not. Each half's
+        // naive share is exactly half a cent; HALF_UP rounds BOTH to a whole one and the
+        // platform pays out TWICE what it charged, leaving the payable a cent to the good with
+        // no capture behind it. Differencing a cumulative allocation cannot do that: the first
+        // half takes the whole indivisible cent and the second takes none.
+        Merchant merchant = onboardedMerchant("0", 1L, RefundFeePolicy.RETURNED);
+        Payment payment = merchantBoundPayment(merchant, AMOUNT);
+        capturedAttempt(payment);
+        Money first = Money.ofMinorUnits(50_00L, EUR);
+        Money second = Money.ofMinorUnits(50_00L, EUR);
+
+        postRefund(merchant, payment, first, ZERO);
+        postRefund(merchant, payment, second, first);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePosition(app, merchant).minorUnits())
+                    .as("the books cancel: no cent created, none stranded")
+                    .isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("INV-MER-03 ACROSS THE REFUND BOUNDARY: a version created after the capture"
+            + " prices NEITHER refund - a refund is priced by what the PAYMENT was priced by")
+    void aVersionCreatedAfterTheCapturePricesNoRefund() throws Exception {
+        Merchant merchant = onboardedMerchant("0.029", 30L, RefundFeePolicy.RETURNED);
+        Payment payment = merchantBoundPayment(merchant, AMOUNT);
+        capturedAttempt(payment);
+
+        // A price change lands between the capture and the refund. If the refund read TODAY'S
+        // schedule it would price at 10% + 5.00 and return a figure nobody agreed to.
+        addVersion(merchant, "0.10", 500L);
+
+        postRefund(merchant, payment, AMOUNT, ZERO);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePosition(app, merchant).minorUnits())
+                    .as("priced by the PIN: the 3.20 that was charged is the 3.20 that came"
+                            + " back, so the position is zero rather than some other number")
+                    .isZero();
+        }
     }
 
     @Test
@@ -623,6 +678,12 @@ class MerchantCaptureDatabaseTest {
     private record Payment(PaymentIntentId intent, UUID party, UUID method, Actor payer) {}
 
     private Merchant onboardedMerchant(String rate, long fixedMinor) throws Exception {
+        return onboardedMerchant(rate, fixedMinor, RefundFeePolicy.RETAINED);
+    }
+
+    /** `P6-TSK-014`: the policy is a version's term, so a suite that tests it must choose. */
+    private Merchant onboardedMerchant(String rate, long fixedMinor, RefundFeePolicy policy)
+            throws Exception {
         UUID party = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             execute(
@@ -682,7 +743,7 @@ class MerchantCaptureDatabaseTest {
                                                             FeeRate.of(new BigDecimal(rate)),
                                                             Money.ofMinorUnits(fixedMinor, EUR),
                                                             RoundingPolicy.HALF_EVEN,
-                                                            RefundFeePolicy.RETAINED,
+                                                            policy,
                                                             Optional.empty(),
                                                             "initial pricing")));
             runner.inTransaction(
@@ -847,6 +908,60 @@ class MerchantCaptureDatabaseTest {
         return attempt;
     }
 
+
+    private static final Money ZERO = Money.ofMinorUnits(0L, EUR);
+
+    /** Composes the refund's lines through the PRODUCTION seam and posts them. */
+    private void postRefund(
+            Merchant merchant, Payment payment, Money refunded, Money refundedBefore) {
+        java.util.UUID refundId = IDS.next();
+        // The posting is an auditable act and demands an actor (INV-AUD-01); in production
+        // this scope is the outcome application's own (PaymentOutcomes runs as the platform).
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
+        runner.inTransaction(
+                uow -> {
+                    java.util.List<com.finapp.ledger.JournalLine> lines =
+                            refundComposition()
+                                    .settle(
+                                            uow,
+                                            new com.finapp.payments.RefundSettlement(
+                                                    payment.intent(),
+                                                    com.finapp.payments.PaymentAttemptId.of(
+                                                            IDS.next()),
+                                                    com.finapp.payments.RefundId.of(refundId),
+                                                    clearing(),
+                                                    merchant.payable(),
+                                                    refunded,
+                                                    refundedBefore,
+                                                    correlation(),
+                                                    Instant.now(CLOCK)));
+                    java.time.LocalDate today =
+                            java.time.LocalDate.now(CLOCK.withZone(java.time.ZoneOffset.UTC));
+                    postings()
+                            .post(
+                                    uow,
+                                    new com.finapp.ledger.PostingCommand(
+                                            "payment-refund:" + refundId,
+                                            today,
+                                            today,
+                                            refundId.toString(),
+                                            lines));
+                    return null;
+                });
+        }
+    }
+
+    private com.finapp.ledger.PostingService postings() {
+        return new PostingService(
+                executor(),
+                new JdbcJournalEntryStore(IDS),
+                new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
+                new JdbcBalanceProjection(),
+                IDS,
+                CLOCK,
+                com.finapp.ledger.PostingObserver.NONE);
+    }
     // ----------------------------------------------------------------- wiring
 
     /**
@@ -886,6 +1001,12 @@ class MerchantCaptureDatabaseTest {
         // production consumer is wired in CheckoutBeans (P6-TSK-007's seam).
         return new MerchantBoundCaptureComposition(
                 settlement(), new WalletTopUpComposition(), landed -> {});
+    }
+
+    /** The refund's mirror seam — the same construction {@code MerchantBeans} performs. */
+    private com.finapp.payments.RefundComposition<Connection> refundComposition() {
+        return new MerchantBoundRefundComposition(
+                settlement(), new com.finapp.payments.WalletRefundComposition());
     }
 
     private com.finapp.merchant.MerchantOnboarding onboarding() {
@@ -930,6 +1051,7 @@ class MerchantCaptureDatabaseTest {
                         PostingObserver.NONE),
                 new ChartOfAccounts<>(ledgerAccounts),
                 composition(),
+                refundComposition(),
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,

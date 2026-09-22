@@ -381,6 +381,51 @@ class PaymentsSchemaDatabaseTest {
     }
 
     @Test
+    @DisplayName("RESERVED IS NOT RETURNED: the COMPLETED sum and the non-failed sum are"
+            + " DIFFERENT questions, and pricing a fee against the wrong one returns money"
+            + " for a refund that has not happened (P6-TSK-014)")
+    void theCompletedSumIsNotTheBudgetSum() throws Exception {
+        // UUIDv7 for the attempt, because the typed identifier refuses anything else
+        // (ADR-0013) - this suite's other tests only ever hand raw UUIDs to SQL.
+        com.finapp.sharedkernel.id.IdGenerator ids =
+                new com.finapp.sharedkernel.id.IdGenerator(
+                        java.time.Clock.systemUTC(), new java.security.SecureRandom());
+        UUID intent = UUID.randomUUID();
+        UUID attempt = ids.next();
+        UUID landed = UUID.randomUUID();
+        UUID inFlight = UUID.randomUUID();
+        com.finapp.payments.JdbcRefundStore refunds = new com.finapp.payments.JdbcRefundStore();
+        com.finapp.payments.PaymentAttemptId attemptId =
+                com.finapp.payments.PaymentAttemptId.of(attempt);
+        com.finapp.sharedkernel.money.CurrencyCode eur =
+                com.finapp.sharedkernel.money.CurrencyCode.of("EUR");
+
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "PROCESSING");
+            insertAttempt(app, attempt, intent, "CAPTURED");
+            insertRefund(app, landed, attempt, 400, "EUR");
+            insertRefund(app, inFlight, attempt, 300, "EUR");
+            try (PreparedStatement complete =
+                    app.prepareStatement(
+                            "UPDATE payments.refund SET status = 'COMPLETED',"
+                                    + " provider_reference = 'psp-refund-1' WHERE id = ?")) {
+                complete.setObject(1, landed);
+                assertThat(complete.executeUpdate()).isEqualTo(1);
+            }
+
+            assertThat(refunds.sumNonFailedFor(app, attemptId, eur).minorUnits())
+                    .as("the BUDGET bound: both refunds have reserved their share")
+                    .isEqualTo(700L);
+            assertThat(refunds.sumCompletedFor(app, attemptId, eur).minorUnits())
+                    .as("what has actually LEFT: only the one that completed. The in-flight"
+                            + " refund can still fail, and a fee returned against it would be"
+                            + " returned against money that never moved, with no producer for"
+                            + " taking it back")
+                    .isEqualTo(400L);
+        }
+    }
+
+    @Test
     @DisplayName("provider evidence is append-only for every writer, and its shape CHECKs hold")
     void evidenceIsAppendOnlyForEveryWriter() throws Exception {
         UUID intent = UUID.randomUUID();

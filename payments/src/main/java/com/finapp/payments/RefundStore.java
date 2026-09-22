@@ -62,6 +62,23 @@ public interface RefundStore<T> {
      */
     Money sumNonFailedFor(T unitOfWork, PaymentAttemptId attempt, CurrencyCode currency);
 
+    /**
+     * What this attempt has actually had returned — the <strong>{@code COMPLETED}</strong> sum
+     * (`P6-TSK-014`).
+     *
+     * <p><strong>Not {@link #sumNonFailedFor}, and the difference is the point.</strong> The
+     * budget bound counts non-failed refunds, correctly: a refund in flight has already
+     * reserved its share of what may be returned, and letting a second one reserve the same
+     * money would let the pair exceed the capture. But money that has been <em>reserved</em>
+     * has not <em>left</em>, and a sibling refund can still fail. Anything priced against the
+     * non-failed sum would therefore return the merchant's fee for a refund that never
+     * happened, with no producer for taking it back.
+     *
+     * <p>Valid under the command's {@code FOR UPDATE} on the attempt row, like its sibling: the
+     * lock is what makes the sum current rather than a write-skew snapshot.
+     */
+    Money sumCompletedFor(T unitOfWork, PaymentAttemptId attempt, CurrencyCode currency);
+
     /** {@code from → COMPLETED} with the provider's reference; the row count is the answer. */
     boolean complete(
             T unitOfWork, RefundId refund, RefundStatus from, ProviderReference providerReference);

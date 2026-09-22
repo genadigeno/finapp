@@ -9,6 +9,7 @@ import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
+import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.event.EventEnvelope;
 import com.finapp.sharedkernel.event.EventId;
@@ -70,6 +71,7 @@ import java.util.UUID;
 public final class MerchantSettlement {
 
     static final String EVENT_TYPE = "merchant.FeeAssessed";
+    static final String FEE_RETURNED_EVENT_TYPE = "merchant.FeeReturned";
     static final String PRODUCER = "merchant";
     static final int EVENT_VERSION = 1;
     static final String AGGREGATE_TYPE = "merchant";
@@ -202,6 +204,184 @@ public final class MerchantSettlement {
     }
 
     /**
+     * The lines a refund of a merchant-bound payment posts, or empty when the payment is
+     * nobody's merchant's (`P6-TSK-014`, ADR-0050's consequences).
+     *
+     * <h2>The gross comes out of the payable; the fee follows the PINNED policy</h2>
+     *
+     * <pre>
+     *   RETAINED:  DR MERCHANT_PAYABLE refunded / CR SETTLEMENT_CLEARING refunded
+     *   RETURNED:  ... and DR FEE_REVENUE returned / CR MERCHANT_PAYABLE returned
+     * </pre>
+     *
+     * <p>Under {@code RETAINED} the merchant ends a fully refunded capture <strong>down by the
+     * fee</strong>, and that is the policy working rather than a defect: they received
+     * gross minus fee and returned the gross, so the platform keeps what it charged for
+     * processing a payment that did happen. Under {@code RETURNED} a fully refunded capture
+     * leaves the payable at <strong>exactly zero</strong> — the reversal is complete.
+     *
+     * <h2>Priced by the pin, never by today's schedule</h2>
+     *
+     * <p>The version is resolved from {@code payment_fee_pin}, exactly as the capture resolved
+     * it, so a schedule version created between the capture and the refund prices neither. A
+     * refund is priced by what the payment was priced by ({@code INV-MER-03}) — and
+     * {@link FeeCalculation#returnedFee} checks that the assessment it is handed came from that
+     * version rather than trusting this method to have looked it up correctly.
+     *
+     * <h2>The two checked assumptions</h2>
+     *
+     * <p>The merchant's payable must exist, and the account the refund debits must BE that
+     * payable — {@link #compose}'s second and third assumptions at the reversal, for the same
+     * reason: a refund taking money out of the wrong account is the defect this method exists
+     * to make impossible. Both throw, failing the whole refund transaction, because returning
+     * the gross out of somewhere else and calling the refund done is the worse answer.
+     *
+     * @param intentRef the refunded payment's intent, by value
+     * @param debit the account the refund was going to take the money from
+     * @param refunded this refund's amount
+     * @param refundedBefore what had already been refunded and completed, excluding this one
+     * @throws MerchantSettlementException if either assumption breaks
+     */
+    public Optional<List<JournalLine>> refund(
+            Connection unitOfWork,
+            UUID intentRef,
+            LedgerAccountId clearing,
+            LedgerAccountId debit,
+            Money refunded,
+            Money refundedBefore,
+            Correlation correlation,
+            Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(intentRef, "intentRef must not be null");
+
+        Optional<PaymentFeePin> found = pins.findFor(unitOfWork, intentRef);
+        if (found.isEmpty()) {
+            // A wallet top-up's refund, as seen from here. Empty keeps Phase 5's path
+            // byte-identical: no pin, no fee treatment, no change.
+            return Optional.empty();
+        }
+        PaymentFeePin pin = found.get();
+
+        FeeScheduleVersion version =
+                schedules
+                        .findVersion(unitOfWork, pin.versionId())
+                        .orElseThrow(
+                                () ->
+                                        new MerchantSettlementException(
+                                                "the pinned fee schedule version "
+                                                        + pin.versionId()
+                                                        + " is not there; a pinned row is"
+                                                        + " immutable and undeletable, so this"
+                                                        + " means the pin outlived its"
+                                                        + " schema"));
+
+        LedgerAccount payable =
+                ledgerAccounts
+                        .findOwned(
+                                unitOfWork,
+                                pin.merchantId().value(),
+                                AccountPurpose.MERCHANT_PAYABLE,
+                                refunded.currency())
+                        .orElseThrow(
+                                () ->
+                                        new MerchantSettlementException(
+                                                "merchant " + pin.merchantId() + " has no "
+                                                        + refunded.currency()
+                                                        + " payable account; the capture this"
+                                                        + " refund reverses could not have"
+                                                        + " posted without one"));
+        if (!payable.id().equals(debit)) {
+            throw new MerchantSettlementException(
+                    "the refund would take " + refunded + " from " + debit + " but merchant "
+                            + pin.merchantId() + "'s payable is " + payable.id()
+                            + "; the intent and its fee pin disagree about whose payment this"
+                            + " is");
+        }
+
+        // The gross out of the payable - the capture's own inverse, whatever the policy says
+        // about the fee.
+        List<JournalLine> lines =
+                new java.util.ArrayList<>(
+                        List.of(
+                                new JournalLine(payable.id(), Direction.DEBIT, refunded),
+                                new JournalLine(clearing, Direction.CREDIT, refunded)));
+
+        if (version.refundFeePolicy() == RefundFeePolicy.RETURNED) {
+            FeeAssessment assessment = FeeCalculation.assess(pin.gross(), version);
+            Money returned =
+                    FeeCalculation.returnedFee(assessment, version, refundedBefore, refunded);
+            if (!returned.isZero()) {
+                // Zero happens legitimately: a free schedule, or a partial refund so small
+                // that its share rounds to nothing this time and to a whole unit on a later
+                // one - which the CUMULATIVE arithmetic handles without stranding anything.
+                // A zero line asserts nothing and the ledger refuses one anyway.
+                LedgerAccount feeRevenue =
+                        chart.resolve(unitOfWork, AccountPurpose.FEE_REVENUE, refunded.currency());
+                lines.add(new JournalLine(feeRevenue.id(), Direction.DEBIT, returned));
+                lines.add(new JournalLine(payable.id(), Direction.CREDIT, returned));
+                announceReturn(unitOfWork, pin, returned, refunded, correlation, at);
+            }
+        }
+        return Optional.of(List.copyOf(lines));
+    }
+
+    /**
+     * {@code merchant.FeeReturned}, on the refund's own connection.
+     *
+     * <p><strong>Announced only when a fee was actually returned.</strong> A {@code RETAINED}
+     * policy emits nothing, because an event saying "no fee came back" is a message no
+     * consumer can act on and a contract nobody could later change.
+     */
+    private void announceReturn(
+            Connection unitOfWork,
+            PaymentFeePin pin,
+            Money returned,
+            Money refunded,
+            Correlation correlation,
+            Instant at) {
+        outbox.write(
+                unitOfWork,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        FEE_RETURNED_EVENT_TYPE,
+                        EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        pin.merchantId(),
+                        AGGREGATE_TYPE,
+                        at,
+                        PRODUCER,
+                        correlation.correlationId(),
+                        causeOf(correlation)),
+                EventPayload.of()
+                        .with("paymentIntentId", pin.paymentIntentRef().toString())
+                        // INV-HIST-04 on the wire, as FeeAssessed carries it: the version alone
+                        // lets a consumer reproduce both the original fee and this share.
+                        .with("feeScheduleVersionId", pin.versionId().value().toString())
+                        .with("refundedMinor", String.valueOf(refunded.minorUnits()))
+                        .with("feeReturnedMinor", String.valueOf(returned.minorUnits()))
+                        .with("currency", returned.currency().code())
+                        .toBytes(),
+                EventPayload.MEDIA_TYPE);
+    }
+
+    /**
+     * The causation identifier this module's events carry, <strong>resolving a root flow to
+     * itself</strong> ({@code PaymentCreation.resolvedCorrelation}'s idiom).
+     *
+     * <p>Both announcements here used to call {@code cause().orElseThrow()}, which is true of
+     * every caller that exists — a request or a resolver, both already caused — and is a
+     * landmine for the next one. `P6-TSK-008` hit exactly this in the expiry sweeper, whose
+     * flow is a root and has no cause by construction. {@code INV-EVT-03} makes all ten
+     * envelope fields mandatory, so the honest answer for a root is that it causes itself,
+     * and stating it once here is cheaper than a caller discovering it.
+     */
+    private static CausationId causeOf(Correlation correlation) {
+        return correlation
+                .cause()
+                .orElseGet(() -> CausationId.of(correlation.correlationId().value()));
+    }
+
+    /**
      * Records the price this payment will be charged at. Commits with the intent it prices, or
      * neither exists.
      *
@@ -278,7 +458,7 @@ public final class MerchantSettlement {
                         at,
                         PRODUCER,
                         correlation.correlationId(),
-                        correlation.cause().orElseThrow()),
+                        causeOf(correlation)),
                 EventPayload.of()
                         .with("paymentIntentId", pin.paymentIntentRef().toString())
                         // INV-HIST-04 on the wire: a consumer can reproduce the number below

@@ -82,6 +82,7 @@ public final class PaymentOutcomes {
     private final PostingService postings;
     private final ChartOfAccounts<Connection> chart;
     private final CaptureComposition<Connection> composition;
+    private final RefundComposition<Connection> refundComposition;
     private final AuditWriter<Connection> audit;
     private final OutboxWriter<Connection> outbox;
     private final IdGenerator ids;
@@ -95,6 +96,7 @@ public final class PaymentOutcomes {
             PostingService postings,
             ChartOfAccounts<Connection> chart,
             CaptureComposition<Connection> composition,
+            RefundComposition<Connection> refundComposition,
             AuditWriter<Connection> audit,
             OutboxWriter<Connection> outbox,
             IdGenerator ids,
@@ -106,6 +108,9 @@ public final class PaymentOutcomes {
         this.postings = Objects.requireNonNull(postings, "postings must not be null");
         this.chart = Objects.requireNonNull(chart, "chart must not be null");
         this.composition = Objects.requireNonNull(composition, "composition must not be null");
+        this.refundComposition =
+                Objects.requireNonNull(
+                        refundComposition, "refundComposition must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
         this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
@@ -409,6 +414,24 @@ public final class PaymentOutcomes {
                                     AccountPurpose.SETTLEMENT_CLEARING,
                                     refund.amount().currency());
                     LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+
+                    // WHAT HAD ALREADY BEEN RETURNED, EXCLUDING THIS REFUND (`P6-TSK-014`).
+                    // The completed sum is read AFTER this refund's own conditional fired, so
+                    // it includes this one; the composer is handed the total BEFORE it,
+                    // because the difference of two cumulative allocations is the whole of
+                    // the proportional arithmetic and neither side of that subtraction may
+                    // be guessed. Valid under the command's FOR UPDATE on the attempt row.
+                    Money refundedBefore =
+                            refunds.sumCompletedFor(
+                                            uow, refund.attemptId(), refund.amount().currency())
+                                    .minus(refund.amount());
+
+                    // THE LINES ARE COMPOSED, NOT WRITTEN HERE (P6-TSK-014, ADR-0050 section
+                    // 6). A wallet top-up's refund reverses in two (DR wallet / CR clearing);
+                    // a merchant-bound refund returns the gross out of the PAYABLE and, under
+                    // a RETURNED policy, gives the merchant back its share of the fee - four
+                    // lines. Which it is depends on the flow that created the intent, and
+                    // this module deliberately cannot tell.
                     postings.post(
                             uow,
                             new PostingCommand(
@@ -416,13 +439,18 @@ public final class PaymentOutcomes {
                                     today,
                                     today,
                                     refund.id().value().toString(),
-                                    List.of(
-                                            new JournalLine(
-                                                    wallet, Direction.DEBIT, refund.amount()),
-                                            new JournalLine(
+                                    refundComposition.settle(
+                                            uow,
+                                            new RefundSettlement(
+                                                    intentId,
+                                                    refund.attemptId(),
+                                                    refund.id(),
                                                     clearing.id(),
-                                                    Direction.CREDIT,
-                                                    refund.amount()))));
+                                                    wallet,
+                                                    refund.amount(),
+                                                    refundedBefore,
+                                                    correlation,
+                                                    now))));
                     // The terminal fact publishes with the transition that commits it
                     // (INV-EVT-01) - inside the conditional, so a duplicate emits nothing.
                     announceRefund(

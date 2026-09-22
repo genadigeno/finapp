@@ -147,6 +147,19 @@ class PaymentSweeperScheduleTest {
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
                         landed -> {}),
+                        // THE REFUND'S MIRROR SEAM (P6-TSK-014): this schedule's sweeper
+                        // never posts a refund, and the seam is wired anyway so the
+                        // construction stays the one MerchantBeans performs.
+                        new com.finapp.app.merchant.MerchantBoundRefundComposition(
+                                new com.finapp.merchant.MerchantSettlement(
+                                        new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                                        new com.finapp.merchant.JdbcFeeScheduleStore(),
+                                        new com.finapp.ledger.JdbcLedgerAccountStore(),
+                                        new com.finapp.ledger.ChartOfAccounts<>(
+                                                new com.finapp.ledger.JdbcLedgerAccountStore()),
+                                        new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                                        ids()),
+                                new com.finapp.payments.WalletRefundComposition()),
                         (uow, record) -> {},
                         (uow, envelope, payload, mediaType) -> {},
                         ids(),

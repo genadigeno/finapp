@@ -273,57 +273,48 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-014` — the merchant refund: gross out of the payable, fee per the pinned policy** —
-`READY`. **The last item in M6.3, and the one that closes fee economics.** `refundFeePolicy` is
-pinned and versioned by `P6-TSK-004` and read by nothing: a refund of a merchant-bound capture
-returns the gross out of the payable (the right direction) while a `RETURNED` policy owes the
-merchant its fee back and no code returns it. Found by `P6-TSK-005`'s completion gate, which is
-the provenance worth keeping. Scope, acceptance and DoD profiles in the backlog entry.
+**`P6-TSK-009` — the merchant transaction surface** — `READY`. **M6.4 opens: the merchant sees
+its business.** `GET /v1/merchant/transactions` — sessions, orders, captures, refunds and fees
+joined by stored identifiers, paginated, **with the tenant in the statement** — and the session
+read beside it. The one-404 discipline on every path, and no other tenant's identifier in any
+response or error. Scope, acceptance and DoD profiles in the backlog entry.
 
 ### Just completed
 
-**`P6-TSK-008` — expiry: the sweeper and the late-completion race** — `COMPLETE` (2026-09-22).
-**The phase's named race, decided in both orderings — and every state in ADR-0053's machine now
-has a producer.**
+**`P6-TSK-014` — the merchant refund: gross out of the payable, fee per the pinned policy** —
+`COMPLETE` (2026-09-22). **M6.3 closes, and `refundFeePolicy` finally has a consumer** — the gap
+`P6-TSK-005`'s own completion gate found, named, and handed to this task.
 
 | Acceptance criterion | Evidence |
 |---|---|
-| The race driven both ways | The late ordering produced the way production produces it, not by editing a row |
-| Counted in the tables | One `EXPIRED`, one history row, one audit record, one event |
-| Concurrent sweepers converge | Ten on one offer; nine honest skips |
-| No landed cent unexplained | **96.80 of a 100.00 purchase in either ordering** |
+| `RETAINED` returns gross, keeps the fee | The merchant ends **down by the fee** — the policy working |
+| `RETURNED` returns gross and the share | The payable cancels to **exactly zero** |
+| Two partials return exactly the fee | An identity, not a bound: the allocation telescopes |
+| A later version prices neither refund | `INV-MER-03` at the boundary that reverses |
+| The wallet-refund suite untouched | Proved **through** the production seam, not around it |
 
-### Why `PAYMENT_PENDING` expires, and why it is not optional
+### The arithmetic is the task
 
-ADR-0053 gave checkout **no failure state**, on purpose: a declined payment is the *payment's*
-state and the customer retries on the same intent. So a customer who is declined and then closes
-the tab leaves a `PAYMENT_PENDING` row that **nothing else can ever end**. This edge is its only
-terminal escape — and it is also what makes ADR-0053 §5's own scenario reachable, because "the
-capture completes after the session expired" requires a session to be `EXPIRED` while a payment
-is in flight.
+A proportional share of a fee, rounded once per refund, **does not add up**. A one-cent fee
+refunded in two halves returns *two* cents that way — each half's share is exactly half a cent
+and rounding takes both up, so the platform pays out twice what it ever charged. Differencing a
+**cumulative allocation** cannot: any sequence telescopes to `cum(total refunded)`, and a full
+refund gives `round(fee × 1)`, which is the assessed fee itself. Conservation by algebra rather
+than by a clamp or a running total anybody has to keep.
 
-It is protected by a **grace**, and the grace is a safety margin rather than the correctness:
-expiring a payment in flight is harmless to the money (the late edge catches the capture) and
-corrosive to the meaning, because `COMPLETED_LATE` would then count ordinary provider latency
-instead of the honest exception it exists to make countable.
+### One survivor, recorded rather than patched
 
-### Two survivors, and both were the battery working
+`applyRefund` reading the budget's non-failed sum instead of the completed one changes nothing
+in any test: the two sums are proven to differ, but nothing drives a refund with a **sibling in
+flight**, so the caller's choice is unbound. The failure mode is at least **loud** — an inflated
+prior total pushes the cumulative figure past the capture and the arithmetic throws rather than
+returning a wrong share quietly. `P6-TST-002`'s concurrent-refund storm inherits the question.
 
-The conditional transition's row count, ignored, changes nothing here — the `FOR UPDATE` lock
-serializes every racer and a loser re-reads `EXPIRED` first. **Recorded rather than patched**,
-with the sharper form (removing the state check) run instead and caught. The withdrawal's tenant
-predicate, weakened, left every HTTP assertion green, because the `404` *and* the untouched row
-both came from the tenant-scoped **render** sharing the command's transaction. **A predicate no
-test can reach is one a later refactor removes**, so the command is now driven directly.
+### And a landmine removed one task after it went off
 
-### Two gate findings, neither made by a probe
-
-**The state and the clock were telling the same customer different things about the same dead
-offer** — `SessionExpired` before the sweeper ran, `NotConfirmable` after. One question, one
-answer, whichever side of the tick it arrives on. And **the grace was applied at the query and
-not at the decision**: a row read as `OPEN` and confirmed before the lock was expired as
-`PAYMENT_PENDING` with a payment one second old. The state a row is in *when the decision is
-made* is the state whose deadline applies.
+Both of the merchant module's announcements assumed a caller-resolved causation — true of every
+caller that exists, and exactly what `P6-TSK-008` hit in the expiry sweeper. A root flow now
+causes itself, stated once.
 
 ### Previously
 

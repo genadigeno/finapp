@@ -238,6 +238,9 @@ class PaymentBeans {
             // merchant and must not; the bean injected here is app's join, and it is the only
             // reason a capture can settle four lines instead of two.
             com.finapp.payments.CaptureComposition<Connection> captureComposition,
+            // AND ITS MIRROR (P6-TSK-014): the refund got its seam a task later, which is why
+            // refundFeePolicy spent a milestone pinned and read by nothing.
+            com.finapp.payments.RefundComposition<Connection> refundComposition,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
@@ -250,6 +253,7 @@ class PaymentBeans {
                 postingService,
                 new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
                 captureComposition,
+                refundComposition,
                 auditWriter,
                 outboxWriter,
                 ids,
