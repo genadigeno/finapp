@@ -7122,7 +7122,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   that closes it must rewrite an assertion rather than discover the question, and owned by the
   new **`P6-TSK-014`** below.
 
-**P6-TSK-006 — The checkout session and order: aggregates, machines, schemas** — `READY`
+**P6-TSK-006 — The checkout session and order: aggregates, machines, schemas** — `COMPLETE` (2026-09-22)
 - **Objective**: ADR-0053's two aggregates with the six-state machine. Bounded context 11.
 - **Scope**: `CheckoutSession` (six states incl. `COMPLETED_LATE`, expiry as data,
   single-purpose token hashed at rest, pinned schedule version, one intent reference) and
@@ -7132,8 +7132,76 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   database; the token never stored in clear; `INV-AUD-02` needles on refusals.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOMAIN`
 - **Out of scope**: fulfilment states; inventory; anything the merchant's shop owns.
+- **Implementation note (2026-09-22)**: the six-state machine on the enum with `V002`'s
+  `CHECK`s and trigger edges **generated from `permittedTransitions()`**, and three edges
+  deliberately absent — `PAYMENT_PENDING → ABANDONED` (cancelling would leave money moving
+  with no commercial home), any failure state (a declined payment is the *payment's* state;
+  the customer retries on the same intent), and `EXPIRED → COMPLETED` (the honest condition
+  stays countable instead of being laundered into the ordinary one). `Order` has **no status
+  column**: an order that exists is paid, refund standing is derived at read, and fulfilment
+  is the merchant's business — the `FeeSchedule` precedent, a status with one producible value
+  is a machine nobody earns. The token is the platform's **fifth** credential value and the
+  third on `SessionToken`'s shape, narrowest of them: possession grants one session and
+  nothing else.
+- **THE DESIGN POINT WORTH READING TWICE** (2026-09-22): **expiry is a state the sweeper
+  earns *and* a clock the aggregate checks.** Those are different questions, not two answers
+  to one. The state makes expiry countable, audited and present in history — never a
+  `WHERE expires_at < now()` filter pretending to be a state (ADR-0053 §4). The clock makes
+  the refusal timely: a sweeper runs on its own cadence, so between the deadline and the sweep
+  a row still reads `OPEN`, and without the check that gap is a window in which money lands on
+  a dead offer.
+- **Found by the build rules, fixed rather than exempted** (2026-09-22): `secretsAreWrapped`
+  flagged `tokenAlgorithm` — a field holding the string `SHA-256`, which is not a secret but
+  **reads** like one to a name-based rule. Wrapping a constant would have been the wrong
+  answer; the field and its column are now `algorithm`, which is what `merchant_api_key`
+  already calls the same thing. `SecretsAreUnwrappedInOnePlaceTest` and `OwnershipIsScopedTest`
+  each demanded their entries, the latter making the module state something true it had not:
+  **a checkout session has no owner** in this platform's sense — it is a merchant's offer to a
+  customer who may not have an account — so what stands in for an ownership predicate is the
+  token.
+- **Gate evidence (2026-09-22)**: **all three accept clauses driven** — every invalid
+  transition refused at the aggregate *and* at the database, both swept from the machine's own
+  cross-product rather than a hand-written list; the token never stored in clear, proven by a
+  sweep across every text column in every schema whose **needle is reconstructed from the
+  randomness the test supplied**, so proving the property did not require widening
+  `plaintext()`; and `INV-AUD-02` needles on every refusal — states only, no identifier, no
+  amount, no token. Suites: `CheckoutSessionTest` 15, `CheckoutSessionTokenTest` 5,
+  `CheckoutSessionMigrationTest` 18, `CheckoutSessionDatabaseTest` 14.
+  **Eleven probes, all caught by the intended assertion, restores verified byte-identical by
+  `cmp`** — several at two or three ranks: `EXPIRED` made terminal (caught by the machine
+  property, the live transition **and** the trigger's generated edge set — `INV-MER-06`'s edge
+  is what keeps a late capture from having nowhere to go); `PAYMENT_PENDING → ABANDONED` added
+  (caught by the aggregate sweep **and** by the reconciliation, the sharper half, which fails
+  without anybody writing a test for the new edge); the clock check dropped from `confirm`; the
+  plaintext stored instead of the hash (caught by the column's shape `CHECK` **and** by the
+  sweep); the conditional `WHERE status = ?` weakened; the set-once intent rule dropped from the
+  trigger; `UNIQUE (session_ref)` weakened; the order's immutability trigger removed; and the
+  amount dropped from the frozen-column list.
+- **TWO GATE FINDINGS, NEITHER FOUND BY A PROBE** (2026-09-22). (1) **The set-once rule was
+  loud at the trigger and SILENT in the store.** The transition writes
+  `payment_intent_ref = COALESCE(payment_intent_ref, ?)` so a move attaching no intent cannot
+  blank one already there — correct, and it also meant a caller carrying a *different* intent
+  had its value quietly dropped while the write reported success, because the column never
+  changed and the trigger therefore never fired. Closed with a predicate that refuses the write
+  instead; the probe removing it then failed. **A guard that makes a write a no-op is not the
+  same as a guard that refuses it.** (2) **The one-token-one-session claim had been asserted
+  against the migration's TEXT and never against the database** — driven now, by raw SQL,
+  because the aggregate cannot construct the collision the index exists to catch.
+- **Found by the build rules, and fixed rather than exempted**: `secretsAreWrapped` flagged
+  `tokenAlgorithm` — a field holding `SHA-256`, not a secret, but one that **reads** like one to
+  a name-based rule. Wrapping a constant would have been the wrong answer; it is now
+  `algorithm`, which is what `merchant_api_key` already calls the same thing.
+  `SecretsAreUnwrappedInOnePlaceTest` took three entries and `OwnershipIsScopedTest` two, the
+  latter making the module state something true it had not: **a checkout session has no
+  owner** — it is a merchant's offer to a customer who may not have an account — so the token
+  is what stands in for an ownership predicate. Registers: `DATA_CLASSIFICATION` §4 **+29 rows
+  in this task**, including the platform's first column whose sensitivity is about *what
+  somebody bought*; `DISTRIBUTED_EXECUTION` §3 +1 row; `MODULE_ARCHITECTURE` unchanged (the
+  module's shape was already recorded at `P6-TSK-001`). Verified by targeted tiers — **the full
+  battery deliberately skipped on the owner's instruction; no fleet-wide database or kafka
+  counts claimed.**
 
-**P6-TSK-007 — The session's payment: create, confirm, complete** — `PLANNED`
+**P6-TSK-007 — The session's payment: create, confirm, complete** — `READY`
 - **Objective**: the customer pays a merchant end to end — the phase's first whole flow.
   Bounded contexts 11, 12, 9 through ports.
 - **Scope**: session create (merchant key, keyed per merchant); confirm (session token +

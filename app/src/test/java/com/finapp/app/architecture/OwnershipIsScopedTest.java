@@ -377,6 +377,33 @@ class OwnershipIsScopedTest {
                                         + " exists because a history row belongs to the merchant"
                                         + " it names.")),
                     Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.read",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-006. The one read behind findById and findByIdForUpdate - the method that"
+                                        + " actually carries the identifier into the statement, which is what this register"
+                                        + " classifies. A CHECKOUT SESSION HAS NO OWNER in this platform's sense: it is a"
+                                        + " merchant's offer to a customer who may not have an account at all, and neither party"
+                                        + " owns it the way a party owns a wallet. What stands in for an ownership predicate is"
+                                        + " THE TOKEN - findByToken resolves a session only for the holder of its secret, and that"
+                                        + " is the path every customer-facing read will take (P6-TSK-007). This id-addressed read"
+                                        + " is the operator's and the completion's, reached from a payment outcome rather than"
+                                        + " from a URL. ADMINISTERED rather than AUTHORITATIVE_ID because the chain begins outside"
+                                        + " any owner-constrained read, and claiming otherwise would inherit a gap (the P1-TSK-030"
+                                        + " rule).")),
+                    Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-006. The append-only history row, written beside the conditional transition it"
+                                        + " evidences, on the identifier the caller's locking read validated in the same"
+                                        + " transaction - and the conditional WHERE status = ? row count already refused the write"
+                                        + " if another writer had moved the row, so this insert records a transition that provably"
+                                        + " happened. Append-only at the privilege; no owner predicate exists because a history row"
+                                        + " belongs to the session it names (the JdbcMerchantStore.appendHistory reasoning, and"
+                                        + " ADMINISTERED for the same reason - a provenance that is itself unowned cannot be cited"
+                                        + " as AUTHORITATIVE_ID).")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcFeeScheduleStore.readSchedule",
                             new Entry(
                                     Scope.ADMINISTERED,

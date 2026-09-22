@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 129 "Previously" blocks, newest first, from `P6-TSK-004` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 130 "Previously" blocks, newest first, from `P6-TSK-005` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,53 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-005` — fee assessment at capture: the merchant-bound posting** — `COMPLETE`
+(2026-09-22). **The phase's financial heart: ADR-0050 §3's single entry, posted.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| All four lines on the right accounts | `DIRECTION:PURPOSE`, never a line count — the `P5-TST-002` lesson |
+| fee + net = captured to the minor unit | And the payable's **derived** position is the net (`INV-MER-02`) |
+| The ten-way duplicate outcome posts once | One entry, four lines, credited once, charged once, announced once |
+| A mid-flight version change prices with the pin | The restatement risk, one level down — and the sharpest probe |
+| The wallet top-up suite untouched | Proven **through the production seam**, not around it |
+
+### The seam ADR-0050 described did not exist
+
+`PaymentOutcomes.applyCapture` *wrote* the capture's two lines itself — right for Phase 5's
+top-up and right for nothing else. It now posts what it is **handed**, through
+`CaptureComposition`: a port in payment vocabulary only. `payments` still cannot name a
+merchant or a fee; `merchant` knows an intent only as a `UUID`; the join is the composition
+root's, the `JdbcPaymentParticipants` shape.
+
+**The pin is the whole of `INV-MER-03` here.** A capture can arrive days after the price was
+agreed — the provider answers on its own schedule. Resolving the fee *at capture* would let a
+version created in between reprice a payment the customer had already agreed to.
+`merchant.payment_fee_pin` fixes the merchant and the version when the price is agreed: one row
+per payment by the primary key, immutable at the same three ranks the fee tables hold, with
+`V004`'s function **reused** rather than copied.
+
+**No assessment table, deliberately**: the assessment *is* the entry. Its amounts are journal
+lines, the version that produced it is the pin, and recomputing under the pin reproduces the
+posted fee — asserted directly. A second record of a derived number is a second authority to
+drift.
+
+### Nine probes, all caught — and two findings no probe made
+
+The sharpest probe **flipped the fee lines' directions**: the entry still balances per
+currency, so `INV-LED-01` passes and a count of four passes. Only `DIRECTION:PURPOSE` and the
+derived position notice.
+
+**The gate's own two findings**: the third checked assumption (*no payable in this currency*)
+had no test, and it is the least unreachable of the three — added. And **a refund of a
+merchant-bound capture applies no fee treatment, with no task owning it**: `refundFeePolicy` is
+pinned, versioned and read by nothing, while `P6-TST-002` already asserts an identity that
+needs it. Pinned as a named test and owned by the new **`P6-TSK-014`**.
 
 ---
 

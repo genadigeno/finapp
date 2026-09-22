@@ -107,6 +107,28 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // secret in the issuance response - AuthenticationService's role, and the
                     // only place a merchant key's plaintext leaves its wrapper.
                     "com.finapp.app.merchant.MerchantApiKeyOperations",
+                    // THE FIFTH CREDENTIAL VALUE, and the third to follow SessionToken's
+                    // shape (`P6-TSK-006`, ADR-0053). It is the NARROWEST of them: possession
+                    // grants access to ONE checkout session - no person, no permission, no
+                    // account - so a leak buys an attacker one stranger's pending purchase.
+                    // That narrowness is why it lives in `checkout` rather than in `identity`:
+                    // it authenticates nothing `identity` owns, and moving it there would make
+                    // that module own the purchase experience's state. What travels instead
+                    // are the disciplines, each inherited explicitly and each named here.
+                    //
+                    // Mints the token, hashes it and verifies a presented one - the only
+                    // component that sees the plaintext at all.
+                    "com.finapp.checkout.CheckoutSessionToken",
+                    // Holds the HASH wrapped and compares against it; the accessor returns
+                    // Sensitive, so no caller inherits a bare value.
+                    "com.finapp.checkout.CheckoutSession",
+                    // Writes the hash - not the token - to its column, hashes a presented one
+                    // to look it up by index, and re-wraps on read. JdbcSessionStore's role.
+                    "com.finapp.checkout.JdbcCheckoutSessionStore",
+                    // NOTHING IN `app` IS NAMED FOR THIS TOKEN, and that is the design: the
+                    // boundary that shows a freshly minted checkout token once arrives with
+                    // `P6-TSK-007`, and this task deliberately ships no surface. Three entries
+                    // rather than four, for the second credential running.
                     // Derives and verifies. The only component that must see the plaintext at all.
                     "com.finapp.identity.Argon2PasswordDeriver",
                     // Writes the derivation - not the password - to its column.

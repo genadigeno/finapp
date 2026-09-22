@@ -273,61 +273,51 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-006` — the checkout session and order: aggregates, machines, schemas** — `READY`.
-M6.3 opens: ADR-0053's two aggregates — `CheckoutSession` with its six states (including
-`COMPLETED_LATE`, the edge that keeps landed money from being orphaned by a clock) and `Order`,
-one per session, append-only because an order is a fact. Expiry as data, the single-purpose
-token hashed at rest, the pinned schedule version, and the established three-layer enforcement.
-Scope, acceptance and DoD profiles in the backlog entry.
+**`P6-TSK-007` — the session's payment: create, confirm, complete** — `READY`.
+**The phase's first whole flow**: a customer pays a merchant end to end. Session create behind
+the merchant key and keyed per merchant; confirm (session token + customer session) creating the
+intent through the port with ADR-0050's line composition and moving `OPEN → PAYMENT_PENDING`
+conditionally; the payment outcome reaching the session's conditional edge, birthing the order
+and `OrderPaid` in the outcome's own transaction. Scope, acceptance and DoD profiles in the
+backlog entry.
 
 ### Just completed
 
-**`P6-TSK-005` — fee assessment at capture: the merchant-bound posting** — `COMPLETE`
-(2026-09-22). **The phase's financial heart: ADR-0050 §3's single entry, posted.**
+**`P6-TSK-006` — the checkout session and order** — `COMPLETE` (2026-09-22). **M6.3 opens:
+the purchase experience exists as two aggregates, and the race that defines the phase has its
+edges.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| All four lines on the right accounts | `DIRECTION:PURPOSE`, never a line count — the `P5-TST-002` lesson |
-| fee + net = captured to the minor unit | And the payable's **derived** position is the net (`INV-MER-02`) |
-| The ten-way duplicate outcome posts once | One entry, four lines, credited once, charged once, announced once |
-| A mid-flight version change prices with the pin | The restatement risk, one level down — and the sharpest probe |
-| The wallet top-up suite untouched | Proven **through the production seam**, not around it |
+| Every invalid transition refused | At the aggregate **and** at the trigger, both swept from the machine's own cross-product |
+| The token never stored in clear | Swept across every text column in every schema — needle reconstructed from the randomness the test supplied |
+| `INV-AUD-02` needles on refusals | States only: no identifier, no amount, no token |
 
-### The seam ADR-0050 described did not exist
+### Three collapses refused, and one design point worth reading twice
 
-`PaymentOutcomes.applyCapture` *wrote* the capture's two lines itself — right for Phase 5's
-top-up and right for nothing else. It now posts what it is **handed**, through
-`CaptureComposition`: a port in payment vocabulary only. `payments` still cannot name a
-merchant or a fee; `merchant` knows an intent only as a `UUID`; the join is the composition
-root's, the `JdbcPaymentParticipants` shape.
+**An offer is not an order**: a session that dies unpaid leaves no order row at all — the
+platform does not manufacture commercial facts out of silence. **An order is barely a machine**:
+no status column, because an order that exists is paid and refund standing is derived at read.
+**Three edges are absent on purpose** — `PAYMENT_PENDING → ABANDONED` (cancelling would leave
+money moving with no commercial home), any failure state (a declined payment is the *payment's*
+state), and `EXPIRED → COMPLETED` (the honest condition stays countable).
 
-**The pin is the whole of `INV-MER-03` here.** A capture can arrive days after the price was
-agreed — the provider answers on its own schedule. Resolving the fee *at capture* would let a
-version created in between reprice a payment the customer had already agreed to.
-`merchant.payment_fee_pin` fixes the merchant and the version when the price is agreed: one row
-per payment by the primary key, immutable at the same three ranks the fee tables hold, with
-`V004`'s function **reused** rather than copied.
+**Expiry is a state the sweeper earns *and* a clock the aggregate checks** — different
+questions, not two answers to one. The state makes expiry countable and audited; the clock makes
+the refusal timely, because a sweeper one minute behind is a minute in which money lands on a
+dead offer.
 
-**No assessment table, deliberately**: the assessment *is* the entry. Its amounts are journal
-lines, the version that produced it is the pin, and recomputing under the pin reproduces the
-posted fee — asserted directly. A second record of a derived number is a second authority to
-drift.
+### Eleven probes caught, and two findings no probe made
 
-### Nine probes, all caught — and two findings no probe made
-
-The sharpest probe **flipped the fee lines' directions**: the entry still balances per
-currency, so `INV-LED-01` passes and a count of four passes. Only `DIRECTION:PURPOSE` and the
-derived position notice.
-
-**The gate's own two findings**: the third checked assumption (*no payable in this currency*)
-had no test, and it is the least unreachable of the three — added. And **a refund of a
-merchant-bound capture applies no fee treatment, with no task owning it**: `refundFeePolicy` is
-pinned, versioned and read by nothing, while `P6-TST-002` already asserts an identity that
-needs it. Pinned as a named test and owned by the new **`P6-TSK-014`**.
+`EXPIRED` made terminal was caught at **three ranks**; the plaintext-for-hash swap at two. The
+gate's own findings: **the set-once rule was loud at the trigger and silent in the store** —
+`COALESCE` quietly discarded a conflicting intent while reporting success, now refused — and the
+one-token-one-session claim had been asserted against the migration's *text* and never against
+the database. **A guard that makes a write a no-op is not the same as a guard that refuses it.**
 
 ### Previously
 
-The per-task completion records behind this one — 129 blocks, from `P6-TSK-004` back to project
+The per-task completion records behind this one — 130 blocks, from `P6-TSK-005` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -345,7 +335,7 @@ archived verbatim in
 `P5-DOC-001`'s exit review and confirmed by the transition's independent audit.
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
 same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2 of 2** as scoped (`P6-TSK-004`, `-005`); M6.3
-opens at 0 of 4, next `P6-TSK-006`. *(M6.3 gained `P6-TSK-014` — the merchant refund's fee
+open at 1 of 4, next `P6-TSK-007`. *(M6.3 gained `P6-TSK-014` — the merchant refund's fee
 treatment, found missing by `P6-TSK-005`'s gate and sequenced after `P6-TSK-007`, which
 creates the first real payment it could refund.)*
 

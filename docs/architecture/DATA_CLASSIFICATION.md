@@ -680,6 +680,55 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `payment_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was agreed — with `pinned_by`, the provenance of a money decision |
 | `payment_fee_pin` | `pinned_by` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model |
 
+### `checkout` — *added by `P6-TSK-006`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `checkout_session` | `id` | `INTERNAL` | An identifier of a thing — and deliberately **not** the token: naming a session is not the same act as being able to act on one |
+| `checkout_session` | `merchant_ref` | `CONFIDENTIAL` | Whose shop this purchase is at. On its own an identifier; beside the rest of the row it says who is selling to whom |
+| `checkout_session` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount — `journal_line.amount_minor`'s classification. What one person is being asked to pay |
+| `checkout_session` | `amount_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
+| `checkout_session` | `amount_scale` | `INTERNAL` | As `amount_currency` |
+| `checkout_session` | `line_summary` | `RESTRICTED-PII` | **Free text written by a merchant about one person's purchase.** Not a name or an identifier, and at the ceiling anyway: *what somebody bought* is among the most revealing facts a payments platform holds — medication, legal services, a gift to an address — and the content is constrained by no type (`refund.reason`'s reasoning, at a new subject) |
+| `checkout_session` | `fee_schedule_version_ref` | `RESTRICTED-FINANCIAL` | `merchant_fee_schedule.fee_schedule_id`'s reasoning: joined to `fee_schedule_version` it says what this merchant pays on this purchase |
+| `checkout_session` | `token_hash` | `CONFIDENTIAL` | A SHA-256 digest of 32 random bytes — **not crackable**, so not `RESTRICTED`; classified here for `session.token_hash`'s reason: in a log it is a precise identifier of one live checkout, which is what an attacker reading log archives would want |
+| `checkout_session` | `algorithm` | `INTERNAL` | What produced the hash (`INV-IDN-02`) — a fixed vocabulary, and publishing it tells an attacker only what the code already says |
+| `checkout_session` | `payment_intent_ref` | `RESTRICTED-FINANCIAL` | An identifier of a money movement — `audit_record.target_id`'s rule: an identifier inherits the sensitivity of what it names |
+| `checkout_session` | `status` | `CONFIDENTIAL` | Where one person's purchase got to — and `ABANDONED` beside a merchant ref is commercially sensitive to that merchant |
+| `checkout_session` | `expires_at` | `CONFIDENTIAL` | When an offer stops; with `created_at`, how long a customer was given |
+| `checkout_session` | `created_at` | `CONFIDENTIAL` | When one person started buying something |
+| `checkout_session` | `status_changed_at` | `CONFIDENTIAL` | Dates the purchase's last move |
+| `checkout_session_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `checkout_session_event` | `session_id` | `INTERNAL` | An identifier of a thing |
+| `checkout_session_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `checkout_session_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `checkout_session_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model. Here it may be a CUSTOMER, a merchant or the platform |
+| `checkout_session_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `checkout_session_event` | `occurred_at` | `CONFIDENTIAL` | Dates a step in one person's purchase |
+| `checkout_order` | `id` | `INTERNAL` | An identifier of a thing |
+| `checkout_order` | `session_ref` | `INTERNAL` | An identifier of a thing |
+| `checkout_order` | `merchant_ref` | `CONFIDENTIAL` | Whose shop, as on the session |
+| `checkout_order` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount — what actually changed hands |
+| `checkout_order` | `amount_currency` | `INTERNAL` | Part of the monetary shape |
+| `checkout_order` | `amount_scale` | `INTERNAL` | As `amount_currency` |
+| `checkout_order` | `captured_entry_ref` | `RESTRICTED-FINANCIAL` | The journal entry that paid for this order — an identifier of a posting, at the ceiling for `audit_record.target_id`'s reason |
+| `checkout_order` | `created_at` | `CONFIDENTIAL` | When one person bought something |
+
+**`line_summary` is the platform's first column whose sensitivity is about *what somebody
+bought*** (`P6-TSK-006`). Every prior `RESTRICTED-PII` column holds a name, an identity or a
+person's own words about a decision; this one holds a merchant's description of a purchase,
+and the reason it sits at the ceiling is that a payments platform's most revealing data is
+often not the amount. There is no column here for a shipping address, a customer name or an
+email — checkout holds the **offer**, and who the customer is remains `identity`'s and
+`party`'s question.
+
+**No column could hold a token** (`INV-IDN-01`): the only token-named column is `token_hash`,
+bounded to base64-of-SHA-256's exact shape so a plaintext would not fit quietly, and the
+database suite sweeps every text column in every schema for a token it issued.
+
+**The order carries no status** (ADR-0053 §6): an order that exists is paid, and refund
+standing is derived from the payment's refund rows at read time rather than stored.
+
 **`payment_fee_pin` is the schema's first row about an individual money movement**
 (`P6-TSK-005`). Everything before it in `merchant` is configuration or standing; this is one
 payment, one merchant, one price — so almost every column sits at the financial ceiling,
