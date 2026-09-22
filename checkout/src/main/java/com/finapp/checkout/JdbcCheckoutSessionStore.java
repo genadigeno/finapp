@@ -148,6 +148,24 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
     }
 
     @Override
+    public Optional<CheckoutSession> findByIntentOwnedBy(
+            Connection unitOfWork, UUID intentRef, UUID merchantRef) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM checkout.checkout_session"
+                                + " WHERE payment_intent_ref = ? AND merchant_ref = ?")) {
+            select.setObject(1, intentRef);
+            select.setObject(2, merchantRef);
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next() ? Optional.of(sessionFrom(rows)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new CheckoutStorageException(
+                    DatabaseFailure.describe("reading a merchant's session by its intent", failure));
+        }
+    }
+
+    @Override
     public java.util.List<CheckoutSession> findExpirable(
             Connection unitOfWork, Instant openBefore, Instant pendingBefore, int limit) {
         Objects.requireNonNull(openBefore, "openBefore must not be null");

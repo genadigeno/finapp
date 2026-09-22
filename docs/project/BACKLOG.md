@@ -7369,7 +7369,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   suites, 0 failures** (checkout, merchant and payments). **The full battery deliberately
   skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TSK-009 — The merchant transaction surface** — `READY`
+**P6-TSK-009 — The merchant transaction surface** — `COMPLETE` (2026-09-22)
 - **Objective**: the merchant sees its business — tenant-isolated, ledger-consistent.
   Bounded context 12.
 - **Scope**: `GET /v1/merchant/transactions` (sessions/orders/captures/refunds/fees joined
@@ -7379,8 +7379,52 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
 - **Deps**: `P6-TSK-007`. **Accept**: negative per endpoint (merchant A on B's ids: the
   one refusal, zero rows); the report reconciles against the journal for a seeded book.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`
+- **Delivered (2026-09-22)**: `GET /v1/merchant/transactions?from=&to=` — per currency, an
+  opening, one movement per payable-moving journal entry (`CAPTURE` / `REFUND` / `OTHER`, with
+  `gross`, `fee`, a signed `net`, and the checkout, order, intent and refund it belongs to), and
+  a closing. **The money IS the journal**: the figures are `ledger`'s own `StatementDerivation`
+  of the merchant's payable, so `Σ net = closing − opening` is inherited rather than
+  maintained. The session read the scope names already existed and has been tenant-scoped in SQL
+  since `P6-TSK-007`.
+- **ADR-0006 decided the architecture**: *cross-module data is read through the owning module's
+  API, never by querying its tables* — so there is **no cross-schema join**. The report is
+  assembled in `app` from four owners' reads: the ledger statement for the money, `payments`'
+  attempt and refund stores for the kind, `checkout`'s session and order stores for the
+  purchase. In memory, by stored identifier, one owner at a time.
+- **The period is the page, and a cursor was rejected on purpose**: each request is one
+  `READ COMMITTED` snapshot and the reconciliation holds *inside* it; a cursor over a period's
+  lines would make every page its own snapshot, and a posting committed between pages would
+  make them fail to sum to the period — silently. Bounded at 31 days, so any calendar month
+  fits and one request stays one bounded read.
+- **Accept clauses, both driven**: the report **reconciles against independent journal SQL**
+  for a seeded book of two captures and a **real refund driven through production** (the
+  operator surface, the provider and `P6-TSK-014`'s seam — which is that task's first
+  end-to-end evidence as well); and the negative per endpoint — merchant B's report contains
+  **none** of A's rows (the route takes no identifier, so the question cannot even be asked),
+  and A's session id on B's session read is **byte-identical** to a session that never existed.
+- **Four probes, all caught** (restores verified byte-identical by `cmp`): the enrichment's
+  tenant predicate neutralised; `net` from the credits alone; refunds left unclassified (the
+  report still SUMMED and lost the drill-down — reconciling is necessary and not sufficient);
+  and the period bound removed.
+- **A GATE FINDING, WITH AN OWNER**: `OwnershipIsScopedTest`'s detector keys on
+  `EntityId`-typed parameters, and checkout holds **every** cross-module reference by value as a
+  bare `UUID` (ADR-0029) — so `findByIntentOwnedBy`, `findByIntentForUpdate` and
+  `findExpirable` are invisible to the platform's ownership register. The new read is scoped in
+  its own statement and bound by a store-level negative, so it is covered; the *detector's*
+  blindness is platform-wide and is given to `P6-TST-001`, whose scope is exactly "mechanised so
+  a new endpoint cannot dodge it". Widening it here would sweep in every raw-`UUID` persistence
+  method on the platform, which is not a merchant task's to reclassify.
+- **Multi-instance: PASS** — a read, one snapshot per request, no state, nothing written.
+  **Registers**: `MUTATION_TESTING` +4 rows; contract baseline 62 → 63 paths, **0 keys removed,
+  0 changed**, 33 added. No migration, no `DATA_CLASSIFICATION` rows, no audit action (reads are
+  not audited, platform precedent), no error code (the period refusals reuse
+  `VALIDATION_FAILED`, the statement endpoint's own).
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1450 tests across 14 modules, 0 failures**, and **188 targeted database tests across 20
+  suites, 0 failures** (checkout, merchant and payments). **The full battery deliberately
+  skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TSK-010 — The payable view** — `PLANNED`
+**P6-TSK-010 — The payable view** — `READY`
 - **Objective**: `INV-MER-02` as a surface — what the platform owes, derived, explainable.
   Bounded context 12.
 - **Scope**: `GET /v1/merchant/payable` reading the payable ledger position per currency
@@ -7519,6 +7563,10 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   high-volume fee batch (hundreds of assessments across amounts, rates and 0/2/3-minor
   currencies: cumulative residual exactly zero, trial balance zero per currency —
   `INV-MER-04` at volume); `Phase: 6` register rows for what these suites demonstrate.
+- **Input from `P6-TSK-009`'s gate**: `OwnershipIsScopedTest`'s detector keys on `EntityId`
+  parameters and so cannot see checkout's by-value `UUID` reads (`findByIntentOwnedBy`,
+  `findByIntentForUpdate`, `findExpirable`). Mechanising the tenancy battery is this task's
+  scope, and a detector that cannot see a module's reads is the first thing to mechanise.
 - **Deps**: `P6-TSK-009`, `-005`. **Accept**: both batteries green from fresh runs; the
   register rows land with performed demonstrations. **Risk**: Medium. **Cx**: M.
   **DoD**: `DOD-TEST`, `DOD-FIN`, `DOD-SEC`

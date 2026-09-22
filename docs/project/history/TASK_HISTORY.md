@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 133 "Previously" blocks, newest first, from `P6-TSK-008` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 134 "Previously" blocks, newest first, from `P6-TSK-014` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,45 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-014` — the merchant refund: gross out of the payable, fee per the pinned policy** —
+`COMPLETE` (2026-09-22). **M6.3 closes, and `refundFeePolicy` finally has a consumer** — the gap
+`P6-TSK-005`'s own completion gate found, named, and handed to this task.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| `RETAINED` returns gross, keeps the fee | The merchant ends **down by the fee** — the policy working |
+| `RETURNED` returns gross and the share | The payable cancels to **exactly zero** |
+| Two partials return exactly the fee | An identity, not a bound: the allocation telescopes |
+| A later version prices neither refund | `INV-MER-03` at the boundary that reverses |
+| The wallet-refund suite untouched | Proved **through** the production seam, not around it |
+
+### The arithmetic is the task
+
+A proportional share of a fee, rounded once per refund, **does not add up**. A one-cent fee
+refunded in two halves returns *two* cents that way — each half's share is exactly half a cent
+and rounding takes both up, so the platform pays out twice what it ever charged. Differencing a
+**cumulative allocation** cannot: any sequence telescopes to `cum(total refunded)`, and a full
+refund gives `round(fee × 1)`, which is the assessed fee itself. Conservation by algebra rather
+than by a clamp or a running total anybody has to keep.
+
+### One survivor, recorded rather than patched
+
+`applyRefund` reading the budget's non-failed sum instead of the completed one changes nothing
+in any test: the two sums are proven to differ, but nothing drives a refund with a **sibling in
+flight**, so the caller's choice is unbound. The failure mode is at least **loud** — an inflated
+prior total pushes the cumulative figure past the capture and the arithmetic throws rather than
+returning a wrong share quietly. `P6-TST-002`'s concurrent-refund storm inherits the question.
+
+### And a landmine removed one task after it went off
+
+Both of the merchant module's announcements assumed a caller-resolved causation — true of every
+caller that exists, and exactly what `P6-TSK-008` hit in the expiry sweeper. A root flow now
+causes itself, stated once.
 
 ---
 

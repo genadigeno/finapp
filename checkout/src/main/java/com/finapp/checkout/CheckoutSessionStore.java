@@ -57,6 +57,20 @@ public interface CheckoutSessionStore<T> {
     Optional<CheckoutSession> findByIntentForUpdate(T unitOfWork, java.util.UUID intentRef);
 
     /**
+     * The session that opened {@code intentRef}, <strong>if it is this merchant's</strong>
+     * (`P6-TSK-009`) — the merchant transaction report's enrichment read.
+     *
+     * <p>Not locking, and not merely filtered: the tenant is a predicate in the statement
+     * ({@code merchant_ref = ?}, {@code INV-MER-01}). The report only ever asks about intents it
+     * found on the merchant's own payable, so this is a second rank rather than the first —
+     * and it is the rank that holds if the first ever stops: a capture posted to the wrong
+     * payable would otherwise surface a competitor's session identifier in somebody else's
+     * report.
+     */
+    Optional<CheckoutSession> findByIntentOwnedBy(
+            T unitOfWork, java.util.UUID intentRef, java.util.UUID merchantRef);
+
+    /**
      * Applies {@code transitioned}'s status conditionally ({@code WHERE status = ?} on the
      * from-state), attaches the payment intent reference when the transition set one, and
      * appends the history row when the write landed.

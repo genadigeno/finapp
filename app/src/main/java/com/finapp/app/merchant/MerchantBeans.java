@@ -28,6 +28,27 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Configuration
 public class MerchantBeans {
 
+    /**
+     * The merchant transaction report (`P6-TSK-009`). Every collaborator is the owning module's
+     * own read API — the ledger's statement, payments' attempt and refund stores, checkout's
+     * session and order stores — because ADR-0006 forbids reading another module's tables, and
+     * a cross-schema join here would be exactly that with a friendlier name.
+     */
+    @Bean
+    MerchantTransactionReport merchantTransactionReport(
+            com.finapp.ledger.StatementDerivation<Connection> statementDerivation,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource) {
+        return new MerchantTransactionReport(
+                statementDerivation,
+                new com.finapp.payments.JdbcPaymentAttemptStore(),
+                new com.finapp.payments.JdbcRefundStore(),
+                new com.finapp.checkout.JdbcCheckoutSessionStore(),
+                new com.finapp.checkout.JdbcOrderStore(),
+                new TransactionTemplate(transactionManager),
+                dataSource);
+    }
+
     @Bean
     MerchantVerification<Connection> merchantVerification() {
         return new VerifiedMerchantOrganisation(new JdbcPartyStore());

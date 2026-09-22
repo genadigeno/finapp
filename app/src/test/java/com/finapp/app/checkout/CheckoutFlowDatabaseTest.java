@@ -522,6 +522,43 @@ class CheckoutFlowDatabaseTest {
         }
     }
 
+    /** One completed purchase: create, confirm, capture. Returns the checkout id. */
+    private String purchase(Merchant merchant, Customer customer) throws Exception {
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        providerAuthorises();
+        providerCaptures();
+        HttpResponse<String> confirmed = confirm(customer, field(created, "sessionToken"));
+        assertThat(field(confirmed.body(), "status")).isEqualTo("COMPLETED");
+        return field(created, "checkoutId");
+    }
+
+    private HttpResponse<String> transactions(Merchant merchant, String from, String to)
+            throws Exception {
+        return get("/v1/merchant/transactions?from=" + from + "&to=" + to, merchant.apiKey());
+    }
+
+    private static String intentOfSession(String checkoutId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT payment_intent_ref FROM checkout.checkout_session"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, UUID.fromString(checkoutId));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
+
+    private static int countOf(String body, String needle) {
+        int count = 0;
+        for (int at = body.indexOf(needle); at >= 0; at = body.indexOf(needle, at + 1)) {
+            count++;
+        }
+        return count;
+    }
+
     /** Drives the withdrawal command itself, past the surface's own tenant-scoped render. */
     private boolean abandonDirectly(MerchantId merchant, CheckoutSessionId id) throws Exception {
         try (CorrelationContext.Scope flow =
@@ -633,6 +670,169 @@ class CheckoutFlowDatabaseTest {
                 .as("the positive control: the owner withdraws its own offer")
                 .isTrue();
         assertThat(sessionStatus(checkoutId)).isEqualTo("ABANDONED");
+    }
+
+    // ----------------------------------------------------------------- the transaction report
+
+    @Test
+    @DisplayName("P6-TSK-009: the merchant's report RECONCILES TO THE JOURNAL - two captures and"
+            + " a real refund, each named by purchase, and the nets sum to closing minus opening")
+    void theTransactionReportReconcilesToTheJournal() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String firstCheckout = purchase(merchant, customer);
+        String secondCheckout = purchase(merchant, customer);
+
+        // A REAL REFUND through production - the operator surface, the provider, and
+        // P6-TSK-014's seam - of 40.00 of the first purchase, under the RETAINED policy.
+        String firstIntent = intentOfSession(firstCheckout);
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.REFUNDS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_ref-" + UUID.randomUUID()
+                        + "\"}");
+        HttpResponse<String> refunded =
+                post(
+                        "/v1/payments/" + firstIntent + "/refund",
+                        "{\"amount\":\"40.00\",\"currency\":\"EUR\","
+                                + "\"reason\":\"one item returned\"}",
+                        operatorSession(RoleName.LEDGER_OPERATOR),
+                        someKey());
+        assertThat(refunded.statusCode()).as(refunded.body()).isEqualTo(201);
+
+        String today = java.time.LocalDate.now(CLOCK).toString();
+        HttpResponse<String> report = transactions(merchant, today, today);
+        assertThat(report.statusCode()).as(report.body()).isEqualTo(200);
+        String body = report.body();
+
+        // Every movement is NAMED BY ITS PURCHASE - the drill-down the merchant needs.
+        assertThat(body).contains(firstCheckout).contains(secondCheckout);
+        assertThat(countOf(body, "\"kind\":\"CAPTURE\"")).isEqualTo(2);
+        assertThat(countOf(body, "\"kind\":\"REFUND\"")).isEqualTo(1);
+        assertThat(body)
+                .as("a capture shows its gross and the fee the platform took")
+                .contains("\"gross\":\"100.00\",\"fee\":\"3.20\",\"net\":\"96.80\"")
+                .as("and the RETAINED refund returns the gross and no fee")
+                .contains("\"gross\":\"40.00\",\"fee\":\"0.00\",\"net\":\"-40.00\"");
+
+        // THE RECONCILIATION, against INDEPENDENT SQL over the journal - not against the
+        // report's own arithmetic. 96.80 + 96.80 - 40.00.
+        java.math.BigDecimal closing = new java.math.BigDecimal(field(body, "closing"));
+        java.math.BigDecimal opening = new java.math.BigDecimal(field(body, "opening"));
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(closing.subtract(opening).movePointRight(2).longValueExact())
+                    .as("closing minus opening IS the payable's movement in the journal")
+                    .isEqualTo(payablePositionMinor(app, merchant))
+                    .isEqualTo(153_60L);
+        }
+    }
+
+    @Test
+    @DisplayName("P6-TSK-009, INV-MER-01: merchant B's report contains NONE of A's rows, and A's"
+            + " session id on B's session read is the one 404 - the negative per endpoint")
+    void noMerchantSeesAnotherMerchantsBusiness() throws Exception {
+        Merchant a = tradingMerchant("0.029", 30L);
+        Merchant b = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String aCheckout = purchase(a, customer);
+        String aIntent = intentOfSession(aCheckout);
+        String bCheckout = purchase(b, customer);
+
+        String today = java.time.LocalDate.now(CLOCK).toString();
+        String bReport = transactions(b, today, today).body();
+
+        assertThat(bReport)
+                .as("the route takes no identifier, so the question cannot even be asked -"
+                        + " and the answer contains none of A's purchase, payment or entries")
+                .contains(bCheckout)
+                .doesNotContain(aCheckout)
+                .doesNotContain(aIntent);
+        assertThat(countOf(bReport, "\"kind\":\"CAPTURE\"")).isEqualTo(1);
+
+        HttpResponse<String> read = get("/v1/checkout/sessions/" + aCheckout, b.apiKey());
+        HttpResponse<String> unknown =
+                get("/v1/checkout/sessions/" + UUID.randomUUID(), b.apiKey());
+        assertThat(read.statusCode()).isEqualTo(404);
+        // INDISTINGUISHABLE, which is the property - not "the id is absent from the body":
+        // `instance` is the caller's OWN request path echoed back, so it carries the id B
+        // itself sent (the platform's problem-detail convention, P1-TSK-016's equality idiom).
+        // With the per-request fields normalized, a competitor's session and a session that
+        // never existed must be byte-for-byte the same answer.
+        assertThat(normalized(read.body()))
+                .as("the session read: a competitor's session is indistinguishable from none")
+                .isEqualTo(normalized(unknown.body()));
+    }
+
+    /** The per-request fields: the correlation id differs by design, instance echoes the path. */
+    private static String normalized(String body) {
+        return body.replaceAll("\"correlationId\":\"[^\"]*\"", "\"correlationId\":\"n\"")
+                .replaceAll("\"instance\":\"[^\"]*\"", "\"instance\":\"n\"");
+    }
+
+    @Test
+    @DisplayName("P6-TSK-009, THE SECOND RANK: the report's checkout read resolves an intent only"
+            + " for ITS OWN merchant - merchant_ref = ? in the statement, driven directly")
+    void theEnrichmentReadIsTenantScopedInItsOwnStatement() throws Exception {
+        // Driven at the STORE, because over HTTP this predicate is unreachable: the report only
+        // follows references it found on the merchant's OWN payable (the first rank), so it
+        // never asks about a competitor's intent. A predicate no test can reach is one a later
+        // refactor removes (P6-TSK-008's survivor lesson) - and this one is also invisible to
+        // OwnershipIsScopedTest, whose detector keys on EntityId-typed parameters while
+        // checkout holds every cross-module reference by value, as a bare UUID (ADR-0029).
+        Merchant a = tradingMerchant("0.029", 30L);
+        Merchant b = tradingMerchant("0.029", 30L);
+        String aIntent = intentOfSession(purchase(a, payingCustomer()));
+        com.finapp.checkout.JdbcCheckoutSessionStore store =
+                new com.finapp.checkout.JdbcCheckoutSessionStore();
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(
+                            store.findByIntentOwnedBy(
+                                    app, UUID.fromString(aIntent), UUID.fromString(b.id())))
+                    .as("B asking about A's intent: nothing, from the database")
+                    .isEmpty();
+            assertThat(
+                            store.findByIntentOwnedBy(
+                                    app, UUID.fromString(aIntent), UUID.fromString(a.id())))
+                    .as("the positive control: A's own intent resolves")
+                    .isPresent();
+        }
+    }
+
+    @Test
+    @DisplayName("P6-TSK-009: an empty window is ZEROS, not an absence - and a merchant who has"
+            + " never traded still gets its payable's section")
+    void anEmptyWindowIsZeros() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        String today = java.time.LocalDate.now(CLOCK).toString();
+
+        String body = transactions(merchant, today, today).body();
+
+        assertThat(body)
+                .contains("\"currency\":\"EUR\"")
+                .contains("\"opening\":\"0.00\"")
+                .contains("\"closing\":\"0.00\"")
+                .contains("\"movements\":[]");
+    }
+
+    @Test
+    @DisplayName("P6-TSK-009: the period's refusals are specific 422s - a date names nobody,"
+            + " so it is the caller's own correctable value")
+    void thePeriodIsBounded() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+
+        assertThat(transactions(merchant, "2026-09-10", "2026-09-01").statusCode())
+                .as("from after to")
+                .isEqualTo(422);
+        assertThat(transactions(merchant, "2026-01-01", "2026-03-01").statusCode())
+                .as("longer than a month: one request stays one bounded read")
+                .isEqualTo(422);
+        assertThat(transactions(merchant, "yesterday", "2026-09-01").statusCode())
+                .as("malformed")
+                .isEqualTo(422);
+        assertThat(transactions(merchant, "2026-08-01", "2026-08-31").statusCode())
+                .as("the longest month is exactly the bound, and it is allowed")
+                .isEqualTo(200);
     }
 
     // ----------------------------------------------------------------- the phase's race
@@ -949,6 +1149,11 @@ class CheckoutFlowDatabaseTest {
     }
 
     private String operatorSession() throws Exception {
+        return operatorSession(RoleName.MERCHANT_ADMINISTRATOR);
+    }
+
+    /** A signed-in staff member holding exactly {@code role}. */
+    private String operatorSession(RoleName role) throws Exception {
         String login = "ops." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(register(login).statusCode()).isEqualTo(201);
         UUID identity;
@@ -971,7 +1176,7 @@ class CheckoutFlowDatabaseTest {
             authorization.assign(
                     app,
                     IdentityId.of(identity),
-                    RoleName.MERCHANT_ADMINISTRATOR,
+                    role,
                     IdentityId.of(identity),
                     "test fixture");
             app.commit();

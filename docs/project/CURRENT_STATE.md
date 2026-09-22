@@ -273,48 +273,42 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-009` — the merchant transaction surface** — `READY`. **M6.4 opens: the merchant sees
-its business.** `GET /v1/merchant/transactions` — sessions, orders, captures, refunds and fees
-joined by stored identifiers, paginated, **with the tenant in the statement** — and the session
-read beside it. The one-404 discipline on every path, and no other tenant's identifier in any
-response or error. Scope, acceptance and DoD profiles in the backlog entry.
+**`P6-TSK-010` — the payable view** — `READY`. **`INV-MER-02` as a surface**: what the platform
+owes a merchant, per currency, derived from the payable's ledger position and explainable as
+*captured − fees − refunds − payouts*, reconciled against independent SQL with a refund and a
+failed payout in the picture — and a schema sweep pinning that no stored figure exists anywhere.
+Scope, acceptance and DoD profiles in the backlog entry.
 
 ### Just completed
 
-**`P6-TSK-014` — the merchant refund: gross out of the payable, fee per the pinned policy** —
-`COMPLETE` (2026-09-22). **M6.3 closes, and `refundFeePolicy` finally has a consumer** — the gap
-`P6-TSK-005`'s own completion gate found, named, and handed to this task.
+**`P6-TSK-009` — the merchant transaction surface** — `COMPLETE` (2026-09-22). **M6.4 opens: the
+merchant sees its business, and the money in it IS the journal.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| `RETAINED` returns gross, keeps the fee | The merchant ends **down by the fee** — the policy working |
-| `RETURNED` returns gross and the share | The payable cancels to **exactly zero** |
-| Two partials return exactly the fee | An identity, not a bound: the allocation telescopes |
-| A later version prices neither refund | `INV-MER-03` at the boundary that reverses |
-| The wallet-refund suite untouched | Proved **through** the production seam, not around it |
+| Reconciles against the journal | Independent SQL over a seeded book with a **real refund** |
+| Negative per endpoint | B's report holds none of A's rows; A's id on B's read = a nonexistent one |
 
-### The arithmetic is the task
+### ADR-0006 decided the architecture
 
-A proportional share of a fee, rounded once per refund, **does not add up**. A one-cent fee
-refunded in two halves returns *two* cents that way — each half's share is exactly half a cent
-and rounding takes both up, so the platform pays out twice what it ever charged. Differencing a
-**cumulative allocation** cannot: any sequence telescopes to `cum(total refunded)`, and a full
-refund gives `round(fee × 1)`, which is the assessed fee itself. Conservation by algebra rather
-than by a clamp or a running total anybody has to keep.
+*Cross-module data is read through the owning module's API, never by querying its tables* — so
+the report is **not a cross-schema join**. The money is `ledger`'s own statement of the payable;
+`payments` names each entry's kind; `checkout` names the purchase. Assembled in `app`, in memory,
+by stored identifier, one owner at a time. `Σ net = closing − opening` is inherited from the
+statement rather than maintained.
 
-### One survivor, recorded rather than patched
+### The period is the page
 
-`applyRefund` reading the budget's non-failed sum instead of the completed one changes nothing
-in any test: the two sums are proven to differ, but nothing drives a refund with a **sibling in
-flight**, so the caller's choice is unbound. The failure mode is at least **loud** — an inflated
-prior total pushes the cumulative figure past the capture and the arithmetic throws rather than
-returning a wrong share quietly. `P6-TST-002`'s concurrent-refund storm inherits the question.
+A cursor was rejected on purpose: each request is one `READ COMMITTED` snapshot and the
+reconciliation holds *inside* it. Pages would each be their own snapshot, and a posting landing
+between two of them would make the pages fail to sum to the period — silently.
 
-### And a landmine removed one task after it went off
+### A gate finding with an owner
 
-Both of the merchant module's announcements assumed a caller-resolved causation — true of every
-caller that exists, and exactly what `P6-TSK-008` hit in the expiry sweeper. A root flow now
-causes itself, stated once.
+`OwnershipIsScopedTest` keys on `EntityId` parameters, and checkout holds every cross-module
+reference by value as a bare `UUID` — so its reads are invisible to the ownership register. The
+new read is scoped in its own statement and bound by a store-level negative; the detector's
+blindness is platform-wide and goes to `P6-TST-001`, whose scope is mechanising exactly that.
 
 ### Previously
 

@@ -396,6 +396,10 @@ class OpenApiContractTest {
                         // rather than a DELETE on the session, the /suspension shape - nothing
                         // is deleted, the session stays in a state that says what happened.
                         ApiVersion.CURRENT_PREFIX + "/checkout/sessions/{id}/abandonment",
+                        // P6-TSK-009: the merchant's business, derived from the ledger. Takes
+                        // no identifier - the tenant is the credential - so there is no shape a
+                        // request could take to ask about another merchant.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/transactions",
                         ApiVersion.CURRENT_PREFIX + "/checkout/sessions/confirmation",
                         // P6-TSK-004: what the platform charges, behind FEE_ADMINISTER -
                         // its own permission because pricing is a commercial trust decision

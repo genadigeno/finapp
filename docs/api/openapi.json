@@ -2791,6 +2791,41 @@
         },
         "type": "object"
       },
+      "MovementView": {
+        "properties": {
+          "checkoutId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "fee": {
+            "type": "string"
+          },
+          "gross": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "net": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OnboardMerchantRequest": {
         "properties": {
           "displayName": {
@@ -3257,6 +3292,26 @@
         ],
         "type": "object"
       },
+      "SectionView": {
+        "properties": {
+          "closing": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "movements": {
+            "items": {
+              "$ref": "#/components/schemas/MovementView"
+            },
+            "type": "array"
+          },
+          "opening": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "SelfView": {
         "properties": {
           "displayName": {
@@ -3444,6 +3499,23 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TransactionsView": {
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionView"
+            },
+            "type": "array"
+          },
+          "to": {
             "type": "string"
           }
         },
@@ -4637,6 +4709,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SelfView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/transactions": {
+      "get": {
+        "operationId": "listMerchantTransactions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionsView"
                 }
               }
             },
