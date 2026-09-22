@@ -122,6 +122,37 @@ public class MerchantBeans {
                 feeSchedules, new TransactionTemplate(transactionManager), dataSource);
     }
 
+    /**
+     * ADR-0050 §3's entry, composed (`P6-TSK-005`). Reads the pin, prices under the PINNED
+     * version, resolves the payable and the fee revenue account, and writes
+     * {@code merchant.FeeAssessed} on the capture's own connection.
+     */
+    @Bean
+    com.finapp.merchant.MerchantSettlement merchantSettlement(
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids) {
+        return new com.finapp.merchant.MerchantSettlement(
+                new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                new com.finapp.merchant.JdbcFeeScheduleStore(),
+                ledgerAccountStore,
+                new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
+                outboxWriter,
+                ids);
+    }
+
+    /**
+     * The seam itself (`P6-TSK-005`): the bean {@code PaymentOutcomes} posts through. Declared
+     * HERE rather than in {@code PaymentBeans}, because the reason it exists is that
+     * {@code payments} cannot name the type it delegates to.
+     */
+    @Bean
+    com.finapp.payments.CaptureComposition<Connection> captureComposition(
+            com.finapp.merchant.MerchantSettlement merchantSettlement) {
+        return new MerchantBoundCaptureComposition(
+                merchantSettlement, new com.finapp.payments.WalletTopUpComposition());
+    }
+
     @Bean
     MerchantOperations merchantOperations(
             MerchantOnboarding merchantOnboarding,

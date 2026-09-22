@@ -1062,6 +1062,19 @@ class PaymentRefundDatabaseTest {
                 holdService(),
                 postingService(),
                 new ChartOfAccounts<>(ledgerAccounts),
+                // THE PRODUCTION SEAM (P6-TSK-005): the composition production posts
+                // through, not the wallet one directly - so "no fee pin, two lines" is
+                // proven where it matters. A payment with no pin falls back, which is
+                // this suite's every payment.
+                new com.finapp.app.merchant.MerchantBoundCaptureComposition(
+                        new com.finapp.merchant.MerchantSettlement(
+                                new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                                new com.finapp.merchant.JdbcFeeScheduleStore(),
+                                ledgerAccounts,
+                                new ChartOfAccounts<>(ledgerAccounts),
+                                new JdbcOutboxWriter(),
+                                IDS),
+                        new com.finapp.payments.WalletTopUpComposition()),
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,

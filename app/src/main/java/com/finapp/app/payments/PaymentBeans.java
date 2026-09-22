@@ -234,6 +234,10 @@ class PaymentBeans {
             com.finapp.ledger.HoldService holdService,
             com.finapp.ledger.PostingService postingService,
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            // THE COMPOSITION SEAM (P6-TSK-005, ADR-0050 section 6). payments cannot see
+            // merchant and must not; the bean injected here is app's join, and it is the only
+            // reason a capture can settle four lines instead of two.
+            com.finapp.payments.CaptureComposition<Connection> captureComposition,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
@@ -245,6 +249,7 @@ class PaymentBeans {
                 holdService,
                 postingService,
                 new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
+                captureComposition,
                 auditWriter,
                 outboxWriter,
                 ids,

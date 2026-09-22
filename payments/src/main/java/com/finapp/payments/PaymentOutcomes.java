@@ -81,6 +81,7 @@ public final class PaymentOutcomes {
     private final com.finapp.ledger.HoldService holds;
     private final PostingService postings;
     private final ChartOfAccounts<Connection> chart;
+    private final CaptureComposition<Connection> composition;
     private final AuditWriter<Connection> audit;
     private final OutboxWriter<Connection> outbox;
     private final IdGenerator ids;
@@ -93,6 +94,7 @@ public final class PaymentOutcomes {
             com.finapp.ledger.HoldService holds,
             PostingService postings,
             ChartOfAccounts<Connection> chart,
+            CaptureComposition<Connection> composition,
             AuditWriter<Connection> audit,
             OutboxWriter<Connection> outbox,
             IdGenerator ids,
@@ -103,6 +105,7 @@ public final class PaymentOutcomes {
         this.holds = Objects.requireNonNull(holds, "holds must not be null");
         this.postings = Objects.requireNonNull(postings, "postings must not be null");
         this.chart = Objects.requireNonNull(chart, "chart must not be null");
+        this.composition = Objects.requireNonNull(composition, "composition must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
         this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
@@ -237,9 +240,17 @@ public final class PaymentOutcomes {
                             uow, attemptId, from, PaymentAttemptStatus.CAPTURED, platform, now);
 
                     // THE POSTING - same connection, atomically with the transition
-                    // (ADR-0048). DR clearing / CR wallet; no savepoint, deliberately: a
-                    // posting failure fails this whole transaction loudly, whichever
-                    // resolver carried the outcome.
+                    // (ADR-0048). No savepoint, deliberately: a posting failure fails this
+                    // whole transaction loudly, whichever resolver carried the outcome.
+                    //
+                    // THE LINES ARE COMPOSED, NOT WRITTEN HERE (P6-TSK-005, ADR-0050 section
+                    // 6). A wallet top-up settles in two (DR clearing / CR wallet); a
+                    // merchant-bound capture settles in four, with the platform's fee taken
+                    // out of the payable in the SAME entry. Which it is depends on the flow
+                    // that created the intent, and this module deliberately cannot tell -
+                    // the composer runs here, on this connection, after the conditional
+                    // transition has been won, so it runs exactly once per capture however
+                    // many resolvers raced.
                     LedgerAccount clearing =
                             chart.resolve(
                                     uow, AccountPurpose.SETTLEMENT_CLEARING, amount.currency());
@@ -247,15 +258,24 @@ public final class PaymentOutcomes {
                     postings.post(
                             uow,
                             new PostingCommand(
+                                    // ONE key, whatever the shape of the entry: a duplicate
+                                    // outcome from any resolver posts once, and four lines
+                                    // inherit that guarantee wholesale because they are ONE
+                                    // entry under it (INV-IDEM-01's kernel, unchanged).
                                     "payment-capture:" + attemptId.value(),
                                     today,
                                     today,
                                     attemptId.value().toString(),
-                                    List.of(
-                                            new JournalLine(
-                                                    clearing.id(), Direction.DEBIT, amount),
-                                            new JournalLine(
-                                                    wallet, Direction.CREDIT, amount))));
+                                    composition.settle(
+                                            uow,
+                                            new CaptureSettlement(
+                                                    intentId,
+                                                    attemptId,
+                                                    clearing.id(),
+                                                    wallet,
+                                                    amount,
+                                                    correlation,
+                                                    now))));
 
                     if (intents.transition(
                             uow,

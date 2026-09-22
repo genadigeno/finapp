@@ -367,7 +367,15 @@ class MerchantOnboardingDatabaseTest {
             java.util.Set.of(
                     "fee_schedule_version.fixed_amount_minor",
                     "fee_schedule_version.fixed_currency",
-                    "fee_schedule_version.fixed_scale");
+                    "fee_schedule_version.fixed_scale",
+                    // P6-TSK-005: what was AGREED for one payment, not what is OWED for it.
+                    // The pin is an INPUT to the entry that moves the payable, never a copy of
+                    // its result - and the entry is what makes the position, which continues
+                    // to exist only in the ledger. Named here because the sweep flagged it the
+                    // moment the table arrived, which is the list working rather than failing.
+                    "payment_fee_pin.gross_amount_minor",
+                    "payment_fee_pin.gross_currency",
+                    "payment_fee_pin.gross_scale");
 
     @Test
     @DisplayName("no balance column exists in the live merchant schema (INV-MER-02's sweep)")

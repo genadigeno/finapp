@@ -273,60 +273,61 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-005` — fee assessment at capture: the merchant-bound posting** — `READY`.
-**The phase's financial heart**: ADR-0050 §3's single journal entry — DR `SETTLEMENT_CLEARING`
-gross / CR `MERCHANT_PAYABLE` gross / DR payable fee / CR `FEE_REVENUE` fee — composed in
-`app` and posted atomically with the attempt's `CAPTURED` transition, priced by the version
-**pinned at intent creation**, with `payments` staying merchant-blind behind the composition
-seam. Scope, acceptance and DoD profiles in the backlog entry.
+**`P6-TSK-006` — the checkout session and order: aggregates, machines, schemas** — `READY`.
+M6.3 opens: ADR-0053's two aggregates — `CheckoutSession` with its six states (including
+`COMPLETED_LATE`, the edge that keeps landed money from being orphaned by a clock) and `Order`,
+one per session, append-only because an order is a fact. Expiry as data, the single-purpose
+token hashed at rest, the pinned schedule version, and the established three-layer enforcement.
+Scope, acceptance and DoD profiles in the backlog entry.
 
 ### Just completed
 
-**`P6-TSK-004` — the versioned fee schedule** — `COMPLETE` (2026-09-22). **M6.2 opens, and
-the platform can say what it charges — before anything charges it.** Fees as immutable,
-versioned configuration with pure, conserving arithmetic: `FeeSchedule` as the stable
-commercial identity a merchant is *assigned* to, `FeeScheduleVersion` as the priced content an
-assessment *pins* (`INV-HIST-04`'s **first subject** in five phases), `FEE_ADMINISTER` as the
-platform's ninth permission, and `V004`'s four tables.
+**`P6-TSK-005` — fee assessment at capture: the merchant-bound posting** — `COMPLETE`
+(2026-09-22). **The phase's financial heart: ADR-0050 §3's single entry, posted.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Recomputation under a pinned version reproduces to the minor unit | From the stored row, twice — the row can never change, so it reproduces forever |
-| A new version reprices nothing | The pinned assessment is untouched; captures after the change get the new version |
-| The split conserves | By **property test** over amounts × rates × six policies × 0/2/3-minor-unit currencies |
-| Mutation of a frozen version is refused at the database | Withheld grant for the app role; unconditional trigger for the **migrator** |
+| All four lines on the right accounts | `DIRECTION:PURPOSE`, never a line count — the `P5-TST-002` lesson |
+| fee + net = captured to the minor unit | And the payable's **derived** position is the net (`INV-MER-02`) |
+| The ten-way duplicate outcome posts once | One entry, four lines, credited once, charged once, announced once |
+| A mid-flight version change prices with the pin | The restatement risk, one level down — and the sharpest probe |
+| The wallet top-up suite untouched | Proven **through the production seam**, not around it |
 
-### Three things this task decided rather than inherited
+### The seam ADR-0050 described did not exist
 
-**No `DRAFT` state, and no editable window.** A version is a fact the moment it is written, so
-`V004`'s trigger is `RAISE EXCEPTION` on *every* `UPDATE` and `DELETE`. Editable-until-effective
-buys only what superseding already buys, and costs a trigger that must reason about which column
-may move in which state — the one place such reasoning can be subtly wrong. A mistake is
-corrected by a **later version**, and **ties on `effective_from` are legal**, so an operator who
-catches a mistyped future rate supersedes it at the same instant rather than leaving a second of
-wrong pricing.
+`PaymentOutcomes.applyCapture` *wrote* the capture's two lines itself — right for Phase 5's
+top-up and right for nothing else. It now posts what it is **handed**, through
+`CaptureComposition`: a port in payment vocabulary only. `payments` still cannot name a
+merchant or a fee; `merchant` knows an intent only as a `UUID`; the join is the composition
+root's, the `JdbcPaymentParticipants` shape.
 
-**No idempotency key, stated rather than omitted.** Every keyed command here is keyed because a
-duplicate produces a duplicate *effect*. A duplicated version creation produces two versions
-with identical content that price identically — the harm does not exist. Assignment converges
-instead, writing nothing when it changes nothing.
+**The pin is the whole of `INV-MER-03` here.** A capture can arrive days after the price was
+agreed — the provider answers on its own schedule. Resolving the fee *at capture* would let a
+version created in between reprice a payment the customer had already agreed to.
+`merchant.payment_fee_pin` fixes the merchant and the version when the price is agreed: one row
+per payment by the primary key, immutable at the same three ranks the fee tables hold, with
+`V004`'s function **reused** rather than copied.
 
-**A schedule row cannot be locked, and that is the same fact as its immutability.** PostgreSQL
-requires the `UPDATE` privilege to take a row lock; `V004` withholds it. Granting `UPDATE` to
-make a lock takeable would buy a lock on a table nothing may write twice, at the cost of the
-grant no longer saying *immutable*. The arbiter is the unique index on
-`(fee_schedule_id, version)` — which is also the queue — with the writer retrying behind a
-savepoint. Found by the suite, at SQLState 42501.
+**No assessment table, deliberately**: the assessment *is* the entry. Its amounts are journal
+lines, the version that produced it is the pin, and recomputing under the pin reproduces the
+posted fee — asserted directly. A second record of a derived number is a second authority to
+drift.
 
-**The gate's survivor**: neutralising the tenant predicate left the suite green, because its
-only negative was *an unassigned merchant resolves empty* — which an unscoped query also
-answers when nothing else is assigned. **An empty assertion is not a tenant negative.** Closed
-with a three-tenant test; the mutation then failed. **9 probes, 8 caught first time, four at
-two ranks, restores byte-identical.**
+### Nine probes, all caught — and two findings no probe made
+
+The sharpest probe **flipped the fee lines' directions**: the entry still balances per
+currency, so `INV-LED-01` passes and a count of four passes. Only `DIRECTION:PURPOSE` and the
+derived position notice.
+
+**The gate's own two findings**: the third checked assumption (*no payable in this currency*)
+had no test, and it is the least unreachable of the three — added. And **a refund of a
+merchant-bound capture applies no fee treatment, with no task owning it**: `refundFeePolicy` is
+pinned, versioned and read by nothing, while `P6-TST-002` already asserts an identity that
+needs it. Pinned as a named test and owned by the new **`P6-TSK-014`**.
 
 ### Previously
 
-The per-task completion records behind this one — 128 blocks, from `P6-TSK-002` back to project
+The per-task completion records behind this one — 129 blocks, from `P6-TSK-004` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
@@ -343,7 +344,10 @@ archived verbatim in
 **Phase 5 is `COMPLETE`** (2026-09-21) — 21 of 21 items across nine milestones, ruled by
 `P5-DOC-001`'s exit review and confirmed by the transition's independent audit.
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
-same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; M6.2 open at 1 of 3, next `P6-TSK-005`.
+same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2 of 2** as scoped (`P6-TSK-004`, `-005`); M6.3
+opens at 0 of 4, next `P6-TSK-006`. *(M6.3 gained `P6-TSK-014` — the merchant refund's fee
+treatment, found missing by `P6-TSK-005`'s gate and sequenced after `P6-TSK-007`, which
+creates the first real payment it could refund.)*
 
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
@@ -535,6 +539,7 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
+| **`payment_intent.wallet_account_id` holds a merchant payable for a merchant-bound payment.** The column's own comment defines it as *the wallet's ledger account - where the capture will credit*, so its MEANING is right and its NAME is narrower than its meaning (`P6-TSK-005`) | Renaming a column of applied history needs a new migration plus the every-writer trigger's recreation on the platform's most critical table, and the first PRODUCTION writer of a merchant-bound intent does not exist yet - `P6-TSK-007` brings it. Renaming before its real consumer exists would be guessing at what the consumer wants to call it | **Naming only, and bounded**: nothing reads it as a wallet - the capture credits whatever account it names, and the settlement REFUSES a capture whose credit account is not the pinned merchant's payable, so a mismatch is loud rather than silent. The cost is a reader of the schema being misled | `P6-TSK-007`, which creates merchant-bound intents for real | Phase 6 (`P6-TSK-007`) |
 | **Every session actor is audited as `CUSTOMER`, including operators.** `SessionAuthenticationInterceptor` enters `new Actor(identityId, ActorType.CUSTOMER)` for every authenticated session, so an operator's privileged acts — a manual adjustment, a transfer reversal, a refund, a merchant suspension, an API-key revocation — are recorded with the wrong actor TYPE. Found at `P6-TSK-002`'s implementation, while asserting that issuance names its operator: the test expected `EMPLOYEE` and the trail said `CUSTOMER` | The identifier is right — `actor_id` is the acting identity, so every record still names the person and `INV-AUD-01`'s attributability holds. What is wrong is the vocabulary that says which POPULATION acted, which is the field an auditor filters on to answer *what did staff do*. Correcting it means deriving the type from the identity's roles at authentication time and touches every audited session path on the platform — not a merchant task's to change, and not a change to make without its own negative tests | **Bounded but real**: no record is missing and none names the wrong person; a report separating staff activity from customers' cannot be built from `actor_type` alone today, and `ActorType.EMPLOYEE`'s own javadoc (*a human acting in an operational or administrative capacity*) describes a value nothing currently produces | An audit-completeness review, or the first report that must distinguish staff from customers | Phase 15 (audit completeness verification) |
 | ~~**Broker adapter behind `EventPublisher`.**~~ - **closed 2026-09-09** by `P2-TSK-001`. `KafkaEventPublisher` publishes every outbox event to Kafka - payload bytes verbatim, envelope as record headers, aggregate as the record key, one topic per producing module - and `OutboxRelaySchedule` polls on every instance, safely, because the per-aggregate advisory lock is the lease (`DISTRIBUTED_EXECUTION.md` §3). Delivery is at-least-once with `finapp.eventId` as the consumer dedupe key, and the crash duplicate is DEMONSTRATED in `KafkaOutboxDeliveryKafkaTest` rather than hidden. | - | - | - | - |
 | **Outbox retention.** Published rows are never deleted | `V005` says a published row may be deleted once retained long enough for diagnosis; the sweep is a scheduled job with its own cluster-safety question, and no task owned it | Unbounded table growth. The partial pending index does **not** grow with it — published rows leave it — so the cost is storage and vacuum, not relay latency | Table size becoming operationally material | Phase 15 (data retention and deletion) |

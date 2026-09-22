@@ -671,6 +671,19 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `merchant_fee_schedule_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s model |
 | `merchant_fee_schedule_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
 | `merchant_fee_schedule_event` | `occurred_at` | `CONFIDENTIAL` | Dates a commercial judgement |
+| `payment_fee_pin` | `payment_intent_ref` | `RESTRICTED-FINANCIAL` | The payment this prices, by value (ADR-0029). An identifier of a money movement — `audit_record.target_id`'s rule: an identifier inherits the sensitivity of what it names, and what this one names is a capture |
+| `payment_fee_pin` | `merchant_id` | `RESTRICTED-FINANCIAL` | **Whose payment it is.** On its own an identifier of a thing; here it is the join that says *this merchant took a payment*, so the pair of columns is transaction data about a counterparty rather than a reference |
+| `payment_fee_pin` | `fee_schedule_version_id` | `RESTRICTED-FINANCIAL` | `merchant_fee_schedule.fee_schedule_id`'s reasoning, sharper: joined to `fee_schedule_version` this says exactly what this merchant paid on this capture, which is the disclosure `INV-MER-01` exists to prevent |
+| `payment_fee_pin` | `gross_amount_minor` | `RESTRICTED-FINANCIAL` | An amount — `journal_line.amount_minor`'s classification. What was agreed, never what is owed (`INV-MER-02`) |
+| `payment_fee_pin` | `gross_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
+| `payment_fee_pin` | `gross_scale` | `INTERNAL` | As `gross_currency` |
+| `payment_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was agreed — with `pinned_by`, the provenance of a money decision |
+| `payment_fee_pin` | `pinned_by` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model |
+
+**`payment_fee_pin` is the schema's first row about an individual money movement**
+(`P6-TSK-005`). Everything before it in `merchant` is configuration or standing; this is one
+payment, one merchant, one price — so almost every column sits at the financial ceiling,
+including two identifiers, for the reason the fee tables' own note gives below.
 
 **The fee tables are this schema's first `RESTRICTED-FINANCIAL` rows** (`P6-TSK-004`), and
 three of them are not amounts. A rate is a ratio; a schedule identifier is a UUID. They are at

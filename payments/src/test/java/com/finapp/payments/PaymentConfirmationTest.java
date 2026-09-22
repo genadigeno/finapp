@@ -133,6 +133,9 @@ class PaymentConfirmationTest {
                         com.finapp.ledger.PostingObserver.NONE),
                 new com.finapp.ledger.ChartOfAccounts<>(
                         new com.finapp.ledger.JdbcLedgerAccountStore()),
+                // The wallet top-up composition, which is what this suite's intents are: the
+                // two lines PaymentOutcomes used to write inline (P6-TSK-005).
+                new WalletTopUpComposition(),
                 (uow, record) -> auditTrail.add(record),
                 (uow, envelope, payload, mediaType) -> events.add(envelope),
                 IDS,

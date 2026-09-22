@@ -170,19 +170,44 @@ class FeeScheduleMigrationTest {
     @DisplayName("this schema still holds no balance (INV-MER-02)")
     void noBalanceColumnAppears() {
         // The standing claim V002 made, re-asserted by the task that adds three more tables to
-        // the schema. Comments stripped: this file's own prose discusses the payable.
-        String definitionsOnly =
-                migration()
-                        .lines()
-                        .map(line -> line.replaceFirst("--.*$", ""))
-                        .filter(line -> !line.contains("COMMENT ON"))
-                        .collect(Collectors.joining("\n"))
-                        .toLowerCase();
-        assertThat(definitionsOnly)
+        // the schema - read over the COLUMN DECLARATIONS, because this file's own prose
+        // discusses the payable at length and must be allowed to.
+        assertThat(columnDeclarations())
                 .doesNotContain("balance")
                 .doesNotContain("payable")
-                .doesNotContain("amount_owed");
+                .doesNotContain("owed");
     }
+
+    /**
+     * Only the {@code CREATE TABLE} bodies, with {@code --} comments stripped — the column and
+     * constraint declarations and nothing else.
+     *
+     * <p>The first form of the no-balance sweep filtered out lines <em>containing</em>
+     * {@code COMMENT ON}, and a {@code COMMENT ON COLUMN} whose text wraps onto a second line
+     * defeated it — the sweep read prose that says "not what is owed" as a column that holds
+     * what is owed. A guard whose subject is column declarations should read column
+     * declarations.
+     */
+    private static String columnDeclarations() {
+        StringBuilder declarations = new StringBuilder();
+        boolean inside = false;
+        for (String raw : migration().lines().toList()) {
+            String line = raw.replaceFirst("--.*$", "");
+            if (line.stripLeading().startsWith("CREATE TABLE")) {
+                inside = true;
+                continue;
+            }
+            if (inside) {
+                if (line.startsWith(");")) {
+                    inside = false;
+                    continue;
+                }
+                declarations.append(line).append('\n');
+            }
+        }
+        return declarations.toString().toLowerCase();
+    }
+
 
     @Test
     @DisplayName("the guard can actually read the migration")

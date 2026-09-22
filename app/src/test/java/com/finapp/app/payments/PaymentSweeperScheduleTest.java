@@ -132,6 +132,18 @@ class PaymentSweeperScheduleTest {
                                 com.finapp.ledger.PostingObserver.NONE),
                         new com.finapp.ledger.ChartOfAccounts<>(
                                 new com.finapp.ledger.JdbcLedgerAccountStore()),
+                        // THE PRODUCTION SEAM (P6-TSK-005): the composition production posts through,
+                        // not the wallet one directly - so "no fee pin, two lines" is proven where it
+                        // matters. Every payment in this suite is a top-up and falls back.
+                        new com.finapp.app.merchant.MerchantBoundCaptureComposition(
+                                new com.finapp.merchant.MerchantSettlement(
+                                        new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                                        new com.finapp.merchant.JdbcFeeScheduleStore(),
+                                        new com.finapp.ledger.JdbcLedgerAccountStore(),
+                                        new com.finapp.ledger.ChartOfAccounts<>(new com.finapp.ledger.JdbcLedgerAccountStore()),
+                                        new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                                        ids()),
+                                new com.finapp.payments.WalletTopUpComposition()),
                         (uow, record) -> {},
                         (uow, envelope, payload, mediaType) -> {},
                         ids(),

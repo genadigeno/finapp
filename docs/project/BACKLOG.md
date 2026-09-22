@@ -6698,7 +6698,10 @@ time** (the transition's new `INV-MER-01`…06, `INV-HIST-04`'s fees element, an
 F1–F8 binds; every task that can affect money carries `DOD-FIN`.
 
 **Milestones**: M6.1 Foundations (`P6-TSK-001`…`-003`) · M6.2 Fee economics
-(`P6-TSK-004`, `-005`) · M6.3 Checkout (`P6-TSK-006`…`-008`) · M6.4 The merchant surface
+(`P6-TSK-004`, `-005`) · M6.3 Checkout (`P6-TSK-006`…`-008`, and `-014` — *added by `P6-TSK-005`'s completion
+gate and sequenced HERE rather than in M6.2, because the refund half of fee economics
+depends on `P6-TSK-007` having created a real merchant-bound payment to refund; a
+milestone whose last item waits on a later milestone is not a milestone*) · M6.4 The merchant surface
 (`P6-TSK-009`, `-010`) · M6.5 Payouts (`P6-TSK-011`, `-012`) · M6.6 Observability and
 demonstration (`P6-TSK-013`, `P6-TST-001`, `P6-TST-002`) · M6.7 The gate (`P6-DOC-001`).
 Acceptance per milestone in `PHASE_6_PLAN.md` §16.
@@ -7035,7 +7038,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   **the full battery deliberately skipped on the owner's instruction; no fleet-wide database
   or kafka counts claimed.**
 
-**P6-TSK-005 — Fee assessment at capture: the merchant-bound posting** — `READY`
+**P6-TSK-005 — Fee assessment at capture: the merchant-bound posting** — `COMPLETE` (2026-09-22)
 - **Objective**: ADR-0050 §3's one entry — the phase's financial heart. Bounded contexts
   12 with 9 (through the seam only).
 - **Scope**: the composition seam (`app`) supplying a checkout-created intent's posting
@@ -7051,8 +7054,75 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   mid-flight version change prices with the pinned version; the wallet top-up suite
   untouched.
 - **Risk**: High (the restatement risk question 8 carried). **Cx**: L. **DoD**: `DOD-FIN`
+- **Implementation note (2026-09-22)**: **the seam ADR-0050 §6 describes did not exist** —
+  `PaymentOutcomes.applyCapture` *wrote* the capture's two lines itself, correct for Phase 5's
+  top-up and correct for nothing else. It now posts what it is **handed**, through
+  `CaptureComposition` — a port in payment vocabulary only (an approved capture of this amount
+  arrived; the clearing account is this; the account it credits is this). `WalletTopUpComposition`
+  holds Phase 5's expression unchanged; `MerchantSettlement` composes ADR-0050 §3's four lines
+  and announces `merchant.FeeAssessed` **on the capture's own connection**;
+  `MerchantBoundCaptureComposition` in `app` is the join, because `payments` cannot see
+  `merchant` and `merchant` knows an intent only as a `UUID` it was handed.
+- **The pin, and why it is a table** (2026-09-22): a capture can arrive days after the price
+  was agreed — the provider answers on its own schedule (ADR-0046) and the sweeper resolves
+  what never answered. Resolving the fee *at capture* would let a version created in between
+  reprice a payment the customer had already agreed to: **the restatement risk question 8
+  carried, one level down**. `merchant.payment_fee_pin` fixes the merchant and the version when
+  the price is agreed, one row per payment by the primary key, immutable at the same three
+  ranks the fee tables hold (no `UPDATE` grant, `V004`'s unconditional trigger **reused rather
+  than copied**, a port with no method that could express a change).
+- **No assessment table, deliberately** (2026-09-22): the assessment *is* the entry. Its gross
+  and fee are journal lines, the version that produced it is the pin, and recomputing under the
+  pin reproduces the posted fee — asserted directly. A second record of a derived number is a
+  second authority to drift, which is `INV-MER-02`'s reasoning applied one level up.
+- **Three assumptions checked rather than trusted** (2026-09-22), each unreachable today and
+  each a silent mispricing if it stopped being: the captured amount is the pinned gross
+  (ADR-0045 §4 — no partial capture until its producer exists); the merchant's payable exists;
+  and the account the capture credits **is** that payable. All three throw, failing the capture's
+  whole transaction — the honest outcome, because the alternative is posting two lines where
+  four were owed. **No new audit action**: a fee assessment is a financial fact, not an
+  administrative act, and an audit row would claim somebody decided something at capture time
+  when what happened is that a pinned policy was applied.
+- **Recorded as debt** (2026-09-22): `payment_intent.wallet_account_id` now holds a
+  **merchant payable** for a merchant-bound payment. The column's own comment already defines
+  it as *where the capture will credit*, so the meaning is right and the name is narrower than
+  it — see `CURRENT_STATE.md` §Known Architectural Debt, owned by `P6-TSK-007`, which brings the
+  first production writer.
+- **Gate evidence (2026-09-22)**: **every accept clause driven end to end** through the real
+  ledger, the real merchant chain and a real HTTP provider — the `DIRECTION:PURPOSE` probe
+  asserting all four lines on the accounts ADR-0050 §3 names (never a line count); fee + net =
+  captured to the minor unit with the payable's derived position at the **net**; the ten-way
+  duplicate-outcome race posting **one entry with four lines**, crediting once, charging once
+  and announcing once; a version created mid-flight pricing **nothing** already dispatched; and
+  Phase 5's top-up path unchanged — proven **through the production seam** rather than around
+  it, so "no pin, two lines" is checked where production checks it. Suite:
+  `MerchantCaptureDatabaseTest` 13, `PaymentFeePinMigrationTest` 8; every Phase 5 payment
+  database suite re-run green (136 targeted database tests, 0 failures).
+  **Nine probes, all caught by the intended assertion, restores verified byte-identical by
+  `cmp`.** The sharpest was **the fee lines' directions flipped**: the entry still *balances
+  per currency*, so `INV-LED-01` passes and a line count of four passes — only
+  `DIRECTION:PURPOSE` and the derived payable position notice, which is `P5-TST-002`'s lesson
+  probed rather than quoted. Also caught: the fee lines dropped; **the version resolved at
+  capture instead of under the pin** (caught by the one test written for it — `INV-MER-03`);
+  each of the three checked assumptions dropped; the announcement dropped; the seam always
+  falling back; the pin's primary key weakened to a surrogate; and the pin's immutability
+  trigger removed (probed against the **migrator**, the only writer the grants cannot bind).
+- **TWO GATE FINDINGS, NEITHER FOUND BY A PROBE** (2026-09-22). (1) **The third checked
+  assumption had no test.** The captured-amount and credit-account refusals each had one; *the
+  merchant has no payable in this currency* did not — and it is the least unreachable of the
+  three, because a merchant settles in ONE currency and a session priced in another produces
+  exactly it. Test added; `P6-TSK-007` must refuse it at the session, and until then the throw
+  is a checked backstop. (2) **THE REFUND OF A MERCHANT-BOUND CAPTURE APPLIES NO FEE
+  TREATMENT, AND NO TASK OWNED IT.** The capture now composes its lines through a seam; the
+  refund still writes its own two inline, which returns the gross out of the payable — the
+  right direction — while `refundFeePolicy`, pinned and versioned by `P6-TSK-004`, is read by
+  **nothing**. Unreachable in production today (only a test can create a merchant-bound
+  intent), but `P6-TST-002` already asserts *payables equal captured − fees − refunds −
+  payouts*, an identity nothing produces the terms for. Pinned as a named test so the task
+  that closes it must rewrite an assertion rather than discover the question, and owned by the
+  new **`P6-TSK-014`** below.
 
-**P6-TSK-006 — The checkout session and order: aggregates, machines, schemas** — `PLANNED`
+**P6-TSK-006 — The checkout session and order: aggregates, machines, schemas** — `READY`
 - **Objective**: ADR-0053's two aggregates with the six-state machine. Bounded context 11.
 - **Scope**: `CheckoutSession` (six states incl. `COMPLETED_LATE`, expiry as data,
   single-purpose token hashed at rest, pinned schedule version, one intent reference) and
@@ -7158,6 +7228,30 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   database; the tag vocabulary walks the designed path if it widens at all.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
 
+**P6-TSK-014 — The merchant refund: gross out of the payable, fee per the pinned policy** — `PLANNED`
+- **Objective**: give `refundFeePolicy` its consumer. ADR-0050's consequences say a refund of
+  a merchant-bound capture reverses the same shape — gross out of the payable, the fee
+  **retained or returned per the schedule version pinned on the original payment**. Bounded
+  contexts 12 with 9, through the seam only.
+- **Found by `P6-TSK-005`'s completion gate**, which is the provenance worth keeping: the
+  capture gained a composition seam and the refund did not, so a merchant refund today returns
+  the gross and applies no fee treatment at all. The attribute is pinned, versioned and read by
+  nothing.
+- **Scope**: a refund composition seam in `payments` mirroring `CaptureComposition` (the refund
+  posts lines it is handed, and still names no merchant and no fee); `MerchantSettlement`
+  composing the reversal under the **original** capture's pin (`INV-MER-03` — a refund is
+  priced by what the payment was priced by, never by today's schedule); `RETURNED` computing
+  the returned share **once** with the remainder by subtraction (`INV-MER-04` across the refund
+  boundary), bounded so successive partial refunds cannot return more fee than was assessed;
+  `FeeReturned` in the refund's transaction; Phase 5's wallet-refund path byte-identical after.
+- **Deps**: `P6-TSK-005`; `P6-TSK-007` for a production merchant-bound payment to refund.
+  **Accept**: `RETAINED` returns gross and leaves `FEE_REVENUE` untouched; `RETURNED` returns
+  gross and the proportional fee, conserving to the minor unit; two partial refunds summing to
+  the capture return exactly the assessed fee and no more; a version created after the capture
+  prices neither refund; the wallet-refund suite untouched.
+- **Risk**: High (it moves money out of a counterparty's position). **Cx**: M. **DoD**:
+  `DOD-FIN`
+
 **P6-TST-001 — The tenancy and fee-conservation battery** — `PLANNED`
 - **Objective**: the two gate properties that decay silently, demonstrated in bulk.
 - **Scope**: the cross-tenant negative battery (every merchant endpoint, merchant A on B's
@@ -7180,7 +7274,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   unaccounted, no over-paid merchant; the payable bound contested (a drained payable
   refusing — the availability-boundary lesson from `P5-TST-003` applied at design time:
   the storm must include the drain); remaining `Phase: 6` register rows.
-- **Deps**: `P6-TSK-012`, `P6-TST-001`. **Accept**: the readings reconcile under load;
+- **Deps**: `P6-TSK-012`, `P6-TST-001`, **`P6-TSK-014`** *(added by `P6-TSK-005`'s gate: without it the `− refunds` term of this item's own conservation identity has no producer)*. **Accept**: the readings reconcile under load;
   both refusal kinds occur as checked facts; every `Phase: 6` invariant row demanded by
   the guard is present.
 - **Risk**: Medium. **Cx**: L. **DoD**: `DOD-TEST`, `DOD-FIN`

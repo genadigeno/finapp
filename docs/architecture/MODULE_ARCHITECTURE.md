@@ -339,6 +339,7 @@ phases must satisfy, not a description of code.
 - **Security:** webhook signature verification and replay-window enforcement; provider credentials in secret management; tokenised instruments only — no PAN, ever; refunds are privileged.
 - **Operations:** per-provider success/failure/latency, unknown-state count **and age**, webhook lag and duplicate rate, stuck-attempt alerting.
 - **Providers:** PSP/processor adapters (ADR-0008), retaining raw evidence for `settlement`.
+- **Ports `app` implements:** `PaymentParticipants` (the caller's wallet and instrument, resolved from authoritative state — `P5-TSK-009`) and, from `P6-TSK-005`, **`CaptureComposition`** — *the lines an approved capture posts*. The second exists because a merchant-bound capture settles in four lines (ADR-0050 §3) and composing them here would mean this module knowing what a merchant is, what a fee is and which schedule version priced it. **Fee vocabulary never enters this domain model**, which is `INV-PAY-03`'s discipline at a second vocabulary; the flow that created the intent supplies the lines and the capture posts what it is handed.
 
 ### `paymentmethods` — Phase 5
 - **Responsibility:** the tokenised-instrument boundary. Exists so that "no raw card data crosses this line" is a reviewable boundary rather than a convention.
@@ -361,6 +362,7 @@ phases must satisfy, not a description of code.
 - **Failure:** a payout against insufficient payable is a domain rejection; duplicate payout initiation produces one effect; the fee schedule version is pinned per transaction so a mid-flight change cannot reprice history (`INV-HIST-04`).
 - **Security:** merchant authentication distinct from customer authentication; cross-tenant access impossible; payout destination change requires step-up, four-eyes and a cooling-off period.
 - **Operations:** fee accrual, payout volume and age, per-merchant error rates, chargeback ratio (regulatory-relevant).
+- **Composes, never orchestrates** (`P6-TSK-005`): `MerchantSettlement` returns ADR-0050 §3's four journal lines and announces `FeeAssessed`, on the capture's own connection, through the `CaptureComposition` port `app` wires. `merchant` knows an intent only as a `UUID` it was handed and cannot see `payments`; `payments` cannot see `merchant`. The join is the composition root's, the `JdbcPaymentParticipants` shape.
 
 ### `checkout` — Phase 6
 - **Responsibility:** the customer-facing purchase experience and the order it produces.

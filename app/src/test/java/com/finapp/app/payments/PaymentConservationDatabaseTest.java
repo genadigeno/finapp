@@ -786,7 +786,20 @@ class PaymentConservationDatabaseTest {
     private PaymentOutcomes outcomes() {
         return new PaymentOutcomes(
                 intents, attempts, refunds, holdService(), postingService(),
-                new ChartOfAccounts<>(ledgerAccounts), new JdbcAuditWriter(),
+                new ChartOfAccounts<>(ledgerAccounts),
+                // THE PRODUCTION SEAM (P6-TSK-005): the composition production posts through,
+                // not the wallet one directly - so "no fee pin, two lines" is proven where it
+                // matters. Every payment in this suite is a top-up and falls back.
+                new com.finapp.app.merchant.MerchantBoundCaptureComposition(
+                        new com.finapp.merchant.MerchantSettlement(
+                                new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                                new com.finapp.merchant.JdbcFeeScheduleStore(),
+                                ledgerAccounts,
+                                new ChartOfAccounts<>(ledgerAccounts),
+                                new JdbcOutboxWriter(),
+                                IDS),
+                        new com.finapp.payments.WalletTopUpComposition()),
+                new JdbcAuditWriter(),
                 new JdbcOutboxWriter(), IDS, CLOCK);
     }
 

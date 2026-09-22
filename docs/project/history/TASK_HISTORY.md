@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 128 "Previously" blocks, newest first, from `P6-TSK-002` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 129 "Previously" blocks, newest first, from `P6-TSK-004` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,52 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-004` — the versioned fee schedule** — `COMPLETE` (2026-09-22). **M6.2 opens, and
+the platform can say what it charges — before anything charges it.** Fees as immutable,
+versioned configuration with pure, conserving arithmetic: `FeeSchedule` as the stable
+commercial identity a merchant is *assigned* to, `FeeScheduleVersion` as the priced content an
+assessment *pins* (`INV-HIST-04`'s **first subject** in five phases), `FEE_ADMINISTER` as the
+platform's ninth permission, and `V004`'s four tables.
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Recomputation under a pinned version reproduces to the minor unit | From the stored row, twice — the row can never change, so it reproduces forever |
+| A new version reprices nothing | The pinned assessment is untouched; captures after the change get the new version |
+| The split conserves | By **property test** over amounts × rates × six policies × 0/2/3-minor-unit currencies |
+| Mutation of a frozen version is refused at the database | Withheld grant for the app role; unconditional trigger for the **migrator** |
+
+### Three things this task decided rather than inherited
+
+**No `DRAFT` state, and no editable window.** A version is a fact the moment it is written, so
+`V004`'s trigger is `RAISE EXCEPTION` on *every* `UPDATE` and `DELETE`. Editable-until-effective
+buys only what superseding already buys, and costs a trigger that must reason about which column
+may move in which state — the one place such reasoning can be subtly wrong. A mistake is
+corrected by a **later version**, and **ties on `effective_from` are legal**, so an operator who
+catches a mistyped future rate supersedes it at the same instant rather than leaving a second of
+wrong pricing.
+
+**No idempotency key, stated rather than omitted.** Every keyed command here is keyed because a
+duplicate produces a duplicate *effect*. A duplicated version creation produces two versions
+with identical content that price identically — the harm does not exist. Assignment converges
+instead, writing nothing when it changes nothing.
+
+**A schedule row cannot be locked, and that is the same fact as its immutability.** PostgreSQL
+requires the `UPDATE` privilege to take a row lock; `V004` withholds it. Granting `UPDATE` to
+make a lock takeable would buy a lock on a table nothing may write twice, at the cost of the
+grant no longer saying *immutable*. The arbiter is the unique index on
+`(fee_schedule_id, version)` — which is also the queue — with the writer retrying behind a
+savepoint. Found by the suite, at SQLState 42501.
+
+**The gate's survivor**: neutralising the tenant predicate left the suite green, because its
+only negative was *an unassigned merchant resolves empty* — which an unscoped query also
+answers when nothing else is assigned. **An empty assertion is not a tenant negative.** Closed
+with a three-tenant test; the mutation then failed. **9 probes, 8 caught first time, four at
+two ranks, restores byte-identical.**
 
 ---
 
