@@ -108,6 +108,7 @@ class CheckoutFlowDatabaseTest {
     @Autowired private javax.sql.DataSource dataSource;
     @Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
     @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    @Autowired private com.finapp.ledger.PostingService postingService;
 
     @BeforeAll
     static void startProvider() {
@@ -522,6 +523,150 @@ class CheckoutFlowDatabaseTest {
         }
     }
 
+    /**
+     * Wraps {@code real} so that, the moment the position breakdown's line statement has
+     * executed, {@code sideEffect} runs and commits on ANOTHER connection. Everything else passes
+     * straight through.
+     */
+    private static Connection commitAfterTheLineRead(Connection real, Runnable sideEffect) {
+        java.util.concurrent.atomic.AtomicBoolean fired =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        return (Connection)
+                java.lang.reflect.Proxy.newProxyInstance(
+                        Connection.class.getClassLoader(),
+                        new Class<?>[] {Connection.class},
+                        (proxy, method, args) -> {
+                            Object result = invoke(real, method, args);
+                            if ("prepareStatement".equals(method.getName())
+                                    && args != null
+                                    && args[0] instanceof String sql
+                                    && sql.contains("AS counterparty")) {
+                                PreparedStatement statement = (PreparedStatement) result;
+                                return java.lang.reflect.Proxy.newProxyInstance(
+                                        PreparedStatement.class.getClassLoader(),
+                                        new Class<?>[] {PreparedStatement.class},
+                                        (inner, call, callArgs) -> {
+                                            Object answer = invoke(statement, call, callArgs);
+                                            if ("executeQuery".equals(call.getName())
+                                                    && fired.compareAndSet(false, true)) {
+                                                sideEffect.run();
+                                            }
+                                            return answer;
+                                        });
+                            }
+                            return result;
+                        });
+    }
+
+    private static Object invoke(Object target, java.lang.reflect.Method method, Object[] args)
+            throws Throwable {
+        try {
+            return method.invoke(target, args);
+        } catch (java.lang.reflect.InvocationTargetException wrapped) {
+            throw wrapped.getCause();
+        }
+    }
+
+    /** DR SETTLEMENT_CLEARING / CR the merchant's payable, 1.00, committed on its own. */
+    @SuppressWarnings("try") // Scopes are used for their close side effect.
+    private void postOneEuroToThePayable(Merchant merchant) {
+        try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection other = DatabaseRoles.application()) {
+            other.setAutoCommit(false);
+            com.finapp.sharedkernel.money.CurrencyCode eur =
+                    com.finapp.sharedkernel.money.CurrencyCode.of("EUR");
+            com.finapp.ledger.JdbcLedgerAccountStore accounts =
+                    new com.finapp.ledger.JdbcLedgerAccountStore();
+            com.finapp.ledger.LedgerAccount payable =
+                    accounts.findOwned(
+                                    other,
+                                    UUID.fromString(merchant.id()),
+                                    com.finapp.ledger.AccountPurpose.MERCHANT_PAYABLE,
+                                    eur)
+                            .orElseThrow();
+            com.finapp.ledger.LedgerAccount clearing =
+                    new com.finapp.ledger.ChartOfAccounts<>(accounts)
+                            .resolve(
+                                    other,
+                                    com.finapp.ledger.AccountPurpose.SETTLEMENT_CLEARING,
+                                    eur);
+            Money one = Money.ofMinorUnits(1_00L, eur);
+            java.time.LocalDate today = java.time.LocalDate.now(CLOCK);
+            postingService.post(
+                    other,
+                    new com.finapp.ledger.PostingCommand(
+                            "mid-read:" + UUID.randomUUID(),
+                            today,
+                            today,
+                            "mid-read-" + UUID.randomUUID(),
+                            java.util.List.of(
+                                    new com.finapp.ledger.JournalLine(
+                                            clearing.id(),
+                                            com.finapp.ledger.Direction.DEBIT,
+                                            one),
+                                    new com.finapp.ledger.JournalLine(
+                                            payable.id(),
+                                            com.finapp.ledger.Direction.CREDIT,
+                                            one))));
+            other.commit();
+        } catch (Exception failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private HttpResponse<String> payable(Merchant merchant) throws Exception {
+        return get("/v1/merchant/payable", merchant.apiKey());
+    }
+
+    /** A real refund through the operator surface, approved by the simulated provider. */
+    private void refund(String intentId, String amount) throws Exception {
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.REFUNDS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_ref-" + UUID.randomUUID()
+                        + "\"}");
+        HttpResponse<String> refunded =
+                post(
+                        "/v1/payments/" + intentId + "/refund",
+                        "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\","
+                                + "\"reason\":\"goods returned\"}",
+                        operatorSession(RoleName.LEDGER_OPERATOR),
+                        someKey());
+        assertThat(refunded.statusCode()).as(refunded.body()).isEqualTo(201);
+    }
+
+    /** position == captured - fees - refunded + feesReturned + other, read from the body. */
+    private static boolean explainsItself(String body) {
+        java.math.BigDecimal position = new java.math.BigDecimal(field(body, "position"));
+        java.math.BigDecimal terms =
+                new java.math.BigDecimal(field(body, "captured"))
+                        .subtract(new java.math.BigDecimal(field(body, "fees")))
+                        .subtract(new java.math.BigDecimal(field(body, "refunded")))
+                        .add(new java.math.BigDecimal(field(body, "feesReturned")))
+                        .add(new java.math.BigDecimal(field(body, "other")));
+        return position.compareTo(terms) == 0;
+    }
+
+    /** The ledger's own DEFINITION of the payable - the fold the view must also equal. */
+    private static long derivedPayableMinor(Connection app, Merchant merchant) {
+        com.finapp.ledger.JdbcLedgerAccountStore accounts =
+                new com.finapp.ledger.JdbcLedgerAccountStore();
+        com.finapp.ledger.LedgerAccount payable =
+                accounts.findOwned(
+                                app,
+                                UUID.fromString(merchant.id()),
+                                com.finapp.ledger.AccountPurpose.MERCHANT_PAYABLE,
+                                com.finapp.sharedkernel.money.CurrencyCode.of("EUR"))
+                        .orElseThrow();
+        return new com.finapp.ledger.JdbcBalanceDerivation()
+                .derive(app, payable.id(), com.finapp.ledger.AsOf.latest())
+                .settled()
+                .minorUnits();
+    }
+
     /** One completed purchase: create, confirm, capture. Returns the checkout id. */
     private String purchase(Merchant merchant, Customer customer) throws Exception {
         String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
@@ -835,6 +980,233 @@ class CheckoutFlowDatabaseTest {
                 .isEqualTo(200);
     }
 
+    // ----------------------------------------------------------------- the payable view
+
+    @Test
+    @DisplayName("P6-TSK-010: the payable is the LEDGER POSITION, explained - two captures and a"
+            + " real refund, every term named, equal to independent SQL AND to the derivation")
+    void thePayableReconcilesToTheLedger() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String first = purchase(merchant, customer);
+        purchase(merchant, customer);
+        refund(intentOfSession(first), "40.00");
+
+        String body = payable(merchant).body();
+
+        assertThat(field(body, "kind"))
+                .as("the figure is folded from the lines, never read from the projection")
+                .isEqualTo("DERIVED");
+        assertThat(body)
+                .contains("\"currency\":\"EUR\"")
+                .contains("\"position\":\"153.60\"")
+                .contains("\"captured\":\"200.00\"")
+                .contains("\"fees\":\"6.40\"")
+                .contains("\"refunded\":\"40.00\"")
+                .contains("\"feesReturned\":\"0.00\"")
+                .contains("\"other\":\"0.00\"");
+
+        // AGAINST TWO INDEPENDENT AUTHORITIES: plain SQL over the journal, and the ledger's
+        // own definition. The view is neither of them, and must equal both.
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePositionMinor(app, merchant)).isEqualTo(153_60L);
+            assertThat(derivedPayableMinor(app, merchant)).isEqualTo(153_60L);
+        }
+    }
+
+    @Test
+    @DisplayName("P6-TSK-010: the FOURTH cell - a RETURNED refund shows the fee coming back, its"
+            + " share computed by P6-TSK-014's cumulative allocation")
+    void aReturnedRefundShowsTheFeeComingBack() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L, "RETURNED");
+        String checkout = purchase(merchant, payingCustomer());
+        // HALF, deliberately: a FULL refund of a merchant-bound capture is refused as unfunded
+        // today, which is its own finding and its own pinned test below.
+        refund(intentOfSession(checkout), "50.00");
+
+        String body = payable(merchant).body();
+
+        assertThat(body)
+                .contains("\"captured\":\"100.00\"")
+                .contains("\"fees\":\"3.20\"")
+                .contains("\"refunded\":\"50.00\"")
+                .as("a credit on the payable in an entry that CREDITS clearing is a fee returned:"
+                        + " half the capture returns half the fee")
+                .contains("\"feesReturned\":\"1.60\"")
+                .as("96.80 - 50.00 + 1.60")
+                .contains("\"position\":\"48.40\"");
+        assertThat(explainsItself(body)).isTrue();
+    }
+
+    @Test
+    @DisplayName("A GATE FINDING, PINNED (P6-TSK-010 -> P6-TSK-015): a FULL refund of a"
+            + " merchant-bound capture is REFUSED AS UNFUNDED under either fee policy")
+    void aFullMerchantRefundIsRefusedAsUnfunded() throws Exception {
+        // FOUND BY THIS TASK'S END-TO-END TEST, and pinned so the task that decides it must
+        // CHANGE THIS ASSERTION rather than discover the question.
+        //
+        // Phase 5's refund places a hold on the account it debits and judges affordability
+        // against that account's available position - in PAYMENT vocabulary, on the GROSS.
+        // For a merchant-bound payment that account is the PAYABLE, which after the capture
+        // holds the NET (96.80 of 100.00). So a full refund is always unfunded:
+        //
+        //   RETURNED - the composed entry's net is -96.80 (the gross out, the 3.20 fee back),
+        //              which lands the payable at EXACTLY ZERO and is refused anyway, because
+        //              the bound never sees the fee coming back. This half is a defect.
+        //   RETAINED - the merchant genuinely cannot fund 100.00 from 96.80; allowing it would
+        //              take the payable negative, an exposure to the merchant nobody decided to
+        //              carry. This half is a DECISION the platform has not made: refuse, or
+        //              permit a negative payable recovered from future captures.
+        //
+        // P6-TSK-014's tests posted through the composition seam directly and never crossed the
+        // refund command's funding bound, so they could not see this. Owned by P6-TSK-015.
+        for (String policy : new String[] {"RETAINED", "RETURNED"}) {
+            Merchant merchant = tradingMerchant("0.029", 30L, policy);
+            String intent = intentOfSession(purchase(merchant, payingCustomer()));
+            provider.succeedsWith(
+                    SimulatedCardPspAdapter.REFUNDS_PATH,
+                    200,
+                    "{\"status\":\"approved\",\"reference\":\"psp_ref-" + UUID.randomUUID()
+                            + "\"}");
+
+            HttpResponse<String> refused =
+                    post(
+                            "/v1/payments/" + intent + "/refund",
+                            "{\"amount\":\"100.00\",\"currency\":\"EUR\","
+                                    + "\"reason\":\"order cancelled\"}",
+                            operatorSession(RoleName.LEDGER_OPERATOR),
+                            someKey());
+
+            assertThat(refused.statusCode())
+                    .as("policy %s: when this becomes 201, P6-TSK-015 has landed and this test is"
+                            + " its assertion to rewrite", policy)
+                    .isEqualTo(409);
+            assertThat(refused.body()).contains("payments.RefundUnfunded");
+            assertThat(payable(merchant).body())
+                    .as("and the refusal moved nothing")
+                    .contains("\"position\":\"96.80\"");
+        }
+    }
+
+    @Test
+    @DisplayName("P6-TSK-010: UNDER LIVE TRAFFIC every response explains itself exactly, and at"
+            + " rest the view equals the journal to the minor unit")
+    void thePayableHoldsUnderLiveTraffic() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        int purchases = 8;
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        java.util.concurrent.atomic.AtomicBoolean trading =
+                new java.util.concurrent.atomic.AtomicBoolean(true);
+        java.util.List<String> inconsistent =
+                java.util.Collections.synchronizedList(new ArrayList<>());
+        java.util.concurrent.atomic.AtomicInteger reads =
+                new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            Future<?> traffic =
+                    pool.submit(
+                            () -> {
+                                try {
+                                    for (int i = 0; i < purchases; i++) {
+                                        purchase(merchant, customer);
+                                    }
+                                } finally {
+                                    trading.set(false);
+                                }
+                                return null;
+                            });
+            Future<?> reader =
+                    pool.submit(
+                            () -> {
+                                while (trading.get()) {
+                                    String body = payable(merchant).body();
+                                    reads.incrementAndGet();
+                                    if (!explainsItself(body)) {
+                                        inconsistent.add(body);
+                                    }
+                                }
+                                return null;
+                            });
+            traffic.get(300, TimeUnit.SECONDS);
+            reader.get(60, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(reads.get()).as("the view was actually read while money moved").isPositive();
+        assertThat(inconsistent)
+                .as("THE POINT OF ONE STATEMENT: a response whose terms did not sum to its own"
+                        + " position would mean the figure and its explanation came from two"
+                        + " snapshots, with a capture committed between them")
+                .isEmpty();
+
+        String atRest = payable(merchant).body();
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(new java.math.BigDecimal(field(atRest, "position"))
+                            .movePointRight(2)
+                            .longValueExact())
+                    .as("at rest: the view, the journal and the definition agree")
+                    .isEqualTo(payablePositionMinor(app, merchant))
+                    .isEqualTo(derivedPayableMinor(app, merchant))
+                    .isEqualTo(purchases * 96_80L);
+        }
+    }
+
+    @Test
+    @DisplayName("P6-TSK-010: ONE SNAPSHOT, proved DETERMINISTICALLY - a posting committed in the"
+            + " middle of the view's read cannot make its terms disagree with its position")
+    void aPostingMidReadCannotSplitTheFigureFromItsTerms() throws Exception {
+        // THE LIVE-TRAFFIC TEST ABOVE CANNOT PROVE THIS, and the mutation battery showed it: a
+        // version that read the position in a SECOND statement survived, because a capture
+        // landing in the microseconds between two statements is too improbable for traffic to
+        // produce on demand. So the race is not waited for - it is MADE. The view's connection
+        // is wrapped so that the instant its line read returns, another connection commits a
+        // posting to the same payable. Under READ COMMITTED any LATER statement sees that
+        // posting and the line read does not; a design with only one statement has no later
+        // statement to see it, which is the whole claim.
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        purchase(merchant, payingCustomer());
+        com.finapp.merchant.MerchantPayable view =
+                new com.finapp.merchant.MerchantPayable(
+                        new com.finapp.ledger.JdbcLedgerAccountStore(),
+                        new com.finapp.ledger.JdbcPositionBreakdown());
+
+        java.util.List<com.finapp.merchant.MerchantPayable.Payable> read;
+        try (Connection real = DatabaseRoles.application()) {
+            real.setAutoCommit(false);
+            Connection interposing =
+                    commitAfterTheLineRead(real, () -> postOneEuroToThePayable(merchant));
+            read =
+                    view.payablesOf(
+                            interposing,
+                            com.finapp.merchant.MerchantId.of(UUID.fromString(merchant.id())));
+            real.commit();
+        }
+
+        com.finapp.merchant.MerchantPayable.Payable payable = read.get(0);
+        assertThat(payable.terms())
+                .as("the figure and its explanation came from the same lines")
+                .isEqualTo(payable.position());
+        assertThat(payable.position().minorUnits())
+                .as("and the posting that landed mid-read is in NEITHER - it is in the next read")
+                .isEqualTo(96_80L);
+        assertThat(new java.math.BigDecimal(field(payable(merchant).body(), "position")))
+                .isEqualByComparingTo("97.80");
+    }
+
+    @Test
+    @DisplayName("P6-TSK-010, INV-MER-01: one merchant's traffic moves no other merchant's"
+            + " payable - the route takes no identifier, so there is nothing to ask about")
+    void oneMerchantsTrafficMovesNoOtherPayable() throws Exception {
+        Merchant a = tradingMerchant("0.029", 30L);
+        Merchant b = tradingMerchant("0.029", 30L);
+        purchase(a, payingCustomer());
+
+        assertThat(payable(b).body()).contains("\"position\":\"0.00\"");
+        assertThat(payable(a).body()).contains("\"position\":\"96.80\"");
+    }
+
     // ----------------------------------------------------------------- the phase's race
 
     @Test
@@ -1027,6 +1399,12 @@ class CheckoutFlowDatabaseTest {
 
     /** An onboarded, ACTIVE merchant with a fee schedule assigned and an API key. */
     private Merchant tradingMerchant(String rate, long fixedMinor) throws Exception {
+        return tradingMerchant(rate, fixedMinor, "RETAINED");
+    }
+
+    /** `P6-TSK-010`: the refund-fee policy is a version's term, so a suite testing it chooses. */
+    private Merchant tradingMerchant(String rate, long fixedMinor, String refundFeePolicy)
+            throws Exception {
         String operator = operatorSession();
         String merchantId = onboard(operator);
         String schedule =
@@ -1045,7 +1423,8 @@ class CheckoutFlowDatabaseTest {
                                         "{\"rate\":" + rate + ",\"fixedAmountMinor\":"
                                                 + fixedMinor
                                                 + ",\"roundingPolicy\":\"HALF_EVEN\","
-                                                + "\"refundFeePolicy\":\"RETAINED\","
+                                                + "\"refundFeePolicy\":\""
+                                                + refundFeePolicy + "\","
                                                 + "\"reason\":\"initial pricing\"}",
                                         operator,
                                         null)

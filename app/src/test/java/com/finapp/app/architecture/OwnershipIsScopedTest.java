@@ -922,6 +922,20 @@ class OwnershipIsScopedTest {
                                         + " endpoint' - that surface was P3-TSK-013's display,"
                                         + " the recorded one-task plan drift, corrected here.)")),
                     Map.entry(
+                            "com.finapp.ledger.JdbcPositionBreakdown.breakdown",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P6-TSK-010. The derivation read a second way - the same"
+                                        + " fold over the same lines, each carrying how its entry"
+                                        + " treated a named counterparty purpose - and classified"
+                                        + " as derive is, for derive's reason: a ledger account"
+                                        + " may be the platform's or a party's, so ownership is"
+                                        + " a property of the SURFACE that discloses the figure,"
+                                        + " not of the computation. The one surface is the"
+                                        + " merchant payable view, which reaches here only with"
+                                        + " accounts from findAllOwned (owner_ref = ? in the"
+                                        + " ledger's statement) under the merchant's own key.")),
+                    Map.entry(
                             "com.finapp.ledger.JdbcBalanceDerivation.linesInRange",
                             new Entry(
                                     Scope.NOT_OWNED,

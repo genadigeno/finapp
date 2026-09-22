@@ -400,6 +400,10 @@ class OpenApiContractTest {
                         // no identifier - the tenant is the credential - so there is no shape a
                         // request could take to ask about another merchant.
                         ApiVersion.CURRENT_PREFIX + "/merchant/transactions",
+                        // P6-TSK-010: INV-MER-02 as a surface - the payable, DERIVED from the
+                        // ledger's lines and explained by its terms. No identifier: the tenant
+                        // is the credential.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/payable",
                         ApiVersion.CURRENT_PREFIX + "/checkout/sessions/confirmation",
                         // P6-TSK-004: what the platform charges, behind FEE_ADMINISTER -
                         // its own permission because pricing is a commercial trust decision

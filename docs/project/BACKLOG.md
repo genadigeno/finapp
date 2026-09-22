@@ -6702,7 +6702,8 @@ F1–F8 binds; every task that can affect money carries `DOD-FIN`.
 gate and sequenced HERE rather than in M6.2, because the refund half of fee economics
 depends on `P6-TSK-007` having created a real merchant-bound payment to refund; a
 milestone whose last item waits on a later milestone is not a milestone*) · M6.4 The merchant surface
-(`P6-TSK-009`, `-010`) · M6.5 Payouts (`P6-TSK-011`, `-012`) · M6.6 Observability and
+(`P6-TSK-009`, `-010`, and `-015` — *added by `P6-TSK-010`'s completion gate, because a full
+merchant refund is refused as unfunded on a live money path*) · M6.5 Payouts (`P6-TSK-011`, `-012`) · M6.6 Observability and
 demonstration (`P6-TSK-013`, `P6-TST-001`, `P6-TST-002`) · M6.7 The gate (`P6-DOC-001`).
 Acceptance per milestone in `PHASE_6_PLAN.md` §16.
 
@@ -7424,7 +7425,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   suites, 0 failures** (checkout, merchant and payments). **The full battery deliberately
   skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TSK-010 — The payable view** — `READY`
+**P6-TSK-010 — The payable view** — `COMPLETE` (2026-09-23)
 - **Objective**: `INV-MER-02` as a surface — what the platform owes, derived, explainable.
   Bounded context 12.
 - **Scope**: `GET /v1/merchant/payable` reading the payable ledger position per currency
@@ -7435,6 +7436,80 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   before the gate, extended then). **Accept**: the view equals the ledger position to the
   minor unit under live traffic; the schema sweep finds no balance column.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-FIN`, `DOD-API`
+- **Delivered (2026-09-23)**: `GET /v1/merchant/payable` — per currency, `kind: DERIVED`, the
+  position and the terms that explain it (`captured`, `fees`, `refunded`, `feesReturned`,
+  `other`), with `position = captured − fees − refunded + feesReturned + other` exactly.
+- **The design, in three decisions.** (1) **The position is the definition, not the
+  projection**: the customer balance reads the display projection and says so; this view reports
+  a drill-down beside its figure, and a projection is maintained by a different mechanism than
+  the lines it would sit beside. (2) **The figure and its terms come from ONE statement**, so a
+  posting committed mid-read cannot make them disagree. (3) **The classification is structural
+  rather than a lookup** — each payable line is placed by how its own entry treated
+  `SETTLEMENT_CLEARING` (a capture debits it, a refund credits it), which is ADR-0050 §3's
+  shapes read backwards. The `ledger` exposes only a generic `PositionBreakdown` in its own
+  vocabulary; the meaning lives in `merchant`, beside the composer that writes those shapes. No
+  N+1, no payments lookup, **no SQL `SUM`** (the ledger's recorded rule: fold through `Money`).
+- **No `paidOut` term yet**, deliberately: payouts arrive with `P6-TSK-012` and a field that is
+  always zero with no producer is the state-without-a-producer this phase keeps refusing. A
+  payout would land in `other`, visibly and still summing, until that task splits it out.
+- **Accept clauses**: the view equals **independent journal SQL and the ledger's own
+  derivation** to the minor unit, for a book with a real refund; **under live traffic** every
+  response explains itself exactly, and **deterministically** — a posting committed in the middle
+  of the view's read lands in neither the figure nor its terms; the schema sweep, **widened
+  from `merchant` to every schema**, finds no position column. **The failed-payout half of the
+  reconciliation clause is inherited by `P6-TSK-012`**, per this entry's own dependency note
+  (payouts do not exist yet), and is written into that task's accept.
+- **Three probes, all caught in the end, and the first one is the task's lesson**: reading the
+  position in a second statement **survived the live-traffic test** — a commit in the
+  microseconds between two statements is too improbable for traffic to produce on demand, so the
+  claim looked tested and was not. Closed by MAKING the race: the view's connection is wrapped so
+  another connection commits a posting the instant the line read returns. Also caught: the
+  refund cells swapped; and a payable figure stored in `checkout`, **which only the widened
+  sweep could see** — the merchant-schema sweep passed with the probe applied.
+- **A GATE FINDING, PINNED AND OWNED — THE NEXT TASK**: a **full** refund of a merchant-bound
+  capture is refused as `payments.RefundUnfunded` under either fee policy. Phase 5's funding
+  bound judges the GROSS against the debit account, and for a merchant payment that account is
+  the payable, which holds the NET. Under `RETURNED` the composed entry lands the payable at
+  exactly zero and is refused anyway — a defect; under `RETAINED` the merchant genuinely cannot
+  fund it from the payable — a decision nobody has made. `P6-TSK-014`'s tests posted through the
+  composition seam directly and never crossed that bound. Pinned as
+  `CheckoutFlowDatabaseTest#aFullMerchantRefundIsRefusedAsUnfunded` and owned by `P6-TSK-015`.
+- **Registers**: `MUTATION_TESTING` +3 rows; `OwnershipIsScopedTest` +1 classification (the
+  breakdown is `NOT_OWNED` for the derivation's own reason — ownership belongs to the surface
+  that discloses the figure); contract baseline 63 → 64 paths, **0 keys removed, 0 changed**,
+  15 added. No migration, no `DATA_CLASSIFICATION` rows, no audit action, no error code.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1450 tests across 14 modules, 0 failures**, and **195 targeted database tests across 20
+  suites, 0 failures** (checkout, merchant and payments). **The full battery deliberately skipped
+  on the owner's instruction; no fleet-wide database or kafka counts claimed.**
+
+**P6-TSK-015 — The merchant refund's funding bound: judge the composed net, and decide the
+negative payable** — `READY`
+- **Objective**: a merchant must be able to refund a sale in full. Today it cannot, under either
+  fee policy. Bounded contexts 12 with 9, through the seam.
+- **Found by `P6-TSK-010`'s end-to-end test** — the provenance worth keeping, because
+  `P6-TSK-014`'s own suite posted through the composition seam directly and so never crossed the
+  refund command's funding bound. Pinned as
+  `CheckoutFlowDatabaseTest#aFullMerchantRefundIsRefusedAsUnfunded`, which this task must
+  REWRITE rather than discover.
+- **Scope**: (1) **`RETURNED` is a defect**: the bound judges the gross (100.00) against a payable
+  holding the net (96.80), while the composed entry's net is exactly the 96.80 the payable holds.
+  The bound must be judged on what the refund will actually take from the debit account —
+  asked of the composition in payment vocabulary ("how much does this refund debit the account
+  it names"), so `payments` stays fee-blind (`INV-PAY-03`). (2) **`RETAINED` is a decision**:
+  either refuse (a merchant must fund a full refund from its payable), or permit the payable to
+  go NEGATIVE — the merchant owing the platform its fee, recovered from later captures. That is
+  a credit exposure to a counterparty and belongs in an ADR, and it interacts with ADR-0051's
+  payout bound, which judges debits against the same position. (3) The hold, placed and released
+  under the refund's existing lifecycle, sized by the same figure the bound judged.
+- **Deps**: `P6-TSK-014`, `P6-TSK-010`. **Accept**: a `RETURNED` full refund succeeds end to end
+  and lands the payable at exactly zero; the `RETAINED` outcome is whatever the ADR decides,
+  driven both ways; a refund racing a capture on one payable stays inside the bound (counted);
+  Phase 5's wallet-refund suite untouched.
+- **Sequenced into M6.4, and FIRST**: it breaks a live money path (checkout payments are real
+  since `P6-TSK-007`), and it settles what the payable's available position means before
+  `P6-TSK-012`'s payouts judge debits against it.
+- **Risk**: High (it moves money out of a counterparty's position). **Cx**: M. **DoD**: `DOD-FIN`
 
 **P6-TSK-011 — The payout destination: step-up, four-eyes, cooling-off** — `PLANNED`
 - **Objective**: the platform's **first four-eyes primitive** (`INV-AUD-04` live) on the
@@ -7467,7 +7542,9 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   dispatch exactly the affordable set (counted: rows, holds, entries); the timeout →
   standing hold → query-resolved flow end to end; retry-after-timeout converges to one
   wire operation; the insufficient-payable refusal commits nothing; the permissionless and
-  cross-tenant refusals leave counts unmoved.
+  cross-tenant refusals leave counts unmoved. **Inherited from `P6-TSK-010`**: the payable view
+  reconciles against independent SQL with a FAILED payout in the picture (it posts nothing and
+  moves nothing), and `paidOut` splits out of `other` as its own term.
 - **Risk**: High (outbound money). **Cx**: XL. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`
 
 **P6-TSK-013 — The meters and the dashboard row** — `PLANNED`
@@ -7524,6 +7601,9 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   version created after the capture prices neither refund; and **Phase 5's wallet-refund suite
   is untouched**, proved through the production seam rather than around it — every payments
   suite now composes its refunds through `MerchantBoundRefundComposition` and falls back.
+- **Corrected by `P6-TSK-010`'s gate (2026-09-23)**: the full-refund evidence above is at the
+  composition seam, posted directly. End to end, a FULL refund of a merchant-bound capture is
+  refused as unfunded by Phase 5's bound, which this suite never crossed. Owned by `P6-TSK-015`.
 - **Four probes, three caught, ONE SURVIVOR** (restores verified byte-identical by `cmp`).
   Caught: the naive per-refund share (**a one-cent fee refunded in two halves returns TWO cents
   naively** — caught by the 1800-case property sweep and at the database); the refund priced by

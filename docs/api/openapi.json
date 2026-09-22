@@ -2923,6 +2923,46 @@
         },
         "type": "object"
       },
+      "PayableLine": {
+        "properties": {
+          "captured": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "fees": {
+            "type": "string"
+          },
+          "feesReturned": {
+            "type": "string"
+          },
+          "other": {
+            "type": "string"
+          },
+          "position": {
+            "type": "string"
+          },
+          "refunded": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PayableView": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "payables": {
+            "items": {
+              "$ref": "#/components/schemas/PayableLine"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "PaymentCreateRequest": {
         "properties": {
           "amount": {
@@ -4709,6 +4749,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SelfView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/payable": {
+      "get": {
+        "operationId": "viewMerchantPayable",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayableView"
                 }
               }
             },

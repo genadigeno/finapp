@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 134 "Previously" blocks, newest first, from `P6-TSK-014` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 135 "Previously" blocks, newest first, from `P6-TSK-009` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,39 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P6-TSK-009` — the merchant transaction surface** — `COMPLETE` (2026-09-22). **M6.4 opens: the
+merchant sees its business, and the money in it IS the journal.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Reconciles against the journal | Independent SQL over a seeded book with a **real refund** |
+| Negative per endpoint | B's report holds none of A's rows; A's id on B's read = a nonexistent one |
+
+### ADR-0006 decided the architecture
+
+*Cross-module data is read through the owning module's API, never by querying its tables* — so
+the report is **not a cross-schema join**. The money is `ledger`'s own statement of the payable;
+`payments` names each entry's kind; `checkout` names the purchase. Assembled in `app`, in memory,
+by stored identifier, one owner at a time. `Σ net = closing − opening` is inherited from the
+statement rather than maintained.
+
+### The period is the page
+
+A cursor was rejected on purpose: each request is one `READ COMMITTED` snapshot and the
+reconciliation holds *inside* it. Pages would each be their own snapshot, and a posting landing
+between two of them would make the pages fail to sum to the period — silently.
+
+### A gate finding with an owner
+
+`OwnershipIsScopedTest` keys on `EntityId` parameters, and checkout holds every cross-module
+reference by value as a bare `UUID` — so its reads are invisible to the ownership register. The
+new read is scoped in its own statement and bound by a store-level negative; the detector's
+blindness is platform-wide and goes to `P6-TST-001`, whose scope is mechanising exactly that.
 
 ---
 

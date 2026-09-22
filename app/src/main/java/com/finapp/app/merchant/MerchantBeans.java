@@ -34,6 +34,21 @@ public class MerchantBeans {
      * session and order stores — because ADR-0006 forbids reading another module's tables, and
      * a cross-schema join here would be exactly that with a friendlier name.
      */
+    /**
+     * The payable view (`P6-TSK-010`): the ledger's owner-scoped account read and its position
+     * breakdown, interpreted by the merchant module that composes the entry shapes being read.
+     */
+    @Bean
+    MerchantPayableQuery merchantPayableQuery(
+            PlatformTransactionManager transactionManager, DataSource dataSource) {
+        return new MerchantPayableQuery(
+                new com.finapp.merchant.MerchantPayable(
+                        new JdbcLedgerAccountStore(),
+                        new com.finapp.ledger.JdbcPositionBreakdown()),
+                new TransactionTemplate(transactionManager),
+                dataSource);
+    }
+
     @Bean
     MerchantTransactionReport merchantTransactionReport(
             com.finapp.ledger.StatementDerivation<Connection> statementDerivation,

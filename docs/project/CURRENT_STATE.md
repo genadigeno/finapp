@@ -273,42 +273,42 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-010` — the payable view** — `READY`. **`INV-MER-02` as a surface**: what the platform
-owes a merchant, per currency, derived from the payable's ledger position and explainable as
-*captured − fees − refunds − payouts*, reconciled against independent SQL with a refund and a
-failed payout in the picture — and a schema sweep pinning that no stored figure exists anywhere.
-Scope, acceptance and DoD profiles in the backlog entry.
+**`P6-TSK-015` — the merchant refund's funding bound: judge the composed net, and decide the
+negative payable** — `READY`. **A merchant cannot refund a sale in full today, under either fee
+policy.** Phase 5's funding bound judges the gross against the payable, which holds the net: under
+`RETURNED` that is a defect (the composed entry lands the payable at exactly zero and is refused
+anyway), under `RETAINED` it is a decision nobody has made (refuse, or let the payable go negative
+and recover it from later captures — an ADR-level credit exposure). Found by `P6-TSK-010`'s
+end-to-end test; pinned as a named test this task must rewrite. Scope, acceptance and DoD in the
+backlog entry.
 
 ### Just completed
 
-**`P6-TSK-009` — the merchant transaction surface** — `COMPLETE` (2026-09-22). **M6.4 opens: the
-merchant sees its business, and the money in it IS the journal.**
+**`P6-TSK-010` — the payable view** — `COMPLETE` (2026-09-23). **`INV-MER-02` as a surface: what
+the platform owes a merchant, derived, and explained by terms that sum to it exactly.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Reconciles against the journal | Independent SQL over a seeded book with a **real refund** |
-| Negative per endpoint | B's report holds none of A's rows; A's id on B's read = a nonexistent one |
+| Equals the ledger position | Independent journal SQL **and** the ledger's own derivation |
+| Under live traffic | Every response explains itself — and **deterministically**, mid-read |
+| No stored figure | The sweep, **widened to every schema** |
+| A failed payout in the picture | **Inherited by `P6-TSK-012`** — payouts do not exist yet |
 
-### ADR-0006 decided the architecture
+### Three decisions
 
-*Cross-module data is read through the owning module's API, never by querying its tables* — so
-the report is **not a cross-schema join**. The money is `ledger`'s own statement of the payable;
-`payments` names each entry's kind; `checkout` names the purchase. Assembled in `app`, in memory,
-by stored identifier, one owner at a time. `Σ net = closing − opening` is inherited from the
-statement rather than maintained.
+**The definition, not the projection** — a drill-down beside a figure must reconcile to it, and
+a projection is a different mechanism. **One statement** for the figure and every term, so a
+posting mid-read cannot split them. **A structural classification**: each payable line is placed
+by how its own entry treated `SETTLEMENT_CLEARING`, which is ADR-0050 §3's shapes read backwards
+— the ledger stays in its own vocabulary, and the meaning lives in `merchant`, beside the
+composer that writes those shapes.
 
-### The period is the page
+### The survivor that was the lesson
 
-A cursor was rejected on purpose: each request is one `READ COMMITTED` snapshot and the
-reconciliation holds *inside* it. Pages would each be their own snapshot, and a posting landing
-between two of them would make the pages fail to sum to the period — silently.
-
-### A gate finding with an owner
-
-`OwnershipIsScopedTest` keys on `EntityId` parameters, and checkout holds every cross-module
-reference by value as a bare `UUID` — so its reads are invisible to the ownership register. The
-new read is scoped in its own statement and bound by a store-level negative; the detector's
-blindness is platform-wide and goes to `P6-TST-001`, whose scope is mechanising exactly that.
+Reading the position in a second statement **passed the live-traffic test**: a commit landing in
+the microseconds between two statements is too improbable for traffic to produce on demand. So
+the race is now MADE rather than waited for — a wrapped connection commits a posting the instant
+the line read returns — and the mutation fails every time.
 
 ### Previously
 

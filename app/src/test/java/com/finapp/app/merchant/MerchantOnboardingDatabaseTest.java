@@ -412,6 +412,45 @@ class MerchantOnboardingDatabaseTest {
                 .isEqualTo(0);
     }
 
+    /**
+     * The single column on the platform whose name says "balance" and is not a figure: an
+     * account's NORMAL balance is its side (DEBIT or CREDIT), a classification fixed when the
+     * account is opened. Named, with its reason, so that widening this set is a visible act.
+     */
+    private static final java.util.Set<String> PERMITTED_BALANCE_NAMED_COLUMNS =
+            java.util.Set.of("ledger.ledger_account.normal_balance");
+
+    @Test
+    @DisplayName("P6-TSK-010: no column in ANY schema stores what the platform owes - the payable"
+            + " is a ledger position and exists nowhere else, platform-wide (INV-MER-02)")
+    void noPositionIsStoredInAnySchema() throws Exception {
+        // The merchant-schema sweep above guards the module that most wants to store a
+        // payable. This one guards every OTHER place a figure could quietly be kept: an order
+        // total renamed, a "cached owed" column added to checkout, a convenience field in
+        // payments. The payable view reads the position from the ledger's lines, and it is
+        // only honest while there is nowhere else a different number could come from.
+        java.util.List<String> found = new java.util.ArrayList<>();
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT table_schema, table_name, column_name FROM"
+                                        + " information_schema.columns WHERE table_schema NOT"
+                                        + " IN ('pg_catalog', 'information_schema') AND"
+                                        + " (column_name ILIKE '%payable%' OR column_name ILIKE"
+                                        + " '%owed%' OR column_name ILIKE '%balance%')");
+                ResultSet rows = read.executeQuery()) {
+            while (rows.next()) {
+                found.add(rows.getString(1) + "." + rows.getString(2) + "." + rows.getString(3));
+            }
+        }
+        assertThat(found)
+                .as("a column named for a position, anywhere on the platform, must be named in"
+                        + " PERMITTED_BALANCE_NAMED_COLUMNS with its reason - and %payable% and"
+                        + " %owed% can never be, because there is no reading of those words that"
+                        + " is not a figure somebody is owed")
+                .isSubsetOf(PERMITTED_BALANCE_NAMED_COLUMNS);
+    }
+
     // -----------------------------------------------------------------
 
     private MerchantOnboarding.OnboardingResult onboard(UUID party, String key)
