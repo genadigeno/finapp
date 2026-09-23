@@ -7,7 +7,8 @@ import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,13 +47,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/checkout/sessions", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class CheckoutSessionController {
 
-    private final CheckoutService checkout;
-
-    public CheckoutSessionController(CheckoutService checkout) {
-        this.checkout = Objects.requireNonNull(checkout, "checkout must not be null");
-    }
+    @NonNull private final CheckoutService checkout;
 
     /**
      * Opens an offer, or converges on the one this key already opened.

@@ -7,9 +7,10 @@ import com.finapp.payments.InstrumentToken;
 import com.finapp.payments.PaymentParticipants;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.sql.Connection;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * {@link PaymentParticipants} for a <strong>checkout</strong> payment (`P6-TSK-007`,
@@ -39,30 +40,22 @@ import java.util.UUID;
  * by the check that makes a mismatch loud: {@code MerchantSettlement} refuses a capture whose
  * credit account is not the pinned merchant's payable.
  */
+@RequiredArgsConstructor
 public final class CheckoutPaymentParticipants implements PaymentParticipants<Connection> {
 
-    private final LedgerAccountStore<Connection> ledgerAccounts;
-    private final PaymentParticipants<Connection> instruments;
-    private final UUID merchantRef;
-    private final CurrencyCode currency;
+    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
+
+    /** The real resolver, for the half this class does not answer. */
+    @NonNull private final PaymentParticipants<Connection> instruments;
 
     /**
-     * @param merchantRef whose payable this payment credits — taken from the SESSION, which is
-     *     authoritative state, never from the request
-     * @param currency the offer's currency, which the create command judges the amount against
-     * @param instruments the real resolver, for the half this class does not answer
+     * Whose payable this payment credits — taken from the SESSION, which is authoritative state,
+     * never from the request.
      */
-    public CheckoutPaymentParticipants(
-            LedgerAccountStore<Connection> ledgerAccounts,
-            PaymentParticipants<Connection> instruments,
-            UUID merchantRef,
-            CurrencyCode currency) {
-        this.ledgerAccounts =
-                Objects.requireNonNull(ledgerAccounts, "ledgerAccounts must not be null");
-        this.instruments = Objects.requireNonNull(instruments, "instruments must not be null");
-        this.merchantRef = Objects.requireNonNull(merchantRef, "merchantRef must not be null");
-        this.currency = Objects.requireNonNull(currency, "currency must not be null");
-    }
+    @NonNull private final UUID merchantRef;
+
+    /** The offer's currency, which the create command judges the amount against. */
+    @NonNull private final CurrencyCode currency;
 
     /**
      * The merchant's payable, read authoritatively.

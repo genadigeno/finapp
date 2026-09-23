@@ -2,7 +2,8 @@ package com.finapp.app.payments;
 
 import com.finapp.app.session.Unauthenticated;
 import com.finapp.payments.WebhookSignature;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -36,13 +37,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/providers/payments/webhooks")
 @Unauthenticated
 @ConditionalOnProperty("finapp.payments.provider.url")
+@RequiredArgsConstructor
 public class PaymentWebhookController {
 
-    private final PaymentWebhookService webhooks;
-
-    public PaymentWebhookController(PaymentWebhookService webhooks) {
-        this.webhooks = Objects.requireNonNull(webhooks, "webhooks must not be null");
-    }
+    @NonNull private final PaymentWebhookService webhooks;
 
     /**
      * Accepts one delivery. {@code 204} acknowledges — processed, duplicate, and

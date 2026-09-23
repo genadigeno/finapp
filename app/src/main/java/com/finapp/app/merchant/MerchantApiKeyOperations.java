@@ -16,10 +16,13 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** The operator's API-key surface behind the controller (`P6-TSK-002`). */
+@RequiredArgsConstructor
 public class MerchantApiKeyOperations {
 
     /**
@@ -45,16 +48,9 @@ public class MerchantApiKeyOperations {
     /** A key as the operator lists it: metadata only — no secret, and no hash. */
     public record KeyView(String keyId, String status, String issuedAt, String revokedAt) {}
 
-    private final MerchantApiKeys keys;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    public MerchantApiKeyOperations(
-            MerchantApiKeys keys, TransactionTemplate transactions, DataSource dataSource) {
-        this.keys = Objects.requireNonNull(keys, "keys must not be null");
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final MerchantApiKeys keys;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     /** Issues a key, or converges on the one a retried request already minted. */
     public IssuedKeyView issue(String rawMerchantId, String idempotencyKey) {

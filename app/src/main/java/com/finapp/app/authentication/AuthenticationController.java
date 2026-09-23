@@ -5,7 +5,9 @@ import com.finapp.identity.IdentityErrorCode;
 import com.finapp.platform.api.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -71,14 +73,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(
         path = "/authentications",
         produces = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 class AuthenticationController {
 
-    private final AuthenticationService authentications;
-
-    AuthenticationController(AuthenticationService authentications) {
-        this.authentications =
-                Objects.requireNonNull(authentications, "authentications must not be null");
-    }
+    @NonNull private final AuthenticationService authentications;
 
     /**
      * Authenticates a person and issues their session.

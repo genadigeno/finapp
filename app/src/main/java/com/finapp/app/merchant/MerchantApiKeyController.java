@@ -6,7 +6,8 @@ import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -42,13 +43,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(
         path = "/operator/merchants/{id}/api-keys",
         produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class MerchantApiKeyController {
 
-    private final MerchantApiKeyOperations keys;
-
-    public MerchantApiKeyController(MerchantApiKeyOperations keys) {
-        this.keys = Objects.requireNonNull(keys, "keys must not be null");
-    }
+    @NonNull private final MerchantApiKeyOperations keys;
 
     /**
      * Issues a key. The {@code 201} body carries the secret <strong>once</strong>; a retried

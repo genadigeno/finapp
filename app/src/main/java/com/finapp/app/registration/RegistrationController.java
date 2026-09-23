@@ -5,7 +5,9 @@ import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,13 +49,10 @@ import org.springframework.web.bind.annotation.RestController;
 @com.finapp.app.session.Unauthenticated
 @RestController
 @RequestMapping("/registrations")
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 class RegistrationController {
 
-    private final RegistrationService registrations;
-
-    RegistrationController(RegistrationService registrations) {
-        this.registrations = Objects.requireNonNull(registrations, "registrations must not be null");
-    }
+    @NonNull private final RegistrationService registrations;
 
     /**
      * Registers a person.

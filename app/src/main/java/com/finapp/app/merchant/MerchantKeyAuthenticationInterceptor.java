@@ -13,10 +13,11 @@ import com.finapp.platform.security.SecurityContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.sql.Connection;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.method.HandlerMethod;
@@ -51,6 +52,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * <p>A storage failure propagates: no key, no tenant, no request served. Authenticating a
  * counterparty against an unreadable database is the one outcome worse than an outage.
  */
+@RequiredArgsConstructor
 public final class MerchantKeyAuthenticationInterceptor implements HandlerInterceptor {
 
     /** Where the authenticated tenant is left for the handler — a request attribute, never a
@@ -62,18 +64,9 @@ public final class MerchantKeyAuthenticationInterceptor implements HandlerInterc
     private static final String SCHEME = "Bearer ";
     private static final String SEPARATOR = ".";
 
-    private final MerchantApiKeyStore<Connection> keys;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    public MerchantKeyAuthenticationInterceptor(
-            MerchantApiKeyStore<Connection> keys,
-            TransactionTemplate transactions,
-            DataSource dataSource) {
-        this.keys = Objects.requireNonNull(keys, "keys must not be null");
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final MerchantApiKeyStore<Connection> keys;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     @Override
     public boolean preHandle(

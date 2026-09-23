@@ -1,9 +1,11 @@
 package com.finapp.app.kyc;
 
 import java.sql.Connection;
-import java.util.Objects;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -16,15 +18,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * transaction the operation opened, so an audit record or a review task written beside a check
  * commits or rolls back with it.
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class KycUnitOfWork {
 
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    KycUnitOfWork(TransactionTemplate transactions, DataSource dataSource) {
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     <T> T inTransaction(Function<Connection, T> work) {
         return transactions.execute(

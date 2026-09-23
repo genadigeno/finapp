@@ -14,9 +14,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Objects;
 import java.util.Optional;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.method.HandlerMethod;
@@ -57,10 +59,9 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * into an empty result, so there is no branch anybody could later report on: {@code INV-IDN-07}'s
  * reasoning applied to a session rather than to a password.
  */
+@Slf4j
+@RequiredArgsConstructor
 public final class SessionAuthenticationInterceptor implements HandlerInterceptor {
-
-    private static final org.slf4j.Logger LOGGER =
-            org.slf4j.LoggerFactory.getLogger(SessionAuthenticationInterceptor.class);
 
     /**
      * Where the authenticated session is left for the handler.
@@ -75,28 +76,12 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
     private static final String SCOPE_ATTRIBUTE = CURRENT_SESSION + ".scope";
     private static final String SCHEME = "Bearer ";
 
-    private final SessionStore<Connection> sessions;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-    private final Clock clock;
-    private final SessionPolicy policy;
-    private final com.finapp.identity.Authorization authorization;
-
-    public SessionAuthenticationInterceptor(
-            SessionStore<Connection> sessions,
-            TransactionTemplate transactions,
-            DataSource dataSource,
-            Clock clock,
-            SessionPolicy policy,
-            com.finapp.identity.Authorization authorization) {
-        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.policy = Objects.requireNonNull(policy, "policy must not be null");
-        this.authorization =
-                Objects.requireNonNull(authorization, "authorization must not be null");
-    }
+    @NonNull private final SessionStore<Connection> sessions;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
+    @NonNull private final Clock clock;
+    @NonNull private final SessionPolicy policy;
+    @NonNull private final com.finapp.identity.Authorization authorization;
 
     @Override
     public boolean preHandle(
@@ -304,7 +289,7 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                         || annotation(handlerMethod, RequiresAssurance.class) != null
                         || annotation(handlerMethod, RequiresPermission.class) != null
                         || annotation(handlerMethod, Unauthenticated.class) != null)) {
-            LOGGER.error(
+            log.error(
                     "Refusing {}: it declares @RequiresMerchantKey AND another rule. The"
                         + " authentication populations are disjoint - a route belongs to a"
                         + " customer, an operator, a provider or a merchant, never two.",
@@ -323,7 +308,7 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                 && annotation(handlerMethod, RequiresPermission.class) == null) {
             return;
         }
-        LOGGER.error(
+        log.error(
                 "Refusing {}: it declares @Unauthenticated AND a protective rule. A handler declares"
                     + " exactly one rule; a contradiction is refused rather than resolved, because"
                     + " resolving it silently would hide the defect while the endpoint reads as"
@@ -354,7 +339,7 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                 || annotation(handlerMethod, RequiresPermission.class) != null) {
             return;
         }
-        LOGGER.error(
+        log.error(
                 "Refusing {}: it declares no authorization rule, and a rule's absence is never a"
                     + " grant (ADR-0031, INV-IDN-04). Annotate it with @Unauthenticated,"
                     + " @RequiresSession, @RequiresAssurance or @RequiresPermission.",

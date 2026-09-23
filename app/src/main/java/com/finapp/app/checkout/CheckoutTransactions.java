@@ -2,9 +2,11 @@ package com.finapp.app.checkout;
 
 import com.finapp.checkout.CheckoutTransactionRunner;
 import java.sql.Connection;
-import java.util.Objects;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -18,15 +20,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * makes "one transaction per swept row" a property of {@code CheckoutExpirySweeper}'s
  * straight-line code rather than a promise about how somebody calls it.
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class CheckoutTransactions implements CheckoutTransactionRunner {
 
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    CheckoutTransactions(TransactionTemplate transactions, DataSource dataSource) {
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     @Override
     public <R> R inTransaction(Function<Connection, R> work) {

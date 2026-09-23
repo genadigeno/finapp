@@ -43,6 +43,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The checkout flow's three commands (`P6-TSK-007`, ADR-0053) — <strong>the phase's first
@@ -68,6 +70,7 @@ import java.util.UUID;
  * fixing their configuration and a customer's money needing a refund. The third, the expired
  * session, is refused at confirmation by the aggregate's own clock.
  */
+@RequiredArgsConstructor
 public final class CheckoutSessions {
 
     static final String IDEMPOTENCY_SCOPE = "checkout.session";
@@ -93,42 +96,17 @@ public final class CheckoutSessions {
     public record OpenedSession(
             CheckoutSessionId id, Optional<Sensitive<String>> token, boolean replayed) {}
 
-    private final CheckoutSessionStore<Connection> sessions;
-    private final OrderStore<Connection> orders;
-    private final MerchantStore<Connection> merchants;
-    private final FeeSchedules feeSchedules;
-    private final IdempotentExecutor executor;
-    private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final SecureRandom randomness;
-    private final CheckoutMeters meters;
-
-    public CheckoutSessions(
-            CheckoutSessionStore<Connection> sessions,
-            OrderStore<Connection> orders,
-            MerchantStore<Connection> merchants,
-            FeeSchedules feeSchedules,
-            IdempotentExecutor executor,
-            AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
-            IdGenerator ids,
-            Clock clock,
-            SecureRandom randomness,
-            CheckoutMeters meters) {
-        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
-        this.orders = Objects.requireNonNull(orders, "orders must not be null");
-        this.merchants = Objects.requireNonNull(merchants, "merchants must not be null");
-        this.feeSchedules = Objects.requireNonNull(feeSchedules, "feeSchedules must not be null");
-        this.executor = Objects.requireNonNull(executor, "executor must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
-        this.meters = Objects.requireNonNull(meters, "meters must not be null");
-    }
+    @NonNull private final CheckoutSessionStore<Connection> sessions;
+    @NonNull private final OrderStore<Connection> orders;
+    @NonNull private final MerchantStore<Connection> merchants;
+    @NonNull private final FeeSchedules feeSchedules;
+    @NonNull private final IdempotentExecutor executor;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final SecureRandom randomness;
+    @NonNull private final CheckoutMeters meters;
 
     // ----------------------------------------------------------------- create
 

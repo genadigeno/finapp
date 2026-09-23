@@ -7,8 +7,9 @@ import com.finapp.identity.RecoveryRequestId;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.validation.Valid;
-import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,13 +45,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/recoveries")
 @Unauthenticated
+@RequiredArgsConstructor
 public class RecoveryController {
 
-    private final RecoveryApplicationService recoveries;
-
-    public RecoveryController(RecoveryApplicationService recoveries) {
-        this.recoveries = Objects.requireNonNull(recoveries, "recoveries must not be null");
-    }
+    @NonNull private final RecoveryApplicationService recoveries;
 
     /** Begins recovery. Always 202. */
     @PostMapping

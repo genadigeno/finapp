@@ -7,7 +7,8 @@ import com.finapp.identity.Session;
 import com.finapp.platform.api.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -46,13 +47,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/authentications/mfa", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class MfaChallengeController {
 
-    private final MfaChallengeApplicationService challenges;
-
-    public MfaChallengeController(MfaChallengeApplicationService challenges) {
-        this.challenges = Objects.requireNonNull(challenges, "challenges must not be null");
-    }
+    @NonNull private final MfaChallengeApplicationService challenges;
 
     @PostMapping
     public ElevatedSession elevateAssurance(

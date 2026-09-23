@@ -2,7 +2,9 @@ package com.finapp.app.api;
 
 import com.finapp.platform.api.ApiVersion;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
-import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.HandlerTypePredicate;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -30,19 +32,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * {@link ApiVersion} describes.
  */
 @Configuration
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 class ApiVersionConfiguration implements WebMvcConfigurer {
 
-    private final SessionAuthenticationInterceptor sessionAuthentication;
-    private final com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantKey;
-
-    ApiVersionConfiguration(
-            SessionAuthenticationInterceptor sessionAuthentication,
-            com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantKey) {
-        this.sessionAuthentication =
-                Objects.requireNonNull(
-                        sessionAuthentication, "sessionAuthentication must not be null");
-        this.merchantKey = Objects.requireNonNull(merchantKey, "merchantKey must not be null");
-    }
+    @NonNull private final SessionAuthenticationInterceptor sessionAuthentication;
+    @NonNull private final com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantKey;
 
     /**
      * Only handlers in this package tree are versioned.

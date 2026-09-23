@@ -33,8 +33,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
@@ -69,6 +68,7 @@ import tools.jackson.databind.ObjectMapper;
  * transitions (ADR-0047 §4); here it carries the dedupe record alone, which is exactly the
  * scope boundary the backlog draws — ingestion, not effect.
  */
+@Slf4j
 public class PaymentWebhookService {
 
     static final String CONSUMER = "payments.provider-webhook";
@@ -82,8 +82,6 @@ public class PaymentWebhookService {
      * we cannot key is an integration break to alert on, not a queue to stall.
      */
     private static final Pattern EVENT_ID = Pattern.compile("[A-Za-z0-9._:@/+=-]+");
-
-    private static final Logger log = LoggerFactory.getLogger(PaymentWebhookService.class);
 
     private final WebhookSignature signature;
     private final ProviderEvidenceStore<Connection> evidence;
