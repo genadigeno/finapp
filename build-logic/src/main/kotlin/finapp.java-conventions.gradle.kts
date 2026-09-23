@@ -55,6 +55,48 @@ dependencies {
 }
 
 // ---------------------------------------------------------------------------
+// Lombok - the project-standard boilerplate reducer (.claude/rules/java-lombok.md).
+//
+// COMPILE TIME ONLY, by construction: compileOnly puts the annotations on the compile classpath
+// and annotationProcessor runs the generator, and neither configuration is part of a runtime
+// classpath - so Lombok is in no jar, no boot archive and no SBOM. What ships is the bytecode it
+// wrote. Wired here, once, so every module and every source set gets the same version from the
+// catalog and no module can declare it at a different scope.
+//
+// The processor path needs the entry as well as the compile path: since JDK 23 javac no longer
+// discovers processors on the compile classpath by default, and naming the processor path
+// explicitly is correct on 21 too.
+// ---------------------------------------------------------------------------
+val lombok =
+    extensions.getByType<VersionCatalogsExtension>()
+        .named("libs")
+        .findLibrary("lombok")
+        .orElseThrow { GradleException("Version catalog is missing library 'lombok'") }
+
+dependencies {
+    "compileOnly"(lombok)
+    "annotationProcessor"(lombok)
+    "testCompileOnly"(lombok)
+    "testAnnotationProcessor"(lombok)
+}
+
+// Test fixtures are test code too, in the two modules that publish them.
+plugins.withId("java-test-fixtures") {
+    dependencies {
+        "testFixturesCompileOnly"(lombok)
+        "testFixturesAnnotationProcessor"(lombok)
+    }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    // lombok.config changes what the generator writes, so it is a compilation INPUT - declared,
+    // or an edit to it would leave every up-to-date class compiled under the old rules.
+    inputs.file(rootProject.layout.projectDirectory.file("lombok.config"))
+        .withPropertyName("lombokConfig")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
+// ---------------------------------------------------------------------------
 // Dependency locking (P0-TSK-039).
 //
 // WHAT THIS ADDS OVER gradle/verification-metadata.xml, which already refuses any artefact

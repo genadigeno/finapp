@@ -349,6 +349,16 @@ same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2
 sentence read "M6.3 open at 1 of 4, next `P6-TSK-007`" through five completed tasks, corrected
 by `P6-TSK-015`'s gate.)*
 
+**Cross-cutting — `X-TSK-001`, Lombok adoption** (planned 2026-09-23; it belongs to no phase,
+gates no phase exit and does not displace `P6-TSK-011`):
+- **In place (Batch 0):** Lombok is the project standard for Java boilerplate, at compile time
+  only. That covers the build wiring, `lombok.config` and `.claude/rules/java-lombok.md`
+  (ADR-0055, `Proposed`). New code follows the rule from now on.
+- **Not started:** refactoring the existing Phase 1–6 code, 152 of 691 production classes in nine
+  module batches, each behind a bytecode-equivalence gate. It waits for the owner's go-ahead.
+  **No application source file has changed.** The plan is
+  [`tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`](tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md).
+
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
 (**1323 hermetic / 829 database / 14 kafka, 0 failures** — after finding and repairing the
@@ -377,7 +387,20 @@ documentation reflecting reality must not leave its own document stale.)*
 
 ## Blockers
 
-**None.**
+**The full database tier is not green** (found 2026-09-23 by `X-TSK-001`'s full run). This does
+not block the current task; it blocks the Phase 6 exit battery (`P6-DOC-001`, criterion 7).
+- **What fails:** `OperationalChartDatabaseTest#everyCombinationResolves`, identically on untouched
+  `HEAD`. It asks the operational chart for every purpose except customer-owned ones, and
+  `P6-TSK-003` added the merchant-owned `MERCHANT_PAYABLE`, which the chart correctly never holds.
+  So the test's filter is stale, not the chart.
+- **Why it went unseen:** Phase 6's task work ran only targeted database suites, never this one.
+- **Owner:** a separate fix; the fix is to skip every non-`OPERATIONAL` owner kind. Recorded as an
+  input to `P6-DOC-001`.
+- **Also seen in the same session:** `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` is
+  flaky, failing about one run in three with no change to its module. Flagged separately; it is
+  not counted as a regression.
+
+*Earlier blockers, resolved:*
 
 ~~**The suite has never run in CI.**~~ — **resolved 2026-09-04** by `P0-TSK-042`. The remote is
 `https://github.com/genadigeno/finapp`, and the four jobs run on every push to `master`. Run

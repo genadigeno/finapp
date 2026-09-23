@@ -11,6 +11,7 @@ P<phase>-FEAT-<nn>    Feature
 P<phase>-TSK-<nnn>    Technical task
 P<phase>-TST-<nnn>    Test task
 P<phase>-DOC-<nnn>    Documentation task
+X-TSK-<nnn>           Cross-cutting technical task: belongs to no phase and gates no phase exit
 ```
 
 IDs are permanent. A cancelled item is marked `CANCELLED`, never reused or renumbered.
@@ -7763,11 +7764,67 @@ negative payable** — `COMPLETE` (2026-09-23)
   the transition's extension, **read from the gate at review time**), F1–F8 re-assessed,
   the ten-instances question over the phase's contended decisions, assess → corrections →
   **flip** → battery, the review's own verdict flipping the phase.
+- **Input from `X-TSK-001`'s full database run (2026-09-23)**: the database tier is not green.
+  `OperationalChartDatabaseTest#everyCombinationResolves` fails on untouched `HEAD` and has since
+  `P6-TSK-003`, whose merchant-owned `MERCHANT_PAYABLE` purpose the test does not skip. Phase 6's
+  targeted runs never included the suite. The post-flip battery cannot be green until it is fixed.
 - **Input from `P6-TSK-015`'s gate**: `DECISIONS.md` carries no Phase 6 section. ADR-0050…0054
   are indexed only in `docs/adr/README.md`, which is the omission `P2-DOC-001` found once
   before and corrected at its review.
 - **Deps**: everything above. **Accept**: the review's verdict flips the status; the
   post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
+
+---
+
+# Cross-cutting work
+
+Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
+and gate no phase exit. A cross-cutting task runs between phase tasks when the owner schedules it.
+
+**X-TSK-001 — Lombok adoption and the Phase 1–6 refactor** — `PLANNED` *(Batch 0 applied
+2026-09-23; Batches 1–9 wait for the owner's go-ahead)*
+- **Context**: every Java module; build tooling. Owner-directed; ADR-0055 (`Proposed`).
+- **Description**: Lombok as the project-standard boilerplate reducer, compile time only. The
+  existing Phase 1–6 code is converted module by module, where and only where the result is
+  byte-identical: 22 loggers → `@Slf4j`; 104 assign-only constructors and 28 contract-enum
+  constructors → `@RequiredArgsConstructor`, with `@NonNull` where the old constructor null-checked.
+  That is 152 production classes (54 SAFE TO REFACTOR, 98 REQUIRES CAREFUL REVIEW). The other 446
+  stay hand-written, each with a stated reason. The plan is
+  [`tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`](tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md).
+- **Why**: the owner's standard, with the repetition measured rather than assumed. Safe defaults
+  are made mechanical, because this codebase holds PANs, secrets and KYC evidence: `lombok.config`
+  refuses `@Data`, `@SneakyThrows` and `@Synchronized`, and makes generated `toString` opt-in per
+  field.
+- **Batch 0 (applied)**: the catalog pin (1.18.46, the Spring Boot 4.1.1 BOM's), the convention
+  plugin wiring, `lombok.config`, 14 lockfiles and 2 checksum entries,
+  `.claude/rules/java-lombok.md`, ADR-0055 and the documentation. Lombok is in no runtime or SBOM
+  configuration, and the boot jar holds none.
+- **Batches 1–9**, one commit each:
+  1. `platform`
+  2. `ledger`
+  3. `accounts` and `transfers`
+  4. `payments` and `paymentmethods`
+  5. `merchant` and `checkout`
+  6. `identity`
+  7. `party`, `kyc` and `consent`
+  8. `app`, security-sensitive web layer
+  9. `app`, remaining
+
+  Each batch passes the plan's §15 gate: `javap` equivalence of constructors, parameter-to-field
+  mapping, null-check count, fields, methods and static initialiser; zero-warning compile; the
+  fleet-wide hermetic suite; and its module's database suites (plus the kafka tier in Batch 1).
+- **Deps**: none for Batch 0. The final acceptance's "all tiers green" needs the pre-existing
+  `OperationalChartDatabaseTest` failure fixed first (`CURRENT_STATE.md` §Blockers).
+- **Accept**:
+  - all 152 candidates converted, each batch through the gate;
+  - no DO NOT REFACTOR class touched, no test changed, and no annotation beyond `@Slf4j`,
+    `@RequiredArgsConstructor`, `@NonNull` and `AccessLevel`;
+  - the hermetic, database and kafka tiers green from fresh runs;
+  - Lombok compile-time only, shown by the lockfiles and the boot jar.
+- **Risk**: Low. Behaviour is proved identical per batch, so the residual risk is review fatigue
+  on a mechanical diff, which is why the batches are small. **Cx**: M. **DoD**: `DOD-BUILD`,
+  `DOD-ARCH`. Each batch's equivalence gate is its `DOD-FIN`/`DOD-SEC` evidence that nothing
+  financial or security-related moved.
 
 ---
 

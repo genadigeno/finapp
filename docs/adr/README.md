@@ -72,6 +72,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0052](ADR-0052-merchant-api-identity.md) | Merchant API identity: scoped API keys, tenancy in the statement | Proposed | 6 | Merchant · Identity |
 | [0053](ADR-0053-checkout-session-and-order.md) | Checkout session and order: two aggregates, expiry gates dispatch, landed money always wins | Proposed | 6 | Checkout · Merchant · Payments |
 | [0054](ADR-0054-merchant-refund-funded-by-its-net.md) | A merchant refund is funded by its net; the only credit it extends is the fee the platform keeps | Proposed | 6 | Merchant · Payments · Ledger |
+| [0055](ADR-0055-lombok-compile-time-boilerplate.md) | Lombok is the project-standard boilerplate reducer, at compile time only | Proposed | 6 | Build |
 
 ## Anticipated ADRs
 
