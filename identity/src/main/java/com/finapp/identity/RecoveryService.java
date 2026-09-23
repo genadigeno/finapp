@@ -20,6 +20,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Account recovery, which exists to bypass the credential (`P1-TSK-023`, {@code INV-IDN-06}).
@@ -47,6 +49,7 @@ import java.util.Optional;
  * the identity up first would run a different number of queries for an account that exists, which is
  * the timing channel {@code P1-TSK-008} found in authentication.
  */
+@RequiredArgsConstructor
 public final class RecoveryService {
 
     /** Long enough to read a message; short enough that a stolen token is not a standing key. */
@@ -65,36 +68,15 @@ public final class RecoveryService {
     private static final String PRODUCER = "identity";
     private static final int EVENT_VERSION = 1;
 
-    private final RecoveryRequestStore<Connection> requests;
-    private final CredentialStore<Connection> credentials;
-    private final SessionStore<Connection> sessions;
-    private final PasswordDeriver deriver;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final SecureRandom randomness;
-    private final AuditWriter<Connection> auditWriter;
-    private final OutboxWriter<Connection> outboxWriter;
-
-    public RecoveryService(
-            RecoveryRequestStore<Connection> requests,
-            CredentialStore<Connection> credentials,
-            SessionStore<Connection> sessions,
-            PasswordDeriver deriver,
-            IdGenerator ids,
-            Clock clock,
-            SecureRandom randomness,
-            AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter) {
-        this.requests = Objects.requireNonNull(requests, "requests must not be null");
-        this.credentials = Objects.requireNonNull(credentials, "credentials must not be null");
-        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
-        this.deriver = Objects.requireNonNull(deriver, "deriver must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outboxWriter = Objects.requireNonNull(outboxWriter, "outboxWriter must not be null");
-    }
+    @NonNull private final RecoveryRequestStore<Connection> requests;
+    @NonNull private final CredentialStore<Connection> credentials;
+    @NonNull private final SessionStore<Connection> sessions;
+    @NonNull private final PasswordDeriver deriver;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final SecureRandom randomness;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final OutboxWriter<Connection> outboxWriter;
 
     /**
      * Begins recovery, if this identifier names somebody who can recover.

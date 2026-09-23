@@ -5,6 +5,8 @@ import java.security.SecureRandom;
 import java.sql.Connection;
 import java.time.Clock;
 import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The first session of a login (`P1-TSK-027`, ADR-0030).
@@ -36,32 +38,20 @@ import java.util.Objects;
  * the decision — the level, and that it is not a parameter — in {@code identity}, where the rule
  * lives, rather than in an application service that could pass whatever it liked.
  */
+@RequiredArgsConstructor
 public final class SessionIssue {
 
-    private final SessionStore<Connection> sessions;
-    private final SessionPolicy policy;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final SecureRandom randomness;
-
+    @NonNull private final SessionStore<Connection> sessions;
     /**
-     * @param policy injected rather than read from {@link SessionPolicy#current()} here. {@code
-     *     SessionBeans} makes it one shared value on purpose - calling {@code current()} at each
-     *     site is how two components come to disagree about how long a session lasts, and the
-     *     interceptor that extends these sessions reads the injected one.
+     * Injected rather than read from {@link SessionPolicy#current()} here. {@code SessionBeans}
+     * makes it one shared value on purpose - calling {@code current()} at each site is how two
+     * components come to disagree about how long a session lasts, and the interceptor that
+     * extends these sessions reads the injected one.
      */
-    public SessionIssue(
-            SessionStore<Connection> sessions,
-            SessionPolicy policy,
-            IdGenerator ids,
-            Clock clock,
-            SecureRandom randomness) {
-        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
-        this.policy = Objects.requireNonNull(policy, "policy must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
-    }
+    @NonNull private final SessionPolicy policy;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final SecureRandom randomness;
 
     /**
      * Issues a session for an identity whose credential has just been proven.

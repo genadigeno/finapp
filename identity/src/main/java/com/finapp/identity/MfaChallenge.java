@@ -16,6 +16,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Proving a second factor, and elevating the session that proved it (`P1-TSK-018`,
@@ -55,38 +57,20 @@ import java.util.OptionalLong;
  * after a network timeout with the same code; the malicious cause requires already holding a valid
  * one. Counting it would let a flaky connection lock a customer out of their own account.
  */
+@RequiredArgsConstructor
 public final class MfaChallenge {
 
     /** What an audit record for a challenge points at: the identity that was challenged. */
     public static final String AUDIT_TARGET_TYPE = "identity.Identity";
 
-    private final MfaEnrolmentStore<Connection> enrolments;
-    private final SecretCipher cipher;
-    private final TotpVerifier verifier;
-    private final SessionRotation rotation;
-    private final AuthenticationThrottle throttle;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-
-    public MfaChallenge(
-            MfaEnrolmentStore<Connection> enrolments,
-            SecretCipher cipher,
-            TotpVerifier verifier,
-            SessionRotation rotation,
-            AuthenticationThrottle throttle,
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter) {
-        this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
-        this.cipher = Objects.requireNonNull(cipher, "cipher must not be null");
-        this.verifier = Objects.requireNonNull(verifier, "verifier must not be null");
-        this.rotation = Objects.requireNonNull(rotation, "rotation must not be null");
-        this.throttle = Objects.requireNonNull(throttle, "throttle must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-    }
+    @NonNull private final MfaEnrolmentStore<Connection> enrolments;
+    @NonNull private final SecretCipher cipher;
+    @NonNull private final TotpVerifier verifier;
+    @NonNull private final SessionRotation rotation;
+    @NonNull private final AuthenticationThrottle throttle;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
 
     /**
      * Verifies a code against the session's identity and, on success, elevates the session.

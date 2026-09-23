@@ -15,6 +15,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Registering a channel and proving control of it (`P1-TSK-023`, {@code INV-IDN-06}).
@@ -40,6 +42,7 @@ import java.util.Optional;
  * plaintext to its caller, where a notifier will attach in this same transaction, and the HTTP layer
  * discards it. Returning it to whoever asked would make channel control prove nothing at all.
  */
+@RequiredArgsConstructor
 public final class ContactChannelService {
 
     /** Long enough to find the message; short enough that a leaked mailbox is not a standing key. */
@@ -47,24 +50,11 @@ public final class ContactChannelService {
 
     private static final String AUDIT_TARGET_TYPE = "ContactChannel";
 
-    private final ContactChannelStore<Connection> channels;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final SecureRandom randomness;
-    private final AuditWriter<Connection> auditWriter;
-
-    public ContactChannelService(
-            ContactChannelStore<Connection> channels,
-            IdGenerator ids,
-            Clock clock,
-            SecureRandom randomness,
-            AuditWriter<Connection> auditWriter) {
-        this.channels = Objects.requireNonNull(channels, "channels must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-    }
+    @NonNull private final ContactChannelStore<Connection> channels;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final SecureRandom randomness;
+    @NonNull private final AuditWriter<Connection> auditWriter;
 
     /**
      * Registers an unverified channel and issues a challenge to it.

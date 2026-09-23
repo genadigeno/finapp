@@ -11,17 +11,16 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /** Plain-JDBC role assignment store (`P1-TSK-020`, ADR-0033). */
+@RequiredArgsConstructor
 public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connection> {
 
     private static final String TABLE = "identity.role_assignment";
 
-    private final IdGenerator ids;
-
-    public JdbcRoleAssignmentStore(IdGenerator ids) {
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-    }
+    @NonNull private final IdGenerator ids;
 
     @Override
     public Set<RoleName> liveRolesOf(Connection unitOfWork, IdentityId identityId) {

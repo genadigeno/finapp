@@ -19,6 +19,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * A logged-in person replaces their own password (`P1-TSK-033`).
@@ -58,6 +60,7 @@ import java.util.Optional;
  * they lost — no second credential is inserted against a row somebody else already moved. The
  * session rotation's revoke-first conditional arbitrates the session race the same way.
  */
+@RequiredArgsConstructor
 public final class CredentialChange {
 
     /** Kept in one place because it is a published value: consumers route on it. */
@@ -67,42 +70,17 @@ public final class CredentialChange {
 
     public static final String AUDIT_TARGET_TYPE = "identity.Identity";
 
-    private final CredentialVerifier verifier;
-    private final CredentialStore<Connection> credentials;
-    private final MfaEnrolmentStore<Connection> enrolments;
-    private final AuthenticationThrottle throttle;
-    private final SessionRevocation revocations;
-    private final SessionRotation rotation;
-    private final PasswordDeriver deriver;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-    private final OutboxWriter<Connection> outboxWriter;
-
-    public CredentialChange(
-            CredentialVerifier verifier,
-            CredentialStore<Connection> credentials,
-            MfaEnrolmentStore<Connection> enrolments,
-            AuthenticationThrottle throttle,
-            SessionRevocation revocations,
-            SessionRotation rotation,
-            PasswordDeriver deriver,
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter) {
-        this.verifier = Objects.requireNonNull(verifier, "verifier must not be null");
-        this.credentials = Objects.requireNonNull(credentials, "credentials must not be null");
-        this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
-        this.throttle = Objects.requireNonNull(throttle, "throttle must not be null");
-        this.revocations = Objects.requireNonNull(revocations, "revocations must not be null");
-        this.rotation = Objects.requireNonNull(rotation, "rotation must not be null");
-        this.deriver = Objects.requireNonNull(deriver, "deriver must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outboxWriter = Objects.requireNonNull(outboxWriter, "outboxWriter must not be null");
-    }
+    @NonNull private final CredentialVerifier verifier;
+    @NonNull private final CredentialStore<Connection> credentials;
+    @NonNull private final MfaEnrolmentStore<Connection> enrolments;
+    @NonNull private final AuthenticationThrottle throttle;
+    @NonNull private final SessionRevocation revocations;
+    @NonNull private final SessionRotation rotation;
+    @NonNull private final PasswordDeriver deriver;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final OutboxWriter<Connection> outboxWriter;
 
     /**
      * Derives the new credential <strong>before the transaction opens</strong> (`P1-TSK-026`).

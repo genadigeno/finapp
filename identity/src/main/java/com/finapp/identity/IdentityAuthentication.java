@@ -18,6 +18,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Records an authentication attempt: its audit record and its event (`P1-TSK-010`).
@@ -45,6 +47,7 @@ import java.util.Optional;
  * all - so a payload that named one would either be absent for some failures, which is a shape
  * difference a consumer can read, or fabricated. It carries neither identifier nor identity.
  */
+@RequiredArgsConstructor
 public final class IdentityAuthentication {
 
     /** Kept in one place because it is a published value: consumers route on it. */
@@ -64,22 +67,11 @@ public final class IdentityAuthentication {
      * failure names a fresh identifier of its own, which is honest - the thing that happened is the
      * attempt, and the attempt is what the event is about.
      */
-    private final IdGenerator ids;
+    @NonNull private final IdGenerator ids;
 
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-    private final OutboxWriter<Connection> outboxWriter;
-
-    public IdentityAuthentication(
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter) {
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outboxWriter = Objects.requireNonNull(outboxWriter, "outboxWriter must not be null");
-    }
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final OutboxWriter<Connection> outboxWriter;
 
     /**
      * Records a successful authentication.

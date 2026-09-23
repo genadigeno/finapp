@@ -13,8 +13,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.Optional;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Decides whether somebody knows the secret, and upgrades the credential while it is in hand
@@ -70,9 +69,8 @@ import org.slf4j.LoggerFactory;
  * credential produce one upgrade; the loser is told it lost and skips its insert, so the partial
  * unique index is never even reached.
  */
+@Slf4j
 public final class CredentialVerifier {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(CredentialVerifier.class);
 
     /** Long enough to be well outside {@link RawPassword}'s bounds check by a wide margin. */
     private static final int THROWAWAY_BYTES = 32;
@@ -291,7 +289,7 @@ public final class CredentialVerifier {
             // missed optimisation rather than an incident, and the credential is upgraded on the
             // next successful login. Naming the account would put an existence fact in a log line
             // for an event that is not about a person doing anything wrong.
-            LOGGER.warn("A credential upgrade was discarded; the authentication itself succeeded",
+            log.warn("A credential upgrade was discarded; the authentication itself succeeded",
                     failed);
         }
     }

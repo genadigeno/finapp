@@ -9,6 +9,8 @@ import java.time.Instant;
 import java.util.Objects;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * RFC 6238 time-based one-time passwords (`P1-TSK-017`).
@@ -46,6 +48,7 @@ import javax.crypto.spec.SecretKeySpec;
  * with it leaks how many leading digits were right — which turns a 10^6 search into six searches of
  * 10. {@link MessageDigest#isEqual} is the JDK's constant-time comparison and is what this uses.
  */
+@RequiredArgsConstructor
 public final class TotpVerifier {
 
     /**
@@ -57,11 +60,7 @@ public final class TotpVerifier {
      */
     public static final int WINDOW_STEPS = 1;
 
-    private final Clock clock;
-
-    public TotpVerifier(Clock clock) {
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final Clock clock;
 
     /**
      * Whether {@code presented} is a valid code for {@code secret} at the current time.

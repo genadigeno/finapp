@@ -16,6 +16,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Enrolling a second factor (`P1-TSK-017`, {@code INV-IDN-05}).
@@ -38,6 +40,7 @@ import java.util.Optional;
  * {@link #confirm}, on a valid code, makes it usable. Without that step, reaching this endpoint on
  * somebody else's session would be enough to attach a factor.
  */
+@RequiredArgsConstructor
 public final class MfaEnrolmentService {
 
     /**
@@ -51,33 +54,14 @@ public final class MfaEnrolmentService {
 
     public static final String AUDIT_TARGET_TYPE = "identity.MfaEnrolment";
 
-    private final MfaEnrolmentStore<Connection> enrolments;
-    private final SecretCipher cipher;
-    private final TotpVerifier verifier;
-    private final SecureRandom randomness;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-    private final com.finapp.platform.outbox.OutboxWriter<Connection> outbox;
-
-    public MfaEnrolmentService(
-            MfaEnrolmentStore<Connection> enrolments,
-            SecretCipher cipher,
-            TotpVerifier verifier,
-            SecureRandom randomness,
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter,
-            com.finapp.platform.outbox.OutboxWriter<Connection> outbox) {
-        this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
-        this.cipher = Objects.requireNonNull(cipher, "cipher must not be null");
-        this.verifier = Objects.requireNonNull(verifier, "verifier must not be null");
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-    }
+    @NonNull private final MfaEnrolmentStore<Connection> enrolments;
+    @NonNull private final SecretCipher cipher;
+    @NonNull private final TotpVerifier verifier;
+    @NonNull private final SecureRandom randomness;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final com.finapp.platform.outbox.OutboxWriter<Connection> outbox;
 
     /**
      * Begins an enrolment, returning the secret for the customer to scan.
