@@ -128,7 +128,10 @@ public final class CheckoutSessions {
      * invariant rather than being quietly bent.
      *
      * @throws MerchantNotTradingException the merchant is not {@code ACTIVE}
-     * @throws MerchantNotPriceableException the merchant has no effective fee schedule version
+     * @throws MerchantNotPriceableException the merchant has no effective fee schedule version,
+     *     or none in the offer's currency
+     * @throws com.finapp.merchant.SaleBelowFeeException the fee, priced under that version,
+     *     meets or exceeds the amount (`P6-TST-001`, ADR-0058)
      */
     public OpenedSession open(Connection unitOfWork, OpenSessionCommand command) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
@@ -148,6 +151,22 @@ public final class CheckoutSessions {
                         .effectiveVersionFor(
                                 unitOfWork, command.merchant(), Instant.now(clock))
                         .orElseThrow(MerchantNotPriceableException::new);
+        // THE PRICE, AND WHETHER THE SALE COVERS IT (P6-TST-001, ADR-0058). Priced under the
+        // version this session will carry: an amount whose fee meets or exceeds it would leave
+        // the merchant paying to sell - its payable driven below zero at capture, and a refund
+        // nothing could fund. Refused here, before the claim, like the pricing it follows.
+        com.finapp.merchant.FeeAssessment priced;
+        try {
+            priced = com.finapp.merchant.FeeCalculation.assess(command.amount(), pricing);
+        } catch (com.finapp.merchant.FeeCurrencyMismatchException foreign) {
+            // A schedule prices one currency - the settlement currency its assignment checked -
+            // so an offer in another cannot be priced. Refused now, not at confirmation or,
+            // worse, inside the capture that moves the money.
+            throw new MerchantNotPriceableException();
+        }
+        if (!priced.net().isPositive()) {
+            throw new com.finapp.merchant.SaleBelowFeeException();
+        }
 
         // The token is minted OUTSIDE the claim body, so the value is reachable here to be
         // returned once. What goes INTO the claim is the session id.

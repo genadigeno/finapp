@@ -174,7 +174,8 @@ class FeeCalculationTest {
     void theFeeIsNotClampedToTheGross() {
         // 0.30 fixed on a 0.10 capture. The net goes negative and conservation STILL holds.
         // Clamping would make the recorded fee disagree with what the pinned version produces
-        // on recomputation - INV-MER-03 broken for cosmetics.
+        // on recomputation - INV-MER-03 broken for cosmetics. Such a SALE is refused at the
+        // price (ADR-0058, P6-TST-001), and that refusal needs this honest net to judge.
         Money gross = Money.ofMinorUnits(10L, CurrencyCode.of("USD"));
         FeeAssessment assessment =
                 FeeCalculation.assess(

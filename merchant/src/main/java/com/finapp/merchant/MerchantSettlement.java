@@ -307,11 +307,13 @@ public final class MerchantSettlement {
      *
      * <h2>Never below one minor unit</h2>
      *
-     * <p>A hold is positive by definition, and the refund's lifecycle carries one. The net can
-     * only fail to be positive when a capture's fee was at least its gross — a large fixed
-     * part on a tiny payment, which {@link FeeAssessment#exceedsGross} names and nothing
-     * refuses — and then the smallest unit is reserved: conservative, and a refusal the
-     * operator can read rather than a hold the ledger would reject as malformed.
+     * <p>A hold is positive by definition, and the refund's lifecycle carries one. Since
+     * ADR-0058 no sale's fee meets its gross, but the net can still fail to be positive: the
+     * last of a partial series on a sale that nets a unit or two, whose earlier shares rounded
+     * the fee down (60.00 then 40.01 of a 100.01 sale netting 0.01 leaves the last share exactly
+     * 40.01), and any pin written before that rule. Then the smallest unit is reserved:
+     * conservative, and a refusal the operator can read rather than a hold the ledger would
+     * reject as malformed.
      *
      * @param intentRef the refunded payment's intent, by value
      * @param debit the account the refund was going to take the money from — checked to be
@@ -482,11 +484,31 @@ public final class MerchantSettlement {
      * {@link #compose} guard a capture, and this one guards the agreement the capture will be
      * settled against.
      *
+     * @throws SaleBelowFeeException the fee, priced under the pinned version, meets or exceeds
+     *     the gross (`P6-TST-001`, ADR-0058) - nothing is written
+     * @throws FeeCurrencyMismatchException the gross is not in the currency the pinned version
+     *     prices - nothing is written, and the capture's backstop in {@link #compose} is never
+     *     reached through a pin this method judged
      * @throws MerchantSettlementException this intent is already pinned to a different price
      */
     public void pin(Connection unitOfWork, PaymentFeePin pin) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(pin, "pin must not be null");
+        // A SALE MUST COVER ITS FEE (P6-TST-001, ADR-0058), re-asserted where the price is
+        // agreed: the checkout refused it when the session was opened, and this is the rule
+        // for every pin, whoever reached here. Before the insert, so a refusal writes nothing,
+        // and before any money moves - never at capture, where money that landed is recorded.
+        FeeScheduleVersion version =
+                schedules
+                        .findVersion(unitOfWork, pin.versionId())
+                        .orElseThrow(
+                                () ->
+                                        new MerchantSettlementException(
+                                                "a fee pin names version " + pin.versionId()
+                                                        + ", which is not there"));
+        if (!FeeCalculation.assess(pin.gross(), version).net().isPositive()) {
+            throw new SaleBelowFeeException();
+        }
         if (pins.insertIfAbsent(unitOfWork, pin)) {
             return;
         }

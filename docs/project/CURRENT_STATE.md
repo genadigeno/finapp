@@ -274,57 +274,69 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TST-001` — the tenancy and fee-conservation battery** — `READY`. **M6.6 at 1 of 3.** The
-two gate properties that decay silently, demonstrated in bulk. First, the cross-tenant negative
-battery: every merchant endpoint, merchant A on B's world, one refusal and zero rows, mechanised
-so a new endpoint cannot dodge it. Second, the high-volume fee batch: hundreds of assessments
-across amounts, rates and 0/2/3-minor-unit currencies, the cumulative residual exactly zero and
-the trial balance zero per currency (`INV-MER-04` at volume). With them, the `Phase: 6` register
-rows for what they demonstrate. Scope, acceptance and DoD (`DOD-TEST`, `DOD-FIN`, `DOD-SEC`) in the
-backlog entry.
+**`P6-TST-002` — the merchant conservation storm** — `READY`. **M6.6 at 2 of 3.** The phase's
+composition demonstration: checkouts, captures-with-fees, refunds and payouts at once, on several
+merchants, while the trial-balance and projection sweeps run. Three readings must hold: the
+payables equal captured − fees − refunds − payouts to the minor unit; `PAYOUT_CLEARING`'s delta
+equals the completed payouts; and the outcome tally leaves no `DISPATCHED` payout, no hold
+unaccounted and no merchant over-paid. The payable bound is contested: the storm drains a payable
+and counts its refusals. The remaining `Phase: 6` register rows land with it. Scope, acceptance and
+DoD (`DOD-TEST`, `DOD-FIN`) in the backlog entry.
 
-**What it inherits.** `OwnershipIsScopedTest`'s detector cannot see checkout's by-value `UUID`
-reads (`P6-TSK-009`'s gate), so mechanising the battery starts there. A fee that meets or exceeds
-its sale is accepted today (`P6-TSK-015`'s gate), and the batch is where that is decided, at the
-price.
+**What it inherits.** Since ADR-0058 no accepted sale takes a payable below zero at capture, so
+the storm's sales must cover their fees and merchant debt has one source, the fee a `RETAINED`
+refund keeps (`INV-MER-07`). `MerchantCaptureDatabaseTest`'s fixture now onboards merchants in
+GBP and USD as well as EUR. The refusal kinds to count are `payments.RefundUnfunded` against a
+drained payable and `merchant.PayoutUnfunded` against the payout bound.
 
 ### Just completed
 
-**`P6-TSK-013` — the meters and the dashboard row** — `COMPLETE` (2026-09-23). **M6.6 opens: an
-operator can see offers end, fees taken and payouts decided — and a payout the platform has no
-answer for raises the alert whether or not anything is still trying to resolve it.**
+**`P6-TST-001` — the tenancy and fee-conservation battery** — `COMPLETE` (2026-09-23). **M6.6 at
+2 of 3: another merchant's world is unknown on every merchant route - one refusal, zero rows,
+and a new route cannot dodge the battery - and 360 assessments across three currencies conserve
+every minor unit. A sale that does not cover its fee is refused at the price.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| All six series from a freshly started instance with no database | Seven, the stuck-payout gauges a row each: the pinned guard boots with nothing configured - no provider, no database |
-| The tag vocabulary walks the designed path if it widens | It did not widen: `outcome` only, under the convention test |
-| The dashboard row resolves against a live scrape | Seven panels, every query checked against the running application's scrape; a missing series probed |
-| The derived guard takes §15's table at the flip | The pinned Phase 6 test holds it until then. The plan's combined gauge row is split, so the age gauge is held too |
+| Both batteries green from fresh runs | `MerchantTenancyBatteryDatabaseTest` (4 tests over 23 derived routes) and `MerchantCaptureDatabaseTest#theFeeBatchConservesEveryMinorUnit` (360 assessments), green in the final targeted run |
+| The register rows land with performed demonstrations | `MUTATION_TESTING` §2 +14 rows, the floor row re-pointed and re-performed, §3 +1 paragraph and §4 +1 row: thirty-one probes, twenty-nine caught, the two survivors recorded |
 
 ### The design
 
-- **Acting judgements only, counted at the door after commit.** The acting bit was discarded
-  before it left `merchant`; `Initiated.acting` and `SweepResult.actingJudgements` carry it out.
-- **The stuck-payout gauge counts an overdue dispatch as well as `UNKNOWN`.** With the sweep down,
-  a crashed dispatch stays `DISPATCHED` for ever and an unknown-only gauge reads zero. So it reads
-  the sweep's own candidacy, past the sweep's own bound, through one placeholder both share.
-- **Conversion age is split by outcome**: in-window measures the customer, late the provider.
-- Fee assessments are counts, never amounts.
+- **The pricing decision, at the price** (ADR-0058). A sale must net the merchant at least one
+  minor unit. The creation prices the offer before the claim and refuses `net ≤ 0` as
+  `checkout.SaleBelowFee`; the pin re-asserts it for every pin; a capture is never refused. The
+  same pricing refuses an offer in a currency the schedule does not price, which was accepted at
+  creation until now.
+- **The detector sees what hid.** In the tenant's two packages a bare `UUID` is a resource
+  identifier and a same-class helper's SQL is the caller's. Nineteen methods became visible and
+  are classified, and a guard keeps every tenant-column statement inside those packages. The
+  platform-wide widening would surface 31 more methods: `X-TSK-002`.
+- **The battery derives its routes from the application**, holds each row's kind to its shape,
+  probes every addressed route with a positive control, and fingerprints both worlds.
+- **The fee batch runs through the capture's production seam** against an independent formula.
+  The ledger holds only two-minor-unit currencies, so the 0- and 3-minor-unit cases stay with
+  `FeeCalculationTest`'s property sweep: a stated limit.
 
 ### What the gate found
 
-- **The running instance never read the real schema.** Every gauge value test stubbed the reading
-  or called the store directly, so a broken wiring would have passed while every scrape read NaN.
-  The wired gauge is now read against the real schema, and probed.
-- **The conversion age's value was unasserted where it is recorded.** A reversed age read zero and
-  passed; it is now bounded by the test's own span.
-- **The resolution schedule had no lifecycle test**, missing since `P6-TSK-012`: a tick that
-  rethrew would have ended resolution for good. Now tested.
-- Twenty probes, all caught, each restore byte-identical.
+- **The confirmation's mapping of the pin's refusal had no test.** A session opened before the
+  rule would have been answered 500. The test is added, driving a session opened through the
+  store, and probed.
+- **A register row named a test this task rewrote**, and the fleet-wide run failed on it. The
+  reservation's floor is still reachable under the rule, as the last of a partial series on a
+  sale netting one minor unit. It gained a seam test, the row was re-pointed and re-performed, and
+  the javadoc and ADR text that said otherwise were corrected.
+- **The battery's fingerprint was unproven.** Every writing control must now move it. A fingerprint
+  that sees nothing is refused by that check alone, as the probe showed.
+- **Two survivors, recorded.** A keys-blind fingerprint still moved on the revocation's event row
+  and audit record: redundancy, not a gap. The withdrawal's own tenant read is masked over HTTP by
+  the render's and caught at the command. **The dispatch's destination read has a second rank**:
+  unscoped, a payout naming another merchant's account is refused by `V007`'s trigger.
 
 ### Previously
 
-The per-task completion records behind this one — 139 blocks, from `P6-TSK-012` back to project
+The per-task completion records behind this one — 140 blocks, from `P6-TSK-013` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
 `P6-TSK-015`'s gate.)*
@@ -345,8 +357,8 @@ archived verbatim in
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
 same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2 of 2** as scoped (`P6-TSK-004`, `-005`); **M6.3
 `CLOSED` at 4 of 4** (`P6-TSK-006`…`-008`, `-014`); **M6.4 `CLOSED` at 3 of 3** (`P6-TSK-009`,
-`-010`, `-015`); **M6.5 `CLOSED` at 2 of 2** (`P6-TSK-011`, `-012`); **M6.6 open at 1 of 3**
-(`P6-TSK-013`; next `P6-TST-001`). *(M6.3 gained `P6-TSK-014`, found missing by
+`-010`, `-015`); **M6.5 `CLOSED` at 2 of 2** (`P6-TSK-011`, `-012`); **M6.6 open at 2 of 3**
+(`P6-TSK-013`, `P6-TST-001`; next `P6-TST-002`). *(M6.3 gained `P6-TSK-014`, found missing by
 `P6-TSK-005`'s gate; M6.4 gained `P6-TSK-015`, found by `P6-TSK-010`'s end-to-end test. This
 sentence read "M6.3 open at 1 of 4, next `P6-TSK-007`" through five completed tasks, corrected
 by `P6-TSK-015`'s gate.)*
@@ -593,6 +605,7 @@ carries, what triggers paying it down, and the owning phase.
 | **No per-source rate limiting.** Lockout bounds *guessing* per identity; nothing bounds the *volume* one source can generate | **Building it now would be harmful, not merely premature.** `SYSTEM_ARCHITECTURE.md` §Multi-Instance Execution commits to N replicas behind a load balancer, so `getRemoteAddr()` is the balancer: every user shares one bucket, the threshold is reached in seconds, and authentication goes down for everyone. `X-Forwarded-For` is caller-supplied and ADR-0034 settled that such values are not trusted; no trusted-proxy configuration exists. The missing input is a deployment topology, not effort (`P1-TSK-011`) | **Resource exhaustion, and it is the platform's most expensive unauthenticated operation**: ADR-0032 makes each attempt cost ~46 ms and ~19 MiB *by design*, so the work factor protecting a stolen credential store is the one an attacker spends for free. Ten concurrent attempts is ~190 MiB on one instance. `INV-IDN-07` still holds - every response is identical, so flooding discloses nothing - and lockout now bounds what an attacker learns, though not what they cost. Bounded today only by the fact that nothing is deployed | A deployment topology and a trusted-proxy declaration | Phase 15 |
 | **`POST /v1/registrations` is unauthenticated and unthrottled.** Anyone who can reach the port can create Parties, Customers and Identities without limit | There is no rate-limiting mechanism anywhere on the platform. `P1-TSK-011` builds one for **authentication** - failure counting and lockout keyed on an identity - and none of that applies to an endpoint whose whole point is that no identity exists yet. Building a second, differently-shaped mechanism here before that one exists would be designing the general case from one example | **Resource exhaustion, not disclosure - and `P1-TSK-026` made it materially worse, which is recorded rather than left for somebody to notice.** Every response is still identical whatever is sent, so flooding discloses nothing (`INV-IDN-07` holds). What changed is the cost: a required password means **every** request now performs an Argon2id derivation, ~46 ms of CPU and ~19 MiB, *before* anything can refuse it (ADR-0032) - so this endpoint has become the same CPU-and-memory amplifier `POST /v1/authentications` already is, and unlike that one it needs no existing account. It also still fills three tables and the outbox, and the idempotency key does not help since a flooder generates a fresh one. Bounded today only by the fact that nothing is deployed | **Re-owned by `P1-DOC-002` (2026-09-09)**: `P1-TSK-011`'s mechanism is keyed on an identity, and an unauthenticated endpoint has none - the only usable key is the source, so this row's missing input is per-source rate limiting's missing input, a deployment topology and a trusted-proxy declaration. Merged with that row's trigger | Phase 15 |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
+| **The ownership detector is widened in the tenant's two packages only.** In `com.finapp.merchant` and `com.finapp.checkout`, `OwnershipIsScopedTest` counts a bare `UUID` as a resource identifier and a same-class helper's SQL as the caller's (`P6-TST-001`); everywhere else it still keys on `EntityId` and on direct `prepareStatement` calls | Applied platform-wide, the same widening surfaces 31 more methods in ten modules, and reclassifying other modules' reads is not a merchant task's work (`P6-TSK-009`'s gate said the same) | A by-value read or a helper-split statement outside the tenant packages ships unclassified. Bounded: the tenant-column guard keeps every `merchant_id` / `merchant_ref` statement inside the widened packages, and each customer module's behavioural negatives still run | `X-TSK-002` scheduled, or a new by-value read on a customer-facing surface | Cross-cutting (`X-TSK-002`) |
 | **The conditional step-up is a private six-line method in three services.** `BeneficiaryService`, `PaymentMethodService` and, from `P6-TSK-011`, `PayoutDestinationOperations` each restate `P4-TSK-007`'s *`MULTI_FACTOR` exactly when a factor is active* | Extracting it would have meant refactoring two unrelated services inside a task about payout destinations (the smallest-coherent-change rule); three identical copies of a security check are a maintainability risk, not a correctness one today | A fix to one copy that misses the others: a step-up rule that differs by surface | A fourth caller, or any change to the rule itself - then extract one component and move all callers in one change | Phase 6 or whichever phase meets the trigger |
 
 None of these is financial-correctness debt.
@@ -672,7 +685,7 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P6-TST-001` — the tenancy and fee-conservation battery** — see
+**`P6-TST-002` — the merchant conservation storm** — see
 [§Current Task](#current-task), which this section mirrors. *(This section named `P6-TSK-001`
 from the Phase 5 → 6 transition until `P6-TSK-015`'s gate — stale across the eleven tasks
 completed from `P6-TSK-001` to `P6-TSK-010`, the stale-second-copy class `P3-DOC-001` named. The superseded lead is kept below.)*

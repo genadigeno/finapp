@@ -197,9 +197,20 @@ public class CheckoutService {
         } catch (MerchantNotPriceableException refused) {
             throw new ApiException(
                     CheckoutErrorCode.NOT_PRICEABLE,
-                    "A checkout session was refused because the merchant has no fee schedule",
-                    "this merchant has no fee schedule, so a checkout cannot be priced.");
+                    "A checkout session was refused because no fee schedule prices it",
+                    "this merchant has no fee schedule for this currency, so a checkout cannot"
+                            + " be priced.");
+        } catch (com.finapp.merchant.SaleBelowFeeException refused) {
+            throw saleBelowFee();
         }
+    }
+
+    /** `P6-TST-001`, ADR-0058: refused at the price, at creation or when the fee is pinned. */
+    private static ApiException saleBelowFee() {
+        return new ApiException(
+                CheckoutErrorCode.SALE_BELOW_FEE,
+                "A checkout was refused because its fee meets or exceeds its amount",
+                "this amount does not cover the merchant's fee, so it cannot be sold.");
     }
 
     /** The merchant's own session. Unknown, malformed and another's are one 404. */
@@ -306,6 +317,10 @@ public class CheckoutService {
                     "A confirmation was refused by the session's state (" + refused.status() + ")",
                     "this checkout session is " + refused.status()
                             + " and is not awaiting confirmation.");
+        } catch (com.finapp.merchant.SaleBelowFeeException refused) {
+            // Reachable only for a session opened before the rule existed: the pin re-asserts
+            // it, and its transaction rolls back with the intent it would have priced.
+            throw saleBelowFee();
         }
 
         // OUTSIDE a transaction: the command runs its own Tx1 / provider call / Tx2

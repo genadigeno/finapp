@@ -309,16 +309,27 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | Code | Status | Meaning |
 |---|---|---|
 | `checkout.NotPriceable` | 422 | This merchant has no fee schedule, so a checkout cannot be priced. |
+| `checkout.SaleBelowFee` | 422 | This amount does not cover the merchant's fee, so it cannot be sold. |
 | `checkout.NotTrading` | 409 | This merchant cannot open new checkout sessions. |
 | `checkout.SessionExpired` | 409 | This checkout session has expired. |
 | `checkout.NotConfirmable` | 409 | This checkout session is not awaiting confirmation. |
 | `checkout.NotAbandonable` | 409 | This checkout session cannot be withdrawn. |
 
-`checkout.NotPriceable` and `checkout.NotTrading` are refused **at session creation** rather
-than discovered at the capture. That is the whole reason they exist as codes: an unpriced or
-untraded session would fail inside the transaction that moves money, *after* the customer had
-paid — the difference between a merchant fixing their configuration and a customer's money
-needing a refund.
+`checkout.NotPriceable`, `checkout.SaleBelowFee` and `checkout.NotTrading` are refused **at
+session creation** rather than discovered at the capture. That is the whole reason they exist
+as codes: an unpriced or untraded session would fail inside the transaction that moves money,
+*after* the customer had paid — the difference between a merchant fixing their configuration
+and a customer's money needing a refund.
+
+The offer is **priced at creation** (`P6-TST-001`, ADR-0058), under the version the session
+will carry, and two refusals come out of that pricing. `checkout.NotPriceable` also answers an
+offer in a currency the merchant's schedule does not price: a schedule prices one currency, and
+the fee arithmetic refuses a foreign gross by name. `checkout.SaleBelowFee` answers an amount
+whose fee meets or exceeds it — a sale that would net the merchant nothing or less, drive its
+payable below zero at capture, and leave the sale's refund waiting on the merchant's other
+sales. Its detail names no amount. The same rule is re-asserted when the confirmation pins the fee, so a session opened
+before the rule existed is refused there with the same code, its transaction rolled back.
+Both refusals come before the idempotency claim: nothing is written and the key is not spent.
 
 **`checkout.NotTrading` is the race's refusal, not the ordinary one**, and the distinction is
 worth stating because a reader will otherwise expect to see it. A suspended or closed merchant's

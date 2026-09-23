@@ -717,6 +717,41 @@
           }
         }
       },
+      "checkout.SaleBelowFee": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "checkout.SaleBelowFee"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/checkout.SaleBelowFee"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] This amount does not cover the merchant's fee, so it cannot be sold.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "checkout.SessionExpired": {
         "content": {
           "application/problem+json": {

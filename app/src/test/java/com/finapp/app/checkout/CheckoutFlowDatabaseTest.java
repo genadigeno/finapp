@@ -1062,9 +1062,10 @@ class CheckoutFlowDatabaseTest {
         // Driven at the STORE, because over HTTP this predicate is unreachable: the report only
         // follows references it found on the merchant's OWN payable (the first rank), so it
         // never asks about a competitor's intent. A predicate no test can reach is one a later
-        // refactor removes (P6-TSK-008's survivor lesson) - and this one is also invisible to
-        // OwnershipIsScopedTest, whose detector keys on EntityId-typed parameters while
-        // checkout holds every cross-module reference by value, as a bare UUID (ADR-0029).
+        // refactor removes (P6-TSK-008's survivor lesson). It was also invisible to
+        // OwnershipIsScopedTest, whose detector keyed on EntityId-typed parameters while
+        // checkout holds every cross-module reference by value, as a bare UUID (ADR-0029);
+        // P6-TST-001 widened the detector, and this test is the register's named negative.
         Merchant a = tradingMerchant("0.029", 30L);
         Merchant b = tradingMerchant("0.029", 30L);
         String aIntent = intentOfSession(purchase(a, payingCustomer()));
@@ -1521,26 +1522,111 @@ class CheckoutFlowDatabaseTest {
     }
 
     @Test
-    @DisplayName("P6-TSK-015, A FINDING PINNED: a sale whose fee EXCEEDED its gross leaves the"
-            + " payable negative at capture, and its refund is refused as unfunded - honestly,"
-            + " never as a malformed hold")
-    void aRefundOfASaleWhoseFeeExceededItsGrossIsRefusedHonestly() throws Exception {
-        // A fixed part larger than the sale: 150.00 on 100.00. FeeCalculation lets a fee exceed
-        // its gross and FeeAssessment.exceedsGross() says so, but nothing refuses one, so the
-        // capture itself leaves the payable at -50.00. Its RETURNED refund would land it at
-        // zero - but its net is not positive, a hold is, and the reservation's floor of one
-        // minor unit cannot be held against a negative payable. Refused, conservatively.
-        // Pinned so the decision about a fee exceeding its sale is made on purpose.
-        Merchant merchant = tradingMerchant("0", 150_00L, "RETURNED");
-        String intent = intentOfSession(purchase(merchant, payingCustomer()));
-        assertThat(payable(merchant).body()).contains("\"position\":\"-50.00\"");
+    @DisplayName("P6-TST-001, ADR-0058: a sale whose fee MEETS or EXCEEDS it is refused AT THE"
+            + " PRICE - checkout.SaleBelowFee, nothing written, and the key not spent")
+    void aSaleThatDoesNotCoverItsFeeIsRefusedAtThePrice() throws Exception {
+        // P6-TSK-015's gate pinned what accepting such a sale did - the capture left the
+        // payable below zero by the excess, and the sale's refund was refused as unfunded -
+        // and handed the decision here. Decided at the price: a fixed part of 100.00 and no
+        // rate, so 100.00 nets the merchant nothing and 50.00 nets it minus 50.00. The
+        // merchant would pay to sell, so the offer is refused before anything exists.
+        Merchant merchant = tradingMerchant("0", 100_00L, "RETURNED");
+        String key = someKey();
 
-        HttpResponse<String> refused = refundResponse(intent, "100.00");
+        HttpResponse<String> meets = createSession(merchant, 100_00L, key);
+        HttpResponse<String> exceeds = createSession(merchant, 50_00L, someKey());
 
-        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
-        assertThat(refused.body()).contains("payments.RefundUnfunded");
-        assertThat(refundRowsFor(intent)).isZero();
-        assertThat(payable(merchant).body()).contains("\"position\":\"-50.00\"");
+        for (HttpResponse<String> refused : List.of(meets, exceeds)) {
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+            assertThat(refused.body()).contains("checkout.SaleBelowFee");
+        }
+        assertThat(sessionCount(merchant)).as("the refusal wrote nothing").isZero();
+
+        // Refused BEFORE the claim, so the key is unspent: the same key under another body is
+        // a first attempt. A spent key would refuse it as a different request (INV-IDEM-03).
+        HttpResponse<String> covered = createSession(merchant, 100_01L, key);
+        assertThat(covered.statusCode()).as(covered.body()).isEqualTo(201);
+        assertThat(sessionCount(merchant)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("P6-TST-001, ADR-0058: the smallest sale the rule admits - a net of ONE minor"
+            + " unit - captures to a positive payable, and its full RETURNED refund is funded")
+    void theSmallestCoveredSaleIsRefundableInFull() throws Exception {
+        // The pinned finding's other half: under the rule no capture leaves a payable below
+        // zero, so the RETURNED refund of a sale - its gross out, its whole fee back, a net
+        // of 0.01 - is funded by the sale it reverses, and lands the payable at exactly zero.
+        Merchant merchant = tradingMerchant("0", 100_00L, "RETURNED");
+        String created = createSession(merchant, 100_01L, someKey()).body();
+        providerAuthorises();
+        providerCaptures();
+        HttpResponse<String> confirmed =
+                confirm(payingCustomer(), field(created, "sessionToken"));
+        assertThat(field(confirmed.body(), "status")).isEqualTo("COMPLETED");
+        String intent = intentOfSession(field(created, "checkoutId"));
+        assertThat(payable(merchant).body()).contains("\"position\":\"0.01\"");
+
+        refund(intent, "100.01");
+
+        assertThat(refundRowsFor(intent)).isEqualTo(1);
+        assertThat(activeHoldsOn(merchant)).isZero();
+        String after = payable(merchant).body();
+        assertThat(after).contains("\"position\":\"0.00\"");
+        assertThat(explainsItself(after)).isTrue();
+    }
+
+    @Test
+    @DisplayName("P6-TST-001: an offer in a currency the merchant's schedule does not price is"
+            + " refused at CREATION as checkout.NotPriceable - never discovered at the capture")
+    void anOfferInAnotherCurrencyIsNotPriceable() throws Exception {
+        // Pricing the offer at creation is what surfaces this: the schedule prices EUR, the
+        // settlement currency its assignment checked, and the fee arithmetic refuses a USD
+        // gross by name. Unmapped, that refusal would have been a 500 at the surface.
+        Merchant merchant = tradingMerchant("0.029", 30L);
+
+        HttpResponse<String> refused = createSession(merchant, AMOUNT_MINOR, "USD", someKey());
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+        assertThat(refused.body()).contains("checkout.NotPriceable");
+        assertThat(sessionCount(merchant)).as("the refusal wrote nothing").isZero();
+    }
+
+    @Test
+    @DisplayName("P6-TST-001, ADR-0058 section 3: a session opened BEFORE the rule is refused when"
+            + " its fee is pinned - checkout.SaleBelowFee - and the intent it would have priced"
+            + " rolls back with it")
+    void aSessionOpenedBeforeTheRuleIsRefusedAtConfirmation() throws Exception {
+        // ADDED BY THE COMPLETION GATE: the confirmation's mapping of the pin's refusal had no
+        // test, so a missing catch would have answered this customer 500. Opened through the
+        // store rather than the surface, because the surface now refuses it: this is the offer
+        // an instance still running the old code accepted a moment before the rule shipped.
+        Merchant merchant = tradingMerchant("0", 100_00L, "RETURNED");
+        com.finapp.checkout.CheckoutSessionToken token =
+                com.finapp.checkout.CheckoutSessionToken.issue(new SecureRandom());
+        com.finapp.checkout.CheckoutSession session =
+                com.finapp.checkout.CheckoutSession.open(
+                        IDS,
+                        CLOCK,
+                        UUID.fromString(merchant.id()),
+                        Money.ofMinorUnits(50_00L, CurrencyCode.of("EUR")),
+                        "An offer from before the rule",
+                        versionOf(merchant),
+                        token,
+                        java.time.Instant.now(CLOCK).plus(Duration.ofMinutes(30)));
+        try (Connection app = DatabaseRoles.application()) {
+            new com.finapp.checkout.JdbcCheckoutSessionStore().insert(app, session);
+        }
+
+        HttpResponse<String> refused = confirm(payingCustomer(), token.presentedOnce().expose());
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+        assertThat(refused.body()).contains("checkout.SaleBelowFee");
+        assertThat(statusAndIntentOf(session.id().value()))
+                .as("the offer stands, unconfirmed")
+                .isEqualTo("OPEN:null");
+        assertThat(intentsCrediting(merchant))
+                .as("the payment intent the pin would have priced rolled back with it")
+                .isZero();
     }
 
     @Test
@@ -2048,9 +2134,14 @@ class CheckoutFlowDatabaseTest {
 
     private HttpResponse<String> createSession(Merchant merchant, long amountMinor, String key)
             throws Exception {
+        return createSession(merchant, amountMinor, "EUR", key);
+    }
+
+    private HttpResponse<String> createSession(
+            Merchant merchant, long amountMinor, String currency, String key) throws Exception {
         return post(
                 "/v1/checkout/sessions",
-                "{\"amountMinor\":" + amountMinor + ",\"currency\":\"EUR\","
+                "{\"amountMinor\":" + amountMinor + ",\"currency\":\"" + currency + "\","
                         + "\"lineSummary\":\"Two coffees and a pastry\"}",
                 merchant.apiKey(),
                 key);
@@ -2188,6 +2279,56 @@ class CheckoutFlowDatabaseTest {
                                 + " AND aggregate_id = ?")) {
             read.setString(1, eventType);
             read.setObject(2, UUID.fromString(aggregateId));
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    /** The one version the merchant's schedule holds - `tradingMerchant` adds exactly one. */
+    private static UUID versionOf(Merchant merchant) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT version.id FROM merchant.fee_schedule_version version"
+                                        + " JOIN merchant.merchant_fee_schedule assignment"
+                                        + "   ON assignment.fee_schedule_id ="
+                                        + " version.fee_schedule_id"
+                                        + " WHERE assignment.merchant_id = ?")) {
+            read.setObject(1, UUID.fromString(merchant.id()));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getObject(1, UUID.class);
+            }
+        }
+    }
+
+    private static String statusAndIntentOf(UUID session) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT status, payment_intent_ref FROM checkout.checkout_session"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, session);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1) + ":" + row.getString(2);
+            }
+        }
+    }
+
+    /** Payment intents whose capture would credit the merchant's payable. */
+    private static long intentsCrediting(Merchant merchant) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT count(*) FROM payments.payment_intent intent"
+                                        + " JOIN ledger.ledger_account account"
+                                        + "   ON account.id = intent.wallet_account_id"
+                                        + " WHERE account.owner_ref = ?"
+                                        + "   AND account.purpose = 'MERCHANT_PAYABLE'")) {
+            read.setObject(1, UUID.fromString(merchant.id()));
             try (ResultSet row = read.executeQuery()) {
                 row.next();
                 return row.getLong(1);

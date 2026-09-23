@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 139 "Previously" blocks, newest first, from `P6-TSK-012` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 140 "Previously" blocks, newest first, from `P6-TSK-013` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,40 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P6-TSK-013` — the meters and the dashboard row** — `COMPLETE` (2026-09-23). **M6.6 opens: an
+operator can see offers end, fees taken and payouts decided — and a payout the platform has no
+answer for raises the alert whether or not anything is still trying to resolve it.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| All six series from a freshly started instance with no database | Seven, the stuck-payout gauges a row each: the pinned guard boots with nothing configured - no provider, no database |
+| The tag vocabulary walks the designed path if it widens | It did not widen: `outcome` only, under the convention test |
+| The dashboard row resolves against a live scrape | Seven panels, every query checked against the running application's scrape; a missing series probed |
+| The derived guard takes §15's table at the flip | The pinned Phase 6 test holds it until then. The plan's combined gauge row is split, so the age gauge is held too |
+
+### The design
+
+- **Acting judgements only, counted at the door after commit.** The acting bit was discarded
+  before it left `merchant`; `Initiated.acting` and `SweepResult.actingJudgements` carry it out.
+- **The stuck-payout gauge counts an overdue dispatch as well as `UNKNOWN`.** With the sweep down,
+  a crashed dispatch stays `DISPATCHED` for ever and an unknown-only gauge reads zero. So it reads
+  the sweep's own candidacy, past the sweep's own bound, through one placeholder both share.
+- **Conversion age is split by outcome**: in-window measures the customer, late the provider.
+- Fee assessments are counts, never amounts.
+
+### What the gate found
+
+- **The running instance never read the real schema.** Every gauge value test stubbed the reading
+  or called the store directly, so a broken wiring would have passed while every scrape read NaN.
+  The wired gauge is now read against the real schema, and probed.
+- **The conversion age's value was unasserted where it is recorded.** A reversed age read zero and
+  passed; it is now bounded by the test's own span.
+- **The resolution schedule had no lifecycle test**, missing since `P6-TSK-012`: a tick that
+  rethrew would have ended resolution for good. Now tested.
+- Twenty probes, all caught, each restore byte-identical.
 
 ### Previously
 

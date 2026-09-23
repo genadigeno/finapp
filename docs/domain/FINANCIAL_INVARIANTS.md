@@ -1053,8 +1053,9 @@ meter and visible to an operator view.
 at dispatch, what it takes from the payable net of the least fee share any completion order
 can attribute to it, so the fee share it keeps owing is the only part of a refund the payable
 may leave unfunded. A merchant's payable therefore goes below zero only by fee the platform has
-charged and not collected (a retained refund share, or a fee that exceeded its sale) — never by
-money the platform paid out. A refund beyond that is a committed domain refusal.
+charged and not collected (a retained refund share; a fee that exceeded its sale was the other,
+closed at the price by ADR-0058, so only a pin written before that rule can still reach it) —
+never by money the platform paid out. A refund beyond that is a committed domain refusal.
 **Why:** A refund judged on its gross refuses what the merchant can fund (a `RETURNED` full
 refund lands the payable at exactly zero). An unbounded one turns every refund after a payout
 into the platform funding a merchant's customers with its own money. Bounded by the retained

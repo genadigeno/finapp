@@ -75,6 +75,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0055](ADR-0055-lombok-compile-time-boilerplate.md) | Lombok is the project-standard boilerplate reducer, at compile time only | Proposed | 6 | Build |
 | [0056](ADR-0056-payout-destination-four-eyes.md) | A payout destination changes by two operators, a conditional step-up and a cancellable cooling-off; bank details never enter | Proposed | 6 | Merchant · Identity · Security |
 | [0057](ADR-0057-payout-dispatch-and-resolution.md) | The payout dispatches behind a send permit, fails only on what it knows, and resolves by query | Proposed | 6 | Merchant · Ledger · Identity |
+| [0058](ADR-0058-a-sale-must-cover-its-fee.md) | A sale that does not cover its fee is refused at the price | Proposed | 6 | Merchant · Checkout |
 
 ## Anticipated ADRs
 

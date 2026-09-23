@@ -8007,7 +8007,7 @@ negative payable** — `COMPLETE` (2026-09-23)
   suites, 0 failures** (merchant, payments and checkout). **The full battery deliberately
   skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TST-001 — The tenancy and fee-conservation battery** — `READY`
+**P6-TST-001 — The tenancy and fee-conservation battery** — `COMPLETE` (2026-09-23)
 - **Objective**: the two gate properties that decay silently, demonstrated in bulk.
 - **Scope**: the cross-tenant negative battery (every merchant endpoint, merchant A on B's
   world: one refusal, zero rows — mechanised so a new endpoint cannot dodge it); the
@@ -8029,8 +8029,123 @@ negative payable** — `COMPLETE` (2026-09-23)
 - **Deps**: `P6-TSK-009`, `-005`. **Accept**: both batteries green from fresh runs; the
   register rows land with performed demonstrations. **Risk**: Medium. **Cx**: M.
   **DoD**: `DOD-TEST`, `DOD-FIN`, `DOD-SEC`
+- **Design and implementation (2026-09-23)**:
+  - **The pricing decision, taken at the price** (ADR-0058, `Proposed`). A sale must net the
+    merchant at least one minor unit. `CheckoutSessions.open` prices the offer under the version
+    the session will carry, before the claim, and refuses `net ≤ 0` as `checkout.SaleBelowFee`
+    (422): nothing written, the key unspent. `MerchantSettlement.pin` re-asserts it for every
+    pin, before the insert. A capture is never refused. The same pricing now refuses an offer in a
+    currency the schedule does not price as `checkout.NotPriceable`; until now it was accepted at
+    creation. The pinned test is rewritten as three: meets and exceeds refused with the key
+    unspent; the smallest covered sale refunded in full under `RETURNED`, landing the payable at
+    exactly zero; and the foreign-currency refusal. The pin's own refusal is driven at the store.
+    `INV-MER-07`'s statement narrows, and ADR-0054's open item is annotated as decided.
+  - **The detector, widened where the blind spots are.** In `com.finapp.merchant` and
+    `com.finapp.checkout`, `OwnershipIsScopedTest` counts a bare `UUID` as a resource identifier,
+    and SQL issued by a same-class helper as the caller's, one hop deep. It newly sees nineteen
+    methods, and each is classified: four `OWNER_SCOPED`, each naming a negative; five
+    `AUTHORITATIVE_ID`; ten `ADMINISTERED`. A guard fails the build if `merchant_id` or
+    `merchant_ref` appears in a SQL literal anywhere else, which is why those two packages suffice.
+    The same widening platform-wide would surface 31 more methods in ten modules: `X-TSK-002`.
+  - **The battery**, `MerchantTenancyBatteryDatabaseTest`. The routes come from the application's
+    handler mapping: 23 of them, 8 on the merchant key and 15 operator paths naming a merchant.
+    The table must equal that set, and each row's kind must be its shape's:
+    - DERIVED 5 — driven: A's reads and writes stay in A's world, and the dispatch pays only A's
+      own destination;
+    - ID_ADDRESSED 3 and PAIRED 4 — probed: A on B's resource is a 404 normalised-identical to
+      an unknown one, both worlds' fingerprints are unchanged, and a positive control follows;
+    - SUBJECT 11 — each declares its permission.
+  - **The fee batch**, `MerchantCaptureDatabaseTest#theFeeBatchConservesEveryMinorUnit`. 360
+    assessments go through the capture's production seam: EUR, GBP and USD; six rounding
+    policies; seven rates; four fixed parts; 150 of the amounts on exact halves, which every
+    rounding policy meets in at least two currencies. Per currency, the
+    books equal an independent formula, the residual read from the books alone is zero, and the
+    trial balance is zero. **Stated limit**: the chart holds only two-minor-unit currencies, so the
+    0- and 3-minor-unit cases rest on `FeeCalculationTest`'s hermetic property sweep (JPY, USD and
+    BHD; 7,200 cases), not on the ledger batch.
+- **Completion gate (2026-09-23)** — thirty-one probes, twenty-nine caught, every restore
+  verified byte-identical and the whole tree compared before and after:
+  - **The refusal at every rank.** The creation's check removed, and narrowed to `net < 0`,
+    each fails the price test (the pin still refuses behind it). The pin's check removed fails
+    the pin's own test, the foreign-currency pin and the pre-rule confirmation. Narrowed, it
+    fails the pin test's *meets* case. The foreign currency rethrown fails as a 500. Either
+    surface mapping removed fails its test. The reservation's floor removed fails the floor's
+    seam test.
+  - **The battery at every kind.** Each addressed statement neutralised, its parameter still
+    bound: the session read, the payout read, the destination pairing, the key pairing and the
+    dispatch's destination read. Each is caught by the battery. A new merchant route, a new
+    operator pairing, and an identifier parameter on a derived route each fail the table. A probe
+    aimed at a path that does not exist fails its positive control. A fingerprint that sees
+    nothing fails its own sensitivity check.
+  - **The detector and its guard.** The UUID widening reverted, the helper widening reverted, a
+    new unclassified UUID read in a tenant store, a tenant statement in the app module, and a
+    helper-split `OWNER_SCOPED` statement losing its predicate: each fails the rule.
+  - **The fee batch.** The version's rounding policy defaulted: caught by the batch and the
+    hermetic policy test. A balanced mis-split of one minor unit per entry: caught by nine tests.
+    It leaves the residual at zero and the independent formula sees it, which is why the batch
+    carries one. The stored rounding policy ignored at read: caught by the batch alone in its
+    suite, and by the schedule suite's round trip (checked, not assumed).
+  - **Two survivors, recorded rather than hidden.** A fingerprint blind to the keys' statuses
+    still moved on a revocation's event row and audit record. That is redundancy, not a gap, and a
+    fingerprint returning a constant was then caught by the sensitivity check alone. The
+    withdrawal's own tenant read removed survives the battery, because the render's owner-scoped
+    read shares the transaction and rolls it back (`P6-TSK-008`'s finding).
+    `theWithdrawalCommandIsTenantScoped` caught it at the command.
+  - **The dispatch's destination read has a second rank.** Unscoped, every payout that picked
+    another merchant's account was refused by `V007`'s own-destination trigger (SQLState `23514`),
+    so the battery sees the defect as a failure rather than as a payment to the wrong account.
+  - **Two first runs did not compile** and are not counted: a probe's edit dropped a brace, and a
+    planted method landed under an `@Override`. The second had also read the previous probe's
+    result file through the runner's one-second slack, which the runner no longer allows.
+- **What the gate found, and fixed**:
+  - (1) **The confirmation's mapping of the pin's refusal had no test.** A session opened before
+    the rule reaches the pin, and a missing catch would have answered 500. Added
+    `CheckoutFlowDatabaseTest#aSessionOpenedBeforeTheRuleIsRefusedAtConfirmation`, the session
+    opened through the store, and probed.
+  - (2) **A register row named a test this task rewrote.** `MUTATION_TESTING` §2's floor row
+    pointed at `aRefundOfASaleWhoseFeeExceededItsGrossIsRefusedHonestly`, and
+    `MutationDemonstrationTest` failed the fleet-wide run on it. The floor is still reachable
+    under the rule, as the last of a partial series on a sale netting one minor unit, and was
+    also misdescribed in `MerchantSettlement.reservation`'s javadoc ("only when a capture's fee
+    was at least its gross"). Added `MerchantCaptureDatabaseTest#theReservationFloorHoldsTheSmallestUnit`,
+    re-pointed the row, re-performed the probe, and corrected the javadoc and ADR-0058's
+    refund claim.
+  - (3) **The battery's fingerprint was unproven.** "Unchanged" would have passed a fingerprint
+    that saw nothing. Every positive control on a writing route must now move it, and no read
+    may, probed. The payout negative now also shows A's world unmoved while B pays.
+  - (4) **Three texts that said what is not so.** `JdbcCheckoutSessionStore.read`'s register
+    reason named callers it no longer has. `FeeAssessment.exceedsGross`'s javadoc pointed at a
+    debt row that does not exist. ADR-0058's draft said nothing priced a foreign offer until
+    confirmation, where the code in fact refuses it (`NoWalletForPaymentException`).
+- **Findings recorded with owners**:
+  - **The detector's widening is the tenant's two packages only**: `X-TSK-002`, and a debt row.
+  - **The ledger batch holds two-minor-unit currencies only**, because the chart does. The 0- and
+    3-minor arithmetic rests on `FeeCalculationTest`'s sweep. A ledger-level batch in JPY or BHD
+    waits for a phase that operates in one: Phase 9's multi-currency accounting.
+  - **`checkout.NotPriceable`'s title predates the currency case** ("has no fee schedule"). The
+    detail and the contract prose carry the case, and retitling is a contract change left to
+    `P6-DOC-001`.
+- **Multi-instance `PASS`.** The refusal is a pure judgement over the offer's amount and an
+  immutable version, read in the creation's own transaction before the claim, so ten instances
+  pricing one offer reach one answer, and the claim arbitrates duplicates. The pin's
+  re-assertion is judged per pin under the same immutable version, so ten confirmations racing
+  one session converge on one intent and one answer. Tenancy is a predicate in each statement,
+  correct on any number of instances by construction. The battery and the batch decide nothing.
+  Nothing rests on one JVM.
+- **Registers**: `MUTATION_TESTING` §2 +14 rows, the floor row re-pointed, §3 +1 paragraph
+  and §4 +1 row; ADR-0058 (`Proposed`) and its index row; ADR-0054 annotated; `INV-MER-07`
+  narrowed; `ERROR_CONTRACT` +1 code; `CHECKOUT_MERCHANT_LIFECYCLES` §2; the OpenAPI baseline
+  (one response component added, nothing removed or changed); `OwnershipIsScopedTest` +19
+  register entries, +4 negatives, +2 tests; `CURRENT_STATE` +1 debt row; `X-TSK-002` created.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at **1542 tests across 14 modules, 0 failures**,
+  and **225 targeted database tests across 21 suites, 0 failures**: every checkout suite; the
+  merchant capture, battery, fee-schedule, API-key, endpoint, onboarding, payout and destination
+  suites; the stuck-payout gauges and dashboard queries; the payment capture, refund and
+  conservation suites; the trial balance and deny-by-default. **The full battery was
+  deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts are
+  claimed.**
 
-**P6-TST-002 — The merchant conservation storm** — `PLANNED`
+**P6-TST-002 — The merchant conservation storm** — `READY`
 - **Objective**: the phase's composition demonstration — checkouts, captures-with-fees,
   refunds and payouts at once, conservation as arithmetic (`P5-TST-003`'s discipline on
   the merchant book).
@@ -8043,7 +8158,11 @@ negative payable** — `COMPLETE` (2026-09-23)
   the storm must include the drain); remaining `Phase: 6` register rows. **Input from `P6-TSK-015`**:
   refunds against a drained payable are a third refusal kind (`payments.RefundUnfunded`), and
   merchant debt from `RETAINED` fees must stay bounded by the fees retained on refunded sales
-  (`INV-MER-07`).
+  (`INV-MER-07`). **Input from `P6-TST-001`**: since ADR-0058 a sale below its fee is a
+  refusal at creation, not a negative payable, so the storm's sales must cover their fees
+  and merchant debt has one source, the fee a `RETAINED` refund keeps. The fee batch's
+  fixture onboards merchants in GBP and USD as well as EUR, ready for a multi-currency
+  reading.
 - **Deps**: `P6-TSK-012`, `P6-TST-001`, **`P6-TSK-014`** *(added by `P6-TSK-005`'s gate: without it the `− refunds` term of this item's own conservation identity has no producer)*. **Accept**: the readings reconcile under load;
   both refusal kinds occur as checked facts; every `Phase: 6` invariant row demanded by
   the guard is present.
@@ -8142,6 +8261,23 @@ Batches 0–9 applied and verified 2026-09-23; its one failing test predates it.
   on a mechanical diff, which is why the batches are small. **Cx**: M. **DoD**: `DOD-BUILD`,
   `DOD-ARCH`. Each batch's equivalence gate is its `DOD-FIN`/`DOD-SEC` evidence that nothing
   financial or security-related moved.
+
+**X-TSK-002 — Widen the ownership detector to every module** — `PLANNED`
+- **Context**: `OwnershipIsScopedTest`, every module. Recorded by `P6-TST-001`'s design.
+- **Description**: `P6-TST-001` widened the detector in the tenant's two packages only. There, a
+  bare `UUID` counts as a resource identifier and SQL issued by a same-class helper as the
+  caller's. Applied to every package, the same widening surfaces 31 more methods in ten modules
+  (measured by running it). Among them are the ledger's `findOwned`, `findAllOwned` and
+  `lockOwnedForUpdate`, which read merchant payables by `owner_ref`, and the outbox relay's
+  per-aggregate drains. Each is classified with the register's existing scopes, and the widening
+  becomes unconditional.
+- **Why not in `P6-TST-001`**: reclassifying other modules' reads is not a merchant task's work,
+  as `P6-TSK-009`'s gate also said. In the meantime the tenant-column guard keeps every statement
+  over a tenant column inside the widened packages, and the tenant's ledger rows, reached by
+  `owner_ref`, are covered behaviourally by the battery's derived reads.
+- **Accept**: the widening applies to every package; every newly visible method is classified,
+  each `OWNER_SCOPED` one with a named negative. **Risk**: Low. **Cx**: M.
+  **DoD**: `DOD-TEST`, `DOD-SEC`
 
 ---
 

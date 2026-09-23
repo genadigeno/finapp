@@ -52,6 +52,14 @@ nothing new — but **landed money always wins**: a capture that arrives after e
 `EXPIRED → COMPLETED_LATE`, credits the merchant per ADR-0050, and is counted and
 operator-visible. Money is never auto-reversed by a clock.
 
+**What refuses to create `OPEN`** (`P6-TST-001`, ADR-0058): the offer is priced when it is
+created, under the version the session will carry, so a session exists only for a sale the
+platform can price and the merchant is paid for. A merchant not trading (`checkout.NotTrading`),
+no schedule, or none in the offer's currency (`checkout.NotPriceable`), and an amount whose fee
+meets or exceeds it (`checkout.SaleBelowFee`) are all refused before the idempotency claim,
+with nothing written. The rule is re-asserted when the confirmation pins the fee, for a session
+opened before it existed, and never at capture: money that landed is recorded as it landed.
+
 **The money at each state**: nothing moves before `PAYMENT_PENDING`; from dispatch to
 outcome the money's state is the *attempt's* (Phase 5's honest `*_UNKNOWN` doctrine
 applies unchanged); at `COMPLETED`/`COMPLETED_LATE` the capture entry exists — gross to

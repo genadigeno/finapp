@@ -30,6 +30,7 @@ import com.finapp.merchant.MerchantSettlement;
 import com.finapp.merchant.MerchantSettlementException;
 import com.finapp.merchant.PaymentFeePin;
 import com.finapp.merchant.RefundFeePolicy;
+import com.finapp.merchant.SaleBelowFeeException;
 import com.finapp.party.JdbcPartyStore;
 import com.finapp.paymentmethods.JdbcPaymentMethodStore;
 import com.finapp.payments.CaptureComposition;
@@ -470,11 +471,29 @@ class MerchantCaptureDatabaseTest {
         // a checkout session priced in another produces exactly this. P6-TSK-007 must refuse
         // it at the session; until then this throw is the backstop, and now it is a checked
         // one.
+        //
+        // P6-TST-001: both front doors now refuse it - the session as checkout.NotPriceable,
+        // and the pin, which prices its gross under its version and so meets the foreign
+        // currency by name. The backstop is still reached by a pin written BEFORE that rule,
+        // which is what the store call below stands for.
         Merchant merchant = onboardedMerchant("0.029", 30L);
         CurrencyCode usd = CurrencyCode.of("USD");
         Money inUsd = Money.ofMinorUnits(100_00L, usd);
+        assertThatThrownBy(() -> runner.inTransaction(uow -> pin(uow, merchant, IDS.next(), inUsd)))
+                .isInstanceOf(com.finapp.merchant.FeeCurrencyMismatchException.class);
+
         UUID intentRef = IDS.next();
-        runner.inTransaction(uow -> pin(uow, merchant, intentRef, inUsd));
+        runner.inTransaction(
+                uow ->
+                        pins.insertIfAbsent(
+                                uow,
+                                new PaymentFeePin(
+                                        intentRef,
+                                        merchant.id(),
+                                        merchant.versionId(),
+                                        inUsd,
+                                        Instant.now(CLOCK),
+                                        "a pin from before the rule")));
 
         assertThatThrownBy(
                         () ->
@@ -607,6 +626,31 @@ class MerchantCaptureDatabaseTest {
     }
 
     @Test
+    @DisplayName("P6-TST-001: the reservation's ONE-UNIT FLOOR is still reachable under ADR-0058 -"
+            + " the last of a partial series on a sale netting one minor unit - and holds the"
+            + " smallest unit rather than nothing")
+    void theReservationFloorHoldsTheSmallestUnit() throws Exception {
+        // The smallest sale the rule admits: 100.01 under a fixed 100.00, a net of 0.01.
+        // 60.00 refunded and completed returned round(100.00 x 60.00 / 100.01) = 59.99 of the
+        // fee (HALF_EVEN), so the last 40.01's exact share is 40.01 and its net is ZERO. A hold
+        // is positive by definition, so what it reserves is the floor. The sale that used to
+        // reach this in CheckoutFlowDatabaseTest - a fee above its gross - can no longer be sold.
+        Merchant merchant = onboardedMerchant("0", 100_00L, RefundFeePolicy.RETURNED);
+        UUID intentRef = pinFor(merchant, Money.ofMinorUnits(100_01L, EUR));
+
+        Money reserved =
+                reserve(
+                        merchant.payable(),
+                        intentRef,
+                        Money.ofMinorUnits(40_01L, EUR),
+                        Money.ofMinorUnits(60_00L, EUR));
+
+        assertThat(reserved)
+                .as("a zero net reserves one minor unit, never nothing")
+                .isEqualTo(Money.ofMinorUnits(1L, EUR));
+    }
+
+    @Test
     @DisplayName("P6-TSK-015: a refund of a payment that is NOBODY's merchant's holds its GROSS"
             + " - Phase 5's hold, unchanged, through the same seam")
     void aRefundOfNobodysMerchantHoldsItsGross() throws Exception {
@@ -688,6 +732,54 @@ class MerchantCaptureDatabaseTest {
     }
 
     @Test
+    @DisplayName("P6-TST-001, ADR-0058: a pin whose fee MEETS or EXCEEDS its gross is REFUSED"
+            + " and writes nothing - the rule re-asserted where the price is agreed")
+    void aPinOfASaleBelowItsFeeIsRefused() throws Exception {
+        // The checkout refuses such an offer when it is opened; this is the same rule for
+        // every pin, whoever reaches it - a session opened before the rule existed, or a
+        // caller that is not a checkout at all. Judged before the insert, so a refusal writes
+        // nothing, and before any money moves.
+        Merchant merchant = onboardedMerchant("0", 100_00L);
+        UUID meets = IDS.next();
+        UUID exceeds = IDS.next();
+
+        assertThatThrownBy(() -> runner.inTransaction(uow -> pin(uow, merchant, meets, AMOUNT)))
+                .isInstanceOf(SaleBelowFeeException.class);
+        assertThatThrownBy(
+                        () ->
+                                runner.inTransaction(
+                                        uow ->
+                                                pin(
+                                                        uow,
+                                                        merchant,
+                                                        exceeds,
+                                                        Money.ofMinorUnits(50_00L, EUR))))
+                .isInstanceOf(SaleBelowFeeException.class);
+        UUID covered = pinFor(merchant, Money.ofMinorUnits(100_01L, EUR));
+
+        try (Connection app = DatabaseRoles.application()) {
+            for (UUID refused : List.of(meets, exceeds)) {
+                assertThat(
+                                count(
+                                        app,
+                                        "SELECT count(*) FROM merchant.payment_fee_pin"
+                                                + " WHERE payment_intent_ref = ?",
+                                        refused))
+                        .as("a refused pin writes nothing")
+                        .isZero();
+            }
+            assertThat(
+                            count(
+                                    app,
+                                    "SELECT count(*) FROM merchant.payment_fee_pin"
+                                            + " WHERE payment_intent_ref = ?",
+                                    covered))
+                    .as("a net of one minor unit is a sale, and it is pinned")
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
     @DisplayName("a pin is IMMUTABLE at the database - for the app role by a withheld grant,"
             + " and for the MIGRATOR by the trigger")
     void aPinCannotBeChanged() throws Exception {
@@ -732,6 +824,198 @@ class MerchantCaptureDatabaseTest {
         }
     }
 
+    // ----------------------------------------------------------------- the fee batch
+
+    @Test
+    @DisplayName("INV-MER-04 AT VOLUME (P6-TST-001): 360 assessments across three currencies, six"
+            + " rounding policies, seven rates and four fixed parts conserve every minor unit - the"
+            + " cumulative residual is ZERO per currency, and so is the trial balance")
+    void theFeeBatchConservesEveryMinorUnit() throws Exception {
+        // Through the capture's PRODUCTION seam - the pin, then the composition's lines posted
+        // under the capture's key in one transaction, exactly as PaymentOutcomes runs them -
+        // rather than through the provider: the provider path is the four-line test's subject,
+        // and this one's is the arithmetic and the books it lands in, at volume.
+        //
+        // Seeded, so a failure is reproducible from its message (FeeCalculationTest's rule).
+        java.util.Random random = new java.util.Random(20260923L);
+        List<CurrencyCode> currencies =
+                List.of(EUR, CurrencyCode.of("GBP"), CurrencyCode.of("USD"));
+        List<String> rates = List.of("0", "0.0001", "0.0175", "0.025", "0.029", "0.0999", "0.35");
+        long[] fixedParts = {0L, 1L, 25L, 30L};
+
+        java.util.Map<CurrencyCode, long[]> expected = new java.util.LinkedHashMap<>();
+        java.util.Map<CurrencyCode, List<Merchant>> merchants = new java.util.LinkedHashMap<>();
+        List<String> references = new ArrayList<>();
+        int index = 0;
+        for (CurrencyCode currency : currencies) {
+            LedgerAccountId clearing = clearingIn(currency);
+            for (RoundingPolicy rounding : RoundingPolicy.values()) {
+                BigDecimal rate = new BigDecimal(rates.get(index % rates.size()));
+                long fixed = fixedParts[index % fixedParts.length];
+                index++;
+                Merchant merchant =
+                        onboardedMerchant(
+                                rate.toPlainString(), fixed, RefundFeePolicy.RETAINED, currency,
+                                rounding);
+                merchants.computeIfAbsent(currency, key -> new ArrayList<>()).add(merchant);
+                for (long grossMinor : discriminatingAmounts(rate, random)) {
+                    references.add(
+                            assessAtCapture(
+                                    merchant, clearing, Money.ofMinorUnits(grossMinor, currency)));
+                    long[] sums = expected.computeIfAbsent(currency, key -> new long[2]);
+                    sums[0] += grossMinor;
+                    sums[1] += expectedFee(grossMinor, rate, fixed, rounding);
+                }
+            }
+        }
+        assertThat(references).as("the batch is the size it claims").hasSize(360);
+
+        try (Connection app = DatabaseRoles.application()) {
+            java.util.Map<String, Long> booked = bookedByLine(app, references);
+            for (CurrencyCode currency : currencies) {
+                String code = currency.code();
+                long gross = expected.get(currency)[0];
+                long fee = expected.get(currency)[1];
+
+                // The books against the formula, computed here independently of FeeCalculation.
+                assertThat(booked.get(code + " DEBIT:SETTLEMENT_CLEARING"))
+                        .as("%s: clearing received every gross", code)
+                        .isEqualTo(gross);
+                assertThat(booked.get(code + " CREDIT:MERCHANT_PAYABLE"))
+                        .as("%s: the payables were credited every gross", code)
+                        .isEqualTo(gross);
+                assertThat(booked.getOrDefault(code + " DEBIT:MERCHANT_PAYABLE", 0L))
+                        .as("%s: the payables were debited the fee each version computes", code)
+                        .isEqualTo(fee);
+                assertThat(booked.getOrDefault(code + " CREDIT:FEE_REVENUE", 0L))
+                        .as("%s: revenue earned exactly that fee", code)
+                        .isEqualTo(fee);
+
+                // THE RESIDUAL, read from the books alone: what clearing received, less what
+                // revenue earned, less what the payables now hold - derived, never stored.
+                long net = 0L;
+                for (Merchant merchant : merchants.get(currency)) {
+                    net +=
+                            new JdbcBalanceDerivation()
+                                    .derive(app, merchant.payable(), AsOf.latest())
+                                    .settled()
+                                    .minorUnits();
+                }
+                assertThat(
+                                booked.get(code + " DEBIT:SETTLEMENT_CLEARING")
+                                        - booked.getOrDefault(code + " CREDIT:FEE_REVENUE", 0L)
+                                        - net)
+                        .as("%s: the cumulative residual over the batch", code)
+                        .isZero();
+                assertThat(net).as("%s: the nets the formula leaves", code).isEqualTo(gross - fee);
+            }
+            com.finapp.ledger.TrialBalance.Report trial =
+                    new com.finapp.ledger.TrialBalance().sweep(app);
+            assertThat(trial.outOfBalance()).as("the trial balance is zero per currency").isEmpty();
+            assertThat(trial.currenciesVerified()).isGreaterThanOrEqualTo(3L);
+        }
+        assertThat(feeAssessments())
+                .as("each assessment counted once, at the seam")
+                .isEqualTo(360.0d);
+    }
+
+    /**
+     * Twenty sale amounts for {@code rate}: ten drawn at random, and ten on which
+     * {@code gross x rate} is an EXACT half - where HALF_EVEN, HALF_UP and the directed policies
+     * part company, and where a policy defaulted rather than used shows. A rate with no halves
+     * (zero) gets twenty random amounts. Every amount is at least 1.00, which the batch's dearest
+     * terms (35% + 0.30) still leave a positive net on, so no sale is below its fee (ADR-0058).
+     */
+    private static List<Long> discriminatingAmounts(BigDecimal rate, java.util.Random random) {
+        List<Long> amounts = new ArrayList<>();
+        long modulus = BigDecimal.TEN.pow(rate.scale()).longValueExact();
+        long numerator = rate.unscaledValue().longValueExact();
+        long gross = random.nextLong(100L, 100_000L);
+        while (numerator != 0L && amounts.size() < 10) {
+            if (Math.floorMod(gross * numerator, modulus) == modulus / 2) {
+                amounts.add(gross);
+            }
+            gross++;
+        }
+        while (amounts.size() < 20) {
+            amounts.add(random.nextLong(100L, 1_000_000L));
+        }
+        return amounts;
+    }
+
+    /** The documented formula, independently: round(gross x rate, policy) + fixed, in minor units. */
+    private static long expectedFee(
+            long grossMinor, BigDecimal rate, long fixedMinor, RoundingPolicy rounding) {
+        return new BigDecimal(grossMinor).multiply(rate).setScale(0, rounding.mode()).longValueExact()
+                + fixedMinor;
+    }
+
+    /**
+     * One capture's assessment through the PRODUCTION seam: the price pinned, then the lines
+     * composed and posted under the capture's own key in one transaction, and the seam's second
+     * moment - exactly PaymentOutcomes' sequence. Returns the entry's reference.
+     */
+    private String assessAtCapture(Merchant merchant, LedgerAccountId clearing, Money gross) {
+        UUID intentRef = pinFor(merchant, gross);
+        PaymentAttemptId attempt = PaymentAttemptId.of(IDS.next());
+        java.time.LocalDate today =
+                java.time.LocalDate.now(CLOCK.withZone(java.time.ZoneOffset.UTC));
+        CaptureComposition<Connection> composition = composition();
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
+            runner.inTransaction(
+                    uow -> {
+                        com.finapp.payments.CaptureSettlement capture =
+                                new com.finapp.payments.CaptureSettlement(
+                                        PaymentIntentId.of(intentRef),
+                                        attempt,
+                                        clearing,
+                                        merchant.payable(),
+                                        gross,
+                                        correlation(),
+                                        Instant.now(CLOCK));
+                        com.finapp.ledger.PostingResult posted =
+                                postings()
+                                        .post(
+                                                uow,
+                                                new com.finapp.ledger.PostingCommand(
+                                                        "payment-capture:" + attempt.value(),
+                                                        today,
+                                                        today,
+                                                        attempt.value().toString(),
+                                                        composition.settle(uow, capture)));
+                        composition.settled(uow, capture, posted.entryId().value());
+                        return null;
+                    });
+        }
+        return attempt.value().toString();
+    }
+
+    /** Every line of the named entries, summed by {@code CURRENCY DIRECTION:PURPOSE}. */
+    private static java.util.Map<String, Long> bookedByLine(Connection app, List<String> references)
+            throws SQLException {
+        java.util.Map<String, Long> booked = new java.util.HashMap<>();
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT line.currency, line.direction, account.purpose,"
+                                + " SUM(line.amount_minor) FROM ledger.journal_line line"
+                                + " JOIN ledger.journal_entry entry ON entry.id = line.entry_id"
+                                + " JOIN ledger.ledger_account account"
+                                + "   ON account.id = line.ledger_account_id"
+                                + " WHERE entry.reference = ANY (?)"
+                                + " GROUP BY line.currency, line.direction, account.purpose")) {
+            read.setArray(1, app.createArrayOf("text", references.toArray()));
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    booked.put(
+                            rows.getString(1).strip() + " " + rows.getString(2) + ":"
+                                    + rows.getString(3),
+                            rows.getBigDecimal(4).longValueExact());
+                }
+            }
+        }
+        return booked;
+    }
+
     // ----------------------------------------------------------------- fixtures
 
     private record Merchant(
@@ -745,6 +1029,20 @@ class MerchantCaptureDatabaseTest {
 
     /** `P6-TSK-014`: the policy is a version's term, so a suite that tests it must choose. */
     private Merchant onboardedMerchant(String rate, long fixedMinor, RefundFeePolicy policy)
+            throws Exception {
+        return onboardedMerchant(rate, fixedMinor, policy, EUR, RoundingPolicy.HALF_EVEN);
+    }
+
+    /**
+     * `P6-TST-001`: a merchant settling in {@code currency}, priced under {@code rounding} - the
+     * fee batch's two further dimensions.
+     */
+    private Merchant onboardedMerchant(
+            String rate,
+            long fixedMinor,
+            RefundFeePolicy policy,
+            CurrencyCode currency,
+            RoundingPolicy rounding)
             throws Exception {
         UUID party = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
@@ -775,7 +1073,7 @@ class MerchantCaptureDatabaseTest {
                                                             party,
                                                             "Acme GmbH",
                                                             "Acme",
-                                                            EUR)));
+                                                            currency)));
             MerchantId merchantId = onboarded.merchantId();
             LedgerAccountId payable =
                     runner.inTransaction(
@@ -785,7 +1083,7 @@ class MerchantCaptureDatabaseTest {
                                                     uow,
                                                     merchantId.value(),
                                                     AccountPurpose.MERCHANT_PAYABLE,
-                                                    EUR)
+                                                    currency)
                                             .orElseThrow()
                                             .id());
 
@@ -793,7 +1091,7 @@ class MerchantCaptureDatabaseTest {
                     runner.inTransaction(
                             uow ->
                                     feeSchedules()
-                                            .create(uow, "Std " + UUID.randomUUID(), EUR));
+                                            .create(uow, "Std " + UUID.randomUUID(), currency));
             FeeScheduleVersion version =
                     runner.inTransaction(
                             uow ->
@@ -803,8 +1101,9 @@ class MerchantCaptureDatabaseTest {
                                                     schedule.id(),
                                                     new FeeSchedules.NewVersion(
                                                             FeeRate.of(new BigDecimal(rate)),
-                                                            Money.ofMinorUnits(fixedMinor, EUR),
-                                                            RoundingPolicy.HALF_EVEN,
+                                                            Money.ofMinorUnits(
+                                                                    fixedMinor, currency),
+                                                            rounding,
                                                             policy,
                                                             Optional.empty(),
                                                             "initial pricing")));
