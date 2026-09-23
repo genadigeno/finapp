@@ -1,12 +1,14 @@
 package com.finapp.transfers;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The transfers module's auditable actions ({@code AUDITABLE_ACTIONS.md}), arriving with the
  * command whose design fixes their meaning — the {@code P2-TSK-005}/{@code P3-TSK-012}
  * precedent, exercised for this module by {@code P4-TSK-001}'s deliberate deferral.
  */
+@RequiredArgsConstructor
 public enum TransfersAuditAction implements AuditableAction {
 
     /**
@@ -82,12 +84,6 @@ public enum TransfersAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    TransfersAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

@@ -29,6 +29,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Closes a customer account product: the agreement ends, the accounting history does not
@@ -59,6 +61,7 @@ import java.util.UUID;
  * refuses it new lines. A successor agreement is a <em>new</em> aggregate: closure frees the
  * one-live slot ({@code INV-LIFE-04}'s asymmetry, decided by `P3-TSK-012`'s index).
  */
+@RequiredArgsConstructor
 public final class AccountClosing {
 
     /** One fact, named once, in two registries — the audit action carries the same code. */
@@ -71,34 +74,14 @@ public final class AccountClosing {
     /** The result: the agreement as it now stands, and whether this call ended it. */
     public record Closure(CustomerAccount account, boolean closed) {}
 
-    private final CustomerAccountStore<Connection> accounts;
-    private final LedgerAccountStore<Connection> ledgerAccounts;
-    private final BalanceDerivation<Connection> derivation;
-    private final HoldStore<Connection> holds;
-    private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public AccountClosing(
-            CustomerAccountStore<Connection> accounts,
-            LedgerAccountStore<Connection> ledgerAccounts,
-            BalanceDerivation<Connection> derivation,
-            HoldStore<Connection> holds,
-            AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
-            IdGenerator ids,
-            Clock clock) {
-        this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
-        this.ledgerAccounts =
-                Objects.requireNonNull(ledgerAccounts, "ledgerAccounts must not be null");
-        this.derivation = Objects.requireNonNull(derivation, "derivation must not be null");
-        this.holds = Objects.requireNonNull(holds, "holds must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final CustomerAccountStore<Connection> accounts;
+    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
+    @NonNull private final BalanceDerivation<Connection> derivation;
+    @NonNull private final HoldStore<Connection> holds;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * Ends the customer's agreement {@code accountId}, or converges on an already-ended one.

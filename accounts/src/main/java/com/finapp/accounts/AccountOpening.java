@@ -25,6 +25,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Opens a customer account product: the agreement and its ledger account, in one transaction
@@ -52,6 +54,7 @@ import java.util.UUID;
  * different currency: adding a currency to an existing product is a different act with no owner
  * this phase, recorded rather than smuggled in here.
  */
+@RequiredArgsConstructor
 public final class AccountOpening {
 
     /** One fact, named once, in two registries — the audit action carries the same code. */
@@ -61,31 +64,13 @@ public final class AccountOpening {
     static final int EVENT_VERSION = 1;
     static final String TARGET_TYPE = "customer_account";
 
-    private final CustomerAccountStore<Connection> accounts;
-    private final LedgerAccountStore<Connection> ledgerAccounts;
-    private final AccountHolderVerification<Connection> holders;
-    private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public AccountOpening(
-            CustomerAccountStore<Connection> accounts,
-            LedgerAccountStore<Connection> ledgerAccounts,
-            AccountHolderVerification<Connection> holders,
-            AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
-            IdGenerator ids,
-            Clock clock) {
-        this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
-        this.ledgerAccounts =
-                Objects.requireNonNull(ledgerAccounts, "ledgerAccounts must not be null");
-        this.holders = Objects.requireNonNull(holders, "holders must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final CustomerAccountStore<Connection> accounts;
+    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
+    @NonNull private final AccountHolderVerification<Connection> holders;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * Ensures the party's live account of {@code productType} exists, creating it — and its

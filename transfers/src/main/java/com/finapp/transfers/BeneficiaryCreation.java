@@ -4,6 +4,8 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.time.Clock;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Saves a destination for a party ({@code P4-TSK-006}): validate that the destination exists
@@ -29,24 +31,13 @@ import java.util.UUID;
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */
+@RequiredArgsConstructor
 public final class BeneficiaryCreation<T> {
 
-    private final TransferParticipants<T> participants;
-    private final BeneficiaryStore<T> beneficiaries;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public BeneficiaryCreation(
-            TransferParticipants<T> participants,
-            BeneficiaryStore<T> beneficiaries,
-            IdGenerator ids,
-            Clock clock) {
-        this.participants = Objects.requireNonNull(participants, "participants must not be null");
-        this.beneficiaries =
-                Objects.requireNonNull(beneficiaries, "beneficiaries must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final TransferParticipants<T> participants;
+    @NonNull private final BeneficiaryStore<T> beneficiaries;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * Save the destination for the party, converging onto an already-live row for the same

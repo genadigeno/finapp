@@ -1,6 +1,7 @@
 package com.finapp.transfers;
 
 import com.finapp.platform.api.ErrorCode;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The failures this module reports to a client (`P4-TSK-007`).
@@ -14,6 +15,7 @@ import com.finapp.platform.api.ErrorCode;
  * byte-identical across its causes — a distinct code would make the endpoint an oracle over
  * other people's saved destinations (the {@code P1-TSK-016} reasoning).
  */
+@RequiredArgsConstructor
 public enum TransfersErrorCode implements ErrorCode {
 
     /**
@@ -69,12 +71,6 @@ public enum TransfersErrorCode implements ErrorCode {
     private final String code;
     private final int status;
     private final String title;
-
-    TransfersErrorCode(String code, int status, String title) {
-        this.code = code;
-        this.status = status;
-        this.title = title;
-    }
 
     @Override
     public String code() {
