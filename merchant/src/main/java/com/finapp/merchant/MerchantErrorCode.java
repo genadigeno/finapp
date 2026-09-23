@@ -139,7 +139,41 @@ public enum MerchantErrorCode implements ErrorCode {
     DESTINATION_TOKENISATION_UNAVAILABLE(
             "merchant.DestinationTokenisationUnavailable",
             503,
-            "The destination could not be tokenised right now; retry later.");
+            "The destination could not be tokenised right now; retry later."),
+
+    /**
+     * The payable cannot fund the payout (`P6-TSK-012`, {@code INV-MER-05}): judged under the
+     * payable's lock with every in-flight payout held — a payable left negative by a retained
+     * fee refuses every amount (ADR-0054). Nothing is written; a later retry may fit.
+     */
+    PAYOUT_UNFUNDED(
+            "merchant.PayoutUnfunded",
+            409,
+            "The payable cannot fund this payout."),
+
+    /** No {@code EFFECTIVE} payout destination, so there is nowhere to pay (ADR-0056 §9). */
+    NO_EFFECTIVE_DESTINATION(
+            "merchant.NoEffectiveDestination",
+            409,
+            "The merchant has no effective payout destination."),
+
+    /** The merchant is suspended or closed, and suspension gates new dispatches. */
+    NOT_TRADING(
+            "merchant.NotTrading",
+            409,
+            "This merchant cannot initiate payouts while suspended or closed."),
+
+    /** A payout in a currency other than the merchant's settlement currency (one payable). */
+    PAYOUT_CURRENCY_MISMATCH(
+            "merchant.PayoutCurrencyMismatch",
+            422,
+            "A payout must be in the merchant's settlement currency."),
+
+    /** No payout provider is configured on this instance: nothing was dispatched. */
+    PAYOUT_PROVIDER_UNAVAILABLE(
+            "merchant.PayoutProviderUnavailable",
+            503,
+            "Payouts are unavailable right now; retry later.");
 
     private final String code;
     private final int status;

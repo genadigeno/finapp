@@ -416,7 +416,14 @@ class CredentialReachesNoEmittedSinkTest {
                         "ProposePayoutDestinationRequest",
                         // P6-TSK-011. The approve / reject / withdraw body: a free-text reason
                         // and nothing else, the SuspensionRequest shape.
-                        "PayoutDestinationDecisionRequest");
+                        "PayoutDestinationDecisionRequest",
+                        // P6-TSK-012. The merchant's payout: an amount and a currency, and
+                        // deliberately no destination - a payout goes only to the effective one,
+                        // so there is no field a redirecting value could arrive in.
+                        "MerchantPayoutRequest",
+                        // P6-TSK-012. The operator's payout on the merchant's behalf: the same
+                        // two fields plus the free-text reason the audit record requires.
+                        "OperatorPayoutRequest");
     }
 
     @Test

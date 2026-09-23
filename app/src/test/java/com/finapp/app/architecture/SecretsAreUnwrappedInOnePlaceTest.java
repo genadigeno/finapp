@@ -267,7 +267,12 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     "com.finapp.merchant.PayoutDestinations",
                     // P6-TSK-011. The grant onto the exchange wire, the one place it
                     // legitimately goes - the SimulatedTokenisationAdapter claim for bank data.
-                    "com.finapp.merchant.SimulatedPayoutDestinationTokenisation");
+                    "com.finapp.merchant.SimulatedPayoutDestinationTokenisation",
+                    // P6-TSK-012. The destination's reference onto the payout wire - the
+                    // provider's own handle for the account, sent to the provider that issued
+                    // it, which is the one place besides its column it must exist bare. The
+                    // request's toString names neither it nor the amount.
+                    "com.finapp.merchant.SimulatedPayoutProvider");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

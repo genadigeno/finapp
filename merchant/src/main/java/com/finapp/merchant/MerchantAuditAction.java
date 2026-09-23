@@ -181,6 +181,42 @@ public enum MerchantAuditAction implements AuditableAction {
             "The platform made an approved payout destination effective once its cooling-off"
                     + " elapsed, superseding the previous one in the same transaction; the record"
                     + " names both by identifier.",
+            false),
+
+    /**
+     * A merchant initiated a payout of its payable with its own API key (`P6-TSK-012`): judged
+     * under the payable's lock, held, dispatched. The record names the payout, the merchant, the
+     * destination version and our reference by identifier — and the API key that acted, as
+     * ADR-0052 §2 requires of a merchant's act. No reason: the merchant's own request carries
+     * none. Emitted by the dispatching call only — a replay and a takeover record nothing.
+     */
+    MERCHANT_PAYOUT_INITIATED(
+            "merchant.MerchantPayoutInitiated",
+            "A merchant initiated a payout of its payable with its API key; the record names the"
+                    + " payout, the destination and the key by identifier.",
+            false),
+
+    /**
+     * An operator initiated a payout on the merchant's behalf (`P6-TSK-012`, ADR-0057 §6),
+     * over {@code MERCHANT_PAYOUT}. <strong>Reasoned, always</strong>: money leaves the platform
+     * because a person asked, and the record is what explains it.
+     */
+    MERCHANT_PAYOUT_INITIATED_BY_OPERATOR(
+            "merchant.MerchantPayoutInitiatedByOperator",
+            "An operator initiated a payout of a merchant's payable on its behalf; the reason is"
+                    + " required.",
+            true),
+
+    /**
+     * The platform applied the payout provider's answer — completed, failed or unknown — through
+     * an enumerated {@code enterSystem()} site: the dispatch's own outcome transaction or the
+     * resolution sweep. Acting transitions only, so ten racing resolvers leave one record. No
+     * reason: no person decided anything at that moment.
+     */
+    MERCHANT_PAYOUT_OUTCOME_APPLIED(
+            "merchant.MerchantPayoutOutcomeApplied",
+            "The platform applied the payout provider's answer to a payout (completed, failed or"
+                    + " unknown); acting transitions only.",
             false);
 
     private final String code;

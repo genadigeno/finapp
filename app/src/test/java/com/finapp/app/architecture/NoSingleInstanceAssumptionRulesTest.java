@@ -148,7 +148,14 @@ class NoSingleInstanceAssumptionRulesTest {
                     // so N schedules on one due change produce one EFFECTIVE between them.
                     // Register row: DISTRIBUTED_EXECUTION.md section 3; the N-way race is
                     // PayoutDestinationDatabaseTest's.
-                    "com.finapp.app.merchant.PayoutDestinationEffectuationSchedule");
+                    "com.finapp.app.merchant.PayoutDestinationEffectuationSchedule",
+                    // P6-TSK-012: the PaymentSweeperSchedule half again, pointed at payouts.
+                    // The provider query is read-only and idempotent by our reference, and
+                    // every write is a conditional transition on a locked payout row whose
+                    // losers converge - so N schedules, the synchronous answer and a takeover's
+                    // re-send are one counted race. Register row: DISTRIBUTED_EXECUTION.md
+                    // section 3; the ten-sweeper race is MerchantPayoutDatabaseTest's.
+                    "com.finapp.app.merchant.MerchantPayoutResolutionSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

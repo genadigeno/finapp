@@ -189,5 +189,20 @@ public enum PermissionName {
      * where money goes is a real future split, one role because nothing has yet taken that
      * decision.
      */
-    PAYOUT_DESTINATION_APPROVE
+    PAYOUT_DESTINATION_APPROVE,
+
+    /**
+     * Initiate a payout of a merchant's payable on the merchant's behalf (`P6-TSK-012`,
+     * ADR-0057 §6) — the operator route beside the merchant's own API-key route, reasoned and
+     * audited as {@code merchant.MerchantPayoutInitiatedByOperator}. Ships with its real check
+     * site, {@code POST /v1/operator/merchants/'{merchantId}'/payouts}.
+     *
+     * <p><strong>Money leaves the platform, so it is the money-operating population's</strong>:
+     * held by {@link RoleName#LEDGER_OPERATOR} beside {@link #PAYMENT_REFUND}, never by
+     * {@link RoleName#MERCHANT_ADMINISTRATOR} — onboarding opens books and moves nothing through
+     * them, which is the sentence that role's javadoc wrote for this permission's arrival. What
+     * the holder cannot do is choose where the money goes: a payout dispatches only to the
+     * merchant's effective destination, which four-eyes and a cooling-off guard (ADR-0056).
+     */
+    MERCHANT_PAYOUT
 }

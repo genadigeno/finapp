@@ -375,7 +375,14 @@ class MerchantOnboardingDatabaseTest {
                     // moment the table arrived, which is the list working rather than failing.
                     "payment_fee_pin.gross_amount_minor",
                     "payment_fee_pin.gross_currency",
-                    "payment_fee_pin.gross_scale");
+                    "payment_fee_pin.gross_scale",
+                    // P6-TSK-012: what ONE payout moves, not what the merchant is owed. The
+                    // amount is the hold's size while the payout is in flight and the
+                    // merchant-payout:<payoutId> posting's once it completes - the payable
+                    // itself still exists only in the ledger, and no row sums payouts into a
+                    // figure. The sweep flagged it the moment V007 arrived: the list working.
+                    // (currency and scale carry no flagged word, so only the amount is named.)
+                    "merchant_payout.amount_minor");
 
     @Test
     @DisplayName("no balance column exists in the live merchant schema (INV-MER-02's sweep)")

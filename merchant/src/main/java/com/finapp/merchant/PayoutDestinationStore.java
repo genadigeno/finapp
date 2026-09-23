@@ -46,6 +46,14 @@ public interface PayoutDestinationStore<T> {
     Optional<PayoutDestination> findEffectiveForUpdate(T unitOfWork, MerchantId merchant);
 
     /**
+     * The same, share-locked — the payout dispatch's read (`P6-TSK-012`, ADR-0057 §7): a
+     * supersession's {@code FOR UPDATE} waits for the payout to commit, so the destination a
+     * payout records was still the effective one when it committed. Payouts share it; they
+     * serialise on the payable, never on this.
+     */
+    Optional<PayoutDestination> findEffectiveForShare(T unitOfWork, MerchantId merchant);
+
+    /**
      * Approved changes whose cooling-off has elapsed at {@code now}, oldest deadline first, at
      * most {@code limit} — the effectuation sweep's candidates. A candidate is a hint, never a
      * judgement: the sweep re-reads it locked and re-judges it against the clock.

@@ -131,6 +131,10 @@ class CheckoutFlowDatabaseTest {
         registry.add("finapp.paymentmethods.tokenisation.timeout", () -> "PT0.7S");
         registry.add("finapp.payments.provider.url", () -> provider.baseUrl());
         registry.add("finapp.payments.provider.timeout", () -> "PT0.7S");
+        // P6-TSK-012: the payout provider on the same harness, so a payout can stand in flight
+        // beside a merchant refund - the refund-beside-a-payout clause, driven for real.
+        registry.add("finapp.merchant.payout.provider.url", () -> provider.baseUrl());
+        registry.add("finapp.merchant.payout.provider.timeout", () -> "PT0.7S");
     }
 
     @BeforeEach
@@ -621,6 +625,31 @@ class CheckoutFlowDatabaseTest {
         return get("/v1/merchant/payable", merchant.apiKey());
     }
 
+    /**
+     * An EFFECTIVE payout destination for {@code merchant} (`P6-TSK-012`): its four-eyes flow is
+     * {@code PayoutDestinationDatabaseTest}'s subject, so the row is a fixture whose timestamps
+     * satisfy `V006`'s approval and cooling-off CHECKs.
+     */
+    private static void effectiveDestinationFor(Merchant merchant) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement insert =
+                        app.prepareStatement(
+                                "INSERT INTO merchant.payout_destination (id, merchant_id,"
+                                        + " destination_reference, display_suffix, status,"
+                                        + " proposed_by, proposed_at, proposal_reason, approved_by,"
+                                        + " approved_at, cooling_off_until, effective_at) VALUES"
+                                        + " (?, ?, ?, '3000', 'EFFECTIVE', 'fixture-a', now() -"
+                                        + " interval '4 days', 'fixture', 'fixture-b', now() -"
+                                        + " interval '4 days', now() - interval '1 day', now() -"
+                                        + " interval '1 hour')")) {
+            insert.setObject(1, IDS.next());
+            insert.setObject(2, UUID.fromString(merchant.id()));
+            insert.setString(
+                    3, "pdr_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+            insert.executeUpdate();
+        }
+    }
+
     /** A real refund through the operator surface, approved by the simulated provider. */
     private void refund(String intentId, String amount) throws Exception {
         provider.succeedsWith(
@@ -722,7 +751,10 @@ class CheckoutFlowDatabaseTest {
         }
     }
 
-    /** position == captured - fees - refunded + feesReturned + other, read from the body. */
+    /**
+     * position == captured - fees - refunded + feesReturned - paidOut + other, read from the
+     * body ({@code paidOut} its own term since `P6-TSK-012`).
+     */
     private static boolean explainsItself(String body) {
         java.math.BigDecimal position = new java.math.BigDecimal(field(body, "position"));
         java.math.BigDecimal terms =
@@ -730,6 +762,7 @@ class CheckoutFlowDatabaseTest {
                         .subtract(new java.math.BigDecimal(field(body, "fees")))
                         .subtract(new java.math.BigDecimal(field(body, "refunded")))
                         .add(new java.math.BigDecimal(field(body, "feesReturned")))
+                        .subtract(new java.math.BigDecimal(field(body, "paidOut")))
                         .add(new java.math.BigDecimal(field(body, "other")));
         return position.compareTo(terms) == 0;
     }
@@ -1171,6 +1204,92 @@ class CheckoutFlowDatabaseTest {
                 assertThat(derivedPayableMinor(app, merchant)).isEqualTo(position);
             }
         }
+    }
+
+    @Test
+    @DisplayName("P6-TSK-012 (inherited from P6-TSK-015): a refund dispatched while a payout is in"
+            + " flight is judged against what the payout's hold leaves")
+    void aRefundBesideAPayoutInFlightIsJudgedAgainstItsHold() throws Exception {
+        // Driven for real, end to end: a checkout captures 100.00 (the payable holds its 96.80
+        // net), a payout of 80.00 goes out and its provider never answers - UNKNOWN, its hold
+        // STANDING - and a merchant refund is then judged against the payable's available
+        // position, which is the net less every standing hold, the payout's included.
+        Merchant merchant = tradingMerchant("0.029", 30L, "RETURNED");
+        String intent = intentOfSession(purchase(merchant, payingCustomer()));
+        effectiveDestinationFor(merchant);
+        provider.neverResponds(com.finapp.merchant.SimulatedPayoutProvider.PAYOUTS_PATH);
+        HttpResponse<String> payout =
+                post(
+                        "/v1/merchant/payouts",
+                        "{\"amount\":\"80.00\",\"currency\":\"EUR\"}",
+                        merchant.apiKey(),
+                        someKey());
+        assertThat(payout.statusCode()).as(payout.body()).isEqualTo(201);
+        assertThat(field(payout.body(), "status")).isEqualTo("UNKNOWN");
+
+        // 30.00 reserves its net, 29.04 - more than the 16.80 the payout's hold leaves.
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.REFUNDS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_ref-" + UUID.randomUUID() + "\"}");
+        HttpResponse<String> refused =
+                post(
+                        "/v1/payments/" + intent + "/refund",
+                        "{\"amount\":\"30.00\",\"currency\":\"EUR\",\"reason\":\"goods returned\"}",
+                        operatorSession(RoleName.LEDGER_OPERATOR),
+                        someKey());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("payments.RefundUnfunded");
+
+        // 10.00 reserves 9.68, which fits: the payable is judged, not frozen.
+        refund(intent, "10.00");
+        assertThat(heldOn(merchant))
+                .as("the payout's hold still stands beside the released refund's")
+                .containsExactlyInAnyOrder("8000:ACTIVE", "968:RELEASED");
+    }
+
+    @Test
+    @DisplayName("P6-TSK-012 (inherited from P6-TSK-015): a payable left negative by a RETAINED fee"
+            + " refuses every payout until a later capture restores it")
+    void aPayableLeftNegativeByARetainedFeeRefusesEveryPayout() throws Exception {
+        // Driven for real: a sale of 100.00 (the payable holds its 96.80 net) refunded in full
+        // under RETAINED - the gross out, the 3.20 fee kept - leaves the payable owing 3.20.
+        Merchant merchant = tradingMerchant("0.029", 30L, "RETAINED");
+        refund(intentOfSession(purchase(merchant, payingCustomer())), "100.00");
+        effectiveDestinationFor(merchant);
+        provider.succeedsWith(
+                com.finapp.merchant.SimulatedPayoutProvider.PAYOUTS_PATH,
+                200,
+                "{\"status\":\"paid\",\"reference\":\"po-{{request.headers.Idempotency-Key}}\"}");
+
+        HttpResponse<String> owing = payoutOf(merchant, "0.01");
+        assertThat(owing.statusCode()).as(owing.body()).isEqualTo(409);
+        assertThat(owing.body()).contains("merchant.PayoutUnfunded");
+
+        // The next sale repays the debt first: 96.80 - 3.20 = 93.60 may leave, and not a cent
+        // more.
+        purchase(merchant, payingCustomer());
+        HttpResponse<String> over = payoutOf(merchant, "93.61");
+        assertThat(over.statusCode()).as(over.body()).isEqualTo(409);
+        HttpResponse<String> paid = payoutOf(merchant, "93.60");
+        assertThat(paid.statusCode()).as(paid.body()).isEqualTo(201);
+        assertThat(field(paid.body(), "status")).isEqualTo("COMPLETED");
+
+        String body = payable(merchant).body();
+        assertThat(explainsItself(body)).as(body).isTrue();
+        assertThat(body).contains("\"paidOut\":\"93.60\"").contains("\"position\":\"0.00\"");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePositionMinor(app, merchant)).as("paid out to exactly zero").isZero();
+            assertThat(derivedPayableMinor(app, merchant)).isZero();
+        }
+    }
+
+    private HttpResponse<String> payoutOf(Merchant merchant, String amount) throws Exception {
+        return post(
+                "/v1/merchant/payouts",
+                "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\"}",
+                merchant.apiKey(),
+                someKey());
     }
 
     @Test

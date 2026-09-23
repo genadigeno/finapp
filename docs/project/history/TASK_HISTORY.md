@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 137 "Previously" blocks, newest first, from `P6-TSK-015` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 138 "Previously" blocks, newest first, from `P6-TSK-011` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,40 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P6-TSK-011` — the payout destination: step-up, four-eyes, cooling-off** — `COMPLETE`
+(2026-09-23). **M6.5 opens: no one person can redirect a merchant's money, and no change
+redirects it at once.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Approve-by-proposer refused and audited | Refused at the aggregate, in the statement and by `V006`'s CHECK; the refusal commits its `DENIED` record, then answers 409. Each layer probed |
+| A dispatch during the cooling-off uses the prior destination | Proven against the real schema, and the new one after the deadline. Caught once the deadline is gone from every layer |
+| The propose/approve/supersede races counted to one effective row | Ten proposals leave one open change, ten approvers one approval, ten sweeps one effective row and one supersession. Each race's arbiter probed |
+
+### The design (ADR-0056)
+
+- **Two distinct operators**, not a merchant and an operator: a merchant has only a machine key
+  this phase, and a leaked server key must not be one click from redirecting its money.
+- **A cooling-off** (default 72 hours) pinned on the row at approval, and **withdrawable** during
+  it: a window nothing can act on is a delay, not a control.
+- **A leaderless sweep** produces `EFFECTIVE` and supersedes the old destination in the same
+  transaction; partial indexes keep one open change and one effective destination per merchant.
+- **Bank details never enter**: a provider grant is exchanged for an opaque reference and a
+  four-character suffix, and account-shaped values are refused at every layer.
+
+### What the gate found
+
+- **A fifth cooling-off layer.** With the deadline removed everywhere the design counted, the
+  timeline test still passed, because the sweep's candidate query filtered on it. Probed
+  separately, and both results recorded.
+- **Demonstrations claimed but never performed.** Two tests had never failed under a probe, and
+  three invariants the ADR claimed had none. All are now probed and caught. The ADR's `INV-LIFE`
+  claim was withdrawn instead, because a destination is not a money-moving operation.
+- Three untested claims are now tested, and three inaccuracies corrected, among them "the first
+  four-eyes subject": manual adjustments have been that since Phase 3.
 
 ### Previously
 

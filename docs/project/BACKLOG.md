@@ -7698,7 +7698,7 @@ negative payable** — `COMPLETE` (2026-09-23)
   enumeration and column classification. **The full battery deliberately skipped on the owner's
   instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TSK-012 — The payout: hold-then-dispatch on the payable** — `READY`
+**P6-TSK-012 — The payout: hold-then-dispatch on the payable** — `COMPLETE` (2026-09-23)
 - **Objective**: ADR-0051 whole — money leaves the platform under Phase 5's disciplines
   pointed outward. Bounded context 12.
 - **Scope**: initiate (merchant key or operator, keyed) → the bound judged inside the
@@ -7724,8 +7724,124 @@ negative payable** — `COMPLETE` (2026-09-23)
   `EFFECTIVE` destination, and records the destination id it used (each change is its own
   immutable row, so the id is the destination version).
 - **Risk**: High (outbound money). **Cx**: XL. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`
+- **Design decisions (2026-09-23, ADR-0057)**: four states, not five — the planned `REQUESTED`
+  has no producer, since the dispatch transaction judges, holds and commits `DISPATCHED`
+  atomically (ADR-0044) — with `FAILED` recording why (`DECLINED`, `PROVIDER_UNAVAILABLE`,
+  `NEVER_RECEIVED`). **Found by the design**: the payout is the first flow with both a re-sending
+  takeover and a sweep that can conclude "never received", and together they could fail a
+  payout, release its hold and still see it paid. Closed by a **send permit**
+  (`last_dispatched_at`, committed before every send, conditional on the payout still being
+  resolvable), with `NEVER_RECEIVED` concluded only past the permit's bound on the locked row;
+  and a refused connection fails a payout only on its **first** send. The claim is scoped per
+  merchant. The operator initiates over its own route and a new `MERCHANT_PAYOUT` in
+  `LEDGER_OPERATOR` (the populations are disjoint, ADR-0052), with a reason. The destination is
+  share-locked at dispatch and bound by a composite FK and an insert trigger. `PAYOUT_CLEARING`
+  is a credit-normal `LIABILITY` (ledger `V012`). The evidence is encrypted under its own key.
+  The webhook is deferred: the query sweep resolves. Every resolver locks the payout first, so
+  the refund's losing-resolver report is not inherited.
+- **Completion gate (2026-09-23)** — thirty-three mutations in thirty-five runs. Every valid one
+  was caught, and every restore was verified byte-identical, the whole tree compared before and
+  after each run:
+  - **The bound, at every rank.** A hold of one minor unit instead of the payout's amount: six of
+    ten racers dispatched against 100.00, and a refund beside a payout in flight was admitted,
+    in both suites; after a `RETAINED` refund, 93.61 left against a 93.60 remainder. A completion
+    that posts nothing: all ten dispatched. A completion that keeps its hold: five tests.
+    `paidOut` unclassified: the term read zero while the position still summed.
+  - **The send permit, both halves** (ADR-0057 §4). The takeover's conditional renewal
+    neutralised: caught by the new race, with `V007` turning it into a loud P0001. With that
+    clause removed too, the takeover re-sent a payout a resolver had just failed. The resolvers'
+    row lock dropped: caught by the new sweep-side race, and by nothing else. The re-judgement's
+    arithmetic replaced by `true`, and the sweep's candidate filter neutralised: each caught by
+    its own test.
+  - **Ambiguity stays ambiguous.** `firstSend` dropped: a re-send's refused connection failed a
+    payout the first send may have paid.
+  - **The machine.** Born anywhere (the insert trigger dropped); the trigger's status clause
+    alone (a payout to a `PROPOSED` destination stored); a backward edge admitted by `V007`; the
+    aggregate's edge check removed; a terminal state given an edge. Each was caught, the
+    trigger's edges and the terminal states at two ranks.
+  - **The claimed boundaries**, each probed: the operator route's permission widened to
+    `MERCHANT_ADMINISTER`; the tenancy predicate dropped from the read and from the dispatch-key
+    lookup; the claim's scope made constant; the takeover minting a fresh reference; the operator
+    audited as the merchant; the amount dropped from the fingerprint; the replay rendering the
+    current status; the evidence stored in the clear; the amount in the facts, as a decimal
+    (refused by `EventPayload` itself) and in minor units (caught by the needle alone).
+  - **Recorded and not claimed**: the destination's share lock and the merchant row's lock, each
+    caught by the one test written for it (`MUTATION_TESTING.md` §3); and the composite foreign
+    key, which alone refused another merchant's destination (23503) once the trigger's clause
+    was removed.
+- **What the gate found, and fixed**:
+  - (1) **Claims with no test that could fail them.** Both halves of the send permit's race: the
+    takeover's conditional, which the takeover-after-sweep test never reached because an unlocked
+    `isResolvable()` pre-check stops it first; and the resolvers' row lock, which the test named
+    for it (`theBoundIsRejudgedUnderTheLock`) never exercised, being single-threaded. Also the
+    release belt (§12), the two ordering locks (§7, §11), and the sensitive-data needle: no
+    amounts in the facts, no destination reference in facts or records, ciphertext at rest. Every
+    one is now tested and probed.
+  - (2) **`V007`'s edge rule had no behavioural demonstration.** Its only raw-SQL edge
+    assertion, `FAILED → UNKNOWN`, is refused by the recorded-outcome clause before the edge rule
+    runs. `UNKNOWN → DISPATCHED` is the move only the edge rule refuses, and it is now asserted.
+  - (3) **Three inherited clauses were proven only by composition** and are now driven end to
+    end: the refund beside a payout in flight, and the negative payable after a `RETAINED`
+    refund, both through checkout; and timeout → standing hold → query-resolved over HTTP, with
+    the replay after resolution answering the original judgement.
+  - (4) **Invalid probes were found, and not counted.** The candidate-filter probe broke the
+    query instead of removing the filter (42P18: pgjdbc binds a `Timestamp` untyped); it was
+    re-run as `<= ? OR true`. The decimal amount was refused by `EventPayload` before the needle
+    could see it. That is itself a finding: the platform primitive refuses decimals but admits
+    digits, so the minor-unit form is the leak only the needle catches. One run never started
+    (the Testcontainers reaper) and was repeated.
+  - (5) **ADR-0057 corrected**: §4's premise now names the clock skew between instances, and
+    the invariant list separates what is protected here from what is relied on (`INV-LED-01`,
+    `INV-BAL-05`, `INV-EVT-01`).
+- **Findings recorded with owners**:
+  - **A stuck payout is detectable but not alertable on its own** until the payout series exist
+    (`DOD-FIN` 1.11): recorded in `CURRENT_STATE.md` §Partially Satisfied Definition of Done,
+    owned by `P6-TSK-013`.
+  - **The resolvers' lock is not the counted race's arbiter**: the conditional transition is.
+    The lock is what makes the send permit's re-judgement sound (above).
+  - **No operator read route for a payout.** An operator can initiate on a merchant's behalf but
+    reads it only through the merchant's own surface. Out of this task's scope; a candidate for
+    the operator surface when it is built.
+  - **A load-sensitive test outside this task.** `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable`
+    (`P5-TSK-005`) failed once in a fresh fleet-wide run. Its 200 ms client timeout raced the
+    simulated provider's request journal under build load, and it passed alone and in the repeat.
+    It is offered as its own task: a bounded wait in place of the instant count.
+- **Multi-instance `PASS`.** Every decision is arbitrated in PostgreSQL:
+  - the bound by the payable account's row lock, ten racers counted to the affordable set;
+  - the destination and the merchant's standing by the dispatch's share and row locks, each loser
+    observed Lock-waiting;
+  - each payout's outcome by its row lock and the conditional transition beneath it, ten sweeps
+    to one outcome;
+  - the send permit by its conditional renewal and the resolvers' lock, both halves of the race
+    driven.
 
-**P6-TSK-013 — The meters and the dashboard row** — `PLANNED`
+  Nothing rests on one JVM, and the premise the permit needs — a bound above the clock skew — is
+  stated.
+- **Registers**:
+  - `MUTATION_TESTING`: §2 +28 rows, §3 +1 paragraph;
+  - ADR-0057 `Proposed`, its premise and invariant list corrected by the gate; ADR-0051 refined;
+  - merchant `V007` (the payout, its history and its evidence; the insert and edge triggers; the
+    composite foreign key) and ledger `V012` (`PAYOUT_CLEARING` in three currencies);
+  - three operations over three paths, and the OpenAPI baseline;
+  - `MERCHANT_PAYOUT` joins `LEDGER_OPERATOR`;
+  - `AUDITABLE_ACTIONS` +3, `ERROR_CONTRACT` +5, `DATA_CLASSIFICATION` +33 rows;
+  - `DISTRIBUTED_EXECUTION` §3 +1 row; `MODULE_ARCHITECTURE`;
+  - `CHECKOUT_MERCHANT_LIFECYCLES` §4, `PHASE_6_PLAN` §4/§5/§8/§9/§11;
+  - `CURRENT_STATE` §Partially Satisfied Definition of Done +1 row.
+
+  Three events (`MerchantPayoutInitiated`, `-Completed`, `-Failed`) and one posting.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1524 tests across 14 modules, 0 failures**, and **256 targeted database tests across 24
+  suites, 0 failures**: every merchant suite, every checkout suite, the payment refund and
+  capture suites, the ledger account, hold and balance suites, both adjustment suites,
+  deny-by-default, role-assignment concurrency, the MFA-bypass enumeration and column
+  classification. The first fleet-wide hermetic run failed one test outside this task,
+  `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` (`paymentmethods`, untouched); it
+  passed alone, 7 of 7, and the fleet-wide repeat above is the counted run. **The full battery
+  was deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
+  are claimed.**
+
+**P6-TSK-013 — The meters and the dashboard row** — `READY`
 - **Objective**: `PHASE_6_PLAN.md` §15's six series, the established conventions.
 - **Scope**: session outcomes (acting only), conversion age, fee assessments (counts,
   never amounts), payout outcomes, stuck-payout gauges (NaN-never-zero, floored,
@@ -7868,7 +7984,15 @@ negative payable** — `COMPLETE` (2026-09-23)
 - **Input from `P6-TSK-015`'s gate**: `DECISIONS.md` carries no Phase 6 section. ADR-0050…0054
   are indexed only in `docs/adr/README.md`, which is the omission `P2-DOC-001` found once
   before and corrected at its review. *(`P6-TSK-011` adds ADR-0056 to the same set: the Phase 6
-  section owes it too.)*
+  section owes it too; `P6-TSK-012` adds ADR-0057.)*
+- **Input from `P6-TSK-012`'s design**: three recorded disagreements between the documents and
+  the code, owned here because each spans the phase rather than one task. (1) ADR-0052 §2 says
+  every merchant-API audit record names the key that acted; the payout's records do, the checkout
+  session's do not yet. (2) Every idempotency scope is a constant, so two merchants reusing one
+  key value collide as `api.Conflict` on `checkout.session`; the payout scopes its claim per
+  merchant, as ADR-0004 intends. (3) `PHASE_6_PLAN.md` §10 says event payloads carry "never
+  amounts", but `merchant.FeeAssessed` and `merchant.FeeReturned` carry them, with a test
+  asserting it. The review decides which side each document is on.
 - **Deps**: everything above. **Accept**: the review's verdict flips the status; the
   post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
 

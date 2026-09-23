@@ -274,56 +274,69 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-012` — the payout: hold-then-dispatch on the payable** — `READY`. **M6.5 at 1 of
-2.** ADR-0051 whole: money leaves the platform under Phase 5's disciplines pointed outward. The
-bound is judged inside the payable account's lock with in-flight holds cumulative
-(`INV-MER-05`); the hold is placed; `DISPATCHED` and our minted reference are committed before
-the wire; completion releases the hold and posts the payout, failure releases it, and `UNKNOWN`
-leaves it standing until a query resolves it. Scope, acceptance and DoD in the backlog entry.
-**What it inherits from `P6-TSK-011`** (ADR-0056 §9): the dispatch reads
-`PayoutDestinations.effectiveFor` in its own transaction, refuses when the merchant has no
-`EFFECTIVE` destination, and records the destination id it used. Each change is its own
-immutable row, so the id is the destination's version. **And from M6.4**: a payable left
-negative by a retained fee refuses every payout until later captures restore it (ADR-0054),
-already written into its accept.
+**`P6-TSK-013` — the meters and the dashboard row** — `READY`. **M6.6 opens at 0 of 3.**
+`PHASE_6_PLAN.md` §15's six series under the established conventions: session outcomes (acting
+only), conversion age, fee assessments (counts, never amounts), payout outcomes, the
+stuck-payout gauges (NaN-never-zero, floored, fleet-wide `max()`) and pending destinations,
+eager from a plain context, with the dashboard row resolving against a live scrape. Scope,
+acceptance and DoD (`DOD-OBS`) in the backlog entry.
+
+**What it inherits.** One of the six is registered already: `P6-TSK-011`'s
+`finapp.merchant.destination.pending`. The rows the payout series read have existed since
+`P6-TSK-012` — the status, `last_dispatched_at` and the history table — so the stuck-payout
+gauges read what the resolution sweep reads. It also closes `P6-TSK-012`'s one partially
+satisfied DoD item ([§Partially Satisfied Definition of Done](#partially-satisfied-definition-of-done)):
+a stuck payout is detectable today but not alertable on its own.
 
 ### Just completed
 
-**`P6-TSK-011` — the payout destination: step-up, four-eyes, cooling-off** — `COMPLETE`
-(2026-09-23). **M6.5 opens: no one person can redirect a merchant's money, and no change
-redirects it at once.**
+**`P6-TSK-012` — the payout: hold-then-dispatch on the payable** — `COMPLETE` (2026-09-23).
+**M6.5 closes: money leaves the platform under the bound, and an ambiguous answer never
+releases what may already have been paid.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Approve-by-proposer refused and audited | Refused at the aggregate, in the statement and by `V006`'s CHECK; the refusal commits its `DENIED` record, then answers 409. Each layer probed |
-| A dispatch during the cooling-off uses the prior destination | Proven against the real schema, and the new one after the deadline. Caught once the deadline is gone from every layer |
-| The propose/approve/supersede races counted to one effective row | Ten proposals leave one open change, ten approvers one approval, ten sweeps one effective row and one supersession. Each race's arbiter probed |
+| Ten concurrent payouts dispatch exactly the affordable set | Four of ten 25.00 payouts against 100.00, counted in rows, holds and entries; the hold's amount and the completion's posting each probed |
+| Timeout → standing hold → query-resolved, end to end | Over HTTP: 201 `UNKNOWN` with the hold standing; the sweep's query settles it; the read shows `COMPLETED`, and the keyed replay still answers `UNKNOWN`, byte for byte |
+| Retry-after-timeout converges to one wire operation | One send, ever. A crashed dispatch taken over re-sends the STORED reference; convergence and the reference each probed |
+| The insufficient-payable refusal commits nothing | No row, no hold, no claim, no record, nothing sent |
+| Permissionless and cross-tenant refusals leave counts unmoved | No role, the wrong population, another merchant's payout and another merchant's key: each refused, nothing written or sent. The permission, both tenancy predicates and the claim's scope each probed |
+| Inherited: reconciles with a `FAILED` payout; `paidOut` its own term | Against independent SQL; the classification probed |
+| Inherited: a negative payable refuses; a refund judged against a payout's hold | Both driven for real through checkout: a `RETAINED` refund, and a payout in flight |
+| Inherited: the effective destination read, refused when none, its id recorded | Bound at dispatch at every rank; the supersession race observed |
 
-### The design (ADR-0056)
+### The design (ADR-0057)
 
-- **Two distinct operators**, not a merchant and an operator: a merchant has only a machine key
-  this phase, and a leaked server key must not be one click from redirecting its money.
-- **A cooling-off** (default 72 hours) pinned on the row at approval, and **withdrawable** during
-  it: a window nothing can act on is a delay, not a control.
-- **A leaderless sweep** produces `EFFECTIVE` and supersedes the old destination in the same
-  transaction; partial indexes keep one open change and one effective destination per merchant.
-- **Bank details never enter**: a provider grant is exchanged for an opaque reference and a
-  four-character suffix, and account-shaped values are refused at every layer.
+- **Four states.** `REQUESTED` would have no producer, because one transaction judges, holds and
+  commits `DISPATCHED`. `FAILED` records why.
+- **The send permit.** This is the first flow with both a re-sending takeover and a sweep that can
+  conclude "never received". `last_dispatched_at` is committed before every send, conditionally,
+  and `NEVER_RECEIVED` is concluded only past its bound, on the locked row.
+- **A refused connection fails a payout only on its first send.** On a re-send, the first send
+  may have paid.
+- **The operator's own route** over `MERCHANT_PAYOUT` in `LEDGER_OPERATOR`, with a reason; the
+  claim scoped per merchant; `PAYOUT_CLEARING` a credit-normal liability; the provider's answers
+  encrypted under their own key.
 
 ### What the gate found
 
-- **A fifth cooling-off layer.** With the deadline removed everywhere the design counted, the
-  timeline test still passed, because the sweep's candidate query filtered on it. Probed
-  separately, and both results recorded.
-- **Demonstrations claimed but never performed.** Two tests had never failed under a probe, and
-  three invariants the ADR claimed had none. All are now probed and caught. The ADR's `INV-LIFE`
-  claim was withdrawn instead, because a destination is not a money-moving operation.
-- Three untested claims are now tested, and three inaccuracies corrected, among them "the first
-  four-eyes subject": manual adjustments have been that since Phase 3.
+- **Claims no test could fail.** Both halves of the send permit's race had none. The takeover
+  side's test was stopped by an unlocked pre-check before the conditional, and the sweep side's
+  test, named for the lock, is single-threaded. The release belt, the two ordering locks, the
+  edge rule's raw-SQL demonstration and the sensitive-data needle had none either. All are now
+  tested, and each was probed and caught.
+- **Three inherited clauses were proven only by composition.** Each is now driven end to end:
+  the refund beside a payout in flight, the negative payable after a `RETAINED` refund, and the
+  timeout resolved over HTTP with the replay after resolution.
+- **Two probes were invalid, and were repeated rather than counted.** One broke the query
+  instead of removing the filter. The other was refused by `EventPayload` before the test could
+  see it, which showed the platform primitive refuses decimals but admits digits.
+- **ADR-0057 corrected**: its premise now names clock skew between instances, and its invariant
+  list separates what is protected here from what is relied on.
 
 ### Previously
 
-The per-task completion records behind this one — 137 blocks, from `P6-TSK-015` back to project
+The per-task completion records behind this one — 138 blocks, from `P6-TSK-011` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
 `P6-TSK-015`'s gate.)*
@@ -344,7 +357,8 @@ archived verbatim in
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
 same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2 of 2** as scoped (`P6-TSK-004`, `-005`); **M6.3
 `CLOSED` at 4 of 4** (`P6-TSK-006`…`-008`, `-014`); **M6.4 `CLOSED` at 3 of 3** (`P6-TSK-009`,
-`-010`, `-015`); **M6.5 open at 1 of 2** (`P6-TSK-011`; next `P6-TSK-012`). *(M6.3 gained `P6-TSK-014`, found missing by
+`-010`, `-015`); **M6.5 `CLOSED` at 2 of 2** (`P6-TSK-011`, `-012`); **M6.6 open at 0 of 3**
+(next `P6-TSK-013`). *(M6.3 gained `P6-TSK-014`, found missing by
 `P6-TSK-005`'s gate; M6.4 gained `P6-TSK-015`, found by `P6-TSK-010`'s end-to-end test. This
 sentence read "M6.3 open at 1 of 4, next `P6-TSK-007`" through five completed tasks, corrected
 by `P6-TSK-015`'s gate.)*
@@ -555,6 +569,7 @@ Recorded so it is not mistaken for a completed criterion.
 | ~~`P0-TSK-002`~~ | ~~Boundary enforcement partial~~ — **closed**. Cross-module internals and entity references by `P0-TSK-007`; `INV-MON-01` by `P0-TSK-008`. | — |
 | ~~`P0-TSK-014`~~ | ~~Correlation must reach four sinks; the trace one is unverifiable~~ - **closed** by `P0-TSK-028`. All four sinks are now asserted: the log (`P0-TSK-014`), the outbox row (`P0-TSK-019`), the audit record (`P0-TSK-022`) and the trace, where every span carries `finapp.correlation_id`. The clause survived four tasks and a milestone because `CorrelationSinkCoverageTest` refused to let a new platform concern land unclassified - which is what closing on arrival rather than on memory means. | — |
 | ~~`P0-TSK-003`, `P0-TSK-005`~~ | ~~Local PostgreSQL runs as the cluster superuser, so the database-privilege invariants cannot be exercised~~ — **closed** by `P0-TSK-022`. `finapp_migrator` and `finapp_app` exist, both `NOSUPERUSER`; Flyway connects as the migrator and every table grants the application role only the DML it requires. `INV-HIST-03` is now enforced and proven; `INV-LED-03` and `INV-HIST-01` have the mechanism they need and close when the ledger tables exist (Phase 3). | — |
+| `P6-TSK-012` | `DOD-FIN` 1.11, "failure and stuck states are detectable and alertable": the payout's own series are not registered yet. These are its outcomes, and the stuck-payout gauges that would alert on an `UNKNOWN` payout's standing hold or a `DISPATCHED` payout past its bound. A stuck payout is **detectable** today: its row's status, `last_dispatched_at` and history; its hold in `finapp.ledger.hold.active`; the sweep's per-row failures logged with identifier and failure class. It is not **alertable** on its own. Scheduled rather than forgotten: `PHASE_6_PLAN.md` §15 gives these series to the meters task, which depends on this one, and the rows they read exist now (ADR-0057 §Consequences). | `P6-TSK-013` |
 
 ---
 
@@ -669,7 +684,7 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P6-TSK-012` — the payout: hold-then-dispatch on the payable** — see
+**`P6-TSK-013` — the meters and the dashboard row** — see
 [§Current Task](#current-task), which this section mirrors. *(This section named `P6-TSK-001`
 from the Phase 5 → 6 transition until `P6-TSK-015`'s gate — stale across the eleven tasks
 completed from `P6-TSK-001` to `P6-TSK-010`, the stale-second-copy class `P3-DOC-001` named. The superseded lead is kept below.)*

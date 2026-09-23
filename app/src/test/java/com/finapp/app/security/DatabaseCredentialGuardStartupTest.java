@@ -54,7 +54,9 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
-                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="))
+                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+                                                "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Refusing to start");
@@ -84,6 +86,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+                                                "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
                                                 "--spring.datasource.password=supplied-by-the-deployment"))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
@@ -111,6 +115,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+                                                "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
                                 "--spring.datasource.password=supplied-by-the-deployment",
                                 "--spring.datasource.hikari.data-source-properties.sslmode=verify-full")) {
             assertThat(context.getBean(TransportSecurityGuard.class)).isNotNull();
@@ -161,6 +167,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
-                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=");
+                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+                                                "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
     }
 }

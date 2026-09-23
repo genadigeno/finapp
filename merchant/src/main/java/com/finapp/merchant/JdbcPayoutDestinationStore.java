@@ -140,6 +140,17 @@ public final class JdbcPayoutDestinationStore implements PayoutDestinationStore<
     }
 
     @Override
+    public Optional<PayoutDestination> findEffectiveForShare(
+            Connection unitOfWork, MerchantId merchant) {
+        return one(
+                unitOfWork,
+                "SELECT " + COLUMNS + " FROM " + TABLE
+                        + " WHERE merchant_id = ? AND status = 'EFFECTIVE' FOR SHARE",
+                "share-locking a merchant's effective payout destination",
+                merchant.value());
+    }
+
+    @Override
     public List<PayoutDestination> findDue(Connection unitOfWork, Instant now, int limit) {
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(

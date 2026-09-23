@@ -192,7 +192,26 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " they did, at a moment they chose nothing; the platform making the"
                         + " approved destination effective when its pinned deadline passes is"
                         + " exactly what happened. The scope wraps the whole tick for the same"
-                        + " reason as the expiry sweep's."));
+                        + " reason as the expiry sweep's."),
+                    Map.entry(
+                            "com.finapp.merchant.MerchantPayouts.initiate",
+                    "The payout's outcome transaction (P6-TSK-012, ADR-0051): the"
+                        + " PaymentRefund.refund reasoning, pointed at a merchant. The request"
+                        + " that asked is recorded as the asker - the merchant's key or the"
+                        + " operator, with their reason - in the dispatch transaction's own"
+                        + " audit record; the provider's answer is then applied by the"
+                        + " platform, because the same answer applied by the resolution sweep"
+                        + " is the platform's act too, and attribution must not depend on"
+                        + " which resolver wins the harmless race. The scope wraps the outcome"
+                        + " transaction only; the dispatch before it runs as the asker."),
+                    Map.entry(
+                            "com.finapp.merchant.MerchantPayoutResolution.sweep",
+                    "The swept payout resolution (P6-TSK-012, ADR-0046 section 4): a"
+                        + " scheduled query by our reference has no person at all - the"
+                        + " PaymentSweeper case, eighth occurrence - and the same outcome"
+                        + " applied by the synchronous answer is already the platform's act."
+                        + " The scope wraps each row's query-and-resolve; the candidate read"
+                        + " before it claims nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

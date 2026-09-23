@@ -7,7 +7,9 @@ import java.util.Optional;
 
 /**
  * One account's committed lines, totalled by direction and by <strong>how the same entry
- * treated a named counterparty purpose</strong> (`P6-TSK-010`) — a generic read in the
+ * treated named counterparty purposes</strong> (`P6-TSK-010`; a precedence list since
+ * `P6-TSK-012`, when a payout's {@code PAYOUT_CLEARING} joined a capture's and a refund's
+ * {@code SETTLEMENT_CLEARING}) — a generic read in the
  * ledger's own vocabulary, so that a caller can explain a position without the ledger learning
  * the caller's words.
  *
@@ -42,10 +44,24 @@ import java.util.Optional;
 public interface PositionBreakdown<T> {
 
     /**
-     * The total of the account's lines in one direction, from entries that treated the
-     * counterparty purpose one way — or did not touch it at all ({@code counterparty} empty).
+     * How a line's entry touched one of the named counterparty purposes: which purpose, and in
+     * which direction (`P6-TSK-012` widened the read from one purpose to a precedence list, so
+     * a payable can tell a payout's {@code PAYOUT_CLEARING} from a capture's
+     * {@code SETTLEMENT_CLEARING} in the same snapshot).
      */
-    record Bucket(Direction direction, Optional<Direction> counterparty, Money total) {
+    record Counterparty(AccountPurpose purpose, Direction direction) {
+
+        public Counterparty {
+            Objects.requireNonNull(purpose, "purpose must not be null");
+            Objects.requireNonNull(direction, "direction must not be null");
+        }
+    }
+
+    /**
+     * The total of the account's lines in one direction, from entries that touched a named
+     * counterparty purpose one way — or touched none of them ({@code counterparty} empty).
+     */
+    record Bucket(Direction direction, Optional<Counterparty> counterparty, Money total) {
 
         public Bucket {
             Objects.requireNonNull(direction, "direction must not be null");
@@ -71,11 +87,16 @@ public interface PositionBreakdown<T> {
     }
 
     /**
-     * Breaks {@code account}'s committed position down by how each line's entry treated
-     * {@code counterparty}.
+     * Breaks {@code account}'s committed position down by how each line's entry treated the
+     * named counterparty purposes. A line is labelled with the <strong>first</strong> purpose in
+     * {@code precedence} that its entry touched — an order the caller states, so the answer is
+     * deterministic even for an entry touching several — and every line is folded exactly once
+     * whatever its label, so the precedence can move a line between buckets but never change
+     * the position.
      *
+     * @param precedence the counterparty purposes, most significant first; non-empty, distinct
      * @throws UnderivableBalanceException if the account does not exist or its history cannot
      *     be folded — the derivation's own regime: an underivable history refuses, never renders
      */
-    Breakdown breakdown(T unitOfWork, LedgerAccountId account, AccountPurpose counterparty);
+    Breakdown breakdown(T unitOfWork, LedgerAccountId account, List<AccountPurpose> precedence);
 }

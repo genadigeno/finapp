@@ -21,34 +21,39 @@ import lombok.RequiredArgsConstructor;
  * <h2>This module reads the buckets because this module wrote the shapes</h2>
  *
  * <p>{@link PositionBreakdown} hands back the payable's lines bucketed by direction and by how
- * each line's entry treated {@code SETTLEMENT_CLEARING} — the ledger's own vocabulary, nothing
- * more. What those buckets MEAN is ADR-0050 §3's entry shapes read backwards, and
- * {@link MerchantSettlement} is the component that composes those shapes. So the interpretation
- * lives here, beside the composer, rather than in a ledger that must not know what a fee is:
+ * each line's entry treated {@code SETTLEMENT_CLEARING} or, failing that,
+ * {@code PAYOUT_CLEARING} — the ledger's own vocabulary, nothing more. What those buckets MEAN
+ * is ADR-0050 §3's and ADR-0051 §2's entry shapes read backwards, and {@link MerchantSettlement}
+ * and {@link MerchantPayoutOutcomes} are the components that compose those shapes. So the
+ * interpretation lives here, beside the composers, rather than in a ledger that must not know
+ * what a fee is:
  *
  * <pre>
- *   payable line | entry DEBITS clearing (capture) | entry CREDITS clearing (refund) | neither
- *   CREDIT       | captured                        | fees returned                   | other
- *   DEBIT        | fees                            | refunded                        | other
+ *   payable line | DEBITS settlement clearing | CREDITS settlement clearing | CREDITS payout clearing | none
+ *                | (a capture)                | (a refund)                  | (a payout)              |
+ *   CREDIT       | captured                   | fees returned               | other                   | other
+ *   DEBIT        | fees                       | refunded                    | paid out                | other
  * </pre>
  *
  * <p>If a composer ever changes those shapes, this table is the thing that must change with it —
  * and it is one screen away from the code that would have changed, which is the point of putting
- * it here.
+ * it here. The precedence (settlement clearing first) is stated, not incidental: no entry this
+ * platform composes touches both, and a line is folded once whatever its label.
  *
  * <h2>The terms sum to the position by construction</h2>
  *
  * <p>Every bucket came from the one statement the position was folded from, so
- * {@code position = captured − fees − refunded + feesReturned + other} is an identity of the
- * breakdown, not a reconciliation this class performs. {@link Payable#terms()} restates it so a
- * caller can check it without re-deriving the sign convention.
+ * {@code position = captured − fees − refunded + feesReturned − paidOut + other} is an identity
+ * of the breakdown, not a reconciliation this class performs. {@link Payable#terms()} restates it
+ * so a caller can check it without re-deriving the sign convention.
  *
- * <h2>Why there is no payouts term yet</h2>
+ * <h2>Paid out, not in flight</h2>
  *
- * <p>Payouts arrive with `P6-TSK-012` and post against {@code PAYOUT_CLEARING}, a purpose that
- * does not exist yet. A {@code paidOut} figure that is always zero with no producer is the
- * state-with-no-producer this phase has refused repeatedly, so until then a payout would land in
- * {@code other} — visibly, and still summing — and that task splits it out.
+ * <p>{@code paidOut} counts payouts the rail accepted — posted, keyed
+ * {@code merchant-payout:<payoutId>} (`P6-TSK-012`). A payout still in flight is a hold, and a
+ * hold is not a posting: it narrows what the next payout may take ({@code INV-MER-05}) without
+ * moving the position, so it appears in no term here. A failed payout posted nothing and
+ * appears nowhere, which is exactly its truth.
  */
 @RequiredArgsConstructor
 public final class MerchantPayable {
@@ -57,8 +62,8 @@ public final class MerchantPayable {
      * One currency's payable.
      *
      * @param position what the platform owes, derived; positive means owed TO the merchant
-     * @param other movements that are neither a capture nor a refund, SIGNED — an operator
-     *     adjustment today, a payout until `P6-TSK-012` gives it its own term
+     * @param paidOut payouts the rail accepted, posted against {@code PAYOUT_CLEARING}
+     * @param other movements that are none of the above, SIGNED — an operator adjustment today
      */
     public record Payable(
             Money position,
@@ -66,6 +71,7 @@ public final class MerchantPayable {
             Money fees,
             Money refunded,
             Money feesReturned,
+            Money paidOut,
             Money other) {
 
         public Payable {
@@ -74,14 +80,23 @@ public final class MerchantPayable {
             Objects.requireNonNull(fees, "fees must not be null");
             Objects.requireNonNull(refunded, "refunded must not be null");
             Objects.requireNonNull(feesReturned, "feesReturned must not be null");
+            Objects.requireNonNull(paidOut, "paidOut must not be null");
             Objects.requireNonNull(other, "other must not be null");
         }
 
         /** The drill-down's own sum: always equal to {@link #position()}, by construction. */
         public Money terms() {
-            return captured.minus(fees).minus(refunded).plus(feesReturned).plus(other);
+            return captured.minus(fees)
+                    .minus(refunded)
+                    .plus(feesReturned)
+                    .minus(paidOut)
+                    .plus(other);
         }
     }
+
+    /** The counterparty purposes the drill-down reads, most significant first. */
+    static final List<AccountPurpose> COUNTERPARTIES =
+            List.of(AccountPurpose.SETTLEMENT_CLEARING, AccountPurpose.PAYOUT_CLEARING);
 
     @NonNull private final LedgerAccountStore<Connection> accounts;
     @NonNull private final PositionBreakdown<Connection> breakdowns;
@@ -102,38 +117,50 @@ public final class MerchantPayable {
 
     private Payable payableOf(Connection unitOfWork, LedgerAccount account) {
         PositionBreakdown.Breakdown breakdown =
-                breakdowns.breakdown(
-                        unitOfWork, account.id(), AccountPurpose.SETTLEMENT_CLEARING);
+                breakdowns.breakdown(unitOfWork, account.id(), COUNTERPARTIES);
         Money zero = Money.ofMinorUnits(0L, breakdown.position().currency());
         Money captured = zero;
         Money fees = zero;
         Money refunded = zero;
         Money feesReturned = zero;
+        Money paidOut = zero;
         Money other = zero;
         for (PositionBreakdown.Bucket bucket : breakdown.buckets()) {
-            Optional<Direction> clearing = bucket.counterparty();
+            Optional<PositionBreakdown.Counterparty> counterparty = bucket.counterparty();
             boolean credit = bucket.direction() == Direction.CREDIT;
-            if (clearing.isEmpty()) {
-                // Neither a capture nor a refund. Signed as the liability reads it: a credit
-                // increases what is owed, a debit reduces it.
-                other = credit ? other.plus(bucket.total()) : other.minus(bucket.total());
-            } else if (clearing.get() == Direction.DEBIT) {
-                // A capture: money arrived in clearing, the gross was credited, the fee debited.
-                if (credit) {
-                    captured = captured.plus(bucket.total());
+            if (counterparty.isPresent()
+                    && counterparty.get().purpose() == AccountPurpose.SETTLEMENT_CLEARING) {
+                if (counterparty.get().direction() == Direction.DEBIT) {
+                    // A capture: money arrived in clearing, the gross was credited, the fee
+                    // debited.
+                    if (credit) {
+                        captured = captured.plus(bucket.total());
+                    } else {
+                        fees = fees.plus(bucket.total());
+                    }
                 } else {
-                    fees = fees.plus(bucket.total());
+                    // A refund: money left through clearing, the gross debited, a RETURNED
+                    // policy's share of the fee credited back.
+                    if (credit) {
+                        feesReturned = feesReturned.plus(bucket.total());
+                    } else {
+                        refunded = refunded.plus(bucket.total());
+                    }
                 }
+            } else if (counterparty.isPresent()
+                    && counterparty.get().purpose() == AccountPurpose.PAYOUT_CLEARING
+                    && counterparty.get().direction() == Direction.CREDIT
+                    && !credit) {
+                // A payout the rail accepted: the payable debited, payout clearing credited
+                // (ADR-0051 §2, keyed merchant-payout:<payoutId>).
+                paidOut = paidOut.plus(bucket.total());
             } else {
-                // A refund: money left through clearing, the gross debited, a RETURNED policy's
-                // share of the fee credited back.
-                if (credit) {
-                    feesReturned = feesReturned.plus(bucket.total());
-                } else {
-                    refunded = refunded.plus(bucket.total());
-                }
+                // None of the shapes above. Signed as the liability reads it: a credit increases
+                // what is owed, a debit reduces it.
+                other = credit ? other.plus(bucket.total()) : other.minus(bucket.total());
             }
         }
-        return new Payable(breakdown.position(), captured, fees, refunded, feesReturned, other);
+        return new Payable(
+                breakdown.position(), captured, fees, refunded, feesReturned, paidOut, other);
     }
 }

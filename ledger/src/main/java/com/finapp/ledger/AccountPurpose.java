@@ -42,6 +42,16 @@ public enum AccountPurpose {
     /** Value in flight between the platform and an external counterparty. Phase 8's seam. */
     SETTLEMENT_CLEARING(OwnerKind.OPERATIONAL),
 
+    /**
+     * Payouts the platform has irrevocably instructed and the rail has not yet settled
+     * (ADR-0051 §3, ADR-0057): a completed payout credits it and debits the merchant's payable,
+     * keyed {@code merchant-payout:<payoutId>}, and Phase 8's settlement will debit it against
+     * cash. {@code INV-SET-01} on the outbound side — "completed" means instructed, never
+     * settled. Added by `P6-TSK-012` with the capability needing it, beside a new `V012`
+     * regenerating the four constraints this list feeds.
+     */
+    PAYOUT_CLEARING(OwnerKind.OPERATIONAL),
+
     /** Fees earned. Phase 6's seam; nothing posts to it before then. */
     FEE_REVENUE(OwnerKind.OPERATIONAL),
 

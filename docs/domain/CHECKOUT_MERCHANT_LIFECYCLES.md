@@ -64,25 +64,39 @@ only derived quality is refund standing — computed from the payment's refund r
 time (the ADR-0045 derivation discipline), never stored. Fulfilment is the merchant's
 business, outside the platform's books.
 
-## 4. The merchant payout — five states
+## 4. The merchant payout — four states
 
 ```
-REQUESTED ──► DISPATCHED ──► COMPLETED
-                  │    │
-                  │    └────► FAILED
-                  └─────────► UNKNOWN ──(query/webhook)──► COMPLETED | FAILED
+DISPATCHED ──► COMPLETED
+    │    └───► FAILED
+    └───────► UNKNOWN ──(query)──► COMPLETED | FAILED
 ```
 
 | State | Meaning | The money |
 |---|---|---|
-| `REQUESTED` | Command accepted, not yet judged against the payable | Nothing held, nothing moved |
-| `DISPATCHED` | Bound judged under the payable's lock; hold placed; our reference minted and committed; the wire call runs after commit | The payout amount is **held** against the payable (`INV-MER-05`) |
+| `DISPATCHED` | Bound judged under the payable's lock; hold placed; our reference minted and committed, with the first send permit; the wire call runs after commit | The payout amount is **held** against the payable (`INV-MER-05`) |
 | `COMPLETED` | The rail accepted irrevocably | Hold released and posting committed atomically: DR payable / CR `PAYOUT_CLEARING`, keyed `merchant-payout:<payoutId>` — instructed, not settled (`INV-SET-01`) |
-| `FAILED` | The rail refused | Hold released, nothing posted; the payable is whole |
-| `UNKNOWN` | The rail's answer is missing or ambiguous | **The hold stands** — money visibly parked until query or webhook resolves it (`INV-LIFE-03`, the standing-hold doctrine) |
+| `FAILED` | The rail refused (`DECLINED`), nothing was sent on the first send (`PROVIDER_UNAVAILABLE`), or the provider has no record past the sweep's bound (`NEVER_RECEIVED`) — the reason on the row | Hold released, nothing posted; the payable is whole |
+| `UNKNOWN` | The rail's answer is missing or ambiguous | **The hold stands** — money visibly parked until a query resolves it (`INV-LIFE-03`, the standing-hold doctrine) |
 
-Dispatch-before-call throughout (ADR-0046's shape); every outcome edge conditional; the
-takeover convergence by dispatch key (`P5-TSK-016`'s contract) applies verbatim.
+**Four states, not the five first planned** (ADR-0057 §1, `P6-TSK-012`): the dispatch
+transaction judges, holds and commits `DISPATCHED` atomically, so the planned `REQUESTED` would
+be a state no committed row could hold — ADR-0044 refuses a state with no producer, and the
+refund, the same shape, has four.
+
+Dispatch-before-call throughout (ADR-0046's shape); every outcome edge conditional on the row
+its resolver locked; the takeover convergence by dispatch key (`P5-TSK-016`'s contract) applies,
+with two refinements the payout needed because it is the first flow with both a re-sending
+takeover and a sweep that can conclude "never received" (ADR-0057 §3–4):
+
+- **a refused connection fails a payout only on its first send** — a re-send's says nothing about
+  the send before it;
+- **every send is preceded by a committed send permit** (`last_dispatched_at`), and
+  `NEVER_RECEIVED` is concluded only when the latest permit is older than the sweep's bound,
+  judged on the locked row — so no send can follow the conclusion.
+
+The query sweep is the resolver of `DISPATCHED` rows a crash stranded and of `UNKNOWN` ones; the
+provider webhook ADR-0051 §5 named is deferred (ADR-0057 §10).
 
 ## 5. The merchant — three states
 

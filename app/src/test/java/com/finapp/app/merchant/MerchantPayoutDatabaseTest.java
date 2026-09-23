@@ -1,0 +1,1394 @@
+package com.finapp.app.merchant;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.AccountType;
+import com.finapp.ledger.ChartOfAccounts;
+import com.finapp.ledger.Direction;
+import com.finapp.ledger.HoldExceedsAvailableBalanceException;
+import com.finapp.ledger.HoldId;
+import com.finapp.ledger.HoldService;
+import com.finapp.ledger.JournalLine;
+import com.finapp.ledger.LedgerAccount;
+import com.finapp.ledger.LedgerAccountId;
+import com.finapp.ledger.LedgerAccountStore;
+import com.finapp.ledger.PostingCommand;
+import com.finapp.ledger.PostingService;
+import com.finapp.merchant.MerchantId;
+import com.finapp.merchant.MerchantNotTradingException;
+import com.finapp.merchant.MerchantPayable;
+import com.finapp.merchant.MerchantPayout;
+import com.finapp.merchant.MerchantPayoutId;
+import com.finapp.merchant.MerchantPayoutOutcomes;
+import com.finapp.merchant.MerchantPayoutResolution;
+import com.finapp.merchant.MerchantPayoutStatus;
+import com.finapp.merchant.MerchantPayoutStore;
+import com.finapp.merchant.MerchantPayoutUnfundedException;
+import com.finapp.merchant.MerchantPayouts;
+import com.finapp.merchant.NoEffectiveDestinationException;
+import com.finapp.merchant.PayoutCurrencyMismatchException;
+import com.finapp.merchant.PayoutDestinationStore;
+import com.finapp.merchant.PayoutEvidenceStore;
+import com.finapp.merchant.PayoutFailureReason;
+import com.finapp.merchant.PayoutProvider;
+import com.finapp.merchant.PayoutQueryAnswer;
+import com.finapp.merchant.SimulatedPayoutProvider;
+import com.finapp.platform.audit.AuditWriter;
+import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.idempotency.IdempotentExecutor;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
+import com.finapp.platform.security.SecurityContext;
+import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.platform.testing.provider.SimulatedProvider;
+import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.id.IdGenerator;
+import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.Money;
+import java.net.ServerSocket;
+import java.net.URI;
+import java.security.SecureRandom;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import javax.sql.DataSource;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+/**
+ * The merchant payout against the real schema (`P6-TSK-012`, ADR-0051, ADR-0057): the
+ * hold-then-dispatch, the three outcomes' money, the payable bound raced and contested, the
+ * timeout's standing hold resolved by the sweep, the takeover's convergence and its send
+ * permit, and `V007` refusing — for raw SQL — what the domain refuses. The HTTP surface is
+ * {@code MerchantPayoutEndpointDatabaseTest}'s.
+ *
+ * <p>Every count is read from the tables, never inferred from a return value.
+ */
+@Tag("database")
+@SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
+@SpringBootTest
+@DisplayName("the merchant payout against the real schema (P6-TSK-012)")
+class MerchantPayoutDatabaseTest {
+
+    private static final Clock CLOCK = Clock.systemUTC();
+    private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
+    private static final CurrencyCode EUR = CurrencyCode.of("EUR");
+    private static final String PATH = SimulatedPayoutProvider.PAYOUTS_PATH;
+    private static final String PAID =
+            "{\"status\":\"paid\",\"reference\":\"po-{{request.headers.Idempotency-Key}}\"}";
+    private static final int RACERS = 10;
+
+    private static SimulatedProvider provider;
+
+    @Autowired private MerchantPayouts payouts;
+    @Autowired private MerchantPayoutStore<Connection> payoutStore;
+    @Autowired private MerchantPayoutOutcomes outcomes;
+    @Autowired private PayoutEvidenceStore<Connection> evidence;
+    @Autowired private PayoutDestinationStore<Connection> destinations;
+    @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
+    @Autowired private HoldService holds;
+    @Autowired private PostingService postings;
+    @Autowired private IdempotentExecutor idempotentExecutor;
+    @Autowired private AuditWriter<Connection> auditWriter;
+    @Autowired private MerchantPayableQuery payables;
+    @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private DataSource dataSource;
+
+    @BeforeAll
+    static void startProvider() {
+        if (provider == null) {
+            provider = SimulatedProvider.start();
+        }
+    }
+
+    @AfterAll
+    static void stopProvider() {
+        provider.close();
+    }
+
+    @DynamicPropertySource
+    static void providerUrl(DynamicPropertyRegistry registry) {
+        if (provider == null) {
+            provider = SimulatedProvider.start();
+        }
+        registry.add("finapp.merchant.payout.provider.url", () -> provider.baseUrl());
+        registry.add("finapp.merchant.payout.provider.timeout", () -> "PT0.7S");
+    }
+
+    @BeforeEach
+    void reset() {
+        provider.reset();
+    }
+
+    // -----------------------------------------------------------------
+    // The money
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a paid payout releases its hold and posts DR payable / CR PAYOUT_CLEARING, once")
+    void aPaidPayoutReleasesAndPosts() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.succeedsWith(PATH, 200, PAID);
+
+        MerchantPayouts.Initiated paid = initiate(merchant, "40.00", key());
+
+        assertThat(paid.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(holdStatuses(merchant)).containsExactly("RELEASED");
+        assertThat(entryLines(paid.payout()))
+                .containsExactlyInAnyOrder(
+                        "DEBIT:MERCHANT_PAYABLE:4000", "CREDIT:PAYOUT_CLEARING:4000");
+        assertThat(positionMinor(merchant)).isEqualTo(6000);
+        assertThat(outboxCount("merchant.MerchantPayoutInitiated", paid.payout())).isEqualTo(1);
+        assertThat(outboxCount("merchant.MerchantPayoutCompleted", paid.payout())).isEqualTo(1);
+        assertThat(auditCount("merchant.MerchantPayoutInitiated", paid.payout())).isEqualTo(1);
+        assertThat(auditCount("merchant.MerchantPayoutOutcomeApplied", paid.payout()))
+                .isEqualTo(1);
+        assertThat(count(
+                        "SELECT count(*) FROM merchant.payout_evidence WHERE payout_id = ?"
+                                + " AND kind = 'RESPONSE'",
+                        paid.payout().value()))
+                .as("the provider's answer is retained, encrypted")
+                .isEqualTo(1);
+        assertThat(provider.headerValues(PATH, SimulatedPayoutProvider.IDEMPOTENCY_KEY_HEADER))
+                .as("our minted reference was committed before the wire and sent as the key")
+                .containsExactly(stored(merchant, paid.payout()).reference().value());
+    }
+
+    @Test
+    @DisplayName("a declined payout is FAILED(DECLINED): the hold released and nothing posted")
+    void aDeclinedPayoutPostsNothing() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.succeedsWith(PATH, 200, "{\"status\":\"declined\"}");
+
+        MerchantPayouts.Initiated declined = initiate(merchant, "40.00", key());
+
+        assertThat(declined.status()).isEqualTo(MerchantPayoutStatus.FAILED);
+        assertThat(stored(merchant, declined.payout()).failureReason())
+                .contains(PayoutFailureReason.DECLINED);
+        assertThat(holdStatuses(merchant)).containsExactly("RELEASED");
+        assertThat(entryLines(declined.payout())).isEmpty();
+        assertThat(positionMinor(merchant)).as("the payable is whole").isEqualTo(10000);
+        assertThat(outboxCount("merchant.MerchantPayoutFailed", declined.payout())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a refused connection on the first send is FAILED(PROVIDER_UNAVAILABLE), released")
+    void nothingSentOnTheFirstSend() throws Exception {
+        Funded merchant = funded("100.00");
+        MerchantPayouts.Initiated refused =
+                initiateWith(payoutsSendingTo(unreachable(), idempotentExecutor), merchant,
+                        "40.00", key());
+
+        assertThat(refused.status()).isEqualTo(MerchantPayoutStatus.FAILED);
+        assertThat(stored(merchant, refused.payout()).failureReason())
+                .contains(PayoutFailureReason.PROVIDER_UNAVAILABLE);
+        assertThat(holdStatuses(merchant)).containsExactly("RELEASED");
+        assertThat(entryLines(refused.payout())).isEmpty();
+    }
+
+    // -----------------------------------------------------------------
+    // The bound (INV-MER-05)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("ten concurrent payouts against one payable dispatch exactly the affordable set")
+    void tenConcurrentPayoutsDispatchExactlyTheAffordableSet() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.succeedsWith(PATH, 200, PAID);
+        List<Callable<Object>> racers = new ArrayList<>();
+        for (int i = 0; i < RACERS; i++) {
+            racers.add(
+                    () -> {
+                        try {
+                            return initiate(merchant, "25.00", key());
+                        } catch (MerchantPayoutUnfundedException unfunded) {
+                            return unfunded;
+                        }
+                    });
+        }
+        List<Object> outcomes = race(racers);
+
+        assertThat(outcomes.stream().filter(MerchantPayouts.Initiated.class::isInstance))
+                .as("100.00 funds exactly four payouts of 25.00")
+                .hasSize(4);
+        assertThat(outcomes.stream().filter(MerchantPayoutUnfundedException.class::isInstance))
+                .hasSize(RACERS - 4);
+        assertThat(count(
+                        "SELECT count(*) FROM merchant.merchant_payout WHERE merchant_id = ?",
+                        merchant.id().value()))
+                .isEqualTo(4);
+        assertThat(holdStatuses(merchant)).hasSize(4).containsOnly("RELEASED");
+        assertThat(count(
+                        "SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope LIKE"
+                                + " 'ledger.post:merchant-payout:%' AND reference IN (SELECT"
+                                + " id::text FROM merchant.merchant_payout WHERE merchant_id = ?)",
+                        merchant.id().value()))
+                .isEqualTo(4);
+        assertThat(positionMinor(merchant)).as("never below zero: nothing over-paid").isZero();
+    }
+
+    @Test
+    @DisplayName("the unfunded refusal commits nothing: no row, no hold, no claim, no record")
+    void theUnfundedRefusalCommitsNothing() throws Exception {
+        Funded merchant = funded("10.00");
+        String key = key();
+        assertThatThrownBy(() -> initiate(merchant, "20.00", key))
+                .isInstanceOf(MerchantPayoutUnfundedException.class);
+
+        assertThat(count(
+                        "SELECT count(*) FROM merchant.merchant_payout WHERE merchant_id = ?",
+                        merchant.id().value()))
+                .isZero();
+        assertThat(holdStatuses(merchant)).isEmpty();
+        assertThat(count(
+                        "SELECT count(*) FROM platform.idempotency_record WHERE scope = ? AND"
+                                + " idempotency_key = ?",
+                        MerchantPayouts.IDEMPOTENCY_SCOPE_PREFIX + merchant.id().value(),
+                        key))
+                .as("the key is unspent: a later retry may fit")
+                .isZero();
+        assertThat(count(
+                        "SELECT count(*) FROM platform.audit_record WHERE operation LIKE"
+                                + " 'merchant.MerchantPayout%' AND change_summary LIKE ?",
+                        "%merchant=" + merchant.id() + "%"))
+                .isZero();
+        assertThat(provider.requestCount(PATH)).isZero();
+    }
+
+    @Test
+    @DisplayName("a negative payable refuses every payout until a later capture restores it")
+    void aNegativePayableRefusesEveryPayout() throws Exception {
+        Funded merchant = funded("0.00");
+        // A RETAINED fee's share kept on a refund, the payable left owing the platform
+        // (ADR-0054): refund-shaped, DEBIT payable / CREDIT settlement clearing.
+        post(merchant, "5.00", Direction.DEBIT);
+        assertThat(positionMinor(merchant)).isEqualTo(-500);
+        assertThatThrownBy(() -> initiate(merchant, "0.01", key()))
+                .isInstanceOf(MerchantPayoutUnfundedException.class);
+
+        post(merchant, "20.00", Direction.CREDIT);
+        provider.succeedsWith(PATH, 200, PAID);
+        assertThat(initiate(merchant, "15.00", key()).status())
+                .as("the capture repaid the debt first, and only the remainder may leave")
+                .isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThatThrownBy(() -> initiate(merchant, "0.01", key()))
+                .isInstanceOf(MerchantPayoutUnfundedException.class);
+    }
+
+    @Test
+    @DisplayName("a refund dispatched while a payout is in flight is judged against what its hold leaves")
+    void aRefundIsJudgedAgainstThePayoutsHold() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.neverResponds(PATH);
+        MerchantPayouts.Initiated inFlight = initiate(merchant, "80.00", key());
+        assertThat(inFlight.status()).isEqualTo(MerchantPayoutStatus.UNKNOWN);
+
+        // The refund's funding check IS a hold on the payable (ADR-0054's mechanism): the
+        // payout's standing hold leaves 20.00, so 30.00 is refused and 20.00 fits.
+        assertThatThrownBy(() -> hold(merchant, "30.00"))
+                .isInstanceOf(HoldExceedsAvailableBalanceException.class);
+        hold(merchant, "20.00");
+    }
+
+    // -----------------------------------------------------------------
+    // Ambiguity and its resolution
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("timeout: UNKNOWN with the hold standing, a retry replays, and the sweep resolves it")
+    void aTimeoutIsResolvedByTheSweep() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.neverResponds(PATH);
+        String key = key();
+
+        MerchantPayouts.Initiated unknown = initiate(merchant, "40.00", key);
+        assertThat(unknown.status()).isEqualTo(MerchantPayoutStatus.UNKNOWN);
+        assertThat(holdStatuses(merchant)).containsExactly("ACTIVE");
+        assertThat(positionMinor(merchant)).as("a hold is not a posting").isEqualTo(10000);
+        assertThatThrownBy(() -> initiate(merchant, "70.00", key()))
+                .as("but it narrows what the next payout may take")
+                .isInstanceOf(MerchantPayoutUnfundedException.class);
+
+        MerchantPayouts.Initiated retried = initiate(merchant, "40.00", key);
+        assertThat(retried.replayed()).isTrue();
+        assertThat(retried.status())
+                .as("the retry answers the judgement it was given")
+                .isEqualTo(MerchantPayoutStatus.UNKNOWN);
+        assertThat(provider.requestCount(PATH))
+                .as("retry-after-timeout converges to ONE wire operation")
+                .isEqualTo(1);
+
+        queryAnswers(merchant, unknown.payout(), "paid");
+        MerchantPayoutResolution.SweepResult swept = resolution(Duration.ZERO).sweep();
+        assertThat(swept.resolved()).isGreaterThanOrEqualTo(1);
+        assertThat(stored(merchant, unknown.payout()).status())
+                .isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(holdStatuses(merchant)).containsExactly("RELEASED");
+        assertThat(entryLines(unknown.payout()))
+                .containsExactlyInAnyOrder(
+                        "DEBIT:MERCHANT_PAYABLE:4000", "CREDIT:PAYOUT_CLEARING:4000");
+        assertThat(count(
+                        "SELECT count(*) FROM merchant.payout_evidence WHERE payout_id = ?"
+                                + " AND kind = 'QUERY_RESULT'",
+                        unknown.payout().value()))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("ten concurrent sweeps leave one outcome, one entry, one fact, one record")
+    void tenConcurrentSweepsLeaveOneOutcome() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.neverResponds(PATH);
+        MerchantPayouts.Initiated unknown = initiate(merchant, "40.00", key());
+        queryAnswers(merchant, unknown.payout(), "paid");
+
+        List<Callable<Object>> sweepers = new ArrayList<>();
+        for (int i = 0; i < RACERS; i++) {
+            sweepers.add(() -> resolution(Duration.ZERO).sweep());
+        }
+        race(sweepers);
+
+        assertThat(stored(merchant, unknown.payout()).status())
+                .isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(entryLines(unknown.payout())).hasSize(2);
+        assertThat(outboxCount("merchant.MerchantPayoutCompleted", unknown.payout()))
+                .isEqualTo(1);
+        assertThat(auditCount("merchant.MerchantPayoutOutcomeApplied", unknown.payout()))
+                .as("DISPATCHED -> UNKNOWN once, UNKNOWN -> COMPLETED once")
+                .isEqualTo(2);
+    }
+
+    // -----------------------------------------------------------------
+    // The takeover and the send permit (ADR-0057 sections 3-4)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a crashed dispatch is taken over: no second hold, the STORED reference re-sent")
+    void theCrashedDispatchIsTakenOver() throws Exception {
+        Funded merchant = funded("100.00");
+        String key = key();
+        MerchantPayoutId crashed = crash(merchant, "40.00", key);
+        assertThat(stored(merchant, crashed).status()).isEqualTo(MerchantPayoutStatus.DISPATCHED);
+        assertThat(provider.requestCount(PATH)).as("the crash sent nothing").isZero();
+
+        expireTheLease(merchant, key);
+        provider.succeedsWith(PATH, 200, PAID);
+        MerchantPayouts.Initiated takenOver = initiate(merchant, "40.00", key);
+
+        assertThat(takenOver.payout()).isEqualTo(crashed);
+        assertThat(takenOver.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(holdStatuses(merchant)).as("no second hold").containsExactly("RELEASED");
+        assertThat(provider.headerValues(PATH, SimulatedPayoutProvider.IDEMPOTENCY_KEY_HEADER))
+                .as("the re-send presents the reference stored before the crash (INV-PAY-04)")
+                .containsExactly(stored(merchant, crashed).reference().value());
+        assertThat(count(
+                        "SELECT count(*) FROM merchant.merchant_payout WHERE merchant_id = ?",
+                        merchant.id().value()))
+                .isEqualTo(1);
+        assertThat(auditCount("merchant.MerchantPayoutInitiated", crashed))
+                .as("the takeover converges: it initiates nothing")
+                .isEqualTo(1);
+
+        MerchantPayouts.Initiated replay = initiate(merchant, "40.00", key);
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("a takeover after the sweep resolved the payout sends nothing and answers the row")
+    void aTakeoverAfterTheSweepSendsNothing() throws Exception {
+        Funded merchant = funded("100.00");
+        String key = key();
+        MerchantPayoutId crashed = crash(merchant, "40.00", key);
+        queryAnswers(merchant, crashed, "paid");
+        resolution(Duration.ZERO).sweep();
+        assertThat(stored(merchant, crashed).status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+
+        expireTheLease(merchant, key);
+        provider.succeedsWith(PATH, 200, PAID);
+        MerchantPayouts.Initiated takenOver = initiate(merchant, "40.00", key);
+
+        assertThat(takenOver.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(provider.requestCount(PATH)).as("a resolved payout is never sent again").isZero();
+        assertThat(entryLines(crashed)).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("never-received waits for the permit: fresh is not swept, old is failed, and no send follows")
+    void neverReceivedWaitsForThePermit() throws Exception {
+        Funded merchant = funded("100.00");
+        String key = key();
+        MerchantPayoutId crashed = crash(merchant, "40.00", key);
+        queryAnswers(merchant, crashed, "unrecognised");
+
+        assertThat(resolution(Duration.ofMinutes(10)).sweep().resolved())
+                .as("a permit younger than the bound is not a candidate")
+                .isZero();
+        assertThat(provider.requestCount(PATH + "/" + stored(merchant, crashed).reference().value()))
+                .as("not even queried: the candidate filter is its own layer")
+                .isZero();
+        assertThat(stored(merchant, crashed).status()).isEqualTo(MerchantPayoutStatus.DISPATCHED);
+
+        resolution(Duration.ZERO).sweep();
+        assertThat(stored(merchant, crashed).status()).isEqualTo(MerchantPayoutStatus.FAILED);
+        assertThat(stored(merchant, crashed).failureReason())
+                .contains(PayoutFailureReason.NEVER_RECEIVED);
+        assertThat(holdStatuses(merchant)).containsExactly("RELEASED");
+
+        expireTheLease(merchant, key);
+        provider.succeedsWith(PATH, 200, PAID);
+        assertThat(initiate(merchant, "40.00", key).status())
+                .isEqualTo(MerchantPayoutStatus.FAILED);
+        assertThat(provider.requestCount(PATH))
+                .as("NEVER_RECEIVED is a claim about the future too: nothing is sent after it")
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("the never-received bound is re-judged on the locked row: a renewed permit wins")
+    void theBoundIsRejudgedUnderTheLock() throws Exception {
+        Funded merchant = funded("100.00");
+        MerchantPayoutId crashed = crash(merchant, "40.00", key());
+        PayoutQueryAnswer unrecognised =
+                PayoutQueryAnswer.unrecognised(
+                        "{\"status\":\"unrecognised\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        // As if a takeover renewed the permit after the sweep read its candidates: the bound
+        // the sweep brings is older than the permit, so absence proves nothing yet.
+        MerchantPayoutOutcomes.Applied tooSoon =
+                asPlatform(
+                        uow ->
+                                outcomes.applyQueryAnswer(
+                                        uow,
+                                        payoutStore.findForUpdate(uow, merchant.id(), crashed)
+                                                .orElseThrow(),
+                                        unrecognised,
+                                        Instant.now().minus(Duration.ofMinutes(10)),
+                                        correlation()));
+        assertThat(tooSoon.acting()).isFalse();
+        assertThat(tooSoon.status()).isEqualTo(MerchantPayoutStatus.DISPATCHED);
+
+        MerchantPayoutOutcomes.Applied old =
+                asPlatform(
+                        uow ->
+                                outcomes.applyQueryAnswer(
+                                        uow,
+                                        payoutStore.findForUpdate(uow, merchant.id(), crashed)
+                                                .orElseThrow(),
+                                        unrecognised,
+                                        Instant.now().plusSeconds(1),
+                                        correlation()));
+        assertThat(old.acting()).isTrue();
+        assertThat(old.status()).isEqualTo(MerchantPayoutStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("a sweep racing a takeover's renewal judges the renewed permit: the resolver's row lock orders them")
+    void aSweepRacingARenewalJudgesTheRenewedPermit() throws Exception {
+        Funded merchant = funded("100.00");
+        MerchantPayoutId crashed = crash(merchant, "40.00", key());
+        queryAnswers(merchant, crashed, "unrecognised");
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection takeover = DatabaseRoles.application()) {
+            takeover.setAutoCommit(false);
+            // A takeover's renewal, mid-transaction: the row locked and the permit moved past any
+            // bound, not yet committed - once it commits, the takeover sends.
+            try (PreparedStatement renewal =
+                    takeover.prepareStatement(
+                            "UPDATE merchant.merchant_payout SET last_dispatched_at = now() +"
+                                    + " interval '1 hour' WHERE id = ?")) {
+                renewal.setObject(1, crashed.value());
+                assertThat(renewal.executeUpdate()).isEqualTo(1);
+            }
+            Future<MerchantPayoutResolution.SweepResult> sweep =
+                    pool.submit(() -> resolution(Duration.ZERO).sweep());
+            // The sweep reaches the row and waits behind the renewal - on its locking read, or
+            // on its transition if the read did not lock.
+            awaitWaiting("merchant.merchant_payout");
+            takeover.commit();
+            sweep.get(60, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        // theBoundIsRejudgedUnderTheLock proves the arithmetic single-threaded; this is the lock.
+        assertThat(stored(merchant, crashed).status())
+                .as("judged on the renewed permit: absence proves nothing yet")
+                .isEqualTo(MerchantPayoutStatus.DISPATCHED);
+        assertThat(holdStatuses(merchant)).containsExactly("ACTIVE");
+    }
+
+    @Test
+    @DisplayName("a takeover racing the sweep's verdict sends nothing: the renewal's conditional is the permit")
+    void aTakeoverRacingTheVerdictSendsNothing() throws Exception {
+        Funded merchant = funded("100.00");
+        String key = key();
+        MerchantPayoutId crashed = crash(merchant, "40.00", key);
+        expireTheLease(merchant, key);
+        provider.succeedsWith(PATH, 200, PAID);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection resolver = DatabaseRoles.application()) {
+            resolver.setAutoCommit(false);
+            // A resolver's verdict, mid-transaction: the row locked and moved, not yet committed.
+            try (PreparedStatement verdict =
+                    resolver.prepareStatement(
+                            "UPDATE merchant.merchant_payout SET status = 'FAILED', failure_reason"
+                                    + " = 'NEVER_RECEIVED' WHERE id = ?")) {
+                verdict.setObject(1, crashed.value());
+                assertThat(verdict.executeUpdate()).isEqualTo(1);
+            }
+            // The takeover reads DISPATCHED (the verdict is uncommitted) and waits on the row to
+            // renew its permit: exactly the window ADR-0057 section 4 closes.
+            Future<MerchantPayouts.Initiated> takeover =
+                    pool.submit(() -> initiate(merchant, "40.00", key));
+            awaitWaiting("SET last_dispatched_at");
+            resolver.commit();
+
+            MerchantPayouts.Initiated answered = takeover.get(60, TimeUnit.SECONDS);
+            assertThat(answered.payout()).isEqualTo(crashed);
+            assertThat(answered.status())
+                    .as("the row's truth, never a re-send's")
+                    .isEqualTo(MerchantPayoutStatus.FAILED);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(provider.requestCount(PATH))
+                .as("the renewal matched no row, so nothing was sent")
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("a refused connection on a RE-send moves nothing: the first send may have paid")
+    void nothingSentOnAReSendMovesNothing() throws Exception {
+        Funded merchant = funded("100.00");
+        String key = key();
+        MerchantPayoutId crashed = crash(merchant, "40.00", key);
+        expireTheLease(merchant, key);
+
+        MerchantPayouts.Initiated takenOver =
+                initiateWith(payoutsSendingTo(unreachable(), idempotentExecutor), merchant,
+                        "40.00", key);
+
+        assertThat(takenOver.status())
+                .as("never FAILED from a re-send's refused connection")
+                .isEqualTo(MerchantPayoutStatus.DISPATCHED);
+        assertThat(holdStatuses(merchant)).containsExactly("ACTIVE");
+        assertThat(stored(merchant, crashed).failureReason()).isEmpty();
+    }
+
+    // -----------------------------------------------------------------
+    // The refusals that write nothing
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("no effective destination, a suspended merchant, a foreign currency: refused, nothing written")
+    void theRefusalsWriteNothing() throws Exception {
+        Funded noDestination = fundedWithoutDestination("100.00");
+        assertThatThrownBy(() -> initiate(noDestination, "10.00", key()))
+                .isInstanceOf(NoEffectiveDestinationException.class);
+
+        Funded suspended = funded("100.00");
+        raw("UPDATE merchant.merchant SET status = 'SUSPENDED' WHERE id = ?", suspended.id().value());
+        assertThatThrownBy(() -> initiate(suspended, "10.00", key()))
+                .isInstanceOf(MerchantNotTradingException.class);
+
+        Funded euro = funded("100.00");
+        assertThatThrownBy(
+                        () ->
+                                initiateAmount(
+                                        euro, Money.of(new java.math.BigDecimal("10.00"),
+                                                CurrencyCode.of("GBP")), key()))
+                .isInstanceOf(PayoutCurrencyMismatchException.class);
+
+        for (Funded merchant : List.of(noDestination, suspended, euro)) {
+            assertThat(holdStatuses(merchant)).isEmpty();
+            assertThat(count(
+                            "SELECT count(*) FROM merchant.merchant_payout WHERE merchant_id = ?",
+                            merchant.id().value()))
+                    .isZero();
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // The payable view (INV-MER-02, inherited from P6-TSK-010)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("the payable reconciles with a paid and a FAILED payout in the picture: paidOut is its own term")
+    void thePayableReconcilesWithPayouts() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.succeedsWith(PATH, 200, PAID);
+        initiate(merchant, "30.00", key());
+        provider.reset();
+        provider.succeedsWith(PATH, 200, "{\"status\":\"declined\"}");
+        initiate(merchant, "20.00", key());
+
+        MerchantPayable.Payable payable = payables.payablesOf(merchant.id()).get(0);
+        assertThat(payable.position()).isEqualTo(eur("70.00"));
+        assertThat(payable.captured()).isEqualTo(eur("100.00"));
+        assertThat(payable.paidOut()).as("only the paid payout, never the failed one").isEqualTo(eur("30.00"));
+        assertThat(payable.other()).isEqualTo(eur("0.00"));
+        assertThat(payable.terms()).isEqualTo(payable.position());
+        assertThat(positionMinor(merchant))
+                .as("independent SQL over the payable's lines agrees")
+                .isEqualTo(7000);
+        assertThat(count(
+                        "SELECT COALESCE(sum(line.amount_minor), 0) FROM ledger.journal_line line"
+                                + " JOIN ledger.ledger_account account ON account.id ="
+                                + " line.ledger_account_id JOIN ledger.journal_entry entry ON"
+                                + " entry.id = line.entry_id WHERE account.purpose ="
+                                + " 'PAYOUT_CLEARING' AND line.direction = 'CREDIT' AND"
+                                + " entry.reference IN (SELECT id::text FROM"
+                                + " merchant.merchant_payout WHERE merchant_id = ?)",
+                        merchant.id().value()))
+                .as("PAYOUT_CLEARING moved by exactly the completed payout")
+                .isEqualTo(3000);
+    }
+
+    // -----------------------------------------------------------------
+    // V007, for every writer
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("V007 refuses what the domain refuses, for raw SQL")
+    void theSchemaRefusesWhatTheDomainRefuses() throws Exception {
+        Funded merchant = funded("100.00");
+        Funded other = funded("100.00");
+        provider.succeedsWith(PATH, 200, "{\"status\":\"declined\"}");
+        MerchantPayoutId failed = initiate(merchant, "10.00", key()).payout();
+
+        // Born DISPATCHED, to its own merchant's EFFECTIVE destination. Another merchant's
+        // destination is refused by the BEFORE INSERT trigger first (23514) - triggers run
+        // before the composite foreign key is checked, which stands behind it as the backstop.
+        assertSqlState("23514", () -> insertRaw(merchant, merchant.destination(), "COMPLETED"));
+        assertSqlState("23514", () -> insertRaw(merchant, other.destination(), "DISPATCHED"));
+        UUID proposed = proposedDestination(merchant);
+        assertSqlState("23514", () -> insertRaw(merchant, proposed, "DISPATCHED"));
+        // A terminal payout never moves, and a resolved one is never re-sent.
+        assertThatThrownBy(
+                        () ->
+                                raw(
+                                        "UPDATE merchant.merchant_payout SET status = 'UNKNOWN',"
+                                                + " failure_reason = NULL WHERE id = ?",
+                                        failed.value()))
+                .isInstanceOf(SQLException.class);
+        assertThatThrownBy(
+                        () ->
+                                raw(
+                                        "UPDATE merchant.merchant_payout SET last_dispatched_at ="
+                                                + " now() + interval '1 hour' WHERE id = ?",
+                                        failed.value()))
+                .isInstanceOf(SQLException.class);
+        // The dispatch is frozen: not even updatable by the app role.
+        assertSqlState(
+                "42501",
+                () ->
+                        raw(
+                                "UPDATE merchant.merchant_payout SET amount_minor = 1 WHERE id = ?",
+                                failed.value()));
+        // No payout ever disappears, and no evidence is ever edited.
+        assertSqlState(
+                "42501", () -> raw("DELETE FROM merchant.merchant_payout WHERE id = ?", failed.value()));
+        assertSqlState(
+                "42501",
+                () ->
+                        raw(
+                                "UPDATE merchant.payout_evidence SET key_version = 2 WHERE"
+                                        + " payout_id = ?",
+                                failed.value()));
+        assertThat(stored(merchant, failed).status()).isEqualTo(MerchantPayoutStatus.FAILED);
+
+        // The one backward move no earlier rule stands in front of: an UNKNOWN payout carries
+        // no recorded outcome to freeze, so only the edge rule keeps it from DISPATCHED.
+        provider.reset();
+        provider.neverResponds(PATH);
+        MerchantPayoutId unknown = initiate(merchant, "10.00", key()).payout();
+        assertThat(stored(merchant, unknown).status()).isEqualTo(MerchantPayoutStatus.UNKNOWN);
+        assertThatThrownBy(
+                        () ->
+                                raw(
+                                        "UPDATE merchant.merchant_payout SET status = 'DISPATCHED'"
+                                                + " WHERE id = ?",
+                                        unknown.value()))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("moves only along the machine");
+    }
+
+    @Test
+    @DisplayName("a resolution whose hold is no longer standing refuses: nothing posts, the payout stays")
+    void aResolutionWithoutItsHoldRefuses() throws Exception {
+        Funded merchant = funded("100.00");
+        MerchantPayoutId crashed = crash(merchant, "40.00", key());
+        HoldId hold = stored(merchant, crashed).holdId();
+        // Another writer releases the payout's hold behind its back - the defect this belt
+        // exists to surface: the money is no longer reserved, so posting now would move it twice.
+        asOperator(uow -> holds.release(uow, hold));
+        queryAnswers(merchant, crashed, "paid");
+
+        MerchantPayoutResolution.SweepResult swept = resolution(Duration.ZERO).sweep();
+
+        assertThat(swept.failedRows()).as("refused loudly, never guessed at").isPositive();
+        assertThat(stored(merchant, crashed).status())
+                .as("the transition rolled back with the refusal")
+                .isEqualTo(MerchantPayoutStatus.DISPATCHED);
+        assertThat(entryLines(crashed)).as("nothing posted").isEmpty();
+        assertThat(count(
+                        "SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?",
+                        crashed.value()))
+                .as("only the dispatch's own fact")
+                .isEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------
+    // The serialisation points (ADR-0057 sections 7 and 11)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a supersession racing a dispatch waits for it: the payout commits to the destination effective at its commit")
+    void aSupersessionWaitsForTheDispatch() throws Exception {
+        Funded merchant = funded("100.00");
+        UUID next = approvedAndDue(merchant);
+        provider.succeedsWith(PATH, 200, PAID);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try (Connection blocker = DatabaseRoles.application()) {
+            blocker.setAutoCommit(false);
+            lockThePayable(blocker, merchant);
+            Future<MerchantPayouts.Initiated> dispatch =
+                    pool.submit(() -> initiate(merchant, "10.00", key()));
+            // The dispatch holds the effective destination FOR SHARE and waits on the payable.
+            awaitWaiting("FROM ledger.ledger_account");
+            Future<?> supersession = pool.submit(() -> effectuation().sweep());
+            // The supersession's FOR UPDATE on that destination waits behind the share lock.
+            awaitWaiting("status = 'EFFECTIVE' FOR UPDATE");
+            blocker.rollback();
+
+            MerchantPayouts.Initiated paid = dispatch.get(60, TimeUnit.SECONDS);
+            supersession.get(60, TimeUnit.SECONDS);
+            assertThat(paid.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+            assertThat(stored(merchant, paid.payout()).destinationId().value())
+                    .as("bound to the destination still effective when the payout committed")
+                    .isEqualTo(merchant.destination());
+            assertThat(destinationStatus(merchant.destination())).isEqualTo("SUPERSEDED");
+            assertThat(destinationStatus(next)).isEqualTo("EFFECTIVE");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("a suspension racing a dispatch waits for it: the merchant row is the serialisation point")
+    void aSuspensionWaitsForTheDispatch() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.succeedsWith(PATH, 200, PAID);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try (Connection blocker = DatabaseRoles.application()) {
+            blocker.setAutoCommit(false);
+            lockThePayable(blocker, merchant);
+            Future<MerchantPayouts.Initiated> dispatch =
+                    pool.submit(() -> initiate(merchant, "10.00", key()));
+            awaitWaiting("FROM ledger.ledger_account");
+            Future<?> suspension =
+                    pool.submit(
+                            () -> {
+                                raw(
+                                        "UPDATE merchant.merchant SET status = 'SUSPENDED' WHERE"
+                                                + " id = ?",
+                                        merchant.id().value());
+                                return null;
+                            });
+            // The suspension waits on the merchant row the dispatch locked.
+            awaitWaiting("UPDATE merchant.merchant SET status");
+            blocker.rollback();
+
+            assertThat(dispatch.get(60, TimeUnit.SECONDS).status())
+                    .as("ordered before the suspension, so dispatched while trading")
+                    .isEqualTo(MerchantPayoutStatus.COMPLETED);
+            suspension.get(60, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThatThrownBy(() -> initiate(merchant, "10.00", key()))
+                .as("and once suspended, nothing more is dispatched")
+                .isInstanceOf(MerchantNotTradingException.class);
+    }
+
+    // -----------------------------------------------------------------
+    // Nothing sensitive leaves (INV-AUD-02, PHASE_6_PLAN section 10)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("nothing sensitive leaves: facts carry identifiers and names, records no reference, evidence is ciphertext")
+    void nothingSensitiveLeaves() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.succeedsWith(PATH, 200, PAID);
+        MerchantPayoutId paid = initiate(merchant, "37.19", key()).payout();
+        provider.reset();
+        provider.succeedsWith(PATH, 200, "{\"status\":\"declined\"}");
+        MerchantPayoutId declined = initiate(merchant, "12.34", key()).payout();
+        String reference = destinationReference(merchant);
+        java.util.regex.Pattern fieldName = java.util.regex.Pattern.compile("\"([A-Za-z]+)\"\\s*:");
+
+        for (MerchantPayoutId payout : List.of(paid, declined)) {
+            List<String> payloads =
+                    strings(
+                            "SELECT convert_from(payload, 'UTF8') FROM platform.outbox_event"
+                                    + " WHERE aggregate_id = ?",
+                            payout.value());
+            assertThat(payloads).as("the dispatch's fact and the outcome's").hasSize(2);
+            for (String payload : payloads) {
+                List<String> fields =
+                        fieldName.matcher(payload).results().map(found -> found.group(1)).toList();
+                assertThat(fields)
+                        .as("identifiers and enumerated names only, never an amount: %s", payload)
+                        .isSubsetOf("status", "merchantId", "destinationId", "failureReason");
+                assertThat(payload).doesNotContain(reference);
+            }
+            for (String summary :
+                    strings(
+                            "SELECT change_summary FROM platform.audit_record WHERE target_id = ?",
+                            payout.value().toString())) {
+                assertThat(summary).as("never the destination's reference").doesNotContain(reference);
+            }
+            List<byte[]> retained =
+                    byteArrays(
+                            "SELECT content_ciphertext FROM merchant.payout_evidence WHERE"
+                                    + " payout_id = ?",
+                            payout.value());
+            assertThat(retained).isNotEmpty();
+            for (byte[] ciphertext : retained) {
+                assertThat(new String(ciphertext, java.nio.charset.StandardCharsets.ISO_8859_1))
+                        .as("the provider's answer is ciphertext at rest")
+                        .doesNotContain("\"status\"");
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Fixtures
+    // -----------------------------------------------------------------
+
+    /** A merchant, its payable, and an effective destination. */
+    private record Funded(MerchantId id, LedgerAccountId payable, UUID destination) {}
+
+    private Funded funded(String amount) throws Exception {
+        Funded bare = fundedWithoutDestination(amount);
+        UUID destination = IDS.next();
+        raw(
+                "INSERT INTO merchant.payout_destination (id, merchant_id, destination_reference,"
+                        + " display_suffix, status, proposed_by, proposed_at, proposal_reason,"
+                        + " approved_by, approved_at, cooling_off_until, effective_at) VALUES"
+                        + " (?, ?, ?, '3000', 'EFFECTIVE', 'fixture-a', now() - interval '4 days',"
+                        + " 'fixture', 'fixture-b', now() - interval '4 days', now() - interval"
+                        + " '1 day', now() - interval '1 hour')",
+                destination,
+                bare.id().value(),
+                "pdr_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        return new Funded(bare.id(), bare.payable(), destination);
+    }
+
+    private Funded fundedWithoutDestination(String amount) throws Exception {
+        MerchantId merchant = MerchantId.next(IDS);
+        raw(
+                "INSERT INTO merchant.merchant (id, party_ref, legal_name, display_name,"
+                        + " settlement_currency, status, created_at, status_changed_at) VALUES"
+                        + " (?, ?, 'Acme GmbH', 'Acme', 'EUR', 'ACTIVE', now(), now())",
+                merchant.value(),
+                UUID.randomUUID());
+        LedgerAccountId payable =
+                asOperator(
+                        uow ->
+                                ledgerAccountStore
+                                        .createOrConverge(
+                                                uow,
+                                                LedgerAccount.owned(
+                                                        IDS,
+                                                        CLOCK,
+                                                        AccountType.LIABILITY,
+                                                        AccountPurpose.MERCHANT_PAYABLE,
+                                                        EUR,
+                                                        merchant.value()))
+                                        .account()
+                                        .id());
+        Funded funded = new Funded(merchant, payable, null);
+        if (!eur(amount).isZero()) {
+            post(funded, amount, Direction.CREDIT);
+        }
+        return funded;
+    }
+
+    /**
+     * A capture-shaped entry ({@code CREDIT}: DR settlement clearing / CR payable) or a
+     * refund-shaped one ({@code DEBIT}), so the payable view reads it as captured or refunded.
+     */
+    private void post(Funded merchant, String amount, Direction payableSide) throws Exception {
+        asOperator(
+                uow -> {
+                    LedgerAccount clearing =
+                            new ChartOfAccounts<>(ledgerAccountStore)
+                                    .resolve(uow, AccountPurpose.SETTLEMENT_CLEARING, EUR);
+                    LocalDate today = LocalDate.now(CLOCK.withZone(ZoneOffset.UTC));
+                    Direction clearingSide =
+                            payableSide == Direction.CREDIT ? Direction.DEBIT : Direction.CREDIT;
+                    UUID reference = UUID.randomUUID();
+                    return postings.post(
+                            uow,
+                            new PostingCommand(
+                                    "payout-test-fixture:" + reference,
+                                    today,
+                                    today,
+                                    reference.toString(),
+                                    List.of(
+                                            new JournalLine(clearing.id(), clearingSide, eur(amount)),
+                                            new JournalLine(
+                                                    merchant.payable(), payableSide, eur(amount)))));
+                });
+    }
+
+    private void hold(Funded merchant, String amount) throws Exception {
+        asOperator(uow -> holds.place(uow, merchant.payable(), eur(amount)));
+    }
+
+    private UUID proposedDestination(Funded merchant) throws SQLException {
+        UUID id = IDS.next();
+        raw(
+                "INSERT INTO merchant.payout_destination (id, merchant_id, destination_reference,"
+                        + " display_suffix, status, proposed_by, proposed_at, proposal_reason)"
+                        + " VALUES (?, ?, 'pdr_proposedone', '3000', 'PROPOSED', 'fixture',"
+                        + " now(), 'fixture')",
+                id,
+                merchant.id().value());
+        return id;
+    }
+
+    private static void insertRaw(Funded merchant, UUID destination, String status)
+            throws SQLException {
+        raw(
+                "INSERT INTO merchant.merchant_payout (id, merchant_id, amount_minor, currency,"
+                        + " scale, destination_id, hold_reference, provider_idempotency_reference,"
+                        + " provider_reference, status, failure_reason, dispatch_key, requested_by,"
+                        + " requested_by_type, reason, created_at, last_dispatched_at) VALUES"
+                        + " (?, ?, 100, 'EUR', 2, ?, ?, ?, ?, ?, NULL, ?, 'raw', 'MERCHANT', NULL,"
+                        + " now(), now())",
+                IDS.next(),
+                merchant.id().value(),
+                destination,
+                IDS.next(),
+                "pyo-" + UUID.randomUUID(),
+                status.equals("COMPLETED") ? "po_raw" : null,
+                status,
+                "raw-" + UUID.randomUUID());
+    }
+
+    // -----------------------------------------------------------------
+    // Driving the command
+    // -----------------------------------------------------------------
+
+    private MerchantPayouts.Initiated initiate(Funded merchant, String amount, String key)
+            throws Exception {
+        return initiateWith(payouts, merchant, amount, key);
+    }
+
+    private MerchantPayouts.Initiated initiateAmount(Funded merchant, Money amount, String key)
+            throws Exception {
+        return asMerchant(
+                merchant,
+                () ->
+                        payouts.initiate(
+                                new MerchantPayouts.InitiateCommand(
+                                        merchant.id(), amount, key, Optional.empty(),
+                                        Optional.empty())));
+    }
+
+    private MerchantPayouts.Initiated initiateWith(
+            MerchantPayouts command, Funded merchant, String amount, String key) throws Exception {
+        return asMerchant(
+                merchant,
+                () ->
+                        command.initiate(
+                                new MerchantPayouts.InitiateCommand(
+                                        merchant.id(), eur(amount), key, Optional.empty(),
+                                        Optional.empty())));
+    }
+
+    /**
+     * The crash between the two transactions: the dispatch commits, then the wire call dies
+     * before anything is sent, leaving the payout DISPATCHED and its claim IN_PROGRESS.
+     */
+    private MerchantPayoutId crash(Funded merchant, String amount, String key) throws Exception {
+        PayoutProvider crashing =
+                new PayoutProvider() {
+                    @Override
+                    public com.finapp.merchant.PayoutAnswer dispatch(PayoutRequest request) {
+                        throw new IllegalStateException("the instance died mid-call");
+                    }
+
+                    @Override
+                    public PayoutQueryAnswer query(com.finapp.merchant.PayoutReference ours) {
+                        throw new IllegalStateException("unused");
+                    }
+                };
+        assertThatThrownBy(
+                        () ->
+                                initiateWith(
+                                        payoutsSendingTo(crashing, idempotentExecutor),
+                                        merchant,
+                                        amount,
+                                        key))
+                .isInstanceOf(IllegalStateException.class);
+        try (Connection app = DatabaseRoles.application()) {
+            return payoutStore.findByDispatchKey(app, merchant.id(), key).orElseThrow().id();
+        }
+    }
+
+    private void expireTheLease(Funded merchant, String key) throws SQLException {
+        raw(
+                "UPDATE platform.idempotency_record SET lease_expires_at = now() - interval"
+                        + " '1 minute' WHERE scope = ? AND idempotency_key = ? AND state ="
+                        + " 'IN_PROGRESS'",
+                MerchantPayouts.IDEMPOTENCY_SCOPE_PREFIX + merchant.id().value(),
+                key);
+    }
+
+    private MerchantPayouts payoutsSendingTo(PayoutProvider wire, IdempotentExecutor executor) {
+        return new MerchantPayouts(
+                new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
+                executor,
+                new com.finapp.merchant.JdbcMerchantStore(),
+                destinations,
+                ledgerAccountStore,
+                holds,
+                payoutStore,
+                wire,
+                outcomes,
+                evidence,
+                auditWriter,
+                IDS,
+                CLOCK);
+    }
+
+    private MerchantPayoutResolution resolution(Duration dispatchedAge) {
+        return new MerchantPayoutResolution(
+                new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
+                payoutStore,
+                new SimulatedPayoutProvider(
+                        URI.create(provider.baseUrl()), Duration.ofSeconds(2), new byte[32]),
+                outcomes,
+                evidence,
+                IDS,
+                CLOCK,
+                dispatchedAge,
+                Duration.ZERO,
+                1000);
+    }
+
+    private static PayoutProvider unreachable() throws Exception {
+        int closed;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            closed = socket.getLocalPort();
+        }
+        return new SimulatedPayoutProvider(
+                URI.create("http://127.0.0.1:" + closed), Duration.ofSeconds(2), new byte[32]);
+    }
+
+    private void queryAnswers(Funded merchant, MerchantPayoutId payout, String word)
+            throws Exception {
+        String reference = stored(merchant, payout).reference().value();
+        provider.succeedsWith(
+                PATH + "/" + reference,
+                200,
+                word.equals("paid")
+                        ? "{\"status\":\"paid\",\"reference\":\"po-q-" + reference + "\"}"
+                        : "{\"status\":\"" + word + "\"}");
+    }
+
+    /** An APPROVED change whose cooling-off already elapsed: the next sweep effects it. */
+    private UUID approvedAndDue(Funded merchant) throws SQLException {
+        UUID id = IDS.next();
+        raw(
+                "INSERT INTO merchant.payout_destination (id, merchant_id, destination_reference,"
+                        + " display_suffix, status, proposed_by, proposed_at, proposal_reason,"
+                        + " approved_by, approved_at, cooling_off_until) VALUES (?, ?, ?, '4000',"
+                        + " 'APPROVED', 'fixture-a', now() - interval '5 days', 'fixture',"
+                        + " 'fixture-b', now() - interval '4 days', now() - interval '1 hour')",
+                id,
+                merchant.id().value(),
+                "pdr_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        return id;
+    }
+
+    private com.finapp.merchant.PayoutDestinationEffectuation effectuation() {
+        return new com.finapp.merchant.PayoutDestinationEffectuation(
+                new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
+                destinations,
+                auditWriter,
+                IDS,
+                CLOCK,
+                1000);
+    }
+
+    private static void lockThePayable(Connection blocker, Funded merchant) throws SQLException {
+        try (PreparedStatement lock =
+                blocker.prepareStatement(
+                        "SELECT id FROM ledger.ledger_account WHERE id = ? FOR UPDATE")) {
+            lock.setObject(1, merchant.payable().value());
+            lock.executeQuery().close();
+        }
+    }
+
+    /**
+     * Waits until some session is blocked on a lock while running a statement containing
+     * {@code fragment} - the deterministic way to know a racer reached its lock, never a sleep
+     * standing in for one.
+     */
+    private static void awaitWaiting(String fragment) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < deadline) {
+            if (count(
+                            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+                                    + " AND query LIKE ?",
+                            "%" + fragment + "%")
+                    > 0) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("no session waited on a lock running: " + fragment);
+    }
+
+    private static String destinationStatus(UUID destination) throws SQLException {
+        return strings("SELECT status FROM merchant.payout_destination WHERE id = ?", destination)
+                .get(0);
+    }
+
+    private static String destinationReference(Funded merchant) throws SQLException {
+        return strings(
+                        "SELECT destination_reference FROM merchant.payout_destination WHERE id = ?",
+                        merchant.destination())
+                .get(0);
+    }
+
+    private static List<byte[]> byteArrays(String sql, Object... arguments) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                read.setObject(i + 1, arguments[i]);
+            }
+            List<byte[]> values = new ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    values.add(row.getBytes(1));
+                }
+            }
+            return values;
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Scopes
+    // -----------------------------------------------------------------
+
+    private <R> R asMerchant(Funded merchant, Supplier<R> work) {
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(correlation());
+                SecurityContext.Scope acting =
+                        SecurityContext.enter(
+                                new Actor(merchant.id().value().toString(), ActorType.MERCHANT))) {
+            return work.get();
+        }
+    }
+
+    private <R> R asOperator(Function<Connection, R> work) throws Exception {
+        return committed(new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER), work);
+    }
+
+    private <R> R asPlatform(Function<Connection, R> work) throws Exception {
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow = CorrelationContext.enter(correlation());
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            R result = work.apply(app);
+            app.commit();
+            return result;
+        }
+    }
+
+    private <R> R committed(Actor actor, Function<Connection, R> work) throws Exception {
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(correlation());
+                SecurityContext.Scope acting = SecurityContext.enter(actor);
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try {
+                R result = work.apply(app);
+                app.commit();
+                return result;
+            } catch (RuntimeException refused) {
+                app.rollback();
+                throw refused;
+            }
+        }
+    }
+
+    private static Correlation correlation() {
+        return Correlation.startingWith(CorrelationId.generate(IDS));
+    }
+
+    // -----------------------------------------------------------------
+    // Counters - in the tables, never inferred
+    // -----------------------------------------------------------------
+
+    private MerchantPayout stored(Funded merchant, MerchantPayoutId payout) throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            return payoutStore.find(app, merchant.id(), payout).orElseThrow();
+        }
+    }
+
+    private static List<String> holdStatuses(Funded merchant) throws SQLException {
+        return strings(
+                "SELECT status FROM ledger.hold WHERE ledger_account_id = ? ORDER BY placed_at",
+                merchant.payable().value());
+    }
+
+    private static List<String> entryLines(MerchantPayoutId payout) throws SQLException {
+        return strings(
+                "SELECT line.direction || ':' || account.purpose || ':' || line.amount_minor"
+                        + " FROM ledger.journal_line line JOIN ledger.journal_entry entry ON"
+                        + " entry.id = line.entry_id JOIN ledger.ledger_account account ON"
+                        + " account.id = line.ledger_account_id WHERE entry.idempotency_scope = ?",
+                "ledger.post:" + MerchantPayoutOutcomes.POSTING_KEY_PREFIX + payout.value());
+    }
+
+    private static long positionMinor(Funded merchant) throws SQLException {
+        return count(
+                "SELECT COALESCE(sum(CASE WHEN direction = 'CREDIT' THEN amount_minor ELSE"
+                        + " -amount_minor END), 0) FROM ledger.journal_line WHERE"
+                        + " ledger_account_id = ?",
+                merchant.payable().value());
+    }
+
+    private static long outboxCount(String type, MerchantPayoutId payout) throws SQLException {
+        return count(
+                "SELECT count(*) FROM platform.outbox_event WHERE event_type = ? AND"
+                        + " aggregate_id = ?",
+                type,
+                payout.value());
+    }
+
+    private static long auditCount(String operation, MerchantPayoutId payout)
+            throws SQLException {
+        return count(
+                "SELECT count(*) FROM platform.audit_record WHERE operation = ? AND target_id = ?",
+                operation,
+                payout.value().toString());
+    }
+
+    private static Money eur(String amount) {
+        return Money.of(new java.math.BigDecimal(amount), EUR);
+    }
+
+    private static String key() {
+        return "pay-" + UUID.randomUUID();
+    }
+
+    private static List<Object> race(List<Callable<Object>> racers) throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(racers.size());
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<Object>> futures = new ArrayList<>();
+            for (Callable<Object> racer : racers) {
+                futures.add(
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return racer.call();
+                                }));
+            }
+            start.countDown();
+            List<Object> outcomes = new ArrayList<>();
+            for (Future<Object> future : futures) {
+                outcomes.add(future.get(120, TimeUnit.SECONDS));
+            }
+            return outcomes;
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private static void assertSqlState(String state, ThrowingRunnable statement) {
+        assertThatThrownBy(statement::run)
+                .isInstanceOf(SQLException.class)
+                .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo(state));
+    }
+
+    @FunctionalInterface
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
+
+    private static void raw(String sql, Object... arguments) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement statement = app.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                statement.setObject(i + 1, arguments[i]);
+            }
+            statement.executeUpdate();
+        }
+    }
+
+    private static long count(String sql, Object... arguments) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                read.setObject(i + 1, arguments[i]);
+            }
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    private static List<String> strings(String sql, Object... arguments) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                read.setObject(i + 1, arguments[i]);
+            }
+            List<String> values = new ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    values.add(row.getString(1));
+                }
+            }
+            return values;
+        }
+    }
+}

@@ -433,6 +433,13 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/merchants/{merchantId}/payout-destinations"
                                 + "/{destinationId}/withdrawal",
+                        // P6-TSK-012: the payout (ADR-0051, ADR-0057) - the merchant's own,
+                        // keyed, with its API key and no identifier but the payout's own; and
+                        // an operator's on its behalf behind MERCHANT_PAYOUT, reasoned. Neither
+                        // body can name a destination: a payout goes only to the effective one.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/payouts",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/payouts/{payoutId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/payouts",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

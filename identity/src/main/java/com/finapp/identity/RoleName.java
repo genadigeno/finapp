@@ -77,7 +77,11 @@ public enum RoleName {
                     PermissionName.TRANSFER_REVERSE,
                     // P5-TSK-015: the refund joins the one money-operating population - the
                     // same reasoning as the reversal's arrival, restated not re-argued.
-                    PermissionName.PAYMENT_REFUND)),
+                    PermissionName.PAYMENT_REFUND,
+                    // P6-TSK-012: the operator-initiated payout joins it too - money leaving
+                    // the platform, the refund's reasoning pointed at the merchant. Where it
+                    // goes stays four-eyes-guarded (ADR-0056); only when it is asked for moves.
+                    PermissionName.MERCHANT_PAYOUT)),
 
     /**
      * Administers commercial counterparties and nothing else (`P6-TSK-003`): onboards
@@ -89,7 +93,9 @@ public enum RoleName {
      * ({@link #ADMINISTRATOR}), nor reviewing verification cases ({@link #KYC_REVIEWER} - the
      * KYB decision is an input this role consumes, never one it makes), nor operating the
      * money ({@link #LEDGER_OPERATOR} - onboarding opens books and moves nothing through
-     * them; the payout, when it arrives, is commanded over ITS OWN permission). Holds none of
+     * them; the payout is commanded over ITS OWN permission, {@link
+     * PermissionName#MERCHANT_PAYOUT}, which `P6-TSK-012` gave the money-operating population).
+     * Holds none of
      * the other populations' permissions and they hold neither of these, asserted pairwise
      * and over HTTP in both directions ({@code INV-AUD-03}).
      */

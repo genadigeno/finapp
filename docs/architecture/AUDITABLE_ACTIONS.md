@@ -358,6 +358,9 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `merchant.PayoutDestinationRejected` | **Yes** | An operator rejected a proposed payout destination - terminal; the reason is required. |
 | `merchant.PayoutDestinationWithdrawn` | **Yes** | An operator withdrew a payout destination change before it took effect - terminal; the reason is required. |
 | `merchant.PayoutDestinationEffective` | No | The platform made an approved payout destination effective once its cooling-off elapsed, superseding the previous one in the same transaction; the record names both by identifier. |
+| `merchant.MerchantPayoutInitiated` | No | A merchant initiated a payout of its payable with its API key; the record names the payout, the destination and the key by identifier. |
+| `merchant.MerchantPayoutInitiatedByOperator` | **Yes** | An operator initiated a payout of a merchant's payable on its behalf; the reason is required. |
+| `merchant.MerchantPayoutOutcomeApplied` | No | The platform applied the payout provider's answer to a payout (completed, failed or unknown); acting transitions only. |
 | `checkout.CheckoutSessionCreated` | No | A merchant opened a checkout session; the record names the session and the merchant by identifier, never the token and never what was bought. |
 | `checkout.CheckoutSessionConfirmed` | No | A customer confirmed a checkout session; the record names the session and the payment intent by identifier. |
 | `checkout.OrderCreated` | No | A capture completed a checkout session and produced its order; the record names the order, the session and the journal entry that paid for it. |
@@ -373,6 +376,18 @@ record of what the refused actor said they were doing. `merchant.PayoutDestinati
 needs none: nobody decided anything when the cooling-off elapsed, and the decisions are already
 on the trail as the proposal and the approval. No record ever carries the provider reference or
 its suffix (`INV-AUD-02`).
+
+**One of the three payout actions requires a reason, and it is the operator's**
+(`P6-TSK-012`, ADR-0057). A merchant paying out its own payable with its own key is doing the
+ordinary thing the surface exists for, and the record names the key that acted — the first
+merchant act to carry ADR-0052 §2's key id, which the checkout records do not yet carry. An
+operator moving a merchant's money on its behalf is a judgement the trail must explain, so
+`merchant.MerchantPayoutInitiatedByOperator` requires it, and the payout row keeps it too.
+`merchant.MerchantPayoutOutcomeApplied` is the platform's: the dispatch's own outcome
+transaction or the resolution sweep, through enumerated `enterSystem()` sites, written only on
+an acting transition — so ten racing resolvers leave one record per move, not ten. No record
+carries the destination's provider reference (`INV-AUD-02`). The ledger's own hold and posting
+records sit beside these, as they do for the refund.
 
 **Four of the five checkout actions require no reason, and the fifth does** — the split is
 `INV-AUD-03` working rather than an inconsistency (`P6-TSK-007`, `P6-TSK-008`). Creating,

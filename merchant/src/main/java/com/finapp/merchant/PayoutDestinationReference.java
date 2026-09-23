@@ -40,7 +40,10 @@ public record PayoutDestinationReference(Sensitive<String> secret) {
         return new PayoutDestinationReference(Sensitive.of(value));
     }
 
-    /** The bare reference, for the store's column and nowhere else. */
+    /**
+     * The bare reference, for the store's column and the payout wire (`P6-TSK-012`), and
+     * nowhere else — both sites named in {@code SecretsAreUnwrappedInOnePlaceTest}.
+     */
     public String expose() {
         return secret.expose();
     }

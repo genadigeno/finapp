@@ -354,12 +354,12 @@ phases must satisfy, not a description of code.
 
 ### `merchant` — Phase 6
 - **Responsibility:** the merchant as a commercial counterparty, its fees and its payouts.
-- **Owns:** Merchant, Merchant Account, Fee Schedule (versioned), Payout Destination (a proposal flow; `P6-TSK-011`, ADR-0056), Merchant Payout.
-- **Transaction:** own; payout initiation requests ledger postings.
+- **Owns:** Merchant, Merchant Account, Fee Schedule (versioned), Payout Destination (a proposal flow; `P6-TSK-011`, ADR-0056), Merchant Payout (hold-then-dispatch, four states; `P6-TSK-012`, ADR-0051, ADR-0057).
+- **Transaction:** own; a payout's dispatch places a `ledger` hold on the payable, and its completion releases it and requests the `merchant-payout:<payoutId>` posting (DR payable / CR `PAYOUT_CLEARING`) in one transaction.
 - **Consistency:** strong for merchant state. **Payable is derived from `ledger` postings and never stored** — a stored payable would be a second balance authority.
-- **APIs:** merchant CRUD (privileged), payout destination proposal and decisions (operator only — two operators, four-eyes), payout initiation, merchant transaction reporting. Strict tenant scoping on every call.
+- **APIs:** merchant CRUD (privileged), payout destination proposal and decisions (operator only — two operators, four-eyes), payout initiation (the merchant's key, or an operator over `MERCHANT_PAYOUT` — two routes) and read, merchant transaction reporting. Strict tenant scoping on every call.
 - **Events:** `MerchantOnboarded`, `FeeAssessed`, `MerchantPayoutInitiated`, `MerchantPayoutCompleted`, `MerchantPayoutFailed` *(pair added by the Phase 5 → 6 transition — terminal facts publish, the `RefundFailed` precedent)*.
-- **Failure:** a payout against insufficient payable is a domain rejection; duplicate payout initiation produces one effect; the fee schedule version is pinned per transaction so a mid-flight change cannot reprice history (`INV-HIST-04`).
+- **Failure:** a payout against insufficient payable is a domain rejection; duplicate payout initiation produces one effect; an ambiguous payout is `UNKNOWN` with its hold standing until the resolution sweep's query resolves it, and "never received" is concluded only behind the send permit (ADR-0057); the fee schedule version is pinned per transaction so a mid-flight change cannot reprice history (`INV-HIST-04`).
 - **Security:** merchant authentication distinct from customer authentication; cross-tenant access impossible; payout destination change requires step-up, four-eyes and a cooling-off period.
 - **Operations:** fee accrual, payout volume and age, per-merchant error rates, chargeback ratio (regulatory-relevant).
 - **Composes, never orchestrates** (`P6-TSK-005`): `MerchantSettlement` returns ADR-0050 §3's four journal lines and announces `FeeAssessed`, on the capture's own connection, through the `CaptureComposition` port `app` wires. `merchant` knows an intent only as a `UUID` it was handed and cannot see `payments`; `payments` cannot see `merchant`. The join is the composition root's, the `JdbcPaymentParticipants` shape.

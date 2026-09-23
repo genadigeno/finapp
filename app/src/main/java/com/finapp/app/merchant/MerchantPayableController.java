@@ -44,8 +44,10 @@ public class MerchantPayableController {
 
     /**
      * One currency's payable. Every figure is a decimal string; {@code position} equals
-     * {@code captured − fees − refunded + feesReturned + other} exactly, and {@code other} is
-     * signed (an adjustment today; a payout until `P6-TSK-012` gives it its own term).
+     * {@code captured − fees − refunded + feesReturned − paidOut + other} exactly.
+     * {@code paidOut} is what the payout rail accepted (`P6-TSK-012`; a payout in flight is a
+     * hold, not a posting, and appears in no term), and {@code other} is signed — an operator
+     * adjustment today.
      */
     public record PayableLine(
             String currency,
@@ -54,6 +56,7 @@ public class MerchantPayableController {
             String fees,
             String refunded,
             String feesReturned,
+            String paidOut,
             String other) {}
 
     /** {@code kind} is always {@code "DERIVED"} — see the class javadoc. */
@@ -76,6 +79,7 @@ public class MerchantPayableController {
                 decimal(payable.fees()),
                 decimal(payable.refunded()),
                 decimal(payable.feesReturned()),
+                decimal(payable.paidOut()),
                 decimal(payable.other()));
     }
 

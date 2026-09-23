@@ -298,6 +298,11 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `merchant.DestinationChangeNotOpen` | 409 | The payout destination change is no longer open to this decision. |
 | `merchant.DestinationNotTokenised` | 422 | The destination grant was refused; obtain a fresh grant and retry. |
 | `merchant.DestinationTokenisationUnavailable` | 503 | The destination could not be tokenised right now; retry later. |
+| `merchant.PayoutUnfunded` | 409 | The payable cannot fund this payout. |
+| `merchant.NoEffectiveDestination` | 409 | The merchant has no effective payout destination. |
+| `merchant.NotTrading` | 409 | This merchant cannot initiate payouts while suspended or closed. |
+| `merchant.PayoutCurrencyMismatch` | 422 | A payout must be in the merchant's settlement currency. |
+| `merchant.PayoutProviderUnavailable` | 503 | Payouts are unavailable right now; retry later. |
 
 ### `checkout.*` — the purchase experience (`P6-TSK-007`)
 
@@ -369,6 +374,26 @@ one `api.NotFound`, the merchant surface's standing rule.
   grant shaped like an account number never reaches either: it is `api.ValidationFailed` naming
   `destinationToken`, never the value.
 - Unknown, malformed and another merchant's destination identifiers are one `api.NotFound`.
+
+**The payout's five codes (`P6-TSK-012`, ADR-0051, ADR-0057).**
+- `merchant.PayoutUnfunded` is `INV-MER-05` refusing a payout the payable cannot fund, judged
+  inside the payable account's lock with every in-flight payout and refund already held — the
+  refund's `payments.RefundUnfunded` for the merchant's own money. A payable left negative by a
+  retained fee (ADR-0054) refuses every amount. Nothing is written, the key included, so a later
+  retry may fit.
+- `merchant.NoEffectiveDestination` is ADR-0056 §9's refusal: a proposal or a cooling-off
+  changes nothing until the platform effects it, so there is nowhere yet to pay.
+- `merchant.NotTrading` is suspension gating new dispatches, checkout's `checkout.NotTrading`
+  vocabulary for the same fact. A suspended merchant's key already fails authentication, so over
+  the merchant route this is the race's refusal; over the operator route it is the answer.
+- `merchant.PayoutCurrencyMismatch` (`422`): a merchant has one payable, in its settlement
+  currency; multi-currency payouts are Phase 9's.
+- `merchant.PayoutProviderUnavailable` (`503`) is a deployment with no payout provider
+  configured — nothing claimed, nothing held. A provider that is configured but unreachable is
+  NOT this code: that is an honest `201` whose payout is `FAILED` (`PROVIDER_UNAVAILABLE`) when
+  nothing was sent, or `UNKNOWN` with its hold standing when something may have been.
+- Unknown, malformed and another merchant's payout identifiers are one `api.NotFound`; an
+  operator naming an unknown merchant is the same.
 
 `merchant.NotKeyable` refuses only a **closed** merchant. A `SUSPENDED` one may still be
 issued keys: suspension is reversible, its keys already refuse at authentication because the

@@ -65,7 +65,7 @@ other's lifecycle.
 | `MerchantApiKey` | `merchant` | issue, revoke (operator) | Issue keyed; revoke converges by row count |
 | `FeeSchedule` | `merchant` | create version, assign to merchant (operator) | Versions immutable; assignment conditional |
 | `PayoutDestination` | `merchant` | propose, approve (four-eyes), reject, withdraw; effected by the platform after the cooling-off (`P6-TSK-011`, ADR-0056) | Propose keyed; approve conditional on proposer ≠ approver, in the statement; the rest converge by machine |
-| `MerchantPayout` | `merchant` | initiate (merchant or operator), apply-outcome | Initiate keyed; outcomes conditional (ADR-0051) |
+| `MerchantPayout` | `merchant` | initiate (the merchant's key, or an operator over `MERCHANT_PAYOUT` — two routes, ADR-0057 §6); outcomes applied by the platform (the synchronous answer, a takeover's re-send, the resolution sweep) | Initiate keyed per merchant (ADR-0057 §5); outcomes conditional on the row their resolver locked (ADR-0051, ADR-0057 §12) |
 | `CheckoutSession` | `checkout` | create (merchant), confirm (customer, by session token), expire (sweeper), complete (outcome) | Create keyed per merchant; all transitions conditional |
 | `Order` | `checkout` | created by completion only | Born in the completion's transaction; one per session (partial index) |
 
@@ -73,7 +73,8 @@ other's lifecycle.
 
 Stated in full in `CHECKOUT_MERCHANT_LIFECYCLES.md`: the session's six states (`OPEN`,
 `PAYMENT_PENDING`, `COMPLETED`, `COMPLETED_LATE`, `EXPIRED`, `ABANDONED`), the payout's
-five (`REQUESTED`, `DISPATCHED`, `COMPLETED`, `FAILED`, `UNKNOWN`), the merchant's three
+four (`DISPATCHED`, `COMPLETED`, `FAILED`, `UNKNOWN` — the planned `REQUESTED` refused by
+ADR-0057 §1, since the dispatch commits `DISPATCHED` atomically), the merchant's three
 (`ACTIVE`, `SUSPENDED`, `CLOSED`), the destination's proposal flow. Every machine gets the
 established three-layer enforcement: exhaustive aggregate sweep, generated schema `CHECK` +
 transition trigger binding every writer, append-only history.
@@ -139,9 +140,14 @@ Schema `merchant` (owner `finapp_migrator`, default-deny floor first):
   cooling-off deadline (`CHECK effective_at >= cooling_off_until`), one-open and one-effective
   partial indexes. History table (`payout_destination_event`). *(Built by `P6-TSK-011` as
   `merchant` `V006`, ADR-0056.)*
-- `merchant_payout` — merchant FK, amount (`MoneyColumns`), status (5 values, generated),
-  our minted idempotency reference (`INV-PAY-04`'s discipline), provider references,
-  hold reference, destination version ref. History table.
+- `merchant_payout` — merchant FK, amount (`MoneyColumns`), status (4 values, generated) and
+  its failure reason, our minted idempotency reference (`INV-PAY-04`'s discipline), the
+  provider's reference, hold reference, destination version ref (a composite FK to the
+  merchant's own destination; an insert trigger admits only an `EFFECTIVE` one), the dispatch
+  key (unique per merchant), the requester and an operator's reason, and the send permit
+  (`last_dispatched_at`, ADR-0057 §4). History table; encrypted, append-only evidence table.
+  *(Built by `P6-TSK-012` as `merchant` `V007`, ADR-0057; `PAYOUT_CLEARING` seeded by `ledger`
+  `V012`.)*
 
 Schema `checkout`:
 
@@ -170,7 +176,8 @@ per the established ceremony.
 | Merchant payable | `GET /v1/merchant/payable` | merchant key | — |
 | Propose / list destination | `POST`/`GET /v1/operator/merchants/{merchantId}/payout-destinations` | operator session, `MERCHANT_ADMINISTER`; step-up when a factor is enrolled | propose keyed |
 | Approve / reject / withdraw | `POST …/payout-destinations/{destinationId}/approval`, `/rejection`, `/withdrawal` | `PAYOUT_DESTINATION_APPROVE` (approve, reject — four-eyes, `INV-AUD-04`; step-up on approve) or `MERCHANT_ADMINISTER` (withdraw) | machine convergence |
-| Initiate payout | `POST /v1/merchant/payouts` | merchant key (or operator) | `@RequiresIdempotencyKey` |
+| Initiate payout | `POST /v1/merchant/payouts` | merchant key | `@RequiresIdempotencyKey` (the claim scoped per merchant) |
+| Initiate payout for a merchant | `POST /v1/operator/merchants/{merchantId}/payouts` | operator session, `MERCHANT_PAYOUT`, reason required — the plan's "(or operator)", a route of its own because the populations are disjoint (ADR-0057 §6) | `@RequiresIdempotencyKey` |
 | Payout status | `GET /v1/merchant/payouts/{id}` | merchant key, own only | — |
 
 Error vocabulary: merchant/checkout-domain codes only; the one-404 discipline for
@@ -203,7 +210,8 @@ tenant's identifiers.
   after the cooling-off elapses (and withdrawable during it), every step audited with reason.
 - **Privileged actions**: `MERCHANT_ONBOARD`, `MERCHANT_ADMINISTER`, `FEE_ADMINISTER`,
   `PAYOUT_DESTINATION_APPROVE` (planned as `PAYOUT_APPROVE`; named for what it approves by
-  `P6-TSK-011`) — new permissions with negative tests; the money-operating population
+  `P6-TSK-011`), `MERCHANT_PAYOUT` (`P6-TSK-012`, held by `LEDGER_OPERATOR` — money leaving the
+  platform) — new permissions with negative tests; the money-operating population
   (`LEDGER_OPERATOR`) stays distinct from merchant administration.
 - **Auditable actions**: onboarding, key issue/revoke, schedule changes, destination
   proposal/approval, payout initiation (with reason where operator-driven), session

@@ -701,6 +701,39 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `payout_destination_event` | `actor_id` | `RESTRICTED-PII` | The acting identity, or the platform's for an effectuation — `audit_record.actor_id`'s model |
 | `payout_destination_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
 | `payout_destination_event` | `occurred_at` | `CONFIDENTIAL` | Dates a move in a destination change |
+| `merchant_payout` | `id` | `INTERNAL` | An aggregate identifier — the payout posting's key carries it (`merchant-payout:<payoutId>`, `P6-TSK-012`) |
+| `merchant_payout` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_payout` | `amount_minor` | `RESTRICTED-FINANCIAL` | Money paid out to a counterparty — `refund.amount_minor`'s reasoning for the merchant's side |
+| `merchant_payout` | `currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `merchant_payout` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `merchant_payout` | `destination_id` | `INTERNAL` | A destination VERSION by identifier (ADR-0056 §9) — what it resolves to is `payout_destination`'s to classify |
+| `merchant_payout` | `hold_reference` | `INTERNAL` | A hold identifier by value; what it resolves to is `ledger.hold`'s to classify |
+| `merchant_payout` | `provider_idempotency_reference` | `INTERNAL` | An operation reference the platform minted (`INV-PAY-04`) |
+| `merchant_payout` | `provider_reference` | `CONFIDENTIAL` | The payout provider's identifier for a payout it accepted — `refund.provider_reference`'s reasoning |
+| `merchant_payout` | `status` | `CONFIDENTIAL` | What happened to a counterparty's payout |
+| `merchant_payout` | `failure_reason` | `CONFIDENTIAL` | Why a counterparty's payout failed — an enumeration, never provider text |
+| `merchant_payout` | `dispatch_key` | `INTERNAL` | The idempotency claim whose dispatch transaction created the row — **caller-chosen** key material, `refund.dispatch_key`'s reasoning and §5 |
+| `merchant_payout` | `requested_by` | `RESTRICTED-PII` | The merchant's identifier, or the acting operator's identity — `audit_record.actor_id`'s model |
+| `merchant_payout` | `requested_by_type` | `INTERNAL` | Which vocabulary `requested_by` is in |
+| `merchant_payout` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — an operator's reason for moving a merchant's money, `refund.reason`'s ceiling; absent on the merchant's own payout |
+| `merchant_payout` | `created_at` | `CONFIDENTIAL` | Dates a counterparty's payout |
+| `merchant_payout` | `last_dispatched_at` | `CONFIDENTIAL` | The latest send permit (ADR-0057 §4): when the payout was last authorised onto the wire |
+| `merchant_payout_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `merchant_payout_event` | `payout_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_payout_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `merchant_payout_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `merchant_payout_event` | `actor_id` | `RESTRICTED-PII` | The platform's identifier for every outcome it applied — `audit_record.actor_id`'s model |
+| `merchant_payout_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `merchant_payout_event` | `occurred_at` | `CONFIDENTIAL` | Dates a move in a payout; the resolution sweep ages an `UNKNOWN` from it |
+| `payout_evidence` | `id` | `INTERNAL` | An aggregate identifier |
+| `payout_evidence` | `payout_id` | `INTERNAL` | An identifier of a thing |
+| `payout_evidence` | `kind` | `INTERNAL` | An enumeration of wire-artefact kinds — a fact about a message, not a person |
+| `payout_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The payout provider's raw answer about a counterparty's money.** Classified at the ceiling of what it decrypts to (ADR-0022): untrusted bytes the platform does not control, which a real provider could enrich with an account holder's details — `provider_evidence.content_ciphertext`'s reasoning, and the level governs handling if the encryption is ever broken, mis-keyed or stripped |
+| `payout_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
+| `payout_evidence` | `key_version` | `INTERNAL` | Which key wrote the row — operational metadata for rotation |
+| `payout_evidence` | `checksum_sha256` | `RESTRICTED-PII` | The possession oracle: anyone holding a candidate answer can confirm this is what the provider said — `provider_evidence.checksum_sha256`'s reasoning |
+| `payout_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a decline's body differs from an acceptance's, so the length leaks the outcome's shape |
+| `payout_evidence` | `recorded_at` | `CONFIDENTIAL` | Dates a counterparty's payout traffic |
 
 ### `checkout` — *added by `P6-TSK-006`*
 

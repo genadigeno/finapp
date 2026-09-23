@@ -77,3 +77,10 @@ Two design temptations must be refused explicitly:
   captures repay the debt before any money leaves. A refund dispatched while a payout is in
   flight is judged against what the payout's hold leaves, so a merchant cannot refund money
   it has already been paid.
+- **Refined by ADR-0057** (`P6-TSK-012`, which built it): the machine is FOUR states — §5's
+  `REQUESTED` would be a state no committed row can hold, since §2's dispatch transaction judges,
+  holds and dispatches atomically (ADR-0044) — and `FAILED` records why. `PAYOUT_CLEARING` is a
+  credit-normal `LIABILITY` (§3). §5's webhook is deferred and the query sweep is the resolver.
+  A send permit makes the sweep's "never received" safe beside the takeover's re-send, a refused
+  connection fails a payout only on its first send, and the operator initiates over its own
+  route and `MERCHANT_PAYOUT`.

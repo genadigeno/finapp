@@ -397,6 +397,46 @@ class OwnershipIsScopedTest {
                                         + " proved had happened, in the same transaction."
                                         + " Append-only at the privilege.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.findByDispatchKey",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P6-TSK-012. The takeover's convergence read: the payout a"
+                                        + " client key dispatched, found by merchant_id = ? AND"
+                                        + " dispatch_key = ? IN THE STATEMENT, so a key another"
+                                        + " merchant used converges on nothing of this merchant's."
+                                        + " The merchant is the authenticated key's own, or the"
+                                        + " operator's URL under MERCHANT_PAYOUT; the claim's scope"
+                                        + " carries the same merchant, so the two can never"
+                                        + " disagree. Negative:"
+                                        + " MerchantPayoutEndpointDatabaseTest#aClientKeyIsEachMerchantsOwn"
+                                        + " - two merchants, one key, two payouts.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-012, the JdbcPayoutDestinationStore.appendHistory"
+                                        + " reasoning restated: the payout identifier reached this"
+                                        + " insert through the locking read's id = ? AND"
+                                        + " merchant_id = ? pairing, in the same transaction as"
+                                        + " the conditional WHERE status = ? write it records. The"
+                                        + " writer is always the platform - an enumerated"
+                                        + " system-actor site applying the provider's answer - so"
+                                        + " the provenance is administered, not owned. Append-only"
+                                        + " at the privilege.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutEvidenceStore.append",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-012. The provider's retained answer, written against"
+                                        + " a payout the SAME transaction locked through"
+                                        + " JdbcMerchantPayoutStore.findForUpdate's id = ? AND"
+                                        + " merchant_id = ? - or a candidate the resolution sweep"
+                                        + " read and then locked the same way. Never a merchant's"
+                                        + " read (nothing decrypts it on any request path); the"
+                                        + " writer is the platform's outcome transaction, an"
+                                        + " enumerated system-actor site. Append-only for every"
+                                        + " writer by V007's trigger, SELECT/INSERT at the grant.")),
+                    Map.entry(
                             "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -1519,6 +1559,10 @@ class OwnershipIsScopedTest {
                             "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
                             "com.finapp.app.checkout.CheckoutFlowDatabaseTest"
                                     + ".aMerchantReadsOnlyItsOwnSession"),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.findByDispatchKey",
+                            "com.finapp.app.merchant.MerchantPayoutEndpointDatabaseTest"
+                                    + ".aClientKeyIsEachMerchantsOwn"),
                     Map.entry(
                             "com.finapp.merchant.JdbcMerchantApiKeyStore.findOwnedForUpdate",
                             "com.finapp.app.merchant.MerchantApiKeyDatabaseTest"

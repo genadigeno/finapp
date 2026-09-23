@@ -24,8 +24,15 @@ import org.junit.jupiter.api.Test;
 @DisplayName("the operational chart seed and its definitions agree (P3-TSK-003)")
 class OperationalChartMigrationTest {
 
-    private static final String MIGRATION =
-            "db/migration/ledger/V003__seed_operational_chart.sql";
+    /**
+     * Every migration that seeds operational rows, read together: `V003` seeded the Phase 3
+     * chart and `V012` adds `PAYOUT_CLEARING` (`P6-TSK-012`) — applied history is never
+     * edited, so the definition "one row per operational purpose per currency" spans both.
+     */
+    private static final List<String> SEED_MIGRATIONS =
+            List.of(
+                    "db/migration/ledger/V003__seed_operational_chart.sql",
+                    "db/migration/ledger/V012__payout_clearing_joins_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
@@ -35,6 +42,9 @@ class OperationalChartMigrationTest {
     private static final Map<AccountPurpose, AccountType> SEEDED_TYPES =
             Map.of(
                     AccountPurpose.SETTLEMENT_CLEARING, AccountType.ASSET,
+                    // ADR-0057: instructed and not yet settled is an obligation we still owe,
+                    // so it grows on the credit side the payout credits.
+                    AccountPurpose.PAYOUT_CLEARING, AccountType.LIABILITY,
                     AccountPurpose.FEE_REVENUE, AccountType.REVENUE,
                     AccountPurpose.FX_POSITION, AccountType.ASSET,
                     AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE,
@@ -117,22 +127,24 @@ class OperationalChartMigrationTest {
     @Test
     @DisplayName("the guard can actually read the migration")
     void theGuardIsNotVacuous() {
-        assertThat(migration()).contains("INSERT INTO ledger.ledger_account");
-        assertThat(rows()).isNotEmpty();
+        // Each seed file on its own: a moved V012 must not hide behind V003's rows.
+        for (String seed : SEED_MIGRATIONS) {
+            assertThat(migration(seed)).as(seed).contains("INSERT INTO ledger.ledger_account");
+            assertThat(ROW.matcher(migration(seed)).results()).as(seed).isNotEmpty();
+        }
     }
 
     private static List<MatchResult> rows() {
-        return ROW.matcher(migration()).results().toList();
+        return SEED_MIGRATIONS.stream()
+                .flatMap(seed -> ROW.matcher(migration(seed)).results())
+                .toList();
     }
 
-    private static String migration() {
+    private static String migration(String path) {
         try (InputStream migration =
-                OperationalChartMigrationTest.class
-                        .getClassLoader()
-                        .getResourceAsStream(MIGRATION)) {
+                OperationalChartMigrationTest.class.getClassLoader().getResourceAsStream(path)) {
             if (migration == null) {
-                throw new IllegalStateException(
-                        "Migration not on the test classpath: " + MIGRATION);
+                throw new IllegalStateException("Migration not on the test classpath: " + path);
             }
             return new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

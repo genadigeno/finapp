@@ -5,15 +5,18 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.MonetaryOverflowException;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.money.ScaleMismatchException;
+import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * {@link PositionBreakdown} over plain JDBC (`P6-TSK-010`, ADR-0033) —
@@ -25,19 +28,25 @@ import java.util.Optional;
  * which is safe for the reason the derivation records: both are frozen once posted to, so no
  * interleaving commit can change what the lines mean between the two reads.
  *
- * <p>An entry that touched the counterparty purpose in BOTH directions is not a shape any
- * composer on this platform produces; the subquery takes the first by line sequence so the
- * answer is deterministic, and the position is unaffected either way — every line is folded
- * exactly once, whatever bucket its label puts it in.
+ * <p>An entry that touched a counterparty purpose in BOTH directions, or several of the named
+ * purposes at once, is not a shape any composer on this platform produces; the subquery takes
+ * the first by the caller's precedence and then by line sequence, so the answer is
+ * deterministic, and the position is unaffected either way — every line is folded exactly
+ * once, whatever bucket its label puts it in.
  */
 public final class JdbcPositionBreakdown implements PositionBreakdown<Connection> {
 
     @Override
     public Breakdown breakdown(
-            Connection unitOfWork, LedgerAccountId account, AccountPurpose counterparty) {
+            Connection unitOfWork, LedgerAccountId account, List<AccountPurpose> precedence) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(account, "account must not be null");
-        Objects.requireNonNull(counterparty, "counterparty must not be null");
+        Objects.requireNonNull(precedence, "precedence must not be null");
+        if (precedence.isEmpty() || Set.copyOf(precedence).size() != precedence.size()) {
+            throw new IllegalArgumentException(
+                    "the counterparty precedence must name at least one purpose, each once: "
+                            + precedence);
+        }
         try {
             CurrencyCode currency;
             NormalBalance normalBalance;
@@ -62,16 +71,19 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                             unitOfWork.prepareStatement(
                                     "SELECT line.direction, line.amount_minor, line.currency,"
                                             + " line.scale,"
-                                            + " (SELECT other.direction"
+                                            + " (SELECT other_account.purpose || '|'"
+                                            + "         || other.direction"
                                             + "    FROM ledger.journal_line other"
                                             + "    JOIN ledger.ledger_account other_account"
                                             + "      ON other_account.id = other.ledger_account_id"
                                             + "   WHERE other.entry_id = line.entry_id"
-                                            + "     AND other_account.purpose = ?"
-                                            + "   ORDER BY other.seq LIMIT 1) AS counterparty"
+                                            + "     AND other_account.purpose = ANY (?)"
+                                            + "   ORDER BY array_position(?, other_account.purpose),"
+                                            + "            other.seq"
+                                            + "   LIMIT 1) AS counterparty"
                                             + " FROM ledger.journal_line line"
                                             + " WHERE line.ledger_account_id = ?");
-                    ResultSet row = executed(select, counterparty, account)) {
+                    ResultSet row = executed(unitOfWork, select, precedence, account)) {
                 while (row.next()) {
                     CurrencyCode lineCurrency =
                             CurrencyCode.of(row.getString("currency").stripTrailing());
@@ -87,16 +99,19 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                                     row.getLong("amount_minor"), lineCurrency,
                                     row.getShort("scale"));
                     Direction direction = Direction.valueOf(row.getString("direction"));
-                    Optional<Direction> other =
+                    Optional<Counterparty> other =
                             Optional.ofNullable(row.getString("counterparty"))
-                                    .map(Direction::valueOf);
+                                    .map(JdbcPositionBreakdown::counterparty);
 
                     if (direction == Direction.DEBIT) {
                         debits = JournalEntry.sum(debits, amount);
                     } else {
                         credits = JournalEntry.sum(credits, amount);
                     }
-                    String key = direction + "|" + other.map(Direction::name).orElse("NONE");
+                    String key =
+                            direction + "|"
+                                    + other.map(c -> c.purpose() + ":" + c.direction())
+                                            .orElse("NONE");
                     Bucket so = buckets.get(key);
                     buckets.put(
                             key,
@@ -132,11 +147,26 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
     }
 
     private static ResultSet executed(
-            PreparedStatement select, AccountPurpose counterparty, LedgerAccountId account)
+            Connection unitOfWork,
+            PreparedStatement select,
+            List<AccountPurpose> precedence,
+            LedgerAccountId account)
             throws SQLException {
-        select.setString(1, counterparty.name());
-        select.setObject(2, account.value());
+        Array purposes =
+                unitOfWork.createArrayOf(
+                        "text", precedence.stream().map(AccountPurpose::name).toArray());
+        select.setArray(1, purposes);
+        select.setArray(2, purposes);
+        select.setObject(3, account.value());
         return select.executeQuery();
+    }
+
+    /** Parses the subquery's {@code PURPOSE|DIRECTION} label, both halves the ledger's own. */
+    private static Counterparty counterparty(String label) {
+        int bar = label.indexOf('|');
+        return new Counterparty(
+                AccountPurpose.valueOf(label.substring(0, bar)),
+                Direction.valueOf(label.substring(bar + 1)));
     }
 
     private static UnderivableBalanceException refused(LedgerAccountId account, String why) {
