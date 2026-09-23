@@ -280,15 +280,21 @@ captured − fees − refunds − payouts).
 | Meter | Kind | Notes |
 |---|---|---|
 | `finapp.checkout.session` | counter by `outcome` (completed / completed_late / expired / abandoned) | acting transitions only |
-| `finapp.checkout.conversion.age` | timer | creation → completion |
+| `finapp.checkout.conversion.age` | timer by `outcome` (completed / completed_late) | creation → completion; split because in-window measures the customer and late measures the provider (`P6-TSK-013`) |
 | `finapp.merchant.fee.assessed` | counter | assessments, not amounts (`INV-AUD-02`) |
-| `finapp.merchant.payout` | counter by `outcome` | acting judgements only |
-| `finapp.merchant.payout.unknown.active` / `.age` | gauges | the stuck-payout alert; NaN never zero; fleet-wide, `max()` |
+| `finapp.merchant.payout` | counter by `outcome` (completed / failed / unknown) | acting judgements only |
+| `finapp.merchant.payout.unknown.active` | gauge | the stuck-payout alert: every `UNKNOWN` payout, and every `DISPATCHED` one past the sweep's own bound (`P6-TSK-013`); NaN never zero; fleet-wide, `max()` |
+| `finapp.merchant.payout.unknown.age` | gauge (max seconds) | the oldest of those, aged the sweep's way |
 | `finapp.merchant.destination.pending` | gauge | proposals awaiting approval/cooling-off — built by `P6-TSK-011` with the flow it measures |
 
 All eager from a plain context; a dashboard row; the derived guard takes this table over at
 the flip. No new tag keys expected (`outcome` exists); if one is needed it walks the
 `ALLOWED_TAG_KEYS` designed path.
+
+*(Until `P6-TSK-013`'s design the two stuck-payout gauges shared one row, written
+"`….unknown.active` / `.age`". The guard reads a row's first backticked name, so the age gauge
+would never have been held; `PHASE_5_PLAN.md` gives each gauge its own row, and so does this
+table now.)*
 
 ## 16. Milestones
 

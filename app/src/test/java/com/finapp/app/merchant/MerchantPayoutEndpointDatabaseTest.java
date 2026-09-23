@@ -95,6 +95,7 @@ class MerchantPayoutEndpointDatabaseTest {
     @Autowired private Authorization authorization;
     @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
     @Autowired private PostingService postings;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
     @Autowired private MerchantPayoutStore<Connection> payoutStore;
     @Autowired private MerchantPayoutOutcomes outcomes;
     @Autowired private PayoutEvidenceStore<Connection> evidence;
@@ -135,9 +136,13 @@ class MerchantPayoutEndpointDatabaseTest {
     void aMerchantPaysOutOverHttp() throws Exception {
         Merchant merchant = funded("100.00");
         String key = someKey();
+        double completedBefore = payoutMeter("completed");
 
         HttpResponse<String> paid = payout(merchant.key(), "40.00", "EUR", key);
         assertThat(paid.statusCode()).isEqualTo(201);
+        assertThat(payoutMeter("completed") - completedBefore)
+                .as("the acting judgement, counted post-commit at the door (P6-TSK-013)")
+                .isEqualTo(1.0d);
         assertThat(field(paid.body(), "status")).isEqualTo("COMPLETED");
         assertThat(field(paid.body(), "amount")).isEqualTo("40.00");
         assertThat(field(paid.body(), "destinationSuffix")).isEqualTo("3000");
@@ -151,6 +156,9 @@ class MerchantPayoutEndpointDatabaseTest {
         assertThat(replay.statusCode()).isEqualTo(201);
         assertThat(replay.body()).as("the replay is the original bytes").isEqualTo(paid.body());
         assertThat(provider.requestCount(PATH)).as("one wire operation").isEqualTo(1);
+        assertThat(payoutMeter("completed") - completedBefore)
+                .as("and one judgement: a replay answers a recorded one, it never makes another")
+                .isEqualTo(1.0d);
 
         assertThat(payout(merchant.key(), "41.00", "EUR", key).statusCode())
                 .as("a reused key for a different request is the distinct 409 (INV-IDEM-03)")
@@ -293,6 +301,7 @@ class MerchantPayoutEndpointDatabaseTest {
         provider.reset();
         provider.neverResponds(PATH);
         String key = someKey();
+        double unknownBefore = payoutMeter("unknown");
 
         HttpResponse<String> unknown = payout(merchant.key(), "40.00", "EUR", key);
         assertThat(unknown.statusCode()).isEqualTo(201);
@@ -303,6 +312,9 @@ class MerchantPayoutEndpointDatabaseTest {
                         merchant.payable().value()))
                 .isEqualTo(1);
         assertThat(payout(merchant.key(), "40.00", "EUR", key).body()).isEqualTo(unknown.body());
+        assertThat(payoutMeter("unknown") - unknownBefore)
+                .as("the honest UNKNOWN is a judgement, counted once - and the replay nothing")
+                .isEqualTo(1.0d);
 
         // RESOLVED BY QUERY, NEVER BY A SECOND SEND (ADR-0057): the provider paid after all, the
         // sweep learns it, and the read shows the truth.
@@ -590,6 +602,11 @@ class MerchantPayoutEndpointDatabaseTest {
             }
             return values;
         }
+    }
+
+    /** The payout counter for one outcome, in the application's own registry (`P6-TSK-013`). */
+    private double payoutMeter(String outcome) {
+        return meterRegistry.get("finapp.merchant.payout").tag("outcome", outcome).counter().count();
     }
 
     /** The correlation identifier and the echoed path differ per request by design. */

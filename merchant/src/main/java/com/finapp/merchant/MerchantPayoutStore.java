@@ -1,5 +1,6 @@
 package com.finapp.merchant;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -48,4 +49,32 @@ public interface MerchantPayoutStore<T> {
      */
     List<MerchantPayout> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
+     * The stuck-payout gauges' one reading (`P6-TSK-013`): the payouts the platform has no answer
+     * for past the point one was due. That is every {@code UNKNOWN} payout, and every
+     * {@code DISPATCHED} one whose latest send permit is older than {@code dispatchedBound} —
+     * the sweep's own candidacy, with the {@code UNKNOWN} bound at zero. Within the bound a
+     * dispatched payout is mid-question, and counting it would alert on healthy traffic.
+     *
+     * <p>Aged the sweep's way — an {@code UNKNOWN} payout from its entry into that state, a
+     * {@code DISPATCHED} one from its latest permit — on the database server's clock. Read-only
+     * and across every merchant by design: a count and a number of seconds, never a row.
+     */
+    UnknownReading unknownReading(T unitOfWork, Duration dispatchedBound);
+
+    /**
+     * How many payouts are waiting past their due for the rail's word, and how long the oldest
+     * has waited, in whole seconds; zero and zero when none is.
+     */
+    record UnknownReading(long active, long oldestAgeSeconds) {
+
+        public UnknownReading {
+            if (active < 0 || oldestAgeSeconds < 0) {
+                throw new IllegalArgumentException(
+                        "a count and an age are never negative: " + active + ", "
+                                + oldestAgeSeconds);
+            }
+        }
+    }
 }

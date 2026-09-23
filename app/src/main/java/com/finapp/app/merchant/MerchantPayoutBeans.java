@@ -66,6 +66,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Configuration
 public class MerchantPayoutBeans {
 
+    /**
+     * The sweep's dispatched bound, as ONE placeholder (`P6-TSK-013`): the resolution sweep
+     * concludes nothing about a younger permit, and the stuck-payout gauge counts a
+     * {@code DISPATCHED} payout only past it. Both read this constant, so the two can never
+     * disagree about when an answer was due.
+     */
+    public static final String DISPATCHED_AGE =
+            "${finapp.merchant.payout.sweeper.dispatched-age:PT10M}";
+
     @Bean
     MerchantPayoutStore<Connection> merchantPayoutStore() {
         return new JdbcMerchantPayoutStore();
@@ -169,13 +178,15 @@ public class MerchantPayoutBeans {
             MerchantPayoutStore<Connection> merchantPayoutStore,
             PayoutDestinationStore<Connection> payoutDestinationStore,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.app.telemetry.MerchantMeters merchantMeters) {
         return new MerchantPayoutOperations(
                 merchantPayouts,
                 merchantPayoutStore,
                 payoutDestinationStore,
                 new TransactionTemplate(transactionManager),
-                dataSource);
+                dataSource,
+                merchantMeters);
     }
 
     @Bean
@@ -189,7 +200,7 @@ public class MerchantPayoutBeans {
             Clock clock,
             PlatformTransactionManager transactionManager,
             DataSource dataSource,
-            @Value("${finapp.merchant.payout.sweeper.dispatched-age:PT10M}") Duration dispatchedAge,
+            @Value(DISPATCHED_AGE) Duration dispatchedAge,
             @Value("${finapp.merchant.payout.sweeper.unknown-age:PT1M}") Duration unknownAge,
             @Value("${finapp.merchant.payout.sweeper.batch:50}") int batchSize) {
         return new MerchantPayoutResolution(
@@ -220,7 +231,9 @@ public class MerchantPayoutBeans {
     @ConditionalOnBean(MerchantPayoutResolution.class)
     MerchantPayoutResolutionSchedule merchantPayoutResolutionSchedule(
             MerchantPayoutResolution merchantPayoutResolution,
+            com.finapp.app.telemetry.MerchantMeters merchantMeters,
             @Value("${finapp.merchant.payout.sweeper.poll-interval:PT30S}") Duration pollInterval) {
-        return new MerchantPayoutResolutionSchedule(merchantPayoutResolution, pollInterval);
+        return new MerchantPayoutResolutionSchedule(
+                merchantPayoutResolution, merchantMeters, pollInterval);
     }
 }

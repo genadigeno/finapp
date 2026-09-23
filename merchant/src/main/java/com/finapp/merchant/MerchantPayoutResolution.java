@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -90,8 +91,28 @@ public final class MerchantPayoutResolution {
     /**
      * One tick's tally — telemetry, never the count of record. {@code resolved} counts this
      * tick's own acting transitions; a candidate a sibling resolved first is {@code skipped}.
+     *
+     * @param actingJudgements the status each of this tick's OWN acting transitions committed,
+     *     in candidate order — what the payout meter counts (`P6-TSK-013`, the
+     *     {@code PaymentSweeper} shape). A sibling's resolution, a young permit and an answer
+     *     that moved nothing are absent, so ten sweeps racing one payout count one judgement
      */
-    public record SweepResult(int candidates, int resolved, int skipped, int failedRows) {}
+    public record SweepResult(
+            int candidates,
+            int resolved,
+            int skipped,
+            int failedRows,
+            List<MerchantPayoutStatus> actingJudgements) {
+
+        public SweepResult {
+            actingJudgements = List.copyOf(actingJudgements);
+            if (actingJudgements.size() != resolved) {
+                throw new IllegalArgumentException(
+                        "every acting transition is one judgement: " + resolved + " resolved, "
+                                + actingJudgements.size() + " judged");
+            }
+        }
+    }
 
     /** One sweep: bounded candidates, one transaction per row. */
     @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
@@ -105,7 +126,7 @@ public final class MerchantPayoutResolution {
                                         now.minus(dispatchedAge),
                                         now.minus(unknownAge),
                                         batchSize));
-        int resolved = 0;
+        List<MerchantPayoutStatus> judged = new ArrayList<>();
         int skipped = 0;
         int failedRows = 0;
         for (MerchantPayout candidate : candidates) {
@@ -113,8 +134,9 @@ public final class MerchantPayoutResolution {
                             CorrelationContext.enter(
                                     Correlation.startingWith(CorrelationId.generate(ids)));
                     SecurityContext.Scope actor = SecurityContext.enterSystem()) {
-                if (resolve(candidate)) {
-                    resolved++;
+                Optional<MerchantPayoutStatus> judgement = resolve(candidate);
+                if (judgement.isPresent()) {
+                    judged.add(judgement.get());
                 } else {
                     skipped++;
                 }
@@ -129,11 +151,11 @@ public final class MerchantPayoutResolution {
                         oneRowsFailure.getClass().getSimpleName());
             }
         }
-        return new SweepResult(candidates.size(), resolved, skipped, failedRows);
+        return new SweepResult(candidates.size(), judged.size(), skipped, failedRows, judged);
     }
 
-    /** {@code true} when THIS call's own transition fired. */
-    private boolean resolve(MerchantPayout candidate) {
+    /** The status THIS call's own transition committed, or empty when it moved nothing. */
+    private Optional<MerchantPayoutStatus> resolve(MerchantPayout candidate) {
         // The query, holding no connection (ADR-0046 §1).
         PayoutQueryAnswer answer = provider.query(candidate.reference());
         Correlation correlation =
@@ -150,17 +172,12 @@ public final class MerchantPayoutResolution {
                     Optional<MerchantPayout> found =
                             payouts.findForUpdate(uow, candidate.merchantId(), candidate.id());
                     if (found.isEmpty()) {
-                        return false;
+                        return Optional.<MerchantPayoutStatus>empty();
                     }
                     Instant now = Instant.now(clock);
-                    boolean acting =
+                    MerchantPayoutOutcomes.Applied applied =
                             outcomes.applyQueryAnswer(
-                                            uow,
-                                            found.get(),
-                                            answer,
-                                            now.minus(dispatchedAge),
-                                            correlation)
-                                    .acting();
+                                    uow, found.get(), answer, now.minus(dispatchedAge), correlation);
                     // Retained whatever it moved: a late or contradictory answer beside a
                     // resolved payout is evidence, not a move (INV-HIST-02).
                     answer.evidence()
@@ -172,7 +189,9 @@ public final class MerchantPayoutResolution {
                                                     PayoutEvidenceKind.QUERY_RESULT,
                                                     bytes,
                                                     now));
-                    return acting;
+                    return applied.acting()
+                            ? Optional.of(applied.status())
+                            : Optional.<MerchantPayoutStatus>empty();
                 });
     }
 

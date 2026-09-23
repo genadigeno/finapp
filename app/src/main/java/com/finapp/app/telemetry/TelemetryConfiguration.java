@@ -180,6 +180,40 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The merchant surface's counters (`P6-TSK-013`): fee assessments and payout judgements.
+     * Eager and <strong>unconditional</strong> for the {@code PaymentMeters} reason: the payout
+     * command exists only where a provider is configured, but a deployment without one still
+     * publishes healthy zeros rather than absences an alert cannot evaluate.
+     */
+    @Bean
+    MerchantMeters merchantMeters(MeterRegistry registry) {
+        return new MerchantMeters(registry);
+    }
+
+    /**
+     * The stuck-payout gauges (`P6-TSK-013`): the {@code PaymentMetrics} stance verbatim — the
+     * scrape is the schedule, one floored read-only aggregate per instance, no leader, nothing
+     * written, and NaN rather than a false zero when the database cannot be read — over the
+     * sweep's own dispatched bound, read through the one placeholder the sweep reads. The store
+     * bean is unconditional, so the gauges exist without a configured provider too.
+     */
+    @Bean
+    MerchantPayoutMetrics merchantPayoutMetrics(
+            com.finapp.merchant.MerchantPayoutStore<java.sql.Connection> merchantPayoutStore,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry,
+            @org.springframework.beans.factory.annotation.Value(
+                            com.finapp.app.merchant.MerchantPayoutBeans.DISPATCHED_AGE)
+                    java.time.Duration dispatchedAge) {
+        return new MerchantPayoutMetrics(
+                connection -> merchantPayoutStore.unknownReading(connection, dispatchedAge),
+                dataSource::getConnection,
+                clock,
+                registry);
+    }
+
+    /**
      * The stuck-payment gauges (`P5-TSK-017`): the {@code LedgerMetrics} stance verbatim —
      * the scrape is the schedule, one floored read-only pair of aggregates per instance, no
      * leader, no ambient schedule, nothing written, and NaN rather than a false zero when the

@@ -633,7 +633,9 @@ class PaymentSweeperDatabaseTest {
                         new com.finapp.payments.WalletTopUpComposition(),
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
-                        landed -> {}),
+                        landed -> {},
+                        new com.finapp.app.telemetry.MerchantMeters(
+                                new io.micrometer.core.instrument.simple.SimpleMeterRegistry())),
                 // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own for the same
                 // reason: every refund in this suite falls back to Phase 5's two lines, and
                 // proving that through the real composition is what makes "byte-identical"

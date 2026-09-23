@@ -2,7 +2,9 @@ package com.finapp.app.merchant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
+import com.finapp.app.telemetry.MerchantMeters;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.ChartOfAccounts;
@@ -48,6 +50,7 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.security.SecureRandom;
@@ -124,6 +127,7 @@ class MerchantPayoutDatabaseTest {
     @Autowired private MerchantPayableQuery payables;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private DataSource dataSource;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     @BeforeAll
     static void startProvider() {
@@ -377,16 +381,86 @@ class MerchantPayoutDatabaseTest {
         for (int i = 0; i < RACERS; i++) {
             sweepers.add(() -> resolution(Duration.ZERO).sweep());
         }
-        race(sweepers);
+        List<Object> swept = race(sweepers);
 
         assertThat(stored(merchant, unknown.payout()).status())
                 .isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(swept.stream()
+                        .map(MerchantPayoutResolution.SweepResult.class::cast)
+                        .flatMap(result -> result.actingJudgements().stream())
+                        .filter(MerchantPayoutStatus.COMPLETED::equals))
+                .as("the meter's tally (P6-TSK-013): ten sweeps, ONE acting completion - nine"
+                        + " converged on a judgement they did not make")
+                .hasSize(1);
         assertThat(entryLines(unknown.payout())).hasSize(2);
         assertThat(outboxCount("merchant.MerchantPayoutCompleted", unknown.payout()))
                 .isEqualTo(1);
         assertThat(auditCount("merchant.MerchantPayoutOutcomeApplied", unknown.payout()))
                 .as("DISPATCHED -> UNKNOWN once, UNKNOWN -> COMPLETED once")
                 .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("the WIRED stuck-payout gauges read the real schema through the application's own"
+            + " pool and the sweep's own bound: a number, never NaN")
+    void theWiredGaugesReadTheRealSchema() throws Exception {
+        // DOD-OBS's "verified against a running instance" (P6-TSK-013): the hermetic suite stubs
+        // the reading and the schema suite calls the store directly, so only this proves the
+        // bean the running application registered - its pool, its grants, its placeholder -
+        // publishes something an alert can evaluate.
+        Funded merchant = funded("100.00");
+        provider.neverResponds(PATH);
+        assertThat(initiate(merchant, "40.00", key()).status())
+                .isEqualTo(MerchantPayoutStatus.UNKNOWN);
+
+        // The floor: a reading an earlier test took may stand for up to MIN_REFRESH, so the
+        // payout's arrival in it is awaited, never assumed.
+        await().atMost(Duration.ofSeconds(20))
+                .untilAsserted(
+                        () ->
+                                assertThat(
+                                                meterRegistry
+                                                        .get("finapp.merchant.payout.unknown.active")
+                                                        .gauge()
+                                                        .value())
+                                        .as("an unknown payout the running instance can see")
+                                        .isNotNaN()
+                                        .isGreaterThanOrEqualTo(1.0d));
+        assertThat(meterRegistry.get("finapp.merchant.payout.unknown.age").gauge().value())
+                .isNotNaN()
+                .isGreaterThanOrEqualTo(0.0d);
+    }
+
+    @Test
+    @DisplayName("the schedule counts the sweep's acting judgements, once, after they committed")
+    void theScheduleCountsActingJudgementsOnce() throws Exception {
+        Funded merchant = funded("100.00");
+        MerchantPayoutId crashed = crash(merchant, "40.00", key());
+        queryAnswers(merchant, crashed, "paid");
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        MerchantPayoutResolutionSchedule schedule =
+                new MerchantPayoutResolutionSchedule(
+                        resolution(Duration.ZERO),
+                        new MerchantMeters(registry),
+                        Duration.ofMillis(50));
+        schedule.start();
+        try {
+            await().atMost(Duration.ofSeconds(20)).until(() -> completedPayouts(registry) >= 1.0d);
+            // Later ticks find the payout resolved: a skipped candidate is no judgement.
+            await().during(Duration.ofMillis(400))
+                    .atMost(Duration.ofSeconds(5))
+                    .until(() -> completedPayouts(registry) == 1.0d);
+        } finally {
+            schedule.stop();
+        }
+        assertThat(stored(merchant, crashed).status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(completedPayouts(registry))
+                .as("one completion, counted by the tick that made it (P6-TSK-013)")
+                .isEqualTo(1.0d);
+    }
+
+    private static double completedPayouts(SimpleMeterRegistry registry) {
+        return registry.get("finapp.merchant.payout").tag("outcome", "completed").counter().count();
     }
 
     // -----------------------------------------------------------------

@@ -1,5 +1,6 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.telemetry.MerchantMeters;
 import com.finapp.merchant.AuthenticatedMerchant;
 import com.finapp.merchant.MerchantErrorCode;
 import com.finapp.merchant.MerchantId;
@@ -59,6 +60,9 @@ public class MerchantPayoutOperations {
     @NonNull private final PayoutDestinationStore<Connection> destinations;
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;
+
+    /** The payout counter (`P6-TSK-013`) — last, so the parameter order is unchanged. */
+    @NonNull private final MerchantMeters meters;
 
     /**
      * One payout, as its merchant or an operator sees it. Every figure is a decimal string;
@@ -144,6 +148,12 @@ public class MerchantPayoutOperations {
                     "A payout named a currency other than the merchant's settlement currency");
         } catch (UnknownMerchantException unknown) {
             throw notFound();
+        }
+        // POST-COMMIT, ACTING ONLY (P6-TSK-013): the command's outcome transaction committed
+        // before it returned, and only a call whose own conditional transition fired counts. A
+        // replay, a converged takeover and an answer that moved nothing count nothing.
+        if (initiated.acting()) {
+            meters.payoutJudged(initiated.status());
         }
         return inOneTransaction(
                 unitOfWork ->

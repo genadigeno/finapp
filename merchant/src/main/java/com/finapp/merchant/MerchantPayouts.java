@@ -115,12 +115,21 @@ public final class MerchantPayouts {
      * @param status the committed status when the claim completed — honestly
      *     {@code DISPATCHED} or {@code UNKNOWN} when it is
      * @param replayed whether this answer is a retried key's recorded judgement
+     * @param acting whether THIS call's own conditional transition fired, so {@code status} is
+     *     its judgement — the bit the payout meter counts (`P6-TSK-013`), carried out of
+     *     {@link MerchantPayoutOutcomes.Applied} because that is the only place it exists. A
+     *     replay, a converged takeover and an answer that moved nothing are never acting
      */
-    public record Initiated(MerchantPayoutId payout, MerchantPayoutStatus status, boolean replayed) {
+    public record Initiated(
+            MerchantPayoutId payout, MerchantPayoutStatus status, boolean replayed, boolean acting) {
 
         public Initiated {
             Objects.requireNonNull(payout, "payout must not be null");
             Objects.requireNonNull(status, "status must not be null");
+            if (replayed && acting) {
+                throw new IllegalArgumentException(
+                        "a replay answers a recorded judgement; it never acts");
+            }
         }
     }
 
@@ -201,15 +210,17 @@ public final class MerchantPayouts {
                                                                 "a committed payout was not"
                                                                         + " found to resolve"));
                         MerchantPayoutStatus committed = locked.status();
+                        boolean acting = false;
                         if (answer.isPresent()) {
-                            committed =
+                            MerchantPayoutOutcomes.Applied applied =
                                     outcomes.applySendAnswer(
-                                                    uow,
-                                                    locked,
-                                                    answer.get(),
-                                                    dispatch.firstSend(),
-                                                    correlation)
-                                            .status();
+                                            uow,
+                                            locked,
+                                            answer.get(),
+                                            dispatch.firstSend(),
+                                            correlation);
+                            committed = applied.status();
+                            acting = applied.acting();
                             answer.get()
                                     .evidence()
                                     .ifPresent(
@@ -230,7 +241,7 @@ public final class MerchantPayouts {
                                 key,
                                 true,
                                 StoredResponse.of(renderedForm(locked.id(), committed), "text/plain"));
-                        return new Initiated(locked.id(), committed, false);
+                        return new Initiated(locked.id(), committed, false, acting);
                     });
         }
     }
@@ -387,7 +398,8 @@ public final class MerchantPayouts {
         return new Initiated(
                 MerchantPayoutId.of(UUID.fromString(body.substring(0, separator))),
                 MerchantPayoutStatus.valueOf(body.substring(separator + 1)),
-                true);
+                true,
+                false);
     }
 
     private static Correlation resolvedCorrelation() {

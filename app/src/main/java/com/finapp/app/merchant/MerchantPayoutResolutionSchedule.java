@@ -1,5 +1,6 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.telemetry.MerchantMeters;
 import com.finapp.merchant.MerchantPayoutResolution;
 import java.time.Duration;
 import java.util.Objects;
@@ -37,12 +38,14 @@ import org.springframework.context.SmartLifecycle;
 public final class MerchantPayoutResolutionSchedule implements SmartLifecycle {
 
     private final MerchantPayoutResolution resolution;
+    private final MerchantMeters meters;
     private final Duration pollInterval;
     private ScheduledExecutorService executor;
 
     public MerchantPayoutResolutionSchedule(
-            MerchantPayoutResolution resolution, Duration pollInterval) {
+            MerchantPayoutResolution resolution, MerchantMeters meters, Duration pollInterval) {
         this.resolution = Objects.requireNonNull(resolution, "resolution must not be null");
+        this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval must not be null");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
             throw new IllegalArgumentException("pollInterval must be positive: " + pollInterval);
@@ -68,6 +71,10 @@ public final class MerchantPayoutResolutionSchedule implements SmartLifecycle {
     private void sweepQuietly() {
         try {
             MerchantPayoutResolution.SweepResult result = resolution.sweep();
+            // The tick's OWN acting judgements, counted after their per-row transactions
+            // committed (P6-TSK-013, the PaymentSweeperSchedule seam): a resolution racing a
+            // sibling sweep or the synchronous answer is counted by whichever won, once.
+            result.actingJudgements().forEach(meters::payoutJudged);
             if (result.candidates() > 0) {
                 // Counts only - identifiers live in the sweep's own per-row lines.
                 log.info(

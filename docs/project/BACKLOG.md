@@ -7841,7 +7841,7 @@ negative payable** — `COMPLETE` (2026-09-23)
   was deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
   are claimed.**
 
-**P6-TSK-013 — The meters and the dashboard row** — `READY`
+**P6-TSK-013 — The meters and the dashboard row** — `COMPLETE` (2026-09-23)
 - **Objective**: `PHASE_6_PLAN.md` §15's six series, the established conventions.
 - **Scope**: session outcomes (acting only), conversion age, fee assessments (counts,
   never amounts), payout outcomes, stuck-payout gauges (NaN-never-zero, floored,
@@ -7850,6 +7850,83 @@ negative payable** — `COMPLETE` (2026-09-23)
 - **Deps**: `P6-TSK-012`. **Accept**: all six from a freshly started instance with no
   database; the tag vocabulary walks the designed path if it widens at all.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
+- **Design decisions (2026-09-23)**: two of the six already existed —
+  `finapp.checkout.session` (`P6-TSK-008`) and `finapp.merchant.destination.pending`
+  (`P6-TSK-011`), each built with the flow it measures — so this task builds four and the row.
+  - **Only the acting judgement counts, at the door, after commit.** `Applied.acting` was
+    discarded before it left `merchant`. `MerchantPayouts.Initiated` gains `acting` (the
+    refund's `RefundResult` shape) and `MerchantPayoutResolution.SweepResult` gains
+    `actingJudgements` (the `PaymentSweeper` shape). The app's two doors count post-commit.
+  - **The stuck-payout gauge counts an overdue dispatch too.** `PaymentMetrics` counts only the
+    unknown states, and its database test explains why: a dispatch is mid-question. That holds
+    within the sweep's bound, not past it. With the sweep down, a crashed dispatch stays
+    `DISPATCHED` for ever and an unknown-only gauge reads zero, which is the gap `P6-TSK-012`'s
+    DoD row recorded. So the reading is the sweep's own candidacy with the `UNKNOWN` bound at
+    zero, aged the sweep's way on the server's clock, the bound read through one placeholder
+    the sweep shares.
+  - **Fee assessments and conversion age are counted in the transaction, behind the
+    conditional** — `CheckoutMeters`' stated compromise, for its reason: the capture's
+    transaction belongs to `payments`, which composes only in its acting branch.
+  - **Conversion age by `outcome`**: in-window measures the customer, late measures the
+    provider; one series would let the late ones swallow the mean. No new tag key.
+  - **Found by the design**: §15 gave both stuck-payout gauges one row, and the planned-meters
+    guard reads a row's first name only, so the age gauge would never have been held. Split,
+    as `PHASE_5_PLAN.md` already had it.
+- **Completion gate (2026-09-23)** — twenty probes, all caught, each restore verified
+  byte-identical, the whole tree compared before and after:
+  - **The stuck-payout reading, at each of its three semantics.** The bound neutralised counted
+    the in-flight dispatch (3 where 2 is owed). The overdue-dispatch clause removed - Phase 5's
+    shape - missed the overdue payout (1). An `UNKNOWN` aged from its birth read five days old.
+    Each failed its own assertion in the schema test. NaN-never-zero was probed both ways, and the
+    floor too. This is `INV-LIFE-03`'s "unknown-state age metric" for payouts, and is recorded
+    under it.
+  - **Acting-only at both doors.** Every initiation counted, the acting bit dropped, every applied
+    sweep answer reported as a judgement, the schedule's count removed: each caught.
+  - **The rest.** `DISPATCHED` counted; a top-up counted as a fee assessment; the conversion
+    unsplit, reversed and unclamped; a completion counted without its age; the gauge bean
+    unregistered; the age gauge's plan row removed; a dashboard query naming a series nobody
+    publishes: each caught.
+- **What the gate found, and fixed**:
+  - (1) **The running instance never read the real schema.** Every gauge value test stubbed the
+    reading or called the store directly, so a broken wiring - the pool, the grants, the
+    placeholder - would have passed them all while every scrape read NaN. That left `DOD-OBS`'s
+    "verified against a running instance" unmet. Added
+    `MerchantPayoutDatabaseTest#theWiredGaugesReadTheRealSchema`, probed.
+  - (2) **The conversion age's value was unasserted where it is recorded.** The flow tests counted
+    conversions, so a reversed age read zero and passed. It is now bounded by the test's own span,
+    probed.
+  - (3) **The payout resolution schedule had no lifecycle test**, missing since `P6-TSK-012`, and
+    this task changed the class. A tick that rethrew would end the fixed-delay executor and every
+    resolution with it. Added `MerchantPayoutResolutionScheduleTest`, the
+    `PaymentSweeperScheduleTest` shape, probed.
+  - (4) `NoFloatingPointMoneyRulesTest` refused the gauge's `double` at the registry boundary. It
+    is exempted with its argument - the `PaymentMetrics` case again: counts and seconds as `long`
+    up to the boundary, no amount published.
+- **Findings recorded with owners**:
+  - **Phase 5's stuck-payment gauges have the blind spot the payout gauge closes**: recorded as an
+    input to `P6-DOC-001`, whose review decides.
+  - **Fee assessments and conversions are counted inside the capture's transaction** - the
+    `CheckoutMeters` compromise - so a transaction failing after it overcounts by one. Recorded,
+    not changed.
+  - **The gauge's bound is shared by construction** (one placeholder both beans read), not by a
+    test.
+- **Multi-instance `PASS`.** Counters are per instance, aggregated with `rate()` and `sum()`, and
+  every increment sits behind a conditional only the winner passes: ten racers, one count, probed
+  at both doors. Gauges read the same fleet-wide answer from the shared table on every instance,
+  aggregate with `max()`, are floored at five seconds per instance, read only and decide nothing.
+  Nothing rests on one JVM.
+- **Registers**: `MUTATION_TESTING` §2 +3 rows and §3 +1 paragraph; `PHASE_6_PLAN` §15 (the gauge
+  row split, the kinds made precise); the dashboard's merchant row, seven panels;
+  `NoFloatingPointMoneyRulesTest` +2 exemptions; `CURRENT_STATE`'s partial DoD row for
+  `P6-TSK-012` closed.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at **1540 tests across 14 modules, 0 failures**,
+  and **292 targeted database tests across 33 suites, 0 failures**: every merchant, checkout
+  and telemetry suite, the payment refund, capture, authorization, ambiguity, conservation and
+  sweeper suites, the ledger account, hold and balance suites, both adjustment suites,
+  deny-by-default, role-assignment concurrency, the MFA-bypass enumeration and column
+  classification. **The full battery was
+  deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts are
+  claimed.**
 
 **P6-TSK-014 — The merchant refund: gross out of the payable, fee per the pinned policy** — `COMPLETE` (2026-09-22)
 - **Objective**: give `refundFeePolicy` its consumer. ADR-0050's consequences say a refund of
@@ -7930,7 +8007,7 @@ negative payable** — `COMPLETE` (2026-09-23)
   suites, 0 failures** (merchant, payments and checkout). **The full battery deliberately
   skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TST-001 — The tenancy and fee-conservation battery** — `PLANNED`
+**P6-TST-001 — The tenancy and fee-conservation battery** — `READY`
 - **Objective**: the two gate properties that decay silently, demonstrated in bulk.
 - **Scope**: the cross-tenant negative battery (every merchant endpoint, merchant A on B's
   world: one refusal, zero rows — mechanised so a new endpoint cannot dodge it); the
@@ -7993,6 +8070,12 @@ negative payable** — `COMPLETE` (2026-09-23)
   merchant, as ADR-0004 intends. (3) `PHASE_6_PLAN.md` §10 says event payloads carry "never
   amounts", but `merchant.FeeAssessed` and `merchant.FeeReturned` carry them, with a test
   asserting it. The review decides which side each document is on.
+- **Input from `P6-TSK-013`'s design**: Phase 5's stuck-payment gauges
+  (`finapp.payments.unknown.*`) count only the unknown states, so a payment attempt or a
+  refund whose instance crashed mid-dispatch is invisible to them whenever the sweeper is not
+  running. The payout gauges now count a dispatch overdue past the sweep's own bound; whether
+  the payment gauges should follow is the review's call, since Phase 5 made its choice
+  deliberately and recorded why.
 - **Deps**: everything above. **Accept**: the review's verdict flips the status; the
   post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
 

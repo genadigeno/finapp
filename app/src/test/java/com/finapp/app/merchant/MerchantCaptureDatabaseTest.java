@@ -141,6 +141,10 @@ class MerchantCaptureDatabaseTest {
     private final JdbcLedgerAccountStore ledgerAccounts = new JdbcLedgerAccountStore();
     private final JdbcFeeScheduleStore schedules = new JdbcFeeScheduleStore();
     private final JdbcPaymentFeePinStore pins = new JdbcPaymentFeePinStore();
+
+    /** This test's own registry, so every fee-assessment count starts at zero (`P6-TSK-013`). */
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
     private final JdbcPaymentParticipants realParticipants =
             new JdbcPaymentParticipants(
                     new JdbcPartyStore(),
@@ -210,6 +214,9 @@ class MerchantCaptureDatabaseTest {
             // INV-MER-02: what the platform owes is the POSITION, derived - gross in, fee out.
             assertThat(payablePosition(app, merchant).minorUnits()).isEqualTo(96_80L);
         }
+        assertThat(feeAssessments())
+                .as("one assessment, counted at the seam - never its amount (INV-AUD-02)")
+                .isEqualTo(1.0d);
     }
 
     @Test
@@ -347,6 +354,10 @@ class MerchantCaptureDatabaseTest {
                     .as("announced once, for the same reason it posted once")
                     .isEqualTo(1);
         }
+        assertThat(feeAssessments())
+                .as("and COUNTED once: the seam composes only in the acting branch, so nine"
+                        + " converged racers never reach the meter")
+                .isEqualTo(1.0d);
     }
 
     @Test
@@ -363,6 +374,9 @@ class MerchantCaptureDatabaseTest {
                             "DEBIT:SETTLEMENT_CLEARING", "CREDIT:MERCHANT_PAYABLE");
             assertThat(payablePosition(app, merchant).minorUnits()).isEqualTo(100_00L);
         }
+        assertThat(feeAssessments())
+                .as("an assessment of nothing is still an assessment: announced, and counted")
+                .isEqualTo(1.0d);
     }
 
     // ----------------------------------------------------------------- the regression pin
@@ -391,6 +405,12 @@ class MerchantCaptureDatabaseTest {
                     .as("and nothing was assessed")
                     .isZero();
         }
+        assertThat(feeAssessments()).as("so nothing was counted either").isZero();
+    }
+
+    /** The seam's fee-assessment count, in this test's own registry (`P6-TSK-013`). */
+    private double feeAssessments() {
+        return meterRegistry.get("finapp.merchant.fee.assessed").counter().count();
     }
 
     // ----------------------------------------------------------------- the three assumptions
@@ -1057,7 +1077,10 @@ class MerchantCaptureDatabaseTest {
         // No completion: this suite's payments belong to no checkout session, and the
         // production consumer is wired in CheckoutBeans (P6-TSK-007's seam).
         return new MerchantBoundCaptureComposition(
-                settlement(), new WalletTopUpComposition(), landed -> {});
+                settlement(),
+                new WalletTopUpComposition(),
+                landed -> {},
+                new com.finapp.app.telemetry.MerchantMeters(meterRegistry));
     }
 
     /** The refund's mirror seam — the same construction {@code MerchantBeans} performs. */

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 138 "Previously" blocks, newest first, from `P6-TSK-011` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 139 "Previously" blocks, newest first, from `P6-TSK-012` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,52 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P6-TSK-012` — the payout: hold-then-dispatch on the payable** — `COMPLETE` (2026-09-23).
+**M6.5 closes: money leaves the platform under the bound, and an ambiguous answer never
+releases what may already have been paid.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Ten concurrent payouts dispatch exactly the affordable set | Four of ten 25.00 payouts against 100.00, counted in rows, holds and entries; the hold's amount and the completion's posting each probed |
+| Timeout → standing hold → query-resolved, end to end | Over HTTP: 201 `UNKNOWN` with the hold standing; the sweep's query settles it; the read shows `COMPLETED`, and the keyed replay still answers `UNKNOWN`, byte for byte |
+| Retry-after-timeout converges to one wire operation | One send, ever. A crashed dispatch taken over re-sends the STORED reference; convergence and the reference each probed |
+| The insufficient-payable refusal commits nothing | No row, no hold, no claim, no record, nothing sent |
+| Permissionless and cross-tenant refusals leave counts unmoved | No role, the wrong population, another merchant's payout and another merchant's key: each refused, nothing written or sent. The permission, both tenancy predicates and the claim's scope each probed |
+| Inherited: reconciles with a `FAILED` payout; `paidOut` its own term | Against independent SQL; the classification probed |
+| Inherited: a negative payable refuses; a refund judged against a payout's hold | Both driven for real through checkout: a `RETAINED` refund, and a payout in flight |
+| Inherited: the effective destination read, refused when none, its id recorded | Bound at dispatch at every rank; the supersession race observed |
+
+### The design (ADR-0057)
+
+- **Four states.** `REQUESTED` would have no producer, because one transaction judges, holds and
+  commits `DISPATCHED`. `FAILED` records why.
+- **The send permit.** This is the first flow with both a re-sending takeover and a sweep that can
+  conclude "never received". `last_dispatched_at` is committed before every send, conditionally,
+  and `NEVER_RECEIVED` is concluded only past its bound, on the locked row.
+- **A refused connection fails a payout only on its first send.** On a re-send, the first send
+  may have paid.
+- **The operator's own route** over `MERCHANT_PAYOUT` in `LEDGER_OPERATOR`, with a reason; the
+  claim scoped per merchant; `PAYOUT_CLEARING` a credit-normal liability; the provider's answers
+  encrypted under their own key.
+
+### What the gate found
+
+- **Claims no test could fail.** Both halves of the send permit's race had none. The takeover
+  side's test was stopped by an unlocked pre-check before the conditional, and the sweep side's
+  test, named for the lock, is single-threaded. The release belt, the two ordering locks, the
+  edge rule's raw-SQL demonstration and the sensitive-data needle had none either. All are now
+  tested, and each was probed and caught.
+- **Three inherited clauses were proven only by composition.** Each is now driven end to end:
+  the refund beside a payout in flight, the negative payable after a `RETAINED` refund, and the
+  timeout resolved over HTTP with the replay after resolution.
+- **Two probes were invalid, and were repeated rather than counted.** One broke the query
+  instead of removing the filter. The other was refused by `EventPayload` before the test could
+  see it, which showed the platform primitive refuses decimals but admits digits.
+- **ADR-0057 corrected**: its premise now names clock skew between instances, and its invariant
+  list separates what is protected here from what is relied on.
 
 ### Previously
 

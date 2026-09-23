@@ -386,9 +386,15 @@ class CheckoutFlowDatabaseTest {
     void tenConcurrentConfirmationsProduceOneOrder() throws Exception {
         Merchant merchant = tradingMerchant("0.029", 30L);
         Customer customer = payingCustomer();
+        // Taken BEFORE the session exists, so the conversion's whole age lies inside the span.
+        java.time.Instant spanStart = java.time.Instant.now();
         String token = field(createSession(merchant, AMOUNT_MINOR, someKey()).body(), "sessionToken");
         providerAuthorises();
         providerCaptures();
+        double completedBefore = sessionMeter("completed");
+        long conversionsBefore = conversions("completed");
+        double conversionSecondsBefore = conversionSeconds("completed");
+        double feesBefore = feeAssessments();
 
         int racers = 10;
         CountDownLatch start = new CountDownLatch(1);
@@ -421,6 +427,24 @@ class CheckoutFlowDatabaseTest {
                     .as("and the merchant is owed for one purchase, not ten")
                     .isEqualTo(96_80L);
         }
+        // THE METERS, THROUGH THE WIRED PATH (P6-TSK-013): one ending, one conversion timed,
+        // one fee assessment - each behind the conditional the nine losers never passed.
+        assertThat(sessionMeter("completed") - completedBefore).isEqualTo(1.0d);
+        assertThat(conversions("completed") - conversionsBefore)
+                .as("one conversion timed, from the offer's creation to its completion")
+                .isEqualTo(1L);
+        // The session was created before its first confirmation arrived and completed before
+        // the last answer did, so its age lies inside this test's own span - a reversed or
+        // zeroed age, which a count cannot see, falls outside it.
+        double spanSeconds =
+                java.time.Duration.between(spanStart, java.time.Instant.now()).toNanos() / 1e9;
+        assertThat(conversionSeconds("completed") - conversionSecondsBefore)
+                .as("the recorded age is the conversion's own: positive, and within the span")
+                .isGreaterThan(0.0d)
+                .isLessThanOrEqualTo(spanSeconds);
+        assertThat(feeAssessments() - feesBefore)
+                .as("one capture, one assessment - a count, never the 3.20")
+                .isEqualTo(1.0d);
     }
 
     /** The payments sweeper, with no patience at all — the production outcome path. */
@@ -1655,6 +1679,7 @@ class CheckoutFlowDatabaseTest {
         // provider's answer is LOST. The customer sees the honest PROCESSING (INV-LIFE-03),
         // the session stays PAYMENT_PENDING, and nothing is posted.
         double lateBefore = sessionMeter("completed_late");
+        long lateConversionsBefore = conversions("completed_late");
         providerAuthorises();
         provider.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.CAPTURES_PATH);
         HttpResponse<String> confirmed = confirm(customer, field(created, "sessionToken"));
@@ -1715,10 +1740,35 @@ class CheckoutFlowDatabaseTest {
         assertThat(sessionMeter("completed_late") - lateBefore)
                 .as("the late completion, counted once")
                 .isEqualTo(1.0d);
+        assertThat(conversions("completed_late") - lateConversionsBefore)
+                .as("and timed in its OWN series (P6-TSK-013): late money measures the provider,"
+                        + " and must not swallow the in-window mean")
+                .isEqualTo(1L);
         // The `expired` counter is the SCHEDULE's to increment, from the tick's own tally
         // after each row's transaction committed, and this test drives the sweeper directly.
         // Its wiring is CheckoutExpirySweeperScheduleTest's, where the schedule is the
         // subject - asserting it here would assert a path this test does not take.
+    }
+
+    /** Conversions timed for one outcome, in the application's own registry (`P6-TSK-013`). */
+    private long conversions(String outcome) {
+        io.micrometer.core.instrument.Timer timer =
+                meterRegistry.find("finapp.checkout.conversion.age").tag("outcome", outcome).timer();
+        return timer == null ? 0L : timer.count();
+    }
+
+    /** The seconds recorded for one outcome's conversions, in total (`P6-TSK-013`). */
+    private double conversionSeconds(String outcome) {
+        io.micrometer.core.instrument.Timer timer =
+                meterRegistry.find("finapp.checkout.conversion.age").tag("outcome", outcome).timer();
+        return timer == null ? 0.0d : timer.totalTime(java.util.concurrent.TimeUnit.NANOSECONDS) / 1e9;
+    }
+
+    /** Fee assessments, in the application's own registry (`P6-TSK-013`). */
+    private double feeAssessments() {
+        io.micrometer.core.instrument.Counter counter =
+                meterRegistry.find("finapp.merchant.fee.assessed").counter();
+        return counter == null ? 0.0d : counter.count();
     }
 
     /** The counter for one outcome, read from the application's own registry. */

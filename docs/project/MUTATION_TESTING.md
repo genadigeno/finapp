@@ -139,6 +139,9 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-AUD-02` | `MerchantPayoutDatabaseTest#nothingSensitiveLeaves`, `PayoutEvidenceCipherTest#roundTrips` | Recorded | The evidence cipher storing the plaintext, padded to the tag's length so `V007`'s length CHECK still passes (`P6-TSK-012`, ADR-0057 §9) | Caught at both ranks: the cipher's round trip, and the retained evidence carrying the provider's JSON in the clear at rest. A real provider's answer can name the account holder, which is why it is encrypted under a key of its own |
 | `INV-AUD-02` | `MerchantPayoutDatabaseTest#nothingSensitiveLeaves` | Recorded | The payout's amount added to its event payload, first as a decimal and then in minor units (`P6-TSK-012`) | The decimal never reached the test. `EventPayload` refused `37.19` at construction, because its value vocabulary is identifiers and enumerated names, and every flow that announces failed with it (20 of 22 tests): the platform primitive enforcing the rule one rank below. Minor units are digits, which the primitive admits, so that form is the leak only the needle can see, and the needle's field check alone caught it |
 | `INV-AUD-03` | `MerchantPayoutEndpointDatabaseTest#thePermissionBoundary`, `MerchantPayoutEndpointDatabaseTest#anOperatorPaysOutWithAReason`, `MerchantPayoutEndpointDatabaseTest#oneNotFound` | Recorded | The operator route's `@RequiresPermission` changed from `MERCHANT_PAYOUT` to `MERCHANT_ADMINISTER` (`P6-TSK-012`) | Caught three ways: a merchant administrator moved a merchant's money where the negative test owes 403, and the money-operating `LEDGER_OPERATOR` was refused from the other direction. `RoleName` records the counterparty administrators as a population that moves nothing |
+| `INV-LIFE-03` | `MerchantPayoutMetricsDatabaseTest#theReadingIsTheSweepsOwnCandidacy` | Recorded | **The unknown-state age metric the catalogue's Verify line names, for payouts (`P6-TSK-013`).** Three mutations of `JdbcMerchantPayoutStore.unknownReading`: the dispatched bound neutralised (`OR true`, its parameter still bound); the overdue-dispatch clause made unsatisfiable, which is Phase 5's unknown-only shape; an `UNKNOWN` payout aged from its birth instead of its entry into the state | All three caught by the one schema test, each at its own assertion. The in-flight dispatch counted (3 where 2 is owed), which puts healthy traffic in the alert. The overdue dispatch was missed (1): a crashed payout's held money is invisible whenever the sweep is not running, the gap `P6-TSK-012`'s DoD row recorded. A row born five days ago and stranded a minute ago read 432,000 seconds old. Every row was seeded through the machine's legal edges |
+| `INV-LIFE-03` | `MerchantPayoutMetricsTest#unreadableIsNaNNeverZero`, `MerchantPayoutMetricsTest#anUnopenableConnectionIsNaN` | Recorded | An unreadable database published as zero and zero instead of NaN (`P6-TSK-013`) | Caught, both ways a reading can fail. Zero says "nothing is stuck" at the moment nothing can be known, and silences the stuck-payout alert exactly when the platform is least healthy |
+| `INV-LIFE-03` | `MerchantPayoutDatabaseTest#theWiredGaugesReadTheRealSchema` | Recorded | The wired bean's reading made to throw, so the running instance publishes NaN for ever (`P6-TSK-013`) | Caught by the running instance: the gauge never became a number. **A gate finding**: before this gate every value test either stubbed the reading or called the store directly. A broken wiring - the pool, the grants, the placeholder - would have passed them all while every scrape read NaN, which is `DOD-OBS`'s "verified against a running instance" unmet |
 | `INV-REC-05` | `OperationalChartDatabaseTest#everyCombinationResolves`, `OperationalChartDatabaseTest#theSeamsStaySeams` | Recorded | The `Phase: 3 (accounts)` half — the designated suspense account: its seed row removed (`P3-TSK-003`) | Caught in both tiers, hermetic reconciliation and the resolve suite, so `SUSPENSE_UNMATCHED` exists in every supported currency before Phase 8 needs it — and the self-armed seam count proves **nothing posts to it in Phase 3**, live since `P3-TSK-005` created the line table. Aging, reporting and alerting are the `Phase: 8 (management)` half, owned there |
 | `INV-ACC-01` | `TrialBalanceDatabaseTest#injectedImbalancesAreDetectedPerCurrency`, `TrialBalanceDatabaseTest#theSweepIsSafeUnderConcurrentPosting`, `LedgerMetricsTest#anOutOfBalanceCurrencyReadsOne`, `LedgerMetricsTest#anUnsweepableTrialBalanceReportsAbsent`, `LedgerMetricsTest#theTrialBalanceSeriesAreEager` | Recorded | Six, from `P3-TSK-019`'s sweep: the zero comparison neutralised; the currency buckets collapsed; the scale dropped from the decimal conversion; the direction sign dropped; the unknown gauge reading made zero; the eager registration removed | **All caught by the intended assertion, restores byte-identical.** Three injected shapes ride V004's deferral — equal raw sums at different scales, and the cross-currency subsidy — each flagged per currency with a committed positive control proving the detection was the imbalance; the sign-drop is caught by the positive control (a balanced journal reads out of balance); the gauge reads 0 verified balanced, 1 out, **NaN never zero** when unsweepable, eager per supported currency. No `IN_FLIGHT` verdict exists by design: one statement, one snapshot, and sweeps racing four live posters read zero every time |
 | `INV-IDEM-01` | `PostingServiceDatabaseTest#tenConcurrentIdenticalKeysProduceOneEffect`, `PostingServiceDatabaseTest#aDifferentRequestOnAKnownKeyIsRefused`, `ReversalDatabaseTest#aReplayedKeyIsOneReversal` | Recorded | The financial boundary the kernel row above was built for, mutated by its owning tasks: the fingerprint made constant and the key silently made per-call — every retry a second posting (`P3-TSK-006`); a replay re-entering the reversal effect (`P3-TSK-016`); the actor and the reason each dropped from the adjustment fingerprint (`P3-TSK-017`) | All caught by the intended assertion. Ten identical keys produce one effect **counted in the table**, nine replays carrying the original entry id; a known key with a different request is a distinct conflict (`INV-IDEM-03`), never a silent second effect; the reversal's replay is one entry. ADR-0004's clause — idempotency at the financial boundary, never a cache or an HTTP filter — met by the commands that actually move money |
@@ -376,6 +379,34 @@ the loser observed Lock-waiting in `pg_stat_activity` before the winner committe
   `MerchantPayoutDatabaseTest#aSuspensionWaitsForTheDispatch`.
 
 Neither test existed before `P6-TSK-012`'s gate, so both sections' claims were untested until then.
+
+**The meters' other controls are demonstrated and deliberately not claimed** (`P6-TSK-013`).
+Counting only acting judgements, a floor on a gauge's refresh, eager registration and a dashboard
+that resolves are observability disciplines, not catalogued invariants, so none is claimed under an
+`INV-*` row. Each was probed all the same, and each was caught by the test named:
+- acting-only at the HTTP door - every initiation counted, or the acting bit dropped inside
+  `MerchantPayouts`: `MerchantPayoutEndpointDatabaseTest#aMerchantPaysOutOverHttp` and `#aTimeoutIsHonest`;
+- acting-only at the sweep - every applied answer reported as a judgement:
+  `MerchantPayoutDatabaseTest#tenConcurrentSweepsLeaveOneOutcome` (ten completions where one is owed)
+  and `#neverReceivedWaitsForThePermit`;
+- the schedule's count of that tally removed: `MerchantPayoutDatabaseTest#theScheduleCountsActingJudgementsOnce`;
+- a throwing tick rethrown, which ends a fixed-delay executor:
+  `MerchantPayoutResolutionScheduleTest#aThrowingTickDoesNotEndResolution`;
+- `DISPATCHED` counted as a judgement: `MerchantMetersTest`, both tests;
+- the refresh floor removed: `MerchantPayoutMetricsTest#theRefreshFloorHolds`;
+- the gauge bean unregistered, and the age gauge's plan row removed:
+  `PlannedMetersExistTest#phase6PlannedMetersAreAlreadyPublished`;
+- a wallet top-up counted as a fee assessment: `MerchantCaptureDatabaseTest#aWalletTopUpIsUnchanged`;
+- every conversion recorded in one series: `CheckoutMetersTest#aConversionIsCountedAndTimed` and
+  `CheckoutFlowDatabaseTest#aCaptureLandingAfterExpiryStillProducesTheOrder`;
+- the conversion age measured backwards at the completion site:
+  `CheckoutFlowDatabaseTest#tenConcurrentConfirmationsProduceOneOrder` (the age read zero);
+- the zero clamp removed, and a completion counted without its age: `CheckoutMetersTest`;
+- one of the new row's queries naming a series nobody publishes: `DashboardQueriesResolveTest`.
+
+Three of these tests did not exist before `P6-TSK-013`'s gate: the schedule's lifecycle (missing
+since `P6-TSK-012`), the running instance's gauge reading, and the conversion age's value at the
+real completion site, where a count alone had been asserted.
 
 ---
 

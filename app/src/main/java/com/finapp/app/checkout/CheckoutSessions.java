@@ -347,12 +347,14 @@ public final class CheckoutSessions {
                                         + ", completedAs=" + moved.get().status())));
         announceOrder(unitOfWork, order, session, correlation);
         // ON THE ACTING TRANSITION ONLY: the conditional above already returned for every
-        // racer that lost, so ten instances applying one capture outcome count ONE ending.
+        // racer that lost, so ten instances applying one capture outcome count ONE ending -
+        // and time one conversion (P6-TSK-013), from the offer's creation to this transition.
         // Inside the transaction rather than after it, and CheckoutMeters says why.
-        meters.session(
+        meters.converted(
                 moved.get().status() == CheckoutSessionStatus.COMPLETED_LATE
                         ? CheckoutMeters.Outcome.COMPLETED_LATE
-                        : CheckoutMeters.Outcome.COMPLETED);
+                        : CheckoutMeters.Outcome.COMPLETED,
+                Duration.between(session.createdAt(), moved.get().statusChangedAt()));
         return Optional.of(order);
     }
 

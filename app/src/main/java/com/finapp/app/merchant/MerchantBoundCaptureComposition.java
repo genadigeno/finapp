@@ -1,5 +1,6 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.telemetry.MerchantMeters;
 import com.finapp.ledger.JournalLine;
 import com.finapp.merchant.MerchantSettlement;
 import com.finapp.payments.CaptureComposition;
@@ -30,6 +31,10 @@ import lombok.RequiredArgsConstructor;
  * answers four lines, and everything it cannot answer it throws about
  * ({@code MerchantSettlementException}), which fails the capture's whole transaction rather
  * than posting fewer lines than the money owes.
+ *
+ * <p><strong>It is also where a fee assessment is counted</strong> (`P6-TSK-013`,
+ * {@code finapp.merchant.fee.assessed}), because it is the one place that knows a capture was
+ * merchant-bound — {@code payments} must not, and {@code merchant} has no meters.
  */
 @RequiredArgsConstructor
 public final class MerchantBoundCaptureComposition implements CaptureComposition<Connection> {
@@ -38,21 +43,31 @@ public final class MerchantBoundCaptureComposition implements CaptureComposition
     @NonNull private final CaptureComposition<Connection> walletTopUp;
     @NonNull private final java.util.function.Consumer<Completion> completion;
 
+    /** The fee-assessment counter (`P6-TSK-013`) — last, so the parameter order is unchanged. */
+    @NonNull private final MerchantMeters meters;
+
     /** What a landed entry means to the flow that created the intent (`P6-TSK-007`). */
     public record Completion(Connection unitOfWork, CaptureSettlement capture, java.util.UUID entryRef) {}
 
     @Override
     public List<JournalLine> settle(Connection unitOfWork, CaptureSettlement capture) {
-        return settlement
-                .settle(
+        java.util.Optional<List<JournalLine>> merchantBound =
+                settlement.settle(
                         unitOfWork,
                         capture.intent().value(),
                         capture.clearing(),
                         capture.credit(),
                         capture.captured(),
                         capture.correlation(),
-                        capture.at())
-                .orElseGet(() -> walletTopUp.settle(unitOfWork, capture));
+                        capture.at());
+        if (merchantBound.isEmpty()) {
+            return walletTopUp.settle(unitOfWork, capture);
+        }
+        // ONE ASSESSMENT PER CAPTURE: payments composes only in its acting branch, after the
+        // conditional transition was won, so ten resolvers racing one capture reach this line
+        // once. Inside the capture's transaction rather than after it - MerchantMeters says why.
+        meters.feeAssessed();
+        return merchantBound.get();
     }
 
     /**

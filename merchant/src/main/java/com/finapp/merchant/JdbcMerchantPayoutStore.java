@@ -12,6 +12,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -201,6 +202,41 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
         } catch (SQLException failure) {
             throw new MerchantStorageException(
                     DatabaseFailure.describe("reading sweepable merchant payouts", failure));
+        }
+    }
+
+    @Override
+    public UnknownReading unknownReading(Connection unitOfWork, Duration dispatchedBound) {
+        Objects.requireNonNull(dispatchedBound, "dispatchedBound must not be null");
+        // findSweepable's own expressions with the UNKNOWN bound at zero: an UNKNOWN payout has
+        // waited since the move that made it UNKNOWN, a DISPATCHED one since its latest permit -
+        // and counts only once that permit is past the bound, before which it is mid-question.
+        // The SERVER's clock decides the age, never an instance's (ADR-0014), and the age is a
+        // whole number of seconds - floor()::bigint, never a double for JDBC to round - floored
+        // at zero, because an application clock a moment ahead of the database's must not
+        // publish a negative wait.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*),"
+                                + " GREATEST(0, COALESCE(floor(EXTRACT(EPOCH FROM now() - min("
+                                + "   CASE WHEN p.status = 'UNKNOWN'"
+                                + "        THEN COALESCE(h.entered, p.created_at)"
+                                + "        ELSE p.last_dispatched_at END)))::bigint, 0))"
+                                + " FROM " + TABLE + " p"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM merchant.merchant_payout_event e"
+                                + "   WHERE e.payout_id = p.id) h ON true"
+                                + " WHERE p.status = 'UNKNOWN'"
+                                + "    OR (p.status = 'DISPATCHED'"
+                                + "        AND p.last_dispatched_at <= now() - make_interval(secs => ?))")) {
+            read.setLong(1, dispatchedBound.toSeconds());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return new UnknownReading(row.getLong(1), row.getLong(2));
+            }
+        } catch (SQLException failure) {
+            throw new MerchantStorageException(
+                    DatabaseFailure.describe("reading the stuck-payout gauge", failure));
         }
     }
 
