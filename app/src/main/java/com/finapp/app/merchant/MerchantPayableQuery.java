@@ -4,8 +4,9 @@ import com.finapp.merchant.MerchantId;
 import com.finapp.merchant.MerchantPayable;
 import java.sql.Connection;
 import java.util.List;
-import java.util.Objects;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -16,18 +17,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * for the same reason: a named type with its own template, rather than a controller reaching for
  * whichever {@code TransactionTemplate} bean the context happens to hold.
  */
+@RequiredArgsConstructor
 public final class MerchantPayableQuery {
 
-    private final MerchantPayable payables;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    public MerchantPayableQuery(
-            MerchantPayable payables, TransactionTemplate transactions, DataSource dataSource) {
-        this.payables = Objects.requireNonNull(payables, "payables must not be null");
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final MerchantPayable payables;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     /** Every payable the merchant has, read in one transaction. */
     public List<MerchantPayable.Payable> payablesOf(MerchantId merchant) {

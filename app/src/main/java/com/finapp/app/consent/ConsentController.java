@@ -10,7 +10,8 @@ import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -43,13 +44,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me/consents", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class ConsentController {
 
-    private final ConsentService consents;
-
-    public ConsentController(ConsentService consents) {
-        this.consents = Objects.requireNonNull(consents, "consents must not be null");
-    }
+    @NonNull private final ConsentService consents;
 
     /**
      * Grants for a purpose, against the text version the person was shown.

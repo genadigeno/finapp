@@ -8,9 +8,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,13 +42,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/merchant", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class MerchantTransactionController {
 
-    private final MerchantTransactionReport report;
-
-    public MerchantTransactionController(MerchantTransactionReport report) {
-        this.report = Objects.requireNonNull(report, "report must not be null");
-    }
+    @NonNull private final MerchantTransactionReport report;
 
     /**
      * One movement. {@code gross} and {@code fee} are magnitudes; {@code net} carries the sign —

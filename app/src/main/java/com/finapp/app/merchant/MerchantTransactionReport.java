@@ -26,6 +26,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -68,6 +70,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * the period — silently, which is the one thing a statement must never do. So the period is the
  * unit of pagination, bounded so that one request stays one bounded read.
  */
+@RequiredArgsConstructor
 public final class MerchantTransactionReport {
 
     /** The longest period one request may ask for: any calendar month fits. */
@@ -112,30 +115,13 @@ public final class MerchantTransactionReport {
     /** One currency's movements, between an opening and a closing they reconcile to. */
     public record Section(Money opening, List<Movement> movements, Money closing) {}
 
-    private final StatementDerivation<Connection> statements;
-    private final PaymentAttemptStore<Connection> attempts;
-    private final RefundStore<Connection> refunds;
-    private final CheckoutSessionStore<Connection> sessions;
-    private final OrderStore<Connection> orders;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    public MerchantTransactionReport(
-            StatementDerivation<Connection> statements,
-            PaymentAttemptStore<Connection> attempts,
-            RefundStore<Connection> refunds,
-            CheckoutSessionStore<Connection> sessions,
-            OrderStore<Connection> orders,
-            TransactionTemplate transactions,
-            DataSource dataSource) {
-        this.statements = Objects.requireNonNull(statements, "statements must not be null");
-        this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
-        this.refunds = Objects.requireNonNull(refunds, "refunds must not be null");
-        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
-        this.orders = Objects.requireNonNull(orders, "orders must not be null");
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final StatementDerivation<Connection> statements;
+    @NonNull private final PaymentAttemptStore<Connection> attempts;
+    @NonNull private final RefundStore<Connection> refunds;
+    @NonNull private final CheckoutSessionStore<Connection> sessions;
+    @NonNull private final OrderStore<Connection> orders;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     /**
      * The merchant's movements for {@code [from, to]}, one section per currency its payable

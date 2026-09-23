@@ -2,7 +2,8 @@ package com.finapp.app.merchant;
 
 import com.finapp.merchant.AuthenticatedMerchant;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,13 +30,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/merchant", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class MerchantSelfController {
 
-    private final MerchantSelfView view;
-
-    public MerchantSelfController(MerchantSelfView view) {
-        this.view = Objects.requireNonNull(view, "view must not be null");
-    }
+    @NonNull private final MerchantSelfView view;
 
     /**
      * The authenticated merchant's own record. Carries no other tenant's anything, and

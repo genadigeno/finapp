@@ -8,8 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * The stuck-payment gauges (`P5-TSK-017`, `PHASE_5_PLAN.md` §15):
@@ -47,6 +46,7 @@ import org.slf4j.LoggerFactory;
  * instance, and the cached reading is also the log's rate limit. Nothing is written, ever —
  * a gauge that healed what it found would destroy the evidence of the stall.
  */
+@Slf4j
 final class PaymentMetrics {
 
     /** {@code finapp.payments.unknown.active} — operations in an honestly-unknown state. */
@@ -57,8 +57,6 @@ final class PaymentMetrics {
 
     /** The cheap-read floor, the sibling gauges' own: two indexed aggregates, not a fold. */
     static final Duration MIN_REFRESH = Duration.ofSeconds(5);
-
-    private static final Logger log = LoggerFactory.getLogger(PaymentMetrics.class);
 
     /** The {@code LedgerMetrics.Connections} seam, for the same unit-testability reason. */
     @FunctionalInterface

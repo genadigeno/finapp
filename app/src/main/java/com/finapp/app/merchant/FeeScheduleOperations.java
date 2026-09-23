@@ -23,6 +23,8 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -37,6 +39,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * its own pricing is a real capability and it is {@code P6-TSK-009}'s, where it arrives with
  * the tenant predicate its own surface requires.
  */
+@RequiredArgsConstructor
 public class FeeScheduleOperations {
 
     /** A schedule as an operator sees it listed. */
@@ -63,18 +66,9 @@ public class FeeScheduleOperations {
     /** Which schedule prices a merchant. */
     public record MerchantFeeScheduleView(String merchantId, String feeScheduleId) {}
 
-    private final FeeSchedules feeSchedules;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    public FeeScheduleOperations(
-            FeeSchedules feeSchedules,
-            TransactionTemplate transactions,
-            DataSource dataSource) {
-        this.feeSchedules = Objects.requireNonNull(feeSchedules, "feeSchedules must not be null");
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final FeeSchedules feeSchedules;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     /** Creates a named pricing identity. */
     public FeeScheduleView create(CreateFeeScheduleRequest body) {

@@ -17,6 +17,8 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -26,6 +28,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * command, domain refusals translated to the registered codes, views carrying identifiers
  * and enumerated names and never another tenant's anything.
  */
+@RequiredArgsConstructor
 public class MerchantOperations {
 
     /** The onboarding response: the merchant, its status — never the party's standing. */
@@ -35,22 +38,10 @@ public class MerchantOperations {
             String settlementCurrency,
             String status) {}
 
-    private final MerchantOnboarding onboarding;
-    private final MerchantAdministration administration;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    public MerchantOperations(
-            MerchantOnboarding onboarding,
-            MerchantAdministration administration,
-            TransactionTemplate transactions,
-            DataSource dataSource) {
-        this.onboarding = Objects.requireNonNull(onboarding, "onboarding must not be null");
-        this.administration =
-                Objects.requireNonNull(administration, "administration must not be null");
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final MerchantOnboarding onboarding;
+    @NonNull private final MerchantAdministration administration;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     /** Onboards, or replays the recorded outcome for a retried key ({@code INV-IDEM-01}). */
     public MerchantView onboard(OnboardMerchantRequest body, String idempotencyKey) {

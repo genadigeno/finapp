@@ -8,7 +8,8 @@ import com.finapp.payments.RefundSettlement;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The join (`P6-TSK-014`): {@code payments} cannot see {@code merchant}, and {@code merchant}
@@ -20,16 +21,11 @@ import java.util.Objects;
  * ordering is the whole design: <strong>the presence of a fee pin is what decides</strong>,
  * read authoritatively per refund, never a flag anybody sets.
  */
+@RequiredArgsConstructor
 public final class MerchantBoundRefundComposition implements RefundComposition<Connection> {
 
-    private final MerchantSettlement settlement;
-    private final RefundComposition<Connection> walletRefund;
-
-    public MerchantBoundRefundComposition(
-            MerchantSettlement settlement, RefundComposition<Connection> walletRefund) {
-        this.settlement = Objects.requireNonNull(settlement, "settlement must not be null");
-        this.walletRefund = Objects.requireNonNull(walletRefund, "walletRefund must not be null");
-    }
+    @NonNull private final MerchantSettlement settlement;
+    @NonNull private final RefundComposition<Connection> walletRefund;
 
     @Override
     public List<JournalLine> settle(Connection unitOfWork, RefundSettlement refund) {

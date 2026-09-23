@@ -29,6 +29,8 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -50,47 +52,23 @@ import org.springframework.transaction.support.TransactionTemplate;
  * account. Underneath, `P3-TSK-012`'s {@code openOrConverge} makes any re-execution — a
  * different key, a racing instance — converge on the one live agreement.
  */
+@RequiredArgsConstructor
 public final class AccountService {
 
     /** The idempotency scope (ADR-0004): one command type, one scope. */
     static final String IDEMPOTENCY_SCOPE = "accounts.open";
 
-    private final AccountOpening opening;
-    private final AccountClosing closing;
-    private final CustomerAccountStore<Connection> accounts;
-    private final BalanceDisplay<Connection> balances;
-    private final StatementDerivation<Connection> statements;
-    private final IdentityStore<Connection> identities;
-    private final PartyStore<Connection> parties;
-    private final IdempotentExecutor executor;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-    private final AccountMetrics metrics;
-
-    public AccountService(
-            AccountOpening opening,
-            AccountClosing closing,
-            CustomerAccountStore<Connection> accounts,
-            BalanceDisplay<Connection> balances,
-            StatementDerivation<Connection> statements,
-            IdentityStore<Connection> identities,
-            PartyStore<Connection> parties,
-            IdempotentExecutor executor,
-            TransactionTemplate transactions,
-            DataSource dataSource,
-            AccountMetrics metrics) {
-        this.opening = Objects.requireNonNull(opening, "opening must not be null");
-        this.closing = Objects.requireNonNull(closing, "closing must not be null");
-        this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
-        this.balances = Objects.requireNonNull(balances, "balances must not be null");
-        this.statements = Objects.requireNonNull(statements, "statements must not be null");
-        this.identities = Objects.requireNonNull(identities, "identities must not be null");
-        this.parties = Objects.requireNonNull(parties, "parties must not be null");
-        this.executor = Objects.requireNonNull(executor, "executor must not be null");
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-        this.metrics = Objects.requireNonNull(metrics, "metrics must not be null");
-    }
+    @NonNull private final AccountOpening opening;
+    @NonNull private final AccountClosing closing;
+    @NonNull private final CustomerAccountStore<Connection> accounts;
+    @NonNull private final BalanceDisplay<Connection> balances;
+    @NonNull private final StatementDerivation<Connection> statements;
+    @NonNull private final IdentityStore<Connection> identities;
+    @NonNull private final PartyStore<Connection> parties;
+    @NonNull private final IdempotentExecutor executor;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
+    @NonNull private final AccountMetrics metrics;
 
     /** The rendered agreement — also the stored idempotent response, replayed verbatim. */
     public record AccountView(String id, String productType, String status, String openedAt) {

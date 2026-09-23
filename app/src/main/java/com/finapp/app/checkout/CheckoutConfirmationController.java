@@ -5,7 +5,8 @@ import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.identity.Session;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -54,13 +55,10 @@ import org.springframework.web.bind.annotation.RestController;
         path = "/checkout/sessions/confirmation",
         produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class CheckoutConfirmationController {
 
-    private final CheckoutService checkout;
-
-    public CheckoutConfirmationController(CheckoutService checkout) {
-        this.checkout = Objects.requireNonNull(checkout, "checkout must not be null");
-    }
+    @NonNull private final CheckoutService checkout;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public CheckoutService.SessionView confirmCheckoutSession(

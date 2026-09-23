@@ -10,7 +10,8 @@ import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -62,14 +63,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/identities", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class IdentityAdministrationController {
 
-    private final IdentityAdministrationService administration;
-
-    public IdentityAdministrationController(IdentityAdministrationService administration) {
-        this.administration =
-                Objects.requireNonNull(administration, "administration must not be null");
-    }
+    @NonNull private final IdentityAdministrationService administration;
 
     /**
      * Suspends an identity and ends every session it holds.

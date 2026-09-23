@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * {@link TransferParticipants} over the party, accounts and ledger stores (`P4-TSK-005`) —
@@ -36,21 +38,12 @@ import java.util.UUID;
  * <strong>both</strong> the product agreement (source) and the wallet row must be
  * {@code ACTIVE}.
  */
+@RequiredArgsConstructor
 public final class JdbcTransferParticipants implements TransferParticipants<Connection> {
 
-    private final PartyStore<Connection> parties;
-    private final CustomerAccountStore<Connection> products;
-    private final LedgerAccountStore<Connection> ledgerAccounts;
-
-    public JdbcTransferParticipants(
-            PartyStore<Connection> parties,
-            CustomerAccountStore<Connection> products,
-            LedgerAccountStore<Connection> ledgerAccounts) {
-        this.parties = Objects.requireNonNull(parties, "parties must not be null");
-        this.products = Objects.requireNonNull(products, "products must not be null");
-        this.ledgerAccounts =
-                Objects.requireNonNull(ledgerAccounts, "ledgerAccounts must not be null");
-    }
+    @NonNull private final PartyStore<Connection> parties;
+    @NonNull private final CustomerAccountStore<Connection> products;
+    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
 
     @Override
     public Optional<Source> sourceOwnedBy(

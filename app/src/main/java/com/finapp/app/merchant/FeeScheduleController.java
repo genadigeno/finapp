@@ -4,7 +4,8 @@ import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,13 +39,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/operator/fee-schedules", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class FeeScheduleController {
 
-    private final FeeScheduleOperations feeSchedules;
-
-    public FeeScheduleController(FeeScheduleOperations feeSchedules) {
-        this.feeSchedules = Objects.requireNonNull(feeSchedules, "feeSchedules must not be null");
-    }
+    @NonNull private final FeeScheduleOperations feeSchedules;
 
     /** Creates a named pricing identity. It carries no price until a version is added. */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)

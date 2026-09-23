@@ -7,7 +7,8 @@ import com.finapp.payments.CaptureSettlement;
 import com.finapp.payments.WalletTopUpComposition;
 import java.sql.Connection;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The composition seam, closed (`P6-TSK-005`, ADR-0050 §6) — the whole of what this class does
@@ -30,23 +31,15 @@ import java.util.Objects;
  * ({@code MerchantSettlementException}), which fails the capture's whole transaction rather
  * than posting fewer lines than the money owes.
  */
+@RequiredArgsConstructor
 public final class MerchantBoundCaptureComposition implements CaptureComposition<Connection> {
 
-    private final MerchantSettlement settlement;
-    private final CaptureComposition<Connection> walletTopUp;
-    private final java.util.function.Consumer<Completion> completion;
+    @NonNull private final MerchantSettlement settlement;
+    @NonNull private final CaptureComposition<Connection> walletTopUp;
+    @NonNull private final java.util.function.Consumer<Completion> completion;
 
     /** What a landed entry means to the flow that created the intent (`P6-TSK-007`). */
     public record Completion(Connection unitOfWork, CaptureSettlement capture, java.util.UUID entryRef) {}
-
-    public MerchantBoundCaptureComposition(
-            MerchantSettlement settlement,
-            CaptureComposition<Connection> walletTopUp,
-            java.util.function.Consumer<Completion> completion) {
-        this.settlement = Objects.requireNonNull(settlement, "settlement must not be null");
-        this.walletTopUp = Objects.requireNonNull(walletTopUp, "walletTopUp must not be null");
-        this.completion = Objects.requireNonNull(completion, "completion must not be null");
-    }
 
     @Override
     public List<JournalLine> settle(Connection unitOfWork, CaptureSettlement capture) {

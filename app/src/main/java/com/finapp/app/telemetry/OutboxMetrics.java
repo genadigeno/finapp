@@ -7,8 +7,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Publishes the outbox backlog as two gauges, from one reading.
@@ -36,6 +35,7 @@ import org.slf4j.LoggerFactory;
  * the exact moment nothing can be known, and an alert written on {@code == 0} would stay silent
  * through the outage. Absent data is alertable; a comforting zero is not.
  */
+@Slf4j
 final class OutboxMetrics {
 
     /** {@code finapp.outbox.pending} — unpublished events, dead-lettered ones included. */
@@ -49,8 +49,6 @@ final class OutboxMetrics {
      * monitoring becomes load on the database it is monitoring.
      */
     static final Duration MIN_REFRESH = Duration.ofSeconds(5);
-
-    private static final Logger log = LoggerFactory.getLogger(OutboxMetrics.class);
 
     private final OutboxBacklog backlog;
     private final Clock clock;

@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * {@link PaymentParticipants} over the party, accounts, ledger and paymentmethods stores
@@ -37,24 +39,13 @@ import java.util.UUID;
  * the token is unwrapped here for exactly one purpose (the provider wire, its one legitimate
  * destination) and any second unwrapping site is a review question.
  */
+@RequiredArgsConstructor
 public final class JdbcPaymentParticipants implements PaymentParticipants<Connection> {
 
-    private final PartyStore<Connection> parties;
-    private final CustomerAccountStore<Connection> products;
-    private final LedgerAccountStore<Connection> ledgerAccounts;
-    private final PaymentMethodStore<Connection> instruments;
-
-    public JdbcPaymentParticipants(
-            PartyStore<Connection> parties,
-            CustomerAccountStore<Connection> products,
-            LedgerAccountStore<Connection> ledgerAccounts,
-            PaymentMethodStore<Connection> instruments) {
-        this.parties = Objects.requireNonNull(parties, "parties must not be null");
-        this.products = Objects.requireNonNull(products, "products must not be null");
-        this.ledgerAccounts =
-                Objects.requireNonNull(ledgerAccounts, "ledgerAccounts must not be null");
-        this.instruments = Objects.requireNonNull(instruments, "instruments must not be null");
-    }
+    @NonNull private final PartyStore<Connection> parties;
+    @NonNull private final CustomerAccountStore<Connection> products;
+    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
+    @NonNull private final PaymentMethodStore<Connection> instruments;
 
     @Override
     public Optional<Wallet> walletOwnedBy(Connection unitOfWork, UUID callerPartyId) {

@@ -7,7 +7,8 @@ import com.finapp.payments.QueryAnswer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The provider timer's seam (`P5-TSK-017`): a decorator around the {@link PaymentProvider}
@@ -30,17 +31,12 @@ import java.util.Objects;
  * on ({@code INV-LIFE-03}) — and the duration is recorded either way. The clock is injected
  * (ADR-0014): no ambient time, here or anywhere.
  */
+@RequiredArgsConstructor
 public final class MeteredPaymentProvider implements PaymentProvider {
 
-    private final PaymentProvider delegate;
-    private final PaymentMeters meters;
-    private final Clock clock;
-
-    public MeteredPaymentProvider(PaymentProvider delegate, PaymentMeters meters, Clock clock) {
-        this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
-        this.meters = Objects.requireNonNull(meters, "meters must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final PaymentProvider delegate;
+    @NonNull private final PaymentMeters meters;
+    @NonNull private final Clock clock;
 
     /**
      * The delegate's own name, unchanged — the decorator is transparent to everything but

@@ -7,8 +7,7 @@ import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 
 /**
@@ -39,9 +38,8 @@ import org.springframework.context.SmartLifecycle;
  * per-row failures inside a successful tick are already the sweeper's own anti-stall
  * machinery. (Sweep meters are plan §15's, arriving with `P5-TSK-017`.)
  */
+@Slf4j
 public final class PaymentSweeperSchedule implements SmartLifecycle {
-
-    private static final Logger log = LoggerFactory.getLogger(PaymentSweeperSchedule.class);
 
     private final PaymentSweeper sweeper;
     private final PaymentMeters meters;

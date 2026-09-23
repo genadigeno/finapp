@@ -3,7 +3,8 @@ package com.finapp.app.merchant;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,13 +34,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(
         path = "/operator/merchants/{merchantId}/fee-schedule",
         produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class MerchantFeeScheduleController {
 
-    private final FeeScheduleOperations feeSchedules;
-
-    public MerchantFeeScheduleController(FeeScheduleOperations feeSchedules) {
-        this.feeSchedules = Objects.requireNonNull(feeSchedules, "feeSchedules must not be null");
-    }
+    @NonNull private final FeeScheduleOperations feeSchedules;
 
     /** Points the merchant at a schedule, reasoned. Converges when it is already there. */
     @PutMapping(consumes = MediaType.APPLICATION_JSON_VALUE)

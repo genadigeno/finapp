@@ -8,6 +8,8 @@ import java.sql.Connection;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * {@link AccountHolderVerification} over the party store (`P3-TSK-012`).
@@ -28,13 +30,10 @@ import java.util.UUID;
  * is the {@code P1-TSK-007} licence's subject. The class exists in production code because the
  * gate it implements is production behaviour the database tests drive as the application will.
  */
+@RequiredArgsConstructor
 public final class VerifiedAccountHolder implements AccountHolderVerification<Connection> {
 
-    private final PartyStore<Connection> parties;
-
-    public VerifiedAccountHolder(PartyStore<Connection> parties) {
-        this.parties = Objects.requireNonNull(parties, "parties must not be null");
-    }
+    @NonNull private final PartyStore<Connection> parties;
 
     @Override
     public Optional<UUID> eligibleCustomer(Connection unitOfWork, UUID partyId) {

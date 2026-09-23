@@ -11,8 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 
 /**
@@ -45,6 +44,7 @@ import org.springframework.context.SmartLifecycle;
  * series on a freshly started instance). This pays the inbox-metrics debt row, whose recorded
  * trigger — <em>"the first live consumer"</em> — is this task.
  */
+@Slf4j
 public final class InboxConsumers implements SmartLifecycle {
 
     /** Builds the receiver for one module's group; the composition root supplies the strings. */
@@ -52,8 +52,6 @@ public final class InboxConsumers implements SmartLifecycle {
     public interface ReceiverFactory {
         KafkaEventReceiver connect(String groupId, List<InboxEventHandler> handlers);
     }
-
-    private static final Logger log = LoggerFactory.getLogger(InboxConsumers.class);
 
     private final Map<String, List<InboxEventHandler>> handlersByModule;
     private final ReceiverFactory receivers;

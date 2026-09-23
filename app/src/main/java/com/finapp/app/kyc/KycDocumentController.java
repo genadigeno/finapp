@@ -10,7 +10,8 @@ import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Base64;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,13 +38,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me/kyc/documents", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class KycDocumentController {
 
-    private final DocumentUploadService uploads;
-
-    public KycDocumentController(DocumentUploadService uploads) {
-        this.uploads = Objects.requireNonNull(uploads, "uploads must not be null");
-    }
+    @NonNull private final DocumentUploadService uploads;
 
     /**
      * Uploads a document.

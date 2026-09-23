@@ -16,8 +16,7 @@ import com.finapp.platform.idempotency.IdempotencyConflictException;
 import com.finapp.platform.idempotency.IdempotencyInProgressException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -68,9 +67,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * usefully connects a person reporting a problem to the record of it ({@code INV-AUD-02}).
  */
 @RestControllerAdvice
+@Slf4j
 public class ApiErrorHandler extends ResponseEntityExceptionHandler {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(ApiErrorHandler.class);
 
     /** RFC 9457's media type. Not {@code application/json}: the shape is a contract of its own. */
     public static final MediaType PROBLEM_JSON = MediaType.valueOf("application/problem+json");
@@ -80,7 +78,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetailBody> handleApiException(ApiException exception, HttpServletRequest request) {
         // Warn, not error: a client error is the API working. The message may name whatever makes
         // it diagnosable, because it goes to the log and not to the wire.
-        LOGGER.warn("API error {}: {}", exception.errorCode().code(), exception.getMessage(), exception);
+        log.warn("API error {}: {}", exception.errorCode().code(), exception.getMessage(), exception);
         return render(
                 ProblemDetail.of(
                         exception.errorCode(),
@@ -96,7 +94,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetailBody> handleUnexpected(Exception exception, HttpServletRequest request) {
-        LOGGER.error("Unhandled error on {}", request.getRequestURI(), exception);
+        log.error("Unhandled error on {}", request.getRequestURI(), exception);
         return render(ProblemDetail.of(PlatformErrorCode.INTERNAL_ERROR, request.getRequestURI()));
     }
 
@@ -119,7 +117,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
             if (cause instanceof BoundedRequest.RequestTooLargeException tooLarge) {
                 String path = pathOf(request);
-                LOGGER.warn("Request body to {} exceeded {} bytes", path, tooLarge.maxBytes());
+                log.warn("Request body to {} exceeded {} bytes", path, tooLarge.maxBytes());
                 return ResponseEntity.status(HttpStatus.valueOf(PlatformErrorCode.PAYLOAD_TOO_LARGE.status()))
                         .contentType(PROBLEM_JSON)
                         .body(ProblemDetailBody.from(ProblemDetail.of(
@@ -173,7 +171,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetailBody> handleIdempotencyConflict(
             IdempotencyConflictException exception, HttpServletRequest request) {
 
-        LOGGER.warn("Idempotency key reused for a different request on {}", request.getRequestURI());
+        log.warn("Idempotency key reused for a different request on {}", request.getRequestURI());
         return render(
                 ProblemDetail.of(
                         PlatformErrorCode.CONFLICT,
@@ -195,7 +193,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetailBody> handleIdempotencyInProgress(
             IdempotencyInProgressException exception, HttpServletRequest request) {
 
-        LOGGER.warn("Idempotency key still in progress on {}", request.getRequestURI());
+        log.warn("Idempotency key still in progress on {}", request.getRequestURI());
         return render(
                 ProblemDetail.of(
                         PlatformErrorCode.IDEMPOTENCY_IN_PROGRESS,
@@ -223,7 +221,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
 
         // Warn, not error: a gate refusing is the control working, and the log may name the
         // purpose because it goes to the log and not to a stranger.
-        LOGGER.warn(
+        log.warn(
                 "Consent-gated capability refused on {}: no current basis for {}",
                 request.getRequestURI(),
                 exception.purpose());
@@ -249,7 +247,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetailBody> handleAccountOpeningRefused(
             AccountOpeningRefusedException exception, HttpServletRequest request) {
         // Warn, not error: the gate refusing is the control working.
-        LOGGER.warn("Account opening refused on {}", request.getRequestURI());
+        log.warn("Account opening refused on {}", request.getRequestURI());
         return render(
                 ProblemDetail.of(
                         AccountsErrorCode.ACCOUNT_OPENING_REFUSED,
@@ -297,7 +295,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetailBody> handleAccountNotPostable(
             com.finapp.ledger.LedgerAccountNotPostableException exception,
             HttpServletRequest request) {
-        LOGGER.warn("A posting named a non-ACTIVE account on {}", request.getRequestURI());
+        log.warn("A posting named a non-ACTIVE account on {}", request.getRequestURI());
         return render(
                 ProblemDetail.of(
                         com.finapp.ledger.LedgerErrorCode.ACCOUNT_NOT_POSTABLE,
@@ -316,7 +314,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
             com.finapp.ledger.SelfApprovalRefusedException exception,
             HttpServletRequest request) {
         // Warn, not error: the refusal is the four-eyes control working.
-        LOGGER.warn("A self-approval was refused on {}", request.getRequestURI());
+        log.warn("A self-approval was refused on {}", request.getRequestURI());
         return render(
                 ProblemDetail.of(
                         com.finapp.ledger.LedgerErrorCode.SELF_APPROVAL_REFUSED,
@@ -448,7 +446,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
      */
     private ResponseEntity<Object> validationFailed(String detail, WebRequest request) {
         String path = pathOf(request);
-        LOGGER.warn("Validation failed on {}: {}", path, detail);
+        log.warn("Validation failed on {}: {}", path, detail);
         return ResponseEntity.status(HttpStatus.valueOf(PlatformErrorCode.VALIDATION_FAILED.status()))
                 .contentType(PROBLEM_JSON)
                 .body(
@@ -493,9 +491,9 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         ErrorCode code = codeForStatus(statusCode.value());
         String path = pathOf(request);
         if (statusCode.is5xxServerError()) {
-            LOGGER.error("Framework error {} on {}", statusCode.value(), path, exception);
+            log.error("Framework error {} on {}", statusCode.value(), path, exception);
         } else {
-            LOGGER.warn(
+            log.warn(
                     "Framework error {} on {} rendered as {}",
                     statusCode.value(),
                     path,

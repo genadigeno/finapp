@@ -7,8 +7,7 @@ import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 
 /**
@@ -46,10 +45,8 @@ import org.springframework.context.SmartLifecycle;
  * ({@code INV-AUD-02}); per-row failures inside a successful tick are already the sweeper's own
  * anti-stall machinery.
  */
+@Slf4j
 public final class CheckoutExpirySweeperSchedule implements SmartLifecycle {
-
-    private static final Logger log =
-            LoggerFactory.getLogger(CheckoutExpirySweeperSchedule.class);
 
     private final CheckoutExpirySweeper sweeper;
     private final CheckoutMeters meters;

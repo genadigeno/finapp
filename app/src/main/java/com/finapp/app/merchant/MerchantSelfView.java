@@ -9,6 +9,8 @@ import java.sql.Connection;
 import java.util.Objects;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -16,6 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * The merchant's view of itself (`P6-TSK-002`), read with the tenant the credential
  * established — never one a caller supplied.
  */
+@RequiredArgsConstructor
 public class MerchantSelfView {
 
     /**
@@ -27,18 +30,9 @@ public class MerchantSelfView {
     public record SelfView(
             String merchantId, String displayName, String settlementCurrency, String status) {}
 
-    private final MerchantStore<Connection> merchants;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    public MerchantSelfView(
-            MerchantStore<Connection> merchants,
-            TransactionTemplate transactions,
-            DataSource dataSource) {
-        this.merchants = Objects.requireNonNull(merchants, "merchants must not be null");
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final MerchantStore<Connection> merchants;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     /** The authenticated merchant's record. The tenant IS the predicate. */
     public SelfView of(AuthenticatedMerchant tenant) {

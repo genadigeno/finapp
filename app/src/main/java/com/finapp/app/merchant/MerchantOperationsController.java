@@ -5,7 +5,8 @@ import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,13 +35,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/operator/merchants", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class MerchantOperationsController {
 
-    private final MerchantOperations merchants;
-
-    public MerchantOperationsController(MerchantOperations merchants) {
-        this.merchants = Objects.requireNonNull(merchants, "merchants must not be null");
-    }
+    @NonNull private final MerchantOperations merchants;
 
     /**
      * Onboards the merchant and opens its books, or replays the recorded outcome for a

@@ -9,6 +9,8 @@ import java.sql.Connection;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * {@link MerchantVerification} over the party store (`P6-TSK-003`).
@@ -24,13 +26,10 @@ import java.util.UUID;
  * caches (the {@code ConsentGate} discipline). A person party, a {@code PENDING} customer and
  * an absent one are the same empty answer — {@link MerchantVerification}'s own contract.
  */
+@RequiredArgsConstructor
 public final class VerifiedMerchantOrganisation implements MerchantVerification<Connection> {
 
-    private final PartyStore<Connection> parties;
-
-    public VerifiedMerchantOrganisation(PartyStore<Connection> parties) {
-        this.parties = Objects.requireNonNull(parties, "parties must not be null");
-    }
+    @NonNull private final PartyStore<Connection> parties;
 
     @Override
     public Optional<UUID> eligibleOrganisation(Connection unitOfWork, UUID partyId) {

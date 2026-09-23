@@ -21,6 +21,8 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -42,23 +44,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  * client detail the service's own not-found produces, asserted as an equality between the
  * causes.
  */
+@RequiredArgsConstructor
 public final class LedgerAdjustments {
 
     static final String NOT_FOUND_DETAIL = "no such adjustment proposal";
 
-    private final AdjustmentService adjustments;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
-
-    public LedgerAdjustments(
-            AdjustmentService adjustments,
-            TransactionTemplate transactions,
-            DataSource dataSource) {
-        this.adjustments = Objects.requireNonNull(adjustments, "adjustments must not be null");
-        this.transactions =
-                Objects.requireNonNull(transactions, "transactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-    }
+    @NonNull private final AdjustmentService adjustments;
+    @NonNull private final TransactionTemplate transactions;
+    @NonNull private final DataSource dataSource;
 
     /** The propose response: the proposal awaiting a second person — never an amount. */
     public record ProposalView(String proposalId, String status) {}

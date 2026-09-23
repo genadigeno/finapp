@@ -9,8 +9,9 @@ import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -45,14 +46,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me/payment-methods", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class PaymentMethodController {
 
-    private final PaymentMethodService paymentMethods;
-
-    public PaymentMethodController(PaymentMethodService paymentMethods) {
-        this.paymentMethods =
-                Objects.requireNonNull(paymentMethods, "paymentMethods must not be null");
-    }
+    @NonNull private final PaymentMethodService paymentMethods;
 
     /**
      * Attaches the instrument the grant tokenises to, or converges on the caller's live row

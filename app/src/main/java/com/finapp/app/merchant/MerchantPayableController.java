@@ -5,7 +5,8 @@ import com.finapp.merchant.MerchantPayable;
 import com.finapp.sharedkernel.money.Money;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,13 +37,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/merchant", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class MerchantPayableController {
 
-    private final MerchantPayableQuery payables;
-
-    public MerchantPayableController(MerchantPayableQuery payables) {
-        this.payables = Objects.requireNonNull(payables, "payables must not be null");
-    }
+    @NonNull private final MerchantPayableQuery payables;
 
     /**
      * One currency's payable. Every figure is a decimal string; {@code position} equals

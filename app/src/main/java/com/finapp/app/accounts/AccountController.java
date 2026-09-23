@@ -17,8 +17,9 @@ import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -57,13 +58,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me/accounts", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class AccountController {
 
-    private final AccountService accounts;
-
-    public AccountController(AccountService accounts) {
-        this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
-    }
+    @NonNull private final AccountService accounts;
 
     /**
      * Opens the caller's account of the requested product type, or replays the opening.

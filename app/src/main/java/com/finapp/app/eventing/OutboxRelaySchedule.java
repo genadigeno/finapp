@@ -9,8 +9,7 @@ import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 
 /**
@@ -41,9 +40,8 @@ import org.springframework.context.SmartLifecycle;
  * ({@code INV-AUD-02}) — and the next tick tries again. Per-event failures inside a successful
  * poll are already the relay's own backoff machinery.
  */
+@Slf4j
 public final class OutboxRelaySchedule implements SmartLifecycle {
-
-    private static final Logger log = LoggerFactory.getLogger(OutboxRelaySchedule.class);
 
     private final OutboxRelay relay;
     private final Duration pollInterval;
