@@ -13,6 +13,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The verification job's core (`P3-TSK-010`, ADR-0041 rule 2, {@code INV-BAL-02}): every
@@ -50,6 +52,7 @@ import java.util.UUID;
  * evidence of what went wrong (the §14.12 rule). Repair is a reasoned adjustment,
  * `P3-TSK-017`'s.
  */
+@RequiredArgsConstructor
 public final class ProjectionVerification {
 
     /** One account's answer. */
@@ -80,12 +83,8 @@ public final class ProjectionVerification {
     private static final String LINE_TABLE = "ledger.journal_line";
     private static final String BALANCE_TABLE = "ledger.account_balance";
 
-    private final BalanceDerivation<Connection> derivation;
-
     /** The derivation is a seam so a test can interleave a commit mid-comparison. */
-    public ProjectionVerification(BalanceDerivation<Connection> derivation) {
-        this.derivation = Objects.requireNonNull(derivation, "derivation must not be null");
-    }
+    @NonNull private final BalanceDerivation<Connection> derivation;
 
     /** Every account that has lines or a projection row, each given {@link #verdictOf}. */
     public Report verify(Connection unitOfWork) {

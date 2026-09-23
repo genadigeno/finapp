@@ -14,6 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * {@link StatementDerivation} over explicit SQL (ADR-0033), on the caller's connection.
@@ -31,13 +33,10 @@ import java.util.UUID;
  * lines come from one statement, one snapshot; the entry join filters on
  * {@code posting_date}, served by {@code journal_line_by_account} plus the entry primary key.
  */
+@RequiredArgsConstructor
 public final class JdbcStatementDerivation implements StatementDerivation<Connection> {
 
-    private final BalanceDerivation<Connection> derivation;
-
-    public JdbcStatementDerivation(BalanceDerivation<Connection> derivation) {
-        this.derivation = Objects.requireNonNull(derivation, "derivation must not be null");
-    }
+    @NonNull private final BalanceDerivation<Connection> derivation;
 
     @Override
     public List<AccountStatement> statementsFor(

@@ -2,6 +2,7 @@ package com.finapp.ledger;
 
 import java.util.Arrays;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What a ledger account is <em>for</em> (ADR-0040).
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
  * the schema {@code CHECK} generated from {@link #sqlOwnerKindRule()} holds the stored pair to
  * it.
  */
+@RequiredArgsConstructor
 public enum AccountPurpose {
 
     /** A customer's stored value. The only customer-owned purpose in Phase 3. */
@@ -53,10 +55,6 @@ public enum AccountPurpose {
     SUSPENSE_UNMATCHED(OwnerKind.SUSPENSE);
 
     private final OwnerKind ownerKind;
-
-    AccountPurpose(OwnerKind ownerKind) {
-        this.ownerKind = ownerKind;
-    }
 
     /** Whose account an account of this purpose is. Derived, stored, and {@code CHECK}-held. */
     public OwnerKind ownerKind() {
