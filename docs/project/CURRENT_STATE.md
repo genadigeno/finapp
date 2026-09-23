@@ -273,47 +273,60 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-015` — the merchant refund's funding bound: judge the composed net, and decide the
-negative payable** — `READY`. **A merchant cannot refund a sale in full today, under either fee
-policy.** Phase 5's funding bound judges the gross against the payable, which holds the net: under
-`RETURNED` that is a defect (the composed entry lands the payable at exactly zero and is refused
-anyway), under `RETAINED` it is a decision nobody has made (refuse, or let the payable go negative
-and recover it from later captures — an ADR-level credit exposure). Found by `P6-TSK-010`'s
-end-to-end test; pinned as a named test this task must rewrite. Scope, acceptance and DoD in the
-backlog entry.
+**`P6-TSK-011` — the payout destination: step-up, four-eyes, cooling-off** — `READY`. **M6.5
+opens.** The platform's first four-eyes primitive (`INV-AUD-04` live) on the action that
+redirects merchant money: propose → approve by a DIFFERENT authenticated actor (refused in the
+statement otherwise, step-up on both sides when a factor is enrolled) → effective after a
+cooling-off, one `EFFECTIVE` destination per merchant. Scope, acceptance and DoD in the backlog
+entry. **What it inherits from M6.4**: payouts will judge debits against a payable that can now
+be negative by a retained fee (ADR-0054), which refuses every payout until later captures
+restore it. That is `P6-TSK-012`'s to test, and written into its accept.
 
 ### Just completed
 
-**`P6-TSK-010` — the payable view** — `COMPLETE` (2026-09-23). **`INV-MER-02` as a surface: what
-the platform owes a merchant, derived, and explained by terms that sum to it exactly.**
+**`P6-TSK-015` — the merchant refund's funding bound** — `COMPLETE` (2026-09-23). **M6.4
+closes: a merchant can refund a sale in full, and the only credit a refund extends is the fee
+the platform keeps.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Equals the ledger position | Independent journal SQL **and** the ledger's own derivation |
-| Under live traffic | Every response explains itself — and **deterministically**, mid-read |
-| No stored figure | The sweep, **widened to every schema** |
-| A failed payout in the picture | **Inherited by `P6-TSK-012`** — payouts do not exist yet |
+| A `RETURNED` full refund lands the payable at exactly zero | End to end: one hold of the 96.80 net, released; independent SQL and the ledger's derivation agree |
+| `RETAINED` per the ADR, driven both ways | Admitted, landing at exactly −3.20; beyond the allowance, refused with nothing written |
+| A refund racing a capture stays inside the bound, counted | Exactly two of three admitted; the refused one funded by the merchant's next capture |
+| Phase 5's wallet-refund suite untouched | Unchanged and green; the wallet hold proven to the cent by probe |
 
-### Three decisions
+### The subtlety the design found
 
-**The definition, not the projection** — a drill-down beside a figure must reconcile to it, and
-a projection is a different mechanism. **One statement** for the figure and every term, so a
-posting mid-read cannot split them. **A structural classification**: each payable line is placed
-by how its own entry treated `SETTLEMENT_CLEARING`, which is ADR-0050 §3's shapes read backwards
-— the ledger stays in its own vocabulary, and the meaning lives in `merchant`, beside the
-composer that writes those shapes.
+The fee share a refund returns is allocated in COMPLETION order (`P6-TSK-014`), so at dispatch
+it is not yet known. A one-cent fee refunded in halves returns the cent to one half, depending
+on the order they complete. So the hold covers every order still possible:
+- **exact** when the refund covers the capture's remainder (every full refund);
+- otherwise `⌊fee × refunded / gross⌋` (less one under `HALF_EVEN` when odd). That is never
+  above what any order returns, and proved by enumerating every order.
 
-### The survivor that was the lesson
+### The decision (ADR-0054, `INV-MER-07`)
 
-Reading the position in a second statement **passed the live-traffic test**: a commit landing in
-the microseconds between two statements is too improbable for traffic to produce on demand. So
-the race is now MADE rather than waited for — a wrapped connection commits a posting the instant
-the line read returns — and the mutation fails every time.
+The merchant funds the **net** under either policy. Under `RETAINED` the fee share it keeps
+owing may take the payable below zero; the merchant then owes the platform that fee, recovered
+from its next captures before any payout. Beyond that, a refund is refused. The policy decides
+what is posted, never what must be available.
+
+### What the gate found
+
+- **The new invariant's first wording was false**: a capture whose fee exceeds its sale already
+  takes the payable negative with no refund. It now reads *only by fee charged and not
+  collected*.
+- **The random sweep was blind to `HALF_EVEN` ties**: the probe survived it. An exhaustive
+  sweep now catches it.
+- The decline path lacked a test, and a harness artifact masked a probe as a 500. Both fixed.
+- `## Active Work` and `## Next Task` below were stale since early in the phase. Corrected.
 
 ### Previously
 
-The per-task completion records behind this one — 130 blocks, from `P6-TSK-005` back to project
+The per-task completion records behind this one — 136 blocks, from `P6-TSK-010` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
+*(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
+`P6-TSK-015`'s gate.)*
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
 ---
@@ -329,10 +342,12 @@ archived verbatim in
 **Phase 5 is `COMPLETE`** (2026-09-21) — 21 of 21 items across nine milestones, ruled by
 `P5-DOC-001`'s exit review and confirmed by the transition's independent audit.
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
-same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2 of 2** as scoped (`P6-TSK-004`, `-005`); M6.3
-open at 1 of 4, next `P6-TSK-007`. *(M6.3 gained `P6-TSK-014` — the merchant refund's fee
-treatment, found missing by `P6-TSK-005`'s gate and sequenced after `P6-TSK-007`, which
-creates the first real payment it could refund.)*
+same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2 of 2** as scoped (`P6-TSK-004`, `-005`); **M6.3
+`CLOSED` at 4 of 4** (`P6-TSK-006`…`-008`, `-014`); **M6.4 `CLOSED` at 3 of 3** (`P6-TSK-009`,
+`-010`, `-015`); M6.5 opens with `P6-TSK-011`. *(M6.3 gained `P6-TSK-014`, found missing by
+`P6-TSK-005`'s gate; M6.4 gained `P6-TSK-015`, found by `P6-TSK-010`'s end-to-end test. This
+sentence read "M6.3 open at 1 of 4, next `P6-TSK-007`" through five completed tasks, corrected
+by `P6-TSK-015`'s gate.)*
 
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
@@ -626,6 +641,13 @@ Resolved during initiation:
 ---
 
 ## Next Task
+
+**`P6-TSK-011` — the payout destination: step-up, four-eyes, cooling-off** — see
+[§Current Task](#current-task), which this section mirrors. *(This section named `P6-TSK-001`
+from the Phase 5 → 6 transition until `P6-TSK-015`'s gate — stale across the eleven tasks
+completed from `P6-TSK-001` to `P6-TSK-010`, the stale-second-copy class `P3-DOC-001` named. The superseded lead is kept below.)*
+
+### Superseded: the Phase 6 opening lead (read until 2026-09-23)
 
 **`P6-TSK-001` — the `merchant` and `checkout` modules and schemas.**
 Phase 6's first task, first for the standing reason — the privilege floor is

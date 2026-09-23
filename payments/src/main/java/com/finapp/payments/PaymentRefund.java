@@ -26,10 +26,19 @@ import java.util.UUID;
 /**
  * The refund command: hold, then post (`P5-TSK-015`, ADR-0048 §4) — the same
  * dispatch-before-call choreography as every provider operation, with `P3-TSK-015`'s owed
- * composition held at its centre: <strong>the dispatch transaction reserves the customer's
- * funds with a Phase 3 hold placed inside the account-row lock</strong>, so the money a
+ * composition held at its centre: <strong>the dispatch transaction reserves what the refund
+ * will take with a Phase 3 hold placed inside the account-row lock</strong>, so the money a
  * provider may be about to return is unspendable for the whole flight of its indecision
  * ({@code INV-BAL-04} doing refund duty).
+ *
+ * <h2>What is reserved is asked, not assumed (`P6-TSK-015`, ADR-0054)</h2>
+ *
+ * <p>Phase 5 held the gross, which is what a wallet refund takes. A merchant-bound refund takes
+ * the gross out of the payable and, under a {@code RETURNED} policy, puts the fee share back in
+ * the same entry — so a bound judging the gross refused a full refund that would have landed
+ * the payable at exactly zero. The hold is now sized by
+ * {@link RefundComposition#reserve}, asked through {@link PaymentOutcomes} of the composition
+ * that will write the lines, so this module still never learns what a fee is.
  *
  * <h2>The bound, at two ranks by design</h2>
  *
@@ -138,8 +147,10 @@ public final class PaymentRefund {
      * @throws UnknownPaymentException the intent names nothing — the caller's one 404
      * @throws PaymentNotRefundableException no captured attempt — the caller's 409
      * @throws RefundExceedsCaptureException the bound — the caller's 422
-     * @throws com.finapp.ledger.HoldExceedsAvailableBalanceException the wallet cannot fund
-     *     the return now ({@code INV-BAL-04}) — the caller's 409, nothing written
+     * @throws com.finapp.ledger.HoldExceedsAvailableBalanceException the account the refund
+     *     debits cannot fund what it will take, now ({@code INV-BAL-04}) — a customer who has
+     *     spent the money, or a merchant's payable short of the refund's net (ADR-0054); the
+     *     caller's 409, nothing written
      * @throws com.finapp.platform.idempotency.IdempotencyConflictException the key was used
      *     for a materially different request ({@code INV-IDEM-03})
      * @throws com.finapp.platform.idempotency.IdempotencyInProgressException another flight
@@ -353,10 +364,26 @@ public final class PaymentRefund {
             throw new RefundExceedsCaptureException(attempt.capturedAmount().currency());
         }
 
-        // The Phase 3 hold, placed inside the account-row lock (ADR-0048 §4): from this
-        // commit until the outcome, the money a provider may return is unspendable
-        // (INV-BAL-04). Throws with nothing written when the wallet cannot fund it.
-        com.finapp.ledger.Hold hold = holds.place(uow, intent.walletAccount(), amount);
+        // WHAT THE REFUND WILL TAKE, NOT ITS GROSS (P6-TSK-015, ADR-0054): asked of the
+        // composition that will write the lines, in payment vocabulary - the gross for a
+        // wallet, the net for a merchant's payable, whose fee share comes back in the same
+        // entry. The COMPLETED sum, read under the attempt lock, is the floor of the orders the
+        // completion can still see; never the non-failed one, which a failing sibling undercuts.
+        Money reservation =
+                outcomes.refundReservation(
+                        uow,
+                        new RefundReservation(
+                                intentId,
+                                attempt.id(),
+                                intent.walletAccount(),
+                                amount,
+                                refunds.sumCompletedFor(uow, attempt.id(), amount.currency())));
+
+        // The Phase 3 hold, placed inside the account-row lock (ADR-0048 §4) and sized by the
+        // very figure the bound judges: from this commit until the outcome, what the refund
+        // will take is unspendable (INV-BAL-04). Throws with nothing written when the account
+        // cannot fund it.
+        com.finapp.ledger.Hold hold = holds.place(uow, intent.walletAccount(), reservation);
 
         Refund refund =
                 Refund.create(

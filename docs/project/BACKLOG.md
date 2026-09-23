@@ -7484,7 +7484,7 @@ to refuse. `P6-TSK-003` now precedes; this task's deps change accordingly.)*
   on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
 **P6-TSK-015 — The merchant refund's funding bound: judge the composed net, and decide the
-negative payable** — `READY`
+negative payable** — `COMPLETE` (2026-09-23)
 - **Objective**: a merchant must be able to refund a sale in full. Today it cannot, under either
   fee policy. Bounded contexts 12 with 9, through the seam.
 - **Found by `P6-TSK-010`'s end-to-end test** — the provenance worth keeping, because
@@ -7510,8 +7510,85 @@ negative payable** — `READY`
   since `P6-TSK-007`), and it settles what the payable's available position means before
   `P6-TSK-012`'s payouts judge debits against it.
 - **Risk**: High (it moves money out of a counterparty's position). **Cx**: M. **DoD**: `DOD-FIN`
+- **Implemented (2026-09-23)**: the refund's hold is sized by what the refund will TAKE, asked
+  in the dispatch transaction of the composition that will write its lines
+  (`RefundComposition.reserve`, through `PaymentOutcomes` so one composer answers both), in
+  payment vocabulary (`RefundReservation`). A wallet refund reserves the gross, as in Phase 5.
+  A merchant refund reserves its **net under either policy**: the refund less the least fee
+  share any completion order can still give it (`FeeCalculation.leastReturnedFee`).
+- **The subtlety the design found**: the returned share is allocated in COMPLETION order
+  (`P6-TSK-014`), so at dispatch it is not yet known. A one-cent fee refunded in halves returns
+  the cent to one half, depending on the order. The reservation therefore covers every order
+  still possible:
+  - exact when the refund covers the capture's remainder (every full refund);
+  - otherwise `⌊fee × refunded / gross⌋`, less one under `HALF_EVEN` when odd. That is never
+    above what any order returns, and at most one minor unit below it (two under `HALF_EVEN`),
+    proved by enumerating every completion order across 3,600 cases.
+- **The `RETAINED` decision — ADR-0054, and a new invariant `INV-MER-07`**: the merchant funds
+  the net, and the fee share it keeps owing may take the payable below zero. That share is the
+  only credit a refund extends. It is recovered from the merchant's next captures,
+  because ADR-0051's payout bound pays nothing while the payable is negative. Beyond it, a
+  refund is refused as unfunded. The platform's worst case on a payment is not collecting its
+  fee, never funding a merchant's refund with its own money.
+- **Evidence (database)**: `P6-TSK-010`'s pinned test rewritten. Both policies now return 201:
+  `RETURNED` lands at 0.00 and `RETAINED` at exactly −3.20, with one released hold of 96.80.
+  Also: `RETAINED` refused beyond the allowance with nothing written, and admitted within it;
+  the worst case reserved while a sibling is in flight (the second half refused, the in-order
+  halves exact to 0.00); a refund beside in-flight siblings holding its whole 25.00, not 24.99;
+  refunds racing on one payable admitting exactly the affordable set (counted), then racing
+  the merchant's next capture.
+- **Completion gate (2026-09-23)** — eleven probes, all caught in the end, restores verified
+  byte-identical by `cmp`:
+  - **The defect itself restored** (the command holding the gross again) is caught by the
+    rewritten pinned assertion, with the exact 409 `P6-TSK-010` pinned.
+  - **The caller's choice of sum** (the non-failed sum instead of the completed one) is
+    caught: the third refund beside in-flight siblings holds 24.99. This is `P6-TSK-014`'s
+    recorded survivor shape, now bound, because the reservation is where that choice decides
+    money.
+  - **The payable's row lock dropped** (a probe outside this task's diff) is caught: all three
+    racing refunds admitted. The counted race has teeth.
+  - Also caught: the composer reserving the gross; the share priced at dispatch (at both
+    levels); no allowance under `RETAINED`; no funding check at all; the floor removed; the
+    exact remainder case removed; the wallet reserving a cent less (by Phase 5's own suite).
+- **What the gate found, and fixed**:
+  - (1) **`INV-MER-07`'s first wording was false.** It said the payable goes below zero "only
+    by fee retained on refunded payments", but a capture whose fee exceeds its sale already
+    does so with no refund. Reworded across eight documents to what holds on every path:
+    *only by fee the platform has charged and not collected, never by money it paid out*.
+  - (2) **The random sweep was blind to `HALF_EVEN` ties.** It passed with the odd-share
+    exception removed, because a tie needs an exact half, which random draws almost never
+    produce. An exhaustive sweep over every small capture, fee, refund and order (483,600
+    cases) was added, and it catches the probe.
+  - (3) **The decline path was untested** for a merchant refund. Added: the net is held while
+    the provider decides and released with nothing posted.
+  - (4) **A harness artifact masked a probe.** A fixed-reference provider stub turned "a
+    refund wrongly admitted" into a 500 on the duplicate reference. The test now mints a
+    reference per refund, and the probe fails cleanly.
+  - (5) **`CURRENT_STATE.md`'s `## Active Work` and `## Next Task` were stale** since
+    `P6-TSK-007` and `P6-TSK-001` respectively. Corrected.
+- **Findings recorded with owners**:
+  - **A fee meeting or exceeding its sale is accepted today.** The capture leaves the payable
+    negative, and its refund is refused while the payable stays negative. Pinned as
+    `CheckoutFlowDatabaseTest#aRefundOfASaleWhoseFeeExceededItsGrossIsRefusedHonestly`;
+    owned by `P6-TST-001`.
+  - **`DECISIONS.md` has no Phase 6 section** (ADR-0050…0054); owned by `P6-DOC-001`.
+  - **An unrelated flaky test** (`SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable`,
+    about one run in three, no change in its module) was flagged as a separate task.
+- **Multi-instance `PASS`.** Every decision is arbitrated in PostgreSQL: the attempt lock and
+  V004's trigger for refunds of one payment, the payable's row lock for everything on one
+  merchant (probed), and conditional transitions for the outcome. The reservation reads only
+  values that never change or only grow, so a stale read can only over-reserve.
+- **Registers**: `MUTATION_TESTING` +11 rows; `FINANCIAL_INVARIANTS` +`INV-MER-07` (94
+  invariants); ADR-0054 `Proposed`, with ADR-0051 given a consequence; `ERROR_CONTRACT`,
+  `DISTRIBUTED_EXECUTION` §3, `PHASE_6_PLAN` §6/§7/§14. No migration, no endpoint, no event, no
+  audit action and no `DATA_CLASSIFICATION` rows.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1457 tests across 14 modules, 0 failures**, and **204 targeted database tests across 20
+  suites, 0 failures** (payments, merchant and checkout, Phase 5's wallet-refund suites among
+  them). **The full battery deliberately skipped on the owner's instruction; no fleet-wide
+  database or kafka counts claimed.**
 
-**P6-TSK-011 — The payout destination: step-up, four-eyes, cooling-off** — `PLANNED`
+**P6-TSK-011 — The payout destination: step-up, four-eyes, cooling-off** — `READY`
 - **Objective**: the platform's **first four-eyes primitive** (`INV-AUD-04` live) on the
   action that redirects merchant money. Bounded context 12 with Identity.
 - **Scope**: the proposal flow (`CHECKOUT_MERCHANT_LIFECYCLES.md` §6): propose (keyed) →
@@ -7544,7 +7621,10 @@ negative payable** — `READY`
   wire operation; the insufficient-payable refusal commits nothing; the permissionless and
   cross-tenant refusals leave counts unmoved. **Inherited from `P6-TSK-010`**: the payable view
   reconciles against independent SQL with a FAILED payout in the picture (it posts nothing and
-  moves nothing), and `paidOut` splits out of `other` as its own term.
+  moves nothing), and `paidOut` splits out of `other` as its own term. **Inherited from `P6-TSK-015`**
+  (ADR-0054): a payable left negative by a `RETAINED` fee refuses every payout until later
+  captures restore it, and a refund dispatched while a payout is in flight is judged against
+  what the payout's hold leaves.
 - **Risk**: High (outbound money). **Cx**: XL. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`
 
 **P6-TSK-013 — The meters and the dashboard row** — `PLANNED`
@@ -7647,6 +7727,14 @@ negative payable** — `READY`
   parameters and so cannot see checkout's by-value `UUID` reads (`findByIntentOwnedBy`,
   `findByIntentForUpdate`, `findExpirable`). Mechanising the tenancy battery is this task's
   scope, and a detector that cannot see a module's reads is the first thing to mechanise.
+- **Input from `P6-TSK-015`'s gate**: a fee that meets or exceeds its sale is accepted today.
+  `FeeAssessment.exceedsGross()` names it and nothing consults it, so the capture leaves the
+  payable negative by the excess, and the refund of such a sale is refused while the payable
+  stays negative. That refusal is conservative: its net is not positive, and a hold is.
+  **Decide it at the price**: refuse such a checkout when the fee is pinned, or let such a
+  refund reserve nothing. The fee batch is where the arithmetic already lives; the pinned test
+  `CheckoutFlowDatabaseTest#aRefundOfASaleWhoseFeeExceededItsGrossIsRefusedHonestly` is the
+  assertion to rewrite.
 - **Deps**: `P6-TSK-009`, `-005`. **Accept**: both batteries green from fresh runs; the
   register rows land with performed demonstrations. **Risk**: Medium. **Cx**: M.
   **DoD**: `DOD-TEST`, `DOD-FIN`, `DOD-SEC`
@@ -7661,7 +7749,10 @@ negative payable** — `READY`
   completed payouts; the outcome tally leaves no `DISPATCHED` payout, no standing hold
   unaccounted, no over-paid merchant; the payable bound contested (a drained payable
   refusing — the availability-boundary lesson from `P5-TST-003` applied at design time:
-  the storm must include the drain); remaining `Phase: 6` register rows.
+  the storm must include the drain); remaining `Phase: 6` register rows. **Input from `P6-TSK-015`**:
+  refunds against a drained payable are a third refusal kind (`payments.RefundUnfunded`), and
+  merchant debt from `RETAINED` fees must stay bounded by the fees retained on refunded sales
+  (`INV-MER-07`).
 - **Deps**: `P6-TSK-012`, `P6-TST-001`, **`P6-TSK-014`** *(added by `P6-TSK-005`'s gate: without it the `− refunds` term of this item's own conservation identity has no producer)*. **Accept**: the readings reconcile under load;
   both refusal kinds occur as checked facts; every `Phase: 6` invariant row demanded by
   the guard is present.
@@ -7672,6 +7763,9 @@ negative payable** — `READY`
   the transition's extension, **read from the gate at review time**), F1–F8 re-assessed,
   the ten-instances question over the phase's contended decisions, assess → corrections →
   **flip** → battery, the review's own verdict flipping the phase.
+- **Input from `P6-TSK-015`'s gate**: `DECISIONS.md` carries no Phase 6 section. ADR-0050…0054
+  are indexed only in `docs/adr/README.md`, which is the omission `P2-DOC-001` found once
+  before and corrected at its review.
 - **Deps**: everything above. **Accept**: the review's verdict flips the status; the
   post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
 

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 135 "Previously" blocks, newest first, from `P6-TSK-009` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 136 "Previously" blocks, newest first, from `P6-TSK-010` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,34 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P6-TSK-010` — the payable view** — `COMPLETE` (2026-09-23). **`INV-MER-02` as a surface: what
+the platform owes a merchant, derived, and explained by terms that sum to it exactly.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Equals the ledger position | Independent journal SQL **and** the ledger's own derivation |
+| Under live traffic | Every response explains itself — and **deterministically**, mid-read |
+| No stored figure | The sweep, **widened to every schema** |
+| A failed payout in the picture | **Inherited by `P6-TSK-012`** — payouts do not exist yet |
+
+### Three decisions
+
+**The definition, not the projection** — a drill-down beside a figure must reconcile to it, and
+a projection is a different mechanism. **One statement** for the figure and every term, so a
+posting mid-read cannot split them. **A structural classification**: each payable line is placed
+by how its own entry treated `SETTLEMENT_CLEARING`, which is ADR-0050 §3's shapes read backwards
+— the ledger stays in its own vocabulary, and the meaning lives in `merchant`, beside the
+composer that writes those shapes.
+
+### The survivor that was the lesson
+
+Reading the position in a second statement **passed the live-traffic test**: a commit landing in
+the microseconds between two statements is too improbable for traffic to produce on demand. So
+the race is now MADE rather than waited for — a wrapped connection commits a posting the instant
+the line read returns — and the mutation fails every time.
 
 ### Previously
 

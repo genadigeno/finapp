@@ -3,7 +3,9 @@ package com.finapp.app.merchant;
 import com.finapp.ledger.JournalLine;
 import com.finapp.merchant.MerchantSettlement;
 import com.finapp.payments.RefundComposition;
+import com.finapp.payments.RefundReservation;
 import com.finapp.payments.RefundSettlement;
+import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Objects;
@@ -42,5 +44,22 @@ public final class MerchantBoundRefundComposition implements RefundComposition<C
                         refund.correlation(),
                         refund.at())
                 .orElseGet(() -> walletRefund.settle(unitOfWork, refund));
+    }
+
+    /**
+     * What the dispatch holds (`P6-TSK-015`, ADR-0054): the merchant module's NET when the
+     * payment is a merchant's, and otherwise the wallet refund's gross — {@link #settle}'s
+     * ordering exactly, so the hold and the lines always come from the same side of the join.
+     */
+    @Override
+    public Money reserve(Connection unitOfWork, RefundReservation refund) {
+        return settlement
+                .reservation(
+                        unitOfWork,
+                        refund.intent().value(),
+                        refund.debit(),
+                        refund.refunded(),
+                        refund.refundedBefore())
+                .orElseGet(() -> walletRefund.reserve(unitOfWork, refund));
     }
 }

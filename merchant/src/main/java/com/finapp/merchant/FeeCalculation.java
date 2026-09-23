@@ -1,6 +1,8 @@
 package com.finapp.merchant;
 
+import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.sharedkernel.money.RoundingPolicy;
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -132,6 +134,105 @@ public final class FeeCalculation {
             FeeScheduleVersion version,
             Money refundedBefore,
             Money refunded) {
+        Money after = refundedAfter(assessment, version, refundedBefore, refunded);
+        return cumulativeFee(assessment, version, after)
+                .minus(cumulativeFee(assessment, version, refundedBefore));
+    }
+
+    /**
+     * The LEAST fee a refund of {@code refunded} can return, whatever completes before it —
+     * what a refund's dispatch may count on coming back (`P6-TSK-015`, ADR-0054).
+     *
+     * <h2>Why the share is not known when the refund is dispatched</h2>
+     *
+     * <p>{@link #returnedFee} is evaluated at COMPLETION, against what had completed before —
+     * the only order that telescopes when a sibling refund fails. At dispatch, siblings may
+     * still be in flight and refunds not yet dispatched may complete first, so the
+     * {@code before} the completion will see can be anything from {@code refundedBefore} up to
+     * {@code gross − refunded}, and across that range the share moves by a minor unit: a
+     * one-cent fee refunded in halves returns the cent to whichever half completes FIRST. A
+     * reservation that assumed the larger share would take a cent more than it held the
+     * moment the smaller one happened — and if something else had drained the account in
+     * between, the account would end a cent below anything anybody decided.
+     *
+     * <h2>Exact where it can be, one minor unit conservative where it cannot</h2>
+     *
+     * <ul>
+     *   <li><strong>The refund completes the capture's remainder</strong>
+     *       ({@code refundedBefore + refunded == gross}, every full refund among them): the
+     *       range is a point, and the answer is {@link #returnedFee} itself — nothing can
+     *       complete before this refund that has not already.
+     *   <li><strong>Otherwise</strong>: {@code k = floor(fee × refunded / gross)}, less one
+     *       under {@code HALF_EVEN} when {@code k} is odd.
+     * </ul>
+     *
+     * <p>Why that is a floor for every completion order, which is the whole claim: the
+     * cumulative figure rounds a value held on a fixed grid of {@link #SHARE_SCALE} decimal
+     * places, so the difference of two cumulative values before the policy rounds them is a
+     * whole number of grid steps no smaller than the exact share less one step — and so no
+     * smaller than {@code k}, because a whole minor unit is itself on the grid (the working
+     * scale is finer than any currency's). Every policy but one then commutes with a shift by
+     * whole minor units, so the rounded difference is at least {@code k}; {@code HALF_EVEN}'s
+     * tie-to-even can lose one on an odd shift, which is the one exception. When the exact
+     * share is a whole number of minor units the answer is exact (under {@code HALF_EVEN}, when
+     * that number is even); otherwise it is at most one minor unit below what any particular
+     * order returns — two under {@code HALF_EVEN}, which gives one up in advance for a tie that
+     * may never be reached — and the completion releases the difference.
+     *
+     * <p>Never negative: a fee is never negative ({@link FeeScheduleVersion} refuses a
+     * negative rate or fixed part), so {@code k ≥ 0}, and the {@code HALF_EVEN} step only
+     * applies to an odd {@code k}, which is at least one.
+     *
+     * @param refundedBefore what had already been refunded and COMPLETED when this refund was
+     *     dispatched — never the non-failed sum, because a sibling in flight can still fail and
+     *     leave the completion's {@code before} lower than that
+     * @throws IllegalArgumentException for a foreign assessment or refunds exceeding the
+     *     capture, exactly as {@link #returnedFee} refuses them
+     */
+    public static Money leastReturnedFee(
+            FeeAssessment assessment,
+            FeeScheduleVersion version,
+            Money refundedBefore,
+            Money refunded) {
+        Money after = refundedAfter(assessment, version, refundedBefore, refunded);
+        if (after.toBigDecimal().compareTo(assessment.gross().toBigDecimal()) == 0) {
+            // A POINT: this refund completes the capture's remainder, so the completion will
+            // see exactly refundedBefore. Exact, and by the very function it will evaluate.
+            return returnedFee(assessment, version, refundedBefore, refunded);
+        }
+        CurrencyCode currency = assessment.fee().currency();
+        // Exact: the floor of a rational at the currency's own scale - BigDecimal rounds the
+        // true quotient once, in the direction named, and nothing else is rounded here.
+        Money floor =
+                Money.of(
+                        assessment
+                                .fee()
+                                .toBigDecimal()
+                                .multiply(refunded.toBigDecimal())
+                                .divide(
+                                        assessment.gross().toBigDecimal(),
+                                        currency.minorUnits(),
+                                        java.math.RoundingMode.FLOOR),
+                        currency);
+        if (version.roundingPolicy() == RoundingPolicy.HALF_EVEN
+                && (floor.minorUnits() & 1L) == 1L) {
+            // Tie-to-even does not commute with an ODD shift: x.5 and (x + k).5 round in
+            // opposite directions when k is odd, so the difference can be k − 1.
+            return floor.minus(Money.ofMinorUnits(1L, currency));
+        }
+        return floor;
+    }
+
+    /**
+     * The total refunded once {@code refunded} completes after {@code refundedBefore} —
+     * checked, because both the completion's arithmetic and the dispatch's reservation would
+     * silently produce a wrong number if either assumption below stopped being true.
+     */
+    private static Money refundedAfter(
+            FeeAssessment assessment,
+            FeeScheduleVersion version,
+            Money refundedBefore,
+            Money refunded) {
         Objects.requireNonNull(assessment, "assessment must not be null");
         Objects.requireNonNull(version, "version must not be null");
         if (!assessment.version().equals(version.id())) {
@@ -152,8 +253,7 @@ public final class FeeCalculation {
                     "Refunds of " + after + " exceed the captured " + assessment.gross()
                             + "; a refund cannot return more than was taken");
         }
-        return cumulativeFee(assessment, version, after)
-                .minus(cumulativeFee(assessment, version, refundedBefore));
+        return after;
     }
 
     /** The fee owed back once {@code refunded} of the capture has been returned, in total. */
@@ -187,6 +287,11 @@ public final class FeeCalculation {
      * money-scale rounding as the only one that decides a minor unit. HALF_UP here is a
      * TRUNCATION GUARD rather than a policy choice - the policy choice is the version's, and
      * it is applied by Money.of below.
+     *
+     * <p>{@link #leastReturnedFee}'s floor rests on this grid being FINER than any currency's
+     * minor unit, so that a whole minor unit is a whole number of grid steps. Twelve is well
+     * above the three-decimal currencies this platform prices; a coarser working scale would
+     * need that proof redone before it could ship.
      */
     private static final int SHARE_SCALE = 12;
 }

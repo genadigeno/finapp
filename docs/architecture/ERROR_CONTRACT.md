@@ -391,9 +391,13 @@ RefundExceedsCaptured` (422) is the domain bound (`INV-PAY-05`): the requested a
 plus every non-`FAILED` refund of the attempt would exceed the captured amount — judged under
 the attempt row lock, with `V004`'s trigger beneath, so a *sequential* over-refund is this
 honest 422 and never the schema's own `23514`. `payments.RefundUnfunded` (409) is
-`INV-BAL-04` at the surface: the hold that reserves the customer's funds cannot be placed
-because the available balance no longer covers it — a conflict with the account's *current
-state*, retriable when funds return, which is why it is a 409 and not a 422. The refund's 404
+`INV-BAL-04` at the surface: the hold that reserves what the refund will take cannot be
+placed because the available balance no longer covers it — a conflict with the account's
+*current state*, retriable when funds return, which is why it is a 409 and not a 422. For a
+checkout payment the account is the merchant's payable and the hold is the refund's **net**,
+not its gross (`P6-TSK-015`, ADR-0054): the code means the payable cannot fund that net even
+counting the one credit a merchant is extended, the fee share the platform retained
+(`INV-MER-07`). The merchant's next captures are what fund it. The refund's 404
 folds into `api.NotFound` exactly as above; the operator learns nothing a customer would not.
 
 ### `ledger` — `LedgerErrorCode`

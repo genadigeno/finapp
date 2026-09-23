@@ -91,6 +91,9 @@ standing rule. At planning time that is **eight**:
 - `INV-AUD-04` — four-eyes on high-consequence actions. **Live for the first time**: the
   payout destination change is its first implemented subject *(the catalogue's phase list
   omitted 6 while its statement named the subject — corrected by this transition)*.
+- `INV-MER-07` — **added by `P6-TSK-015`** (ADR-0054), taking the in-scope set to nine and
+  the platform to 94: a refund is funded by its net, and the only credit it extends is the fee
+  the platform keeps.
 
 The standing families (`INV-LIFE-*`, `INV-EVT-*`, `INV-AUD-01…03`, `INV-MON-*`,
 `INV-LED-*`, `INV-BAL-*`, `INV-IDEM-*`, `INV-CON-*`, `INV-HIST-*`) apply as always; the
@@ -108,6 +111,7 @@ PostgreSQL arbiter:
 | Session expiry racing payment completion | Conditional transitions on the session row; the `COMPLETED_LATE` edge makes the late winner modelled rather than lost (ADR-0053 §5, `INV-MER-06`) |
 | Concurrent expiry sweepers | None needed — the `PaymentSweeperSchedule` precedent: reads idempotent, writes conditional, no lease, no leader |
 | Two payouts racing one payable | The payable account's lock + holds: available derived in-lock, in-flight amounts held, the bound cumulative (`INV-MER-05`) |
+| Refunds racing one payable, and a capture landing among them (`P6-TSK-015`) | The same lock + holds: each refund reserves its net in-lock, so exactly the affordable set is admitted; a capture's in-flight posting blocks the placement until it commits, so a refund is funded only by money that has landed (`INV-MER-07`) |
 | Payout outcome races (sync vs query vs webhook) | Conditional transitions through the shared outcomes shape; the posting claim `merchant-payout:<payoutId>` makes a second entry structurally impossible |
 | Fee schedule version change racing a capture | The version is pinned at intent creation and travels with the intent; the capture prices with the pinned version whatever changed since (`INV-MER-03`) |
 | Concurrent destination proposal/approval | Conditional transitions; approver ≠ proposer enforced in the statement (`INV-AUD-04`) |
@@ -248,6 +252,9 @@ captured − fees − refunds − payouts).
 11. Merchant suspended mid-session → the session's confirm refuses; landed money still
     lands (suspension gates new dispatches, not arrived outcomes).
 12. KYB not approved → onboarding refuses; no merchant, no accounts, nothing partial.
+13. A merchant refund the payable cannot fund → committed refusal, nothing held; under
+    `RETAINED` the fee share may leave the payable negative, and never further
+    (`INV-MER-07`, ADR-0054, added by `P6-TSK-015`).
 13. Destination approved by its proposer → refused in the statement (`INV-AUD-04`).
 14. Payout dispatched while destination change is cooling off → the effective destination
     at dispatch is used; the pending proposal changes nothing until effected.

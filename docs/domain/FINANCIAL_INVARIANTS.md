@@ -1042,6 +1042,24 @@ every transition.
 meter and visible to an operator view.
 **Phase:** 6
 
+### INV-MER-07 — A refund is funded by its net; the only credit it extends is the fee kept
+**Statement:** A refund of a merchant-bound payment reserves, inside the payable account's lock
+at dispatch, what it takes from the payable net of the least fee share any completion order
+can attribute to it, so the fee share it keeps owing is the only part of a refund the payable
+may leave unfunded. A merchant's payable therefore goes below zero only by fee the platform has
+charged and not collected (a retained refund share, or a fee that exceeded its sale) — never by
+money the platform paid out. A refund beyond that is a committed domain refusal.
+**Why:** A refund judged on its gross refuses what the merchant can fund (a `RETURNED` full
+refund lands the payable at exactly zero). An unbounded one turns every refund after a payout
+into the platform funding a merchant's customers with its own money. Bounded by the retained
+fee, the platform's worst case on a payment is forgoing its fee (ADR-0054).
+**Enforce:** `DOMAIN`: the reservation is asked of the refund's own composition and held
+through `INV-BAL-04`'s hold, judged under the payable's lock (ADR-0054).
+**Verify:** A full refund end to end under both policies (zero under `RETURNED`, exactly minus
+the fee under `RETAINED`); a refund beyond the allowance refused with nothing written; the
+least-share property swept over every completion order; refunds racing on one payable counted.
+**Phase:** 6
+
 ---
 
 # Invariant Index
@@ -1067,7 +1085,7 @@ meter and visible to an operator view.
 | `INV-KYC` | 01–06 | Verification and case management |
 | `INV-CNS` | 01–04 | Consent |
 | `INV-PAY` | 01–05 | Payments and providers |
-| `INV-MER` | 01–06 | Merchants and checkout |
+| `INV-MER` | 01–07 | Merchants and checkout |
 
-**93 invariants.** Every one must be enforced and verified before the phase that owns it can
+**94 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate.

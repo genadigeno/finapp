@@ -135,6 +135,20 @@ public final class PaymentOutcomes {
     public record RefundApplied(RefundStatus status, boolean acting) {}
 
     /**
+     * What a refund must reserve on the account it debits (`P6-TSK-015`, ADR-0054), asked of
+     * <strong>the same composition that will settle it</strong>.
+     *
+     * <p>That is the whole reason this lives here rather than in the command: the dispatch's
+     * hold and the completion's lines must be priced by ONE composer, because a hold sized by
+     * one and lines written by another is a refund reserving the gross and taking the net - or
+     * reserving the net and taking the gross, which is the dangerous direction. Wiring cannot
+     * split what a single field holds.
+     */
+    public Money refundReservation(Connection uow, RefundReservation reservation) {
+        return refundComposition.reserve(uow, reservation);
+    }
+
+    /**
      * Applies an authorization outcome from {@code from} — {@code AUTH_DISPATCHED} or
      * {@code AUTH_UNKNOWN}.
      *

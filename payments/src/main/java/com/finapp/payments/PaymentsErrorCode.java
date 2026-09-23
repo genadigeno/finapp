@@ -130,13 +130,17 @@ public enum PaymentsErrorCode implements ErrorCode {
             "The refund would exceed the captured amount."),
 
     /**
-     * The customer's wallet cannot fund the return right now ({@code INV-BAL-04} at the
-     * refund's dispatch, `P5-TSK-015`): the hold the flight requires would make available
-     * balance negative — the customer has spent the money.
+     * The account the refund debits cannot fund what it will take, right now
+     * ({@code INV-BAL-04} at the refund's dispatch, `P5-TSK-015`): the hold the flight requires
+     * would make available balance negative — a customer who has spent the money, or
+     * (`P6-TSK-015`, ADR-0054) a merchant's payable short of the refund's NET, the one figure a
+     * merchant must fund; the fee share it keeps owing under {@code RETAINED} is the only credit
+     * a refund extends, and nothing beyond it.
      *
-     * <p>A {@code 409}, not a {@code 422}: the request is well formed and the wallet's
+     * <p>A {@code 409}, not a {@code 422}: the request is well formed and the account's
      * <em>state</em> refuses it — the remedies are a smaller partial refund or the account
-     * topping up, both state changes rather than request corrections.
+     * being funded (a top-up, the merchant's next captures), both state changes rather than
+     * request corrections.
      */
     REFUND_UNFUNDED(
             "payments.RefundUnfunded",

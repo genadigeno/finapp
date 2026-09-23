@@ -254,10 +254,125 @@ public final class MerchantSettlement {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(intentRef, "intentRef must not be null");
 
-        Optional<PaymentFeePin> found = pins.findFor(unitOfWork, intentRef);
+        Optional<RefundTerms> found = refundTerms(unitOfWork, intentRef, debit, refunded);
         if (found.isEmpty()) {
             // A wallet top-up's refund, as seen from here. Empty keeps Phase 5's path
             // byte-identical: no pin, no fee treatment, no change.
+            return Optional.empty();
+        }
+        PaymentFeePin pin = found.get().pin();
+        FeeScheduleVersion version = found.get().version();
+        LedgerAccount payable = found.get().payable();
+
+        // The gross out of the payable - the capture's own inverse, whatever the policy says
+        // about the fee.
+        List<JournalLine> lines =
+                new java.util.ArrayList<>(
+                        List.of(
+                                new JournalLine(payable.id(), Direction.DEBIT, refunded),
+                                new JournalLine(clearing, Direction.CREDIT, refunded)));
+
+        if (version.refundFeePolicy() == RefundFeePolicy.RETURNED) {
+            FeeAssessment assessment = FeeCalculation.assess(pin.gross(), version);
+            Money returned =
+                    FeeCalculation.returnedFee(assessment, version, refundedBefore, refunded);
+            if (!returned.isZero()) {
+                // Zero happens legitimately: a free schedule, or a partial refund so small
+                // that its share rounds to nothing this time and to a whole unit on a later
+                // one - which the CUMULATIVE arithmetic handles without stranding anything.
+                // A zero line asserts nothing and the ledger refuses one anyway.
+                LedgerAccount feeRevenue =
+                        chart.resolve(unitOfWork, AccountPurpose.FEE_REVENUE, refunded.currency());
+                lines.add(new JournalLine(feeRevenue.id(), Direction.DEBIT, returned));
+                lines.add(new JournalLine(payable.id(), Direction.CREDIT, returned));
+                announceReturn(unitOfWork, pin, returned, refunded, correlation, at);
+            }
+        }
+        return Optional.of(List.copyOf(lines));
+    }
+
+    /**
+     * What a refund of a merchant-bound payment must reserve on the payable when it is
+     * dispatched, or empty when the payment is nobody's merchant's (`P6-TSK-015`, ADR-0054).
+     *
+     * <h2>The NET, under either policy</h2>
+     *
+     * <pre>
+     *   reserved = refunded − the least fee share any completion order can attribute to it
+     * </pre>
+     *
+     * <p>Under {@code RETURNED} that is exactly what {@link #refund} will take from the payable
+     * whenever the share can be known now — a full refund, or the capture's last remainder —
+     * and otherwise at most a minor unit more ({@link FeeCalculation#leastReturnedFee} says
+     * why, and when two), which the completion releases. So a full refund of 100.00 carrying
+     * a 3.20 fee reserves the 96.80 the payable holds, and lands it at exactly zero.
+     *
+     * <p>Under {@code RETAINED} the refund will take the GROSS, and the difference between that
+     * and this reservation is <strong>the one credit a refund extends a merchant</strong>: the
+     * fee share the platform retained. A merchant must be able to fund the net of what it received;
+     * the fee it keeps owing may take the payable below zero — the merchant then owes the
+     * platform that fee, recovered from its next captures before any payout — and never
+     * further ({@code INV-MER-07}). The platform's worst case on a payment is forgoing its fee,
+     * never funding a merchant's refund with its own money.
+     *
+     * <p>The same number under both policies is deliberate: the policy decides what is POSTED,
+     * never what must be AVAILABLE.
+     *
+     * <h2>Never below one minor unit</h2>
+     *
+     * <p>A hold is positive by definition, and the refund's lifecycle carries one. The net can
+     * only fail to be positive when a capture's fee was at least its gross — a large fixed
+     * part on a tiny payment, which {@link FeeAssessment#exceedsGross} names and nothing
+     * refuses — and then the smallest unit is reserved: conservative, and a refusal the
+     * operator can read rather than a hold the ledger would reject as malformed.
+     *
+     * @param intentRef the refunded payment's intent, by value
+     * @param debit the account the refund was going to take the money from — checked to be
+     *     the pinned merchant's payable, as {@link #refund} checks it
+     * @param refunded this refund's amount
+     * @param refundedBefore what had already been refunded and COMPLETED when it was dispatched
+     * @throws MerchantSettlementException if the debit account is not the merchant's payable,
+     *     or the pin's version or the payable is missing
+     */
+    public Optional<Money> reservation(
+            Connection unitOfWork,
+            UUID intentRef,
+            LedgerAccountId debit,
+            Money refunded,
+            Money refundedBefore) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(intentRef, "intentRef must not be null");
+        return refundTerms(unitOfWork, intentRef, debit, refunded)
+                .map(
+                        terms -> {
+                            FeeAssessment assessment =
+                                    FeeCalculation.assess(terms.pin().gross(), terms.version());
+                            Money net =
+                                    refunded.minus(
+                                            FeeCalculation.leastReturnedFee(
+                                                    assessment,
+                                                    terms.version(),
+                                                    refundedBefore,
+                                                    refunded));
+                            Money smallest = Money.ofMinorUnits(1L, refunded.currency());
+                            return net.compareTo(smallest) < 0 ? smallest : net;
+                        });
+    }
+
+    /** What a refund of a merchant-bound payment is priced by, and whose payable it debits. */
+    private record RefundTerms(
+            PaymentFeePin pin, FeeScheduleVersion version, LedgerAccount payable) {}
+
+    /**
+     * The pin, its version and the merchant's payable — or empty when the payment is nobody's
+     * merchant's. Shared by {@link #refund} and {@link #reservation} because the hold and the
+     * lines must be judged against the SAME terms: a check copied into each drifts in exactly
+     * one of the copies.
+     */
+    private Optional<RefundTerms> refundTerms(
+            Connection unitOfWork, UUID intentRef, LedgerAccountId debit, Money refunded) {
+        Optional<PaymentFeePin> found = pins.findFor(unitOfWork, intentRef);
+        if (found.isEmpty()) {
             return Optional.empty();
         }
         PaymentFeePin pin = found.get();
@@ -297,32 +412,7 @@ public final class MerchantSettlement {
                             + "; the intent and its fee pin disagree about whose payment this"
                             + " is");
         }
-
-        // The gross out of the payable - the capture's own inverse, whatever the policy says
-        // about the fee.
-        List<JournalLine> lines =
-                new java.util.ArrayList<>(
-                        List.of(
-                                new JournalLine(payable.id(), Direction.DEBIT, refunded),
-                                new JournalLine(clearing, Direction.CREDIT, refunded)));
-
-        if (version.refundFeePolicy() == RefundFeePolicy.RETURNED) {
-            FeeAssessment assessment = FeeCalculation.assess(pin.gross(), version);
-            Money returned =
-                    FeeCalculation.returnedFee(assessment, version, refundedBefore, refunded);
-            if (!returned.isZero()) {
-                // Zero happens legitimately: a free schedule, or a partial refund so small
-                // that its share rounds to nothing this time and to a whole unit on a later
-                // one - which the CUMULATIVE arithmetic handles without stranding anything.
-                // A zero line asserts nothing and the ledger refuses one anyway.
-                LedgerAccount feeRevenue =
-                        chart.resolve(unitOfWork, AccountPurpose.FEE_REVENUE, refunded.currency());
-                lines.add(new JournalLine(feeRevenue.id(), Direction.DEBIT, returned));
-                lines.add(new JournalLine(payable.id(), Direction.CREDIT, returned));
-                announceReturn(unitOfWork, pin, returned, refunded, correlation, at);
-            }
-        }
-        return Optional.of(List.copyOf(lines));
+        return Optional.of(new RefundTerms(pin, version, payable));
     }
 
     /**

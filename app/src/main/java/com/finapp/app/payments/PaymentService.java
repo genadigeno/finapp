@@ -355,7 +355,8 @@ public final class PaymentService {
         } catch (com.finapp.ledger.HoldExceedsAvailableBalanceException unfunded) {
             throw new ApiException(
                     PaymentsErrorCode.REFUND_UNFUNDED,
-                    "A refund could not reserve the customer's funds (INV-BAL-04)");
+                    "A refund could not reserve what it takes from the account it debits"
+                            + " (INV-BAL-04, ADR-0054)");
         }
         countRefund(result);
         return new RefundView(

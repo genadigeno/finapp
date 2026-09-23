@@ -71,6 +71,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0051](ADR-0051-merchant-payout-accounting.md) | Merchant payout: hold-then-dispatch on the payable, nothing final before settlement | Proposed | 6 | Merchant · Ledger |
 | [0052](ADR-0052-merchant-api-identity.md) | Merchant API identity: scoped API keys, tenancy in the statement | Proposed | 6 | Merchant · Identity |
 | [0053](ADR-0053-checkout-session-and-order.md) | Checkout session and order: two aggregates, expiry gates dispatch, landed money always wins | Proposed | 6 | Checkout · Merchant · Payments |
+| [0054](ADR-0054-merchant-refund-funded-by-its-net.md) | A merchant refund is funded by its net; the only credit it extends is the fee the platform keeps | Proposed | 6 | Merchant · Payments · Ledger |
 
 ## Anticipated ADRs
 

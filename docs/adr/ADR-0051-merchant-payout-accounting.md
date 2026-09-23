@@ -70,3 +70,10 @@ Two design temptations must be refused explicitly:
   destination, read in the dispatch transaction.
 - Multi-currency payouts, payout scheduling/netting windows, and settlement confirmation
   are explicitly later (Phases 9, product, 8 respectively).
+- **A negative payable refuses every payout** (added by `P6-TSK-015`, ADR-0054): under a
+  `RETAINED` policy a refund may leave the payable below zero by the fee share the platform
+  kept, which is the merchant's debt to the platform. The bound in §1–2 needs no change to
+  honour that: available is negative, so no payout amount fits, and the merchant's next
+  captures repay the debt before any money leaves. A refund dispatched while a payout is in
+  flight is judged against what the payout's hold leaves, so a merchant cannot refund money
+  it has already been paid.

@@ -567,6 +567,48 @@ class MerchantCaptureDatabaseTest {
     }
 
     @Test
+    @DisplayName("P6-TSK-015: what a merchant-bound refund must hold is its NET, under EITHER"
+            + " policy - the policy decides what is posted, never what must be available")
+    void theReservationIsTheNetUnderEitherPolicy() throws Exception {
+        for (RefundFeePolicy policy : RefundFeePolicy.values()) {
+            Merchant merchant = onboardedMerchant("0.029", 30L, policy);
+            UUID intentRef = IDS.next();
+            runner.inTransaction(uow -> pin(uow, merchant, intentRef, AMOUNT));
+
+            assertThat(reserve(merchant.payable(), intentRef, AMOUNT, ZERO))
+                    .as("%s: a full refund of 100.00 carrying 3.20 holds the 96.80 net - exact,"
+                            + " because nothing can complete before a refund of everything",
+                            policy)
+                    .isEqualTo(Money.ofMinorUnits(96_80L, EUR));
+            assertThat(reserve(merchant.payable(), intentRef, Money.ofMinorUnits(40_00L, EUR), ZERO))
+                    .as("%s: 40.00 counts on its 1.28 share, a whole number of minor units", policy)
+                    .isEqualTo(Money.ofMinorUnits(38_72L, EUR));
+        }
+    }
+
+    @Test
+    @DisplayName("P6-TSK-015: a refund of a payment that is NOBODY's merchant's holds its GROSS"
+            + " - Phase 5's hold, unchanged, through the same seam")
+    void aRefundOfNobodysMerchantHoldsItsGross() throws Exception {
+        assertThat(reserve(clearing(), IDS.next(), AMOUNT, ZERO))
+                .as("no fee pin, so the wallet refund answers: the customer funds all of it")
+                .isEqualTo(AMOUNT);
+    }
+
+    @Test
+    @DisplayName("P6-TSK-015: a reservation against an account that is not the merchant's"
+            + " payable is REFUSED - the hold and the lines are judged against the same terms")
+    void aReservationAgainstAnotherAccountIsRefused() throws Exception {
+        Merchant merchant = onboardedMerchant("0.029", 30L);
+        UUID intentRef = IDS.next();
+        runner.inTransaction(uow -> pin(uow, merchant, intentRef, AMOUNT));
+
+        assertThatThrownBy(() -> reserve(clearing(), intentRef, AMOUNT, ZERO))
+                .isInstanceOf(MerchantSettlementException.class)
+                .hasMessageContaining("disagree about whose payment this is");
+    }
+
+    @Test
     @DisplayName("a second pin of the SAME decision converges and writes nothing - one price"
             + " per payment, and a retry is not a repricing (P6-TSK-007)")
     void anIdenticalSecondPinConverges() throws Exception {
@@ -910,6 +952,21 @@ class MerchantCaptureDatabaseTest {
 
 
     private static final Money ZERO = Money.ofMinorUnits(0L, EUR);
+
+    /** Asks the PRODUCTION seam what a refund must hold on {@code debit} (`P6-TSK-015`). */
+    private Money reserve(LedgerAccountId debit, UUID intentRef, Money refunded, Money before) {
+        return runner.inTransaction(
+                uow ->
+                        refundComposition()
+                                .reserve(
+                                        uow,
+                                        new com.finapp.payments.RefundReservation(
+                                                PaymentIntentId.of(intentRef),
+                                                PaymentAttemptId.of(IDS.next()),
+                                                debit,
+                                                refunded,
+                                                before)));
+    }
 
     /** Composes the refund's lines through the PRODUCTION seam and posts them. */
     private void postRefund(

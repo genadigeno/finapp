@@ -638,6 +638,90 @@ class CheckoutFlowDatabaseTest {
         assertThat(refunded.statusCode()).as(refunded.body()).isEqualTo(201);
     }
 
+    /** A refund through the operator surface, answered however it is answered. */
+    private HttpResponse<String> refundResponse(String intentId, String amount) throws Exception {
+        return refundResponse(intentId, amount, operatorSession(RoleName.LEDGER_OPERATOR));
+    }
+
+    private HttpResponse<String> refundResponse(String intentId, String amount, String operator)
+            throws Exception {
+        return post(
+                "/v1/payments/" + intentId + "/refund",
+                "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\","
+                        + "\"reason\":\"goods returned\"}",
+                operator,
+                someKey());
+    }
+
+    /** Every hold ever placed on the merchant's payable, oldest first, as amount:STATUS. */
+    private static List<String> heldOn(Merchant merchant) throws SQLException {
+        List<String> held = new ArrayList<>();
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT hold.amount_minor, hold.status FROM ledger.hold hold"
+                                        + " JOIN ledger.ledger_account account"
+                                        + "   ON account.id = hold.ledger_account_id"
+                                        + " WHERE account.purpose = 'MERCHANT_PAYABLE'"
+                                        + "   AND account.owner_ref = ?"
+                                        + " ORDER BY hold.placed_at, hold.id")) {
+            read.setObject(1, UUID.fromString(merchant.id()));
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    held.add(row.getLong(1) + ":" + row.getString(2));
+                }
+            }
+        }
+        return held;
+    }
+
+    private static long activeHoldsOn(Merchant merchant) throws SQLException {
+        return heldOn(merchant).stream().filter(hold -> hold.endsWith(":ACTIVE")).count();
+    }
+
+    /** Refund rows of the payment, whatever their status. */
+    private static long refundRowsFor(String intentId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT count(*) FROM payments.refund refund"
+                                        + " JOIN payments.payment_attempt attempt"
+                                        + "   ON attempt.id = refund.attempt_id"
+                                        + " WHERE attempt.intent_id = ?")) {
+            read.setObject(1, UUID.fromString(intentId));
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    /** Runs every task at once - released together by one latch - and returns their answers. */
+    private static <T> List<T> concurrently(List<java.util.concurrent.Callable<T>> tasks)
+            throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(tasks.size());
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<T>> running = new ArrayList<>();
+            for (java.util.concurrent.Callable<T> task : tasks) {
+                running.add(
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return task.call();
+                                }));
+            }
+            start.countDown();
+            List<T> answers = new ArrayList<>();
+            for (Future<T> answer : running) {
+                answers.add(answer.get(120, TimeUnit.SECONDS));
+            }
+            return answers;
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     /** position == captured - fees - refunded + feesReturned + other, read from the body. */
     private static boolean explainsItself(String body) {
         java.math.BigDecimal position = new java.math.BigDecimal(field(body, "position"));
@@ -1038,54 +1122,282 @@ class CheckoutFlowDatabaseTest {
         assertThat(explainsItself(body)).isTrue();
     }
 
+    // ----------------------------------------------------------------- the refund's funding
+
     @Test
-    @DisplayName("A GATE FINDING, PINNED (P6-TSK-010 -> P6-TSK-015): a FULL refund of a"
-            + " merchant-bound capture is REFUSED AS UNFUNDED under either fee policy")
-    void aFullMerchantRefundIsRefusedAsUnfunded() throws Exception {
-        // FOUND BY THIS TASK'S END-TO-END TEST, and pinned so the task that decides it must
-        // CHANGE THIS ASSERTION rather than discover the question.
-        //
-        // Phase 5's refund places a hold on the account it debits and judges affordability
-        // against that account's available position - in PAYMENT vocabulary, on the GROSS.
-        // For a merchant-bound payment that account is the PAYABLE, which after the capture
-        // holds the NET (96.80 of 100.00). So a full refund is always unfunded:
-        //
-        //   RETURNED - the composed entry's net is -96.80 (the gross out, the 3.20 fee back),
-        //              which lands the payable at EXACTLY ZERO and is refused anyway, because
-        //              the bound never sees the fee coming back. This half is a defect.
-        //   RETAINED - the merchant genuinely cannot fund 100.00 from 96.80; allowing it would
-        //              take the payable negative, an exposure to the merchant nobody decided to
-        //              carry. This half is a DECISION the platform has not made: refuse, or
-        //              permit a negative payable recovered from future captures.
-        //
-        // P6-TSK-014's tests posted through the composition seam directly and never crossed the
-        // refund command's funding bound, so they could not see this. Owned by P6-TSK-015.
-        for (String policy : new String[] {"RETAINED", "RETURNED"}) {
+    @DisplayName("P6-TSK-015 (P6-TSK-010's pinned finding, rewritten): a FULL refund of a"
+            + " merchant-bound capture is funded by its NET - RETURNED lands the payable at"
+            + " exactly zero, RETAINED at exactly minus the fee it keeps")
+    void aFullMerchantRefundIsFundedByItsNet() throws Exception {
+        // THE ASSERTION P6-TSK-010 PINNED FOR THIS TASK TO REWRITE. The refund's hold used to
+        // judge the GROSS (100.00) against a payable holding the NET (96.80), and refused both
+        // policies. It now reserves what the refund will take, asked of the composition that
+        // writes the lines (ADR-0054):
+        //   RETURNED - the gross out and the 3.20 fee back IN THE SAME ENTRY: 96.80, exactly.
+        //   RETAINED - the gross out. The merchant funds the 96.80 net, and the 3.20 fee it
+        //              keeps owing takes the payable below zero: the one credit a refund
+        //              extends (INV-MER-07), recovered from the merchant's next captures.
+        for (String policy : new String[] {"RETURNED", "RETAINED"}) {
             Merchant merchant = tradingMerchant("0.029", 30L, policy);
             String intent = intentOfSession(purchase(merchant, payingCustomer()));
-            provider.succeedsWith(
-                    SimulatedCardPspAdapter.REFUNDS_PATH,
-                    200,
-                    "{\"status\":\"approved\",\"reference\":\"psp_ref-" + UUID.randomUUID()
-                            + "\"}");
 
-            HttpResponse<String> refused =
-                    post(
-                            "/v1/payments/" + intent + "/refund",
-                            "{\"amount\":\"100.00\",\"currency\":\"EUR\","
-                                    + "\"reason\":\"order cancelled\"}",
-                            operatorSession(RoleName.LEDGER_OPERATOR),
-                            someKey());
+            refund(intent, "100.00");
 
-            assertThat(refused.statusCode())
-                    .as("policy %s: when this becomes 201, P6-TSK-015 has landed and this test is"
-                            + " its assertion to rewrite", policy)
-                    .isEqualTo(409);
-            assertThat(refused.body()).contains("payments.RefundUnfunded");
-            assertThat(payable(merchant).body())
-                    .as("and the refusal moved nothing")
-                    .contains("\"position\":\"96.80\"");
+            String body = payable(merchant).body();
+            assertThat(explainsItself(body)).as("policy %s: %s", policy, body).isTrue();
+            assertThat(body)
+                    .contains("\"captured\":\"100.00\"")
+                    .contains("\"fees\":\"3.20\"")
+                    .contains("\"refunded\":\"100.00\"");
+            assertThat(heldOn(merchant))
+                    .as("policy %s: ONE hold, of the NET, placed and released under the"
+                            + " refund's own lifecycle", policy)
+                    .containsExactly("9680:RELEASED");
+            try (Connection app = DatabaseRoles.application()) {
+                long position = payablePositionMinor(app, merchant);
+                if (policy.equals("RETURNED")) {
+                    assertThat(body)
+                            .contains("\"feesReturned\":\"3.20\"")
+                            .contains("\"position\":\"0.00\"");
+                    assertThat(position).as("the reversal complete to the minor unit").isZero();
+                } else {
+                    assertThat(body)
+                            .contains("\"feesReturned\":\"0.00\"")
+                            .contains("\"position\":\"-3.20\"");
+                    assertThat(position)
+                            .as("the merchant owes the platform EXACTLY the fee it retained")
+                            .isEqualTo(-3_20L);
+                }
+                assertThat(derivedPayableMinor(app, merchant)).isEqualTo(position);
+            }
         }
+    }
+
+    @Test
+    @DisplayName("P6-TSK-015: a DECLINED merchant refund releases its net hold and moves nothing"
+            + " - the reservation lives and dies with the refund's own lifecycle")
+    void aDeclinedMerchantRefundReleasesItsHold() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L, "RETURNED");
+        String intent = intentOfSession(purchase(merchant, payingCustomer()));
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.REFUNDS_PATH, 200, "{\"status\":\"declined\"}");
+
+        HttpResponse<String> declined = refundResponse(intent, "100.00");
+
+        assertThat(declined.statusCode()).as(declined.body()).isEqualTo(201);
+        assertThat(field(declined.body(), "status")).isEqualTo("FAILED");
+        assertThat(heldOn(merchant))
+                .as("the net was held while the provider decided, and released with nothing"
+                        + " posted")
+                .containsExactly("9680:RELEASED");
+        assertThat(payable(merchant).body())
+                .contains("\"refunded\":\"0.00\"")
+                .contains("\"position\":\"96.80\"");
+    }
+
+    @Test
+    @DisplayName("P6-TSK-015, INV-MER-07: the RETAINED fee share is the ONLY credit a refund"
+            + " extends - a refund needing more than the payable holds is refused with nothing"
+            + " written, and one within it is admitted")
+    void aRetainedFeeIsTheOnlyCreditAMerchantIsExtended() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L, "RETAINED");
+        refund(intentOfSession(purchase(merchant, payingCustomer())), "100.00");
+        String second = intentOfSession(purchase(merchant, payingCustomer()));
+        assertThat(payable(merchant).body())
+                .as("the first sale's retained fee, recovered from the second's net")
+                .contains("\"position\":\"93.60\"");
+
+        // The second sale in full needs its own 96.80 net, and 3.20 of that already paid the
+        // first sale's fee. Refused - and the refusal moves nothing. The provider mints a
+        // reference per refund from here, so that a refund wrongly ADMITTED would complete and
+        // say so, rather than collide with the previous refund's stubbed reference.
+        provider.succeedsWithMintedReference(SimulatedCardPspAdapter.REFUNDS_PATH, "psp_rfd");
+        HttpResponse<String> refused = refundResponse(second, "100.00");
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("payments.RefundUnfunded");
+        assertThat(refundRowsFor(second)).as("nothing written").isZero();
+        assertThat(payable(merchant).body()).contains("\"position\":\"93.60\"");
+
+        // Within what the payable can fund, admitted: 90.00 reserves 87.12, its 2.88 share
+        // carried as the merchant's debt.
+        HttpResponse<String> admitted = refundResponse(second, "90.00");
+        assertThat(admitted.statusCode()).as(admitted.body()).isEqualTo(201);
+        assertThat(field(admitted.body(), "status")).isEqualTo("COMPLETED");
+        assertThat(payable(merchant).body()).contains("\"position\":\"3.60\"");
+
+        // And the remainder is EXACT - 10.00 net of its 0.32 share is 9.68 - against 3.60.
+        HttpResponse<String> remainder = refundResponse(second, "10.00");
+        assertThat(remainder.statusCode()).as(remainder.body()).isEqualTo(409);
+        assertThat(remainder.body()).contains("payments.RefundUnfunded");
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePositionMinor(app, merchant)).isEqualTo(3_60L);
+            assertThat(derivedPayableMinor(app, merchant)).isEqualTo(3_60L);
+        }
+        assertThat(activeHoldsOn(merchant)).as("no refusal left anything standing").isZero();
+    }
+
+    @Test
+    @DisplayName("P6-TSK-015: a refund that cannot know its fee share reserves the WORST case -"
+            + " with the other half in flight the second half is refused, and in order both"
+            + " land the payable at exactly zero")
+    void aRefundThatCannotKnowItsShareReservesTheWorstCase() throws Exception {
+        // A ONE-CENT fee, refunded in halves under RETURNED. The cent comes back with ONE of
+        // the halves, and which one depends on the order they COMPLETE - the only order in
+        // which the cumulative allocation telescopes (P6-TSK-014). So while one half is in
+        // flight, the other may count on nothing.
+        Merchant inOrder = tradingMerchant("0", 1L, "RETURNED");
+        String sale = intentOfSession(purchase(inOrder, payingCustomer()));
+        refund(sale, "50.00");
+        refund(sale, "50.00");
+        assertThat(payable(inOrder).body())
+                .as("in order, the second half is the remainder, priced exactly, and the cent"
+                        + " comes back")
+                .contains("\"feesReturned\":\"0.01\"")
+                .contains("\"position\":\"0.00\"");
+
+        Merchant inFlight = tradingMerchant("0", 1L, "RETURNED");
+        String other = intentOfSession(purchase(inFlight, payingCustomer()));
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.REFUNDS_PATH);
+        HttpResponse<String> first = refundResponse(other, "50.00");
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(201);
+        assertThat(field(first.body(), "status")).isEqualTo("UNKNOWN");
+
+        // 99.99 in the payable; the first half holds its whole 50.00, and the second would
+        // need 50.00 too. 49.99 is left.
+        provider.succeedsWithMintedReference(SimulatedCardPspAdapter.REFUNDS_PATH, "psp_rfd");
+        HttpResponse<String> second = refundResponse(other, "50.00");
+        assertThat(second.statusCode()).as(second.body()).isEqualTo(409);
+        assertThat(second.body()).contains("payments.RefundUnfunded");
+        assertThat(heldOn(inFlight))
+                .as("one hold: the first half's worst case, standing while its answer is lost")
+                .containsExactly("5000:ACTIVE");
+    }
+
+    @Test
+    @DisplayName("P6-TSK-015: a refund dispatched beside siblings IN FLIGHT reserves by what has"
+            + " COMPLETED, never by what is merely reserved - a sibling can still fail")
+    void aRefundBesideSiblingsInFlightReservesByWhatCompleted() throws Exception {
+        // 0.03 on 100.00. A 25.00 refund returns 0.01 completing first or last and NOTHING
+        // completing after only 50.00 - which happens if, of its two siblings in flight
+        // (50.00 and 25.00), the first completes and the second fails. Read by the non-failed
+        // sum (75.00) it would look like the remainder and count on the cent.
+        Merchant merchant = tradingMerchant("0", 3L, "RETURNED");
+        Customer customer = payingCustomer();
+        String sale = intentOfSession(purchase(merchant, customer));
+        purchase(merchant, customer); // headroom, so every hold below is funded
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.REFUNDS_PATH);
+        for (String amount : new String[] {"50.00", "25.00", "25.00"}) {
+            HttpResponse<String> dispatched = refundResponse(sale, amount);
+            assertThat(field(dispatched.body(), "status")).as(dispatched.body()).isEqualTo("UNKNOWN");
+        }
+
+        assertThat(heldOn(merchant))
+                .as("nothing has completed, so no share is knowable and every refund holds its"
+                        + " whole amount - the last one included")
+                .containsExactly("5000:ACTIVE", "2500:ACTIVE", "2500:ACTIVE");
+    }
+
+    @Test
+    @DisplayName("P6-TSK-015: refunds RACING each other and a capture on one payable stay"
+            + " inside the bound - counted: exactly the affordable set is admitted, a refusal"
+            + " writes nothing, and the merchant's next capture funds what was refused")
+    void refundsRacingOnOnePayableStayInsideTheBound() throws Exception {
+        // RETAINED, so the payable can be SHORT of what it owes: four sales (387.20), the
+        // fourth refunded in full - 287.20, its 3.20 fee now the merchant's debt. The other
+        // three in full need 96.80 each, 290.40 in all: EXACTLY TWO fit.
+        Merchant merchant = tradingMerchant("0.029", 30L, "RETAINED");
+        Customer customer = payingCustomer();
+        List<String> sales = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            sales.add(intentOfSession(purchase(merchant, customer)));
+        }
+        refund(intentOfSession(purchase(merchant, customer)), "100.00");
+        assertThat(payable(merchant).body()).contains("\"position\":\"287.20\"");
+
+        String operator = operatorSession(RoleName.LEDGER_OPERATOR);
+        provider.succeedsWithMintedReference(SimulatedCardPspAdapter.REFUNDS_PATH, "psp_rfd");
+        List<java.util.concurrent.Callable<HttpResponse<String>>> race = new ArrayList<>();
+        for (String sale : sales) {
+            race.add(() -> refundResponse(sale, "100.00", operator));
+        }
+        List<HttpResponse<String>> answers = concurrently(race);
+        List<String> refused = new ArrayList<>();
+        for (int i = 0; i < sales.size(); i++) {
+            HttpResponse<String> answer = answers.get(i);
+            if (answer.statusCode() == 201) {
+                assertThat(field(answer.body(), "status")).isEqualTo("COMPLETED");
+            } else {
+                assertThat(answer.statusCode()).as(answer.body()).isEqualTo(409);
+                assertThat(answer.body()).contains("payments.RefundUnfunded");
+                refused.add(sales.get(i));
+            }
+        }
+        assertThat(refused)
+                .as("the payable's lock admits exactly the affordable set: two of three")
+                .hasSize(1);
+        assertThat(refundRowsFor(refused.get(0))).as("the refusal wrote nothing").isZero();
+        assertThat(activeHoldsOn(merchant)).isZero();
+        assertThat(heldOn(merchant))
+                .as("three holds in all, each of a full refund's net, each released")
+                .containsExactly("9680:RELEASED", "9680:RELEASED", "9680:RELEASED");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePositionMinor(app, merchant)).isEqualTo(87_20L);
+        }
+
+        // The refused refund RACES the merchant's next capture: funded only if the capture
+        // commits before the hold is judged. Both outcomes are legal; each is counted, and a
+        // refusal is then funded by the capture it lost to.
+        String late = refused.get(0);
+        List<java.util.concurrent.Callable<HttpResponse<String>>> second = new ArrayList<>();
+        second.add(() -> refundResponse(late, "100.00", operator));
+        second.add(
+                () -> {
+                    purchase(merchant, customer);
+                    return null;
+                });
+        HttpResponse<String> raced = concurrently(second).get(0);
+        if (raced.statusCode() == 409) {
+            assertThat(raced.body()).contains("payments.RefundUnfunded");
+            assertThat(refundRowsFor(late)).isZero();
+            HttpResponse<String> funded = refundResponse(late, "100.00", operator);
+            assertThat(funded.statusCode()).as(funded.body()).isEqualTo(201);
+        } else {
+            assertThat(raced.statusCode()).as(raced.body()).isEqualTo(201);
+        }
+
+        assertThat(activeHoldsOn(merchant)).isZero();
+        assertThat(refundRowsFor(late)).isEqualTo(1);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePositionMinor(app, merchant))
+                    .as("five sales, four refunded in full under RETAINED: 5 x 96.80 - 400.00")
+                    .isEqualTo(84_00L)
+                    .isEqualTo(derivedPayableMinor(app, merchant));
+        }
+        assertThat(explainsItself(payable(merchant).body())).isTrue();
+    }
+
+    @Test
+    @DisplayName("P6-TSK-015, A FINDING PINNED: a sale whose fee EXCEEDED its gross leaves the"
+            + " payable negative at capture, and its refund is refused as unfunded - honestly,"
+            + " never as a malformed hold")
+    void aRefundOfASaleWhoseFeeExceededItsGrossIsRefusedHonestly() throws Exception {
+        // A fixed part larger than the sale: 150.00 on 100.00. FeeCalculation lets a fee exceed
+        // its gross and FeeAssessment.exceedsGross() says so, but nothing refuses one, so the
+        // capture itself leaves the payable at -50.00. Its RETURNED refund would land it at
+        // zero - but its net is not positive, a hold is, and the reservation's floor of one
+        // minor unit cannot be held against a negative payable. Refused, conservatively.
+        // Pinned so the decision about a fee exceeding its sale is made on purpose.
+        Merchant merchant = tradingMerchant("0", 150_00L, "RETURNED");
+        String intent = intentOfSession(purchase(merchant, payingCustomer()));
+        assertThat(payable(merchant).body()).contains("\"position\":\"-50.00\"");
+
+        HttpResponse<String> refused = refundResponse(intent, "100.00");
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("payments.RefundUnfunded");
+        assertThat(refundRowsFor(intent)).isZero();
+        assertThat(payable(merchant).body()).contains("\"position\":\"-50.00\"");
     }
 
     @Test
