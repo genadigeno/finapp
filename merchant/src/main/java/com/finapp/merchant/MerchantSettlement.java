@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * ADR-0050 §3's entry, composed (`P6-TSK-005`) — <strong>the phase's financial heart</strong>.
@@ -68,6 +70,7 @@ import java.util.UUID;
  * produced it is the pin, so recomputing reproduces it without a second authority to drift
  * ({@code INV-MER-02}'s reasoning applied to a derived number).
  */
+@RequiredArgsConstructor
 public final class MerchantSettlement {
 
     static final String EVENT_TYPE = "merchant.FeeAssessed";
@@ -76,28 +79,12 @@ public final class MerchantSettlement {
     static final int EVENT_VERSION = 1;
     static final String AGGREGATE_TYPE = "merchant";
 
-    private final PaymentFeePinStore<Connection> pins;
-    private final FeeScheduleStore<Connection> schedules;
-    private final LedgerAccountStore<Connection> ledgerAccounts;
-    private final ChartOfAccounts<Connection> chart;
-    private final OutboxWriter<Connection> outbox;
-    private final IdGenerator ids;
-
-    public MerchantSettlement(
-            PaymentFeePinStore<Connection> pins,
-            FeeScheduleStore<Connection> schedules,
-            LedgerAccountStore<Connection> ledgerAccounts,
-            ChartOfAccounts<Connection> chart,
-            OutboxWriter<Connection> outbox,
-            IdGenerator ids) {
-        this.pins = Objects.requireNonNull(pins, "pins must not be null");
-        this.schedules = Objects.requireNonNull(schedules, "schedules must not be null");
-        this.ledgerAccounts =
-                Objects.requireNonNull(ledgerAccounts, "ledgerAccounts must not be null");
-        this.chart = Objects.requireNonNull(chart, "chart must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-    }
+    @NonNull private final PaymentFeePinStore<Connection> pins;
+    @NonNull private final FeeScheduleStore<Connection> schedules;
+    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
+    @NonNull private final ChartOfAccounts<Connection> chart;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final IdGenerator ids;
 
     /**
      * The four lines this capture posts, or empty when the payment is nobody's merchant's.

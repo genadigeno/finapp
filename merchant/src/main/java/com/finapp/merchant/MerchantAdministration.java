@@ -14,6 +14,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The operator's reasoned state moves: suspend, reinstate, close (`P6-TSK-003`).
@@ -36,25 +38,15 @@ import java.util.Optional;
  * dispatching commands (`P6-TSK-007`, `-012`), which read the status in their own
  * transactions.
  */
+@RequiredArgsConstructor
 public final class MerchantAdministration {
 
     static final String TARGET_TYPE = "merchant";
 
-    private final MerchantStore<Connection> merchants;
-    private final AuditWriter<Connection> audit;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public MerchantAdministration(
-            MerchantStore<Connection> merchants,
-            AuditWriter<Connection> audit,
-            IdGenerator ids,
-            Clock clock) {
-        this.merchants = Objects.requireNonNull(merchants, "merchants must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final MerchantStore<Connection> merchants;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /** {@code ACTIVE → SUSPENDED}, reasoned. Converges on an already-suspended merchant. */
     public Merchant suspend(Connection unitOfWork, MerchantId id, String reason) {

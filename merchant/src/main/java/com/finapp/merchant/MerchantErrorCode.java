@@ -1,6 +1,7 @@
 package com.finapp.merchant;
 
 import com.finapp.platform.api.ErrorCode;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The failures this module reports to a client (`P6-TSK-003`). Namespaced {@code merchant.*}
@@ -11,6 +12,7 @@ import com.finapp.platform.api.ErrorCode;
  * and when `P6-TSK-002`'s tenant-scoped surfaces arrive, the same one answer folds
  * another-tenant's into it ({@code INV-MER-01}, the {@code P1-TSK-016} oracle reasoning).
  */
+@RequiredArgsConstructor
 public enum MerchantErrorCode implements ErrorCode {
 
     /**
@@ -92,12 +94,6 @@ public enum MerchantErrorCode implements ErrorCode {
     private final String code;
     private final int status;
     private final String title;
-
-    MerchantErrorCode(String code, int status, String title) {
-        this.code = code;
-        this.status = status;
-        this.title = title;
-    }
 
     @Override
     public String code() {

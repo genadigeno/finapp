@@ -18,6 +18,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The operator's fee-schedule commands and the resolution every future capture will call
@@ -50,6 +52,7 @@ import java.util.Optional;
  * of a lock are one fact stated twice, not an obstacle to work around. The arbiter is the
  * unique index on {@code (fee_schedule_id, version)}; see {@link #mintVersion}.
  */
+@RequiredArgsConstructor
 public final class FeeSchedules {
 
     /**
@@ -80,24 +83,11 @@ public final class FeeSchedules {
             Optional<Instant> effectiveFrom,
             String reason) {}
 
-    private final FeeScheduleStore<Connection> schedules;
-    private final MerchantStore<Connection> merchants;
-    private final AuditWriter<Connection> audit;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public FeeSchedules(
-            FeeScheduleStore<Connection> schedules,
-            MerchantStore<Connection> merchants,
-            AuditWriter<Connection> audit,
-            IdGenerator ids,
-            Clock clock) {
-        this.schedules = Objects.requireNonNull(schedules, "schedules must not be null");
-        this.merchants = Objects.requireNonNull(merchants, "merchants must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final FeeScheduleStore<Connection> schedules;
+    @NonNull private final MerchantStore<Connection> merchants;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     // ----------------------------------------------------------------- commands
 

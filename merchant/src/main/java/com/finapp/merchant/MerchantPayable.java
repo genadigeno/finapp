@@ -10,6 +10,8 @@ import java.sql.Connection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What the platform owes a merchant, and <strong>why</strong> (`P6-TSK-010`, {@code INV-MER-02}
@@ -48,6 +50,7 @@ import java.util.Optional;
  * state-with-no-producer this phase has refused repeatedly, so until then a payout would land in
  * {@code other} — visibly, and still summing — and that task splits it out.
  */
+@RequiredArgsConstructor
 public final class MerchantPayable {
 
     /**
@@ -80,14 +83,8 @@ public final class MerchantPayable {
         }
     }
 
-    private final LedgerAccountStore<Connection> accounts;
-    private final PositionBreakdown<Connection> breakdowns;
-
-    public MerchantPayable(
-            LedgerAccountStore<Connection> accounts, PositionBreakdown<Connection> breakdowns) {
-        this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
-        this.breakdowns = Objects.requireNonNull(breakdowns, "breakdowns must not be null");
-    }
+    @NonNull private final LedgerAccountStore<Connection> accounts;
+    @NonNull private final PositionBreakdown<Connection> breakdowns;
 
     /**
      * Every payable this merchant has, one per currency. The accounts come from the ledger's

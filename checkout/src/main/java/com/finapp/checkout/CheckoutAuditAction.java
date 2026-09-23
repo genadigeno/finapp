@@ -1,6 +1,7 @@
 package com.finapp.checkout;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The checkout module's auditable actions ({@code AUDITABLE_ACTIONS.md}), arriving with the
@@ -20,6 +21,7 @@ import com.finapp.platform.audit.AuditableAction;
  * the suspension and revocation shape. The customer looking at the page finds their checkout
  * gone, and the trail must be able to say why.
  */
+@RequiredArgsConstructor
 public enum CheckoutAuditAction implements AuditableAction {
 
     /**
@@ -88,12 +90,6 @@ public enum CheckoutAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    CheckoutAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

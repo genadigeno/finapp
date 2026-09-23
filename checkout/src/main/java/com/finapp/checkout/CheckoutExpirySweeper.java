@@ -22,8 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * The producer of {@code EXPIRED} (`P6-TSK-008`, ADR-0053 §4, {@code INV-MER-06}): every
@@ -85,9 +84,8 @@ import org.slf4j.LoggerFactory;
  * posture, for the same reason one level over: the rows behind a poisoned one are other
  * merchants' offers.
  */
+@Slf4j
 public final class CheckoutExpirySweeper {
-
-    private static final Logger log = LoggerFactory.getLogger(CheckoutExpirySweeper.class);
 
     static final String EVENT_TYPE = "checkout.CheckoutSessionExpired";
     static final String AGGREGATE_TYPE = "checkout_session";

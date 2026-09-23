@@ -1,6 +1,7 @@
 package com.finapp.checkout;
 
 import com.finapp.platform.api.ErrorCode;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The failures this module reports to a client (`P6-TSK-007`). Namespaced {@code checkout.*}
@@ -13,6 +14,7 @@ import com.finapp.platform.api.ErrorCode;
  * is guessed at rather than typed, and telling a guesser that a session exists but is not
  * theirs is the only bit they need.
  */
+@RequiredArgsConstructor
 public enum CheckoutErrorCode implements ErrorCode {
 
     /**
@@ -92,12 +94,6 @@ public enum CheckoutErrorCode implements ErrorCode {
     private final String code;
     private final int status;
     private final String title;
-
-    CheckoutErrorCode(String code, int status, String title) {
-        this.code = code;
-        this.status = status;
-        this.title = title;
-    }
 
     @Override
     public String code() {

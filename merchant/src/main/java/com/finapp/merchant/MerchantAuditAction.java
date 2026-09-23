@@ -1,6 +1,7 @@
 package com.finapp.merchant;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The merchant module's auditable actions ({@code AUDITABLE_ACTIONS.md}), arriving with the
@@ -8,6 +9,7 @@ import com.finapp.platform.audit.AuditableAction;
  * key's issuance and revocation arrive with `P6-TSK-002`; the destination flow's with
  * `P6-TSK-011`; the payout's with `P6-TSK-012`.
  */
+@RequiredArgsConstructor
 public enum MerchantAuditAction implements AuditableAction {
 
     /**
@@ -116,12 +118,6 @@ public enum MerchantAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    MerchantAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

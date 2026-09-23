@@ -32,6 +32,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Onboards a merchant: the commercial relationship and its books, in one transaction
@@ -55,6 +57,7 @@ import java.util.UUID;
  * is money the platform holds against them — created in this same transaction through
  * {@code createOrConverge}, so a partially-repeated onboarding still lands on one account.
  */
+@RequiredArgsConstructor
 public final class MerchantOnboarding {
 
     static final String EVENT_TYPE = "merchant.MerchantOnboarded";
@@ -74,34 +77,14 @@ public final class MerchantOnboarding {
             String displayName,
             CurrencyCode settlementCurrency) {}
 
-    private final MerchantStore<Connection> merchants;
-    private final LedgerAccountStore<Connection> ledgerAccounts;
-    private final MerchantVerification<Connection> verification;
-    private final IdempotentExecutor executor;
-    private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public MerchantOnboarding(
-            MerchantStore<Connection> merchants,
-            LedgerAccountStore<Connection> ledgerAccounts,
-            MerchantVerification<Connection> verification,
-            IdempotentExecutor executor,
-            AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
-            IdGenerator ids,
-            Clock clock) {
-        this.merchants = Objects.requireNonNull(merchants, "merchants must not be null");
-        this.ledgerAccounts =
-                Objects.requireNonNull(ledgerAccounts, "ledgerAccounts must not be null");
-        this.verification = Objects.requireNonNull(verification, "verification must not be null");
-        this.executor = Objects.requireNonNull(executor, "executor must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final MerchantStore<Connection> merchants;
+    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
+    @NonNull private final MerchantVerification<Connection> verification;
+    @NonNull private final IdempotentExecutor executor;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /** Onboards, or replays the recorded outcome for a retried key ({@code INV-IDEM-01}). */
     public OnboardingResult onboard(Connection unitOfWork, OnboardMerchantCommand command) {

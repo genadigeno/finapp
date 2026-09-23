@@ -24,6 +24,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Issues and revokes a merchant's API credentials (`P6-TSK-002`, ADR-0052) — the operator's
@@ -56,6 +58,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * counterparty's access is a security judgement), and a repeat converges on the revoked key
  * rather than failing: one act, however many operators asked.
  */
+@RequiredArgsConstructor
 public final class MerchantApiKeys {
 
     static final String TARGET_TYPE = "merchant_api_key";
@@ -86,30 +89,13 @@ public final class MerchantApiKeys {
         }
     }
 
-    private final MerchantApiKeyStore<Connection> keys;
-    private final MerchantStore<Connection> merchants;
-    private final IdempotentExecutor executor;
-    private final AuditWriter<Connection> audit;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final SecureRandom randomness;
-
-    public MerchantApiKeys(
-            MerchantApiKeyStore<Connection> keys,
-            MerchantStore<Connection> merchants,
-            IdempotentExecutor executor,
-            AuditWriter<Connection> audit,
-            IdGenerator ids,
-            Clock clock,
-            SecureRandom randomness) {
-        this.keys = Objects.requireNonNull(keys, "keys must not be null");
-        this.merchants = Objects.requireNonNull(merchants, "merchants must not be null");
-        this.executor = Objects.requireNonNull(executor, "executor must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
-    }
+    @NonNull private final MerchantApiKeyStore<Connection> keys;
+    @NonNull private final MerchantStore<Connection> merchants;
+    @NonNull private final IdempotentExecutor executor;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final SecureRandom randomness;
 
     /** Issues a key for the merchant, or replays the recorded outcome for a retried key. */
     public IssuedKey issue(
