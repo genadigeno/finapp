@@ -13,8 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Reconciliation by query (`P5-TSK-014`, ADR-0046 §4): every instance polls for
@@ -57,9 +56,8 @@ import org.slf4j.LoggerFactory;
  * (identifiers and failure class only, {@code INV-AUD-02}) and the sweep continues — the
  * anti-stall posture, because the rows behind a poisoned one are other customers' money.
  */
+@Slf4j
 public final class PaymentSweeper {
-
-    private static final Logger log = LoggerFactory.getLogger(PaymentSweeper.class);
 
     private final TransactionRunner transactions;
     private final PaymentAttemptStore<Connection> attempts;

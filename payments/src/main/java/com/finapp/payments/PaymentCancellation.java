@@ -14,6 +14,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The cancellation command ({@code P5-TSK-009}): the customer's own withdrawal, only from
@@ -27,23 +29,13 @@ import java.util.UUID;
  * §10's register carries no {@code PaymentCancelled} — an event without a consumer is
  * vocabulary, and the register is the decision (the deliberately-few licence).
  */
+@RequiredArgsConstructor
 public final class PaymentCancellation {
 
-    private final PaymentIntentStore<Connection> intents;
-    private final AuditWriter<Connection> audit;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public PaymentCancellation(
-            PaymentIntentStore<Connection> intents,
-            AuditWriter<Connection> audit,
-            IdGenerator ids,
-            Clock clock) {
-        this.intents = Objects.requireNonNull(intents, "intents must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final PaymentIntentStore<Connection> intents;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /** The status after this call, and whether it converged on an earlier cancel. */
     public record CancellationResult(PaymentIntentStatus status, boolean converged) {}

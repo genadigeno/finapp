@@ -27,6 +27,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The intent-creation command ({@code P5-TSK-009}, ADR-0045): acceptance, never execution —
@@ -50,6 +52,7 @@ import java.util.UUID;
  * machine has no reason vocabulary, deliberately — the attempt's {@code FAILED} carries the
  * enumerated reasons), so each throws with nothing written, the caller's 4xx.
  */
+@RequiredArgsConstructor
 public final class PaymentCreation {
 
     /** The idempotency scope (ADR-0004): one command type, one scope. */
@@ -60,30 +63,13 @@ public final class PaymentCreation {
     static final int EVENT_VERSION = 1;
     static final String TARGET_TYPE = "payment_intent";
 
-    private final IdempotentExecutor executor;
-    private final PaymentParticipants<Connection> participants;
-    private final PaymentIntentStore<Connection> intents;
-    private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public PaymentCreation(
-            IdempotentExecutor executor,
-            PaymentParticipants<Connection> participants,
-            PaymentIntentStore<Connection> intents,
-            AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
-            IdGenerator ids,
-            Clock clock) {
-        this.executor = Objects.requireNonNull(executor, "executor must not be null");
-        this.participants = Objects.requireNonNull(participants, "participants must not be null");
-        this.intents = Objects.requireNonNull(intents, "intents must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final IdempotentExecutor executor;
+    @NonNull private final PaymentParticipants<Connection> participants;
+    @NonNull private final PaymentIntentStore<Connection> intents;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /** The caller's ask: their party, their instrument, the amount, and their retry key. */
     public record CreatePaymentCommand(

@@ -18,6 +18,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The confirmation command: ADR-0046 as code ({@code P5-TSK-009}, the phase's discipline on
@@ -55,41 +57,19 @@ import java.util.UUID;
  * cause a second provider operation ({@code INV-PAY-04} end to end). No ledger effect
  * anywhere (ADR-0048): this class imports no posting type, structurally.
  */
+@RequiredArgsConstructor
 public final class PaymentConfirmation {
 
-    private final TransactionRunner transactions;
-    private final PaymentIntentStore<java.sql.Connection> intents;
-    private final PaymentAttemptStore<java.sql.Connection> attempts;
-    private final ProviderEvidenceStore<java.sql.Connection> evidence;
-    private final PaymentParticipants<java.sql.Connection> participants;
-    private final PaymentProvider provider;
-    private final PaymentOutcomes outcomes;
-    private final AuditWriter<java.sql.Connection> audit;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public PaymentConfirmation(
-            TransactionRunner transactions,
-            PaymentIntentStore<java.sql.Connection> intents,
-            PaymentAttemptStore<java.sql.Connection> attempts,
-            ProviderEvidenceStore<java.sql.Connection> evidence,
-            PaymentParticipants<java.sql.Connection> participants,
-            PaymentProvider provider,
-            PaymentOutcomes outcomes,
-            AuditWriter<java.sql.Connection> audit,
-            IdGenerator ids,
-            Clock clock) {
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.intents = Objects.requireNonNull(intents, "intents must not be null");
-        this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
-        this.evidence = Objects.requireNonNull(evidence, "evidence must not be null");
-        this.participants = Objects.requireNonNull(participants, "participants must not be null");
-        this.provider = Objects.requireNonNull(provider, "provider must not be null");
-        this.outcomes = Objects.requireNonNull(outcomes, "outcomes must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final TransactionRunner transactions;
+    @NonNull private final PaymentIntentStore<java.sql.Connection> intents;
+    @NonNull private final PaymentAttemptStore<java.sql.Connection> attempts;
+    @NonNull private final ProviderEvidenceStore<java.sql.Connection> evidence;
+    @NonNull private final PaymentParticipants<java.sql.Connection> participants;
+    @NonNull private final PaymentProvider provider;
+    @NonNull private final PaymentOutcomes outcomes;
+    @NonNull private final AuditWriter<java.sql.Connection> audit;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * What the caller learns — statuses honestly, {@code PROCESSING} included (ADR-0046).

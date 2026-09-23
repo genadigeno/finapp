@@ -15,6 +15,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * {@link ProviderEvidenceStore} over JDBC (ADR-0033) — the store encrypts and hashes, so
@@ -22,15 +24,11 @@ import java.util.Optional;
  * SHA-256 of the <strong>plaintext</strong> recorded at capture and verified on every read
  * ({@code V005}'s columns, {@code INV-HIST-02}).
  */
+@RequiredArgsConstructor
 public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Connection> {
 
-    private final EvidenceCipher cipher;
-    private final IdGenerator ids;
-
-    public JdbcProviderEvidenceStore(EvidenceCipher cipher, IdGenerator ids) {
-        this.cipher = Objects.requireNonNull(cipher, "cipher must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-    }
+    @NonNull private final EvidenceCipher cipher;
+    @NonNull private final IdGenerator ids;
 
     @Override
     public void append(

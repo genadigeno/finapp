@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The payments module's auditable actions ({@code AUDITABLE_ACTIONS.md}), arriving with the
@@ -8,6 +9,7 @@ import com.finapp.platform.audit.AuditableAction;
  * {@code package-info}'s deliberately-few licence promised. The capture's and the refund's
  * actions arrive with theirs ({@code P5-TSK-010}/{@code -015}).
  */
+@RequiredArgsConstructor
 public enum PaymentsAuditAction implements AuditableAction {
 
     /**
@@ -90,12 +92,6 @@ public enum PaymentsAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    PaymentsAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

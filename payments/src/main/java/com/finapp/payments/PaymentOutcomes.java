@@ -27,8 +27,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The one outcome application every resolver shares (`P5-TSK-013`, ADR-0047 §4) — the
@@ -60,6 +61,7 @@ import java.util.Optional;
  * savepoint, deliberately ({@code PaymentCapture}'s recorded stance, preserved by the
  * extraction rather than re-decided).
  */
+@RequiredArgsConstructor
 public final class PaymentOutcomes {
 
     static final String AUTHORIZED_EVENT_TYPE = "payments.PaymentAuthorized";
@@ -75,47 +77,18 @@ public final class PaymentOutcomes {
     static final String REFUND_COMPLETED_EVENT_TYPE = "payments.RefundCompleted";
     static final String REFUND_FAILED_EVENT_TYPE = "payments.RefundFailed";
 
-    private final PaymentIntentStore<Connection> intents;
-    private final PaymentAttemptStore<Connection> attempts;
-    private final RefundStore<Connection> refunds;
-    private final com.finapp.ledger.HoldService holds;
-    private final PostingService postings;
-    private final ChartOfAccounts<Connection> chart;
-    private final CaptureComposition<Connection> composition;
-    private final RefundComposition<Connection> refundComposition;
-    private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public PaymentOutcomes(
-            PaymentIntentStore<Connection> intents,
-            PaymentAttemptStore<Connection> attempts,
-            RefundStore<Connection> refunds,
-            com.finapp.ledger.HoldService holds,
-            PostingService postings,
-            ChartOfAccounts<Connection> chart,
-            CaptureComposition<Connection> composition,
-            RefundComposition<Connection> refundComposition,
-            AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
-            IdGenerator ids,
-            Clock clock) {
-        this.intents = Objects.requireNonNull(intents, "intents must not be null");
-        this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
-        this.refunds = Objects.requireNonNull(refunds, "refunds must not be null");
-        this.holds = Objects.requireNonNull(holds, "holds must not be null");
-        this.postings = Objects.requireNonNull(postings, "postings must not be null");
-        this.chart = Objects.requireNonNull(chart, "chart must not be null");
-        this.composition = Objects.requireNonNull(composition, "composition must not be null");
-        this.refundComposition =
-                Objects.requireNonNull(
-                        refundComposition, "refundComposition must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final PaymentIntentStore<Connection> intents;
+    @NonNull private final PaymentAttemptStore<Connection> attempts;
+    @NonNull private final RefundStore<Connection> refunds;
+    @NonNull private final com.finapp.ledger.HoldService holds;
+    @NonNull private final PostingService postings;
+    @NonNull private final ChartOfAccounts<Connection> chart;
+    @NonNull private final CaptureComposition<Connection> composition;
+    @NonNull private final RefundComposition<Connection> refundComposition;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * What committed (or was found committed by the loser of a harmless race).

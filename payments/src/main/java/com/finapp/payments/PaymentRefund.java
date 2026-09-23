@@ -22,6 +22,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The refund command: hold, then post (`P5-TSK-015`, ADR-0048 §4) — the same
@@ -82,49 +84,23 @@ import java.util.UUID;
  * this class's enumerated {@code enterSystem()} site — the `P5-TSK-009` reasoning, refund
  * form.
  */
+@RequiredArgsConstructor
 public final class PaymentRefund {
 
     static final String IDEMPOTENCY_SCOPE = "payment.refund";
 
-    private final TransactionRunner transactions;
-    private final IdempotentExecutor executor;
-    private final PaymentIntentStore<Connection> intents;
-    private final PaymentAttemptStore<Connection> attempts;
-    private final RefundStore<Connection> refunds;
-    private final ProviderEvidenceStore<Connection> evidence;
-    private final HoldService holds;
-    private final PaymentProvider provider;
-    private final PaymentOutcomes outcomes;
-    private final AuditWriter<Connection> audit;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public PaymentRefund(
-            TransactionRunner transactions,
-            IdempotentExecutor executor,
-            PaymentIntentStore<Connection> intents,
-            PaymentAttemptStore<Connection> attempts,
-            RefundStore<Connection> refunds,
-            ProviderEvidenceStore<Connection> evidence,
-            HoldService holds,
-            PaymentProvider provider,
-            PaymentOutcomes outcomes,
-            AuditWriter<Connection> audit,
-            IdGenerator ids,
-            Clock clock) {
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.executor = Objects.requireNonNull(executor, "executor must not be null");
-        this.intents = Objects.requireNonNull(intents, "intents must not be null");
-        this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
-        this.refunds = Objects.requireNonNull(refunds, "refunds must not be null");
-        this.evidence = Objects.requireNonNull(evidence, "evidence must not be null");
-        this.holds = Objects.requireNonNull(holds, "holds must not be null");
-        this.provider = Objects.requireNonNull(provider, "provider must not be null");
-        this.outcomes = Objects.requireNonNull(outcomes, "outcomes must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final TransactionRunner transactions;
+    @NonNull private final IdempotentExecutor executor;
+    @NonNull private final PaymentIntentStore<Connection> intents;
+    @NonNull private final PaymentAttemptStore<Connection> attempts;
+    @NonNull private final RefundStore<Connection> refunds;
+    @NonNull private final ProviderEvidenceStore<Connection> evidence;
+    @NonNull private final HoldService holds;
+    @NonNull private final PaymentProvider provider;
+    @NonNull private final PaymentOutcomes outcomes;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * What the operator learns — the status honestly, {@code UNKNOWN} included.

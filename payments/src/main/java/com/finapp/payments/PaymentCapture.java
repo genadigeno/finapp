@@ -29,6 +29,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The capture command: the ledger's first touch ({@code P5-TSK-010}, ADR-0048) — the same
@@ -75,40 +77,20 @@ import java.util.Optional;
  * {@code CAPTURE_DISPATCHED} visibly, and a retried capture converges with zero provider
  * calls.
  */
+@RequiredArgsConstructor
 public final class PaymentCapture {
 
     static final String CAPTURED_EVENT_TYPE = "payments.PaymentCaptured";
 
-    private final TransactionRunner transactions;
-    private final PaymentIntentStore<Connection> intents;
-    private final PaymentAttemptStore<Connection> attempts;
-    private final ProviderEvidenceStore<Connection> evidence;
-    private final PaymentProvider provider;
-    private final PaymentOutcomes outcomes;
-    private final AuditWriter<Connection> audit;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public PaymentCapture(
-            TransactionRunner transactions,
-            PaymentIntentStore<Connection> intents,
-            PaymentAttemptStore<Connection> attempts,
-            ProviderEvidenceStore<Connection> evidence,
-            PaymentProvider provider,
-            PaymentOutcomes outcomes,
-            AuditWriter<Connection> audit,
-            IdGenerator ids,
-            Clock clock) {
-        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.intents = Objects.requireNonNull(intents, "intents must not be null");
-        this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
-        this.evidence = Objects.requireNonNull(evidence, "evidence must not be null");
-        this.provider = Objects.requireNonNull(provider, "provider must not be null");
-        this.outcomes = Objects.requireNonNull(outcomes, "outcomes must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final TransactionRunner transactions;
+    @NonNull private final PaymentIntentStore<Connection> intents;
+    @NonNull private final PaymentAttemptStore<Connection> attempts;
+    @NonNull private final ProviderEvidenceStore<Connection> evidence;
+    @NonNull private final PaymentProvider provider;
+    @NonNull private final PaymentOutcomes outcomes;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * The states after this call — {@code CAPTURE_DISPATCHED} honestly included.
