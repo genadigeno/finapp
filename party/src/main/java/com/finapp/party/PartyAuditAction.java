@@ -1,6 +1,7 @@
 package com.finapp.party;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What the {@code party} module does that must produce an audit record.
@@ -20,6 +21,7 @@ import com.finapp.platform.audit.AuditableAction;
  * there is nothing to record. The gap is the same one recorded in {@code CURRENT_STATE.md}
  * §Known Architectural Debt for the platform's three.
  */
+@RequiredArgsConstructor
 public enum PartyAuditAction implements AuditableAction {
 
     /**
@@ -111,12 +113,6 @@ public enum PartyAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    PartyAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

@@ -23,6 +23,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Registers a {@link Party} and opens its {@link Customer} relationship (`P1-TSK-006`).
@@ -57,6 +59,7 @@ import java.util.Optional;
  * the other: a consumer may see {@code CustomerOpened} first and must tolerate it
  * ({@code INV-EVT-04}).
  */
+@RequiredArgsConstructor
 public final class PartyRegistration {
 
     /** Kept in one place because it is a published value: consumers route on it. */
@@ -66,21 +69,10 @@ public final class PartyRegistration {
     // same version - one definition, so the wire cannot fork by module-internal drift.
     static final int EVENT_VERSION = 1;
 
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-    private final OutboxWriter<Connection> outboxWriter;
-
-    public PartyRegistration(
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter) {
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outboxWriter = Objects.requireNonNull(outboxWriter, "outboxWriter must not be null");
-    }
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final OutboxWriter<Connection> outboxWriter;
 
     /**
      * Creates the Party and its relationship, on {@code unitOfWork}.

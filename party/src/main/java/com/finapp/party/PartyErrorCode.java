@@ -1,6 +1,7 @@
 package com.finapp.party;
 
 import com.finapp.platform.api.ErrorCode;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The failures this module reports to a client.
@@ -9,6 +10,7 @@ import com.finapp.platform.api.ErrorCode;
  * ({@code ERROR_CONTRACT.md} §4), and permanent: a client's error handling is written against
  * these strings, so one is deprecated rather than renamed.
  */
+@RequiredArgsConstructor
 public enum PartyErrorCode implements ErrorCode {
 
     /**
@@ -33,12 +35,6 @@ public enum PartyErrorCode implements ErrorCode {
     private final String code;
     private final int status;
     private final String title;
-
-    PartyErrorCode(String code, int status, String title) {
-        this.code = code;
-        this.status = status;
-        this.title = title;
-    }
 
     @Override
     public String code() {

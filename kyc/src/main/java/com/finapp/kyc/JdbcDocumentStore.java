@@ -11,6 +11,8 @@ import java.sql.Timestamp;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Plain-JDBC document storage (ADR-0033, ADR-0036).
@@ -25,6 +27,7 @@ import java.util.UUID;
  * arbitrates between two instances storing the same bytes, exactly as {@code JdbcKycCaseStore}
  * relies on for the one-open-case rule.
  */
+@RequiredArgsConstructor
 public final class JdbcDocumentStore implements DocumentStore<Connection> {
 
     private static final String TABLE = "kyc.kyc_document";
@@ -32,11 +35,7 @@ public final class JdbcDocumentStore implements DocumentStore<Connection> {
     /** PostgreSQL SQLStates. Locale-independent, unlike the messages. */
     private static final String UNIQUE_VIOLATION = "23505";
 
-    private final DocumentCipher cipher;
-
-    public JdbcDocumentStore(DocumentCipher cipher) {
-        this.cipher = Objects.requireNonNull(cipher, "cipher must not be null");
-    }
+    @NonNull private final DocumentCipher cipher;
 
     @Override
     public Capture appendOrConverge(

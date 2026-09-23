@@ -11,6 +11,7 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
 import java.util.Objects;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * The platform's first production consumer (`P2-TSK-007`): a registration opens a KYC case.
@@ -62,15 +63,13 @@ import java.util.Objects;
  * record, no announcement — because nothing happened, and the trail of why is the registration's
  * own records plus the absence of a case.
  */
+@Slf4j
 public final class CustomerOpenedOpensCase implements InboxEventHandler {
 
     /** {@code EVENT_ARCHITECTURE.md}: one topic per producing module. */
     private static final String TOPIC = "finapp.party";
 
     private static final String EVENT_TYPE = "party.CustomerOpened";
-
-    private static final org.slf4j.Logger log =
-            org.slf4j.LoggerFactory.getLogger(CustomerOpenedOpensCase.class);
 
     private final KycCaseStore<Connection> cases;
     private final CaseKindResolver<Connection> kinds;
