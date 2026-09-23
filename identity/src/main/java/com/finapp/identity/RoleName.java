@@ -103,7 +103,11 @@ public enum RoleName {
                     // standing are a real future split; one role because nothing has yet taken
                     // that decision, and a role for a split nobody has made is a trust
                     // decision nobody took.
-                    PermissionName.FEE_ADMINISTER));
+                    PermissionName.FEE_ADMINISTER,
+                    // P6-TSK-011: approving a payout destination joins the same population -
+                    // four-eyes is two distinct identities (P3-TSK-021's shape), and the
+                    // approval statement refuses the proposer whatever roles they hold.
+                    PermissionName.PAYOUT_DESTINATION_APPROVE));
 
     private final Set<PermissionName> permissions;
 

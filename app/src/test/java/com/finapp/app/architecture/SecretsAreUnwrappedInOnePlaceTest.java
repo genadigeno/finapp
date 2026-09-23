@@ -62,7 +62,12 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     "com.finapp.identity.RawPassword.expose()",
                     "com.finapp.payments.InstrumentToken.expose()",
                     "com.finapp.paymentmethods.TokenReference.expose()",
-                    "com.finapp.paymentmethods.TokenisationGrant.expose()");
+                    "com.finapp.paymentmethods.TokenisationGrant.expose()",
+                    // P6-TSK-011: the payout destination's bank reference and its one-time
+                    // grant - the paymentmethods pair RESTATED in merchant for bank data
+                    // (ADR-0056), named here so unwrapping them is governed like a card token.
+                    "com.finapp.merchant.PayoutDestinationReference.expose()",
+                    "com.finapp.merchant.PayoutDestinationGrant.expose()");
 
     /**
      * The production classes permitted to unwrap a secret.
@@ -246,7 +251,23 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // implements because payments cannot see paymentmethods (INV-PAY-02).
                     // Nothing is held bare, nothing is logged, and a second bridging site is
                     // a review question by construction.
-                    "com.finapp.app.payments.JdbcPaymentParticipants");
+                    "com.finapp.app.payments.JdbcPaymentParticipants",
+                    // P6-TSK-011. The payout destination's reference and grant, wrapped on the
+                    // TokenReference idiom: each validates its charset and bank-detail refusal
+                    // at construction and re-exposes; their expose() methods are unwrapping
+                    // methods above, so every caller is an entry here.
+                    "com.finapp.merchant.PayoutDestinationReference",
+                    "com.finapp.merchant.PayoutDestinationGrant",
+                    // P6-TSK-011. The reference's store: writing its own column, the one place
+                    // the stored reference must exist bare (the JdbcPaymentMethodStore claim).
+                    "com.finapp.merchant.JdbcPayoutDestinationStore",
+                    // P6-TSK-011. The proposal's idempotency fingerprint: the reference is part
+                    // of what the request MEANS, so it enters the canonical form - which is
+                    // SHA-256-hashed in the same expression and never stored or logged bare.
+                    "com.finapp.merchant.PayoutDestinations",
+                    // P6-TSK-011. The grant onto the exchange wire, the one place it
+                    // legitimately goes - the SimulatedTokenisationAdapter claim for bank data.
+                    "com.finapp.merchant.SimulatedPayoutDestinationTokenisation");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

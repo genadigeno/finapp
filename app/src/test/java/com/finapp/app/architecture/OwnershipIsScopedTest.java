@@ -377,6 +377,26 @@ class OwnershipIsScopedTest {
                                         + " exists because a history row belongs to the merchant"
                                         + " it names.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-011, on the JdbcMerchantStore.appendHistory reasoning"
+                                        + " restated rather than re-argued: the destination"
+                                        + " identifier reached this insert through the locking"
+                                        + " read's id = ? AND merchant_id = ? pairing, but the"
+                                        + " merchant itself was named by an operator's URL, so the"
+                                        + " provenance is administered, not owned, and cannot be"
+                                        + " cited as AUTHORITATIVE_ID. What stands in for the"
+                                        + " missing predicate: MERCHANT_ADMINISTER or"
+                                        + " PAYOUT_DESTINATION_APPROVE at the boundary with the"
+                                        + " required reason, asserted with nothing written by"
+                                        + " PayoutDestinationEndpointDatabaseTest's permission"
+                                        + " negatives - and, for the platform's effectuation, the"
+                                        + " enumerated system-actor site. The row records a"
+                                        + " transition the conditional WHERE status = ? write"
+                                        + " proved had happened, in the same transaction."
+                                        + " Append-only at the privilege.")),
+                    Map.entry(
                             "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
                             new Entry(
                                     Scope.OWNER_SCOPED,

@@ -418,6 +418,21 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/fee-schedules/{id}/versions",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/merchants/{merchantId}/fee-schedule",
+                        // P6-TSK-011: the payout destination's operator surface (ADR-0056) -
+                        // propose and withdraw behind MERCHANT_ADMINISTER, approve and reject
+                        // behind PAYOUT_DESTINATION_APPROVE, four-eyes between them. No merchant
+                        // key reaches any of it, and no route returns the provider reference.
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/payout-destinations",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/payout-destinations"
+                                + "/{destinationId}/approval",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/payout-destinations"
+                                + "/{destinationId}/rejection",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/payout-destinations"
+                                + "/{destinationId}/withdrawal",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

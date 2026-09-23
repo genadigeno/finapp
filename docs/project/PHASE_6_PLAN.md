@@ -64,7 +64,7 @@ other's lifecycle.
 | `Merchant` | `merchant` | onboard (operator), suspend/reinstate (operator) | Onboard keyed; state moves converge by machine |
 | `MerchantApiKey` | `merchant` | issue, revoke (operator) | Issue keyed; revoke converges by row count |
 | `FeeSchedule` | `merchant` | create version, assign to merchant (operator) | Versions immutable; assignment conditional |
-| `PayoutDestination` | `merchant` | propose, approve (four-eyes), effect after cooling-off | Propose keyed; approve conditional on proposer ≠ approver |
+| `PayoutDestination` | `merchant` | propose, approve (four-eyes), reject, withdraw; effected by the platform after the cooling-off (`P6-TSK-011`, ADR-0056) | Propose keyed; approve conditional on proposer ≠ approver, in the statement; the rest converge by machine |
 | `MerchantPayout` | `merchant` | initiate (merchant or operator), apply-outcome | Initiate keyed; outcomes conditional (ADR-0051) |
 | `CheckoutSession` | `checkout` | create (merchant), confirm (customer, by session token), expire (sweeper), complete (outcome) | Create keyed per merchant; all transitions conditional |
 | `Order` | `checkout` | created by completion only | Born in the completion's transaction; one per session (partial index) |
@@ -133,9 +133,12 @@ Schema `merchant` (owner `finapp_migrator`, default-deny floor first):
 - `fee_schedule` / `fee_schedule_version` — immutable versions (rate, fixed part, rounding
   mode, refund-fee policy), effective-from, frozen by trigger; assignment table
   merchant ↔ schedule.
-- `payout_destination` — merchant FK, masked/tokenised destination reference (never raw
-  account details in clear — classification at the ceiling), proposal state, proposer,
-  approver (`CHECK proposer <> approver`), cooling-off-until, one-effective partial index.
+- `payout_destination` — merchant FK, the provider's opaque destination reference and a
+  four-character display suffix (never raw account details — refused by `CHECK` if shaped like
+  one), proposal state, proposer, approver (`CHECK approved_by <> proposed_by`), the pinned
+  cooling-off deadline (`CHECK effective_at >= cooling_off_until`), one-open and one-effective
+  partial indexes. History table (`payout_destination_event`). *(Built by `P6-TSK-011` as
+  `merchant` `V006`, ADR-0056.)*
 - `merchant_payout` — merchant FK, amount (`MoneyColumns`), status (5 values, generated),
   our minted idempotency reference (`INV-PAY-04`'s discipline), provider references,
   hold reference, destination version ref. History table.
@@ -165,7 +168,8 @@ per the established ceremony.
 | Confirm session | `POST /v1/checkout/sessions/{token}/confirmation` | session token + customer session | machine convergence |
 | Merchant transactions | `GET /v1/merchant/transactions` | merchant key, tenant-scoped in the statement | — |
 | Merchant payable | `GET /v1/merchant/payable` | merchant key | — |
-| Propose / approve destination | `POST /v1/merchant/payout-destination…` | step-up + four-eyes (`INV-AUD-04`) | propose keyed |
+| Propose / list destination | `POST`/`GET /v1/operator/merchants/{merchantId}/payout-destinations` | operator session, `MERCHANT_ADMINISTER`; step-up when a factor is enrolled | propose keyed |
+| Approve / reject / withdraw | `POST …/payout-destinations/{destinationId}/approval`, `/rejection`, `/withdrawal` | `PAYOUT_DESTINATION_APPROVE` (approve, reject — four-eyes, `INV-AUD-04`; step-up on approve) or `MERCHANT_ADMINISTER` (withdraw) | machine convergence |
 | Initiate payout | `POST /v1/merchant/payouts` | merchant key (or operator) | `@RequiresIdempotencyKey` |
 | Payout status | `GET /v1/merchant/payouts/{id}` | merchant key, own only | — |
 
@@ -193,11 +197,13 @@ tenant's identifiers.
   `ActorType.MERCHANT`; key id in every merchant-API audit record.
 - **Tenancy**: `INV-MER-01` — in the statement, negatively tested per endpoint.
 - **Four-eyes + step-up + cooling-off** on payout destination change (`INV-AUD-04` live;
-  the delivery plan's own requirement): proposer and approver distinct operators (or
-  merchant-then-operator — fixed by the task design), step-up on both sides when a factor
-  is enrolled, effect only after the cooling-off elapses, every step audited with reason.
+  the delivery plan's own requirement): proposer and approver distinct **operators** — fixed
+  by `P6-TSK-011`'s design (ADR-0056 §1: a merchant has only a machine key this phase, so it
+  reaches no destination route) — step-up on both sides when a factor is enrolled, effect only
+  after the cooling-off elapses (and withdrawable during it), every step audited with reason.
 - **Privileged actions**: `MERCHANT_ONBOARD`, `MERCHANT_ADMINISTER`, `FEE_ADMINISTER`,
-  `PAYOUT_APPROVE` — new permissions with negative tests; the money-operating population
+  `PAYOUT_DESTINATION_APPROVE` (planned as `PAYOUT_APPROVE`; named for what it approves by
+  `P6-TSK-011`) — new permissions with negative tests; the money-operating population
   (`LEDGER_OPERATOR`) stays distinct from merchant administration.
 - **Auditable actions**: onboarding, key issue/revoke, schedule changes, destination
   proposal/approval, payout initiation (with reason where operator-driven), session
@@ -270,7 +276,7 @@ captured − fees − refunds − payouts).
 | `finapp.merchant.fee.assessed` | counter | assessments, not amounts (`INV-AUD-02`) |
 | `finapp.merchant.payout` | counter by `outcome` | acting judgements only |
 | `finapp.merchant.payout.unknown.active` / `.age` | gauges | the stuck-payout alert; NaN never zero; fleet-wide, `max()` |
-| `finapp.merchant.destination.pending` | gauge | proposals awaiting approval/cooling-off |
+| `finapp.merchant.destination.pending` | gauge | proposals awaiting approval/cooling-off — built by `P6-TSK-011` with the flow it measures |
 
 All eager from a plain context; a dashboard row; the derived guard takes this table over at
 the flip. No new tag keys expected (`outcome` exists); if one is needed it walks the

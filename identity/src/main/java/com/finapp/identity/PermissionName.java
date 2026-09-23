@@ -169,5 +169,25 @@ public enum PermissionName {
      * Precise vocabulary, coarse bundling — and when a phase does separate them, the
      * separation is expressible without inventing a permission after the fact.
      */
-    FEE_ADMINISTER
+    FEE_ADMINISTER,
+
+    /**
+     * Approve or reject a proposed payout destination (`P6-TSK-011`, ADR-0056 — the plan's
+     * {@code PAYOUT_APPROVE}, named for what it approves: payouts themselves have no approval
+     * step, and a permission read as "approve payouts" is one somebody grants by mistake).
+     * Names {@code merchant.PayoutDestinationApproved} and its siblings; ships with its real
+     * check sites, the {@code .../payout-destinations/'{id}'/approval} and {@code /rejection}
+     * routes.
+     *
+     * <p><strong>Four-eyes is distinct identities, not distinct permissions</strong> — the
+     * {@code P3-TSK-021} shape, where one {@code LEDGER_ADJUST} population both proposes and
+     * approves: an operator may hold this and {@link #MERCHANT_ADMINISTER} together, and the
+     * approval statement refuses the proposer whatever they hold ({@code INV-AUD-04}).
+     *
+     * <p><strong>Held by {@link RoleName#MERCHANT_ADMINISTRATOR} today</strong>, the
+     * {@link #FEE_ADMINISTER} reasoning: its own permission because a treasury desk approving
+     * where money goes is a real future split, one role because nothing has yet taken that
+     * decision.
+     */
+    PAYOUT_DESTINATION_APPROVE
 }

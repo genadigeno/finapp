@@ -352,11 +352,27 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `merchant.FeeScheduleCreated` | No | An operator created a fee schedule; the record names the schedule by identifier with its name and currency. |
 | `merchant.FeeScheduleVersionCreated` | **Yes** | An operator created a fee schedule version - immutable, effective forward; the record names the version by identifier with its terms; the reason is required. |
 | `merchant.MerchantFeeScheduleAssigned` | **Yes** | An operator assigned a merchant to a fee schedule; the record names the merchant and both schedules by identifier; the reason is required. |
+| `merchant.PayoutDestinationProposed` | **Yes** | An operator proposed a payout destination for a merchant; the record names the destination and the merchant by identifier, never the bank reference; the reason is required. |
+| `merchant.PayoutDestinationApproved` | **Yes** | A second operator, distinct from the proposer, approved a payout destination and its cooling-off started; the reason is required. |
+| `merchant.PayoutDestinationApprovalRefused` | **Yes** | The proposer of a payout destination tried to approve it and was refused (INV-AUD-04); recorded as DENIED with the attempted reason. |
+| `merchant.PayoutDestinationRejected` | **Yes** | An operator rejected a proposed payout destination - terminal; the reason is required. |
+| `merchant.PayoutDestinationWithdrawn` | **Yes** | An operator withdrew a payout destination change before it took effect - terminal; the reason is required. |
+| `merchant.PayoutDestinationEffective` | No | The platform made an approved payout destination effective once its cooling-off elapsed, superseding the previous one in the same transaction; the record names both by identifier. |
 | `checkout.CheckoutSessionCreated` | No | A merchant opened a checkout session; the record names the session and the merchant by identifier, never the token and never what was bought. |
 | `checkout.CheckoutSessionConfirmed` | No | A customer confirmed a checkout session; the record names the session and the payment intent by identifier. |
 | `checkout.OrderCreated` | No | A capture completed a checkout session and produced its order; the record names the order, the session and the journal entry that paid for it. |
 | `checkout.CheckoutSessionExpired` | No | The expiry sweeper ended a checkout session whose offer had run out; the record names the session and the state it expired from. |
 | `checkout.CheckoutSessionAbandoned` | **Yes** | A merchant withdrew a checkout session before it was paid; the record names the session and the merchant, and the reason is required. |
+
+**Five of the six payout destination actions require a reason, and the sixth is the
+platform's** (`P6-TSK-011`, ADR-0056). Proposing, approving, rejecting and withdrawing are each an
+operator's judgement about where a counterparty's money goes, and the trail must be able to say
+why. `merchant.PayoutDestinationApprovalRefused` is the refused self-approval, recorded as
+`DENIED` in a transaction that commits nothing else — it keeps the attempted reason, the only
+record of what the refused actor said they were doing. `merchant.PayoutDestinationEffective`
+needs none: nobody decided anything when the cooling-off elapsed, and the decisions are already
+on the trail as the proposal and the approval. No record ever carries the provider reference or
+its suffix (`INV-AUD-02`).
 
 **Four of the five checkout actions require no reason, and the fifth does** — the split is
 `INV-AUD-03` working rather than an inconsistency (`P6-TSK-007`, `P6-TSK-008`). Creating,

@@ -584,9 +584,15 @@ exposure.
 
 *(The list read "3, 8, 10, 13, 14" until the 2026-09-21 transition into the checkout phase:
 the statement has named "payout destination changes" — that phase's subject — since this
-row was written, while the phase list omitted it; the first implemented four-eyes subject
-is `P6-TSK-011`. The note lives on its own line because the register guard token-parses
-the Phase line — prose digits there would change which phases demand this row.)*
+row was written, while the phase list omitted it. The note lives on its own line because the
+register guard token-parses the Phase line — prose digits there would change which phases
+demand this row.)*
+
+*(Implemented subjects: **manual adjustments** first, by `P3-TSK-021` (ledger `V010`), and
+**payout destination changes** second, by `P6-TSK-011` (merchant `V006`, ADR-0056) — the same
+shape both times: two authenticated acts, approver ≠ initiator as a `CHECK`, a frozen payload,
+lock-then-look approval. This note read "the first implemented four-eyes subject is
+`P6-TSK-011`" until that task's design found adjustments had already been one since Phase 3.)*
 
 ---
 

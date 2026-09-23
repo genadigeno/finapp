@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 136 "Previously" blocks, newest first, from `P6-TSK-010` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 137 "Previously" blocks, newest first, from `P6-TSK-015` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,45 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P6-TSK-015` — the merchant refund's funding bound** — `COMPLETE` (2026-09-23). **M6.4
+closes: a merchant can refund a sale in full, and the only credit a refund extends is the fee
+the platform keeps.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A `RETURNED` full refund lands the payable at exactly zero | End to end: one hold of the 96.80 net, released; independent SQL and the ledger's derivation agree |
+| `RETAINED` per the ADR, driven both ways | Admitted, landing at exactly −3.20; beyond the allowance, refused with nothing written |
+| A refund racing a capture stays inside the bound, counted | Exactly two of three admitted; the refused one funded by the merchant's next capture |
+| Phase 5's wallet-refund suite untouched | Unchanged and green; the wallet hold proven to the cent by probe |
+
+### The subtlety the design found
+
+The fee share a refund returns is allocated in COMPLETION order (`P6-TSK-014`), so at dispatch
+it is not yet known. A one-cent fee refunded in halves returns the cent to one half, depending
+on the order they complete. So the hold covers every order still possible:
+- **exact** when the refund covers the capture's remainder (every full refund);
+- otherwise `⌊fee × refunded / gross⌋` (less one under `HALF_EVEN` when odd). That is never
+  above what any order returns, and proved by enumerating every order.
+
+### The decision (ADR-0054, `INV-MER-07`)
+
+The merchant funds the **net** under either policy. Under `RETAINED` the fee share it keeps
+owing may take the payable below zero; the merchant then owes the platform that fee, recovered
+from its next captures before any payout. Beyond that, a refund is refused. The policy decides
+what is posted, never what must be available.
+
+### What the gate found
+
+- **The new invariant's first wording was false**: a capture whose fee exceeds its sale already
+  takes the payable negative with no refund. It now reads *only by fee charged and not
+  collected*.
+- **The random sweep was blind to `HALF_EVEN` ties**: the probe survived it. An exhaustive
+  sweep now catches it.
+- The decline path lacked a test, and a harness artifact masked a probe as a 500. Both fixed.
+- `## Active Work` and `## Next Task` below were stale since early in the phase. Corrected.
 
 ### Previously
 

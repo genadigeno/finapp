@@ -93,10 +93,36 @@ explainable.
 
 ## 6. The payout destination — a proposal flow, not a field
 
-`PROPOSED → APPROVED → EFFECTIVE` with `REJECTED` and `WITHDRAWN` terminal. The proposer
-and approver are distinct authenticated actors (`INV-AUD-04`, enforced in the statement);
-approval starts the cooling-off clock; only an `EFFECTIVE` destination receives payouts,
-and a dispatch reads the currently effective one in its own transaction. Every step
-audited with actor, reason and correlation. One `EFFECTIVE` destination per merchant
-(partial unique index); a new one taking effect supersedes the old in the same
-transaction.
+Stated in full by `P6-TSK-011` and [ADR-0056](../adr/ADR-0056-payout-destination-four-eyes.md):
+
+```
+PROPOSED ──approve (a second operator, step-up)──► APPROVED ──cooling-off elapsed (the platform)──► EFFECTIVE ──a later one effected──► SUPERSEDED
+   │ reject (an approver) ──► REJECTED               │ withdraw ──► WITHDRAWN
+   └ withdraw ──► WITHDRAWN
+```
+
+| State | Meaning | Produced by |
+|---|---|---|
+| `PROPOSED` | An operator proposed the destination. Nothing pays to it | An operator with `MERCHANT_ADMINISTER`, keyed |
+| `APPROVED` | A second, distinct operator approved it; the cooling-off deadline is pinned on the row. Nothing pays to it yet | An operator with `PAYOUT_DESTINATION_APPROVE` who is not the proposer (`INV-AUD-04`) |
+| `EFFECTIVE` | The destination payouts go to — at most one per merchant | The platform's effectuation sweep, once the deadline has passed |
+| `SUPERSEDED` | A later destination took effect in its place, in the same transaction | The same sweep |
+| `REJECTED` | The second pair of eyes said no | An approver |
+| `WITHDRAWN` | Stopped before it took effect — during the proposal **or the cooling-off** | An operator with `MERCHANT_ADMINISTER` |
+
+- The proposer and approver are distinct authenticated operators, enforced in the domain, in
+  the approval statement and by `CHECK` — a merchant's API key reaches none of this (ADR-0056
+  §1). Each needs a `MULTI_FACTOR` session exactly when they have an active factor.
+- **The cooling-off is a control only because it can be acted on**: `APPROVED → WITHDRAWN` is
+  the edge that stops a change nobody meant. The deadline is `approved_at` plus the configured
+  period (default 72 hours), pinned at approval; the schema refuses an effect before it.
+- **One open change per merchant** (proposed or approved) and **one `EFFECTIVE` destination**,
+  each a partial unique index. The effectuation supersedes the old row before it effects the
+  new one, and both commit together.
+- A payout dispatch reads the currently effective destination in its own transaction; a change
+  still cooling off changes nothing there. Each change is its own immutable row, so the id a
+  payout records is the destination version it was sent to.
+- Every step is audited with actor, reason and correlation — the refused self-approval
+  included, as `DENIED`.
+- The platform holds the provider's opaque reference and a four-character suffix, never bank
+  details.

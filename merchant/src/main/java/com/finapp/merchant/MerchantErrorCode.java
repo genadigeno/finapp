@@ -89,7 +89,57 @@ public enum MerchantErrorCode implements ErrorCode {
     FEE_CURRENCY_MISMATCH(
             "merchant.FeeCurrencyMismatch",
             422,
-            "The fee schedule's currency does not match.");
+            "The fee schedule's currency does not match."),
+
+    /**
+     * The proposer of a payout destination tried to approve it (`P6-TSK-011`,
+     * {@code INV-AUD-04}). A {@code 409}, the ledger's {@code SelfApprovalRefused} status for the
+     * same control: the request is well formed, and the refusal is the state of the change —
+     * it still waits for a second person. The refusal is audited as {@code DENIED}.
+     */
+    SELF_APPROVAL_REFUSED(
+            "merchant.SelfApprovalRefused",
+            409,
+            "A payout destination change requires a second approver distinct from its proposer."),
+
+    /**
+     * The merchant already has an open payout destination change (`P6-TSK-011`): one change at
+     * a time, so a cooling-off never has to arbitrate between two pending destinations. The
+     * remedy is to withdraw the open change first.
+     */
+    DESTINATION_CHANGE_PENDING(
+            "merchant.DestinationChangePending",
+            409,
+            "A payout destination change is already open for this merchant; withdraw it first."),
+
+    /**
+     * The payout destination change is no longer open to the decision asked of it — approved,
+     * rejected, withdrawn or taken effect since (`P6-TSK-011`). A {@code 409}: the change's
+     * current state, not the request, is what refuses.
+     */
+    DESTINATION_CHANGE_NOT_OPEN(
+            "merchant.DestinationChangeNotOpen",
+            409,
+            "The payout destination change is no longer open to this decision."),
+
+    /**
+     * The payout provider explicitly refused the destination grant — expired, used or unknown
+     * (`P6-TSK-011`, the {@code paymentmethods.InstrumentNotTokenised} shape). The caller's to
+     * renew.
+     */
+    DESTINATION_NOT_TOKENISED(
+            "merchant.DestinationNotTokenised",
+            422,
+            "The destination grant was refused; obtain a fresh grant and retry."),
+
+    /**
+     * The destination could not be tokenised: the provider was unreachable, slow, unintelligible
+     * or unconfigured (`P6-TSK-011`). Nothing was written, and nothing rawer was kept instead.
+     */
+    DESTINATION_TOKENISATION_UNAVAILABLE(
+            "merchant.DestinationTokenisationUnavailable",
+            503,
+            "The destination could not be tokenised right now; retry later.");
 
     private final String code;
     private final int status;

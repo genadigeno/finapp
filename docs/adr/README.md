@@ -73,6 +73,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0053](ADR-0053-checkout-session-and-order.md) | Checkout session and order: two aggregates, expiry gates dispatch, landed money always wins | Proposed | 6 | Checkout · Merchant · Payments |
 | [0054](ADR-0054-merchant-refund-funded-by-its-net.md) | A merchant refund is funded by its net; the only credit it extends is the fee the platform keeps | Proposed | 6 | Merchant · Payments · Ledger |
 | [0055](ADR-0055-lombok-compile-time-boilerplate.md) | Lombok is the project-standard boilerplate reducer, at compile time only | Proposed | 6 | Build |
+| [0056](ADR-0056-payout-destination-four-eyes.md) | A payout destination changes by two operators, a conditional step-up and a cancellable cooling-off; bank details never enter | Proposed | 6 | Merchant · Identity · Security |
 
 ## Anticipated ADRs
 

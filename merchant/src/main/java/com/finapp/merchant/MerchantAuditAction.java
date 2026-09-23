@@ -113,7 +113,75 @@ public enum MerchantAuditAction implements AuditableAction {
             "merchant.MerchantFeeScheduleAssigned",
             "An operator assigned a merchant to a fee schedule; the record names the merchant"
                     + " and both schedules by identifier; the reason is required.",
-            true);
+            true),
+
+    /**
+     * An operator proposed where a merchant's payouts should go (`P6-TSK-011`, ADR-0056).
+     * Nothing pays to it until a second operator approves and its cooling-off elapses.
+     * <strong>Reasoned, always</strong> ({@code INV-AUD-03}): a destination change is the act
+     * that redirects a counterparty's money. The record names the destination and the merchant
+     * by identifier and <strong>never the bank reference or its suffix</strong>
+     * ({@code INV-AUD-02}). Emitted by the creating call only — a keyed replay records nothing.
+     */
+    PAYOUT_DESTINATION_PROPOSED(
+            "merchant.PayoutDestinationProposed",
+            "An operator proposed a payout destination for a merchant; the record names the"
+                    + " destination and the merchant by identifier, never the bank reference;"
+                    + " the reason is required.",
+            true),
+
+    /**
+     * A second operator, distinct from the proposer, approved the destination
+     * ({@code INV-AUD-04}); its cooling-off started, and the record carries the deadline.
+     */
+    PAYOUT_DESTINATION_APPROVED(
+            "merchant.PayoutDestinationApproved",
+            "A second operator, distinct from the proposer, approved a payout destination and its"
+                    + " cooling-off started; the reason is required.",
+            true),
+
+    /**
+     * The proposer tried to approve their own destination and was refused — recorded as
+     * {@code DENIED} in a transaction that commits nothing else, because a control with no
+     * evidence that it ever refused anything is one nobody can show is working
+     * ({@code INV-AUD-03}, {@code INV-AUD-04}). The attempted approval's reason is kept: it is
+     * the only record of what the refused actor said they were doing.
+     */
+    PAYOUT_DESTINATION_APPROVAL_REFUSED(
+            "merchant.PayoutDestinationApprovalRefused",
+            "The proposer of a payout destination tried to approve it and was refused"
+                    + " (INV-AUD-04); recorded as DENIED with the attempted reason.",
+            true),
+
+    /** The second pair of eyes said no: {@code PROPOSED → REJECTED}, terminal. */
+    PAYOUT_DESTINATION_REJECTED(
+            "merchant.PayoutDestinationRejected",
+            "An operator rejected a proposed payout destination - terminal; the reason is"
+                    + " required.",
+            true),
+
+    /**
+     * An operator withdrew a change before it took effect — during the proposal, or during the
+     * cooling-off, which is the act that makes the cooling-off a control. Terminal.
+     */
+    PAYOUT_DESTINATION_WITHDRAWN(
+            "merchant.PayoutDestinationWithdrawn",
+            "An operator withdrew a payout destination change before it took effect - terminal;"
+                    + " the reason is required.",
+            true),
+
+    /**
+     * The platform made an approved destination effective once its cooling-off elapsed, and
+     * superseded the previous one in the same transaction. The platform's own act, through the
+     * effectuation sweep's enumerated {@code enterSystem()} site — no reason, because no person
+     * decided anything at that moment; the decisions are the proposal and approval records.
+     */
+    PAYOUT_DESTINATION_EFFECTIVE(
+            "merchant.PayoutDestinationEffective",
+            "The platform made an approved payout destination effective once its cooling-off"
+                    + " elapsed, superseding the previous one in the same transaction; the record"
+                    + " names both by identifier.",
+            false);
 
     private final String code;
     private final String description;

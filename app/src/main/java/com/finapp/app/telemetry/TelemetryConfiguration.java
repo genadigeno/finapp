@@ -86,6 +86,22 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The open payout destination changes, as a gauge (`P6-TSK-011`, {@code PHASE_6_PLAN.md}
+     * §15).
+     *
+     * <p>Arrives with the flow it measures — the trigger-reached rule, `P2-TSK-010`'s reasoning.
+     * Same {@code DataSource} reasoning as its siblings.
+     */
+    @Bean
+    MerchantMetrics merchantMetrics(
+            com.finapp.merchant.PayoutDestinationStore<java.sql.Connection> payoutDestinationStore,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry) {
+        return new MerchantMetrics(payoutDestinationStore, dataSource::getConnection, clock, registry);
+    }
+
+    /**
      * The balance-projection drift, as a gauge (`P3-TSK-010`, ADR-0041 rule 2).
      *
      * <p>The verification job's whole schedule is this gauge's cache floor: a scrape past the

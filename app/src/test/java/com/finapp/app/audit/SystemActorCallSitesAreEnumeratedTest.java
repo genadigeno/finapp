@@ -180,7 +180,19 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " its own state (ABANDONED) and its own required reason, and the two"
                         + " must stay distinguishable in the trail. The scope wraps the whole"
                         + " tick because the candidate read is the platform's too - there is no"
-                        + " other actor anywhere in this path to claim it."));
+                        + " other actor anywhere in this path to claim it."),
+                    Map.entry(
+                            "com.finapp.merchant.PayoutDestinationEffectuation.sweep",
+                    "The payout destination effectuation (P6-TSK-011, ADR-0056 section 3): a"
+                        + " cooling-off elapsing is the expiry sweep's case again, seventh"
+                        + " occurrence - an act with no requester. The decisions were people's"
+                        + " and are recorded as theirs: the proposal and the approval, each its"
+                        + " own audit record with its own actor and reason. Attributing the"
+                        + " EFFECT to the approver would record them as having acted days after"
+                        + " they did, at a moment they chose nothing; the platform making the"
+                        + " approved destination effective when its pinned deadline passes is"
+                        + " exactly what happened. The scope wraps the whole tick for the same"
+                        + " reason as the expiry sweep's."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

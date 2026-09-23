@@ -84,9 +84,10 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("MERCHANT_ADMINISTRATOR grants exactly the three counterparty permissions")
-    void merchantAdministratorGrantsExactlyThree() {
-        // One role, three permissions (P6-TSK-003; FEE_ADMINISTER by P6-TSK-004): one
+    @DisplayName("MERCHANT_ADMINISTRATOR grants exactly the four counterparty permissions")
+    void merchantAdministratorGrantsExactlyFour() {
+        // One role, four permissions (P6-TSK-003; FEE_ADMINISTER by P6-TSK-004;
+        // PAYOUT_DESTINATION_APPROVE by P6-TSK-011, four-eyes being distinct identities): one
         // merchant-administering population - the LEDGER_OPERATOR bundling reasoning - while
         // the vocabulary stays precise so the onboarding endpoint, the reasoned state moves
         // and the pricing surfaces each check their own. Exact set, so the role quietly
@@ -103,7 +104,8 @@ class RoleNameTest {
                 .containsExactlyInAnyOrder(
                         PermissionName.MERCHANT_ONBOARD,
                         PermissionName.MERCHANT_ADMINISTER,
-                        PermissionName.FEE_ADMINISTER);
+                        PermissionName.FEE_ADMINISTER,
+                        PermissionName.PAYOUT_DESTINATION_APPROVE);
     }
 
     @Test

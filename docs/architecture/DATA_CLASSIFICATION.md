@@ -679,6 +679,28 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `payment_fee_pin` | `gross_scale` | `INTERNAL` | As `gross_currency` |
 | `payment_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was agreed — with `pinned_by`, the provenance of a money decision |
 | `payment_fee_pin` | `pinned_by` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model |
+| `payout_destination` | `id` | `INTERNAL` | An identifier of a thing — **the destination's version**: each change is its own row, so this is the value a payout records (`P6-TSK-011`, ADR-0056) |
+| `payout_destination` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `payout_destination` | `destination_reference` | `RESTRICTED-PII` | **The provider's reference for a bank account** — `payment_method.token_reference`'s reasoning for bank data: it resolves at the provider to where a merchant's money goes, so it is never in a log, an event payload or an API response, and `PayoutDestinationReference` carries that structurally. Refused by `CHECK` if shaped like an account number, so raw bank details cannot be stored here at all |
+| `payout_destination` | `display_suffix` | `RESTRICTED-PII` | **A partial account identifier** — `payment_method.display_suffix`'s reasoning: four characters an authorised operator reads to know which account they are approving, and its ceiling is still the account it partially names |
+| `payout_destination` | `status` | `CONFIDENTIAL` | Where a counterparty's money is in the middle of being redirected is itself sensitive — a pending change is the fact an attacker would most like to know is cooling off |
+| `payout_destination` | `proposed_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model |
+| `payout_destination` | `proposed_at` | `CONFIDENTIAL` | Dates a destination change |
+| `payout_destination` | `proposal_reason` | `RESTRICTED-PII` | **Free text written by a person** — `audit_record.reason`'s ceiling; kept on the row so the approver reads what they approve, and never returned by the API |
+| `payout_destination` | `approved_by` | `RESTRICTED-PII` | The second operator's identity — `audit_record.actor_id`'s model |
+| `payout_destination` | `approved_at` | `CONFIDENTIAL` | Dates the four-eyes decision |
+| `payout_destination` | `cooling_off_until` | `CONFIDENTIAL` | When a redirection of money takes effect — the window an attacker would wait out |
+| `payout_destination` | `effective_at` | `CONFIDENTIAL` | When payouts started going to this destination |
+| `payout_destination` | `superseded_at` | `CONFIDENTIAL` | When they stopped |
+| `payout_destination` | `ended_by` | `RESTRICTED-PII` | The operator who rejected or withdrew the change |
+| `payout_destination` | `ended_at` | `CONFIDENTIAL` | Dates a rejection or withdrawal |
+| `payout_destination_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `payout_destination_event` | `payout_destination_id` | `INTERNAL` | An identifier of a thing |
+| `payout_destination_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `payout_destination_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `payout_destination_event` | `actor_id` | `RESTRICTED-PII` | The acting identity, or the platform's for an effectuation — `audit_record.actor_id`'s model |
+| `payout_destination_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `payout_destination_event` | `occurred_at` | `CONFIDENTIAL` | Dates a move in a destination change |
 
 ### `checkout` — *added by `P6-TSK-006`*
 

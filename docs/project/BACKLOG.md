@@ -7589,9 +7589,11 @@ negative payable** — `COMPLETE` (2026-09-23)
   them). **The full battery deliberately skipped on the owner's instruction; no fleet-wide
   database or kafka counts claimed.**
 
-**P6-TSK-011 — The payout destination: step-up, four-eyes, cooling-off** — `READY`
+**P6-TSK-011 — The payout destination: step-up, four-eyes, cooling-off** — `COMPLETE` (2026-09-23)
 - **Objective**: the platform's **first four-eyes primitive** (`INV-AUD-04` live) on the
-  action that redirects merchant money. Bounded context 12 with Identity.
+  action that redirects merchant money. Bounded context 12 with Identity. *(In fact its
+  second subject: `P3-TSK-021` built the first, on manual adjustments. Found by the design
+  below; the objective is kept as written.)*
 - **Scope**: the proposal flow (`CHECKOUT_MERCHANT_LIFECYCLES.md` §6): propose (keyed) →
   approve (a **different** authenticated actor, refused in the statement otherwise;
   step-up on both sides when a factor is enrolled — the `P4-TSK-007` pattern) → effective
@@ -7603,8 +7605,100 @@ negative payable** — `COMPLETE` (2026-09-23)
   propose/approve/supersede races counted to one effective row.
 - **Risk**: High (a wrong destination is money to an attacker). **Cx**: L. **DoD**:
   `DOD-SEC`, `DOD-DOMAIN`
+- **Design decisions (2026-09-23, ADR-0056)**: two distinct **operators**, not
+  merchant-then-operator (a merchant has only a machine key this phase, so it reaches no
+  destination route); `MERCHANT_ADMINISTER` proposes and withdraws, a new
+  `PAYOUT_DESTINATION_APPROVE` (the plan's `PAYOUT_APPROVE`, named precisely) approves and
+  rejects, one role holding both — four-eyes is distinct identities, `P3-TSK-021`'s shape; the
+  cooling-off (default `PT72H`) pinned on the row at approval and **withdrawable** during it;
+  `EFFECTIVE` produced by a leaderless sweep that supersedes the old row first; bank details
+  never enter (grant → provider reference + four-character suffix). **Found by the design**: this
+  is four-eyes' SECOND subject — `P3-TSK-021` built the first on manual adjustments — and the
+  catalogue's "first implemented subject" note is corrected.
+- **Completion gate (2026-09-23)** — eighteen probes, all caught, each restore verified
+  byte-identical:
+  - **Four-eyes, at every rank.** Dropping the aggregate's proposer check fails the hermetic,
+    database and HTTP refusals. Making the refusal's record lie fails the committed-`DENIED`
+    assertion at both levels. Turning `V006`'s self-approval CHECK into a tautology fails the
+    raw-SQL half. Dropping the approval's row lock fails the ten-approver race and the
+    withdrawal-vs-deadline race.
+  - **The accept clauses have teeth.** A dispatch during the cooling-off uses the prior
+    destination: caught once the deadline is gone from every layer (finding 1). The counted
+    races each have their own arbiter, probed: the one-open index, the supersession and the
+    lock.
+  - **The claimed boundaries**, each probed:
+    - the approval granted to a permission the money-operating population holds: a
+      `LEDGER_OPERATOR` approves where the negative test owes 403 (`INV-AUD-03`);
+    - the merchant pairing dropped from the lock's statement: another merchant's path reaches
+      the change where one 404 is owed (`INV-MER-01`);
+    - the refusal echoing the refused value, and the grant printing its own: both caught by the
+      shape tests, and the HTTP response never carried the message (`INV-AUD-02`);
+    - the approval's step-up removed: caught (`INV-IDN-05`);
+    - the international-account shape rule removed: caught on both the grant side and the
+      reference side.
+- **What the gate found, and fixed**:
+  - (1) **A fifth cooling-off layer the design had not counted.** The probe removed the
+    deadline from `isDue`, `effect()`, the constructor and the CHECK, and the timeline test
+    still PASSED, because the sweep's candidate query filters `cooling_off_until <= ?` and never
+    offered the row. Only the raw-SQL test caught that probe. A second probe removed the filter
+    too, and the timeline test failed as the accept clause requires. Both are recorded.
+  - (2) **Two tests were listed as demonstrated but had never failed under a probe**
+    (`theFourEyesFlowOverHttp`, `concurrentApprovalsLeaveOneApproval`). Both were probed, and
+    both are caught.
+  - (3) **ADR-0056 claimed invariants no probe had demonstrated.** `INV-AUD-02`, `INV-AUD-03`
+    and `INV-MER-01` were each probed and caught. `INV-LIFE-01/-02/-04` was withdrawn instead,
+    under `MUTATION_TESTING.md` §3's beneficiary precedent: a destination is not a
+    money-moving operation. The register records those probes without claiming them.
+  - (4) **Three untested claims**: the gauge's registration, a withdrawal racing the deadline,
+    and the merchant-key refusal. Tests were added for all three.
+  - (5) **Three inaccuracies**: "the first four-eyes subject" (in the catalogue,
+    `CURRENT_STATE` and this entry's objective), the plan's permission name, and the lifecycle
+    document's missing `SUPERSEDED`. All corrected.
+  - (6) **The probe runner's console summary cut each failure list at three.** The permission
+    probe's fourth catcher, the negative test itself, was missed on first reading. An
+    instrumented run confirmed it, and the register was then written from the untruncated log.
+- **Findings recorded with owners**:
+  - **One corrupt row would stall the sweep for every merchant.** The candidate read maps every
+    row through the aggregate, which refuses a corrupt row at read. The CHECK probe's cascade
+    surfaced it. It is unreachable while `V006`'s CHECKs mirror every read-time refusal, and is
+    recorded as the sweep's residual (MINOR).
+  - **A proposal refused as a second open change has already spent a provider grant.** The
+    first transaction does not pre-check the one-open rule (MINOR). A pre-check could not
+    arbitrate a race anyway, so the index stays the arbiter.
+  - **The conditional step-up now exists in three copies.** Recorded in `CURRENT_STATE.md`
+    §Known Architectural Debt, to be extracted at the fourth caller (ADR-0056 §Follow-up).
+  - **`P6-TSK-012` inherits the dispatch's read** (its entry): `effectiveFor`, refusal when none
+    is effective, and the destination id recorded.
+- **Multi-instance `PASS`.** Every decision is arbitrated in PostgreSQL:
+  - each destination's decisions by its row lock (probed), with the conditional `status = ?`
+    belt beneath it;
+  - one open change and one effective destination per merchant by partial unique indexes
+    (probed);
+  - the leaderless sweep's instances, racing each other or an operator's withdrawal, as one
+    counted race.
 
-**P6-TSK-012 — The payout: hold-then-dispatch on the payable** — `PLANNED`
+  Nothing rests on one JVM.
+- **Registers**:
+  - `MUTATION_TESTING`: §2 +9 rows, §3 +1 paragraph;
+  - ADR-0056 `Proposed` (its invariant list corrected);
+  - merchant `V006`: two tables, two partial unique indexes, an edge trigger and the frozen
+    proposal;
+  - five operations over four paths, and the OpenAPI baseline;
+  - `PAYOUT_DESTINATION_APPROVE` joins `MERCHANT_ADMINISTRATOR`;
+  - `AUDITABLE_ACTIONS` +6, `ERROR_CONTRACT` +5, `DATA_CLASSIFICATION` +22 rows;
+  - `DISTRIBUTED_EXECUTION` §3 +2 rows, one gauge;
+  - `CHECKOUT_MERCHANT_LIFECYCLES` §6, `PHASE_6_PLAN` §4/§8/§9/§11/§15, the `INV-AUD-04`
+    catalogue note.
+
+  No event, no posting.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1488 tests across 14 modules, 0 failures**, and **173 targeted database tests across 15
+  suites, 0 failures**: every merchant suite, both checkout suites, the first four-eyes
+  subject's two adjustment suites, deny-by-default, role-assignment concurrency, the MFA-bypass
+  enumeration and column classification. **The full battery deliberately skipped on the owner's
+  instruction; no fleet-wide database or kafka counts claimed.**
+
+**P6-TSK-012 — The payout: hold-then-dispatch on the payable** — `READY`
 - **Objective**: ADR-0051 whole — money leaves the platform under Phase 5's disciplines
   pointed outward. Bounded context 12.
 - **Scope**: initiate (merchant key or operator, keyed) → the bound judged inside the
@@ -7625,7 +7719,10 @@ negative payable** — `COMPLETE` (2026-09-23)
   moves nothing), and `paidOut` splits out of `other` as its own term. **Inherited from `P6-TSK-015`**
   (ADR-0054): a payable left negative by a `RETAINED` fee refuses every payout until later
   captures restore it, and a refund dispatched while a payout is in flight is judged against
-  what the payout's hold leaves.
+  what the payout's hold leaves. **Inherited from `P6-TSK-011`** (ADR-0056 §9): the dispatch reads
+  `PayoutDestinations.effectiveFor` in its own transaction, refuses when the merchant has no
+  `EFFECTIVE` destination, and records the destination id it used (each change is its own
+  immutable row, so the id is the destination version).
 - **Risk**: High (outbound money). **Cx**: XL. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`
 
 **P6-TSK-013 — The meters and the dashboard row** — `PLANNED`
@@ -7770,7 +7867,8 @@ negative payable** — `COMPLETE` (2026-09-23)
   targeted runs never included the suite. The post-flip battery cannot be green until it is fixed.
 - **Input from `P6-TSK-015`'s gate**: `DECISIONS.md` carries no Phase 6 section. ADR-0050…0054
   are indexed only in `docs/adr/README.md`, which is the omission `P2-DOC-001` found once
-  before and corrected at its review.
+  before and corrected at its review. *(`P6-TSK-011` adds ADR-0056 to the same set: the Phase 6
+  section owes it too.)*
 - **Deps**: everything above. **Accept**: the review's verdict flips the status; the
   post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
 

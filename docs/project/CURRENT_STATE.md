@@ -209,7 +209,8 @@ Status: **`IN_PROGRESS`** (2026-09-21) — entry gate passed, all twelve criteri
 `Proposed` (the fee model — question 8, the standing High — decided **before** any posting
 exists; payout accounting; merchant API identity; checkout session and order — question 7
 confirmed), the `INV-MER-01`…06 group catalogued (**93 invariants**, with `INV-AUD-04`
-gaining its first subject), `PHASE_6_PLAN.md`, 16 backlog items across seven milestones,
+gaining its second subject: the payout destination, after Phase 3's adjustments. This read
+"first" until `P6-TSK-011`'s design), `PHASE_6_PLAN.md`, 16 backlog items across seven milestones,
 `CHECKOUT_MERCHANT_LIFECYCLES.md`, the glossary and §5 gate extension. Started the same day
 with `P6-TSK-001` (the modules and floors, complete); M6.1 open at 1 of 3.
 
@@ -273,57 +274,56 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TSK-011` — the payout destination: step-up, four-eyes, cooling-off** — `READY`. **M6.5
-opens.** The platform's first four-eyes primitive (`INV-AUD-04` live) on the action that
-redirects merchant money: propose → approve by a DIFFERENT authenticated actor (refused in the
-statement otherwise, step-up on both sides when a factor is enrolled) → effective after a
-cooling-off, one `EFFECTIVE` destination per merchant. Scope, acceptance and DoD in the backlog
-entry. **What it inherits from M6.4**: payouts will judge debits against a payable that can now
-be negative by a retained fee (ADR-0054), which refuses every payout until later captures
-restore it. That is `P6-TSK-012`'s to test, and written into its accept.
+**`P6-TSK-012` — the payout: hold-then-dispatch on the payable** — `READY`. **M6.5 at 1 of
+2.** ADR-0051 whole: money leaves the platform under Phase 5's disciplines pointed outward. The
+bound is judged inside the payable account's lock with in-flight holds cumulative
+(`INV-MER-05`); the hold is placed; `DISPATCHED` and our minted reference are committed before
+the wire; completion releases the hold and posts the payout, failure releases it, and `UNKNOWN`
+leaves it standing until a query resolves it. Scope, acceptance and DoD in the backlog entry.
+**What it inherits from `P6-TSK-011`** (ADR-0056 §9): the dispatch reads
+`PayoutDestinations.effectiveFor` in its own transaction, refuses when the merchant has no
+`EFFECTIVE` destination, and records the destination id it used. Each change is its own
+immutable row, so the id is the destination's version. **And from M6.4**: a payable left
+negative by a retained fee refuses every payout until later captures restore it (ADR-0054),
+already written into its accept.
 
 ### Just completed
 
-**`P6-TSK-015` — the merchant refund's funding bound** — `COMPLETE` (2026-09-23). **M6.4
-closes: a merchant can refund a sale in full, and the only credit a refund extends is the fee
-the platform keeps.**
+**`P6-TSK-011` — the payout destination: step-up, four-eyes, cooling-off** — `COMPLETE`
+(2026-09-23). **M6.5 opens: no one person can redirect a merchant's money, and no change
+redirects it at once.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| A `RETURNED` full refund lands the payable at exactly zero | End to end: one hold of the 96.80 net, released; independent SQL and the ledger's derivation agree |
-| `RETAINED` per the ADR, driven both ways | Admitted, landing at exactly −3.20; beyond the allowance, refused with nothing written |
-| A refund racing a capture stays inside the bound, counted | Exactly two of three admitted; the refused one funded by the merchant's next capture |
-| Phase 5's wallet-refund suite untouched | Unchanged and green; the wallet hold proven to the cent by probe |
+| Approve-by-proposer refused and audited | Refused at the aggregate, in the statement and by `V006`'s CHECK; the refusal commits its `DENIED` record, then answers 409. Each layer probed |
+| A dispatch during the cooling-off uses the prior destination | Proven against the real schema, and the new one after the deadline. Caught once the deadline is gone from every layer |
+| The propose/approve/supersede races counted to one effective row | Ten proposals leave one open change, ten approvers one approval, ten sweeps one effective row and one supersession. Each race's arbiter probed |
 
-### The subtlety the design found
+### The design (ADR-0056)
 
-The fee share a refund returns is allocated in COMPLETION order (`P6-TSK-014`), so at dispatch
-it is not yet known. A one-cent fee refunded in halves returns the cent to one half, depending
-on the order they complete. So the hold covers every order still possible:
-- **exact** when the refund covers the capture's remainder (every full refund);
-- otherwise `⌊fee × refunded / gross⌋` (less one under `HALF_EVEN` when odd). That is never
-  above what any order returns, and proved by enumerating every order.
-
-### The decision (ADR-0054, `INV-MER-07`)
-
-The merchant funds the **net** under either policy. Under `RETAINED` the fee share it keeps
-owing may take the payable below zero; the merchant then owes the platform that fee, recovered
-from its next captures before any payout. Beyond that, a refund is refused. The policy decides
-what is posted, never what must be available.
+- **Two distinct operators**, not a merchant and an operator: a merchant has only a machine key
+  this phase, and a leaked server key must not be one click from redirecting its money.
+- **A cooling-off** (default 72 hours) pinned on the row at approval, and **withdrawable** during
+  it: a window nothing can act on is a delay, not a control.
+- **A leaderless sweep** produces `EFFECTIVE` and supersedes the old destination in the same
+  transaction; partial indexes keep one open change and one effective destination per merchant.
+- **Bank details never enter**: a provider grant is exchanged for an opaque reference and a
+  four-character suffix, and account-shaped values are refused at every layer.
 
 ### What the gate found
 
-- **The new invariant's first wording was false**: a capture whose fee exceeds its sale already
-  takes the payable negative with no refund. It now reads *only by fee charged and not
-  collected*.
-- **The random sweep was blind to `HALF_EVEN` ties**: the probe survived it. An exhaustive
-  sweep now catches it.
-- The decline path lacked a test, and a harness artifact masked a probe as a 500. Both fixed.
-- `## Active Work` and `## Next Task` below were stale since early in the phase. Corrected.
+- **A fifth cooling-off layer.** With the deadline removed everywhere the design counted, the
+  timeline test still passed, because the sweep's candidate query filtered on it. Probed
+  separately, and both results recorded.
+- **Demonstrations claimed but never performed.** Two tests had never failed under a probe, and
+  three invariants the ADR claimed had none. All are now probed and caught. The ADR's `INV-LIFE`
+  claim was withdrawn instead, because a destination is not a money-moving operation.
+- Three untested claims are now tested, and three inaccuracies corrected, among them "the first
+  four-eyes subject": manual adjustments have been that since Phase 3.
 
 ### Previously
 
-The per-task completion records behind this one — 136 blocks, from `P6-TSK-010` back to project
+The per-task completion records behind this one — 137 blocks, from `P6-TSK-015` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
 `P6-TSK-015`'s gate.)*
@@ -344,13 +344,13 @@ archived verbatim in
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
 same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2 of 2** as scoped (`P6-TSK-004`, `-005`); **M6.3
 `CLOSED` at 4 of 4** (`P6-TSK-006`…`-008`, `-014`); **M6.4 `CLOSED` at 3 of 3** (`P6-TSK-009`,
-`-010`, `-015`); M6.5 opens with `P6-TSK-011`. *(M6.3 gained `P6-TSK-014`, found missing by
+`-010`, `-015`); **M6.5 open at 1 of 2** (`P6-TSK-011`; next `P6-TSK-012`). *(M6.3 gained `P6-TSK-014`, found missing by
 `P6-TSK-005`'s gate; M6.4 gained `P6-TSK-015`, found by `P6-TSK-010`'s end-to-end test. This
 sentence read "M6.3 open at 1 of 4, next `P6-TSK-007`" through five completed tasks, corrected
 by `P6-TSK-015`'s gate.)*
 
 **Cross-cutting — `X-TSK-001`, Lombok adoption** (2026-09-23; it belongs to no phase, gates no
-phase exit and does not displace `P6-TSK-011`). **`BLOCKED` on final acceptance only.**
+phase exit and does not displace the phase's current task). **`BLOCKED` on final acceptance only.**
 - **Done:** Lombok is the project standard for Java boilerplate, at compile time only
   (ADR-0055, `Proposed`; `.claude/rules/java-lombok.md`). The Phase 1–6 code is converted: 152
   production classes in nine module batches, each proved byte-identical by `javap` (0
@@ -590,6 +590,7 @@ carries, what triggers paying it down, and the owning phase.
 | **No per-source rate limiting.** Lockout bounds *guessing* per identity; nothing bounds the *volume* one source can generate | **Building it now would be harmful, not merely premature.** `SYSTEM_ARCHITECTURE.md` §Multi-Instance Execution commits to N replicas behind a load balancer, so `getRemoteAddr()` is the balancer: every user shares one bucket, the threshold is reached in seconds, and authentication goes down for everyone. `X-Forwarded-For` is caller-supplied and ADR-0034 settled that such values are not trusted; no trusted-proxy configuration exists. The missing input is a deployment topology, not effort (`P1-TSK-011`) | **Resource exhaustion, and it is the platform's most expensive unauthenticated operation**: ADR-0032 makes each attempt cost ~46 ms and ~19 MiB *by design*, so the work factor protecting a stolen credential store is the one an attacker spends for free. Ten concurrent attempts is ~190 MiB on one instance. `INV-IDN-07` still holds - every response is identical, so flooding discloses nothing - and lockout now bounds what an attacker learns, though not what they cost. Bounded today only by the fact that nothing is deployed | A deployment topology and a trusted-proxy declaration | Phase 15 |
 | **`POST /v1/registrations` is unauthenticated and unthrottled.** Anyone who can reach the port can create Parties, Customers and Identities without limit | There is no rate-limiting mechanism anywhere on the platform. `P1-TSK-011` builds one for **authentication** - failure counting and lockout keyed on an identity - and none of that applies to an endpoint whose whole point is that no identity exists yet. Building a second, differently-shaped mechanism here before that one exists would be designing the general case from one example | **Resource exhaustion, not disclosure - and `P1-TSK-026` made it materially worse, which is recorded rather than left for somebody to notice.** Every response is still identical whatever is sent, so flooding discloses nothing (`INV-IDN-07` holds). What changed is the cost: a required password means **every** request now performs an Argon2id derivation, ~46 ms of CPU and ~19 MiB, *before* anything can refuse it (ADR-0032) - so this endpoint has become the same CPU-and-memory amplifier `POST /v1/authentications` already is, and unlike that one it needs no existing account. It also still fills three tables and the outbox, and the idempotency key does not help since a flooder generates a fresh one. Bounded today only by the fact that nothing is deployed | **Re-owned by `P1-DOC-002` (2026-09-09)**: `P1-TSK-011`'s mechanism is keyed on an identity, and an unauthenticated endpoint has none - the only usable key is the source, so this row's missing input is per-source rate limiting's missing input, a deployment topology and a trusted-proxy declaration. Merged with that row's trigger | Phase 15 |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
+| **The conditional step-up is a private six-line method in three services.** `BeneficiaryService`, `PaymentMethodService` and, from `P6-TSK-011`, `PayoutDestinationOperations` each restate `P4-TSK-007`'s *`MULTI_FACTOR` exactly when a factor is active* | Extracting it would have meant refactoring two unrelated services inside a task about payout destinations (the smallest-coherent-change rule); three identical copies of a security check are a maintainability risk, not a correctness one today | A fix to one copy that misses the others: a step-up rule that differs by surface | A fourth caller, or any change to the rule itself - then extract one component and move all callers in one change | Phase 6 or whichever phase meets the trigger |
 
 None of these is financial-correctness debt.
 
@@ -668,7 +669,7 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P6-TSK-011` — the payout destination: step-up, four-eyes, cooling-off** — see
+**`P6-TSK-012` — the payout: hold-then-dispatch on the payable** — see
 [§Current Task](#current-task), which this section mirrors. *(This section named `P6-TSK-001`
 from the Phase 5 → 6 transition until `P6-TSK-015`'s gate — stale across the eleven tasks
 completed from `P6-TSK-001` to `P6-TSK-010`, the stale-second-copy class `P3-DOC-001` named. The superseded lead is kept below.)*
@@ -695,6 +696,9 @@ catalogue since initiation, subjectless for five phases — goes live on the
 payout destination (`P6-TSK-011`); and the `refund.dispatch_key` lesson is in
 `P6-TSK-001`'s own scope: classification rows land in the task that creates the
 columns.
+
+*(Its `INV-AUD-04` sentence was wrong when written: `P3-TSK-021` gave the invariant its first
+subject in Phase 3. Found by `P6-TSK-011`'s design; kept verbatim, as read.)*
 
 ### Superseded: the Phase 5 → 6 transition
 

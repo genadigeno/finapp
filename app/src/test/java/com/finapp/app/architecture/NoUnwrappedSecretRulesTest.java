@@ -86,6 +86,10 @@ class NoUnwrappedSecretRulesTest {
                     // exist so that a field that would widen it fails the build rather than
                     // arriving quietly.
                     "pan", "cardnumber", "cvv", "cvc", "cvv2", "pin",
+                    // Bank data (P6-TSK-011, ADR-0056): the payout destination keeps bank
+                    // details at the provider, and these make a field that would hold one
+                    // fail the build rather than arrive quietly - the card-data reasoning.
+                    "iban", "accountnumber",
                     // Authentication data.
                     "otp", "mfacode", "sessionid");
 

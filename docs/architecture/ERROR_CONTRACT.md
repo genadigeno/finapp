@@ -293,6 +293,11 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `merchant.NotKeyable` | 409 | A closed merchant cannot be issued an API key. |
 | `merchant.FeeScheduleNotForward` | 422 | A fee schedule version takes effect forward; it cannot be backdated. |
 | `merchant.FeeCurrencyMismatch` | 422 | The fee schedule's currency does not match. |
+| `merchant.SelfApprovalRefused` | 409 | A payout destination change requires a second approver distinct from its proposer. |
+| `merchant.DestinationChangePending` | 409 | A payout destination change is already open for this merchant; withdraw it first. |
+| `merchant.DestinationChangeNotOpen` | 409 | The payout destination change is no longer open to this decision. |
+| `merchant.DestinationNotTokenised` | 422 | The destination grant was refused; obtain a fresh grant and retry. |
+| `merchant.DestinationTokenisationUnavailable` | 503 | The destination could not be tokenised right now; retry later. |
 
 ### `checkout.*` — the purchase experience (`P6-TSK-007`)
 
@@ -349,6 +354,21 @@ the wrong currency, and an assignment to a merchant that settles in another — 
 the same thing to the same reader: this schedule does not price that money. Cross-currency fees
 are Phase 9's. There is no fee-schedule not-found code: unknown and malformed identifiers are
 one `api.NotFound`, the merchant surface's standing rule.
+
+**The payout destination's five codes (`P6-TSK-011`, ADR-0056).**
+- `merchant.SelfApprovalRefused` is `INV-AUD-04` refusing the proposer's own approval — a `409`,
+  the ledger's `SelfApprovalRefused` status for the same control: the request is well formed and
+  the change still waits for a second person. It is the one refusal here whose `DENIED` audit
+  record commits before the response is written.
+- `merchant.DestinationChangePending` is the one-open-change rule: withdraw the open change first.
+- `merchant.DestinationChangeNotOpen` is every decision asked of a change that has moved on —
+  approved, rejected, withdrawn or taken effect. It is not `merchant.IllegalTransition`, whose
+  title speaks of the *merchant's* status.
+- `merchant.DestinationNotTokenised` (`422`) and `merchant.DestinationTokenisationUnavailable`
+  (`503`) are the exchange's refusal and its absence, the `paymentmethods` pair for bank data. A
+  grant shaped like an account number never reaches either: it is `api.ValidationFailed` naming
+  `destinationToken`, never the value.
+- Unknown, malformed and another merchant's destination identifiers are one `api.NotFound`.
 
 `merchant.NotKeyable` refuses only a **closed** merchant. A `SUSPENDED` one may still be
 issued keys: suspension is reversible, its keys already refuse at authentication because the

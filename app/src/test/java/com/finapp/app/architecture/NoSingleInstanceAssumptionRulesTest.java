@@ -141,7 +141,14 @@ class NoSingleInstanceAssumptionRulesTest {
                     // count rather than by anything process-local. Its register row in
                     // DISTRIBUTED_EXECUTION.md section 3 names that justification, and
                     // CheckoutExpiryDatabaseTest drives the N-way race that proves it.
-                    "com.finapp.app.checkout.CheckoutExpirySweeperSchedule");
+                    "com.finapp.app.checkout.CheckoutExpirySweeperSchedule",
+                    // P6-TSK-011: the same half, with no external call either. The payout
+                    // destination effectuation's only writes are conditional transitions on
+                    // locked rows - the approved row, then the effective one it supersedes -
+                    // so N schedules on one due change produce one EFFECTIVE between them.
+                    // Register row: DISTRIBUTED_EXECUTION.md section 3; the N-way race is
+                    // PayoutDestinationDatabaseTest's.
+                    "com.finapp.app.merchant.PayoutDestinationEffectuationSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

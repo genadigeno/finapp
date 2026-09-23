@@ -354,10 +354,10 @@ phases must satisfy, not a description of code.
 
 ### `merchant` — Phase 6
 - **Responsibility:** the merchant as a commercial counterparty, its fees and its payouts.
-- **Owns:** Merchant, Merchant Account, Fee Schedule (versioned), Merchant Payout.
+- **Owns:** Merchant, Merchant Account, Fee Schedule (versioned), Payout Destination (a proposal flow; `P6-TSK-011`, ADR-0056), Merchant Payout.
 - **Transaction:** own; payout initiation requests ledger postings.
 - **Consistency:** strong for merchant state. **Payable is derived from `ledger` postings and never stored** — a stored payable would be a second balance authority.
-- **APIs:** merchant CRUD (privileged), payout initiation, merchant transaction reporting. Strict tenant scoping on every call.
+- **APIs:** merchant CRUD (privileged), payout destination proposal and decisions (operator only — two operators, four-eyes), payout initiation, merchant transaction reporting. Strict tenant scoping on every call.
 - **Events:** `MerchantOnboarded`, `FeeAssessed`, `MerchantPayoutInitiated`, `MerchantPayoutCompleted`, `MerchantPayoutFailed` *(pair added by the Phase 5 → 6 transition — terminal facts publish, the `RefundFailed` precedent)*.
 - **Failure:** a payout against insufficient payable is a domain rejection; duplicate payout initiation produces one effect; the fee schedule version is pinned per transaction so a mid-flight change cannot reprice history (`INV-HIST-04`).
 - **Security:** merchant authentication distinct from customer authentication; cross-tenant access impossible; payout destination change requires step-up, four-eyes and a cooling-off period.

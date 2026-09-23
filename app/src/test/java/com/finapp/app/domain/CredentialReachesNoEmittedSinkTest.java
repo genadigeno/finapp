@@ -86,6 +86,8 @@ class CredentialReachesNoEmittedSinkTest {
                     "credential", "credentials", "derivation",
                     "token", "bearer", "authorization",
                     "pan", "cardnumber", "cvv", "cvc", "cvv2", "pin",
+                    // P6-TSK-011: bank data, reconciled with the build rule's vocabulary.
+                    "iban", "accountnumber",
                     "otp", "mfacode", "sessionid");
 
     @Test
@@ -404,7 +406,17 @@ class CredentialReachesNoEmittedSinkTest {
                         // RESTRICTED-PII at its column for that reason. No secret; here
                         // because the set is every schema REACHABLE from a request body, and
                         // no merchant identifier either: the tenant comes from the API key.
-                        "CreateSessionRequest");
+                        "CreateSessionRequest",
+                        // P6-TSK-011. Carries the payout provider's one-time GRANT for a
+                        // merchant's bank account - `destinationToken`, `Sensitive` because a
+                        // grant in a log is a way to where a merchant's money goes for its
+                        // validity window, and in a request body because there is nowhere else a
+                        // client could put it. Never the account itself: a value shaped like one
+                        // is refused before any exchange (ADR-0056). Plus the operator's reason.
+                        "ProposePayoutDestinationRequest",
+                        // P6-TSK-011. The approve / reject / withdraw body: a free-text reason
+                        // and nothing else, the SuspensionRequest shape.
+                        "PayoutDestinationDecisionRequest");
     }
 
     @Test

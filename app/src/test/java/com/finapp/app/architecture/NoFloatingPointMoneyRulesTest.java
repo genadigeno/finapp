@@ -150,6 +150,12 @@ class NoFloatingPointMoneyRulesTest {
                     // ToDoubleFunction Micrometer's Gauge imposes.
                     "com.finapp.app.telemetry.KycMetrics",
                     "com.finapp.app.telemetry.KycMetrics$Cached",
+                    // P6-TSK-011. The SAME case again: a count of OPEN payout destination
+                    // changes - a `long` from count(*) all the way to the registry boundary
+                    // (PayoutDestinationStore.countOpen returns long) - published through the
+                    // ToDoubleFunction Micrometer's Gauge imposes.
+                    "com.finapp.app.telemetry.MerchantMetrics",
+                    "com.finapp.app.telemetry.MerchantMetrics$Cached",
                     // P3-TSK-010. The SAME case again: a count of DRIFTING projection rows -
                     // a `long` from ProjectionVerification.Report all the way to the registry
                     // boundary - published through the ToDoubleFunction Micrometer's Gauge
