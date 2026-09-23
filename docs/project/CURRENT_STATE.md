@@ -274,69 +274,57 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P6-TST-002` — the merchant conservation storm** — `READY`. **M6.6 at 2 of 3.** The phase's
-composition demonstration: checkouts, captures-with-fees, refunds and payouts at once, on several
-merchants, while the trial-balance and projection sweeps run. Three readings must hold: the
-payables equal captured − fees − refunds − payouts to the minor unit; `PAYOUT_CLEARING`'s delta
-equals the completed payouts; and the outcome tally leaves no `DISPATCHED` payout, no hold
-unaccounted and no merchant over-paid. The payable bound is contested: the storm drains a payable
-and counts its refusals. The remaining `Phase: 6` register rows land with it. Scope, acceptance and
-DoD (`DOD-TEST`, `DOD-FIN`) in the backlog entry.
+**`P6-DOC-001` — the Phase 6 review record** — `READY`. **M6.7, the gate.** The exit review per
+`PHASE_GATES.md` §4 and §5 Phase 6, its bullets read from the gate at review time. The review
+re-assesses F1–F8, asks the ten-instances question over the phase's contended decisions, then
+runs assess → corrections → **flip** → battery; its own verdict flips the phase. Scope,
+acceptance and DoD (`DOD-DOC`) are in the backlog entry.
 
-**What it inherits.** Since ADR-0058 no accepted sale takes a payable below zero at capture, so
-the storm's sales must cover their fees and merchant debt has one source, the fee a `RETAINED`
-refund keeps (`INV-MER-07`). `MerchantCaptureDatabaseTest`'s fixture now onboards merchants in
-GBP and USD as well as EUR. The refusal kinds to count are `payments.RefundUnfunded` against a
-drained payable and `merchant.PayoutUnfunded` against the payout bound.
+**What it inherits.** Every other Phase 6 item is `COMPLETE`, and the flip has been simulated.
+The register guard demands nothing more: all nine `Phase: 6` invariants have rows, and section 4
+covers both test items. The derived meter guard passes too. The review's inputs are listed in its
+entry, among them the one that gates the post-flip battery: `OperationalChartDatabaseTest` fails
+on untouched `HEAD` (the `X-TSK-001` blocker).
 
 ### Just completed
 
-**`P6-TST-001` — the tenancy and fee-conservation battery** — `COMPLETE` (2026-09-23). **M6.6 at
-2 of 3: another merchant's world is unknown on every merchant route - one refusal, zero rows,
-and a new route cannot dodge the battery - and 360 assessments across three currencies conserve
-every minor unit. A sale that does not cover its fee is refused at the price.**
+**`P6-TST-002` — the merchant conservation storm** — `COMPLETE` (2026-09-24). **M6.6 closes:
+checkouts, fee-bearing captures, merchant refunds and payouts run at once on three merchants in
+three currencies. Every payable reconciles to the minor unit against records the ledger never
+sees: mid-storm in one snapshot per sweep round, and at rest term by term.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Both batteries green from fresh runs | `MerchantTenancyBatteryDatabaseTest` (4 tests over 23 derived routes) and `MerchantCaptureDatabaseTest#theFeeBatchConservesEveryMinorUnit` (360 assessments), green in the final targeted run |
-| The register rows land with performed demonstrations | `MUTATION_TESTING` §2 +14 rows, the floor row re-pointed and re-performed, §3 +1 paragraph and §4 +1 row: thirty-one probes, twenty-nine caught, the two survivors recorded |
+| The readings reconcile under load | In every sweep's `REPEATABLE READ` snapshot, each payable equals the independent books and `PAYOUT_CLEARING` equals the completed payouts. At rest, every payable-view term, both clearing accounts and fee revenue reconcile too |
+| Both refusal kinds occur as checked facts | `merchant.PayoutUnfunded` and `payments.RefundUnfunded` against drained payables, and `payments.RefundExceedsCaptured`, each asserted to occur |
+| Every `Phase: 6` row the guard demands is present | The flip was simulated. The guard demanded exactly this item's section 4 row, now landed, and passes |
 
 ### The design
 
-- **The pricing decision, at the price** (ADR-0058). A sale must net the merchant at least one
-  minor unit. The creation prices the offer before the claim and refuses `net ≤ 0` as
-  `checkout.SaleBelowFee`; the pin re-asserts it for every pin; a capture is never refused. The
-  same pricing refuses an offer in a currency the schedule does not price, which was accepted at
-  creation until now.
-- **The detector sees what hid.** In the tenant's two packages a bare `UUID` is a resource
-  identifier and a same-class helper's SQL is the caller's. Nineteen methods became visible and
-  are classified, and a guard keeps every tenant-column statement inside those packages. The
-  platform-wide widening would surface 31 more methods: `X-TSK-002`.
-- **The battery derives its routes from the application**, holds each row's kind to its shape,
-  probes every addressed route with a positive control, and fingerprints both worlds.
-- **The fee batch runs through the capture's production seam** against an independent formula.
-  The ledger holds only two-minor-unit currencies, so the 0- and 3-minor-unit cases stay with
-  `FeeCalculationTest`'s property sweep: a stated limit.
+- **Ten movers through the application's own routes**: three buyers; four refunders finding
+  payments in the database whatever their state; three payers-out draining every payable. The
+  sweeper ends the storm.
+- **A repricing mid-storm.** Buyers confirm sessions opened two rounds earlier, so sales
+  straddle a dearer version. The oracle prices each sale by its pin.
+- **Every success is replayed once with its key.** A duplicate is harmless, or the readings show
+  its second effect.
+- **Readings on shared accounts are summed over the storm's own entries**, because the
+  application's schedulers may post other suites' leftovers into them.
 
 ### What the gate found
 
-- **The confirmation's mapping of the pin's refusal had no test.** A session opened before the
-  rule would have been answered 500. The test is added, driving a session opened through the
-  store, and probed.
-- **A register row named a test this task rewrote**, and the fleet-wide run failed on it. The
-  reservation's floor is still reachable under the rule, as the last of a partial series on a
-  sale netting one minor unit. It gained a seam test, the row was re-pointed and re-performed, and
-  the javadoc and ADR text that said otherwise were corrected.
-- **The battery's fingerprint was unproven.** Every writing control must now move it. A fingerprint
-  that sees nothing is refused by that check alone, as the probe showed.
-- **Two survivors, recorded.** A keys-blind fingerprint still moved on the revocation's event row
-  and audit record: redundancy, not a gap. The withdrawal's own tenant read is masked over HTTP by
-  the render's and caught at the command. **The dispatch's destination read has a second rank**:
-  unscoped, a payout naming another merchant's account is refused by `V007`'s trigger.
+- **The storm reconciled only at rest**, while the acceptance says *under load*. Each capture,
+  refund and payout commits its posting with its own status, so one snapshot per round now
+  reconciles every payable exactly under traffic. A probe reading without the snapshot fails.
+- **`P6-TST-001` routed findings to `P6-DOC-001` without writing them into its entry.** They are
+  written in now.
+- **Eleven probes, ten caught.** The survivor is a payout's claim broken alone, held by the
+  dispatch key's schema rank; both ranks broken are caught. Without payers-out the storm saw no
+  `RefundUnfunded` at all: the drain is what makes a refund meet an unfunded payable.
 
 ### Previously
 
-The per-task completion records behind this one — 140 blocks, from `P6-TSK-013` back to project
+The per-task completion records behind this one — 141 blocks, from `P6-TST-001` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
 `P6-TSK-015`'s gate.)*
@@ -357,8 +345,8 @@ archived verbatim in
 **Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
 same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2 of 2** as scoped (`P6-TSK-004`, `-005`); **M6.3
 `CLOSED` at 4 of 4** (`P6-TSK-006`…`-008`, `-014`); **M6.4 `CLOSED` at 3 of 3** (`P6-TSK-009`,
-`-010`, `-015`); **M6.5 `CLOSED` at 2 of 2** (`P6-TSK-011`, `-012`); **M6.6 open at 2 of 3**
-(`P6-TSK-013`, `P6-TST-001`; next `P6-TST-002`). *(M6.3 gained `P6-TSK-014`, found missing by
+`-010`, `-015`); **M6.5 `CLOSED` at 2 of 2** (`P6-TSK-011`, `-012`); **M6.6 `CLOSED` at 3 of 3**
+(`P6-TSK-013`, `P6-TST-001`, `P6-TST-002`); next M6.7, the gate (`P6-DOC-001`). *(M6.3 gained `P6-TSK-014`, found missing by
 `P6-TSK-005`'s gate; M6.4 gained `P6-TSK-015`, found by `P6-TSK-010`'s end-to-end test. This
 sentence read "M6.3 open at 1 of 4, next `P6-TSK-007`" through five completed tasks, corrected
 by `P6-TSK-015`'s gate.)*
@@ -685,7 +673,7 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P6-TST-002` — the merchant conservation storm** — see
+**`P6-DOC-001` — the Phase 6 review record** — see
 [§Current Task](#current-task), which this section mirrors. *(This section named `P6-TSK-001`
 from the Phase 5 → 6 transition until `P6-TSK-015`'s gate — stale across the eleven tasks
 completed from `P6-TSK-001` to `P6-TSK-010`, the stale-second-copy class `P3-DOC-001` named. The superseded lead is kept below.)*

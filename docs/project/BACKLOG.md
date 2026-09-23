@@ -8145,7 +8145,7 @@ negative payable** — `COMPLETE` (2026-09-23)
   deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts are
   claimed.**
 
-**P6-TST-002 — The merchant conservation storm** — `READY`
+**P6-TST-002 — The merchant conservation storm** — `COMPLETE` (2026-09-24)
 - **Objective**: the phase's composition demonstration — checkouts, captures-with-fees,
   refunds and payouts at once, conservation as arithmetic (`P5-TST-003`'s discipline on
   the merchant book).
@@ -8167,8 +8167,86 @@ negative payable** — `COMPLETE` (2026-09-23)
   both refusal kinds occur as checked facts; every `Phase: 6` invariant row demanded by
   the guard is present.
 - **Risk**: Medium. **Cx**: L. **DoD**: `DOD-TEST`, `DOD-FIN`
+- **Design and implementation (2026-09-24)**: `MerchantConservationStormDatabaseTest`, through
+  the application's own routes. Ten movers run for as long as the sweeper keeps sweeping: three
+  buyers, four refunders and three payers-out.
+  - **The world.** Three merchants in three currencies, covering both refund policies: EUR
+    `RETAINED`, GBP `RETURNED` and USD `RETAINED`.
+  - **The storm.** Buyers confirm sessions they opened two rounds earlier, so sales straddle a
+    **repricing** made half-way through; the oracle prices each sale by its own pin
+    (`INV-MER-03`, `INV-HIST-04` under load). Refunders find their payments in the database
+    whatever state they are in, and every successful refund and payout is replayed once with its
+    key. The sweeper ends the storm (25 rounds, 240 commands, no sleeps). Each round, it checks
+    the trial balance per currency, each payable's projection, each payable's debt bound (read
+    in one snapshot with the refunds that bound it), and each merchant's own payable view
+    explaining itself.
+  - **The readings, against records the ledger never sees.** Each payable view is checked term
+    by term: captured, fees (by pin), refunded, fees returned, paid out and other, plus the
+    position and the ledger's derivation. `PAYOUT_CLEARING`, `SETTLEMENT_CLEARING` and
+    `FEE_REVENUE` are summed over the storm's own entries rather than as deltas, because the
+    application's schedulers may post other suites' leftovers into those shared accounts
+    mid-storm.
+  - **The tally.** No payout or refund is left in flight and no hold is left standing. No
+    merchant is paid past what it is owed: a `RETURNED` payable never goes below zero, and a
+    `RETAINED` one never below minus the fee shares it kept.
+  - **The checked facts.** `merchant.PayoutUnfunded`, `payments.RefundUnfunded`,
+    `payments.RefundExceedsCaptured` and both replays each occur, and at least one sale
+    straddles the repricing.
+  - **Observed in one run**: 42 sales, 7 of them straddling the repricing, 39 refunds completed
+    and 35 payouts completed, all replayed. The refusals: 76 `PayoutUnfunded`, 23
+    `RefundUnfunded`, 36 `RefundExceedsCaptured` and 2 `NotRefundable` (the refund arriving
+    mid-capture). Stable in three consecutive runs of about seven seconds each.
+  - **The register at the flip.** Read with the guard's own rules, all nine `Phase: 6` invariants
+    already have rows, so the flip demands only this item's own section 4 entry.
+- **Completion gate (2026-09-24)** — eleven probes, ten caught, every restore verified
+  byte-identical and the whole tree compared before and after:
+  - **The payout bound and the refund bound, together.** Holds ignored in `AvailableBalance`:
+    caught at round 6, with GBP's `RETURNED` payable at −0.83 while the books still balanced.
+    Only the debt bound sees two commands each judged alone.
+  - **The pin under load.** A capture priced by the version in force was caught at round 14:
+    EUR's payable was 0.30 off the pinned books, one straddling sale's fee difference. The
+    single-threaded mid-flight test caught it too. A refund's terms priced the same way were
+    caught at round 14 (GBP 5.09 against 5.00) and by the seam test. This is `INV-HIST-04`'s
+    first performed mutation.
+  - **The counterparts and the tally.** A payout credited to `SETTLEMENT_CLEARING` was caught at
+    round 2, by the `PAYOUT_CLEARING` reading alone. A payout's hold left standing was caught by
+    the tally alone: eight EUR holds at the end.
+  - **Duplicates.** With a refund's claim forgotten, the replay became a second refund, refused
+    where the replay's 201 is owed. A payout's claim forgotten SURVIVED, held by the schema's
+    `UNIQUE (merchant_id, dispatch_key)` and the convergence read. With both ranks broken, the
+    replay dispatched a second payout and was caught.
+  - **The storm's own teeth.** With no repricing, the storm refuses to pass. With no payers-out,
+    there was no `PayoutUnfunded` and not one `RefundUnfunded` across 74 completed refunds. With
+    the snapshot read under `READ COMMITTED`, the reconciliation failed at round 9.
+  - **The flip, simulated.** With Phase 6 marked `COMPLETE`, the register guard demanded exactly
+    this item's section 4 row, and passed once it landed. The derived meter guard passed both
+    times. `CURRENT_STATE.md` was restored byte-identically.
+- **What the gate found, and fixed**:
+  - (1) **The storm reconciled only at rest.** The acceptance reads *the readings reconcile under
+    load*, and mid-storm the storm checked only the trial balance, the projections, the debt bound
+    and the views' internal sums. Each capture, refund and payout commits its posting with its
+    own status. So one `REPEATABLE READ` snapshot per round now reconciles each payable to the
+    independent books, and `PAYOUT_CLEARING` to the completed payouts. Probed.
+  - (2) **`P6-TST-001` routed three findings to `P6-DOC-001` without writing them into its
+    entry** (the stale-second-copy class). They were `checkout.NotPriceable`'s title, the ledger
+    batch's two-minor-unit limit, and the `INV-HIST-04` row demonstrated without a mutation. The
+    last is now answered by this storm. All three are written into the entry.
+  - (3) Every captured sale must now have its checkout order (`INV-MER-06` at volume), and the
+    storm closes its HTTP client.
+- **Multi-instance `PASS`.** The storm asks the ten-instance question of the whole merchant book:
+  ten movers, each command on its own pooled connection, contending in the database. The beans
+  they share hold no correctness state, which `NoSingleInstanceAssumptionRulesTest` enforces.
+  Every bound held under the contest, every duplicate converged, and no outcome occurred that was
+  not a domain one: no deadlock and no 500.
+- **Registers**: `MUTATION_TESTING` section 2 +7 rows, section 3 +1 paragraph and section 4 +1
+  row; `P6-DOC-001`'s entry +2 inputs. No production code changed.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at **1542 tests across 14 modules, 0 failures**,
+  and **103 targeted database tests across 8 suites, 0 failures**: the storm, the tenancy
+  battery, the capture, checkout-flow and both payout suites, `P5-TST-003`'s storm and the
+  trial balance. **The full battery was deliberately skipped on the owner's instruction; no
+  fleet-wide database or kafka counts are claimed.**
 
-**P6-DOC-001 — Phase 6 review record** — `PLANNED`
+**P6-DOC-001 — Phase 6 review record** — `READY`
 - **Scope**: the exit review per `PHASE_GATES.md` §4 and §5 Phase 6 (original bullets plus
   the transition's extension, **read from the gate at review time**), F1–F8 re-assessed,
   the ten-instances question over the phase's contended decisions, assess → corrections →
@@ -8195,6 +8273,18 @@ negative payable** — `COMPLETE` (2026-09-23)
   running. The payout gauges now count a dispatch overdue past the sweep's own bound; whether
   the payment gauges should follow is the review's call, since Phase 5 made its choice
   deliberately and recorded why.
+- **Input from `P6-TST-001`'s gate** *(written by `P6-TST-002`'s gate, which found these routed
+  here but never recorded)*:
+  - `checkout.NotPriceable`'s title still reads *has no fee schedule*, although the code now
+    also answers an offer in an unpriced currency. Retitling is a contract change.
+  - The ledger-level fee batch runs only two-minor-unit currencies, because the chart holds no
+    others. A JPY or BHD batch waits for a phase that operates in one (Phase 9).
+  - `INV-HIST-04`'s single row was demonstrated rather than mutated. `P6-TST-002`'s performed
+    mutation now answers it.
+- **Input from `P6-TST-002`**: the flip was simulated. The register guard demands nothing
+  more, and the derived meter guard passes. The storm runs its ten movers in one JVM, so two
+  application instances in two JVMs are not driven, and its prices only ever rise. Whether the
+  review wants either is its call.
 - **Deps**: everything above. **Accept**: the review's verdict flips the status; the
   post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
 

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 140 "Previously" blocks, newest first, from `P6-TSK-013` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 141 "Previously" blocks, newest first, from `P6-TST-001` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,51 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P6-TST-001` — the tenancy and fee-conservation battery** — `COMPLETE` (2026-09-23). **M6.6 at
+2 of 3: another merchant's world is unknown on every merchant route - one refusal, zero rows,
+and a new route cannot dodge the battery - and 360 assessments across three currencies conserve
+every minor unit. A sale that does not cover its fee is refused at the price.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Both batteries green from fresh runs | `MerchantTenancyBatteryDatabaseTest` (4 tests over 23 derived routes) and `MerchantCaptureDatabaseTest#theFeeBatchConservesEveryMinorUnit` (360 assessments), green in the final targeted run |
+| The register rows land with performed demonstrations | `MUTATION_TESTING` §2 +14 rows, the floor row re-pointed and re-performed, §3 +1 paragraph and §4 +1 row: thirty-one probes, twenty-nine caught, the two survivors recorded |
+
+### The design
+
+- **The pricing decision, at the price** (ADR-0058). A sale must net the merchant at least one
+  minor unit. The creation prices the offer before the claim and refuses `net ≤ 0` as
+  `checkout.SaleBelowFee`; the pin re-asserts it for every pin; a capture is never refused. The
+  same pricing refuses an offer in a currency the schedule does not price, which was accepted at
+  creation until now.
+- **The detector sees what hid.** In the tenant's two packages a bare `UUID` is a resource
+  identifier and a same-class helper's SQL is the caller's. Nineteen methods became visible and
+  are classified, and a guard keeps every tenant-column statement inside those packages. The
+  platform-wide widening would surface 31 more methods: `X-TSK-002`.
+- **The battery derives its routes from the application**, holds each row's kind to its shape,
+  probes every addressed route with a positive control, and fingerprints both worlds.
+- **The fee batch runs through the capture's production seam** against an independent formula.
+  The ledger holds only two-minor-unit currencies, so the 0- and 3-minor-unit cases stay with
+  `FeeCalculationTest`'s property sweep: a stated limit.
+
+### What the gate found
+
+- **The confirmation's mapping of the pin's refusal had no test.** A session opened before the
+  rule would have been answered 500. The test is added, driving a session opened through the
+  store, and probed.
+- **A register row named a test this task rewrote**, and the fleet-wide run failed on it. The
+  reservation's floor is still reachable under the rule, as the last of a partial series on a
+  sale netting one minor unit. It gained a seam test, the row was re-pointed and re-performed, and
+  the javadoc and ADR text that said otherwise were corrected.
+- **The battery's fingerprint was unproven.** Every writing control must now move it. A fingerprint
+  that sees nothing is refused by that check alone, as the probe showed.
+- **Two survivors, recorded.** A keys-blind fingerprint still moved on the revocation's event row
+  and audit record: redundancy, not a gap. The withdrawal's own tenant read is masked over HTTP by
+  the render's and caught at the command. **The dispatch's destination read has a second rank**:
+  unscoped, a payout naming another merchant's account is refused by `V007`'s trigger.
 
 ### Previously
 
