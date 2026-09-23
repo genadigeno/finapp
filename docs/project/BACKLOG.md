@@ -7781,8 +7781,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
 and gate no phase exit. A cross-cutting task runs between phase tasks when the owner schedules it.
 
-**X-TSK-001 — Lombok adoption and the Phase 1–6 refactor** — `PLANNED` *(Batch 0 applied
-2026-09-23; Batches 1–9 wait for the owner's go-ahead)*
+**X-TSK-001 — Lombok adoption and the Phase 1–6 refactor** — `BLOCKED` *(final acceptance only:
+Batches 0–9 applied and verified 2026-09-23; its one failing test predates it. See **Result**)*
 - **Context**: every Java module; build tooling. Owner-directed; ADR-0055 (`Proposed`).
 - **Description**: Lombok as the project-standard boilerplate reducer, compile time only. The
   existing Phase 1–6 code is converted module by module, where and only where the result is
@@ -7797,8 +7797,9 @@ and gate no phase exit. A cross-cutting task runs between phase tasks when the o
   field.
 - **Batch 0 (applied)**: the catalog pin (1.18.46, the Spring Boot 4.1.1 BOM's), the convention
   plugin wiring, `lombok.config`, 14 lockfiles and 2 checksum entries,
-  `.claude/rules/java-lombok.md`, ADR-0055 and the documentation. Lombok is in no runtime or SBOM
-  configuration, and the boot jar holds none.
+  `.claude/rules/java-lombok.md`, ADR-0055 and the documentation. Lombok is in no runtime
+  configuration, and the boot jar holds none. *("Or SBOM" was here too, and was wrong: the
+  CycloneDX SBOM covers every resolved configuration and lists Lombok as a build-time component.)*
 - **Batches 1–9**, one commit each:
   1. `platform`
   2. `ledger`
@@ -7813,6 +7814,17 @@ and gate no phase exit. A cross-cutting task runs between phase tasks when the o
   Each batch passes the plan's §15 gate: `javap` equivalence of constructors, parameter-to-field
   mapping, null-check count, fields, methods and static initialiser; zero-warning compile; the
   fleet-wide hermetic suite; and its module's database suites (plus the kafka tier in Batch 1).
+- **Result (2026-09-23)**: all nine batches are committed (`4151eb5` … `8cfdcc3`), each through the
+  gate: 152 classes, 0 bytecode differences, 428 null checks before and after, and constructor
+  parameter names unchanged.
+  - Final run from `clean`: 1,457 hermetic (0 failures), 952 database (1 failure, the pre-existing
+    `OperationalChartDatabaseTest`, same message) and 14 Kafka tests (0 failures).
+  - Every acceptance criterion holds except the tiers being green.
+  - **It unblocks when** `OperationalChartDatabaseTest`'s stale owner-kind filter is fixed in its
+    own change (`CURRENT_STATE.md` §Blockers) and a fresh database tier is green. The task is
+    then `COMPLETE` with no further work.
+  - Five convertible classes outside the approved set are recorded for a separately approved pass
+    (plan appendix D.2).
 - **Deps**: none for Batch 0. The final acceptance's "all tiers green" needs the pre-existing
   `OperationalChartDatabaseTest` failure fixed first (`CURRENT_STATE.md` §Blockers).
 - **Accept**:

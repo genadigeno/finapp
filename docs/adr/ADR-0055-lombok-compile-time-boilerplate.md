@@ -24,8 +24,11 @@ reports as a warning fails the build.
 
 1. **Compile time only.** `compileOnly` + `annotationProcessor`, plus the test and test-fixture
    equivalents, wired once in `finapp.java-conventions` from a catalog pin. Lombok is on no runtime
-   classpath, in no jar and in no SBOM, and the lockfiles show that directly: it appears only in
-   the `compileClasspath` and `annotationProcessor` configurations.
+   classpath and in no jar, and the lockfiles show that directly: it appears only in the
+   `compileClasspath` and `annotationProcessor` configurations. The CycloneDX SBOM does list it,
+   as a build-time component, because that SBOM covers every resolved configuration
+   (`app/build.gradle.kts`). *(This decision first said "in no SBOM"; corrected when
+   `X-TSK-001`'s final check read the SBOM.)*
 2. **One version, aligned with the BOM.** Pinned in `gradle/libs.versions.toml` at exactly what
    Spring Boot 4.1.1 manages (1.18.46), for the JUnit and AssertJ reason: `sharedkernel` applies no
    Spring BOM, and one version must serve every module.
@@ -82,10 +85,28 @@ Negative:
 - A `@NonNull` failure message reads "x is marked non-null but is null" rather than "x must not
   be null". Same exception, same moment; no test asserted the old text.
 - IDEs need annotation processing enabled (IntelliJ bundles Lombok support).
+- Lombok declares generated constructor parameters `final`. It shows only as a flag in the
+  `MethodParameters` attribute of classes compiled with `-parameters` (`app`). Parameter names
+  do not change, and nothing reads the flag.
+- A constructor whose parameter names select a bean cannot be generated: Spring autowires by
+  parameter name among same-typed beans, and Lombok names each parameter after its field
+  (`java-lombok.md`).
 
 Operational impact: none at run time; nothing Lombok-owned ships.
 Security impact: none; the conversion generates no `toString`, `equals` or accessor.
 Financial impact: none; no domain type, invariant or persistence path changes.
+
+## Implementation
+
+`X-TSK-001` applied decision 4 on 2026-09-23 in Batches 1–9 (`4151eb5` … `8cfdcc3`):
+- 152 classes, 0 bytecode differences, 428 null checks before and after, and constructor
+  parameter names unchanged;
+- production code 807 lines added and 1,663 removed;
+- final run: 1,457 hermetic (0 failures), 952 database (1 failure, the pre-existing
+  `OperationalChartDatabaseTest`, same message) and 14 Kafka tests (0 failures).
+
+The status stays `Proposed`. In this register a review accepts an ADR once implementation has
+validated it (README), and that call is the owner's.
 
 ## Invariants / constraints
 

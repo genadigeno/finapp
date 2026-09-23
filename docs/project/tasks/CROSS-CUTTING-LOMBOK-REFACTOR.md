@@ -1,7 +1,9 @@
 # X-TSK-001 — Lombok adoption and the Phase 1–6 refactor
 
-**Status:** `PLANNED`. Batch 0 (the build and the standard) was applied on 2026-09-23. Batches 1–9
-wait for the owner's go-ahead. **No application source file has been changed.**
+**Status:** `BLOCKED` on final acceptance only. All ten batches (0–9) were applied and verified
+on 2026-09-23: 152 classes, 0 bytecode differences (§21). Every acceptance criterion holds except
+criterion 5 (all tiers green). That one waits on a pre-existing failure which this task did not
+cause and, by its scope, may not fix (§19).
 **Decision:** [ADR-0055](../../adr/ADR-0055-lombok-compile-time-boilerplate.md) (`Proposed`).
 **Rule:** [`.claude/rules/java-lombok.md`](../../../.claude/rules/java-lombok.md).
 **Backlog:** `X-TSK-001` in [`BACKLOG.md`](../BACKLOG.md) §Cross-cutting work.
@@ -95,12 +97,13 @@ private-constructor value type.
 | `gradle/libs.versions.toml` | `lombok = "1.18.46"`, exactly what Spring Boot 4.1.1 manages (checked in the BOM). Pinned in the catalog like JUnit and AssertJ, because `sharedkernel` applies no Spring BOM. Library `lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }` |
 | `build-logic/.../finapp.java-conventions.gradle.kts` | `compileOnly`, `annotationProcessor`, `testCompileOnly` and `testAnnotationProcessor`, plus `testFixtures*` where `java-test-fixtures` is applied. Wired once, from the catalog, for every module. `lombok.config` declared as a `JavaCompile` input |
 | `lombok.config` (new, root) | `stopBubbling`; `@lombok.Generated` on generated members; no `@ConstructorProperties`; `@NonNull` throws `NullPointerException`; generated `toString` is opt-in per field. Compile errors for `@Data`, `@SneakyThrows`, `@Synchronized`, `val`/`var`, `@Cleanup`, experimental features, `onX` and every non-SLF4J logger. All 22 keys confirmed present in Lombok 1.18.46 |
-| 14 × `gradle.lockfile` | One line each. Lombok appears in `annotationProcessor`, `compileClasspath`, `testAnnotationProcessor` and `testCompileClasspath` (and the two fixture configurations in `identity` and `platform`). It appears in **no runtime and no SBOM configuration** |
+| 14 × `gradle.lockfile` | One line each. Lombok appears in `annotationProcessor`, `compileClasspath`, `testAnnotationProcessor` and `testCompileClasspath` (and the two fixture configurations in `identity` and `platform`). It appears in **no runtime configuration**. *(This row first also said "no SBOM configuration", inferred from the lockfiles. That was wrong: the CycloneDX SBOM covers every resolved configuration and lists Lombok (§21).)* |
 | `gradle/verification-metadata.xml` | Exactly two artefacts: `lombok-1.18.46.jar` and `.pom`. Lombok's POM declares no parent and no dependencies, so a cold-cache resolution needs nothing more (the README §7a concern) |
 
 **Evidence**:
 - The build compiles cleanly under `-Xlint:all -Werror`.
-- The `app` boot jar holds 100 libraries and no Lombok.
+- The `app` boot jar holds 99 library jars and no Lombok. *(First recorded as 100, a count that
+  included the `BOOT-INF/lib/` directory entry.)*
 - `@NonNull` and `@Generated` have `CLASS` retention. They are stored as `RuntimeInvisible*`
   attributes, so nothing at run time can see or need Lombok.
 - After the trial conversion was withdrawn, the restored sources compiled, with Lombok on the
@@ -178,7 +181,10 @@ What each conversion must leave unchanged, and how that is shown:
   (identity equality). Also `Hold` (record); `PostingService`, `HoldService` and `ReversalService`
   (constructors with logic); `PaymentIntent`, `PaymentAttempt` and `Refund` (fluent accessors, no
   setters); the fee types `FeeRate`, `FeeScheduleVersion`, `PaymentFeePin` and `FeeAssessment`;
-  and `PaymentService` and `CheckoutService`, whose constructors differ from what Lombok generates.
+  `PaymentService`, whose constructor renames its `TransactionTemplate` parameter; and
+  `CheckoutService`, which the audit excluded for its initialised `intents` field. *(This sentence
+  first said both constructors differ from what Lombok generates. `CheckoutService`'s does not,
+  because Lombok skips an initialised field: appendix D.2.)*
 - **Converted, constructors only:** services that sit beside the money paths, such as
   `PostingEffect`, `ChartOfAccounts`, `AvailableBalance`, the payment commands,
   `MerchantSettlement` and `MerchantPayable`. Their method bodies — the posting composition, the
@@ -262,6 +268,11 @@ already-converted lower modules. One commit per batch.
    - generated `NullPointerException` throws = baseline `requireNonNull` count;
    - identical fields, where a logger may only become `private static final Logger log`;
    - identical methods;
+   - identical constructor parameter names wherever the class file records them. The
+     `MethodParameters` attribute does not appear in `javap -c`, and `app` compiles with
+     `-parameters`, where Spring autowires by parameter name among same-typed beans. This check
+     was added at Batch 9 and run over Batches 1–9 against `0ca0fd2`. Lombok's `final` flag on
+     generated parameters is the one permitted difference;
    - an identical static initialiser, except that the logger's three instructions may move
      earlier.
 
@@ -309,8 +320,9 @@ already-converted lower modules. One commit per batch.
 4. A clean compile of every source set under `-Werror`.
 5. The hermetic, database and Kafka tiers are green from fresh runs. The pre-existing failure in
    §19 is fixed first by its own task, or explicitly carried with that task named.
-6. Lombok is compile-time only: the lockfiles show it in no runtime or SBOM configuration, and the
-   boot jar contains none.
+6. Lombok is compile-time only: the lockfiles show it in no runtime configuration, and the boot jar
+   contains none. *(This criterion first said "no runtime or SBOM configuration". The SBOM half
+   was wrong; see §21.)*
 7. No test was changed to make a batch pass.
 8. The rule, ADR-0055 and this plan agree with what was done, and the change log carries one row
    per batch.
@@ -341,6 +353,100 @@ plan requires. It is the evidence this plan's method works on this codebase:
 
 The 28 enums and `AuthenticationController` were added to the candidate set after the trial, by
 the complete audit. The batches that hold them prove them for the first time.
+
+## 21. Results (2026-09-23)
+
+| Batch | Scope | Classes | Bytecode differences | Null checks, before → after | Fresh runs at the batch | Commit |
+|---|---|---|---|---|---|---|
+| 0 | Build, `lombok.config`, rule, ADR, plan | — | — | — | Clean compile; hermetic; boot jar | `0ca0fd2` |
+| 1 | `platform` | 5 | 0 | 11 → 11 | 1,277 hermetic · 164 database · 14 Kafka | `4151eb5` |
+| 2 | `ledger` | 9 | 0 | 12 → 12 | 769 hermetic · 78 database (1 failure, §19) | `b00c84c` |
+| 3 | `accounts`, `transfers` | 9 | 0 | 37 → 37 | 500 hermetic · 66 database | `c3135bd` |
+| 4 | `payments`, `paymentmethods` | 12 | 0 | 64 → 64 | 597 hermetic · 218 database | `b04b350` |
+| 5 | `merchant`, `checkout` | 11 | 0 | 39 → 39 | 584 hermetic · 204 database | `34c1239` |
+| 6 | `identity` | 21 | 0 | 88 → 88 | 581 hermetic · 300 database | `824c34e` |
+| 7 | `party`, `kyc`, `consent` | 15 | 0 | 26 → 26 | 603 hermetic · 165 database | `fef1137` |
+| 8 | `app`, security-sensitive web layer | 19 | 0 | 55 → 55 | 459 hermetic · 511 database | `16823c8` |
+| 9 | `app`, remaining | 51 | 0 | 96 → 96 | 459 hermetic · 788 database (1 failure, §19) | `8cfdcc3` |
+| **All** | | **152** | **0** | **428 → 428** | | |
+
+**What changed.**
+- 22 loggers became `@Slf4j`. The three named `LOGGER` became `log`.
+- 132 constructors became `@RequiredArgsConstructor`: 104 in classes (6 of them
+  `AccessLevel.PACKAGE`) and 28 in contract enums.
+- `@NonNull` went on the fields of the 102 class constructors that null-checked.
+- Production code: 152 files, 807 lines added, 1,663 removed. No test file changed.
+
+**Final run.** `./gradlew clean build databaseTest kafkaTest` at `8cfdcc3`, counted from result
+files newer than the run's start. Every source set compiled under `-Xlint:all -Werror` with no
+warning. **Hermetic: 1,457 tests in 14 modules, 0 failures. Database: 952 tests in 2 modules, 1
+failure**, the §19 one, with the same message. **Kafka: 14 tests, 0 failures.** Boot jar: 99 library
+jars, no Lombok.
+
+**Acceptance (§18).**
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | All 152 candidates converted, each batch through the gate | Met |
+| 2 | No DO NOT REFACTOR class changed | Met. The diff since `1d9f97d` touches exactly the 152 appendix A and B files |
+| 3 | No annotation beyond the four; nothing generated beyond constructors and loggers | Met: 132 `@RequiredArgsConstructor`, 102 `@NonNull` users, 22 `@Slf4j`, 6 `AccessLevel`. No other Lombok annotation exists in the tree |
+| 4 | Clean compile of every source set under `-Werror` | Met, in the final run |
+| 5 | All tiers green from fresh runs | **Not met.** Hermetic and Kafka are green. The database tier's one failure is §19's, which no task owns yet |
+| 6 | Compile time only | Met for everything that runs: no runtime configuration, nothing in the boot jar. The SBOM does list Lombok (below) |
+| 7 | No test changed | Met |
+| 8 | The rule, ADR-0055 and this plan agree with what was done; one change-log row per batch | Met, with the corrections below |
+
+**Reviews, against the final tree.**
+- **Distributed system: PASS** on "would this remain correct if 10 instances executed it
+  concurrently?"
+  - Every converted class compiles to what its hand-written predecessor compiled to: constructors
+    (access, descriptor, parameter-to-field mapping, null checks, parameter names), fields, methods
+    and static initialisers.
+  - No method body was edited. So transaction boundaries, isolation, row locking, idempotency, the
+    outbox and inbox, event envelopes, retries and the sweeper schedules are the same bytes.
+  - No state was added. Fields stay `private final` and the logger stays `private static final`;
+    no `@Setter` or `@Synchronized` exists.
+  - A rolling deploy that mixes old and new instances is indistinguishable at run time.
+- **Equality.** Nothing generated: no `@EqualsAndHashCode`, `@Data` or `@Value` exists, and no
+  converted class gained a method. Aggregates and entities are untouched and keep identity equality.
+- **`toString`.** Nothing generated, for the same reasons. Secret, token, credential and PII types
+  keep their hand-written `toString` (appendix D.3). `lombok.config` keeps any future one opt-in
+  per field.
+- **Persistence.** No ORM (`NoObjectRelationalMapperTest` passes). No constructor was added or
+  removed. The JDBC stores changed only in their constructors' source. `rehydrate` factories and
+  private constructors are untouched, and there is no migration.
+- **API and serialization.** No request, response, view, event or `Serializable` type was touched;
+  `OpenApiContractTest` and `ErrorCodeRegistryTest` pass.
+- **Security.** No secret or credential type was touched and every log statement is the same bytes.
+  The §15 security suites pass in the final hermetic run.
+
+**Found by the final check, and corrected.**
+- **The SBOM lists Lombok.** The CycloneDX SBOM covers the whole resolved dependency set,
+  compile-only and annotation-processor configurations included (`app/build.gradle.kts`, SCOPE), so
+  it names `lombok 1.18.46` with `cdx:maven:package:test=false`.
+  - §6, §18 criterion 6, ADR-0055 and the backlog said it appeared in no SBOM. That was inferred
+    from the lockfiles and never checked against the SBOM. Now corrected.
+  - Nothing Lombok-owned ships: no runtime classpath and no boot jar holds it.
+  - The SBOM is not shipping provenance while it includes non-runtime scopes, a limitation Phase 15
+    owns. Lombok is one more build-time component in it, which CI's dependency scan now covers.
+- **Parameter metadata.** Lombok declares generated constructor parameters `final`. In `app`, which
+  compiles with `-parameters`, that shows as a flag in `MethodParameters`. All 57 `app` constructors
+  keep their parameter names, and nothing reads the flag. The gate now checks names (§15).
+- **§10 misdescribed `CheckoutService`.** Its constructor is what Lombok would generate; the audit
+  excluded it for its initialised field. The sentence is corrected; the class stays untouched.
+- **Five classes the plan did not approve look convertible.** `CheckoutService` and
+  `TracedDataSource` were conservatively excluded, and three nested types were never listed by the
+  per-file audit. They are left as they are, with reasons (appendix D.2), for a later pass the owner
+  approves separately.
+- **The change log's table** had its `|---|` separator under 37 rows, displaced by rows inserted
+  above it. Batch 9 moved it, but the batch tool then put Batch 9's own row above it again, so the
+  close-out placed it directly under the header.
+
+**Why `BLOCKED`, not `COMPLETE`.** The owner's instruction is to mark the refactor complete only
+when all tests pass, and the backlog entry requires the §19 failure to be fixed first. The failure
+occurs identically on the pre-refactor tree, and fixing it is outside this task's scope (§3), so it
+is not fixed here. **It unblocks when** the test's stale owner-kind filter is fixed in its own
+change and a fresh database tier is green. `X-TSK-001` then becomes `COMPLETE` with no further work.
 
 ---
 
@@ -537,3 +643,43 @@ Generated from the audit of the source tree at `1d9f97d`. Batch numbers refer to
 - `payments`: `EvidenceCipher`, `WebhookSignature`
 - `platform`: `RequestFingerprint`
 - `sharedkernel`: `CausationId`, `CorrelationId`, `Money`, `Sensitive`
+
+### D. What stays hand-written, and why: the final check
+
+Scanned afresh from the tree at the final batch commit (`8cfdcc3`). The plan-time audit is used only
+to cross-check each reason. Production code unless stated.
+
+**D.1 Loggers.** None in production: all 22 are `@Slf4j`. Test code keeps 6, because the plan leaves
+test code as written (§3):
+- `CredentialNeverReachesALogTest`, `LogRedactionTest` and `RedactionAcrossAppendersTest` (`app`)
+  declare plain class loggers. They are the log-redaction security tests: convertible, but out of
+  scope.
+- `CorrelationContextTest`, `CorrelationPropagationTest` and `RelayLoggingTest` (`platform`) cast to
+  logback's `Logger` to attach a capturing appender, the last to `OutboxRelay`'s own logger. That is
+  test machinery, not a declaration `@Slf4j` can express.
+
+**D.2 Constructors that only assign, kept: 34 in production.**
+
+| Reason | Count | Classes |
+|---|---|---|
+| Private constructor behind an invariant-enforcing factory. Never Lombok (`java-lombok.md`) | 18 | `accounts`: `CustomerAccount` · `checkout`: `CheckoutSessionToken` · `identity`: `Identity`, `SessionToken`, `SingleUseToken`, `VerificationOutcome` · `kyc`: `DocumentBytes`, `KycCase`, `VerificationCheck` · `ledger`: `JournalEntry` · `merchant`: `FeeRate`, `MerchantApiKeySecret` · `party`: `Customer`, `Party` · `platform`: `RequestFingerprint` · `sharedkernel`: `CausationId`, `CorrelationId`, `Sensitive` |
+| Parameter names select a bean. These are `@Service`s autowired by constructor, and with 16 `TransactionTemplate` beans and no `@Primary` or `@Qualifier`, Spring picks by parameter name. Lombok names a parameter after its field, so conversion would break the wiring | 2 | `app`: `ChangePasswordService` (`TransactionTemplate credentialChangeTransactions`), `MfaEnrolmentApplicationService` (`TransactionTemplate mfaTransactions`) |
+| Parameters renamed relative to their fields. Each is built by `new` in a `*Beans` class, so the names are documentation only, but the constructor is not what Lombok generates and the plan converts exact matches only | 8 | `app`: `BeneficiaryService`, `DocumentUploadService`, `IdentityAdministrationService`, `PaymentMethodService`, `PaymentService`, `PaymentWebhookService` (its logger converted in Batch 8), `ProfileService`, `TransferService` |
+| Excluded by the plan-time audit for an initialised or mutable field, although `@RequiredArgsConstructor` would skip that field and generate the same constructor. Untouched here; a candidate for a later, separately approved pass | 2 | `app`: `CheckoutService` (initialised `intents` field), `TracedDataSource` (`volatile` lazily resolved tracer; package-private) |
+| Money kernel | 1 | `sharedkernel`: `RoundingPolicy` |
+| Nested types. The plan-time audit (one record per file) did not enumerate them, so they are outside the approved set and untouched; recorded for a later pass | 3 | `app`: `AuthenticationService.Outcome` (metric-tag enum), `BoundedRequest.BoundedStream` (private stream with a mutable byte counter), `RegistrationService.Outcome` (metric-tag enum) |
+
+Test fixtures keep 2 (`SimulatedInstance` and `SimulatedProvider`, private behind factories) and
+test code 27. Both are out of scope (§3).
+
+**D.3 Hand-written `equals`/`hashCode` (22 production files) and `toString` (68).** None is replaced
+or joined by a generated one. The tree has no `@EqualsAndHashCode`, `@ToString`, `@Value` or
+`@Data`, and the bytecode gate shows no converted class gained a method.
+- `equals`/`hashCode`: the 21 classes the §4 audit counted, plus the record `StoredResponse`.
+- `toString`: the 38 top-level types the audit counted (§4's 39 included one test class), plus 30
+  records, some nested in interfaces, that override their record `toString`. Records are out of
+  scope (§3).
+
+**D.4 Trivial fluent accessors: 326 in 90 production types.** §4 counts the 248 in 60 classes; the
+other 78 are in 30 enums. `@Getter` would rename them `getX()`, and `@Accessors(fluent = true)` is
+experimental and refused by `lombok.config`.

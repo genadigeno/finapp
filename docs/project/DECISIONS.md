@@ -205,7 +205,7 @@ Lombok is the project standard for Java boilerplate. It is `compileOnly` + `anno
 - refused as compile errors: `@Data`, `@SneakyThrows`, `@Synchronized`, `val`/`var`, `@Cleanup`, experimental features and non-SLF4J loggers;
 - a generated `toString` shows only fields explicitly included.
 
-**Records stay first** for values. Aggregates, value objects, secrets and `Money` keep their hand-written construction and equality. Existing code converts in module batches (`X-TSK-001`), each proved byte-equivalent with `javap` before it is committed. &rarr; [ADR-0055](../adr/ADR-0055-lombok-compile-time-boilerplate.md)
+**Records stay first** for values. Aggregates, value objects, secrets and `Money` keep their hand-written construction and equality. Existing code was converted in nine module batches (`X-TSK-001`, 152 classes), each proved byte-equivalent with `javap` before it was committed. &rarr; [ADR-0055](../adr/ADR-0055-lombok-compile-time-boilerplate.md)
 
 ### Test tiers
 A test's tier is **what it needs in order to run**, never what it proves. That is the only axis on

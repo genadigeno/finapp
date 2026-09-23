@@ -45,6 +45,10 @@ never hide important domain behaviour.
   rests on one JVM (`CLAUDE.md`).
 - **Replace a constructor that validates, derives, copies defensively or documents its
   parameters.** Move parameter documentation onto the field, or keep the constructor.
+- **Replace a constructor whose parameter names select a bean.** Several beans can share a type
+  (16 `TransactionTemplate`s, and no `@Qualifier`), so Spring autowires by parameter name. Lombok
+  names each parameter after its field, which silently changes the bean chosen or fails the
+  context.
 - **Reorder the fields of a `@RequiredArgsConstructor` class casually.** Field order IS the
   constructor's parameter order, and two same-typed dependencies swap silently.
 
@@ -56,4 +60,4 @@ every non-SLF4J logger are compile errors.
 
 **Converting existing code** follows `docs/project/tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`: module
 batches, with the classes classified DO NOT REFACTOR left alone. Each batch proves with `javap` that
-constructors, fields, null checks and methods are unchanged.
+constructors, fields, null checks, methods and constructor parameter names are unchanged.

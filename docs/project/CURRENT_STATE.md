@@ -349,15 +349,16 @@ same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2
 sentence read "M6.3 open at 1 of 4, next `P6-TSK-007`" through five completed tasks, corrected
 by `P6-TSK-015`'s gate.)*
 
-**Cross-cutting — `X-TSK-001`, Lombok adoption** (planned 2026-09-23; it belongs to no phase,
-gates no phase exit and does not displace `P6-TSK-011`):
-- **In place (Batch 0):** Lombok is the project standard for Java boilerplate, at compile time
-  only. That covers the build wiring, `lombok.config` and `.claude/rules/java-lombok.md`
-  (ADR-0055, `Proposed`). New code follows the rule from now on.
-- **Not started:** refactoring the existing Phase 1–6 code, 152 of 691 production classes in nine
-  module batches, each behind a bytecode-equivalence gate. It waits for the owner's go-ahead.
-  **No application source file has changed.** The plan is
-  [`tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`](tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md).
+**Cross-cutting — `X-TSK-001`, Lombok adoption** (2026-09-23; it belongs to no phase, gates no
+phase exit and does not displace `P6-TSK-011`). **`BLOCKED` on final acceptance only.**
+- **Done:** Lombok is the project standard for Java boilerplate, at compile time only
+  (ADR-0055, `Proposed`; `.claude/rules/java-lombok.md`). The Phase 1–6 code is converted: 152
+  production classes in nine module batches, each proved byte-identical by `javap` (0
+  differences; 428 null checks before and after). New code follows the rule.
+- **Open:** acceptance criterion 5, all tiers green. The one failure predates the task
+  (§Blockers). Once its fix lands and a fresh database tier is green, `X-TSK-001` is `COMPLETE`
+  with no further work. The plan and its results are
+  [`tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`](tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md) §21.
 
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
@@ -388,7 +389,9 @@ documentation reflecting reality must not leave its own document stale.)*
 ## Blockers
 
 **The full database tier is not green** (found 2026-09-23 by `X-TSK-001`'s full run). This does
-not block the current task; it blocks the Phase 6 exit battery (`P6-DOC-001`, criterion 7).
+not block the current task. It blocks the Phase 6 exit battery (`P6-DOC-001`, criterion 7) and
+`X-TSK-001`'s final acceptance, and this fix alone unblocks the latter. The final run from
+`clean` reproduced it, with the same message, on the fully converted tree.
 - **What fails:** `OperationalChartDatabaseTest#everyCombinationResolves`, identically on untouched
   `HEAD`. It asks the operational chart for every purpose except customer-owned ones, and
   `P6-TSK-003` added the merchant-owned `MERCHANT_PAYABLE`, which the chart correctly never holds.

@@ -237,11 +237,12 @@ Status: `PLANNED`. Elaborated to **epic** level; capabilities at each phase's en
 
 Items that belong to no phase and gate no phase exit.
 
-- ⚪ **`X-TSK-001` — Lombok adoption and the Phase 1–6 refactor.** Lombok becomes the project
+- 🟠 **`X-TSK-001` — Lombok adoption and the Phase 1–6 refactor.** Lombok becomes the project
   standard for Java boilerplate, at compile time only, with its safe defaults enforced by
-  `lombok.config`. The build and the standard are in place. The existing code is then converted
-  in nine module batches, each proved byte-identical with `javap`. Aggregates, value objects,
-  secrets and `Money` stay hand-written.
+  `lombok.config`. The build and the standard are in place, and the existing code is converted:
+  152 classes in nine module batches, each proved byte-identical with `javap`. Aggregates, value
+  objects, secrets and `Money` stay hand-written. Blocked on final acceptance only, by a
+  pre-existing test failure it did not cause.
 
 ## Maintenance
 
