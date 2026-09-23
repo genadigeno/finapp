@@ -18,6 +18,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What an administrator may do to somebody else's identity (`P1-TSK-028`).
@@ -62,6 +64,7 @@ import java.util.Optional;
  * unbuilt, {@code P1-TSK-033} — and `P1-DOC-002` corrected the claim rather than let a reader
  * plan an incident response around a tool that is not there.)
  */
+@RequiredArgsConstructor
 public final class IdentityAdministration {
 
     /** Kept in one place because it is a published value: consumers route on it. */
@@ -72,30 +75,13 @@ public final class IdentityAdministration {
     /** What an audit record about an administrative action points at. */
     public static final String AUDIT_TARGET_TYPE = "identity.Identity";
 
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final IdentityStore<Connection> identities;
-    private final Authorization authorization;
-    private final SessionRevocation sessions;
-    private final AuditWriter<Connection> auditWriter;
-    private final OutboxWriter<Connection> outboxWriter;
-
-    public IdentityAdministration(
-            IdGenerator ids,
-            Clock clock,
-            IdentityStore<Connection> identities,
-            Authorization authorization,
-            SessionRevocation sessions,
-            AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter) {
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.identities = Objects.requireNonNull(identities, "identities must not be null");
-        this.authorization = Objects.requireNonNull(authorization, "authorization must not be null");
-        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outboxWriter = Objects.requireNonNull(outboxWriter, "outboxWriter must not be null");
-    }
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final IdentityStore<Connection> identities;
+    @NonNull private final Authorization authorization;
+    @NonNull private final SessionRevocation sessions;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final OutboxWriter<Connection> outboxWriter;
 
     /**
      * Suspends an identity and ends every session it holds.

@@ -102,6 +102,18 @@ tomcat = "11.0.25"
 junitJupiter = "6.0.3"
 assertj = "3.27.7"
 
+# Lombok, COMPILE TIME ONLY - the project-standard boilerplate reducer (.claude/rules/java-lombok.md).
+#
+# Applied by the convention plugin to every Java module as compileOnly + annotationProcessor (and
+# the test and test-fixture equivalents), so it is never on a runtime classpath, in a jar or in
+# the SBOM: what ships is the bytecode Lombok wrote, not Lombok.
+#
+# Pinned here like JUnit and AssertJ rather than taken from the Spring Boot BOM, for the same
+# reason: `sharedkernel` applies no Spring BOM, and one version must serve every module. Set to
+# exactly what Spring Boot 4.1.1 manages (lombok.version = 1.18.46) - checked in the BOM, not
+# assumed. ON EVERY SPRING BOOT UPGRADE, re-check it alongside junit-jupiter and assertj.
+lombok = "1.18.46"
+
 # WireMock, TEST SCOPE ONLY (P0-TSK-037). The provider failure-simulation harness ADR-0008
 # names, so that "every adapter is contract-tested against simulated failure" is a thing an
 # adapter author reaches for rather than rebuilds.
@@ -218,6 +230,11 @@ opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testi
 # Logback's list appender is how a test asserts what was actually logged, rather
 # than asserting that a logging call was made. Test scope only.
 logback-classic = { module = "ch.qos.logback:logback-classic" }
+
+# --- Compile-time code generation -------------------------------------------------
+# Lombok: compileOnly + annotationProcessor only, wired once by finapp.java-conventions. Never
+# declare it as implementation or runtimeOnly - see the version note.
+lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
 
 # --- Test libraries, for modules that must not see Spring ---------------------
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junitJupiter" }

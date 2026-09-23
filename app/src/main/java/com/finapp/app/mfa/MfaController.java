@@ -7,7 +7,8 @@ import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -45,13 +46,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me/mfa", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class MfaController {
 
-    private final MfaEnrolmentApplicationService enrolments;
-
-    public MfaController(MfaEnrolmentApplicationService enrolments) {
-        this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
-    }
+    @NonNull private final MfaEnrolmentApplicationService enrolments;
 
     /**
      * Begins an enrolment.

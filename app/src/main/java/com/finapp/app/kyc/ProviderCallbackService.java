@@ -19,8 +19,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
@@ -56,6 +55,7 @@ import tools.jackson.databind.ObjectMapper;
  * move the case; and a <em>duplicate</em> delivery re-assesses too, which is what heals a crash
  * between a delivery's commit and its assessment.
  */
+@Slf4j
 public class ProviderCallbackService {
 
     static final String CONSUMER = "kyc.provider-callback";
@@ -70,8 +70,6 @@ public class ProviderCallbackService {
      * it can stop being true. A newline in it would be a forged log line.
      */
     private static final Pattern DELIVERY_ID = Pattern.compile("[A-Za-z0-9._:@/+=-]+");
-
-    private static final Logger log = LoggerFactory.getLogger(ProviderCallbackService.class);
 
     private final CheckStore<Connection> checks;
     private final CallbackSignature signature;

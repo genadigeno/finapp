@@ -1,6 +1,7 @@
 package com.finapp.accounts;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What the {@code accounts} module does that must produce an audit record.
@@ -16,6 +17,7 @@ import com.finapp.platform.audit.AuditableAction;
  * Suspension still has no producer this phase ({@link CustomerAccountStatus}), so an action
  * for it would be vocabulary with no decision behind it.
  */
+@RequiredArgsConstructor
 public enum AccountsAuditAction implements AuditableAction {
 
     /**
@@ -53,12 +55,6 @@ public enum AccountsAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    AccountsAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

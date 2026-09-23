@@ -200,6 +200,13 @@ bot for those was rejected in favour of a check that could actually be **proven*
 repository has no remote and no workflow has ever run. &rarr;
 [ADR-0026](../adr/ADR-0026-keeping-pins-fresh.md), ADR-0025
 
+### Boilerplate: Lombok, compile time only
+Lombok is the project standard for Java boilerplate. It is `compileOnly` + `annotationProcessor`, wired once in the convention plugin from a catalog pin that matches the Spring Boot BOM, so it is on no runtime classpath (the lockfiles show it) and in no jar. The rule is [`.claude/rules/java-lombok.md`](../../.claude/rules/java-lombok.md); `lombok.config` is the half the compiler enforces:
+- refused as compile errors: `@Data`, `@SneakyThrows`, `@Synchronized`, `val`/`var`, `@Cleanup`, experimental features and non-SLF4J loggers;
+- a generated `toString` shows only fields explicitly included.
+
+**Records stay first** for values. Aggregates, value objects, secrets and `Money` keep their hand-written construction and equality. Existing code was converted in nine module batches (`X-TSK-001`, 152 classes), each proved byte-equivalent with `javap` before it was committed. &rarr; [ADR-0055](../adr/ADR-0055-lombok-compile-time-boilerplate.md)
+
 ### Test tiers
 A test's tier is **what it needs in order to run**, never what it proves. That is the only axis on
 which membership can be decided mechanically, and it is the axis that matters for scheduling: a

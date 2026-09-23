@@ -535,6 +535,166 @@ class IdempotentExecutorTest {
     }
 
     // -----------------------------------------------------------------
+    // The two-transaction command (P5-TSK-016): begin / complete
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("begin holds the claim IN_PROGRESS, complete records the response once, and"
+            + " the replay is byte-for-byte from then on")
+    void beginHoldsTheClaimAndCompleteRecordsTheResponse() throws SQLException {
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint fingerprint =
+                RequestFingerprint.sha256("refund:300".getBytes(StandardCharsets.UTF_8));
+        AtomicInteger dispatches = new AtomicInteger();
+
+        IdempotentExecutor.BeginOutcome begun =
+                inScope(
+                        () ->
+                                executor()
+                                        .begin(
+                                                connection,
+                                                key,
+                                                fingerprint,
+                                                uow -> {
+                                                    dispatches.incrementAndGet();
+                                                    return "working".getBytes(
+                                                            StandardCharsets.UTF_8);
+                                                }));
+        connection.commit();
+        assertThat(begun.dispatched()).contains("working".getBytes(StandardCharsets.UTF_8));
+        assertThat(stateOf(key)).isEqualTo(IdempotencyState.IN_PROGRESS);
+
+        // A retry while the flight is live: deterministic, bounded, and true - never a
+        // second dispatch (the lease is alive; nothing is re-run).
+        assertThatThrownBy(
+                        () ->
+                                inScope(
+                                        () ->
+                                                executor()
+                                                        .begin(
+                                                                connection,
+                                                                key,
+                                                                fingerprint,
+                                                                uow -> {
+                                                                    dispatches.incrementAndGet();
+                                                                    return new byte[0];
+                                                                })))
+                .isInstanceOf(IdempotencyInProgressException.class);
+        connection.rollback();
+        assertThat(dispatches.get()).isEqualTo(1);
+
+        // Tx2: the judged response, recorded once - the outcome and the response of record
+        // commit together.
+        boolean recorded =
+                executor()
+                        .complete(
+                                connection,
+                                key,
+                                true,
+                                StoredResponse.of(
+                                        "judged".getBytes(StandardCharsets.UTF_8),
+                                        "text/plain"));
+        connection.commit();
+        assertThat(recorded).isTrue();
+        assertThat(stateOf(key)).isEqualTo(IdempotencyState.COMPLETED);
+
+        // The point of the whole exercise: the replay renders the response of record.
+        IdempotentExecutor.BeginOutcome replay =
+                inScope(
+                        () ->
+                                executor()
+                                        .begin(
+                                                connection,
+                                                key,
+                                                fingerprint,
+                                                uow -> {
+                                                    dispatches.incrementAndGet();
+                                                    return new byte[0];
+                                                }));
+        connection.commit();
+        assertThat(replay.replay().orElseThrow().bodyBytes())
+                .contains("judged".getBytes(StandardCharsets.UTF_8));
+        assertThat(dispatches.get()).as("the dispatch never re-ran").isEqualTo(1);
+
+        // A second completion converges: reported, never thrown, and the frozen response
+        // stands (platform V003, INV-LIFE-04).
+        boolean again =
+                executor()
+                        .complete(
+                                connection,
+                                key,
+                                true,
+                                StoredResponse.of(
+                                        "usurper".getBytes(StandardCharsets.UTF_8),
+                                        "text/plain"));
+        connection.commit();
+        assertThat(again).isFalse();
+        IdempotentExecutor.BeginOutcome still =
+                inScope(() -> executor().begin(connection, key, fingerprint, uow -> new byte[0]));
+        connection.commit();
+        assertThat(still.replay().orElseThrow().bodyBytes())
+                .contains("judged".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("begin takes over an expired lease and re-runs the dispatch - the convergence"
+            + " is the DispatchCommand contract, exercised by its owning suites")
+    void beginTakesOverAnExpiredLeaseAndRerunsTheDispatch() throws SQLException {
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint fingerprint =
+                RequestFingerprint.sha256("refund:301".getBytes(StandardCharsets.UTF_8));
+        insertExpiredLeaseClaim(key, fingerprint);
+        AtomicInteger dispatches = new AtomicInteger();
+
+        IdempotentExecutor.BeginOutcome takenOver =
+                inScope(
+                        () ->
+                                executor()
+                                        .begin(
+                                                connection,
+                                                key,
+                                                fingerprint,
+                                                uow -> {
+                                                    dispatches.incrementAndGet();
+                                                    return "converged".getBytes(
+                                                            StandardCharsets.UTF_8);
+                                                }));
+        connection.commit();
+
+        assertThat(takenOver.dispatched())
+                .contains("converged".getBytes(StandardCharsets.UTF_8));
+        assertThat(dispatches.get()).isEqualTo(1);
+        assertThat(stateOf(key)).isEqualTo(IdempotencyState.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("begin refuses a different fingerprint whatever the claim's state")
+    void beginRefusesADifferentFingerprint() throws SQLException {
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint original =
+                RequestFingerprint.sha256("refund:302".getBytes(StandardCharsets.UTF_8));
+        inScope(() -> executor().begin(connection, key, original, uow -> new byte[0]));
+        connection.commit();
+
+        assertThatThrownBy(
+                        () ->
+                                inScope(
+                                        () ->
+                                                executor()
+                                                        .begin(
+                                                                connection,
+                                                                key,
+                                                                RequestFingerprint.sha256(
+                                                                        "different"
+                                                                                .getBytes(
+                                                                                        StandardCharsets
+                                                                                                .UTF_8)),
+                                                                uow -> new byte[0])))
+                .isInstanceOf(IdempotencyConflictException.class);
+        connection.rollback();
+    }
+
+    // -----------------------------------------------------------------
 
     private static IdempotentExecutor executor() {
         return new IdempotentExecutor(

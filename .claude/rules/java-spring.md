@@ -11,7 +11,8 @@ paths:
 - Keep transactional boundaries explicit.
 - Keep domain rules testable without requiring the full Spring container where practical.
 - Avoid hidden side effects in entity setters.
-- Do not introduce annotations or frameworks without a clear reason.
+- Do not introduce annotations or frameworks without a clear reason. Lombok is the adopted
+  exception for boilerplate, under `java-lombok.md`.
 - Preserve nullability and validation semantics explicitly.
 - Prefer composition over inheritance unless the domain truly requires polymorphism.
 - Use the repository's existing Java/Spring conventions before introducing new patterns.

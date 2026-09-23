@@ -1,0 +1,719 @@
+package com.finapp.app.payments;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.finapp.accounts.AccountOpening;
+import com.finapp.accounts.JdbcCustomerAccountStore;
+import com.finapp.accounts.ProductType;
+import com.finapp.app.accounts.VerifiedAccountHolder;
+import com.finapp.ledger.ChartOfAccounts;
+import com.finapp.ledger.JdbcBalanceProjection;
+import com.finapp.ledger.JdbcJournalEntryStore;
+import com.finapp.ledger.JdbcLedgerAccountStore;
+import com.finapp.ledger.LedgerAccountId;
+import com.finapp.ledger.PostingObserver;
+import com.finapp.ledger.PostingService;
+import com.finapp.party.JdbcPartyStore;
+import com.finapp.paymentmethods.JdbcPaymentMethodStore;
+import com.finapp.payments.EvidenceCipher;
+import com.finapp.payments.JdbcPaymentAttemptStore;
+import com.finapp.payments.JdbcPaymentIntentStore;
+import com.finapp.payments.JdbcProviderEvidenceStore;
+import com.finapp.payments.PaymentAttempt;
+import com.finapp.payments.PaymentAttemptId;
+import com.finapp.payments.PaymentAttemptStatus;
+import com.finapp.payments.PaymentCapture;
+import com.finapp.payments.PaymentConfirmation;
+import com.finapp.payments.PaymentCreation;
+import com.finapp.payments.PaymentIntentId;
+import com.finapp.payments.PaymentIntentStatus;
+import com.finapp.payments.PaymentOutcomes;
+import com.finapp.payments.PaymentSweeper;
+import com.finapp.payments.ProviderIdempotencyReference;
+import com.finapp.payments.SimulatedCardPspAdapter;
+import com.finapp.payments.TransactionRunner;
+import com.finapp.payments.WebhookSignature;
+import com.finapp.platform.audit.JdbcAuditWriter;
+import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.idempotency.IdempotentExecutor;
+import com.finapp.platform.idempotency.JdbcIdempotencyRecordStore;
+import com.finapp.platform.inbox.InboxConsumer;
+import com.finapp.platform.inbox.JdbcInboxRecordStore;
+import com.finapp.platform.outbox.JdbcOutboxWriter;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
+import com.finapp.platform.security.SecurityContext;
+import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.platform.testing.provider.SimulatedProvider;
+import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.id.IdGenerator;
+import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.Money;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.UUID;
+import java.util.function.Function;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The ambiguity demonstration (`P5-TST-001`): the phase's reason for existing, driven whole.
+ *
+ * <p>{@code INV-LIFE-03} calls the assumption this suite attacks <em>"the single most
+ * expensive assumption in payments"</em> — a timeout read as failure. Each scenario here is a
+ * provider that DID act while the platform lost the answer, and each ends with the effect
+ * <strong>counted in the journal and the payment tables, never inferred</strong>: one wire
+ * operation, one transition per edge, one entry — or none at all where value never moved.
+ *
+ * <p>The mechanisms were each proven at their own rank (`P5-TSK-009`/`-010`/`-013`/`-014`,
+ * whose counted races this suite cites rather than repeats); what only a composition can show
+ * is the story: honest {@code *_UNKNOWN} → the platform asks on its own initiative → exactly
+ * one financial effect. The `MUTATION_TESTING.md` row for {@code INV-LIFE-03} names this
+ * suite, with the register's demonstrations performed at this task's gate.
+ */
+@Tag("database")
+@SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
+@DisplayName("the ambiguity demonstration (P5-TST-001)")
+class PaymentAmbiguityDemonstrationDatabaseTest {
+
+    private static final Clock CLOCK = Clock.systemUTC();
+    private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
+    private static final CurrencyCode EUR = CurrencyCode.of("EUR");
+    private static final Money AMOUNT = Money.ofMinorUnits(15_00, EUR);
+    private static final byte[] PSP_KEY =
+            "0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] EVIDENCE_KEY =
+            "abcdef0123456789abcdef0123456789".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] WEBHOOK_KEY =
+            "ffeeddccbbaa00998877665544332211".getBytes(StandardCharsets.UTF_8);
+
+    /** Short on purpose: the timeout scenarios wait it out, so seconds would be minutes. */
+    private static final Duration ADAPTER_TIMEOUT = Duration.ofMillis(700);
+
+    private static SimulatedProvider psp;
+
+    private final CountingRunner runner = new CountingRunner();
+    private final JdbcPaymentIntentStore intents = new JdbcPaymentIntentStore();
+    private final JdbcPaymentAttemptStore attempts = new JdbcPaymentAttemptStore();
+    private final JdbcProviderEvidenceStore evidence =
+            new JdbcProviderEvidenceStore(
+                    new EvidenceCipher(EVIDENCE_KEY, 1, new SecureRandom()), IDS);
+    private final JdbcLedgerAccountStore ledgerAccounts = new JdbcLedgerAccountStore();
+    private final JdbcPaymentParticipants participants =
+            new JdbcPaymentParticipants(
+                    new JdbcPartyStore(),
+                    new JdbcCustomerAccountStore(),
+                    ledgerAccounts,
+                    new JdbcPaymentMethodStore());
+
+    @BeforeAll
+    static void startProvider() {
+        psp = SimulatedProvider.start();
+    }
+
+    @AfterAll
+    static void stopProvider() {
+        psp.close();
+    }
+
+    private CorrelationContext.Scope testFlow;
+
+    @BeforeEach
+    void reset() {
+        psp.reset();
+        testFlow =
+                CorrelationContext.enter(
+                        Correlation.startingWith(CorrelationId.of("amb-" + UUID.randomUUID())));
+    }
+
+    @AfterEach
+    void leaveScope() {
+        testFlow.close();
+    }
+
+    // -----------------------------------------------------------------
+    // Received before lost: the provider took the request and the answer died
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("the provider authorises while the response is lost: AUTH_UNKNOWN commits, the"
+            + " sweeper learns the truth, and the payment completes with ONE wire authorization"
+            + " and ONE entry")
+    void receivedBeforeLostAtAuthorization() throws Exception {
+        Holder holder = holder();
+        psp.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH);
+
+        PaymentAttemptId attemptId = confirmedAttempt(holder);
+
+        // The honest state, committed - never an assumed failure (INV-LIFE-03).
+        assertThat(attemptStatus(attemptId)).isEqualTo("AUTH_UNKNOWN");
+        assertThat(intentStatus(holder.intent())).isEqualTo("PROCESSING");
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
+                .as("the provider RECEIVED the one authorization")
+                .isEqualTo(1);
+
+        // The platform asks on its own initiative; the provider tells the truth it holds.
+        queryAnswers(authReference(attemptId), "approved", "psp_amb-auth-1");
+        sweeper().sweep();
+        assertThat(attemptStatus(attemptId)).isEqualTo("AUTHORIZED");
+
+        // The continuation completes the payment - and the wire count proves no resolver
+        // ever re-dispatched the authorization (INV-PAY-04, end to end).
+        providerCaptures("psp_amb-cap-1");
+        capture().capture(attemptId);
+        assertThat(intentStatus(holder.intent())).isEqualTo("SUCCEEDED");
+        assertThat(entriesByReference(attemptId)).isEqualTo(1);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH)).isEqualTo(1);
+        assertThat(transitionCount(attemptId, "AUTH_UNKNOWN")).isEqualTo(1);
+        assertThat(transitionCount(attemptId, "AUTHORIZED")).isEqualTo(1);
+        assertThat(transitionCount(attemptId, "CAPTURED")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the provider captures while the response is lost: CAPTURE_UNKNOWN commits with"
+            + " NOTHING posted, the mid-ambiguity retry converges with zero wire calls, and the"
+            + " sweeper lands exactly ONE entry")
+    void receivedBeforeLostAtCapture() throws Exception {
+        Holder holder = holder();
+        PaymentAttemptId attemptId = authorizedAttempt(holder);
+        psp.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.CAPTURES_PATH);
+
+        capture().capture(attemptId);
+        assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURE_UNKNOWN");
+        assertThat(entriesByReference(attemptId)).as("ambiguity posts NOTHING").isZero();
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.CAPTURES_PATH)).isEqualTo(1);
+
+        // The client's retry DURING ambiguity: converges on the honest state, zero wire calls
+        // - a retry can never cause a second provider operation.
+        PaymentCapture.CaptureResult retried = capture().capture(attemptId);
+        assertThat(retried.converged()).isTrue();
+        assertThat(retried.attempt()).isEqualTo(PaymentAttemptStatus.CAPTURE_UNKNOWN);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.CAPTURES_PATH)).isEqualTo(1);
+
+        queryAnswers(captureReference(attemptId), "approved", "psp_amb-cap-2");
+        sweeper().sweep();
+
+        assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURED");
+        assertThat(intentStatus(holder.intent())).isEqualTo("SUCCEEDED");
+        assertThat(entriesByReference(attemptId)).as("exactly ONE financial effect").isEqualTo(1);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.CAPTURES_PATH))
+                .as("one wire capture across the whole story")
+                .isEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------
+    // Timeout then success: the other transport shape of the same truth
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("timeout-then-success at authorization: WE time out, the provider completes -"
+            + " AUTH_UNKNOWN, never FAILED, and the payment still ends SUCCEEDED with one entry")
+    void timeoutThenSuccessAtAuthorization() throws Exception {
+        Holder holder = holder();
+        // The provider answers AFTER our timeout: from our side silence, from its side done.
+        psp.respondsAfter(
+                SimulatedCardPspAdapter.AUTHORIZATIONS_PATH,
+                ADAPTER_TIMEOUT.plusMillis(800),
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_late-auth\"}");
+
+        PaymentAttemptId attemptId = confirmedAttempt(holder);
+
+        // The timeout code path lands in the same honest state as the dropped connection:
+        // a timeout is NEVER a failure (INV-LIFE-03's own sentence).
+        assertThat(attemptStatus(attemptId)).isEqualTo("AUTH_UNKNOWN");
+        assertThat(failureReason(attemptId)).isNull();
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH)).isEqualTo(1);
+
+        queryAnswers(authReference(attemptId), "approved", "psp_late-auth");
+        sweeper().sweep();
+        providerCaptures("psp_amb-cap-3");
+        capture().capture(attemptId);
+
+        assertThat(intentStatus(holder.intent())).isEqualTo("SUCCEEDED");
+        assertThat(entriesByReference(attemptId)).isEqualTo(1);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("timeout-then-success at capture: the money form - CAPTURE_UNKNOWN with nothing"
+            + " posted, then the resolution lands exactly one entry for the one wire capture")
+    void timeoutThenSuccessAtCapture() throws Exception {
+        Holder holder = holder();
+        PaymentAttemptId attemptId = authorizedAttempt(holder);
+        psp.respondsAfter(
+                SimulatedCardPspAdapter.CAPTURES_PATH,
+                ADAPTER_TIMEOUT.plusMillis(800),
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_late-cap\"}");
+
+        capture().capture(attemptId);
+
+        assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURE_UNKNOWN");
+        assertThat(entriesByReference(attemptId)).isZero();
+
+        queryAnswers(captureReference(attemptId), "approved", "psp_late-cap");
+        sweeper().sweep();
+
+        assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURED");
+        assertThat(intentStatus(holder.intent())).isEqualTo("SUCCEEDED");
+        assertThat(entriesByReference(attemptId)).isEqualTo(1);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.CAPTURES_PATH))
+                .as("the timed-out request IS the one wire capture; nothing re-dispatched")
+                .isEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------
+    // The contradiction: success claimed after we resolved failure
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("the provider claims success AFTER the sweeper resolved failure: the late claim"
+            + " is refused-edge EVIDENCE - no transition, no entry, the record contradiction-proof")
+    void successAfterResolvedFailureIsEvidence() throws Exception {
+        Holder holder = holder();
+        PaymentAttempt stranded = strandedDispatch(holder);
+
+        // The sweeper's licence: the provider explicitly answers it never saw the reference.
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH
+                        + stranded.authorizationReference().value(),
+                200,
+                "{\"status\":\"unrecognised\"}");
+        sweeper().sweep();
+        assertThat(attemptStatus(stranded.id())).isEqualTo("FAILED");
+        assertThat(failureReason(stranded.id())).isEqualTo("NEVER_RECEIVED");
+        long historyBefore = allTransitionCount(stranded.id());
+        long evidenceBefore = evidenceCount(stranded.id());
+
+        // The contradiction: a late webhook claiming the authorization happened after all.
+        // A terminal never transitions (INV-LIFE-04); the statement is retained; the alert
+        // meter on this rate is plan section 15's, arriving with P5-TSK-017.
+        deliverWebhook(
+                "{\"eventId\":\"evt_contradiction-" + UUID.randomUUID()
+                        + "\",\"operation\":\"" + stranded.authorizationReference().value()
+                        + "\",\"status\":\"approved\",\"reference\":\"psp_too-late\"}");
+
+        assertThat(attemptStatus(stranded.id())).isEqualTo("FAILED");
+        assertThat(failureReason(stranded.id())).isEqualTo("NEVER_RECEIVED");
+        assertThat(allTransitionCount(stranded.id())).isEqualTo(historyBefore);
+        assertThat(evidenceCount(stranded.id()))
+                .as("the contradictory statement is EVIDENCE (INV-HIST-02)")
+                .isEqualTo(evidenceBefore + 1);
+        assertThat(entriesByReference(stranded.id()))
+                .as("no value ever moved, none is invented")
+                .isZero();
+    }
+
+    // -----------------------------------------------------------------
+    // Fixtures (the P5-TSK-014 composition)
+    // -----------------------------------------------------------------
+
+    private record Holder(
+            UUID party, Actor person, PaymentIntentId intent, LedgerAccountId wallet) {}
+
+    private Holder holder() throws Exception {
+        UUID party = IDS.next();
+        UUID customer = IDS.next();
+        UUID method = IDS.next();
+        Actor person = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        try (Connection app = DatabaseRoles.application()) {
+            execute(app,
+                    "INSERT INTO party.party (id, kind, display_name, registered_at)"
+                            + " VALUES (?, 'PERSON', 'Ambiguity Holder',"
+                            + " now() - interval '2 hour')",
+                    party);
+            execute(app,
+                    "INSERT INTO party.customer (id, party_id, status, opened_at,"
+                            + " status_changed_at) VALUES (?, ?, 'ACTIVE',"
+                            + " now() - interval '1 hour', now() - interval '1 hour')",
+                    customer, party);
+            execute(app,
+                    "INSERT INTO paymentmethods.payment_method (id, party_id, token_reference,"
+                            + " brand, display_suffix, expiry_month, expiry_year, status,"
+                            + " created_at) VALUES (?, ?, ?, 'Visa', '4242', 12, 2030,"
+                            + " 'ACTIVE', now())",
+                    method, party, "tok-amb-" + UUID.randomUUID());
+        }
+        SecurityContext.Scope actor = SecurityContext.enter(person);
+        CorrelationContext.Scope flow =
+                CorrelationContext.enter(
+                        Correlation.startingWith(CorrelationId.of("fix-" + UUID.randomUUID())));
+        try {
+            runner.inTransaction(
+                    uow ->
+                            new AccountOpening(
+                                            new JdbcCustomerAccountStore(),
+                                            ledgerAccounts,
+                                            new VerifiedAccountHolder(new JdbcPartyStore()),
+                                            new JdbcAuditWriter(),
+                                            new JdbcOutboxWriter(),
+                                            IDS,
+                                            CLOCK)
+                                    .open(uow, party, ProductType.WALLET, EUR));
+            PaymentCreation.CreationResult created =
+                    runner.inTransaction(
+                            uow ->
+                                    new PaymentCreation(
+                                                    executor(),
+                                                    participants,
+                                                    intents,
+                                                    new JdbcAuditWriter(),
+                                                    new JdbcOutboxWriter(),
+                                                    IDS,
+                                                    CLOCK)
+                                            .create(
+                                                    uow,
+                                                    new PaymentCreation.CreatePaymentCommand(
+                                                            party,
+                                                            method,
+                                                            AMOUNT,
+                                                            "amb-" + UUID.randomUUID())));
+            LedgerAccountId wallet =
+                    runner.inTransaction(
+                            uow ->
+                                    intents.findById(uow, created.intent())
+                                            .orElseThrow()
+                                            .walletAccount());
+            return new Holder(party, person, created.intent(), wallet);
+        } finally {
+            flow.close();
+            actor.close();
+        }
+    }
+
+    /** Confirms with whatever the harness is staged to do; returns the attempt. */
+    private PaymentAttemptId confirmedAttempt(Holder holder) {
+        SecurityContext.Scope actor = SecurityContext.enter(holder.person());
+        CorrelationContext.Scope flow =
+                CorrelationContext.enter(
+                        Correlation.startingWith(CorrelationId.of("cf-" + UUID.randomUUID())));
+        try {
+            confirmation().confirm(holder.party(), holder.intent());
+            return runner.inTransaction(
+                    uow -> attempts.findForIntent(uow, holder.intent()).orElseThrow().id());
+        } finally {
+            flow.close();
+            actor.close();
+        }
+    }
+
+    /** A cleanly AUTHORIZED attempt (approved auth), the capture scenarios' floor. */
+    private PaymentAttemptId authorizedAttempt(Holder holder) {
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.AUTHORIZATIONS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_amb-a-" + UUID.randomUUID()
+                        + "\"}");
+        PaymentAttemptId attemptId = confirmedAttempt(holder);
+        assertThat(attemptStatus(attemptId)).isEqualTo("AUTHORIZED");
+        return attemptId;
+    }
+
+    /** The crash mid-call, reproduced: intent PROCESSING, attempt born AUTH_DISPATCHED. */
+    private PaymentAttempt strandedDispatch(Holder holder) {
+        return runner.inTransaction(
+                uow -> {
+                    intents.transition(
+                            uow,
+                            holder.intent(),
+                            PaymentIntentStatus.REQUIRES_CONFIRMATION,
+                            PaymentIntentStatus.PROCESSING);
+                    PaymentAttempt attempt =
+                            PaymentAttempt.create(
+                                    IDS,
+                                    CLOCK,
+                                    holder.intent(),
+                                    new ProviderIdempotencyReference("amb-" + IDS.next()));
+                    attempts.insert(uow, attempt);
+                    return attempt;
+                });
+    }
+
+    private PaymentConfirmation confirmation() {
+        return new PaymentConfirmation(
+                runner, intents, attempts, evidence, participants, adapter(),
+                outcomes(), new JdbcAuditWriter(), IDS, CLOCK);
+    }
+
+    private PaymentCapture capture() {
+        return new PaymentCapture(
+                runner, intents, attempts, evidence, adapter(), outcomes(),
+                new JdbcAuditWriter(), IDS, CLOCK);
+    }
+
+    private PaymentSweeper sweeper() {
+        return new PaymentSweeper(
+                runner, attempts, intents, evidence, adapter(), outcomes(), IDS, CLOCK,
+                Duration.ZERO, Duration.ZERO, 50);
+    }
+
+    /** A registry of this suite's own: the meters' wiring is the telemetry suites'. */
+    private static com.finapp.app.telemetry.PaymentMeters meters() {
+        return new com.finapp.app.telemetry.PaymentMeters(
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+                SimulatedCardPspAdapter.NAME);
+    }
+
+    private PaymentOutcomes outcomes() {
+        return new PaymentOutcomes(
+                intents,
+                attempts,
+                new com.finapp.payments.JdbcRefundStore(),
+                new com.finapp.ledger.HoldService(
+                        ledgerAccounts,
+                        new com.finapp.ledger.JdbcBalanceDerivation(),
+                        new com.finapp.ledger.JdbcHoldStore(),
+                        new com.finapp.ledger.JdbcBalanceProjection(),
+                        new JdbcAuditWriter(),
+                        new JdbcOutboxWriter(),
+                        IDS,
+                        CLOCK),
+                new PostingService(
+                        executor(),
+                        new JdbcJournalEntryStore(IDS),
+                        new JdbcAuditWriter(),
+                        new JdbcOutboxWriter(),
+                        new JdbcBalanceProjection(),
+                        IDS,
+                        CLOCK,
+                        PostingObserver.NONE),
+                new ChartOfAccounts<>(ledgerAccounts),
+                // THE PRODUCTION SEAM (P6-TSK-005): the composition production posts
+                // through, not the wallet one directly - so "no fee pin, two lines" is
+                // proven where it matters. A payment with no pin falls back, which is
+                // this suite's every payment.
+                new com.finapp.app.merchant.MerchantBoundCaptureComposition(
+                        new com.finapp.merchant.MerchantSettlement(
+                                new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                                new com.finapp.merchant.JdbcFeeScheduleStore(),
+                                ledgerAccounts,
+                                new ChartOfAccounts<>(ledgerAccounts),
+                                new JdbcOutboxWriter(),
+                                IDS),
+                        new com.finapp.payments.WalletTopUpComposition(),
+                        // No completion: these suites' payments belong to no checkout
+                        // session, and the production consumer is wired in CheckoutBeans.
+                        landed -> {}),
+                // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own for the same
+                // reason: every refund in this suite falls back to Phase 5's two lines, and
+                // proving that through the real composition is what makes "byte-identical"
+                // a claim about production rather than about a double.
+                new com.finapp.app.merchant.MerchantBoundRefundComposition(
+                        new com.finapp.merchant.MerchantSettlement(
+                                new com.finapp.merchant.JdbcPaymentFeePinStore(),
+                                new com.finapp.merchant.JdbcFeeScheduleStore(),
+                                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                                new com.finapp.ledger.ChartOfAccounts<>(new com.finapp.ledger.JdbcLedgerAccountStore()),
+                                new JdbcOutboxWriter(),
+                                IDS),
+                        new com.finapp.payments.WalletRefundComposition()),
+                new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
+                IDS,
+                CLOCK);
+    }
+
+    private SimulatedCardPspAdapter adapter() {
+        return new SimulatedCardPspAdapter(URI.create(psp.baseUrl()), ADAPTER_TIMEOUT, PSP_KEY);
+    }
+
+    /** The REAL webhook resolver (the P5-TSK-014 composition) for the contradiction scenario. */
+    private void deliverWebhook(String body) {
+        org.springframework.jdbc.datasource.DriverManagerDataSource dataSource =
+                new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                        DatabaseRoles.required("finapp.db.url"),
+                        DatabaseRoles.required("finapp.db.app.user"),
+                        DatabaseRoles.required("finapp.db.app.password"));
+        org.springframework.transaction.support.TransactionTemplate template =
+                new org.springframework.transaction.support.TransactionTemplate(
+                        new org.springframework.jdbc.support.JdbcTransactionManager(dataSource));
+        template.setPropagationBehavior(
+                org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        PaymentWebhookService webhooks =
+                new PaymentWebhookService(
+                        new WebhookSignature(WEBHOOK_KEY, Duration.ofMinutes(5), CLOCK),
+                        evidence,
+                        attempts,
+                        intents,
+                        new com.finapp.payments.JdbcRefundStore(),
+                        meters(),
+                        outcomes(),
+                        new InboxConsumer<>(new JdbcInboxRecordStore(), CLOCK, Duration.ofDays(14)),
+                        new tools.jackson.databind.ObjectMapper(),
+                        CLOCK,
+                        template,
+                        dataSource);
+        String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
+        webhooks.deliver(
+                body.getBytes(StandardCharsets.UTF_8),
+                timestamp,
+                hmacHex(timestamp + "." + body));
+    }
+
+    private static String hmacHex(String signedPayload) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(WEBHOOK_KEY, "HmacSHA256"));
+            return HexFormat.of()
+                    .formatHex(mac.doFinal(signedPayload.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.GeneralSecurityException impossible) {
+            throw new IllegalStateException("HmacSHA256 is required by every JVM", impossible);
+        }
+    }
+
+    private void queryAnswers(
+            ProviderIdempotencyReference reference, String status, String pspReference) {
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + reference.value(),
+                200,
+                "{\"status\":\"" + status + "\",\"reference\":\"" + pspReference + "\"}");
+    }
+
+    private static void providerCaptures(String pspReference) {
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.CAPTURES_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"" + pspReference + "\"}");
+    }
+
+    private static IdempotentExecutor executor() {
+        return new IdempotentExecutor(
+                new JdbcIdempotencyRecordStore(), CLOCK, Duration.ofDays(1),
+                Duration.ofMinutes(5));
+    }
+
+    // -----------------------------------------------------------------
+    // Readers
+    // -----------------------------------------------------------------
+
+    private ProviderIdempotencyReference authReference(PaymentAttemptId attempt)
+            throws SQLException {
+        return new ProviderIdempotencyReference(
+                oneString(
+                        "SELECT auth_reference FROM payments.payment_attempt WHERE id = ?",
+                        attempt.value()));
+    }
+
+    private ProviderIdempotencyReference captureReference(PaymentAttemptId attempt)
+            throws SQLException {
+        return new ProviderIdempotencyReference(
+                oneString(
+                        "SELECT capture_reference FROM payments.payment_attempt WHERE id = ?",
+                        attempt.value()));
+    }
+
+    private String attemptStatus(PaymentAttemptId attempt) {
+        try {
+            return oneString(
+                    "SELECT status FROM payments.payment_attempt WHERE id = ?", attempt.value());
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private String intentStatus(PaymentIntentId intent) throws SQLException {
+        return oneString(
+                "SELECT status FROM payments.payment_intent WHERE id = ?", intent.value());
+    }
+
+    private String failureReason(PaymentAttemptId attempt) throws SQLException {
+        return oneString(
+                "SELECT failure_reason FROM payments.payment_attempt WHERE id = ?",
+                attempt.value());
+    }
+
+    private static long entriesByReference(PaymentAttemptId attempt) throws SQLException {
+        return count(
+                "SELECT count(*) FROM ledger.journal_entry WHERE reference = ?",
+                attempt.value().toString());
+    }
+
+    private static long transitionCount(PaymentAttemptId attempt, String to) throws SQLException {
+        return count(
+                "SELECT count(*) FROM payments.payment_attempt_event"
+                        + " WHERE attempt_id = ? AND to_status = ?",
+                attempt.value(),
+                to);
+    }
+
+    private static long allTransitionCount(PaymentAttemptId attempt) throws SQLException {
+        return count(
+                "SELECT count(*) FROM payments.payment_attempt_event WHERE attempt_id = ?",
+                attempt.value());
+    }
+
+    private static long evidenceCount(PaymentAttemptId attempt) throws SQLException {
+        return count(
+                "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ?",
+                attempt.value());
+    }
+
+    private static String oneString(String sql, Object argument) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            read.setObject(1, argument);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).as("one row for: %s", sql).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
+
+    private static long count(String sql, Object... arguments) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                read.setObject(i + 1, arguments[i]);
+            }
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    private static void execute(Connection connection, String sql, Object... arguments)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                statement.setObject(i + 1, arguments[i]);
+            }
+            statement.executeUpdate();
+        }
+    }
+
+    private static final class CountingRunner implements TransactionRunner {
+        @Override
+        public <R> R inTransaction(Function<Connection, R> work) {
+            try (Connection unitOfWork = DatabaseRoles.application()) {
+                try {
+                    unitOfWork.setAutoCommit(false);
+                    R result = work.apply(unitOfWork);
+                    unitOfWork.commit();
+                    return result;
+                } catch (RuntimeException failure) {
+                    unitOfWork.rollback();
+                    throw failure;
+                }
+            } catch (SQLException failure) {
+                throw new IllegalStateException("transaction plumbing failed", failure);
+            }
+        }
+    }
+}

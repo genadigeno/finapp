@@ -3,6 +3,7 @@ package com.finapp.app.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.session.RequiresAssurance;
+import com.finapp.app.merchant.RequiresMerchantKey;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.Unauthenticated;
@@ -48,7 +49,14 @@ class EveryEndpointDeclaresARuleTest {
                     Unauthenticated.class,
                     RequiresSession.class,
                     RequiresAssurance.class,
-                    RequiresPermission.class);
+                    RequiresPermission.class,
+                    // P6-TSK-002, the fifth declaration. Taught here as well as to the
+                    // interceptor DELIBERATELY: this guard fails the BUILD where the
+                    // interceptor fails a request, and it is the one that catches a merchant
+                    // route shipped with no rule at all. Two controls blind in different
+                    // directions - and this task proved it, because teaching only the
+                    // interceptor left this one red.
+                    RequiresMerchantKey.class);
 
     /**
      * The MVC mapping specifically.
@@ -66,8 +74,9 @@ class EveryEndpointDeclaresARuleTest {
     void everyHandlerDeclaresSomething() {
         assertThat(undeclaredHandlers())
                 .as("a rule's absence is never a grant (ADR-0031, INV-IDN-04). Annotate the handler"
-                        + " with @Unauthenticated, @RequiresSession, @RequiresAssurance or"
-                        + " @RequiresPermission - being public must be a decision somebody wrote"
+                        + " with @Unauthenticated, @RequiresSession, @RequiresAssurance,"
+                        + " @RequiresPermission or @RequiresMerchantKey - being public must be a"
+                        + " decision somebody wrote"
                         + " down, not something nobody said")
                 .isEmpty();
     }
@@ -125,7 +134,8 @@ class EveryEndpointDeclaresARuleTest {
                         Unauthenticated.class,
                         RequiresSession.class,
                         RequiresAssurance.class,
-                        RequiresPermission.class);
+                        RequiresPermission.class,
+                        RequiresMerchantKey.class);
     }
 
     // -----------------------------------------------------------------
@@ -161,7 +171,12 @@ class EveryEndpointDeclaresARuleTest {
                     declares(handler, RequiresSession.class)
                             || declares(handler, RequiresAssurance.class)
                             || declares(handler, RequiresPermission.class);
-            if (isPublic && isProtected) {
+            // P6-TSK-002: a merchant route beside ANY other rule is the same defect, and
+            // worse in effect - the handler would be reachable by a customer's session AND a
+            // counterparty's key. Mirrors the interceptor's own check, stated here because a
+            // static sweep and a runtime check cannot share a predicate (the comment above).
+            boolean isMerchant = declares(handler, RequiresMerchantKey.class);
+            if ((isPublic && isProtected) || (isMerchant && (isPublic || isProtected))) {
                 contradictory.add(
                         handler.getBeanType().getName() + "." + handler.getMethod().getName());
             }

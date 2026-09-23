@@ -25,6 +25,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Registers an ORGANISATION Party and its Customer, recording the acting person as its one
@@ -58,25 +60,15 @@ import java.util.UUID;
  * session — so the audit record names them via {@link SecurityContext#require()}, and
  * {@code enterSystem()} has no business here.
  */
+@RequiredArgsConstructor
 public final class OrganisationRegistration {
 
     private static final String UNIQUE_VIOLATION = "23505";
 
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-    private final OutboxWriter<Connection> outboxWriter;
-
-    public OrganisationRegistration(
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter) {
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outboxWriter = Objects.requireNonNull(outboxWriter, "outboxWriter must not be null");
-    }
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final OutboxWriter<Connection> outboxWriter;
 
     /**
      * Registers the organisation {@code name} with {@code registrant} as its acting person, or

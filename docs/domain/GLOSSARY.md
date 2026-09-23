@@ -406,6 +406,40 @@ the most overloaded word in the vocabulary, which is why prose should prefer the
 **Not:** a Customer Payment. Different direction, amount, timing and accounts.
 **Owned by:** `merchant`
 
+### Checkout Session
+**Is:** a merchant's short-lived, expiring offer to a customer to pay — the purchase
+experience, referencing the payment intent it opens (ADR-0053).
+**Not:** the Order (a session that dies unpaid produces no order) and not the Payment (it
+owns nothing of the payment's lifecycle).
+**Owned by:** `checkout`
+
+### Order
+**Is:** the commercial fact a paid checkout session produces — permanent, one per session,
+the unit a merchant reconciles against.
+**Not:** the payment (Phase 5's record of the money) and not fulfilment (the merchant's
+business, outside the platform's books).
+**Owned by:** `checkout`
+
+### Fee Schedule
+**Is:** versioned pricing configuration — rate, fixed part, rounding mode, refund-fee
+policy — immutable once effective; change creates a new version effective forward.
+**Not:** a fee assessment, which is the historical fact pinned to the version that priced
+it (`INV-MER-03`).
+**Owned by:** `merchant`
+
+### Merchant Payable
+**Is:** what the platform owes a merchant — the merchant's payable **ledger account
+position**: captured − fees − refunds − payouts (`INV-MER-02`).
+**Not:** a stored balance field. It exists nowhere except as postings.
+**Owned by:** `ledger` (the position); `merchant` (the account's purpose)
+
+### Merchant Payout
+**Is:** a distinct money movement paying the merchant's net payable outward, with its own
+lifecycle, hold, idempotency and provider ambiguity handling (ADR-0051).
+**Not:** settlement of the customer's payment, and not automatic — initiated, bounded by
+the payable, and final only at Phase 8's settlement.
+**Owned by:** `merchant`
+
 ---
 
 ## 6. External parties

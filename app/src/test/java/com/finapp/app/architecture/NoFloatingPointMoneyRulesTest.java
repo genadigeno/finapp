@@ -169,6 +169,16 @@ class NoFloatingPointMoneyRulesTest {
                     // through the ToDoubleFunction Micrometer's Gauge imposes. A count,
                     // never an amount (INV-AUD-02).
                     "com.finapp.app.telemetry.LedgerMetrics$HoldCached",
+                    // P5-TSK-017. The SAME case again, a seventh time: the COUNT of payment
+                    // operations stranded in an unknown state and the AGE IN SECONDS of the
+                    // oldest - longs from the stores to the registry boundary, published
+                    // through the ToDoubleFunction Micrometer's Gauge imposes, with NaN the
+                    // sentinel for unreadable. Counts and seconds, never an amount: the
+                    // money parked behind an unknown refund is deliberately NOT published
+                    // (INV-AUD-02), which is why there is no monetary value in this class
+                    // to be imprecise about.
+                    "com.finapp.app.telemetry.PaymentMetrics",
+                    "com.finapp.app.telemetry.PaymentMetrics$Cached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

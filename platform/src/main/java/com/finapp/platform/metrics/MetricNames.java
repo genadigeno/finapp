@@ -89,7 +89,40 @@ public final class MetricNames {
                     // list's job: the Phase 3 plan's own §15 table says the trial-balance
                     // gauge is "per currency", and a per-currency name split would invent
                     // series the plan does not carry (the `purpose` precedent, P2-TSK-020).
-                    "currency");
+                    "currency",
+                    // Which external provider (P5-TSK-017). Bounded by DEPLOYMENT, not by a
+                    // request: the value is an adapter's own compile-time constant
+                    // (SimulatedCardPspAdapter.NAME) naming an ORGANISATION this platform
+                    // integrates with, so it can never name a person, a resource or anything
+                    // a caller supplies. Added deliberately, which is this list's job: the
+                    // Phase 5 plan's own table says the provider timer is "by provider,
+                    // operation", and ADR-0049 records that one provider becomes several -
+                    // at which point a name split would invent a series per integration and
+                    // make "which provider is slow" unanswerable in one query.
+                    "provider",
+                    // Which provider operation (P5-TSK-017). Bounded by the PaymentProvider
+                    // port's own methods - authorize, capture, refund, query - a closed set
+                    // the compiler owns. Never the provider's status vocabulary
+                    // (INV-PAY-03): what is tagged is OUR word for the call we made.
+                    "operation");
+
+    /**
+     * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling
+     * accident</strong> (`P5-TSK-017`).
+     *
+     * <p>{@code provider} contains the letters {@code id}. The fragment rule is about what a
+     * key's NAME IMPLIES — {@code account_id}, {@code correlation_id}, {@code userId} — and
+     * "provider" implies an organisation this platform integrates with, which is a category,
+     * not an instance. The alternatives were worse: renaming the tag would make the plan's
+     * own §15 table and every dashboard read differently from the code, and softening the
+     * rule to whole-word matching would let {@code accountid} through, which is the exact
+     * shape the rule exists to catch.
+     *
+     * <p>Membership here is <strong>not</strong> a licence: a key listed here must still be
+     * in {@link #ALLOWED_TAG_KEYS}, so it has already been argued for in writing above, and
+     * the guard asserts that containment rather than trusting it.
+     */
+    public static final Set<String> FRAGMENT_EXEMPT_TAG_KEYS = Set.of("provider");
 
     /** Substrings that must never appear in a tag KEY, because of what they imply about values. */
     public static final Set<String> FORBIDDEN_TAG_KEY_FRAGMENTS =

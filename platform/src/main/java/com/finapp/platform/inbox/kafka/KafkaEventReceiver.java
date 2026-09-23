@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -31,8 +32,6 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.header.Header;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * The consumer shell (`P2-TSK-002`): Kafka records in, inbox-deduplicated effects out.
@@ -74,11 +73,10 @@ import org.slf4j.LoggerFactory;
  * acknowledged, because the other transaction may yet roll back. Broker-held offsets are
  * transport bookkeeping, not truth: losing them entirely replays the topic into the dedupe.
  */
+@Slf4j
 public final class KafkaEventReceiver implements AutoCloseable {
 
     static final String HEADER_PREFIX = "finapp.";
-
-    private static final Logger log = LoggerFactory.getLogger(KafkaEventReceiver.class);
 
     private final Consumer<String, byte[]> consumer;
     private final InboxConnectionSource connections;

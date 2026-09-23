@@ -27,20 +27,59 @@
  *
  * <p><strong>What exists so far.</strong> The boundary and the migrator-owned schema floor
  * ({@code P5-TSK-001}), the provider port with its simulated card-PSP adapter
- * ({@code P5-TSK-003}: {@code PaymentProvider}, the answer types, the wire client), all three
- * aggregates with their machines - the intent ({@code P5-TSK-006}) and the attempt and refund
- * ({@code P5-TSK-007}) - and the schema's tables ({@code P5-TSK-008}: {@code V002}-{@code V005}
- * - intent, attempt, refund, their histories and the encrypted provider evidence, the machines'
- * {@code CHECK}s and triggers generated from the enums and reconciled by
- * {@code PaymentsMigrationTest}, the refund sum bound in-trigger under advisory-lock
- * namespace 3 - updated by the task that made the previous sentence stale, the recurring
- * class). The commands are {@code P5-TSK-009}/{@code -010}/{@code -015}, and the evidence
- * cipher arrives with the first writer ({@code P5-TSK-009}).
+ * ({@code P5-TSK-003}), all three aggregates with their machines
+ * ({@code P5-TSK-006}/{@code -007}), the schema ({@code P5-TSK-008}: {@code V002}-{@code V006},
+ * generated {@code CHECK}s and triggers reconciled by {@code PaymentsMigrationTest}, the
+ * refund sum bound in-trigger under advisory-lock namespace 3), and the authorization slice
+ * ({@code P5-TSK-009}: {@code PaymentCreation}/{@code PaymentConfirmation}/
+ * {@code PaymentCancellation} on the dispatch-before-call discipline, the stores, the
+ * {@code PaymentParticipants} port {@code app} implements, {@code EvidenceCipher} with its
+ * confined key, the first audit actions), and the capture ({@code P5-TSK-010}:
+ * {@code PaymentCapture} - the ledger's first touch, the {@code CAPTURED} transition, the
+ * {@code payment-capture:} posting and the intent's {@code SUCCEEDED} one transaction,
+ * ADR-0048), and the HTTP surface's vocabulary ({@code P5-TSK-011}: {@code PaymentsErrorCode}
+ * - the refusals only, a judged failure is a body fact, {@code INV-PAY-03} at the contract -
+ * with the controller and its capture-chaining service composed in {@code app}, where every
+ * surface lives), and the webhook door's verifier ({@code P5-TSK-012}: {@code WebhookSignature}
+ * - HMAC over {@code timestamp + "." + body} with the two-sided freshness window ADR-0047
+ * requires beyond the {@code P2-TSK-011} scheme; the door itself and its evidence-first,
+ * inbox-deduped ingestion live in {@code app}), and the one shared outcome application
+ * ({@code P5-TSK-013}: {@code PaymentOutcomes} - the synchronous Tx2s, the webhook resolver
+ * and the sweeper apply the same judgement through the same code, from their own source
+ * states, with the capture's transition-posting-intent atomicity preserved by extraction
+ * rather than re-decided), and the reconciliation-by-query sweeper ({@code P5-TSK-014}:
+ * {@code PaymentSweeper} - no lease, no leader, by design; bounded candidates, the provider
+ * asked about our stored reference holding no connection, answers applied through the shared
+ * outcomes, an explicit UNRECOGNISED resolving to {@code FAILED(NEVER_RECEIVED)} and a 404
+ * never earning it - updated by the task that made the previous sentence stale, the
+ * recurring class), and the refund command ({@code P5-TSK-015}: {@code PaymentRefund} -
+ * hold-then-post per ADR-0048 §4: the dispatch takes the attempt row lock FIRST (the pinned
+ * attempt-then-account order), judges the two-rank bound (lock-then-look over
+ * {@code sumNonFailedFor}, {@code V004}'s trigger beneath), places the hold and commits
+ * before the wire call; completion releases-and-posts atomically keyed
+ * {@code payment-refund:<refundId>}, failure releases with nothing posted, ambiguity leaves
+ * the hold standing - the customer's funds visibly reserved, never silently spendable), and
+ * the refund's surface and facts ({@code P5-TSK-016}: {@code RefundInitiated} in the dispatch
+ * transaction - legitimate where {@code TransferInitiated} was not, since under ADR-0046 the
+ * dispatch commits durably before its own outcome exists - {@code RefundCompleted}/{@code
+ * RefundFailed} inside the outcome's conditional so duplicates emit nothing, the webhook
+ * resolver completing UNKNOWN refunds through the same shared outcomes, and the refund as the
+ * platform's first two-transaction keyed command: the claim held IN_PROGRESS across the wire,
+ * completed with the judged response in Tx2, replayed byte-for-byte from then on, the
+ * takeover re-run converging by {@code V008}'s dispatch key), and the observability the
+ * phase plan's §15 promised ({@code P5-TSK-017}: this module gained no metrics library and
+ * no meter — what it gained is the <strong>acting bit</strong> on every outcome result
+ * ({@code Applied}, {@code RefundApplied}, the two command results and the sweeper's own
+ * tally), because a conditional transition's row count is the only place the answer to "did
+ * THIS call judge it?" exists, and a counter that could not tell an acting winner from a
+ * converged loser would report one payment N times under a race. The meters themselves, the
+ * provider-timing decorator and the stuck-payment gauges live in {@code app}, where every
+ * composition decision lives).
  *
- * <p><strong>Deliberately no audit-action enum yet</strong> (the deliberately-few licence,
- * {@code P4-TSK-001}'s precedent): the actions arrive with the commands whose designs fix their
- * meaning - confirmation and cancellation as the person ({@code P5-TSK-009}/{@code -011}),
- * outcome application as the platform ({@code P5-TSK-009}/{@code -014}), the refund with its
- * required reason ({@code P5-TSK-015}).
+ * <p><strong>The audit actions arrived exactly as the deliberately-few licence promised</strong>
+ * ({@code P4-TSK-001}'s precedent, paid by {@code P5-TSK-009}): creation, confirmation and
+ * cancellation as the person, outcome application as the platform, the capture's dispatch
+ * ({@code P5-TSK-010}) and the refund's, with its required reason ({@code P5-TSK-015}) -
+ * {@code PaymentsAuditAction}.
  */
 package com.finapp.payments;

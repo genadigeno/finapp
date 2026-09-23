@@ -234,6 +234,67 @@ class OpenApiContractTest {
         }
     }
 
+    /**
+     * The two collisions that were <strong>already published</strong> when this rule arrived
+     * (`P6-TSK-002`) — grandfathered, not tolerated.
+     *
+     * <p>Renaming them now is exactly the breaking change the rule exists to prevent: their
+     * {@code operationId}s are in the committed contract, and a client generated against it
+     * has methods named for them. ADR-0015 is explicit that a breaking change is not
+     * published under version 1, and "we broke it to stop ourselves breaking it" is not an
+     * exception. So they are named here, with their partners, and the rule refuses every NEW
+     * one — which is the property that was missing.
+     *
+     * <p>{@code view_1} shares {@code view} with {@code GET /v1/me/kyb};
+     * {@code register_1} shares {@code register} with {@code POST /v1/registrations}. Both
+     * are reviewed candidates for the next contract version, not for a quiet fix.
+     */
+    private static final java.util.List<String> ALREADY_PUBLISHED_SUFFIXES =
+            java.util.List.of(
+                    "get /v1/ledger/adjustments/{id} -> view_1",
+                    "post /v1/me/organisations -> register_1");
+
+    @Test
+    @DisplayName("no NEW operationId carries a disambiguating suffix - two handlers with one"
+            + " method name renumber EACH OTHER's published identity")
+    void noOperationIdIsSuffixed() throws Exception {
+        // FOUND TWICE IN TWO TASKS, which is why it is a rule rather than a third comment.
+        // springdoc derives operationId from the handler's method name and appends _1, _2 to
+        // break collisions - and the numbering is assignment-ordered, so adding a THIRD
+        // handler named `view` renumbered the two that already existed (P6-TSK-003), and
+        // adding a second named `list` renumbered /v1/beneficiaries (P6-TSK-002). A
+        // generated client keys its method names off operationId: that is a breaking change
+        // to endpoints nobody touched, caused by a name chosen in an unrelated file.
+        //
+        // The contract diff already catches it, but only as collateral damage - the failure
+        // names the VICTIM endpoint, not the collision. This names the cause, and it fails on
+        // the first suffix rather than on the second handler's arrival.
+        JsonNode paths = OpenApiDocument.parse(publishedDocument()).path("paths");
+        java.util.List<String> suffixed = new java.util.ArrayList<>();
+        paths.propertyNames()
+                .forEach(
+                        path ->
+                                paths.get(path)
+                                        .propertyNames()
+                                        .forEach(
+                                                method -> {
+                                                    String id =
+                                                            paths.get(path)
+                                                                    .path(method)
+                                                                    .path("operationId")
+                                                                    .asString("");
+                                                    if (id.matches(".*_[0-9]+$")) {
+                                                        suffixed.add(
+                                                                method + " " + path + " -> " + id);
+                                                    }
+                                                }));
+        assertThat(suffixed)
+                .as("rename the handler method: a suffixed operationId means two handlers"
+                        + " share a method name, and which one keeps the unsuffixed identity"
+                        + " is decided by assignment order rather than by anybody")
+                .containsExactlyInAnyOrderElementsOf(ALREADY_PUBLISHED_SUFFIXES);
+    }
+
     @Test
     @DisplayName("the published contract contains no test fixture")
     void noProbeRouteIsPublished() throws Exception {
@@ -287,6 +348,76 @@ class OpenApiContractTest {
                         // grant, INV-PAY-02), list, and the ownership-scoped detach.
                         ApiVersion.CURRENT_PREFIX + "/me/payment-methods",
                         ApiVersion.CURRENT_PREFIX + "/me/payment-methods/{id}",
+                        // P5-TSK-011: the payment surface - the keyed create, the
+                        // confirmation that answers the intent's real state (honestly
+                        // PROCESSING), the window-bounded cancel, and the ownership-scoped
+                        // reads (party_id = ?).
+                        ApiVersion.CURRENT_PREFIX + "/payments",
+                        ApiVersion.CURRENT_PREFIX + "/payments/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/payments/{id}/confirmation",
+                        // P5-TSK-015: the privileged refund - PAYMENT_REFUND at the boundary,
+                        // the reason and the key required, hold-then-post beneath.
+                        ApiVersion.CURRENT_PREFIX + "/payments/{id}/refund",
+                        // P6-TSK-003: the counterparty's operator surface - onboarding behind
+                        // MERCHANT_ONBOARD and keyed (a duplicate would be a second merchant
+                        // AND a second payable account), the read and the three reasoned
+                        // standing moves behind MERCHANT_ADMINISTER. The merchant-facing
+                        // surfaces (tenant-scoped, API-key authenticated) are P6-TSK-002's.
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/suspension",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/reinstatement",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/closure",
+                        // P6-TSK-002: the merchant's API credential. Issuance and revocation
+                        // are OPERATOR acts behind MERCHANT_ADMINISTER - a key that could
+                        // mint further keys would make one disclosed secret
+                        // self-perpetuating. The 201 carries the secret exactly once; the
+                        // list carries metadata only; no read can produce it.
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/api-keys",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{id}/api-keys/{keyId}",
+                        // P6-TSK-002: the platform's FIRST key-authenticated surface, and the
+                        // one that makes the tenancy primitive real. /me rather than an
+                        // id-addressed route deliberately: a tenant a caller can name is not
+                        // a tenant (INV-MER-01, ADR-0031's defect at the multi-tenant
+                        // boundary).
+                        ApiVersion.CURRENT_PREFIX + "/merchant/me",
+                        // P6-TSK-007: the phase's first whole flow. The merchant's two
+                        // routes take their tenant from the API KEY, so the create body names
+                        // no merchant and the read answers one 404 for unknown, malformed and
+                        // another-tenant's alike (INV-MER-01). The confirmation is the one
+                        // route on this platform demanding TWO credentials - the customer's
+                        // session proves who is paying, the token IN THE BODY proves which
+                        // offer, and neither alone is enough. The token is in the body rather
+                        // than the path because CredentialReachesNoEmittedSinkTest refused the
+                        // path: a secret in a URL is in every access log.
+                        ApiVersion.CURRENT_PREFIX + "/checkout/sessions",
+                        ApiVersion.CURRENT_PREFIX + "/checkout/sessions/{id}",
+                        // P6-TSK-008: the producer of ABANDONED. A POST to a sub-resource
+                        // rather than a DELETE on the session, the /suspension shape - nothing
+                        // is deleted, the session stays in a state that says what happened.
+                        ApiVersion.CURRENT_PREFIX + "/checkout/sessions/{id}/abandonment",
+                        // P6-TSK-009: the merchant's business, derived from the ledger. Takes
+                        // no identifier - the tenant is the credential - so there is no shape a
+                        // request could take to ask about another merchant.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/transactions",
+                        // P6-TSK-010: INV-MER-02 as a surface - the payable, DERIVED from the
+                        // ledger's lines and explained by its terms. No identifier: the tenant
+                        // is the credential.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/payable",
+                        ApiVersion.CURRENT_PREFIX + "/checkout/sessions/confirmation",
+                        // P6-TSK-004: what the platform charges, behind FEE_ADMINISTER -
+                        // its own permission because pricing is a commercial trust decision
+                        // and standing is a risk one, held today by the one
+                        // merchant-administering population. THERE IS NO PUT AND NO DELETE ON
+                        // A SCHEDULE OR A VERSION, and that is the contract rather than an
+                        // omission: a version is immutable (INV-MER-03), so a price change is
+                        // a POST of a new version effective forward. The assignment IS a PUT,
+                        // because it is a pointer with one value, and it converges.
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedules",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedules/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedules/{id}/versions",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/fee-schedule",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",
@@ -314,6 +445,11 @@ class OpenApiContractTest {
                         // declaration, authenticated in fact by the HMAC signature over the raw
                         // body - the deliberate act of publishing a machine-facing route.
                         ApiVersion.CURRENT_PREFIX + "/providers/kyc/callbacks",
+                        // P5-TSK-012. The payments inbound door: unauthenticated by honest
+                        // declaration, authenticated in fact by the HMAC over
+                        // timestamp + "." + raw body with a freshness window (ADR-0047) -
+                        // the second machine-facing route, published deliberately.
+                        ApiVersion.CURRENT_PREFIX + "/providers/payments/webhooks",
                         // P2-TSK-012. The reviewer surface, the phase's privileged endpoints:
                         // both behind @RequiresPermission(KYC_REVIEW), the read audited.
                         ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}",

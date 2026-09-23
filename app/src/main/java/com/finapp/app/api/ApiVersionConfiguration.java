@@ -2,7 +2,9 @@ package com.finapp.app.api;
 
 import com.finapp.platform.api.ApiVersion;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
-import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.HandlerTypePredicate;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -30,16 +32,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * {@link ApiVersion} describes.
  */
 @Configuration
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 class ApiVersionConfiguration implements WebMvcConfigurer {
 
-    private final SessionAuthenticationInterceptor sessionAuthentication;
-
-    ApiVersionConfiguration(
-            SessionAuthenticationInterceptor sessionAuthentication) {
-        this.sessionAuthentication =
-                Objects.requireNonNull(
-                        sessionAuthentication, "sessionAuthentication must not be null");
-    }
+    @NonNull private final SessionAuthenticationInterceptor sessionAuthentication;
+    @NonNull private final com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantKey;
 
     /**
      * Only handlers in this package tree are versioned.
@@ -82,5 +79,14 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
         // annotations today, so this is a decision recorded before it can matter rather than one
         // anybody currently observes.
         registry.addInterceptor(sessionAuthentication);
+
+        // The merchant key's door (`P6-TSK-002`), registered AFTER the session interceptor so
+        // that interceptor's deny-by-default and contradiction checks run first on every
+        // handler - including merchant ones, which it now recognises and passes through
+        // rather than refusing. This one does nothing for a handler that does not declare
+        // @RequiresMerchantKey, so it is registered for every path rather than a list of
+        // them: the decision lives in the declaration, and a path list here would be a second
+        // copy of it that goes stale (the reasoning above, verbatim).
+        registry.addInterceptor(merchantKey);
     }
 }

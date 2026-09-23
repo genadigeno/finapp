@@ -33,7 +33,7 @@ class KycModuleIsolationTest {
     @Test
     @DisplayName("kyc sees no sibling business module and not the composition root")
     void seesNoSiblingAndNoCompositionRoot() {
-        for (String forbidden : List.of("party", "identity", "consent", "ledger", "accounts", "transfers", "payments", "paymentmethods", "app")) {
+        for (String forbidden : List.of("party", "identity", "consent", "ledger", "accounts", "transfers", "payments", "paymentmethods", "checkout", "merchant", "app")) {
             assertThat(classpathEntries())
                     .as("kyc must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));

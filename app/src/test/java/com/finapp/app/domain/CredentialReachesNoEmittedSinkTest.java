@@ -331,6 +331,21 @@ class CredentialReachesNoEmittedSinkTest {
                         // request body. The SuspensionRequest shape with the same bounds
                         // cited from the same constants.
                         "TransferReversalRequest",
+                        // P5-TSK-011. Carries the caller's own payment-method identifier, an
+                        // amount as an exact decimal string and an ISO currency code - no
+                        // secret (a method id is not the token: the PAN-adjacent value stays
+                        // behind the paymentmethods boundary, INV-PAY-02) - here because the
+                        // set is every schema REACHABLE from a request body. What creating a
+                        // payment stores is classified in payments.payment_intent's register
+                        // rows, not in this vocabulary.
+                        "PaymentCreateRequest",
+                        // P5-TSK-015. Carries an amount as an exact decimal string, an ISO
+                        // currency code, and a REASON (free prose by an operator, bound for
+                        // the audit record's reason column and payments.refund's reason
+                        // column - RESTRICTED-FINANCIAL, never rendered by any toString). No
+                        // secret; here because the set is every schema REACHABLE from a
+                        // request body. The TransferReversalRequest shape, at the refund.
+                        "RefundRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/
@@ -344,7 +359,52 @@ class CredentialReachesNoEmittedSinkTest {
                         // wrapped end to end: the deserialiser at the boundary, the
                         // TokenisationGrant type in the domain, one unwrap at the exchange
                         // wire. Never persisted, never in the trail.
-                        "AttachPaymentMethodRequest");
+                        "AttachPaymentMethodRequest",
+                        // P6-TSK-003. Carries the operator's assertion of a party identifier,
+                        // two business NAMES and an ISO currency code - no secret, and no
+                        // person's name (PartyKind.ORGANISATION gates onboarding). Here
+                        // because the set is every schema REACHABLE from a request body; what
+                        // onboarding stores is classified in merchant.merchant's register
+                        // rows, not in this vocabulary.
+                        "OnboardMerchantRequest",
+                        // P6-TSK-003. Carries ONE field: a REASON (free prose by an operator,
+                        // bound for the audit record's reason column - RESTRICTED-FINANCIAL,
+                        // never rendered by any toString), on all three standing moves. No
+                        // secret; the TransferReversalRequest shape, at the counterparty.
+                        "MerchantStandingRequest",
+                        // P6-TSK-008. Carries ONE field: a REQUIRED reason, in a merchant's own
+                        // words, bound for the audit record's reason column. The checkout
+                        // module's only reasoned action (INV-AUD-03), and the MerchantStanding
+                        // shape at a third surface. No secret, and nothing about the customer:
+                        // a merchant withdrawing an offer names the session by identifier.
+                        "AbandonSessionRequest",
+                        // P6-TSK-007. Carries the checkout session's TOKEN - a real bearer
+                        // credential, wrapped in Sensitive from the moment it is deserialised
+                        // (P1-TSK-010's shape) - and a payment method identifier. It is in
+                        // this set rather than in EMITTED_SECRET_SCHEMAS because the guard's
+                        // precise property is that a secret may be SENT and never returned:
+                        // this is the sending half, and the reason the token left the URL.
+                        "ConfirmSessionRequest",
+                        // P6-TSK-004. Carries a schedule NAME (the platform's own vocabulary,
+                        // not anyone's data) and an ISO currency code. No secret; here because
+                        // the set is every schema REACHABLE from a request body.
+                        "CreateFeeScheduleRequest",
+                        // P6-TSK-004. Carries the terms of a price: a RATE as an exact decimal
+                        // (never a double - a rate bound through one would misprice every
+                        // capture), a fixed part in minor units, two policy NAMES, an instant,
+                        // and a REASON (free prose by an operator, bound for the audit record's
+                        // reason column - RESTRICTED-FINANCIAL, never rendered by any
+                        // toString). No secret; the AdjustmentRequest shape, at the price.
+                        "CreateFeeScheduleVersionRequest",
+                        // P6-TSK-004. Carries a schedule identifier and a REASON, on the
+                        // pointer move. No secret; the MerchantStandingRequest shape.
+                        "AssignFeeScheduleRequest",
+                        // P6-TSK-007. Carries an amount, an ISO currency code and a LINE
+                        // SUMMARY - display text about what one person is buying, classified
+                        // RESTRICTED-PII at its column for that reason. No secret; here
+                        // because the set is every schema REACHABLE from a request body, and
+                        // no merchant identifier either: the tenant comes from the API key.
+                        "CreateSessionRequest");
     }
 
     @Test
@@ -475,7 +535,29 @@ class CredentialReachesNoEmittedSinkTest {
      * value whose purpose is to leave.
      */
     private static final java.util.Set<String> EMITTED_SECRET_SCHEMAS =
-            java.util.Set.of("ElevatedSession", "AuthenticatedSession");
+            java.util.Set.of(
+                    "ElevatedSession",
+                    "AuthenticatedSession",
+                    // P6-TSK-002. The merchant API key's issuance response: the SECRET is the
+                    // one value whose whole purpose is to be transmitted, exactly once, and a
+                    // Sensitive would render as the mask. The logging half is closed the same
+                    // way - IssuedKeyView overrides toString. Unlike the two above, it is
+                    // NULL on a replay: the secret is never stored, so there is nothing to
+                    // re-show (INV-IDN-01 winning over the replay discipline).
+                    "IssuedKeyView",
+                    // P6-TSK-007. The checkout session's creation response: the TOKEN is the
+                    // one value whose whole purpose is to be transmitted, exactly once, to the
+                    // merchant who will hand it to a customer. Like IssuedKeyView and unlike
+                    // the two session entries, it is NULL on a replay - the claim records the
+                    // session id alone, so there is nothing to re-show (INV-IDN-01 winning
+                    // over the replay discipline, for the second credential).
+                    //
+                    // THIS GUARD ALSO CHANGED THE DESIGN rather than merely admitting it: the
+                    // confirmation's token was in the URL path, and the guard refused it on
+                    // its own reasoning that a secret in a URL reaches every access log. It
+                    // now travels in a request body, which is why ConfirmSessionRequest
+                    // appears in the bounded set below rather than here.
+                    "CreatedSessionView");
 
     private static List<String> secretNamedMembersOutsideRequestBodiesIn(String document) {
         tools.jackson.databind.JsonNode root =

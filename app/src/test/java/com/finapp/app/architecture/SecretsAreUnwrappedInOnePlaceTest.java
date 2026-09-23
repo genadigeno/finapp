@@ -54,6 +54,11 @@ class SecretsAreUnwrappedInOnePlaceTest {
     private static final Set<String> UNWRAPPING_METHODS =
             Set.of(
                     "com.finapp.sharedkernel.security.Sensitive.expose()",
+                    // P6-TSK-002: the merchant API key's secret, the platform's fourth
+                    // credential kind. Named here so unwrapping it is governed by the same
+                    // rule as a password or an instrument token, rather than being invisible
+                    // to it.
+                    "com.finapp.merchant.MerchantApiKeySecret.exposeOnceForIssuance()",
                     "com.finapp.identity.RawPassword.expose()",
                     "com.finapp.payments.InstrumentToken.expose()",
                     "com.finapp.paymentmethods.TokenReference.expose()",
@@ -71,6 +76,61 @@ class SecretsAreUnwrappedInOnePlaceTest {
      */
     private static final Set<String> PERMITTED =
             Set.of(
+                    // P6-TSK-002. THE FOUR ENTRIES BELOW ARE THE FIRST OUTSIDE `identity`
+                    // TO HANDLE A CREDENTIAL, and this rule's own message calls that out:
+                    // "an entry outside identity means a credential has left the module that
+                    // owns credentials". It has, and the decision is deliberate rather than
+                    // drifted - a merchant API key is not an identity's credential. It
+                    // authenticates a COUNTERPARTY, its lifecycle is the merchant
+                    // relationship's (a closed merchant cannot hold one; a suspended
+                    // merchant's stops working through the lookup's join), and putting it in
+                    // `identity` would make that module own the commercial relationship's
+                    // state. What travels instead are the DISCIPLINES: hashed at rest,
+                    // derivation recorded, shown once, constant-time verification, never
+                    // recoverable - each inherited explicitly and each named here.
+                    //
+                    // Mints the secret and verifies a presented one. The only component that
+                    // sees the plaintext at all, and the analogue of Argon2PasswordDeriver.
+                    "com.finapp.merchant.MerchantApiKeySecret",
+                    // Holds the HASH wrapped and compares against it; surrenders it to no
+                    // caller (the accessor is package-private).
+                    "com.finapp.merchant.MerchantApiKey",
+                    // Writes the hash - not the secret - to its column, and wraps on read.
+                    // JdbcCredentialStore's role exactly.
+                    "com.finapp.merchant.JdbcMerchantApiKeyStore",
+                    // NOT MerchantApiKeys, the issuing command - and its absence is the
+                    // design rather than an oversight. It carries the minted plaintext to the
+                    // boundary WRAPPED (MerchantApiKeySecret.plaintext()), so the component
+                    // with the widest reach on this path never holds a bare secret. Three
+                    // entries rather than four, bought for one accessor.
+                    // Unwraps ONCE, at the boundary that must transmit the freshly minted
+                    // secret in the issuance response - AuthenticationService's role, and the
+                    // only place a merchant key's plaintext leaves its wrapper.
+                    "com.finapp.app.merchant.MerchantApiKeyOperations",
+                    // THE FIFTH CREDENTIAL VALUE, and the third to follow SessionToken's
+                    // shape (`P6-TSK-006`, ADR-0053). It is the NARROWEST of them: possession
+                    // grants access to ONE checkout session - no person, no permission, no
+                    // account - so a leak buys an attacker one stranger's pending purchase.
+                    // That narrowness is why it lives in `checkout` rather than in `identity`:
+                    // it authenticates nothing `identity` owns, and moving it there would make
+                    // that module own the purchase experience's state. What travels instead
+                    // are the disciplines, each inherited explicitly and each named here.
+                    //
+                    // Mints the token, hashes it and verifies a presented one - the only
+                    // component that sees the plaintext at all.
+                    "com.finapp.checkout.CheckoutSessionToken",
+                    // Holds the HASH wrapped and compares against it; the accessor returns
+                    // Sensitive, so no caller inherits a bare value.
+                    "com.finapp.checkout.CheckoutSession",
+                    // Writes the hash - not the token - to its column, hashes a presented one
+                    // to look it up by index, and re-wraps on read. JdbcSessionStore's role.
+                    "com.finapp.checkout.JdbcCheckoutSessionStore",
+                    // Unwraps ONCE, at the boundary that must transmit the freshly minted
+                    // token in the creation's response (`P6-TSK-007`) - MerchantApiKeyOperations'
+                    // role at a fourth door, and the only place a checkout token's plaintext
+                    // leaves its wrapper. The creating command never holds a bare one: it
+                    // carries the value WRAPPED through CheckoutSessionToken.presentedOnce().
+                    "com.finapp.app.checkout.CheckoutService",
                     // Derives and verifies. The only component that must see the plaintext at all.
                     "com.finapp.identity.Argon2PasswordDeriver",
                     // Writes the derivation - not the password - to its column.
@@ -179,7 +239,14 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // P5-TSK-005. The grant's one production caller: onto the exchange wire,
                     // which is the one place it legitimately goes - the SimulatedCardPspAdapter
                     // claim one boundary over, for a shorter-lived value.
-                    "com.finapp.paymentmethods.SimulatedTokenisationAdapter");
+                    "com.finapp.paymentmethods.SimulatedTokenisationAdapter",
+                    // P5-TSK-009. The registered bridge across the PCI boundary: the stored
+                    // TokenReference comes off in ONE expression and is immediately re-wrapped
+                    // as the InstrumentToken the provider port carries - the port app
+                    // implements because payments cannot see paymentmethods (INV-PAY-02).
+                    // Nothing is held bare, nothing is logged, and a second bridging site is
+                    // a review question by construction.
+                    "com.finapp.app.payments.JdbcPaymentParticipants");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

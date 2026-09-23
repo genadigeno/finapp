@@ -336,13 +336,33 @@ class NoUnwrappedSecretRulesTest {
                     // The toString harm is closed by an override, and AuthenticatedSessionTest
                     // asserts it - written WITH this exemption rather than after somebody noticed
                     // it was unbacked, which is what happened to the first one (P1-TSK-018's gate).
-                    "com.finapp.app.authentication.AuthenticatedSession.sessionToken");
+                    "com.finapp.app.authentication.AuthenticatedSession.sessionToken",
+                    // P6-TSK-002. The merchant API key's issuance response. Same two harms,
+                    // same separation: a serialiser reading this field is the entire purpose
+                    // (a Sensitive renders as the mask, and the client would receive
+                    // «redacted» for the one value that must be transmitted), while the
+                    // toString harm is closed by an override.
+                    //
+                    // It differs from the two above in one way that makes it SAFER rather
+                    // than wider: this field is null on a replay, because the secret is never
+                    // stored. The other two can be re-derived from a live session row; this
+                    // one exists in memory for one response and nowhere else (INV-IDN-01).
+                    "com.finapp.app.merchant.MerchantApiKeyOperations$IssuedKeyView.secret",
+                    // P6-TSK-007: the checkout session's token, in the ONE response that shows
+                    // it. Same exemption as the merchant key's above and for the same reason -
+                    // a wire type must carry the value as a String because that is what a
+                    // client reads, and the discipline that makes it safe is that it appears
+                    // here ONCE and the claim records the session id alone.
+                    "com.finapp.app.checkout.CheckoutService$CreatedSessionView.sessionToken");
 
     /** The accessors of {@link #PERMITTED_FIELDS}, for the same reason and no other. */
     private static final Set<String> PERMITTED_ACCESSORS =
             Set.of(
                     "com.finapp.app.mfa.ElevatedSession.sessionToken()",
-                    "com.finapp.app.authentication.AuthenticatedSession.sessionToken()");
+                    "com.finapp.app.authentication.AuthenticatedSession.sessionToken()",
+                    // P6-TSK-002, the field exemption's accessor half - see PERMITTED_FIELDS.
+                    "com.finapp.app.merchant.MerchantApiKeyOperations$IssuedKeyView.secret()",
+                    "com.finapp.app.checkout.CheckoutService$CreatedSessionView.sessionToken()");
 
     @org.junit.jupiter.api.Test
     @org.junit.jupiter.api.DisplayName("every exemption still names a field the rule would otherwise flag")

@@ -1,6 +1,7 @@
 package com.finapp.consent;
 
 import com.finapp.platform.api.ErrorCode;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The failures this module reports to a client.
@@ -16,6 +17,7 @@ import com.finapp.platform.api.ErrorCode;
  * words — and the third is the <em>gate's</em> ({@code INV-CNS-01}), declared by the first
  * surface that shaped its refusal (`P2-TSK-006`, honouring `P2-TSK-019`'s deliberate deferral).
  */
+@RequiredArgsConstructor
 public enum ConsentErrorCode implements ErrorCode {
 
     /**
@@ -79,12 +81,6 @@ public enum ConsentErrorCode implements ErrorCode {
     private final String code;
     private final int status;
     private final String title;
-
-    ConsentErrorCode(String code, int status, String title) {
-        this.code = code;
-        this.status = status;
-        this.title = title;
-    }
 
     @Override
     public String code() {

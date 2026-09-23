@@ -9,8 +9,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Publishes the manual-review queue depth, as a gauge over the database (`P2-TSK-010`,
@@ -28,6 +27,7 @@ import org.slf4j.LoggerFactory;
  * drains — the count becomes distinguishable from "all statuses" the day `P2-TSK-012` writes the
  * first resolution.
  */
+@Slf4j
 final class KycMetrics {
 
     /** {@code finapp.kyc.review.queue} — checks awaiting a person, fleet-wide. */
@@ -35,8 +35,6 @@ final class KycMetrics {
 
     /** The {@code IdentityMetrics} floor, same argument: scrapes must not become queries. */
     static final Duration MIN_REFRESH = Duration.ofSeconds(5);
-
-    private static final Logger log = LoggerFactory.getLogger(KycMetrics.class);
 
     /** Where a connection comes from — the {@code IdentityMetrics.Connections} seam. */
     @FunctionalInterface

@@ -269,6 +269,137 @@ unavailable cause. The 422 is an *explicit parsed refusal* of the caller's own g
 and retry. **There is deliberately no payment-method not-found code**: the detach's unknown,
 not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verbatim).
 
+### `payments` — `PaymentsErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `payments.NoWallet` | 422 | You have no account that can receive a payment. |
+| `payments.UnknownInstrument` | 422 | The payment method does not resolve to an active instrument of yours. |
+| `payments.CurrencyMismatch` | 422 | The payment currency must match your account's currency. |
+| `payments.NotConfirmable` | 409 | The payment is not awaiting confirmation. |
+| `payments.NotCancellable` | 409 | The payment can no longer be cancelled. |
+| `payments.ProviderUnavailable` | 503 | Payments are temporarily unavailable. |
+| `payments.NotRefundable` | 409 | The payment has no captured amount to refund. |
+| `payments.RefundExceedsCaptured` | 422 | The refund would exceed the captured amount. |
+| `payments.RefundUnfunded` | 409 | The account cannot fund this refund right now. |
+
+### `merchant.*` — the counterparty surface (`P6-TSK-003`)
+
+| Code | Status | Meaning |
+|---|---|---|
+| `merchant.NotEligible` | 422 | The party cannot be onboarded as a merchant. |
+| `merchant.IllegalTransition` | 409 | The merchant's current status does not permit this change. |
+| `merchant.UnsupportedCurrency` | 422 | The settlement currency is not supported. |
+| `merchant.NotKeyable` | 409 | A closed merchant cannot be issued an API key. |
+| `merchant.FeeScheduleNotForward` | 422 | A fee schedule version takes effect forward; it cannot be backdated. |
+| `merchant.FeeCurrencyMismatch` | 422 | The fee schedule's currency does not match. |
+
+### `checkout.*` — the purchase experience (`P6-TSK-007`)
+
+| Code | Status | Meaning |
+|---|---|---|
+| `checkout.NotPriceable` | 422 | This merchant has no fee schedule, so a checkout cannot be priced. |
+| `checkout.NotTrading` | 409 | This merchant cannot open new checkout sessions. |
+| `checkout.SessionExpired` | 409 | This checkout session has expired. |
+| `checkout.NotConfirmable` | 409 | This checkout session is not awaiting confirmation. |
+| `checkout.NotAbandonable` | 409 | This checkout session cannot be withdrawn. |
+
+`checkout.NotPriceable` and `checkout.NotTrading` are refused **at session creation** rather
+than discovered at the capture. That is the whole reason they exist as codes: an unpriced or
+untraded session would fail inside the transaction that moves money, *after* the customer had
+paid — the difference between a merchant fixing their configuration and a customer's money
+needing a refund.
+
+**`checkout.NotTrading` is the race's refusal, not the ordinary one**, and the distinction is
+worth stating because a reader will otherwise expect to see it. A suspended or closed merchant's
+API key does not authenticate at all: the key lookup carries the merchant's standing *in the
+join* (`P6-TSK-002`), so the ordinary answer to a suspended merchant is `401`, with no tenant
+resolved and therefore no tenant to refuse. What `NotTrading` guards is the interleaving where a
+suspension commits **between** that authentication read and the command's own authoritative one
+— which is exactly why the command reads standing again rather than trusting the credential
+that got it here. It is proved by driving the command directly, because HTTP cannot produce the
+interleaving on demand.
+
+`checkout.SessionExpired` and `checkout.NotConfirmable` are deliberately distinct, because
+they say different things to the customer looking at the page: one means *too late*, the
+other means *already done*. Expiry is answered whether the sweeper has arrived or not — the
+aggregate checks the clock as well as the state (ADR-0053 §5).
+
+`checkout.NotAbandonable` (`P6-TSK-008`) is what a missing edge looks like at the surface. A
+merchant may withdraw an offer nobody has paid for; it may **not** withdraw one whose payment is
+already in flight, because that would leave money moving toward a purchase with no commercial
+home — the state `INV-MER-06` exists to prevent. The machine has no
+`PAYMENT_PENDING → ABANDONED` edge at all, so the aggregate refuses it, the transition trigger
+refuses it, and this code is the third rank. The same code answers a session already expired,
+abandoned or paid, because the remedy for all of them is the same read.
+
+**There is no checkout not-found code.** An unknown session id, a malformed one, another
+merchant's, and a token that opens nothing are one `api.NotFound`. For the merchant surface
+that is `INV-MER-01`'s tenancy oracle; for the customer it is stronger still, because a
+checkout token is *guessed at* rather than typed, and telling a guesser that a session exists
+but is not theirs is the only bit they need.
+
+`merchant.FeeScheduleNotForward` is `INV-MER-03`'s refusal, and it is the one an operator
+actually meets: *"make this effective from the first of the month"* is a natural thing to type
+on the second of the month, and it is a repricing of every capture in between. A `422` rather
+than a `409`, because the request is coherent and the remedy is the caller's.
+
+`merchant.FeeCurrencyMismatch` covers **both** boundaries — a version whose fixed part is in
+the wrong currency, and an assignment to a merchant that settles in another — because both say
+the same thing to the same reader: this schedule does not price that money. Cross-currency fees
+are Phase 9's. There is no fee-schedule not-found code: unknown and malformed identifiers are
+one `api.NotFound`, the merchant surface's standing rule.
+
+`merchant.NotKeyable` refuses only a **closed** merchant. A `SUSPENDED` one may still be
+issued keys: suspension is reversible, its keys already refuse at authentication because the
+lookup joins the merchant's standing (`P6-TSK-002`), and refusing issuance too would make an
+operator repeat the step when the suspension lifts. There is no merchant-API-key not-found
+code either — unknown, malformed and *another merchant's* key are one `api.NotFound`, because
+the tenant rides in the statement (`INV-MER-01`) and all three produce the same empty answer.
+**Authentication failures are one `api.Unauthenticated`**: unknown key, wrong secret, revoked
+key, suspended merchant and malformed credential are indistinguishable, because a door that
+says which is an oracle over other companies' integrations.
+
+`merchant.NotEligible` deliberately conflates its causes — no such party, a person party, no
+customer relationship, one still under verification — because an onboarding surface that
+distinguishes them is an oracle over parties and their compliance standing (the
+`INV-IDN-07` reasoning at a new boundary). There is no merchant not-found code: unknown,
+malformed and — when `P6-TSK-002`'s tenant scoping arrives — another-tenant's are the one
+`api.NotFound` (`INV-MER-01`).
+
+The payment surface's vocabulary (`P5-TSK-011`) is **the refusals only** — requests the
+platform declined to judge, with nothing written. A *judged* failure is never an error code: a
+declined card is a `200` whose body says `FAILED` with the **mapped** `failureReason`
+(`INV-PAY-03`: the provider's own vocabulary lives in the retained evidence and appears in no
+response — needle-tested). The three 422s are values the caller supplied or standing the
+caller owns, decided **before the idempotency claim is consumed**, so a corrected request
+retries under the same key. `payments.UnknownInstrument` is one code for unknown, not-yours,
+malformed *and detached-since-creation* alike — a split would make the payment endpoints an
+oracle over other people's instruments (the `transfers.UnknownSource` fold). The two 409s are
+named for the machine edge that is *checked*, never the commonest cause (the `NOT_ACTIVE`
+lesson), and the remedy for both is `GET /v1/payments/{id}`, whose view carries the state.
+`payments.ProviderUnavailable` (503) is the `paymentmethods.TokenisationUnavailable` decision
+verbatim: an **unconfigured deployment** declines to judge, distinct in kind from the in-body
+`FAILED(PROVIDER_UNAVAILABLE)` — a refused connection to a *configured* provider is knowledge,
+a judged outcome. **There is deliberately no payment not-found code**: unknown, not-yours and
+malformed on every `{id}` route are one `api.NotFound` (the `P1-TSK-016` reasoning).
+
+The refund's three (`P5-TSK-015`) are the privileged surface's refusals, decided **before the
+wire call** with nothing dispatched. `payments.NotRefundable` (409) is the machine edge — no
+`CAPTURED` attempt exists to refund against, whatever the commonest cause. `payments.
+RefundExceedsCaptured` (422) is the domain bound (`INV-PAY-05`): the requested amount
+plus every non-`FAILED` refund of the attempt would exceed the captured amount — judged under
+the attempt row lock, with `V004`'s trigger beneath, so a *sequential* over-refund is this
+honest 422 and never the schema's own `23514`. `payments.RefundUnfunded` (409) is
+`INV-BAL-04` at the surface: the hold that reserves what the refund will take cannot be
+placed because the available balance no longer covers it — a conflict with the account's
+*current state*, retriable when funds return, which is why it is a 409 and not a 422. For a
+checkout payment the account is the merchant's payable and the hold is the refund's **net**,
+not its gross (`P6-TSK-015`, ADR-0054): the code means the payable cannot fund that net even
+counting the one credit a merchant is extended, the fee share the platform retained
+(`INV-MER-07`). The merchant's next captures are what fund it. The refund's 404
+folds into `api.NotFound` exactly as above; the operator learns nothing a customer would not.
+
 ### `ledger` — `LedgerErrorCode`
 
 | Code | Status | Meaning |

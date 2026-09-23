@@ -1,7 +1,8 @@
 package com.finapp.ledger;
 
 import com.finapp.sharedkernel.money.Money;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Available balance for a balance-affecting decision: settled derived from postings minus the
@@ -26,15 +27,11 @@ import java.util.Objects;
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */
+@RequiredArgsConstructor
 public final class AvailableBalance<T> {
 
-    private final BalanceDerivation<T> derivation;
-    private final HoldStore<T> holds;
-
-    public AvailableBalance(BalanceDerivation<T> derivation, HoldStore<T> holds) {
-        this.derivation = Objects.requireNonNull(derivation, "derivation must not be null");
-        this.holds = Objects.requireNonNull(holds, "holds must not be null");
-    }
+    @NonNull private final BalanceDerivation<T> derivation;
+    @NonNull private final HoldStore<T> holds;
 
     /**
      * What {@code accountId} can spend, judged under the caller's held account-row lock (the

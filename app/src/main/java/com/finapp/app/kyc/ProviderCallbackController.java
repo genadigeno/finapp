@@ -2,7 +2,8 @@ package com.finapp.app.kyc;
 
 import com.finapp.app.session.Unauthenticated;
 import com.finapp.kyc.CallbackSignature;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -36,13 +37,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/providers/kyc/callbacks")
 @Unauthenticated
 @ConditionalOnProperty("finapp.kyc.provider.url")
+@RequiredArgsConstructor
 public class ProviderCallbackController {
 
-    private final ProviderCallbackService callbacks;
-
-    public ProviderCallbackController(ProviderCallbackService callbacks) {
-        this.callbacks = Objects.requireNonNull(callbacks, "callbacks must not be null");
-    }
+    @NonNull private final ProviderCallbackService callbacks;
 
     /**
      * Accepts one delivery. {@code 204} acknowledges — processed, duplicate and late-no-op

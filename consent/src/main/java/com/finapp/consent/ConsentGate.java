@@ -2,6 +2,8 @@ package com.finapp.consent;
 
 import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The enforcement gate (`P2-TSK-019`, ADR-0037): a consent-gated capability proceeds only when a
@@ -31,13 +33,10 @@ import java.util.UUID;
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */
+@RequiredArgsConstructor
 public final class ConsentGate<T> {
 
-    private final ConsentStore<T> consents;
-
-    public ConsentGate(ConsentStore<T> consents) {
-        this.consents = Objects.requireNonNull(consents, "consents must not be null");
-    }
+    @NonNull private final ConsentStore<T> consents;
 
     /**
      * Whether a current basis exists for this party and purpose — read from authoritative state,

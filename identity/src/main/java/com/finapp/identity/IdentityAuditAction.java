@@ -1,6 +1,7 @@
 package com.finapp.identity;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What the {@code identity} module does that must produce an audit record.
@@ -27,6 +28,7 @@ import com.finapp.platform.audit.AuditableAction;
  * <p><strong>Nothing here is emitted yet.</strong> The module has no aggregates and no endpoints;
  * these arrive with {@code P1-TSK-020} and {@code P1-TSK-022}.
  */
+@RequiredArgsConstructor
 public enum IdentityAuditAction implements AuditableAction {
 
     /**
@@ -328,12 +330,6 @@ public enum IdentityAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    IdentityAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

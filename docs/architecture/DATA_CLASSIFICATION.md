@@ -547,7 +547,8 @@ them are classified at the ceiling regardless.
 | `payment_intent_event` | `intent_id` | `INTERNAL` | An identifier of a thing |
 | `payment_intent_event` | `from_status` | `CONFIDENTIAL` | `payment_intent.status`'s reasoning — history is the same facts, older |
 | `payment_intent_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
-| `payment_intent_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `transfer_event.actor_id`'s reasoning |
+| `payment_intent_event` | `actor_id` | `RESTRICTED-PII` | The acting identity - a person's UUID as text, or `system` for the platform's own acts (`V006`, `P5-TSK-009`: an outcome is a provider's answer and has no session). `audit_record.actor_id`'s reasoning and its model |
+| `payment_intent_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in - `audit_record.actor_type`'s reasoning (`V006`) |
 | `payment_intent_event` | `occurred_at` | `CONFIDENTIAL` | Dates a person's financial act |
 | `payment_attempt` | `id` | `INTERNAL` | An aggregate identifier — the capture posting's key carries it (`payment-capture:<attemptId>`) |
 | `payment_attempt` | `intent_id` | `INTERNAL` | An identifier of a thing |
@@ -568,7 +569,8 @@ them are classified at the ceiling regardless.
 | `payment_attempt_event` | `attempt_id` | `INTERNAL` | An identifier of a thing |
 | `payment_attempt_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
 | `payment_attempt_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
-| `payment_attempt_event` | `actor_id` | `RESTRICTED-PII` | The acting identity |
+| `payment_attempt_event` | `actor_id` | `RESTRICTED-PII` | The acting identity - a person's UUID as text, or `system` for the platform's own acts (`V006`, `P5-TSK-009`: an outcome is a provider's answer and has no session). `audit_record.actor_id`'s reasoning and its model |
+| `payment_attempt_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in - `audit_record.actor_type`'s reasoning (`V006`) |
 | `payment_attempt_event` | `occurred_at` | `CONFIDENTIAL` | Dates a person's financial act |
 | `refund` | `id` | `INTERNAL` | An aggregate identifier — the refund posting's key carries it (`payment-refund:<refundId>`) |
 | `refund` | `attempt_id` | `INTERNAL` | An identifier of a thing |
@@ -581,11 +583,13 @@ them are classified at the ceiling regardless.
 | `refund` | `provider_reference` | `CONFIDENTIAL` | As `payment_attempt.auth_provider_reference` |
 | `refund` | `status` | `CONFIDENTIAL` | What happened to a person's refund |
 | `refund` | `created_at` | `CONFIDENTIAL` | Dates a privileged act against a person's account — `transfer.reversed_at`'s reasoning |
+| `refund` | `dispatch_key` | `INTERNAL` | The idempotency claim whose Tx1 created the row (`V008`, `P5-TSK-016`) — **caller-chosen** key material, `idempotency_record.idempotency_key`'s reasoning and §5. *Row added by the Phase 5 → 6 transition: `V008` landed the column without one and no targeted tier runs `ColumnClassificationTest` — found by the transition's fleet-wide battery, the register-decay class in this register* |
 | `refund_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `refund_event` | `refund_id` | `INTERNAL` | An identifier of a thing |
 | `refund_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
 | `refund_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
-| `refund_event` | `actor_id` | `RESTRICTED-PII` | The acting identity |
+| `refund_event` | `actor_id` | `RESTRICTED-PII` | The acting identity - a person's UUID as text, or `system` for the platform's own acts (`V006`, `P5-TSK-009`: an outcome is a provider's answer and has no session). `audit_record.actor_id`'s reasoning and its model |
+| `refund_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in - `audit_record.actor_type`'s reasoning (`V006`) |
 | `refund_event` | `occurred_at` | `CONFIDENTIAL` | Dates a privileged act against a person's account |
 | `provider_evidence` | `id` | `INTERNAL` | An aggregate identifier |
 | `provider_evidence` | `attempt_id` | `INTERNAL` | An identifier of a thing |
@@ -597,6 +601,156 @@ them are classified at the ceiling regardless.
 | `provider_evidence` | `checksum_sha256` | `RESTRICTED-PII` | The possession oracle again: anyone holding a candidate payload can confirm this is what the provider sent about this person's payment. Classified with what it fingerprints — `kyc_document.checksum_sha256` |
 | `provider_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a decline body is longer than an approval's, so the length leaks the outcome's shape. Errs up, because ADR-0022 forbids reclassifying later |
 | `provider_evidence` | `recorded_at` | `CONFIDENTIAL` | Dates a person's payment traffic |
+
+### `merchant` — the counterparty and its history — *added by `P6-TSK-003`*
+
+The first tables whose subject is a commercial counterparty rather than a person — and the
+classification does not relax for it: which organisations the platform does business with,
+and what standing they hold, is commercially sensitive in both directions. **No balance
+column exists here and none ever will** (`INV-MER-02`); the payable is the ledger position.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `merchant` | `id` | `INTERNAL` | A generated identifier — the payable account's opaque `owner_ref` and the future tenant key (`INV-MER-01`) |
+| `merchant` | `party_ref` | `INTERNAL` | An identifier of a thing (`party.party` by value, ADR-0029) |
+| `merchant` | `legal_name` | `CONFIDENTIAL` | An organisation's legal identity — not a person's name (`PartyKind.ORGANISATION` gates onboarding), but who the platform banks is a commercial fact both sides treat as non-public |
+| `merchant` | `display_name` | `CONFIDENTIAL` | As `legal_name` — customer-facing at checkout one task on, but *whose* checkout it appears on is the sensitive part |
+| `merchant` | `settlement_currency` | `INTERNAL` | An enumeration; part of the monetary shape with no amount beside it |
+| `merchant` | `status` | `CONFIDENTIAL` | A merchant's standing — a suspension is a judgement about a counterparty |
+| `merchant` | `created_at` | `CONFIDENTIAL` | When a commercial relationship began — `party.registered_at`'s reasoning |
+| `merchant` | `status_changed_at` | `CONFIDENTIAL` | Dates a standing judgement |
+| `merchant_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `merchant_event` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `merchant_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `merchant_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model |
+| `merchant_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in — `audit_record.actor_type`'s reasoning |
+| `merchant_event` | `occurred_at` | `CONFIDENTIAL` | Dates a standing judgement against a counterparty |
+| `merchant_api_key` | `id` | `INTERNAL` | **Public by design** — it is the lookup prefix of `<keyId>.<secret>` (ADR-0052) and the value audit records name. Knowing it achieves nothing without the secret |
+| `merchant_api_key` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_api_key` | `secret_hash` | `CONFIDENTIAL` | A SHA-256 digest of 32 random bytes — **not crackable**, so not `RESTRICTED`; classified here for `session.token_hash`'s reason: in a log it is a precise identifier of one merchant's live credential, which is the single most useful thing to an attacker reading log archives |
+| `merchant_api_key` | `algorithm` | `INTERNAL` | What produced the hash (`INV-IDN-02`) — a fixed vocabulary, and publishing it tells an attacker only what the code already says |
+| `merchant_api_key` | `status` | `CONFIDENTIAL` | Whether a counterparty's integration is live |
+| `merchant_api_key` | `issued_at` | `CONFIDENTIAL` | Dates a credential's life — correlates with an integration going live |
+| `merchant_api_key` | `issued_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model |
+| `merchant_api_key` | `revoked_at` | `CONFIDENTIAL` | Dates a security judgement |
+| `merchant_api_key_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `merchant_api_key_event` | `key_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_api_key_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `merchant_api_key_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `merchant_api_key_event` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — an operator explains a revocation in words that can name people and incidents; `refund.reason`'s reasoning verbatim: content constrained by no type, handled at the ceiling |
+| `merchant_api_key_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s model |
+| `merchant_api_key_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `merchant_api_key_event` | `occurred_at` | `CONFIDENTIAL` | Dates a security judgement |
+| `fee_schedule` | `id` | `INTERNAL` | An identifier of a thing |
+| `fee_schedule` | `name` | `CONFIDENTIAL` | The platform's own pricing vocabulary — "Enterprise" beside "Standard" discloses that tiers exist and what they are called, which is competitive information about how the platform sells |
+| `fee_schedule` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape with no amount beside it (`merchant.settlement_currency`'s reasoning) |
+| `fee_schedule` | `created_at` | `CONFIDENTIAL` | When a pricing tier was introduced |
+| `fee_schedule` | `created_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model |
+| `fee_schedule_version` | `id` | `INTERNAL` | An identifier of a thing — **the value an assessment pins** (`INV-HIST-04`), which is why it is an identifier rather than the terms themselves |
+| `fee_schedule_version` | `fee_schedule_id` | `INTERNAL` | An identifier of a thing |
+| `fee_schedule_version` | `version` | `INTERNAL` | An ordinal within a schedule |
+| `fee_schedule_version` | `rate` | `RESTRICTED-FINANCIAL` | **What the platform charges.** Not an amount, and classified at the financial ceiling anyway: a rate plus a capture *is* an amount, so a log line carrying this and a gross discloses revenue. It is also the single most commercially sensitive number in this schema — what one merchant is charged, in a competitor's hands, is a negotiating position |
+| `fee_schedule_version` | `fixed_amount_minor` | `RESTRICTED-FINANCIAL` | The flat charge — an amount, and the `MoneyColumns` triple's own classification (`journal_line.amount_minor`'s reasoning). **A price, not a position**: `INV-MER-02` forbids storing what the platform *owes*, and this is what it *charges* |
+| `fee_schedule_version` | `fixed_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
+| `fee_schedule_version` | `fixed_scale` | `INTERNAL` | As `fixed_currency` |
+| `fee_schedule_version` | `rounding_policy` | `INTERNAL` | A fixed vocabulary (`RoundingPolicy`); publishing it says only what the code already says. Required and never defaulted (`INV-MON-03`), which is a correctness property rather than a confidentiality one |
+| `fee_schedule_version` | `refund_fee_policy` | `CONFIDENTIAL` | A term of a commercial agreement — whether the platform returns its fee on a refund is what a merchant negotiated |
+| `fee_schedule_version` | `effective_from` | `CONFIDENTIAL` | When a price starts applying; with `rate` it dates a repricing |
+| `fee_schedule_version` | `created_at` | `CONFIDENTIAL` | When the repricing was decided — and, with `effective_from`, the notice period |
+| `fee_schedule_version` | `created_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s model |
+| `merchant_fee_schedule` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_fee_schedule` | `fee_schedule_id` | `RESTRICTED-FINANCIAL` | **An identifier that is also a price.** On its own it names a row; joined to `fee_schedule_version` it says what this counterparty pays, which is exactly the disclosure `INV-MER-01` exists to prevent. Classified at the ceiling for `audit_record.target_id`'s reason — an identifier inherits the sensitivity of what it resolves to |
+| `merchant_fee_schedule` | `assigned_at` | `CONFIDENTIAL` | When commercial terms last changed for this counterparty |
+| `merchant_fee_schedule` | `assigned_by` | `RESTRICTED-PII` | The acting operator's identity |
+| `merchant_fee_schedule_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `merchant_fee_schedule_event` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_fee_schedule_event` | `from_fee_schedule_id` | `RESTRICTED-FINANCIAL` | History is the same facts, older — `merchant_fee_schedule.fee_schedule_id`'s reasoning, and a *pair* of them discloses the direction a negotiation went |
+| `merchant_fee_schedule_event` | `to_fee_schedule_id` | `RESTRICTED-FINANCIAL` | As `from_fee_schedule_id` |
+| `merchant_fee_schedule_event` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — an operator explains a repricing in words that can name people, deals and negotiations; `merchant_api_key_event.reason`'s reasoning verbatim: content constrained by no type, handled at the ceiling |
+| `merchant_fee_schedule_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s model |
+| `merchant_fee_schedule_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `merchant_fee_schedule_event` | `occurred_at` | `CONFIDENTIAL` | Dates a commercial judgement |
+| `payment_fee_pin` | `payment_intent_ref` | `RESTRICTED-FINANCIAL` | The payment this prices, by value (ADR-0029). An identifier of a money movement — `audit_record.target_id`'s rule: an identifier inherits the sensitivity of what it names, and what this one names is a capture |
+| `payment_fee_pin` | `merchant_id` | `RESTRICTED-FINANCIAL` | **Whose payment it is.** On its own an identifier of a thing; here it is the join that says *this merchant took a payment*, so the pair of columns is transaction data about a counterparty rather than a reference |
+| `payment_fee_pin` | `fee_schedule_version_id` | `RESTRICTED-FINANCIAL` | `merchant_fee_schedule.fee_schedule_id`'s reasoning, sharper: joined to `fee_schedule_version` this says exactly what this merchant paid on this capture, which is the disclosure `INV-MER-01` exists to prevent |
+| `payment_fee_pin` | `gross_amount_minor` | `RESTRICTED-FINANCIAL` | An amount — `journal_line.amount_minor`'s classification. What was agreed, never what is owed (`INV-MER-02`) |
+| `payment_fee_pin` | `gross_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
+| `payment_fee_pin` | `gross_scale` | `INTERNAL` | As `gross_currency` |
+| `payment_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was agreed — with `pinned_by`, the provenance of a money decision |
+| `payment_fee_pin` | `pinned_by` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model |
+
+### `checkout` — *added by `P6-TSK-006`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `checkout_session` | `id` | `INTERNAL` | An identifier of a thing — and deliberately **not** the token: naming a session is not the same act as being able to act on one |
+| `checkout_session` | `merchant_ref` | `CONFIDENTIAL` | Whose shop this purchase is at. On its own an identifier; beside the rest of the row it says who is selling to whom |
+| `checkout_session` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount — `journal_line.amount_minor`'s classification. What one person is being asked to pay |
+| `checkout_session` | `amount_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
+| `checkout_session` | `amount_scale` | `INTERNAL` | As `amount_currency` |
+| `checkout_session` | `line_summary` | `RESTRICTED-PII` | **Free text written by a merchant about one person's purchase.** Not a name or an identifier, and at the ceiling anyway: *what somebody bought* is among the most revealing facts a payments platform holds — medication, legal services, a gift to an address — and the content is constrained by no type (`refund.reason`'s reasoning, at a new subject) |
+| `checkout_session` | `fee_schedule_version_ref` | `RESTRICTED-FINANCIAL` | `merchant_fee_schedule.fee_schedule_id`'s reasoning: joined to `fee_schedule_version` it says what this merchant pays on this purchase |
+| `checkout_session` | `token_hash` | `CONFIDENTIAL` | A SHA-256 digest of 32 random bytes — **not crackable**, so not `RESTRICTED`; classified here for `session.token_hash`'s reason: in a log it is a precise identifier of one live checkout, which is what an attacker reading log archives would want |
+| `checkout_session` | `algorithm` | `INTERNAL` | What produced the hash (`INV-IDN-02`) — a fixed vocabulary, and publishing it tells an attacker only what the code already says |
+| `checkout_session` | `payment_intent_ref` | `RESTRICTED-FINANCIAL` | An identifier of a money movement — `audit_record.target_id`'s rule: an identifier inherits the sensitivity of what it names |
+| `checkout_session` | `status` | `CONFIDENTIAL` | Where one person's purchase got to — and `ABANDONED` beside a merchant ref is commercially sensitive to that merchant |
+| `checkout_session` | `expires_at` | `CONFIDENTIAL` | When an offer stops; with `created_at`, how long a customer was given |
+| `checkout_session` | `created_at` | `CONFIDENTIAL` | When one person started buying something |
+| `checkout_session` | `status_changed_at` | `CONFIDENTIAL` | Dates the purchase's last move |
+| `checkout_session_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `checkout_session_event` | `session_id` | `INTERNAL` | An identifier of a thing |
+| `checkout_session_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `checkout_session_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `checkout_session_event` | `actor_id` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model. Here it may be a CUSTOMER, a merchant or the platform |
+| `checkout_session_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `checkout_session_event` | `occurred_at` | `CONFIDENTIAL` | Dates a step in one person's purchase |
+| `checkout_order` | `id` | `INTERNAL` | An identifier of a thing |
+| `checkout_order` | `session_ref` | `INTERNAL` | An identifier of a thing |
+| `checkout_order` | `merchant_ref` | `CONFIDENTIAL` | Whose shop, as on the session |
+| `checkout_order` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount — what actually changed hands |
+| `checkout_order` | `amount_currency` | `INTERNAL` | Part of the monetary shape |
+| `checkout_order` | `amount_scale` | `INTERNAL` | As `amount_currency` |
+| `checkout_order` | `captured_entry_ref` | `RESTRICTED-FINANCIAL` | The journal entry that paid for this order — an identifier of a posting, at the ceiling for `audit_record.target_id`'s reason |
+| `checkout_order` | `created_at` | `CONFIDENTIAL` | When one person bought something |
+
+**`line_summary` is the platform's first column whose sensitivity is about *what somebody
+bought*** (`P6-TSK-006`). Every prior `RESTRICTED-PII` column holds a name, an identity or a
+person's own words about a decision; this one holds a merchant's description of a purchase,
+and the reason it sits at the ceiling is that a payments platform's most revealing data is
+often not the amount. There is no column here for a shipping address, a customer name or an
+email — checkout holds the **offer**, and who the customer is remains `identity`'s and
+`party`'s question.
+
+**No column could hold a token** (`INV-IDN-01`): the only token-named column is `token_hash`,
+bounded to base64-of-SHA-256's exact shape so a plaintext would not fit quietly, and the
+database suite sweeps every text column in every schema for a token it issued.
+
+**The order carries no status** (ADR-0053 §6): an order that exists is paid, and refund
+standing is derived from the payment's refund rows at read time rather than stored.
+
+**`payment_fee_pin` is the schema's first row about an individual money movement**
+(`P6-TSK-005`). Everything before it in `merchant` is configuration or standing; this is one
+payment, one merchant, one price — so almost every column sits at the financial ceiling,
+including two identifiers, for the reason the fee tables' own note gives below.
+
+**The fee tables are this schema's first `RESTRICTED-FINANCIAL` rows** (`P6-TSK-004`), and
+three of them are not amounts. A rate is a ratio; a schedule identifier is a UUID. They are at
+the financial ceiling because of what they *resolve to*: a rate beside a capture is revenue,
+and a schedule identifier beside `fee_schedule_version` is what one counterparty pays. That is
+`audit_record.target_id`'s rule — an identifier inherits the sensitivity of what it names —
+applied where the thing named is a price rather than an account.
+
+**These rows landed in the task that created the columns.** The standing scope since the
+Phase 5 → 6 transition found `refund.dispatch_key` unclassified for a whole phase, because
+`ColumnClassificationTest` lives in `:platform:databaseTest` — a tier no targeted run covers.
+
+**There is no plaintext column here, and that is the point** (`INV-IDN-01`): the secret exists
+for the length of one issuance response and reaches no storage at all — not this table, and
+deliberately **not `platform.idempotency_record.response_body`** either, which is why the
+issuance claim records the key id alone rather than the response bytes every other keyed
+command records (`P6-TSK-002`; the database suite asserts it by sweeping every text column in
+every schema for the issued secret).
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 

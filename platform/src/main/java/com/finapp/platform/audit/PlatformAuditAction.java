@@ -1,5 +1,7 @@
 package com.finapp.platform.audit;
 
+import lombok.RequiredArgsConstructor;
+
 /**
  * The platform's own auditable actions.
  *
@@ -17,6 +19,7 @@ package com.finapp.platform.audit;
  * an action that must be audited belongs here whether or not the code emitting it exists yet.
  * The gap is recorded in {@code CURRENT_STATE.md}.
  */
+@RequiredArgsConstructor
 public enum PlatformAuditAction implements AuditableAction {
 
     /**
@@ -61,12 +64,6 @@ public enum PlatformAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    PlatformAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

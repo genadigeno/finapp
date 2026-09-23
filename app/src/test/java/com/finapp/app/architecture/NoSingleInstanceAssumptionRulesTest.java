@@ -123,7 +123,25 @@ class NoSingleInstanceAssumptionRulesTest {
      * to ride on it — the set names classes, never packages, so the next scheduler is a decision.
      */
     private static final Set<String> LEASE_PROTECTED_SCHEDULERS =
-            Set.of("com.finapp.app.eventing.OutboxRelaySchedule");
+            Set.of(
+                    "com.finapp.app.eventing.OutboxRelaySchedule",
+                    // P5-TSK-014: the rule's OTHER half made real - no lease, no leader, BY
+                    // DESIGN: the sweeper's provider queries are read-only and idempotent,
+                    // and every write is a conditional transition whose losers converge
+                    // (INV-IDEM-02, the counted races in PaymentSweeperDatabaseTest). The
+                    // set's name says lease-protected because the relay named it; the bar
+                    // the rule states is idempotent-per-period OR a lease, and each entry's
+                    // register row in DISTRIBUTED_EXECUTION.md section 3 names which half
+                    // it stands on.
+                    "com.finapp.app.payments.PaymentSweeperSchedule",
+                    // P6-TSK-008: the same half again, and the cleanest instance of it - the
+                    // checkout expiry sweeper makes NO EXTERNAL CALL AT ALL. Its only writes
+                    // are conditional transitions taken under a row lock, so N schedules on
+                    // one overdue offer produce one EXPIRED between them, counted by the row
+                    // count rather than by anything process-local. Its register row in
+                    // DISTRIBUTED_EXECUTION.md section 3 names that justification, and
+                    // CheckoutExpiryDatabaseTest drives the N-way race that proves it.
+                    "com.finapp.app.checkout.CheckoutExpirySweeperSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =
@@ -365,6 +383,19 @@ class NoSingleInstanceAssumptionRulesTest {
                 .isInstanceOf(AssertionError.class);
 
         assertThatCode(() -> nothingSchedulesAmbiently.check(schedule))
+                .as("and the shipped rule must accept exactly it")
+                .doesNotThrowAnyException();
+
+        // The second occupant (P5-TSK-014), held to the same bar: really a scheduler, and
+        // exempted deliberately rather than by the rule being off.
+        JavaClasses sweeperSchedule =
+                new ClassFileImporter()
+                        .importClasses(com.finapp.app.payments.PaymentSweeperSchedule.class);
+        assertThatThrownBy(() -> withoutExemptions.check(sweeperSchedule))
+                .as("PaymentSweeperSchedule must really hold a scheduler, or its exemption is"
+                        + " empty")
+                .isInstanceOf(AssertionError.class);
+        assertThatCode(() -> nothingSchedulesAmbiently.check(sweeperSchedule))
                 .as("and the shipped rule must accept exactly it")
                 .doesNotThrowAnyException();
     }

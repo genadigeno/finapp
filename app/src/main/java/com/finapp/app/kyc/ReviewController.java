@@ -15,8 +15,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -57,15 +58,11 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/kyc/cases", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class ReviewController {
 
-    private final ReviewService reviews;
-    private final DecisionRecording decisions;
-
-    public ReviewController(ReviewService reviews, DecisionRecording decisions) {
-        this.reviews = Objects.requireNonNull(reviews, "reviews must not be null");
-        this.decisions = Objects.requireNonNull(decisions, "decisions must not be null");
-    }
+    @NonNull private final ReviewService reviews;
+    @NonNull private final DecisionRecording decisions;
 
     /** The reviewer's view of one case. Reading it is on the record ({@code kyc.CaseRead}). */
     @GetMapping("/{id}")

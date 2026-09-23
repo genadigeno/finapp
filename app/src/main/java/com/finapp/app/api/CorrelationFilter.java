@@ -10,8 +10,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Optional;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -69,6 +69,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
+@Slf4j
+@RequiredArgsConstructor
 public class CorrelationFilter extends OncePerRequestFilter {
 
     /**
@@ -89,13 +91,7 @@ public class CorrelationFilter extends OncePerRequestFilter {
      */
     public static final String CLIENT_HEADER = "X-Client-Correlation-Id";
 
-    private static final Logger log = LoggerFactory.getLogger(CorrelationFilter.class);
-
     private final IdGenerator ids;
-
-    public CorrelationFilter(IdGenerator ids) {
-        this.ids = ids;
-    }
 
     @Override
     @SuppressWarnings("try") // The Scope is used for its close side effect.

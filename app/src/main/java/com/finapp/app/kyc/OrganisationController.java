@@ -11,7 +11,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,13 +49,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me/organisations", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class OrganisationController {
 
-    private final KybService kyb;
-
-    public OrganisationController(KybService kyb) {
-        this.kyb = Objects.requireNonNull(kyb, "kyb must not be null");
-    }
+    @NonNull private final KybService kyb;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)

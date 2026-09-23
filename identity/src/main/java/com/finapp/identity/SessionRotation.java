@@ -15,6 +15,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Replaces a session's identifier on a privilege change (`P1-TSK-015`, ADR-0030).
@@ -60,29 +62,17 @@ import java.util.Optional;
  * {@link SessionToken#of} exists to wrap a presented value <em>for lookup</em> and never for issue.
  * A test asserts that rather than a redundant rotation step implementing it.
  */
+@RequiredArgsConstructor
 public final class SessionRotation {
 
     /** What an audit record for a rotation points at: the session that was replaced. */
     public static final String AUDIT_TARGET_TYPE = "identity.Session";
 
-    private final SessionStore<Connection> sessions;
-    private final SecureRandom randomness;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-
-    public SessionRotation(
-            SessionStore<Connection> sessions,
-            SecureRandom randomness,
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter) {
-        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-    }
+    @NonNull private final SessionStore<Connection> sessions;
+    @NonNull private final SecureRandom randomness;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
 
     /**
      * Replaces {@code current} with a new session at {@code toAssurance}.

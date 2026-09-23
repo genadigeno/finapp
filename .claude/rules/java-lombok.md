@@ -1,231 +1,94 @@
 ---
-
 paths:
-
-* "**/*.java"
-* "**/*.gradle"
-* "**/*.gradle.kts"
-
+  - "**/*.java"
+  - "**/*.gradle"
+  - "**/*.gradle.kts"
+  - "lombok.config"
+  - "gradle/libs.versions.toml"
 ---
 
 # Java Lombok Standard
 
-Lombok is the project-standard library for reducing repetitive Java boilerplate.
-
-When implementing or modifying Java code, prefer Lombok wherever it improves clarity and removes mechanical boilerplate.
-
-Do not repeatedly write boilerplate getters, setters, constructors, logging fields, builders, equals/hashCode, or toString implementations when an appropriate Lombok annotation can safely provide the same behavior.
-
-## General Preference
-
-Prefer appropriate Lombok annotations such as:
-
-* `@Getter`
-* `@Setter`
-* `@RequiredArgsConstructor`
-* `@NoArgsConstructor`
-* `@AllArgsConstructor`
-* `@Builder`
-* `@SuperBuilder` when inheritance genuinely requires it
-* `@Value`
-* `@Slf4j`
-* `@EqualsAndHashCode`
-* `@ToString`
-* `@Data` only when all of its generated semantics are actually appropriate
-
-Prefer focused annotations over broad annotations when that makes the class behavior clearer.
-
-## Constructor Injection
-
-For Spring dependency injection, prefer constructor injection and use:
-
-`@RequiredArgsConstructor`
-
-for final dependencies where appropriate.
-
-Do not use field injection merely to avoid writing constructors.
-
-## Getters and Setters
-
-Prefer:
-
-`@Getter`
-
-and/or:
-
-`@Setter`
-
-over manually written accessors when appropriate.
-
-Do not generate setters merely because a field is mutable internally.
-
-Domain invariants take priority over boilerplate reduction.
-
-If unrestricted setters would allow invalid domain state, do not generate them.
-
-Prefer explicit domain methods such as:
-
-* activate()
-* suspend()
-* authorize()
-* capture()
-* refund()
-* revoke()
-
-when those methods enforce business rules.
-
-## Constructors
-
-Use Lombok constructor annotations when appropriate.
-
-Use `@NoArgsConstructor` only when required by a framework, persistence technology, serialization mechanism, or another explicit design requirement.
-
-Do not use `@NoArgsConstructor(force = true)` merely to satisfy a framework when doing so would create invalid domain state.
-
-Use explicit constructors when constructor logic itself is part of the domain invariant.
-
-## Builders
-
-Use `@Builder` where builders improve construction clarity, especially for:
-
-* DTOs;
-* API models;
-* test data;
-* immutable configuration;
-* complex value objects.
-
-Do not use builders where they allow invalid domain state to be constructed without validation.
-
-Do not use `@Builder` as a replacement for a meaningful domain factory when construction has business rules.
-
-## Immutable Objects
-
-Prefer Lombok `@Value` for genuinely immutable simple value-oriented classes where its generated semantics are appropriate.
-
-Do not use `@Value` where framework requirements or domain lifecycle require mutability.
-
-## Logging
-
-Prefer:
-
-`@Slf4j`
-
-instead of manually declaring:
-
-`private static final Logger ...`
-
-Do not log:
-
-* credentials;
-* access tokens;
-* secrets;
-* raw payment credentials;
-* unnecessary PII;
-* sensitive KYC documents/data;
-* security-sensitive information.
-
-## equals / hashCode
-
-Do not blindly generate equality for every class.
-
-For JPA/database entities, aggregates, and other identity-based domain objects, determine the correct identity semantics before using:
-
-`@EqualsAndHashCode`
-
-Never let generated equality accidentally include mutable fields that can break collection behavior or persistence semantics.
-
-For value objects, Lombok-generated equality is generally appropriate when all fields define value identity.
-
-## toString
-
-Never generate `toString()` that exposes:
-
-* passwords;
-* authentication secrets;
-* access tokens;
-* payment credentials;
-* sensitive KYC/KYB data;
-* confidential customer information.
-
-Use exclusions or an explicit implementation when necessary.
-
-## @Data
-
-Do not use `@Data` by default.
-
-`@Data` combines:
-
-* `@Getter`
-* `@Setter`
-* `@RequiredArgsConstructor`
-* `@ToString`
-* `@EqualsAndHashCode`
-
-Therefore it can unintentionally create mutable APIs, equality semantics, and logging behavior that are inappropriate for domain entities and financial models.
-
-Prefer explicit Lombok annotations when class semantics require more control.
-
-## Financial Domain
-
-Lombok must never hide financial invariants.
-
-For:
-
-* ledger entities;
-* journal entries;
-* journal lines;
-* accounts;
-* balances;
-* payments;
-* transfers;
-* loans;
-* credit decisions;
-* reconciliation records;
-
-prefer explicit domain behavior when necessary to protect invariants.
-
-Boilerplate reduction is subordinate to financial correctness.
-
-## Persistence
-
-Where persistence frameworks require constructors or accessors, use the minimum Lombok support necessary.
-
-Do not add Lombok annotations that conflict with:
-
-* ORM identity semantics;
-* entity lifecycle;
-* persistence proxies;
-* serialization;
-* domain encapsulation.
-
-## Validation
-
-Lombok-generated constructors/builders/accessors must not replace required validation.
-
-Business validation remains explicit.
-
-## Code Review Rule
-
-When reviewing Java code, identify unnecessary manually written boilerplate that can safely be replaced with Lombok.
-
-Also identify Lombok usage that should be removed because it hides domain behavior, leaks sensitive data, or creates unsafe equality/mutability semantics.
-
-## Project Standard
-
-For all new Java code:
-
-Lombok should be considered first for repetitive boilerplate.
-
-Manual boilerplate requires a reason when an appropriate Lombok alternative exists.
-
-The reason may be:
-
-* domain invariant;
-* security;
-* persistence semantics;
-* framework requirement;
-* generated-method behavior being inappropriate;
-* readability;
-* maintainability.
-
-Do not introduce Lombok merely for annotation count reduction. Use the annotation that best expresses the intended semantics.
+Lombok is the project standard for repetitive Java boilerplate. For new Java code, consider it
+first: manual boilerplate needs a reason when a suitable Lombok alternative exists. The reason may
+be a domain invariant, security, persistence semantics, a framework requirement, generated
+behaviour that would be wrong, readability or maintainability. **Domain invariants take priority
+over boilerplate reduction**, Lombok must never hide domain behaviour, and it is never added merely
+to cut annotation count: use the annotation that best expresses the intended semantics.
+
+**Use, one focused annotation at a time:**
+- `@RequiredArgsConstructor` for constructor injection when the constructor only assigns its final
+  fields. A field the constructor null-checked is `@NonNull` (same `NullPointerException`, at
+  construction). A package-private constructor stays so: `access = AccessLevel.PACKAGE`. Never
+  field injection to avoid writing a constructor.
+- `@Slf4j` for every logger. It is the only Lombok logger the build accepts.
+- `@Getter`/`@Setter` selectively, per field, where the class really exposes that accessor. This
+  codebase uses fluent accessors (`id()`), which `@Getter` would rename, so keep them explicit. No
+  setter just because a field is mutable internally, and none that could admit invalid state.
+- `@Builder` where construction has many optional parts (DTOs and API models, which are records
+  here; test data; immutable configuration; complex value objects), going through a constructor or
+  record so validation still runs. Never as a stand-in for a domain factory whose construction has
+  rules.
+- `@Value` for an immutable value object that cannot be a record. **Records come first**: a record
+  is Java's own `@Value`. Not where a framework or the domain lifecycle needs mutability.
+- `@EqualsAndHashCode` and `@ToString` only after reviewing what they generate (below).
+- `@NoArgsConstructor` and `@AllArgsConstructor` only where a framework, persistence or
+  serialization genuinely needs them. Never `@NoArgsConstructor(force = true)` without a
+  persistence review, or where it would create invalid domain state.
+
+**Refused by the build.** `lombok.config` makes these compile errors, not guidelines:
+- `@Data`. It bundles `@Getter`, `@Setter`, `@RequiredArgsConstructor`, `@ToString` and
+  `@EqualsAndHashCode`, and so creates mutable APIs, equality and logging behaviour nobody chose
+  for a domain or financial type. Compose the focused annotations instead.
+- Every `lombok.experimental` feature, `@SuperBuilder` included; `@SneakyThrows`; `@Synchronized`;
+  `val`/`var`; `@Cleanup`; `onX`; and every logger except `@Slf4j`.
+
+Adopting any of them means changing `lombok.config` and ADR-0055 first.
+
+**Never:**
+- **Replace a domain method with a setter.** `authorize()`, `capture()`, `refund()`, `revoke()`,
+  `activate()`, `suspend()` and every other transition enforce rules. No `@Setter` on aggregates or
+  entities, and no Lombok on an aggregate's private constructor or invariant-enforcing factory.
+- **Generate `equals`/`hashCode` without reviewing it.** Aggregates, entities and other
+  identity-based objects compare by identity, and all-field equality over mutable state breaks
+  collections and persistence. Generated equality suits a value object only when every field is
+  part of its value. `Money` and other monetary and scale-aware types stay hand-written.
+- **Let a generated `toString` expose secrets, passwords, credentials, tokens, API keys, payment
+  data (PAN, bank details), TOTP seeds, document bytes, KYC/KYB evidence or other sensitive PII.**
+  `lombok.config` makes every field opt-in (`@ToString.Include`); include one only after deciding
+  it is safe to log (`security.md`). A `Sensitive<>` field is safe because it redacts itself. None
+  of these ever reaches a log statement either.
+- **Hide a financial invariant.** Ledger and journal entries and lines, accounts, balances,
+  payments, transfers, loans, credit decisions and reconciliation records keep explicit domain
+  behaviour wherever it protects an invariant. Boilerplate reduction is subordinate to financial
+  correctness.
+- **Replace validation.** Generated constructors, builders and accessors never stand in for
+  required validation; business validation stays explicit.
+- **Change persistence or entity semantics accidentally.** No-argument constructors, identity,
+  equality, lifecycle, proxies and mutability of anything persisted are decisions (this codebase
+  has no ORM; ADR-0033). Where a framework needs Lombok support, use the minimum.
+- **Change an external contract.** Generated accessors change JSON; request, response, event and
+  view types are records.
+- **Add shared mutable state or hidden locking.** `@Synchronized` is refused, and correctness never
+  rests on one JVM (`CLAUDE.md`).
+- **Replace a constructor that validates, derives, copies defensively or documents its
+  parameters.** Move parameter documentation onto the field, or keep the constructor.
+- **Replace a constructor whose parameter names select a bean.** Several beans can share a type
+  (16 `TransactionTemplate`s, and no `@Qualifier`), so Spring autowires by parameter name. Lombok
+  names each parameter after its field, which silently changes the bean chosen or fails the
+  context.
+- **Reorder the fields of a `@RequiredArgsConstructor` class casually.** Field order IS the
+  constructor's parameter order, and two same-typed dependencies swap silently.
+
+**Reviewing Java code:** flag manual boilerplate that Lombok could replace safely, and Lombok usage
+that should go because it hides domain behaviour, leaks sensitive data, or creates unsafe equality
+or mutability.
+
+**Build:** Lombok is `compileOnly` + `annotationProcessor` (and the test and test-fixture
+equivalents), wired once in `finapp.java-conventions` from the catalog version. Never declare it in
+a module build file or at a runtime scope. `lombok.config` is the compiler-enforced half of this
+standard.
+
+**Converting existing code** follows `docs/project/tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`: module
+batches, with the classes classified DO NOT REFACTOR left alone. Each batch proves with `javap` that
+constructors, fields, null checks, methods and constructor parameter names are unchanged.

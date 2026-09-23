@@ -1,5 +1,6 @@
 package com.finapp.app.api;
 
+import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.ObjectMapper;
 import com.finapp.platform.api.ErrorCode;
 import com.finapp.platform.api.ProblemDetail;
@@ -24,13 +25,10 @@ import org.springframework.stereotype.Component;
  * exception.
  */
 @Component
+@RequiredArgsConstructor
 public class ProblemDetailWriter {
 
     private final ObjectMapper json;
-
-    public ProblemDetailWriter(ObjectMapper json) {
-        this.json = json;
-    }
 
     /**
      * Renders {@code errorCode} as the whole response.

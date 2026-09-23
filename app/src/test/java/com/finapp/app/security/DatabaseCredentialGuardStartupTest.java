@@ -51,7 +51,10 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--spring.datasource.hikari.jdbc-url=jdbc:postgresql://db.internal:5432/x",
                                                 "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
                                                 "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
-                                                "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ="))
+                                                "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+                                                "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Refusing to start");
@@ -78,6 +81,9 @@ class DatabaseCredentialGuardStartupTest {
                                 "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
                                                 "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+                                                "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--spring.datasource.password=supplied-by-the-deployment"))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
@@ -102,6 +108,9 @@ class DatabaseCredentialGuardStartupTest {
                                 "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
                                                 "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+                                                "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                 "--spring.datasource.password=supplied-by-the-deployment",
                                 "--spring.datasource.hikari.data-source-properties.sslmode=verify-full")) {
             assertThat(context.getBean(TransportSecurityGuard.class)).isNotNull();
@@ -149,6 +158,9 @@ class DatabaseCredentialGuardStartupTest {
                         "--spring.datasource.url=" + url,
                         "--finapp.mfa.key=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
                         "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
-                                                "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=");
+                                                "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+                                                "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=");
     }
 }

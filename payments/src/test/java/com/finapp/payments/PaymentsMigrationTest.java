@@ -41,6 +41,8 @@ class PaymentsMigrationTest {
             "db/migration/payments/V004__create_refund_and_history.sql";
     private static final String EVIDENCE =
             "db/migration/payments/V005__create_provider_evidence.sql";
+    private static final String HISTORY_ACTOR =
+            "db/migration/payments/V006__history_actor_admits_the_platform.sql";
 
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
@@ -73,9 +75,14 @@ class PaymentsMigrationTest {
     }
 
     @Test
-    @DisplayName("the failure-reason CHECK is generated from PaymentFailureReason")
+    @DisplayName("the failure-reason CHECK is generated from PaymentFailureReason - V007 holds"
+            + " the current definition (V003 is applied history)")
     void failureReasonCheckMatchesTheEnum() {
-        assertThat(migration(ATTEMPT))
+        // P5-TSK-014 widened the enum with the sweeper's NEVER_RECEIVED; V003 cannot be
+        // edited (ADR-0011, forward-only), so V007 REPLACES the constraint and this
+        // reconciliation follows the constraint to its current definition.
+        assertThat(migration(
+                        "db/migration/payments/V007__the_sweepers_failure_reason.sql"))
                 .contains("CHECK (failure_reason IN ("
                         + PaymentFailureReason.sqlValueList() + "))");
     }
@@ -200,6 +207,32 @@ class PaymentsMigrationTest {
                 .doesNotContain("GRANT UPDATE")
                 .doesNotContain("GRANT DELETE")
                 .contains("BEFORE UPDATE OR DELETE ON payments.provider_evidence");
+    }
+
+    @Test
+    @DisplayName("the evidence kind CHECK matches the enum that arrived with its first writer")
+    void evidenceKindMatchesTheEnum() {
+        // V005's hand-listed CHECK, reconciled from the moment EvidenceKind exists
+        // (P5-TSK-009) - the applied migration is history; this asserts the enum grew INTO
+        // the schema's list, not past it.
+        assertThat(migration(EVIDENCE))
+                .contains("CHECK (kind IN (" + EvidenceKind.sqlValueList() + "))");
+    }
+
+    @Test
+    @DisplayName("V006 moves the histories to the audit actor model, bounded like audit_record")
+    void historyActorModelMatchesTheAuditTable() {
+        String v006 = migration(HISTORY_ACTOR);
+        for (String table : new String[] {
+                "payment_intent_event", "payment_attempt_event", "refund_event"}) {
+            assertThat(v006)
+                    .contains("ALTER TABLE payments." + table
+                            + "\n    ALTER COLUMN actor_id TYPE text USING actor_id::text;")
+                    .contains("ALTER TABLE payments." + table
+                            + "\n    ADD COLUMN actor_type text NOT NULL;")
+                    .contains("CHECK (length(actor_id) BETWEEN 1 AND 200)")
+                    .contains("CHECK (length(actor_type) BETWEEN 1 AND 50)");
+        }
     }
 
     @Test

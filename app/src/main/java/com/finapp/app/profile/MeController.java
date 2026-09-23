@@ -9,7 +9,8 @@ import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Instant;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -36,13 +37,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class MeController {
 
-    private final ProfileService profiles;
-
-    public MeController(ProfileService profiles) {
-        this.profiles = Objects.requireNonNull(profiles, "profiles must not be null");
-    }
+    @NonNull private final ProfileService profiles;
 
     /** The caller's own profile. */
     @GetMapping

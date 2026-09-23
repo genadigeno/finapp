@@ -14,6 +14,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Whether an actor holds a permission, and granting the roles that carry them
@@ -39,26 +41,16 @@ import java.util.Set;
  * and a refused privileged attempt is the only trace one leaves. An accepted one is audited by the
  * operation itself; a refused one has no operation to do it.
  */
+@RequiredArgsConstructor
 public final class Authorization {
 
     /** What an audit record about a role or a denial points at. */
     public static final String AUDIT_TARGET_TYPE = "identity.Identity";
 
-    private final RoleAssignmentStore<Connection> assignments;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-
-    public Authorization(
-            RoleAssignmentStore<Connection> assignments,
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter) {
-        this.assignments = Objects.requireNonNull(assignments, "assignments must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-    }
+    @NonNull private final RoleAssignmentStore<Connection> assignments;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
 
     /**
      * Whether the identity may perform the operation.

@@ -13,6 +13,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Ends sessions, and records who decided to (`P1-TSK-014`, {@code INV-IDN-03}).
@@ -41,6 +43,7 @@ import java.util.Optional;
  * every other session. The capability is this task; the callers are theirs. That is the same seam
  * {@code P1-TSK-013} left for issuance.
  */
+@RequiredArgsConstructor
 public final class SessionRevocation {
 
     /** What an audit record for a single revocation points at. */
@@ -49,21 +52,10 @@ public final class SessionRevocation {
     /** What a bulk revocation points at: the identity, because that is what was acted on. */
     public static final String IDENTITY_TARGET_TYPE = "identity.Identity";
 
-    private final SessionStore<Connection> sessions;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-
-    public SessionRevocation(
-            SessionStore<Connection> sessions,
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter) {
-        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-    }
+    @NonNull private final SessionStore<Connection> sessions;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
 
     /**
      * Ends one session <strong>belonging to {@code owner}</strong>.

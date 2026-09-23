@@ -1,12 +1,14 @@
 package com.finapp.paymentmethods;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The paymentmethods module's auditable actions ({@code AUDITABLE_ACTIONS.md}), arriving with
  * the surface whose design fixes their meaning — the deliberately-few licence `P5-TSK-001`
  * recorded, exercised by `P5-TSK-005`.
  */
+@RequiredArgsConstructor
 public enum PaymentmethodsAuditAction implements AuditableAction {
 
     /**
@@ -42,12 +44,6 @@ public enum PaymentmethodsAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    PaymentmethodsAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

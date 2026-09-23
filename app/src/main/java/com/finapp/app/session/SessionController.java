@@ -6,7 +6,8 @@ import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,13 +47,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/sessions", produces = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class SessionController {
 
-    private final SessionQueries sessions;
-
-    public SessionController(SessionQueries sessions) {
-        this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
-    }
+    @NonNull private final SessionQueries sessions;
 
     /** Every live session of the authenticated identity, newest first. */
     @GetMapping

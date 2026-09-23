@@ -1,6 +1,7 @@
 package com.finapp.accounts;
 
 import com.finapp.platform.api.ErrorCode;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The failures this module reports to a client (`P3-TSK-013`).
@@ -14,6 +15,7 @@ import com.finapp.platform.api.ErrorCode;
  * a distinct code would make the balance endpoint an oracle over other people's accounts
  * (the {@code P1-TSK-016} reasoning).
  */
+@RequiredArgsConstructor
 public enum AccountsErrorCode implements ErrorCode {
 
     /**
@@ -63,12 +65,6 @@ public enum AccountsErrorCode implements ErrorCode {
     private final String code;
     private final int status;
     private final String title;
-
-    AccountsErrorCode(String code, int status, String title) {
-        this.code = code;
-        this.status = status;
-        this.title = title;
-    }
 
     @Override
     public String code() {

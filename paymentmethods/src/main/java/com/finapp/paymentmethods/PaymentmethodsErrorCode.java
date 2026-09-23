@@ -1,6 +1,7 @@
 package com.finapp.paymentmethods;
 
 import com.finapp.platform.api.ErrorCode;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The failures this module reports to a client (`P5-TSK-005`).
@@ -14,6 +15,7 @@ import com.finapp.platform.api.ErrorCode;
  * byte-identical across its causes — a distinct code would make the endpoint an oracle over
  * other people's instruments (the beneficiary surface's reasoning, verbatim).
  */
+@RequiredArgsConstructor
 public enum PaymentmethodsErrorCode implements ErrorCode {
 
     /**
@@ -49,12 +51,6 @@ public enum PaymentmethodsErrorCode implements ErrorCode {
     private final String code;
     private final int status;
     private final String title;
-
-    PaymentmethodsErrorCode(String code, int status, String title) {
-        this.code = code;
-        this.status = status;
-        this.title = title;
-    }
 
     @Override
     public String code() {

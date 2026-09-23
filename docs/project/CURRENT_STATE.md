@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-20 (`P5-TSK-008` — the payments schema; **M5.3 CLOSES at 3 of 3**, next `P5-TSK-009`)
+Last updated: 2026-09-21 (`P5-TST-003` — conservation under concurrent captures and refunds; **M5.8 CLOSES at 3 of 3**, next `P5-DOC-001`)
 
 ---
 
@@ -181,11 +181,55 @@ new group needed for the second transition running. Deliberately the *easy* half
 money — both legs internal, no third party — so Phase 5 changes one variable at a time.
 
 **Phase 5 — Payment Infrastructure**
-Status: **`IN_PROGRESS`** — started 2026-09-20 with `P5-TSK-001`; entry gate passed the same day, all twelve criteria
-([`reviews/PHASE_4_TO_5_TRANSITION.md`](reviews/PHASE_4_TO_5_TRANSITION.md)). The external
+Status: ✅ **`COMPLETE`** (2026-09-21) — **all twelve universal criteria, all eight F1–F8
+supplement criteria, and all nineteen phase-specific criteria hold** (8 original + 11 added
+by the Phase 4 → 5 transition, counted from the gate at review time), ruled by the exit
+review ([`reviews/PHASE_5_REVIEW.md`](reviews/PHASE_5_REVIEW.md), `P5-DOC-001`). Entry gate
+passed 2026-09-20, all twelve criteria
+([`reviews/PHASE_4_TO_5_TRANSITION.md`](reviews/PHASE_4_TO_5_TRANSITION.md)); started the
+same day with `P5-TSK-001` and closed at **21 of 21** backlog items across nine milestones.
+
+**Two criteria were not free, and the review did the work rather than asserting it.**
+Criterion 10 demanded every ADR `Accepted` while ADR-0045…0049 all read `Proposed`, deferred
+across the phase with this audit named as owner: each was **read against the code that now
+exists** — ADR-0046's leaderless sweeper, ADR-0047's evidence-first door, ADR-0048 §4's
+hold-then-post down to the posting key — found to describe it, and accepted. Criterion 7
+cannot be met as written while the owner's standing instruction skips
+`build databaseTest kafkaTest`: assessed `PASS` **with the deviation recorded** — the
+hermetic tier run fleet-wide after the flip, the database and kafka tiers verified per task,
+and **no fleet-wide count claimed**.
+
+*(The deviation was then **closed by the Phase 5 → 6 transition** the same day: the full
+battery ran fleet-wide — 1323 hermetic / 829 database / 14 kafka, 0 failures after one
+repair — so Phase 5, like Phase 4, ends with a genuine fleet-wide count after all.)*
+
+**Phase 6 — Checkout and Merchant Platform**
+Status: **`IN_PROGRESS`** (2026-09-21) — entry gate passed, all twelve criteria
+([`reviews/PHASE_5_TO_6_TRANSITION.md`](reviews/PHASE_5_TO_6_TRANSITION.md)): ADR-0050–0053
+`Proposed` (the fee model — question 8, the standing High — decided **before** any posting
+exists; payout accounting; merchant API identity; checkout session and order — question 7
+confirmed), the `INV-MER-01`…06 group catalogued (**93 invariants**, with `INV-AUD-04`
+gaining its first subject), `PHASE_6_PLAN.md`, 16 backlog items across seven milestones,
+`CHECKOUT_MERCHANT_LIFECYCLES.md`, the glossary and §5 gate extension. Started the same day
+with `P6-TSK-001` (the modules and floors, complete); M6.1 open at 1 of 3.
+
+**The flip was the guarded act, and it surfaced nothing because three items pre-paid it**:
+`P5-TST-002` landed every `Phase: 5` invariant row and probed the flip, `P5-TSK-017` landed
+§15's meters behind a pinned guard the derived rule takes over with no edit, and
+`P5-TST-003` closed the one item the probe deliberately left red. Proven non-vacuous against
+the real status afterwards, not only the simulated one.
+
+**What the phase delivered**: money that enters and leaves through a party that can fail in
+every way a third party can — attach, pay, confirm, capture, refund, webhooks, and a
+leaderless reconciliation sweeper — with an honest `*_UNKNOWN` state, an idempotency
+reference stored before anything is sent, a bounded refund that reserves the customer's
+funds, and a ledger whose first touch is capture. 2 owning modules, 8 tables, 8 migrations,
+6 payment operations plus the machine-facing webhook door, 6 auditable actions, 9 error
+codes, 7 event types, 6 meters, 5 ADRs (`Accepted`), 11 `Phase: 5` invariants of the
+platform's 87, and **no raw PAN anywhere by construction**. The external
 world arrives: money movement whose outcome is decided by an unreliable third party, with
 `INV-LIFE-03` live for the first time. Planned in [`PHASE_5_PLAN.md`](PHASE_5_PLAN.md);
-decisions in ADR-0045–0049 (`Proposed`): the intent/attempt model and its three machines,
+decisions in ADR-0045–0049 (`Accepted` at the exit review): the intent/attempt model and its three machines,
 **no transaction spans a provider call** (dispatch-before-call, `UNKNOWN` modelled,
 reconciliation by query with no lease), webhooks (authenticated before parsing,
 freshness-bounded, evidence-first, order-blind), **authorization is a payment-domain fact
@@ -229,80 +273,60 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P5-TSK-009` — the authorization command: dispatch-before-call** — `READY`.
-M5.4 opens, on the money path for the first time: ADR-0046 as code — intent create (keyed
-`payment.create`) and confirm committing `PROCESSING` + the attempt at `AUTH_DISPATCHED`
-with its minted reference in ONE transaction, the provider call holding no connection,
-then the outcome transaction applying `AUTHORIZED`/`FAILED`/`AUTH_UNKNOWN` by conditional
-transition with verbatim evidence (the cipher and its KeySpec arrive here, beside their
-consumer). Cancel from `REQUIRES_CONFIRMATION` only. No ledger effect anywhere
-(ADR-0048). Named mutation owed: the dispatch commit moved AFTER the provider call. See
-the backlog entry.
+**`P6-TSK-011` — the payout destination: step-up, four-eyes, cooling-off** — `READY`. **M6.5
+opens.** The platform's first four-eyes primitive (`INV-AUD-04` live) on the action that
+redirects merchant money: propose → approve by a DIFFERENT authenticated actor (refused in the
+statement otherwise, step-up on both sides when a factor is enrolled) → effective after a
+cooling-off, one `EFFECTIVE` destination per merchant. Scope, acceptance and DoD in the backlog
+entry. **What it inherits from M6.4**: payouts will judge debits against a payable that can now
+be negative by a retained fee (ADR-0054), which refuses every payout until later captures
+restore it. That is `P6-TSK-012`'s to test, and written into its accept.
 
 ### Just completed
 
-**`P5-TSK-008` — the payments schema: intent, attempt, refund, evidence** — `COMPLETE`
-(2026-09-20). **M5.3 CLOSES at 3 of 3: the three machines are pinned in code AND schema**
-— `V002`–`V005`: intent, attempt, refund, their append-only histories and the encrypted
-provider evidence, every generated artefact reconciled against its one definition by
-`PaymentsMigrationTest`, every constraint exercised against raw SQL from scratch by
-`PaymentsSchemaDatabaseTest` (10 tests, prepared statements only — exactly the writer the
-schema must bind, no store existing yet).
+**`P6-TSK-015` — the merchant refund's funding bound** — `COMPLETE` (2026-09-23). **M6.4
+closes: a merchant can refund a sale in full, and the only credit a refund extends is the fee
+the platform keeps.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Every constraint exercised against raw SQL | Every named coherence `CHECK` planted-and-refused `23514` **as the migrator** (the two-shapes `FAILED` rule and the stored over-capture included); edges and freezes refused `P0001` for both roles; the smuggled-edge probe refused by the `NULL → value` payload rule; evidence UPDATE/DELETE refused `42501`/app and `P0001`/migrator |
-| The reconciliations hold | Three machines × three status columns, exact trigger edge sets with terminal-absence halves, `ddl()`/`nullableDdl()` verbatim, reference shapes from the types' `MAX_LENGTH`s, `Refund.MAX_REASON_LENGTH`, `PspWireClient.MAX_EVIDENCE_BYTES`, the one-live predicate from `sqlTerminalValueList()`, every grant set pinned, the advisory namespace pinned |
-| The bound refuses an over-refund for every writer | To-the-penny accepted, one unit past refused for app AND migrator, non-`CAPTURED` subject refused, a `FAILED` refund frees its budget — and **ten concurrent partials of 300 against 1000 accept exactly 3**, the write-skew shape closed by `pg_advisory_xact_lock(3, hashtext(attempt_id))` in the `BEFORE INSERT` trigger |
+| A `RETURNED` full refund lands the payable at exactly zero | End to end: one hold of the 96.80 net, released; independent SQL and the ledger's derivation agree |
+| `RETAINED` per the ADR, driven both ways | Admitted, landing at exactly −3.20; beyond the allowance, refused with nothing written |
+| A refund racing a capture stays inside the bound, counted | Exactly two of three admitted; the refused one funded by the merchant's next capture |
+| Phase 5's wallet-refund suite untouched | Unchanged and green; the wallet hold proven to the cent by probe |
 
-### The grants are the design, and the aggregates' assertions arrived at the privilege
+### The subtlety the design found
 
-The intent's `UPDATE` grant is **one column** — P5-TSK-006's per-field assertion made
-privilege; the attempt's is status plus exactly the payload columns its doors carry —
-P5-TSK-007's recorded wider-grant statement reconciled, with the sharper trigger rule the
-grant cannot hold: **a recorded provider fact moves only from `NULL` to a value**, which
-is what refuses a capture-amount edit smuggled inside a legal edge. The evidence is
-append-only for every writer including the migrator (`INV-HIST-02`), ciphertext-shaped by
-`CHECK` (GCM tag arithmetic, nonce, key version — the `kyc_document` ceremony), with the
-cipher itself arriving beside its first writer (P5-TSK-009, the `ProviderApiKey`
-precedent). The unattributable webhook is retained with both subjects `NULL` — "we could
-not attribute it" is itself the fact an investigation starts from. Deliberate refusals
-recorded in the migration headers: no not-a-PAN `CHECK`s on reference columns (a
-provider's all-numeric reference is legitimate; the PCI boundary is `paymentmethods`'),
-plain provider-reference `UNIQUE`s until routing adds the provider column (Phase 7).
+The fee share a refund returns is allocated in COMPLETION order (`P6-TSK-014`), so at dispatch
+it is not yet known. A one-cent fee refunded in halves returns the cent to one half, depending
+on the order they complete. So the hold covers every order still possible:
+- **exact** when the refund covers the capture's remainder (every full refund);
+- otherwise `⌊fee × refunded / gross⌋` (less one under `HALF_EVEN` when odd). That is never
+  above what any order returns, and proved by enumerating every order.
 
-### What deliberately did not arrive
+### The decision (ADR-0054, `INV-MER-07`)
 
-Stores, commands, endpoints, events, audit actions, meters (`P5-TSK-009`…`-017`); the
-evidence cipher and its `KeySpec` (with the first writer); the sweeper's aged-rows index
-(with its query, `P5-TSK-014`); the webhook inbox table (rides platform's, by plan).
-Registers fed by the task: 64 `DATA_CLASSIFICATION.md` rows at the ceiling
-(`ColumnClassificationTest` green, database tier), advisory-lock **namespace 3**
-registered, the `DISTRIBUTED_EXECUTION.md` §3 row for the schema's arbiters. Side
-deliveries with their own tests: `MoneyColumns.nullableDdl()` (platform — a monetary fact
-that arrives with a later transition), `Refund.MAX_REASON_LENGTH`,
-`PaymentFailureReason.sqlValueList()`. Phase 5 `MUTATION_TESTING.md` rows stay deferred
-to the phase audit per the guard's reached-phase rule.
+The merchant funds the **net** under either policy. Under `RETAINED` the fee share it keeps
+owing may take the payable below zero; the merchant then owes the platform that fee, recovered
+from its next captures before any payout. Beyond that, a refund is refused. The policy decides
+what is posted, never what must be available.
 
-### Eight schema mutations, all caught by the intended assertion, restores byte-identical
+### What the gate found
 
-The one-live index dropped (ten-way race + reconciliation); the index made total (freed
-slot + reconciliation); the sum check dropped (three tests — the acceptance mutation);
-**the advisory lock alone removed — caught by the ten-way race ALONE with every
-sequential test green, the P2-TSK-015 write-skew shape demonstrated live**; the
-`NULL → value` rule removed (the smuggled-edge probe alone); the intent grant widened
-(the `information_schema` sweep, which catches a widening without anyone remembering);
-the evidence trigger dropped (the migrator halves alone — the grants still bound the
-app); `AUTHORIZED → FAILED` smuggled into the trigger (the edge reconciliation alone).
-**Verified by targeted tiers — `:payments:test` 69 / `:platform:test` 171 / `:app:test`
-435 / `PaymentsSchemaDatabaseTest` 10 / `ColumnClassificationTest` 5, 0 failures, fresh
-runs — the full battery deliberately skipped on the owner's instruction; no fleet-wide
-database or kafka counts claimed.**
+- **The new invariant's first wording was false**: a capture whose fee exceeds its sale already
+  takes the payable negative with no refund. It now reads *only by fee charged and not
+  collected*.
+- **The random sweep was blind to `HALF_EVEN` ties**: the probe survived it. An exhaustive
+  sweep now catches it.
+- The decline path lacked a test, and a harness artifact masked a probe as a 500. Both fixed.
+- `## Active Work` and `## Next Task` below were stale since early in the phase. Corrected.
 
 ### Previously
 
-The per-task completion records behind this one — 111 blocks, from `P5-TSK-007` back to project
+The per-task completion records behind this one — 136 blocks, from `P6-TSK-010` back to project
 initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
+*(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
+`P6-TSK-015`'s gate.)*
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
 ---
@@ -315,10 +339,38 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 5 is `IN_PROGRESS`** — M5.1 `CLOSED` (3 of 3), M5.2 `CLOSED` (2 of 2), **M5.3 `CLOSED` (3 of 3)**:
-`P5-TSK-001`…`-008` complete. Next: `P5-TSK-009`, `READY` — **M5.4, money arrives**.
+**Phase 5 is `COMPLETE`** (2026-09-21) — 21 of 21 items across nine milestones, ruled by
+`P5-DOC-001`'s exit review and confirmed by the transition's independent audit.
+**Phase 6 is `IN_PROGRESS`** (started 2026-09-21 with `P6-TSK-001`; entry gate passed the
+same day, all twelve criteria) — M6.1 `CLOSED` at 3 of 3; **M6.2 `CLOSED` at 2 of 2** as scoped (`P6-TSK-004`, `-005`); **M6.3
+`CLOSED` at 4 of 4** (`P6-TSK-006`…`-008`, `-014`); **M6.4 `CLOSED` at 3 of 3** (`P6-TSK-009`,
+`-010`, `-015`); M6.5 opens with `P6-TSK-011`. *(M6.3 gained `P6-TSK-014`, found missing by
+`P6-TSK-005`'s gate; M6.4 gained `P6-TSK-015`, found by `P6-TSK-010`'s end-to-end test. This
+sentence read "M6.3 open at 1 of 4, next `P6-TSK-007`" through five completed tasks, corrected
+by `P6-TSK-015`'s gate.)*
 
-The last work performed was the **Phase 4 → Phase 5 transition** (2026-09-20):
+**Cross-cutting — `X-TSK-001`, Lombok adoption** (2026-09-23; it belongs to no phase, gates no
+phase exit and does not displace `P6-TSK-011`). **`BLOCKED` on final acceptance only.**
+- **Done:** Lombok is the project standard for Java boilerplate, at compile time only
+  (ADR-0055, `Proposed`; `.claude/rules/java-lombok.md`). The Phase 1–6 code is converted: 152
+  production classes in nine module batches, each proved byte-identical by `javap` (0
+  differences; 428 null checks before and after). New code follows the rule.
+- **Open:** acceptance criterion 5, all tiers green. The one failure predates the task
+  (§Blockers). Once its fix lands and a fresh database tier is green, `X-TSK-001` is `COMPLETE`
+  with no further work. The plan and its results are
+  [`tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`](tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md) §21.
+
+The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
+Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
+(**1323 hermetic / 829 database / 14 kafka, 0 failures** — after finding and repairing the
+one failure in 2,166: `refund.dispatch_key` unclassified in `DATA_CLASSIFICATION.md` §4
+since `P5-TSK-016`, the guard living in a tier no targeted run covers — the `RoleNameTest`
+class recurring within a day of being written down), ADR-0050–0053 `Proposed`, the
+`INV-MER` group catalogued (**93 invariants**), `PHASE_6_PLAN.md` and 16 backlog items
+across seven milestones, `CHECKOUT_MERCHANT_LIFECYCLES.md` written, the glossary and gate
+extended, and questions **7 and 8 closed** (the fee model decided before any posting
+exists — the restatement risk retired). Before that, `P5-DOC-001`, the **Phase 5 exit
+review** (2026-09-21), and the **Phase 4 → Phase 5 transition** (2026-09-20):
 Phase 4 confirmed by independent audit, the first fleet-wide full battery of
 the phase (1157 / 729 / 14, 0 failures — after finding and repairing the
 test-harness connection ceiling that had made the fleet-wide database tier
@@ -336,7 +388,22 @@ documentation reflecting reality must not leave its own document stale.)*
 
 ## Blockers
 
-**None.**
+**The full database tier is not green** (found 2026-09-23 by `X-TSK-001`'s full run). This does
+not block the current task. It blocks the Phase 6 exit battery (`P6-DOC-001`, criterion 7) and
+`X-TSK-001`'s final acceptance, and this fix alone unblocks the latter. The final run from
+`clean` reproduced it, with the same message, on the fully converted tree.
+- **What fails:** `OperationalChartDatabaseTest#everyCombinationResolves`, identically on untouched
+  `HEAD`. It asks the operational chart for every purpose except customer-owned ones, and
+  `P6-TSK-003` added the merchant-owned `MERCHANT_PAYABLE`, which the chart correctly never holds.
+  So the test's filter is stale, not the chart.
+- **Why it went unseen:** Phase 6's task work ran only targeted database suites, never this one.
+- **Owner:** a separate fix; the fix is to skip every non-`OPERATIONAL` owner kind. Recorded as an
+  input to `P6-DOC-001`.
+- **Also seen in the same session:** `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` is
+  flaky, failing about one run in three with no change to its module. Flagged separately; it is
+  not counted as a regression.
+
+*Earlier blockers, resolved:*
 
 ~~**The suite has never run in CI.**~~ — **resolved 2026-09-04** by `P0-TSK-042`. The remote is
 `https://github.com/genadigeno/finapp`, and the four jobs run on every push to `master`. Run
@@ -498,6 +565,8 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
+| **`payment_intent.wallet_account_id` holds a merchant payable for a merchant-bound payment.** The column's own comment defines it as *the wallet's ledger account - where the capture will credit*, so its MEANING is right and its NAME is narrower than its meaning (`P6-TSK-005`) | Renaming a column of applied history needs a new migration plus the every-writer trigger's recreation on the platform's most critical table, and the first PRODUCTION writer of a merchant-bound intent does not exist yet - `P6-TSK-007` brings it. Renaming before its real consumer exists would be guessing at what the consumer wants to call it | **Naming only, and bounded**: nothing reads it as a wallet - the capture credits whatever account it names, and the settlement REFUSES a capture whose credit account is not the pinned merchant's payable, so a mismatch is loud rather than silent. The cost is a reader of the schema being misled | `P6-TSK-007`, which creates merchant-bound intents for real | Phase 6 (`P6-TSK-007`) |
+| **Every session actor is audited as `CUSTOMER`, including operators.** `SessionAuthenticationInterceptor` enters `new Actor(identityId, ActorType.CUSTOMER)` for every authenticated session, so an operator's privileged acts — a manual adjustment, a transfer reversal, a refund, a merchant suspension, an API-key revocation — are recorded with the wrong actor TYPE. Found at `P6-TSK-002`'s implementation, while asserting that issuance names its operator: the test expected `EMPLOYEE` and the trail said `CUSTOMER` | The identifier is right — `actor_id` is the acting identity, so every record still names the person and `INV-AUD-01`'s attributability holds. What is wrong is the vocabulary that says which POPULATION acted, which is the field an auditor filters on to answer *what did staff do*. Correcting it means deriving the type from the identity's roles at authentication time and touches every audited session path on the platform — not a merchant task's to change, and not a change to make without its own negative tests | **Bounded but real**: no record is missing and none names the wrong person; a report separating staff activity from customers' cannot be built from `actor_type` alone today, and `ActorType.EMPLOYEE`'s own javadoc (*a human acting in an operational or administrative capacity*) describes a value nothing currently produces | An audit-completeness review, or the first report that must distinguish staff from customers | Phase 15 (audit completeness verification) |
 | ~~**Broker adapter behind `EventPublisher`.**~~ - **closed 2026-09-09** by `P2-TSK-001`. `KafkaEventPublisher` publishes every outbox event to Kafka - payload bytes verbatim, envelope as record headers, aggregate as the record key, one topic per producing module - and `OutboxRelaySchedule` polls on every instance, safely, because the per-aggregate advisory lock is the lease (`DISTRIBUTED_EXECUTION.md` §3). Delivery is at-least-once with `finapp.eventId` as the consumer dedupe key, and the crash duplicate is DEMONSTRATED in `KafkaOutboxDeliveryKafkaTest` rather than hidden. | - | - | - | - |
 | **Outbox retention.** Published rows are never deleted | `V005` says a published row may be deleted once retained long enough for diagnosis; the sweep is a scheduled job with its own cluster-safety question, and no task owned it | Unbounded table growth. The partial pending index does **not** grow with it — published rows leave it — so the cost is storage and vacuum, not relay latency | Table size becoming operationally material | Phase 15 (data retention and deletion) |
 | ~~**Relay metrics.**~~ - **paid in full 2026-09-09** (`P0-TSK-029` the gauges, `P2-TSK-001` the counters): `finapp.outbox.publication` by outcome (published, failed, deadlettered), registered eagerly and fed from `RelayPollResult` by the schedule that now actually runs. The eager series is asserted before any flow in `OutboxRelayScheduleKafkaTest` | Nothing schedules a relay, so those meters would be structurally always zero - which reads as "nothing is failing" rather than "nothing is running" | The remaining risk is narrower: a relay that is running but failing is visible as a growing backlog, not as a failure count | A scheduled relay | Phase 3 |
@@ -540,11 +609,19 @@ it begins.
 
 | # | Question | Must resolve by | Risk if unresolved |
 |---|----------|-----------------|--------------------|
-| 7 | Whether `checkout` is its own module or part of `merchant` | Phase 6 | Low — **working position recorded** (own module, §3 M2) with a named merge trigger |
-| 8 | Fee model: who pays, when recognised, gross vs net settlement | Phase 6 | High — changing revenue recognition after postings exist is a restatement |
 | 11 | Fail-safe policy for risk evaluation: block or allow on unavailability | Phase 13 | High — a wrong default is either an outage or an open door |
 
 Resolved since:
+- ~~8. Fee model: who pays, when recognised, gross vs net settlement~~ →
+  [ADR-0050](../adr/ADR-0050-fee-model-gross-capture-net-payable.md) (Phase 5 → 6
+  transition, 2026-09-21). The merchant pays; revenue recognised at capture; **gross to
+  the books, net to the merchant, in one journal entry** — with the fee computed once and
+  the net derived by subtraction so no rounding residual can exist (`INV-MER-04`), and the
+  schedule version pinned per assessment (`INV-MER-03`)
+- ~~7. Whether `checkout` is its own module or part of `merchant`~~ →
+  [ADR-0053](../adr/ADR-0053-checkout-session-and-order.md) (same transition). The working
+  position confirmed: own module — the order outlives everything, so M2's merge trigger is
+  demonstrably not met; the trigger stays recorded as the watchdog
 - ~~6. Accounting treatment of authorization (memo/hold) vs capture (posting)~~ →
   [ADR-0048](../adr/ADR-0048-authorization-is-not-a-posting.md) (Phase 4 → 5 transition,
   2026-09-20). Authorization is a payment-domain fact with **no ledger effect** — the
@@ -591,21 +668,50 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P5-TSK-001` — the `payments` and `paymentmethods` modules and schemas.**
-Phase 5's first task, first for the standing reason — the privilege floor is
-what every later grant claim rests on — and for the phase-specific one: the
-build-graph decisions (`payments → ledger` declared so postings are commanded
-and never written; `payments → paymentmethods` **refused** so the PCI
-boundary is a module nothing payment-facing can see) are the structure that
-keeps the phase's named risks unreachable before any payment code exists.
-Scope, acceptance and DoD profile in the backlog entry; the module registers
-in `MODULE_ARCHITECTURE.md` §3 already carry both modules' nine attributes.
+**`P6-TSK-011` — the payout destination: step-up, four-eyes, cooling-off** — see
+[§Current Task](#current-task), which this section mirrors. *(This section named `P6-TSK-001`
+from the Phase 5 → 6 transition until `P6-TSK-015`'s gate — stale across the eleven tasks
+completed from `P6-TSK-001` to `P6-TSK-010`, the stale-second-copy class `P3-DOC-001` named. The superseded lead is kept below.)*
 
-**What Phase 5 inherits, already scheduled**: the per-credential confinement
-generalisation (`P5-TSK-002` — the debt row that fired at `P2-TSK-011`), the
-`P3-TSK-015` hold-then-capture composition (the refund's mechanism,
-`P5-TSK-015`), and the provider harness built in `P0-TSK-037` meeting the
-caller it was built for (`P5-TSK-003`).
+### Superseded: the Phase 6 opening lead (read until 2026-09-23)
+
+**`P6-TSK-001` — the `merchant` and `checkout` modules and schemas.**
+Phase 6's first task, first for the standing reason — the privilege floor is
+what every later grant claim rests on — and for the phase-specific one: the
+build-graph decisions (`merchant → ledger` declared so payable reads and payout
+postings are commanded and never written; `checkout → payments` **refused** so
+the purchase-experience module cannot reach provider machinery; both
+`checkout ↔ merchant` edges refused) are the structure that keeps the phase's
+named risks — a stored merchant balance, a god-orchestrator checkout, tenancy
+as an afterthought — unreachable before any merchant code exists. Scope,
+acceptance and DoD profiles in the backlog entry; the module registers in
+`MODULE_ARCHITECTURE.md` §3 already carry both modules' nine attributes, M2's
+provisional status confirmed by ADR-0053.
+
+**What Phase 6 inherits, already scheduled**: the refund-sweep deferral finds
+its sibling in the payout sweep (`P6-TSK-012`'s query resolution — the recorded
+owner "Phase 6 or a sweeper extension" now has a phase); `INV-AUD-04` — in the
+catalogue since initiation, subjectless for five phases — goes live on the
+payout destination (`P6-TSK-011`); and the `refund.dispatch_key` lesson is in
+`P6-TSK-001`'s own scope: classification rows land in the task that creates the
+columns.
+
+### Superseded: the Phase 5 → 6 transition
+
+*(This section described the transition until it was conducted on 2026-09-21.
+Its stated inheritance — the deviation the transition "may choose to close by
+running one full battery" — was exercised: the transition ran the full battery,
+which failed on exactly one of 2,166 tests — a `V008` column unclassified in the
+data-classification register, the guard living in a tier no targeted run covers —
+repaired, and green fleet-wide: 1323 / 829 / 14.)*
+
+### Superseded: P5-TSK-001
+
+*(This section named `P5-TSK-001` from the Phase 4 → 5 transition until Phase 5 closed on
+2026-09-21. It was conducted, and the inheritance it stated — the per-credential confinement
+generalisation, the `P3-TSK-015` hold-then-capture composition, and the `P0-TSK-037` provider
+harness meeting its caller — was exercised by `P5-TSK-002`, `P5-TSK-015` and `P5-TSK-003`
+respectively.)*
 
 ### Superseded: the Phase 4 → 5 transition
 

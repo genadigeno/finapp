@@ -78,6 +78,15 @@ public final class SimulatedProvider implements AutoCloseable {
                                 // Port 0: the OS picks. A fixed port makes two tests running at
                                 // once a flake that looks like a provider fault.
                                 .dynamicPort()
+                                // Response templating, for the one thing a fixed body cannot
+                                // model: a provider that mints a DISTINCT reference per
+                                // operation (`P5-TST-003`). Every provider-reference column
+                                // is UNIQUE by design - one operation, one reference - so a
+                                // storm of captures against a fixed body collides on 23505
+                                // at the second one, which is a harness limit, not a platform
+                                // defect (`P5-TSK-015` recorded exactly this when its race
+                                // had to be reworked around it).
+                                .globalTemplating(true)
                                 .bindAddress("127.0.0.1"));
         server.start();
         return new SimulatedProvider(
@@ -103,6 +112,34 @@ public final class SimulatedProvider implements AutoCloseable {
                                         .withStatus(status)
                                         .withHeader("Content-Type", "application/json")
                                         .withBody(body)));
+    }
+
+    /**
+     * The provider works and <strong>mints a reference of its own per operation</strong>,
+     * derived from the idempotency reference we sent (`P5-TST-003`).
+     *
+     * <p>Needed because a storm is the first thing that asks the harness to behave like a
+     * real PSP in this respect: {@code auth_provider_reference},
+     * {@code capture_provider_reference} and {@code refund.provider_reference} are each
+     * {@code UNIQUE} - one operation, one reference - so a fixed body makes the SECOND
+     * concurrent capture a `23505`. Deriving the answer from the request keeps the mapping
+     * one-to-one and deterministic, which a random value would not.
+     *
+     * @param prefix distinguishes the operation in the answer, as a provider's own scheme
+     *     would ({@code psp_cap}, {@code psp_rfd})
+     */
+    public void succeedsWithMintedReference(String path, String prefix) {
+        server.stubFor(
+                any(urlEqualTo(path))
+                        .willReturn(
+                                aResponse()
+                                        .withStatus(200)
+                                        .withHeader("Content-Type", "application/json")
+                                        .withBody(
+                                                "{\"status\":\"approved\",\"reference\":\""
+                                                        + prefix
+                                                        + "-{{request.headers.Idempotency-Key}}"
+                                                        + "\"}")));
     }
 
     /**
@@ -337,6 +374,31 @@ public final class SimulatedProvider implements AutoCloseable {
     /** The header {@link #deliverSignedCallback} delivers its signature in. */
     public static final String SIGNATURE_HEADER = "X-Provider-Signature";
 
+    /** The header {@link #deliverTimestampSignedCallback} delivers its signed timestamp in. */
+    public static final String TIMESTAMP_HEADER = "X-Provider-Timestamp";
+
+    /**
+     * The provider calls us back signing {@code timestamp + "." + body} — the payments scheme
+     * (`P5-TSK-012`, ADR-0047 §1): HMAC-SHA256 hex in {@value #SIGNATURE_HEADER}, the epoch
+     * seconds in {@value #TIMESTAMP_HEADER}. The timestamp is <em>inside</em> the signed
+     * payload, so a stale-replay test presents an old timestamp with the signature that old
+     * timestamp legitimately produces — computed here with JDK primitives because the harness
+     * cannot depend on the module that verifies it; the receiver's test reconciles both
+     * header names so the two cannot drift.
+     *
+     * @return the status the receiver returned for the last delivery
+     */
+    public int deliverTimestampSignedCallback(
+            URI target, String body, byte[] signingSecret, long epochSeconds, int times) {
+        String timestamp = Long.toString(epochSeconds);
+        String signature = signatureOf(timestamp + "." + body, signingSecret);
+        int status = -1;
+        for (int delivery = 0; delivery < times; delivery++) {
+            status = send(target, body, signature, timestamp);
+        }
+        return status;
+    }
+
     private static String signatureOf(String body, byte[] signingSecret) {
         try {
             javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
@@ -385,6 +447,10 @@ public final class SimulatedProvider implements AutoCloseable {
     }
 
     private int send(URI target, String body, String signature) {
+        return send(target, body, signature, null);
+    }
+
+    private int send(URI target, String body, String signature, String timestamp) {
         HttpRequest.Builder builder =
                 HttpRequest.newBuilder(target)
                         .header("Content-Type", "application/json")
@@ -392,6 +458,9 @@ public final class SimulatedProvider implements AutoCloseable {
                         .POST(HttpRequest.BodyPublishers.ofString(body));
         if (signature != null) {
             builder.header(SIGNATURE_HEADER, signature);
+        }
+        if (timestamp != null) {
+            builder.header(TIMESTAMP_HEADER, timestamp);
         }
         HttpRequest request = builder.build();
         try {

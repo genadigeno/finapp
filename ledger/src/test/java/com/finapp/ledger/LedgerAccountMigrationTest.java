@@ -24,26 +24,61 @@ class LedgerAccountMigrationTest {
 
     private static final String MIGRATION = "db/migration/ledger/V002__create_ledger_account.sql";
 
+    /**
+     * Where the four enum-fed constraints live NOW: `V011` recreated them when
+     * `MERCHANT_PAYABLE` widened two enums (`P6-TSK-003`), because `V002` is applied history
+     * and cannot follow its enums. The reconciliation follows the latest definition — an enum
+     * member added without a fresh recreation migration fails here, which is the entire point.
+     */
+    private static final String LATEST_CHART_RULES =
+            "db/migration/ledger/V011__merchant_payable_joins_the_chart.sql";
+
     @Test
     @DisplayName("every enum's CHECK lists exactly the values the enum declares")
     void everyValueListMatchesItsEnum() {
+        // account_type, normal_balance and status are untouched since V002; owner_kind and
+        // purpose moved to V011 with MERCHANT_PAYABLE.
         assertThat(migration())
                 .contains("CHECK (account_type IN (" + AccountType.sqlValueList() + "))")
                 .contains("CHECK (normal_balance IN (" + NormalBalance.sqlValueList() + "))")
-                .contains("CHECK (owner_kind IN (" + OwnerKind.sqlValueList() + "))")
-                .contains("CHECK (purpose IN (" + AccountPurpose.sqlValueList() + "))")
                 .contains("CHECK (status IN (" + LedgerAccountStatus.sqlValueList() + "))");
+        assertThat(chartRules())
+                .contains("CHECK (owner_kind IN (" + OwnerKind.sqlValueList() + "))")
+                .contains("CHECK (purpose IN (" + AccountPurpose.sqlValueList() + "))");
     }
 
     @Test
-    @DisplayName("both coherence rules are the derivations' own SQL")
+    @DisplayName("all three coherence rules are the derivations' own SQL")
     void theCoherenceRulesAreTheDerivations() {
         assertThat(migration())
                 .as("the type -> normal-balance derivation must have one definition")
                 .contains("CHECK (" + AccountType.sqlNormalBalanceRule() + ")");
-        assertThat(migration())
+        assertThat(chartRules())
                 .as("the purpose -> owner-kind derivation must have one definition")
                 .contains("CHECK (" + AccountPurpose.sqlOwnerKindRule() + ")");
+        assertThat(chartRules())
+                .as("the owner-ref presence rule is generated since V011 - V002's hand-written"
+                        + " CUSTOMER-only form was correct while exactly one kind had an owner")
+                .contains("CHECK (" + OwnerKind.sqlOwnerRefRule() + ")");
+    }
+
+    @Test
+    @DisplayName("V011 recreates exactly the four constraints the widened enums feed")
+    void theRecreationDropsWhatItAdds() {
+        // Each ADD must replace a DROP of the same name in the same statement: a recreation
+        // that forgets the DROP fails migration outright, but a DROP that forgets its ADD
+        // silently removes a constraint - the direction this assertion exists for.
+        for (String constraint :
+                new String[] {
+                    "ledger_account_owner_kind_is_known",
+                    "ledger_account_purpose_is_known",
+                    "ledger_account_owner_kind_matches_purpose",
+                    "ledger_account_owner_ref_matches_kind"
+                }) {
+            assertThat(chartRules())
+                    .contains("DROP CONSTRAINT " + constraint)
+                    .contains("ADD CONSTRAINT " + constraint);
+        }
     }
 
     @Test
@@ -76,22 +111,29 @@ class LedgerAccountMigrationTest {
     }
 
     @Test
-    @DisplayName("the guard can actually read the migration")
+    @DisplayName("the guard can actually read both migrations")
     void theGuardIsNotVacuous() {
         // Without this a moved or renamed file makes every assertion above pass over an empty
         // string - and the doesNotContain assertions would pass most convincingly of all.
         assertThat(migration()).contains("CREATE TABLE ledger.ledger_account");
+        assertThat(chartRules()).contains("ALTER TABLE ledger.ledger_account");
     }
 
     /** From the classpath, the sibling migration tests' idiom. */
     private static String migration() {
+        return read(MIGRATION);
+    }
+
+    private static String chartRules() {
+        return read(LATEST_CHART_RULES);
+    }
+
+    private static String read(String resource) {
         try (InputStream migration =
-                LedgerAccountMigrationTest.class
-                        .getClassLoader()
-                        .getResourceAsStream(MIGRATION)) {
+                LedgerAccountMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
             if (migration == null) {
                 throw new IllegalStateException(
-                        "Migration not on the test classpath: " + MIGRATION);
+                        "Migration not on the test classpath: " + resource);
             }
             return new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

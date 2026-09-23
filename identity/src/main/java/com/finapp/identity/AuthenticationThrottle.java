@@ -17,6 +17,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Counts consecutive authentication failures and locks an identity that crosses the threshold
@@ -62,29 +64,19 @@ import java.util.Optional;
  * removed, and its reflective guard would fail — correctly, because a caller handed an identity on
  * a failed attempt is a caller that can leak one.
  */
+@RequiredArgsConstructor
 public final class AuthenticationThrottle {
 
     /** What an audit record for a lock points at. */
     public static final String AUDIT_TARGET_TYPE = "identity.Identity";
 
-    private final LockoutPolicy policy;
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-
-    public AuthenticationThrottle(
-            LockoutPolicy policy,
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter) {
-        this.policy = Objects.requireNonNull(policy, "policy must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        // Injected, and used ONLY to stamp the audit record's occurredAt. Every decision this class
-        // makes about time - window expiry, whether a lock is live - is the server's, because a
-        // client clock deciding those is the ADR-0014 defect V004 had to correct.
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-    }
+    @NonNull private final LockoutPolicy policy;
+    @NonNull private final IdGenerator ids;
+    // Injected, and used ONLY to stamp the audit record's occurredAt. Every decision this class
+    // makes about time - window expiry, whether a lock is live - is the server's, because a
+    // client clock deciding those is the ADR-0014 defect V004 had to correct.
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
 
     /**
      * Records one failure and reports whether the identity is now locked.

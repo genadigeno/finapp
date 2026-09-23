@@ -18,6 +18,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The record and the announcement of a case that was <strong>created</strong> — the
@@ -46,6 +48,7 @@ import java.util.Optional;
  * endpoint's is caused by the request (the {@code PartyRegistration} flow-root idiom). Both are
  * facts only the door knows, so the cause is a parameter rather than a lookup here.
  */
+@RequiredArgsConstructor
 public final class CaseOpeningTrail {
 
     private static final String EVENT_TYPE = "kyc.KycCaseOpened";
@@ -54,21 +57,10 @@ public final class CaseOpeningTrail {
 
     private static final int EVENT_VERSION = 1;
 
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-    private final OutboxWriter<Connection> outboxWriter;
-
-    public CaseOpeningTrail(
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter) {
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outboxWriter = Objects.requireNonNull(outboxWriter, "outboxWriter must not be null");
-    }
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final OutboxWriter<Connection> outboxWriter;
 
     /**
      * Records and announces a created case on the creating transaction's own unit of work.

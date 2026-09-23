@@ -60,19 +60,50 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("LEDGER_OPERATOR grants exactly the three money-operating permissions")
-    void ledgerOperatorGrantsExactlyThree() {
-        // One role, three permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009): one
-        // money-operating population, and the vocabulary stays precise so the adjustment and
-        // reversal endpoints each check their own. Exact set, so the role quietly gaining
-        // ROLE_ASSIGN - the permission that grants permissions - is a failing test rather
-        // than a silent expansion.
+    @DisplayName("LEDGER_OPERATOR grants exactly the four money-operating permissions")
+    void ledgerOperatorGrantsExactlyFour() {
+        // One role, four permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009;
+        // PAYMENT_REFUND by P5-TSK-015): one money-operating population, and the vocabulary
+        // stays precise so the adjustment, reversal and refund endpoints each check their
+        // own. Exact set, so the role quietly gaining ROLE_ASSIGN - the permission that
+        // grants permissions - is a failing test rather than a silent expansion.
+        //
+        // THIS PIN WAS RED FROM P5-TSK-015 UNTIL P5-DOC-001's post-flip battery, which is
+        // the finding that battery exists to make: the phase verified by TARGETED tiers
+        // (`:payments:test`, `:platform:test`, `:app:test` and the payment database suites)
+        // never ran `:identity:test`, so widening the role passed every check the task
+        // itself ran. Recorded in the phase review's area 8 as the cost of the skip
+        // instruction, with the fleet-wide hermetic run as the thing that closes it.
         assertThat(RoleName.LEDGER_OPERATOR.permissions())
                 .as("operating the money is not managing identities or reviewing cases")
                 .containsExactlyInAnyOrder(
                         PermissionName.LEDGER_POST,
                         PermissionName.LEDGER_ADJUST,
-                        PermissionName.TRANSFER_REVERSE);
+                        PermissionName.TRANSFER_REVERSE,
+                        PermissionName.PAYMENT_REFUND);
+    }
+
+    @Test
+    @DisplayName("MERCHANT_ADMINISTRATOR grants exactly the three counterparty permissions")
+    void merchantAdministratorGrantsExactlyThree() {
+        // One role, three permissions (P6-TSK-003; FEE_ADMINISTER by P6-TSK-004): one
+        // merchant-administering population - the LEDGER_OPERATOR bundling reasoning - while
+        // the vocabulary stays precise so the onboarding endpoint, the reasoned state moves
+        // and the pricing surfaces each check their own. Exact set, so the role quietly
+        // gaining a money-operating or identity permission is a failing test, held pairwise
+        // below as well.
+        //
+        // UPDATED IN THE TASK THAT WIDENED THE ROLE, deliberately. The same pin on
+        // LEDGER_OPERATOR above was left red by P5-TSK-015 and stayed red through four
+        // completion gates because `:identity:test` was in none of that phase's targeted
+        // tiers. A role widened here is a pin edited here, in the same change.
+        assertThat(RoleName.MERCHANT_ADMINISTRATOR.permissions())
+                .as("administering counterparties is neither operating money nor managing"
+                        + " identities")
+                .containsExactlyInAnyOrder(
+                        PermissionName.MERCHANT_ONBOARD,
+                        PermissionName.MERCHANT_ADMINISTER,
+                        PermissionName.FEE_ADMINISTER);
     }
 
     @Test
@@ -131,6 +162,8 @@ class RoleNameTest {
         // made load-bearing, where PermissionName's identical method was deleted as dead - the
         // P1-TSK-013 disposition, where isLiveAt was kept and idleBoundAfterUseAt removed.
         assertThat(RoleName.sqlValueList())
-                .isEqualTo("'ADMINISTRATOR', 'KYC_REVIEWER', 'LEDGER_OPERATOR'");
+                .isEqualTo(
+                        "'ADMINISTRATOR', 'KYC_REVIEWER', 'LEDGER_OPERATOR',"
+                                + " 'MERCHANT_ADMINISTRATOR'");
     }
 }

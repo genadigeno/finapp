@@ -2,6 +2,7 @@ package com.finapp.identity;
 
 import java.util.Arrays;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The HMAC an enrolment uses (`P1-TSK-017`).
@@ -13,16 +14,13 @@ import java.util.stream.Collectors;
  * no producer is not the enum but the *choice*: every enrolment this platform creates is
  * {@link #SHA1}, because that is what authenticator apps actually implement.
  */
+@RequiredArgsConstructor
 public enum TotpAlgorithm {
     SHA1("HmacSHA1"),
     SHA256("HmacSHA256"),
     SHA512("HmacSHA512");
 
     private final String macAlgorithm;
-
-    TotpAlgorithm(String macAlgorithm) {
-        this.macAlgorithm = macAlgorithm;
-    }
 
     /** The JCA name, so no caller assembles one from the enum's own name. */
     public String macAlgorithm() {

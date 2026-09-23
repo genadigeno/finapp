@@ -1,6 +1,7 @@
 package com.finapp.consent;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What the {@code consent} module does that must produce an audit record.
@@ -19,6 +20,7 @@ import com.finapp.platform.audit.AuditableAction;
  * <p><strong>Nothing here is emitted yet</strong>; both constants name their owning task in
  * {@code AuditCompletenessTest.NOT_YET_EMITTED}.
  */
+@RequiredArgsConstructor
 public enum ConsentAuditAction implements AuditableAction {
 
     /**
@@ -53,12 +55,6 @@ public enum ConsentAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    ConsentAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

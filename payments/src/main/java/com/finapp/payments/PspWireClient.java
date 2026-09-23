@@ -57,8 +57,14 @@ import java.util.regex.Pattern;
  */
 final class PspWireClient {
 
-    /** The bound verbatim retention can honestly promise (`INV-HIST-02`); a PSP answer is KBs. */
-    static final int MAX_EVIDENCE_BYTES = 1_048_576;
+    /**
+     * The bound verbatim retention can honestly promise (`INV-HIST-02`); a PSP answer is KBs.
+     * The canonical definition moved to {@link ProviderEvidenceStore#MAX_PAYLOAD_BYTES} when
+     * the webhook door became the second producer of retained bytes (`P5-TSK-012`) — one
+     * bound, owned by the retention it bounds; this alias keeps the wire client's contract
+     * and `P5-TSK-008`'s reconciliation reading unchanged.
+     */
+    static final int MAX_EVIDENCE_BYTES = ProviderEvidenceStore.MAX_PAYLOAD_BYTES;
 
     static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 

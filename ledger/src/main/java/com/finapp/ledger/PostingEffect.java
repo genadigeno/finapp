@@ -17,8 +17,10 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The one write set a journal entry commits with: entry and lines, the audit record, the
@@ -40,6 +42,7 @@ import java.util.Optional;
  * ({@link PostingService}, {@link ReversalService}, and `P3-TSK-017`'s adjustment), which is
  * the one write path {@code INV-LED-04} permits.
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class PostingEffect {
 
     /** One fact, named once, in two registries — the audit action carries the same code. */
@@ -49,27 +52,12 @@ final class PostingEffect {
     static final int EVENT_VERSION = 1;
     static final String TARGET_TYPE = "journal_entry";
 
-    private final JournalEntryStore<Connection> journal;
-    private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
-    private final BalanceProjection<Connection> projection;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    PostingEffect(
-            JournalEntryStore<Connection> journal,
-            AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
-            BalanceProjection<Connection> projection,
-            IdGenerator ids,
-            Clock clock) {
-        this.journal = Objects.requireNonNull(journal, "journal must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.projection = Objects.requireNonNull(projection, "projection must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final JournalEntryStore<Connection> journal;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final BalanceProjection<Connection> projection;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /** The effect, run at most once per key by the caller's executor; one unit of work. */
     CommandResult record(

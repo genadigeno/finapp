@@ -12,6 +12,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The one audited read path for document content (`P2-TSK-008`, {@code INV-KYC-06}).
@@ -46,23 +48,13 @@ import java.util.Optional;
  * what makes "content readable only through the audited path" true from the first day content
  * exists, rather than a property retrofitted around an unaudited read somebody already shipped.
  */
+@RequiredArgsConstructor
 public final class DocumentAccess {
 
-    private final DocumentStore<Connection> documents;
-    private final AuditWriter<Connection> auditWriter;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public DocumentAccess(
-            DocumentStore<Connection> documents,
-            AuditWriter<Connection> auditWriter,
-            IdGenerator ids,
-            Clock clock) {
-        this.documents = Objects.requireNonNull(documents, "documents must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final DocumentStore<Connection> documents;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * Reads document content, writing the {@code kyc.DocumentContentRead} record in the same unit

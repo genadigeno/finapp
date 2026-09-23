@@ -5,7 +5,8 @@ import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -47,13 +48,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/ledger/adjustments", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequiredArgsConstructor
 public class AdjustmentController {
 
-    private final LedgerAdjustments adjustments;
-
-    public AdjustmentController(LedgerAdjustments adjustments) {
-        this.adjustments = Objects.requireNonNull(adjustments, "adjustments must not be null");
-    }
+    @NonNull private final LedgerAdjustments adjustments;
 
     /**
      * Proposes the adjustment, or replays the recorded outcome for a retried key

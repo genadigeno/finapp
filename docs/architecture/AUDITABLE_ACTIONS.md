@@ -333,6 +333,73 @@ token and the display metadata (`RESTRICTED-PII` at the register) never in targe
 the act where an account takeover monetises and the reason the surface demands the enrolled
 identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbatim).
 
+### `payments` — `PaymentsAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `payments.PaymentIntentCreated` | No | A person created a payment intent; the record names the intent, the instrument and the wallet account by identifier, never an amount. |
+| `payments.PaymentConfirmed` | No | A person confirmed a payment intent; the dispatch committed before the provider call, and the record names the intent and the attempt, never an amount. |
+| `payments.PaymentCancelled` | No | A person cancelled a payment intent before confirmation; nothing was dispatched and nothing was posted. |
+| `payments.PaymentCaptureDispatched` | No | The platform dispatched a capture for an authorized attempt; the reference was stored before the provider was asked, and the record names the attempt and the intent, never an amount. |
+| `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. |
+| `payments.PaymentRefundDispatched` | **Yes** | An operator dispatched a bounded refund of a captured payment, with the required reason; the record names the refund, the attempt and the intent, never an amount. |
+| `merchant.MerchantOnboarded` | No | An operator onboarded a merchant; the record names the merchant, its organisation party and its payable ledger account by identifier. |
+| `merchant.MerchantSuspended` | **Yes** | An operator suspended a merchant - new dispatches refuse, landed money still lands; the reason is required. |
+| `merchant.MerchantReinstated` | **Yes** | An operator reinstated a suspended merchant; the reason is required. |
+| `merchant.MerchantClosed` | **Yes** | An operator closed a merchant - terminal; the payable position and its history remain; the reason is required. |
+| `merchant.MerchantApiKeyIssued` | No | An operator issued an API key to a merchant; the record names the key by its public id and the merchant by identifier, never the secret. |
+| `merchant.MerchantApiKeyRevoked` | **Yes** | An operator revoked a merchant's API key - terminal, never reinstated; the reason is required. |
+| `merchant.FeeScheduleCreated` | No | An operator created a fee schedule; the record names the schedule by identifier with its name and currency. |
+| `merchant.FeeScheduleVersionCreated` | **Yes** | An operator created a fee schedule version - immutable, effective forward; the record names the version by identifier with its terms; the reason is required. |
+| `merchant.MerchantFeeScheduleAssigned` | **Yes** | An operator assigned a merchant to a fee schedule; the record names the merchant and both schedules by identifier; the reason is required. |
+| `checkout.CheckoutSessionCreated` | No | A merchant opened a checkout session; the record names the session and the merchant by identifier, never the token and never what was bought. |
+| `checkout.CheckoutSessionConfirmed` | No | A customer confirmed a checkout session; the record names the session and the payment intent by identifier. |
+| `checkout.OrderCreated` | No | A capture completed a checkout session and produced its order; the record names the order, the session and the journal entry that paid for it. |
+| `checkout.CheckoutSessionExpired` | No | The expiry sweeper ended a checkout session whose offer had run out; the record names the session and the state it expired from. |
+| `checkout.CheckoutSessionAbandoned` | **Yes** | A merchant withdrew a checkout session before it was paid; the record names the session and the merchant, and the reason is required. |
+
+**Four of the five checkout actions require no reason, and the fifth does** — the split is
+`INV-AUD-03` working rather than an inconsistency (`P6-TSK-007`, `P6-TSK-008`). Creating,
+confirming, producing an order and expiring are somebody, or *nobody*, doing the ordinary thing
+the surface exists for: a merchant making an offer, a customer paying, a capture landing, a
+deadline passing. Demanding a reason for those would make it a field callers fill with noise,
+which is worse than not asking — and for the expiry there is not even anybody to ask, because
+the sweeper acts as the platform.
+
+`checkout.CheckoutSessionAbandoned` earns its reason: a merchant withdrawing an offer it already
+made is a **judgement about somebody else's purchase**, the suspension and revocation shape. The
+customer looking at the page finds their checkout gone, and the trail must be able to say why.
+
+`checkout.CheckoutSessionExpired` records **the state the session expired from**, because `OPEN`
+(nobody paid) and `PAYMENT_PENDING` (a payment that never landed) are different operational
+facts and an auditor must be able to tell them apart.
+
+`checkout.OrderCreated` names the **journal entry that paid for the order**, which is what
+closes the traceable chain in the trail itself: order → entry → ADR-0050 §3's four lines → the
+merchant's payable position.
+
+The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
+`MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**
+— a container carries no price — while **setting what the platform charges does**, because a
+version can never be edited, only superseded, and an unexplained price change is precisely
+what a reviewer reading a disputed merchant statement needs explained (`INV-AUD-03`).
+`MerchantFeeScheduleAssigned` is emitted by the **moving** call only: an assignment that
+converges on the schedule the merchant is already on changed nothing, and records nothing.
+
+Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
+dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's
+`package-info` licence promised; the refund's arrives with `P5-TSK-015`, the phase's one
+reason-required action. The first three are a person's own acts with their own money (the
+`transfers.TransferExecuted` reasoning); **`PaymentCaptureDispatched` and
+`PaymentOutcomeApplied` are the platform's** — enumerated `enterSystem()` sites, because the
+continuation of a confirmed intent and a provider's answer both have no session
+(`PHASE_5_PLAN.md` §11; ADR-0046 §1 requires the initiation's record, and capture's initiator
+is the platform where the authorization's dispatch rode the person's `PaymentConfirmed`).
+Summaries carry identifiers, verdicts and committed states as enumerated names, never provider
+vocabulary (`INV-PAY-03`) and never an amount (`INV-AUD-02`). Each is emitted by the acting
+call only: an idempotent replay, a converging retry and a losing racer moved nothing and
+record nothing.
+
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure
 in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today

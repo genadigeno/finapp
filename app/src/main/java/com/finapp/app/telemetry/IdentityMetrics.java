@@ -9,8 +9,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Publishes how many sessions are live, as a gauge over the database (`P1-TSK-029`).
@@ -46,6 +45,7 @@ import org.slf4j.LoggerFactory;
  * — summing ten identical readings reports ten times the truth. That is stated here, in the meter's
  * description, and in the dashboard panel, because it is the one way this gauge is easy to misread.
  */
+@Slf4j
 final class IdentityMetrics {
 
     /** {@code finapp.identity.session.active} — sessions that a request could actually use. */
@@ -57,8 +57,6 @@ final class IdentityMetrics {
      * and it matters more here because this query has no partial index to lean on.
      */
     static final Duration MIN_REFRESH = Duration.ofSeconds(5);
-
-    private static final Logger log = LoggerFactory.getLogger(IdentityMetrics.class);
 
     /**
      * Where a connection comes from.

@@ -50,8 +50,13 @@ class OperationalChartMigrationTest {
     void everyPurposeIsSeededInEveryCurrency() {
         List<MatchResult> rows = rows();
         for (AccountPurpose purpose : AccountPurpose.values()) {
-            if (purpose.ownerKind() == OwnerKind.CUSTOMER) {
-                continue; // owned purposes are opened per product, never seeded
+            if (purpose.ownerKind().requiresOwnerRef()) {
+                // Owned purposes - customer wallets, merchant payables - are opened per
+                // owner, never seeded. The predicate is the kind's own requiresOwnerRef()
+                // since P6-TSK-003: "== CUSTOMER" was correct while exactly one kind had an
+                // owner, the same correct-while-one assumption V011 retired from V002's
+                // owner-ref rule.
+                continue;
             }
             for (CurrencyCode currency : SupportedCurrencies.ALL) {
                 assertThat(
@@ -72,7 +77,7 @@ class OperationalChartMigrationTest {
     void theSeedHoldsNoStrayRow() {
         long operationalPurposes =
                 java.util.Arrays.stream(AccountPurpose.values())
-                        .filter(purpose -> purpose.ownerKind() != OwnerKind.CUSTOMER)
+                        .filter(purpose -> !purpose.ownerKind().requiresOwnerRef())
                         .count();
         assertThat(rows())
                 .as("a row outside the definition would be an account nothing resolves")

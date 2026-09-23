@@ -35,6 +35,11 @@ Chargeback
 Dispute
 
 Merchant
+Checkout Session
+Order
+Fee Schedule
+Merchant Payable
+Merchant Payout
 PSP
 Processor
 Acquirer

@@ -16,9 +16,10 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -58,13 +59,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me/kyb", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class KybController {
 
-    private final KybService kyb;
-
-    public KybController(KybService kyb) {
-        this.kyb = Objects.requireNonNull(kyb, "kyb must not be null");
-    }
+    @NonNull private final KybService kyb;
 
     /** The acting person's view of their organisation's case and ownership graph. */
     @GetMapping

@@ -2,6 +2,7 @@ package com.finapp.identity;
 
 import java.util.Arrays;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The function that produced a credential's derivation.
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
  * verification, and this column is what makes <em>"how many credentials use the old algorithm?"</em>
  * an indexed query rather than a full scan with a parse per row.
  */
+@RequiredArgsConstructor
 public enum CredentialAlgorithm {
 
     /**
@@ -35,10 +37,6 @@ public enum CredentialAlgorithm {
      * catalogue, standing behind {@code INV-IDN-01}.
      */
     private final String derivationPrefix;
-
-    CredentialAlgorithm(String derivationPrefix) {
-        this.derivationPrefix = derivationPrefix;
-    }
 
     public String derivationPrefix() {
         return derivationPrefix;

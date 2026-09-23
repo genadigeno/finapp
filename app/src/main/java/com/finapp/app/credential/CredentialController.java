@@ -6,7 +6,8 @@ import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.identity.Session;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -51,13 +52,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me/credential", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class CredentialController {
 
-    private final ChangePasswordService changes;
-
-    public CredentialController(ChangePasswordService changes) {
-        this.changes = Objects.requireNonNull(changes, "changes must not be null");
-    }
+    @NonNull private final ChangePasswordService changes;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)

@@ -23,6 +23,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Creates the {@link Identity} for a newly registered party (`P1-TSK-006`).
@@ -65,6 +67,7 @@ import java.util.UUID;
  * rather than deprecated: leaving it would leave the defect reachable, and Phase 1 has no
  * legitimate caller for it.
  */
+@RequiredArgsConstructor
 public final class IdentityRegistration {
 
     /** Kept in one place because it is a published value: consumers route on it. */
@@ -78,27 +81,12 @@ public final class IdentityRegistration {
     /** What an audit record for an identity action points at. */
     public static final String AUDIT_TARGET_TYPE = "identity.LoginIdentifier";
 
-    private final IdGenerator ids;
-    private final Clock clock;
-    private final AuditWriter<Connection> auditWriter;
-    private final OutboxWriter<Connection> outboxWriter;
-    private final CredentialStore<Connection> credentials;
-    private final PasswordDeriver deriver;
-
-    public IdentityRegistration(
-            IdGenerator ids,
-            Clock clock,
-            AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter,
-            CredentialStore<Connection> credentials,
-            PasswordDeriver deriver) {
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
-        this.outboxWriter = Objects.requireNonNull(outboxWriter, "outboxWriter must not be null");
-        this.credentials = Objects.requireNonNull(credentials, "credentials must not be null");
-        this.deriver = Objects.requireNonNull(deriver, "deriver must not be null");
-    }
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+    @NonNull private final AuditWriter<Connection> auditWriter;
+    @NonNull private final OutboxWriter<Connection> outboxWriter;
+    @NonNull private final CredentialStore<Connection> credentials;
+    @NonNull private final PasswordDeriver deriver;
 
     /**
      * Mints the identifier and derives the credential. Expensive, and deliberately unable to

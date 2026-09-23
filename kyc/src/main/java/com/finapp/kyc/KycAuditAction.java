@@ -1,6 +1,7 @@
 package com.finapp.kyc;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What the {@code kyc} module does that must produce an audit record.
@@ -23,6 +24,7 @@ import com.finapp.platform.audit.AuditableAction;
  * here is emitted yet" until {@code P2-TSK-008} — stale from the day the consumer landed, the
  * recurring claim-the-code-outgrew class.)</em>
  */
+@RequiredArgsConstructor
 public enum KycAuditAction implements AuditableAction {
 
     /**
@@ -143,12 +145,6 @@ public enum KycAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    KycAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

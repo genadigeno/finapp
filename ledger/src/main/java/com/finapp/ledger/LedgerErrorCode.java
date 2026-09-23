@@ -1,6 +1,7 @@
 package com.finapp.ledger;
 
 import com.finapp.platform.api.ErrorCode;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The failures this module reports to a client (`P3-TSK-017`).
@@ -10,6 +11,7 @@ import com.finapp.platform.api.ErrorCode;
  * <strong>No title and no detail ever names an amount</strong> ({@code INV-AUD-02}): which
  * numbers were involved is the caller's own request.
  */
+@RequiredArgsConstructor
 public enum LedgerErrorCode implements ErrorCode {
 
     /**
@@ -83,12 +85,6 @@ public enum LedgerErrorCode implements ErrorCode {
     private final String code;
     private final int status;
     private final String title;
-
-    LedgerErrorCode(String code, int status, String title) {
-        this.code = code;
-        this.status = status;
-        this.title = title;
-    }
 
     @Override
     public String code() {

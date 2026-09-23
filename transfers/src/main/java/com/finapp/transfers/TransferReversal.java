@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The reversal command (`P4-TSK-009`, M4.5): the privileged, reasoned correction —
@@ -72,31 +74,17 @@ import java.util.UUID;
  * transfer stays {@code COMPLETED}, and the surface answers the already-catalogued
  * {@code ledger.AccountNotPostable} — the recorded corner, no repair path here.
  */
+@RequiredArgsConstructor
 public final class TransferReversal {
 
     static final String REVERSED_EVENT_TYPE = "transfers.TransferReversed";
 
-    private final TransferStore<Connection> transfers;
-    private final ReversalService reversals;
-    private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public TransferReversal(
-            TransferStore<Connection> transfers,
-            ReversalService reversals,
-            AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
-            IdGenerator ids,
-            Clock clock) {
-        this.transfers = Objects.requireNonNull(transfers, "transfers must not be null");
-        this.reversals = Objects.requireNonNull(reversals, "reversals must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final TransferStore<Connection> transfers;
+    @NonNull private final ReversalService reversals;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * Reverses the transfer, or refuses with nothing written.

@@ -2,6 +2,8 @@ package com.finapp.ledger;
 
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Resolves the platform's own account for a purpose and currency (`P3-TSK-003`).
@@ -21,13 +23,10 @@ import java.util.Objects;
  * belong to customer products and are resolved by owner (`LedgerAccountStore#findOwned`), so
  * asking the <em>operational</em> chart for one is a programming error, not a lookup miss.
  */
+@RequiredArgsConstructor
 public final class ChartOfAccounts<T> {
 
-    private final LedgerAccountStore<T> store;
-
-    public ChartOfAccounts(LedgerAccountStore<T> store) {
-        this.store = Objects.requireNonNull(store, "store must not be null");
-    }
+    @NonNull private final LedgerAccountStore<T> store;
 
     /** The platform's account for this purpose in this currency. Throws on any gap. */
     public LedgerAccount resolve(T unitOfWork, AccountPurpose purpose, CurrencyCode currency) {

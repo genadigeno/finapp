@@ -13,8 +13,9 @@ import com.finapp.transfers.TransferId;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,13 +50,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/transfers", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class TransferController {
 
-    private final TransferService transfers;
-
-    public TransferController(TransferService transfers) {
-        this.transfers = Objects.requireNonNull(transfers, "transfers must not be null");
-    }
+    @NonNull private final TransferService transfers;
 
     /**
      * Executes the caller's transfer, or replays the judgement — {@code 201} for the replay as

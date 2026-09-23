@@ -2,6 +2,7 @@ package com.finapp.kyc;
 
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What the captured bytes are — the closed set of formats the platform accepts (ADR-0036's
@@ -20,16 +21,13 @@ import java.util.stream.Stream;
  * this column. The declared type is routing metadata for the verification check, not a safety
  * proof.
  */
+@RequiredArgsConstructor
 public enum DocumentContentType {
     JPEG("image/jpeg"),
     PNG("image/png"),
     PDF("application/pdf");
 
     private final String mediaType;
-
-    DocumentContentType(String mediaType) {
-        this.mediaType = mediaType;
-    }
 
     public String mediaType() {
         return mediaType;

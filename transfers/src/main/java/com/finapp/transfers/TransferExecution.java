@@ -42,6 +42,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The execution command (`P4-TSK-005`, the phase's High-risk task): one transfer judged and
@@ -102,6 +104,7 @@ import java.util.UUID;
  * {@code DOMAIN_MODEL.md} §Time requires of the caller, correct for an internally-settled
  * instant movement, revisited when scheduled transfers exist.
  */
+@RequiredArgsConstructor
 public final class TransferExecution {
 
     /** The idempotency scope (ADR-0004): one command type, one scope. */
@@ -113,48 +116,20 @@ public final class TransferExecution {
     static final int EVENT_VERSION = 1;
     static final String TARGET_TYPE = "transfer";
 
-    private final IdempotentExecutor executor;
-    private final TransferParticipants<Connection> participants;
-    private final LedgerAccountStore<Connection> ledgerAccounts;
-    private final AvailableBalance<Connection> availability;
-    private final PostingService postings;
-    private final TransferStore<Connection> transfers;
-    private final TransferLimitCheck<Connection> limits;
-    private final TransferRiskDecision<Connection> risk;
-    private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
-    private final IdGenerator ids;
-    private final Clock clock;
-
-    public TransferExecution(
-            IdempotentExecutor executor,
-            TransferParticipants<Connection> participants,
-            LedgerAccountStore<Connection> ledgerAccounts,
-            AvailableBalance<Connection> availability,
-            PostingService postings,
-            TransferStore<Connection> transfers,
-            TransferLimitCheck<Connection> limits,
-            TransferRiskDecision<Connection> risk,
-            AuditWriter<Connection> audit,
-            OutboxWriter<Connection> outbox,
-            IdGenerator ids,
-            Clock clock) {
-        this.executor = Objects.requireNonNull(executor, "executor must not be null");
-        this.participants = Objects.requireNonNull(participants, "participants must not be null");
-        this.ledgerAccounts =
-                Objects.requireNonNull(ledgerAccounts, "ledgerAccounts must not be null");
-        this.availability = Objects.requireNonNull(availability, "availability must not be null");
-        this.postings = Objects.requireNonNull(postings, "postings must not be null");
-        this.transfers = Objects.requireNonNull(transfers, "transfers must not be null");
-        // Required, with no defaulted overload (the PostingObserver precedent): a skipped
-        // control must not compile, so Phase 13's wiring is a decision (P4-TSK-010).
-        this.limits = Objects.requireNonNull(limits, "limits must not be null");
-        this.risk = Objects.requireNonNull(risk, "risk must not be null");
-        this.audit = Objects.requireNonNull(audit, "audit must not be null");
-        this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    }
+    @NonNull private final IdempotentExecutor executor;
+    @NonNull private final TransferParticipants<Connection> participants;
+    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
+    @NonNull private final AvailableBalance<Connection> availability;
+    @NonNull private final PostingService postings;
+    @NonNull private final TransferStore<Connection> transfers;
+    // Required, with no defaulted overload (the PostingObserver precedent): a skipped
+    // control must not compile, so Phase 13's wiring is a decision (P4-TSK-010).
+    @NonNull private final TransferLimitCheck<Connection> limits;
+    @NonNull private final TransferRiskDecision<Connection> risk;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final OutboxWriter<Connection> outbox;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
 
     /**
      * Executes {@code command} at most once for its key, or replays the recorded judgement.

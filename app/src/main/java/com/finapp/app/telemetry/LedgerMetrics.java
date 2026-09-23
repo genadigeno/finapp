@@ -18,8 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Publishes how many accounts' projections disagree with the derivation (`P3-TSK-010`,
@@ -52,6 +51,7 @@ import org.slf4j.LoggerFactory;
  * {@code INV-AUD-02}) so an operator knows where to look. Nothing here writes anything: a
  * ledger that corrected itself would destroy the evidence of what went wrong.
  */
+@Slf4j
 final class LedgerMetrics {
 
     /** {@code finapp.ledger.projection.drift} — accounts where recomputation ≠ projection. */
@@ -80,8 +80,6 @@ final class LedgerMetrics {
      * {@code KycMetrics}): the hold count is one {@code COUNT(*)}, not a journal fold.
      */
     static final Duration HOLD_REFRESH = Duration.ofSeconds(5);
-
-    private static final Logger log = LoggerFactory.getLogger(LedgerMetrics.class);
 
     /** The {@code IdentityMetrics.Connections} seam, for the same unit-testability reason. */
     @FunctionalInterface

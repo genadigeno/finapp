@@ -113,5 +113,61 @@ public enum PermissionName {
      * Unlike its two ledger siblings it ships with its real check site,
      * {@code POST /v1/transfers/'{id}'/reversal}.
      */
-    TRANSFER_REVERSE
+    TRANSFER_REVERSE,
+
+    /**
+     * Command a refund of a captured payment (`P5-TSK-015`): a privileged, reasoned return of
+     * captured value — {@code INV-AUD-03}'s regime, the reversal precedent applied to the
+     * provider-decided rail. Distinct from {@link #TRANSFER_REVERSE} because the operations
+     * and their bounds differ (a refund is bounded by its capture and decided by a third
+     * party); joins {@code LEDGER_OPERATOR} rather than minting a role, because a role exists
+     * when a distinct trust decision does and there is one money-operating population
+     * (`P4-TSK-009`'s recorded sentence). Ships with its real check site,
+     * {@code POST /v1/payments/'{id}'/refund}.
+     */
+    PAYMENT_REFUND,
+
+    /**
+     * Onboard a merchant (`P6-TSK-003`): create the commercial counterparty and its payable
+     * ledger account, gated on the KYB decision's projection ({@code INV-KYC-05} consumed).
+     * Not a money-operating permission - onboarding opens books and moves nothing through
+     * them - so it does NOT join {@code LEDGER_OPERATOR}: administering counterparties is a
+     * distinct trust decision (`P2-TSK-004`'s rule), held by
+     * {@link RoleName#MERCHANT_ADMINISTRATOR}. Names {@code merchant.MerchantOnboarded};
+     * ships with its real check site, {@code POST /v1/operator/merchants}.
+     */
+    MERCHANT_ONBOARD,
+
+    /**
+     * Administer an onboarded merchant (`P6-TSK-003`): suspend, reinstate and close - each a
+     * reasoned judgement about a counterparty ({@code INV-AUD-03}) - and, from `P6-TSK-002`,
+     * issue and revoke the merchant's API keys. Distinct from {@link #MERCHANT_ONBOARD}
+     * because the checks differ per surface (the state moves demand recorded reasons; the
+     * onboarding demands the KYB gate), while one role holds both - one
+     * merchant-administering population until a trust decision splits it, the
+     * {@code LEDGER_OPERATOR} reasoning. Ships with its real check sites, the
+     * {@code /v1/operator/merchants/'{id}'/*} state moves.
+     */
+    MERCHANT_ADMINISTER,
+
+    /**
+     * Administer the platform's pricing (`P6-TSK-004`, ADR-0050): create fee schedules and
+     * their immutable versions, and assign a merchant to one. Names
+     * {@code merchant.FeeScheduleVersionCreated} and its siblings; ships with its real check
+     * sites, {@code /v1/operator/fee-schedules} and
+     * {@code PUT /v1/operator/merchants/'{id}'/fee-schedule}.
+     *
+     * <p><strong>Its own permission, because pricing is not standing.</strong> Deciding what
+     * the platform charges is a commercial act; deciding whether a counterparty may trade is a
+     * risk act. In most organisations those are different desks, and this permission is what
+     * makes splitting them a one-line change rather than a refactor — the
+     * {@link #PAYMENT_REFUND} shape.
+     *
+     * <p><strong>Held by {@link RoleName#MERCHANT_ADMINISTRATOR} today</strong>, because a
+     * role exists when a distinct trust decision does and nothing has yet taken the decision
+     * to separate pricing from counterparty administration (`P4-TSK-009`'s recorded sentence).
+     * Precise vocabulary, coarse bundling — and when a phase does separate them, the
+     * separation is expressible without inventing a permission after the fact.
+     */
+    FEE_ADMINISTER
 }

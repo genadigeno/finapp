@@ -9,8 +9,9 @@ import com.finapp.transfers.BeneficiaryId;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -47,13 +48,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/beneficiaries", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class BeneficiaryController {
 
-    private final BeneficiaryService beneficiaries;
-
-    public BeneficiaryController(BeneficiaryService beneficiaries) {
-        this.beneficiaries = Objects.requireNonNull(beneficiaries, "beneficiaries must not be null");
-    }
+    @NonNull private final BeneficiaryService beneficiaries;
 
     /**
      * Saves a destination, or converges on the caller's live row for it — {@code 201} either

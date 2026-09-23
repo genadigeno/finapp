@@ -1,6 +1,7 @@
 package com.finapp.ledger;
 
 import com.finapp.platform.audit.AuditableAction;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What the {@code ledger} module does that must produce an audit record.
@@ -25,6 +26,7 @@ import com.finapp.platform.audit.AuditableAction;
  * {@code ADJUSTMENT_POSTED} sat in {@code AuditCompletenessTest.NOT_YET_EMITTED} until
  * `P3-TSK-021` — stale since `P3-TSK-017` emitted it; corrected where it lived.)</em>
  */
+@RequiredArgsConstructor
 public enum LedgerAuditAction implements AuditableAction {
 
     /**
@@ -123,12 +125,6 @@ public enum LedgerAuditAction implements AuditableAction {
     private final String code;
     private final String description;
     private final boolean requiresReason;
-
-    LedgerAuditAction(String code, String description, boolean requiresReason) {
-        this.code = code;
-        this.description = description;
-        this.requiresReason = requiresReason;
-    }
 
     @Override
     public String code() {

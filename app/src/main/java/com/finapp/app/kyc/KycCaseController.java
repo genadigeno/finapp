@@ -7,7 +7,8 @@ import com.finapp.kyc.KycCase;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -52,13 +53,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(path = "/me/kyc", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
+@RequiredArgsConstructor
 public class KycCaseController {
 
-    private final KycCaseService cases;
-
-    public KycCaseController(KycCaseService cases) {
-        this.cases = Objects.requireNonNull(cases, "cases must not be null");
-    }
+    @NonNull private final KycCaseService cases;
 
     /** Ensures the caller's case exists — the first consent-gated capability over HTTP. */
     @PostMapping

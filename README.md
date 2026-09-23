@@ -177,6 +177,10 @@ Report the Gradle version and the JVM Gradle itself is running on:
 ./gradlew toolchainInfo
 ```
 
+**In an IDE**, Lombok generates constructors and loggers at compile time (ADR-0055). IntelliJ
+IDEA bundles Lombok support: enable annotation processing (*Settings → Build → Compiler →
+Annotation Processors*), or delegate builds to Gradle. The Gradle build needs nothing extra.
+
 Note that the launcher JVM is *not* the compile toolchain. The build targets Java 21 whatever
 JVM launched it; what proves that is `BuildToolchainTest`, which asserts the emitted bytecode
 version and runs as part of `./gradlew build`.

@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Plain-JDBC storage for the journal (ADR-0033).
@@ -26,17 +28,14 @@ import java.util.UUID;
  * store never re-checks what the domain already validated, because a third copy of the rule
  * is a third thing to drift.
  */
+@RequiredArgsConstructor
 public final class JdbcJournalEntryStore implements JournalEntryStore<Connection> {
 
     private static final String ENTRY_TABLE = "ledger.journal_entry";
     private static final String LINE_TABLE = "ledger.journal_line";
 
-    private final IdGenerator ids;
-
     /** Line identifiers are minted per line at append; the entry's is the aggregate's own. */
-    public JdbcJournalEntryStore(IdGenerator ids) {
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-    }
+    @NonNull private final IdGenerator ids;
 
     @Override
     public void append(

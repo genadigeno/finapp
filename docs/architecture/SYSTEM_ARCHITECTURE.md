@@ -62,6 +62,7 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | Grafana | 12.4.10 | Renders the reviewed dashboard in git; UI edits disabled (ADR-0018) |
 | Flyway | 12.4.0 | Matches the Spring Boot BOM; forward-only (ADR-0011) |
 | WireMock | 3.13.2 | Provider failure simulation, test scope; standalone artefact (ADR-0008, `P0-TSK-037`) |
+| Lombok | 1.18.46 | **Compile time only** (`compileOnly` + `annotationProcessor`, wired once in `finapp.java-conventions`); matches the Spring Boot BOM; `.claude/rules/java-lombok.md` and `lombok.config` (ADR-0055) |
 | PostgreSQL JDBC | 42.7.13 | Matches the Spring Boot BOM |
 | CycloneDX Gradle plugin | 3.4.1 | Produces the SBOM the dependency scan consumes |
 | gitleaks | v8.30.1 | Secret scanning; pinned by image digest in `infra/scripts/secret-scan.sh`, which CI calls |

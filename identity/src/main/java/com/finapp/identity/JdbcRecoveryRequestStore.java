@@ -10,8 +10,11 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /** Plain-JDBC recovery request store (`P1-TSK-023`, ADR-0033). */
+@RequiredArgsConstructor
 public final class JdbcRecoveryRequestStore implements RecoveryRequestStore<Connection> {
 
     /**
@@ -22,11 +25,7 @@ public final class JdbcRecoveryRequestStore implements RecoveryRequestStore<Conn
      * an existing resource, which is the shape {@code OwnershipIsScopedTest} exists to interrogate.
      * A creation has no owner to check, and the signature now says so.
      */
-    private final com.finapp.sharedkernel.id.IdGenerator ids;
-
-    public JdbcRecoveryRequestStore(com.finapp.sharedkernel.id.IdGenerator ids) {
-        this.ids = Objects.requireNonNull(ids, "ids must not be null");
-    }
+    @NonNull private final com.finapp.sharedkernel.id.IdGenerator ids;
 
     private static final String TABLE = "identity.recovery_request";
 

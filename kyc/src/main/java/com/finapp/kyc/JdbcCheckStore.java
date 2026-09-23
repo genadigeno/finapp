@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Plain-JDBC storage for verification checks and their evidence (ADR-0033, `P2-TSK-009`).
@@ -46,6 +48,7 @@ import java.util.UUID;
  * blocks harder, and an extra {@code INDETERMINATE} only spends the budget faster — which is
  * the safe direction, and why it is recorded rather than locked away.
  */
+@RequiredArgsConstructor
 public final class JdbcCheckStore implements CheckStore<Connection> {
 
     private static final String TABLE = "kyc.verification_check";
@@ -54,11 +57,7 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
     /** PostgreSQL SQLStates. Locale-independent, unlike the messages. */
     private static final String UNIQUE_VIOLATION = "23505";
 
-    private final DocumentCipher cipher;
-
-    public JdbcCheckStore(DocumentCipher cipher) {
-        this.cipher = Objects.requireNonNull(cipher, "cipher must not be null");
-    }
+    @NonNull private final DocumentCipher cipher;
 
     @Override
     public Requested requestOrConverge(Connection unitOfWork, VerificationCheck fresh) {
