@@ -6,8 +6,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Runs a message handler at most once per consumer, however many times the message arrives.
@@ -60,9 +59,8 @@ import org.slf4j.LoggerFactory;
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */
+@Slf4j
 public final class InboxConsumer<T> {
-
-    private static final Logger log = LoggerFactory.getLogger(InboxConsumer.class);
 
     /** What happened to one delivery. */
     public enum Outcome {

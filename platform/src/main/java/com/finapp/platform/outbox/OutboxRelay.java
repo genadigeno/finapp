@@ -14,8 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Publishes what the outbox holds: the other half of ADR-0005.
@@ -78,9 +77,8 @@ import org.slf4j.LoggerFactory;
  * that makes multiple instances safe.
  */
 @SuppressWarnings("try") // A correlation Scope is used for its close side effect.
+@Slf4j
 public final class OutboxRelay {
-
-    private static final Logger log = LoggerFactory.getLogger(OutboxRelay.class);
 
     private static final String TABLE = "platform.outbox_event";
 

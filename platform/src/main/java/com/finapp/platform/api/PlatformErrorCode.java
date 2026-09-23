@@ -1,5 +1,7 @@
 package com.finapp.platform.api;
 
+import lombok.RequiredArgsConstructor;
+
 /**
  * The failures the API surface itself can produce, before any business module is reached.
  *
@@ -14,6 +16,7 @@ package com.finapp.platform.api;
  * warning about when it asks for explicit error contracts, and it is invisible in testing
  * because the happy path and the handled path both look fine.
  */
+@RequiredArgsConstructor
 public enum PlatformErrorCode implements ErrorCode {
 
     /** The request body could not be parsed, or was structurally unusable. */
@@ -106,12 +109,6 @@ public enum PlatformErrorCode implements ErrorCode {
     private final String code;
     private final int status;
     private final String title;
-
-    PlatformErrorCode(String code, int status, String title) {
-        this.code = code;
-        this.status = status;
-        this.title = title;
-    }
 
     @Override
     public String code() {
