@@ -443,7 +443,8 @@ class PaymentAuthorizationDatabaseTest {
                         new JdbcAuditWriter(),
                         new JdbcOutboxWriter(),
                         IDS,
-                        CLOCK);
+                        CLOCK,
+                        PaymentCreation.IDEMPOTENCY_SCOPE);
         return runner.inTransaction(
                 uow ->
                         creation.create(
@@ -604,6 +605,11 @@ class PaymentAuthorizationDatabaseTest {
             return callerPartyId.equals(party)
                     ? Optional.of(new Wallet(customerId, wallet, EUR))
                     : Optional.empty();
+        }
+
+        @Override
+        public boolean creditable(Connection uow, LedgerAccountId account) {
+            return true;
         }
 
         @Override

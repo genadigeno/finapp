@@ -179,8 +179,9 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
         //
         // PAYMENT_PENDING is here because it is the ONLY terminal escape for a session whose
         // payment failed: ADR-0053 gave checkout no failure state (a declined payment is the
-        // PAYMENT's state and the customer retries on the same intent), so a customer who is
-        // declined and then closes the tab leaves a row nothing else can ever end.
+        // PAYMENT's state, and terminal - a retried confirmation answers NotConfirmable and the
+        // customer needs a new session), so every declined session is a row nothing else can
+        // ever end.
         //
         // Ordered by the deadline then the id - deterministic, so N sweepers walk the same
         // queue in the same order and contend on the oldest row rather than scattering.

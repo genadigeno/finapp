@@ -44,11 +44,14 @@ services:
     # this file exists to prevent.
     image: postgres:18.6
     environment:
-      # The same environment variables are read by platform/build.gradle.kts, which must
-      # connect to this container to run migrations, by app/src/main/resources/
-      # application.yaml, which is how the application itself connects, and by
-      # infra/postgres/initdb/00-roles.sql. An override therefore moves the container, the
-      # migration tool and the application together rather than only one of them.
+      # The same FINAPP_DB_* environment variables are read by platform/build.gradle.kts,
+      # which must connect to this container to run migrations, and by app/src/main/resources/
+      # application.yaml, which is how the application itself connects. An override of the name
+      # or the superuser moves the container and both tools together. The two ordinary roles
+      # are the exception: infra/postgres/initdb/00-roles.sql creates them with the marked local
+      # default, since an init script cannot read the environment, so overriding the migrator's
+      # or the application's password here means altering that role to match
+      # (SECRET_MANAGEMENT.md; corrected at the Phase 6 -> 7 transition).
       #
       # Nobody has to keep them in step by hand, and nobody should try: this comment used to
       # say "three places" when there were six. CommittedConfigurationHoldsNoSecretTest fails

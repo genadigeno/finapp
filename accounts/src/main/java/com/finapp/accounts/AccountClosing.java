@@ -78,6 +78,13 @@ public final class AccountClosing {
     @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
     @NonNull private final BalanceDerivation<Connection> derivation;
     @NonNull private final HoldStore<Connection> holds;
+
+    /**
+     * The payments in flight to the product's accounts (the Phase 6 → 7 transition) — asked under
+     * the same lock as the balance and the holds, because empty means nothing on its way either.
+     */
+    @NonNull private final PendingCredits<Connection> pendingCredits;
+
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
@@ -141,6 +148,13 @@ public final class AccountClosing {
             // authoritative hold rows (INV-BAL-05's discipline; never holds_minor).
             List<Hold> standing = holds.findActiveFor(unitOfWork, ledgerAccount.id());
             if (!standing.isEmpty()) {
+                throw new AccountNotEmptyException(accountId, ledgerAccount.currency());
+            }
+            // Nor while a payment is on its way to it (the Phase 6 -> 7 transition's C2 finding):
+            // a customer could close the wallet an open top-up credits and then confirm, and the
+            // provider captured the card while the ledger refused the capture's posting. Asked
+            // under this lock; a confirmation's FOR SHARE on the row is the rank beneath it.
+            if (pendingCredits.anyFor(unitOfWork, ledgerAccount.id())) {
                 throw new AccountNotEmptyException(accountId, ledgerAccount.currency());
             }
         }

@@ -68,8 +68,10 @@ import lombok.RequiredArgsConstructor;
  * <h2>The platform's act, end to end</h2>
  *
  * <p>Capture is the continuation of a confirmed intent — chained by the surface after a
- * synchronous {@code AUTHORIZED} ({@code P5-TSK-011}) or by a resolver ({@code P5-TSK-013}/
- * {@code -014}) — and has no session either way: one enumerated {@code enterSystem()} site
+ * synchronous {@code AUTHORIZED} ({@code P5-TSK-011}), or by the sweeper's stranded leg for an
+ * {@code AUTHORIZED} that nothing chained (the Phase 6 → 7 transition; this said "or by a
+ * resolver" until then, and none did: an authorization resolved by query or webhook stopped at
+ * {@code AUTHORIZED}) — and has no session either way: one enumerated {@code enterSystem()} site
  * wraps the whole command ({@code PHASE_5_PLAN.md} §11). Ambiguity commits
  * {@code CAPTURE_UNKNOWN} with <strong>nothing posted</strong> ({@code INV-LIFE-03});
  * {@code DECLINED} and a refused connection fail the attempt and the intent with it (no retry

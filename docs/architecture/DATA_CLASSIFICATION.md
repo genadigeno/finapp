@@ -587,6 +587,7 @@ them are classified at the ceiling regardless.
 | `refund` | `status` | `CONFIDENTIAL` | What happened to a person's refund |
 | `refund` | `created_at` | `CONFIDENTIAL` | Dates a privileged act against a person's account — `transfer.reversed_at`'s reasoning |
 | `refund` | `dispatch_key` | `INTERNAL` | The idempotency claim whose Tx1 created the row (`V008`, `P5-TSK-016`) — **caller-chosen** key material, `idempotency_record.idempotency_key`'s reasoning and §5. *Row added by the Phase 5 → 6 transition: `V008` landed the column without one and no targeted tier runs `ColumnClassificationTest` — found by the transition's fleet-wide battery, the register-decay class in this register* |
+| `refund` | `last_dispatched_at` | `CONFIDENTIAL` | The latest send permit (`V009`, the Phase 6 → 7 transition; ADR-0057 §4's discipline): when the refund was last authorised onto the wire — `merchant_payout.last_dispatched_at`'s reasoning. *Classified in the migration's own change, the lesson of the row above* |
 | `refund_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `refund_event` | `refund_id` | `INTERNAL` | An identifier of a thing |
 | `refund_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |

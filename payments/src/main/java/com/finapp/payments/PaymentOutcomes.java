@@ -194,9 +194,8 @@ public final class PaymentOutcomes {
             }
         }
 
-        appendOutcomeAudit(uow, intentId, attemptId, verdict.name(), committedAttempt,
-                committedIntent, platform, correlation, now);
-        return new Applied(committedIntent, committedAttempt, acting);
+        return answered(uow, intentId, attemptId, verdict.name(), committedAttempt,
+                committedIntent, acting, platform, correlation, now);
     }
 
     /**
@@ -325,9 +324,8 @@ public final class PaymentOutcomes {
             }
         }
 
-        appendOutcomeAudit(uow, intentId, attemptId, verdict.name(), committedAttempt,
-                committedIntent, platform, correlation, now);
-        return new Applied(committedIntent, committedAttempt, acting);
+        return answered(uow, intentId, attemptId, verdict.name(), committedAttempt,
+                committedIntent, acting, platform, correlation, now);
     }
 
     /**
@@ -350,9 +348,9 @@ public final class PaymentOutcomes {
         Failed failed =
                 failBoth(uow, intentId, attemptId, from, PaymentFailureReason.NEVER_RECEIVED,
                         correlation, platform, now);
-        appendOutcomeAudit(uow, intentId, attemptId, QueryAnswer.Verdict.UNRECOGNISED.name(),
-                failed.status(), PaymentIntentStatus.FAILED, platform, correlation, now);
-        return new Applied(PaymentIntentStatus.FAILED, failed.status(), failed.acting());
+        return answered(uow, intentId, attemptId, QueryAnswer.Verdict.UNRECOGNISED.name(),
+                failed.status(), PaymentIntentStatus.FAILED, failed.acting(), platform,
+                correlation, now);
     }
 
     /**
@@ -407,7 +405,11 @@ public final class PaymentOutcomes {
                     // it includes this one; the composer is handed the total BEFORE it,
                     // because the difference of two cumulative allocations is the whole of
                     // the proportional arithmetic and neither side of that subtraction may
-                    // be guessed. Valid under the command's FOR UPDATE on the attempt row.
+                    // be guessed. Valid because the release above locked the DEBITED account
+                    // FOR UPDATE, and a sibling refund's completion must take the same lock, so
+                    // the two sums are read in the order the completions commit. (This named a
+                    // FOR UPDATE on the attempt row until the Phase 6 -> 7 transition; no
+                    // resolver takes one.)
                     Money refundedBefore =
                             refunds.sumCompletedFor(
                                             uow, refund.attemptId(), refund.amount().currency())
@@ -479,6 +481,13 @@ public final class PaymentOutcomes {
             }
         }
 
+        if (!acting) {
+            // A converged application moved nothing: the row's truth, and no record of an
+            // outcome this call did not apply (the attempt's rule, the Phase 6 -> 7 transition).
+            return new RefundApplied(
+                    refunds.findById(uow, refund.id()).map(Refund::status).orElse(committed),
+                    false);
+        }
         audit.append(
                 uow,
                 new AuditRecord(
@@ -495,7 +504,7 @@ public final class PaymentOutcomes {
                                 "refund=" + refund.id()
                                         + ", verdict=" + verdict
                                         + ", refundStatus=" + committed)));
-        return new RefundApplied(committed, acting);
+        return new RefundApplied(committed, true);
     }
 
     /** The attempt fails with its mapped reason from {@code from}, and the intent with it. */
@@ -529,6 +538,47 @@ public final class PaymentOutcomes {
                     correlation, now);
         }
         return new Failed(PaymentAttemptStatus.FAILED, acting);
+    }
+
+    /**
+     * What an attempt outcome answers (the Phase 6 → 7 transition): the states THIS call's own
+     * conditional committed, recorded once — or, when a racing resolver's conditional won, the
+     * row's truth and no record at all. Before this, a loser reported the verdict it held as if it
+     * had been applied and appended an outcome record for a transition it never made: ten webhooks
+     * racing one operation left ten records for one move, and a contradictory loser's record named
+     * a state the row does not hold.
+     */
+    private Applied answered(
+            Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttemptId attemptId,
+            String verdict,
+            PaymentAttemptStatus committedAttempt,
+            PaymentIntentStatus committedIntent,
+            boolean acting,
+            Actor platform,
+            Correlation correlation,
+            Instant now) {
+        if (!acting) {
+            PaymentAttempt current =
+                    attempts.findById(uow, attemptId)
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "an attempt an outcome was applied to"
+                                                            + " exists"));
+            PaymentIntent intent =
+                    intents.findById(uow, intentId)
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "an attempt row's intent exists: V003's"
+                                                            + " foreign key holds it"));
+            return new Applied(intent.status(), current.status(), false);
+        }
+        appendOutcomeAudit(uow, intentId, attemptId, verdict, committedAttempt, committedIntent,
+                platform, correlation, now);
+        return new Applied(committedIntent, committedAttempt, true);
     }
 
     /** Verdict and committed states as enumerated names — never an amount, never provider vocabulary. */

@@ -130,3 +130,22 @@ own primary key as a storage failure failed nine of ten purchases that had worke
 converges when the merchant, the version and the gross all match, and throws when any of them
 does not — the two halves of `INV-MER-03` at this level: converging is what keeps a retry from
 being an error, and refusing is what keeps it from being a silent repricing.
+
+## Amendment — the Phase 6 → 7 transition: four corrections to what a confirmation does
+
+None of them changes the model; each corrects an answer.
+
+- **The derived key has a scope of its own**, `checkout.payment`. In `payment.create` any
+  customer could claim `checkout:<checkoutId>` first through the public command, and the payer's
+  confirmation would then meet a fingerprint it can never match (ADR-0004's follow-up).
+- **A confirmation that loses the open converges.** Two confirmations that both read `OPEN` meet
+  at the claim; the second replays the first's intent and then finds the session moved — and was
+  answered `checkout.NotConfirmable` naming `EXPIRED`, whatever had moved it. It now rolls back
+  and reads the session again, answering from the state the winner left; one that finds the
+  payment succeeded meanwhile renders the paid session.
+- **A second holder of the token on a session mid-payment gets the session's one `404`.** The
+  payments surface still performs the payer check, as above; its own `404`'s wording told the
+  holder the session was live and being paid, and the confirmation now translates it.
+- **The merchant's standing is read `FOR SHARE`**, so a close committing mid-confirmation is
+  waited for rather than read around — and a close refuses while the merchant is owed money or a
+  payment crediting it is in flight (`merchant.NotSettled`).

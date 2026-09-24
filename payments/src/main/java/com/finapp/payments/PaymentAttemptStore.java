@@ -51,25 +51,42 @@ public interface PaymentAttemptStore<T> {
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
 
     /**
+     * {@code AUTHORIZED} attempts that have rested there since at or before {@code
+     * authorizedBefore} — oldest first, at most {@code limit} (the Phase 6 → 7 transition).
+     *
+     * <p>Every Phase 5 and 6 payment captures what it authorizes, and only the HTTP surface
+     * chained the capture: an authorization resolved by the sweeper or by a webhook, or one whose
+     * instance crashed between its commit and the chain, rested in {@code AUTHORIZED} with no
+     * resolver and no gauge until the customer happened to retry. The sweep now chains these
+     * captures ({@link PaymentCapture}, which converges), and the gauge counts them.
+     */
+    List<PaymentAttempt> findStrandedAuthorizations(
+            T unitOfWork, Instant authorizedBefore, int limit);
+
+    /**
+     * How many attempts are stuck right now, and how long the oldest has waited (`P5-TSK-017`,
+     * {@code INV-LIFE-03}'s operational face): every {@code *_UNKNOWN}, and — since the Phase 6
+     * → 7 transition, in the payout's shape (`P6-TSK-013`) — every {@code *_DISPATCHED} and
+     * {@code AUTHORIZED} past the sweep's own {@code dispatchedBound}. A dispatch whose instance
+     * crashed mid-call, or an authorization nothing captured, is exactly as stuck as an unknown
+     * one, and counting only the unknown left both invisible whenever the sweep was down.
+     *
+     * <p>Age is measured the sweeper's way — the latest transition row, with birth as the
+     * fallback — so the gauge and the resolver cannot disagree about what "stuck" means.
+     * Counts and seconds only, never an amount ({@code INV-AUD-02}).
+     */
+    UnknownReading unknownReading(T unitOfWork, java.time.Duration dispatchedBound);
+
+    /** A count of stuck operations and the oldest one's wait in seconds. */
+    record UnknownReading(long active, long oldestAgeSeconds) {}
+
+    /**
      * The attempt one of whose minted operation references is {@code reference} — the webhook
      * door's attribution read (`P5-TSK-012`). The identifier presented is one the platform
      * handed the provider before anything was sent ({@code INV-PAY-04}), and the HMAC is
      * verified before this read runs — the {@code SIGNED_CALLBACK} reasoning; empty is the
      * unattributable webhook {@code V005} explicitly admits.
      */
-    /**
-     * How many attempts sit in an honestly-unknown state right now, and how long the oldest
-     * has been there (`P5-TSK-017`, {@code INV-LIFE-03}'s operational face).
-     *
-     * <p>Age is measured the sweeper's way — the latest transition row, with birth as the
-     * fallback — so the gauge and the resolver cannot disagree about what "stuck" means.
-     * Counts and seconds only, never an amount ({@code INV-AUD-02}).
-     */
-    UnknownReading unknownReading(T unitOfWork);
-
-    /** A count of unknown operations and the oldest one's age in seconds. */
-    record UnknownReading(long active, long oldestAgeSeconds) {}
-
     Optional<PaymentAttempt> findByOperationReference(
             T unitOfWork, ProviderIdempotencyReference reference);
 

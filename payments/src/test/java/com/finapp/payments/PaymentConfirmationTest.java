@@ -321,6 +321,11 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public boolean creditable(Connection uow, LedgerAccountId account) {
+            return true;
+        }
+
+        @Override
         public Optional<InstrumentToken> instrumentOwnedBy(
                 Connection uow, UUID callerPartyId, UUID paymentMethodId) {
             return instrumentPresent
@@ -384,6 +389,12 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public boolean anyInFlightCrediting(
+                Connection uow, com.finapp.ledger.LedgerAccountId account) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
         public void insert(Connection uow, PaymentIntent fresh) {
             rows.put(fresh.id().value(), fresh);
         }
@@ -438,7 +449,14 @@ class PaymentConfirmationTest {
         }
 
         @Override
-        public UnknownReading unknownReading(Connection uow) {
+        public UnknownReading unknownReading(
+                Connection uow, java.time.Duration dispatchedBound) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.List<PaymentAttempt> findStrandedAuthorizations(
+                Connection uow, java.time.Instant authorizedBefore, int limit) {
             throw new UnsupportedOperationException("not exercised here");
         }
 

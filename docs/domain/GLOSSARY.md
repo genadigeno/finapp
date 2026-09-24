@@ -399,6 +399,55 @@ arrives with deadlines and evidence requirements a refund does not have.
 opportunity to defend the payment.
 **Owned by:** `payments`
 
+### Payment Rail
+**Is:** a way money travels between institutions — a card network through a processor, an
+instant credit-transfer scheme, or the platform's own books for a wallet payment — described by
+a declared capability descriptor: its interaction model (two-step, push or book), when an
+operation is final, whether and how it can be reversed, how a refund executes, how long an
+unknown outcome may last, and which clearing position a completion posts to (ADR-0059,
+`INV-RAIL-01`).
+**Not:** a PSP, which is a company that operates on a rail, and not a Payment Method, which is
+the customer's instrument. A rail is never branched on by name outside its adapter: the domain
+acts on what the rail declared.
+**Owned by:** `payments`
+
+### Routing Decision
+**Is:** the recorded choice of rail for one payment, made once at confirmation by a pinned,
+versioned routing policy over stored inputs — the instrument, the currency and amount, the
+capabilities each candidate declared, and each rail's recorded availability — with every
+rejected candidate and its reason (ADR-0060, `INV-RAIL-02`, `INV-HIST-04`).
+**Not:** a retry policy, and not load balancing: a decision advances to another rail only on
+knowledge that nothing was sent, never after an ambiguous dispatch.
+**Owned by:** `payments`
+
+### A2A Payment
+**Is:** an account-to-account payment — value moved from a payer's bank account to a payee's
+over a credit-transfer rail, initiated by the payer or by the platform on the payer's authority
+(a pay-by-bank pay-in), or by the platform to a customer's own bank account (a withdrawal)
+(ADR-0062).
+**Not:** a Transfer, which moves value between two ledger accounts on the platform's own books,
+and not a Journal Entry, which is how either is recorded. An A2A payment's settlement happens
+between the institutions; the platform records its clearing position (`INV-RAIL-04`).
+**Owned by:** `payments`
+
+### Instant Payment
+**Is:** an A2A payment on a rail whose scheme confirms acceptance within seconds and makes it
+final on acceptance, with an outcome deadline after which an inquiry is authoritative
+(ADR-0062).
+**Not:** settled when accepted: acceptance is final between payer and payee, while the
+institutions settle later under the scheme's own cycle (`INV-SET-01`). And not reversible — a
+mistaken instant payment is corrected by a new return payment (`INV-REV-03`).
+**Owned by:** `payments`
+
+### Withdrawal
+**Is:** a customer's instruction to move value from their wallet to their own external bank
+account — held on the wallet at dispatch, sent under a send permit, and posted when the rail
+accepts it (ADR-0062).
+**Not:** a Refund, which returns a payment to its payer, and not a Merchant Payout, which pays a
+merchant its payable. The three share the outbound disciplines and have different subjects and
+bounds.
+**Owned by:** `payments`
+
 ### Transaction
 **Is:** the bookkeeping envelope grouping the journal entries produced by one economic event.
 **Not:** a Payment, not a Transfer, and never — in domain prose — a *database* transaction. This is

@@ -380,6 +380,81 @@ class PaymentsSchemaDatabaseTest {
         }
     }
 
+    /**
+     * V009's clauses against raw SQL (the Phase 6 -> 7 transition): the permit is the one column
+     * a status-unchanged update may move, forward only and only while the refund is resolvable,
+     * and the replaced function still freezes the recorded dispatch - its key now included.
+     */
+    @Test
+    @DisplayName("a refund's send permit moves forward only and never on a resolved refund, and"
+            + " the dispatch it records stays frozen - for every writer (V009)")
+    void theRefundSendPermitIsForwardOnlyAndOnlyWhileResolvable() throws Exception {
+        UUID intent = UUID.randomUUID();
+        UUID attempt = UUID.randomUUID();
+        UUID refund = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "PROCESSING");
+            insertAttempt(app, attempt, intent, "CAPTURED");
+            insertRefund(app, refund, attempt, 500, "EUR");
+
+            // Forward while DISPATCHED: the renewal a takeover commits before its re-send.
+            assertThat(
+                            updated(
+                                    app,
+                                    "UPDATE payments.refund SET last_dispatched_at ="
+                                            + " last_dispatched_at + interval '1 minute'"
+                                            + " WHERE id = ?",
+                                    refund))
+                    .isEqualTo(1);
+            assertThatThrownBy(
+                            () ->
+                                    updated(
+                                            app,
+                                            "UPDATE payments.refund SET last_dispatched_at ="
+                                                    + " last_dispatched_at - interval '30 seconds'"
+                                                    + " WHERE id = ?",
+                                            refund))
+                    .hasMessageContaining("send permit only moves forward");
+        }
+        // The owner, which no column grant restrains, still meets the freeze - the key included,
+        // which V004's function left out.
+        try (Connection owner = DatabaseRoles.migrator()) {
+            assertThatThrownBy(
+                            () ->
+                                    updated(
+                                            owner,
+                                            "UPDATE payments.refund SET dispatch_key = 'moved'"
+                                                    + " WHERE id = ?",
+                                            refund))
+                    .hasMessageContaining("immutable outside its outcome");
+        }
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(
+                            updated(
+                                    app,
+                                    "UPDATE payments.refund SET status = 'COMPLETED',"
+                                            + " provider_reference = 'psp-permit-1' WHERE id = ?",
+                                    refund))
+                    .isEqualTo(1);
+            assertThatThrownBy(
+                            () ->
+                                    updated(
+                                            app,
+                                            "UPDATE payments.refund SET last_dispatched_at ="
+                                                    + " last_dispatched_at + interval '1 minute'"
+                                                    + " WHERE id = ?",
+                                            refund))
+                    .hasMessageContaining("resolved refund is never sent again");
+        }
+    }
+
+    private static int updated(Connection connection, String sql, UUID id) throws SQLException {
+        try (PreparedStatement update = connection.prepareStatement(sql)) {
+            update.setObject(1, id);
+            return update.executeUpdate();
+        }
+    }
+
     @Test
     @DisplayName("RESERVED IS NOT RETURNED: the COMPLETED sum and the non-failed sum are"
             + " DIFFERENT questions, and pricing a fee against the wrong one returns money"
@@ -653,16 +728,19 @@ class PaymentsSchemaDatabaseTest {
         try (PreparedStatement insert = connection.prepareStatement(
                 "INSERT INTO payments.refund (id, attempt_id, amount_minor, currency, scale,"
                         + " reason, hold_reference, provider_idempotency_reference,"
-                        + " provider_reference, status, created_at)"
+                        + " provider_reference, status, created_at, last_dispatched_at)"
                         + " VALUES (?, ?, ?, ?, 2, 'operator-recorded reason', ?, ?, NULL,"
-                        + " 'DISPATCHED', ?)")) {
+                        + " 'DISPATCHED', ?, ?)")) {
+            Timestamp born = Timestamp.from(Instant.now());
             insert.setObject(1, id);
             insert.setObject(2, attempt);
             insert.setLong(3, amountMinor);
             insert.setString(4, currency);
             insert.setObject(5, UUID.randomUUID());
             insert.setString(6, "refund-" + id);
-            insert.setTimestamp(7, Timestamp.from(Instant.now()));
+            insert.setTimestamp(7, born);
+            // The birth permit is the dispatch itself (V009): the same value as created_at.
+            insert.setTimestamp(8, born);
             insert.executeUpdate();
         }
     }

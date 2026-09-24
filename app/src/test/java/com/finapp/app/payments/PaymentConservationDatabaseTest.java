@@ -762,7 +762,8 @@ class PaymentConservationDatabaseTest {
     private PaymentCreation creation() {
         return new PaymentCreation(
                 executor(), participants, intents, new JdbcAuditWriter(),
-                new JdbcOutboxWriter(), IDS, CLOCK);
+                new JdbcOutboxWriter(), IDS, CLOCK,
+                PaymentCreation.IDEMPOTENCY_SCOPE);
     }
 
     private PaymentConfirmation confirmation() {

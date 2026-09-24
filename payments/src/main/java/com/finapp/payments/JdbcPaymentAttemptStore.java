@@ -142,10 +142,48 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     }
 
     @Override
-    public UnknownReading unknownReading(Connection unitOfWork) {
-        // One aggregate over the two honestly-unknown states, aged the sweeper's way (the
-        // findSweepable expression: the latest transition, birth as the fallback). The
-        // server's clock decides the age - never an instance's (ADR-0014).
+    public List<PaymentAttempt> findStrandedAuthorizations(
+            Connection unitOfWork, Instant authorizedBefore, int limit) {
+        Objects.requireNonNull(authorizedBefore, "authorizedBefore must not be null");
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive: " + limit);
+        }
+        // findSweepable's age expression: the latest transition - the move INTO AUTHORIZED -
+        // with birth as the fallback.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt a"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM payments.payment_attempt_event e"
+                                + "   WHERE e.attempt_id = a.id) h ON true"
+                                + " WHERE a.status = 'AUTHORIZED'"
+                                + "   AND COALESCE(h.entered, a.created_at) <= ?"
+                                + " ORDER BY a.created_at, a.id"
+                                + " LIMIT ?")) {
+            read.setTimestamp(1, java.sql.Timestamp.from(authorizedBefore));
+            read.setInt(2, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<PaymentAttempt> stranded = new ArrayList<>();
+                while (rows.next()) {
+                    stranded.add(rehydrate(rows));
+                }
+                return List.copyOf(stranded);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading stranded authorizations", failure));
+        }
+    }
+
+    @Override
+    public UnknownReading unknownReading(
+            Connection unitOfWork, java.time.Duration dispatchedBound) {
+        Objects.requireNonNull(dispatchedBound, "dispatchedBound must not be null");
+        // One aggregate over what is stuck, aged the sweeper's way (the findSweepable
+        // expression: the latest transition, birth as the fallback): the two honestly-unknown
+        // states, and - since the Phase 6 -> 7 transition, the payout's shape (P6-TSK-013) -
+        // the two dispatched states and AUTHORIZED once past the sweep's own bound. The
+        // server's clock decides the age - never an instance's (ADR-0014) - floored at zero.
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT count(*),"
@@ -154,19 +192,25 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                                 // JDBC a floating-point value to round for us
                                 // (INV-MON-01 is about signatures, and this is the
                                 // discipline behind it - the rule caught it here).
-                                + " COALESCE(floor(EXTRACT(EPOCH FROM now()"
-                                + "   - min(COALESCE(h.entered, a.created_at))))::bigint, 0)"
+                                + " GREATEST(0, COALESCE(floor(EXTRACT(EPOCH FROM now()"
+                                + "   - min(COALESCE(h.entered, a.created_at))))::bigint, 0))"
                                 + " FROM payments.payment_attempt a"
                                 + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
                                 + "   FROM payments.payment_attempt_event e"
                                 + "   WHERE e.attempt_id = a.id) h ON true"
-                                + " WHERE a.status IN ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN')");
-                ResultSet row = read.executeQuery()) {
-            row.next();
-            return new UnknownReading(row.getLong(1), row.getLong(2));
+                                + " WHERE a.status IN ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN')"
+                                + "    OR (a.status IN"
+                                + "          ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED', 'AUTHORIZED')"
+                                + "        AND COALESCE(h.entered, a.created_at)"
+                                + "            <= now() - make_interval(secs => ?))")) {
+            read.setLong(1, dispatchedBound.toSeconds());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return new UnknownReading(row.getLong(1), row.getLong(2));
+            }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
-                    DatabaseFailure.describe("reading the unknown-attempt gauge", failure));
+                    DatabaseFailure.describe("reading the stuck-attempt gauge", failure));
         }
     }
 

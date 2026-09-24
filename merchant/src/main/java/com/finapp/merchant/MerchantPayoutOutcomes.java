@@ -115,12 +115,17 @@ public final class MerchantPayoutOutcomes {
      *
      * @param firstSend whether this answer is to the dispatch's own first send — the only send
      *     whose refused connection proves nothing was ever transmitted
+     * @param permit the send permit the answering flight committed; a first send's refused
+     *     connection fails the payout only while the locked row's permit is still this one —
+     *     a takeover that renewed it since may have sent, and been paid (the Phase 6 → 7
+     *     transition: this rule compared no permit, judging the request rather than the row)
      */
     public Applied applySendAnswer(
             Connection unitOfWork,
             MerchantPayout locked,
             PayoutAnswer answer,
             boolean firstSend,
+            Instant permit,
             Correlation correlation) {
         Objects.requireNonNull(locked, "locked must not be null");
         Objects.requireNonNull(answer, "answer must not be null");
@@ -136,7 +141,9 @@ public final class MerchantPayoutOutcomes {
             case DECLINED ->
                     fail(unitOfWork, locked, PayoutFailureReason.DECLINED, correlation, "send");
             case NOTHING_SENT ->
-                    firstSend && locked.status() == MerchantPayoutStatus.DISPATCHED
+                    firstSend
+                                    && locked.status() == MerchantPayoutStatus.DISPATCHED
+                                    && locked.lastDispatchedAt().equals(permit)
                             ? fail(unitOfWork, locked, PayoutFailureReason.PROVIDER_UNAVAILABLE,
                                     correlation, "send")
                             : new Applied(locked.status(), false);

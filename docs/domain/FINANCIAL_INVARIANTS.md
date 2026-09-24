@@ -205,12 +205,12 @@ trail that can be edited is worth less than none, because it invites false confi
 **Phase:** 0
 
 ### INV-HIST-04 — Decisions record the version of the policy that produced them
-**Statement:** Any versioned artefact (credit policy, fee schedule, matching rule, rounding
-policy, risk rule set) used in a decision is pinned and recorded on that decision.
+**Statement:** Any versioned artefact (credit policy, fee schedule, routing policy, matching
+rule, rounding policy, risk rule set) used in a decision is pinned and recorded on that decision.
 **Why:** Without version pinning, a past decision cannot be reproduced or defended.
 **Enforce:** `DB-CONSTRAINT` (`NOT NULL` version reference).
 **Verify:** Replay test reproducing a stored decision exactly.
-**Phase:** 6 (fees), 8 (matching), 10 (credit), 13 (risk)
+**Phase:** 6 (fees), 7 (routing), 8 (matching), 10 (credit), 13 (risk)
 
 ---
 
@@ -1074,6 +1074,124 @@ the fee under `RETAINED`); a refund beyond the allowance refused with nothing wr
 least-share property swept over every completion order; refunds racing on one payable counted.
 **Phase:** 6
 
+*Amended by ADR-0061 §5 (`Proposed`, the Phase 6 → 7 transition), in force when the first
+chargeback posts (`P7-TSK-013`): a chargeback is the second, bounded source of merchant debt — it
+leaves the payable below zero by no more than the sale credited it, and the debt is recovered from
+later captures before any payout (`INV-MER-05`). `INV-DSP-01` holds the bound.*
+
+---
+
+---
+
+# Rails — `INV-RAIL`
+
+*Catalogued by the Phase 6 → 7 transition (2026-09-24), the `INV-PAY` and `INV-MER` precedent:
+Phase 7's gate properties given stable IDs before any rail code exists, so the register can
+demand their demonstrations by identifier rather than by prose. Decisions in ADR-0059…0062.
+`INV-REV-03`, catalogued at initiation and subjectless until now, is Phase 7's too.*
+
+### INV-RAIL-01 — A rail's capabilities are declared, and the domain acts on them, never on a rail's name
+**Statement:** Every rail-dependent decision — whether an operation can be reversed, how a
+refund executes, which clearing position a completion posts to, whether a dispute can follow,
+how long an unknown outcome may last — is taken by reading the capability descriptor the
+attempt's rail declared, and the descriptor in force is recorded with the payment's routing
+decision. No code outside a rail's adapter branches on a rail's name.
+**Why:** A core that knows rail names turns the second scheme into a core change, and a
+behaviour that differs from what the rail declared is a finality or reversal decision nobody
+can explain afterwards (ADR-0059).
+**Enforce:** `DOMAIN` + `STATIC` — a build rule refusing rail-name literals outside adapter
+packages and configuration.
+**Verify:** Per-rail contract tests asserting each adapter behaves as its descriptor says; the
+static rule's own planted-violation test.
+**Phase:** 7
+
+### INV-RAIL-02 — A payment is routed once, deterministically, and never re-routed after an ambiguous dispatch
+**Statement:** A payment's rail is chosen by a pinned routing-policy version over stored
+inputs, before anything is sent; recomputing the pinned version over the stored inputs
+reproduces the choice. A decision advances to another rail only on knowledge that nothing was
+sent on the current one (an eligibility refusal before dispatch, or `NOTHING_SENT`), never after
+a dispatch whose outcome is unknown. A payment is dispatched on at most one rail at a time.
+**Why:** An unexplainable route is an unexplainable finality, and a fallback after an ambiguous
+dispatch is a second payment — `INV-PAY-04`'s double effect reached through routing (ADR-0060).
+**Enforce:** `DOMAIN` + `DB-CONSTRAINT` (the decision row exists before the attempt can dispatch,
+is frozen by trigger, and has one open step).
+**Verify:** Recomputation tests over stored inputs across policy versions; a fallback test on
+`NOTHING_SENT` and a refusal test on `INDETERMINATE`; a ten-way race confirming one decision
+and one dispatch per payment.
+**Phase:** 7
+
+### INV-RAIL-03 — Bank account identifiers and payment aliases never enter the platform
+**Statement:** An external account is known to the platform only by an opaque reference
+issued by its rail's provider, a four-character display suffix and the confirmation-of-payee
+result. No account number, international account identifier, routing code or alias value is
+stored, logged, published or returned; values of those shapes are refused at the surface, in
+the domain types and by `CHECK` constraints.
+**Why:** The provider already holds the details and the reference is all a payment needs;
+holding them would put bank data and personal identifiers in scope for no gain — `INV-PAY-02`'s
+reasoning for bank data (ADR-0056 §7, ADR-0062 §2).
+**Enforce:** `DOMAIN` + `DB-CONSTRAINT` + `STATIC` (the wrapping rule's vocabulary).
+**Verify:** Shaped-value refusal tests at each layer; the `information_schema` column sweep; a
+needle test over logs, events and responses.
+**Phase:** 7
+
+### INV-RAIL-04 — Every external rail's value in flight has its own clearing position
+**Statement:** A completion on an external rail posts to that rail's own clearing account —
+the card PSP's `SETTLEMENT_CLEARING`, the instant scheme's `INSTANT_CLEARING` — and never to
+another rail's; no clearing account nets two counterparties.
+**Why:** Phase 8 discharges each position against its own counterparty's settlement evidence;
+a shared position nets one counterparty's receivable against another's payable and makes the
+break unexplainable (`INV-SET-01`, ADR-0059 §4).
+**Enforce:** `DOMAIN` — the rail's descriptor names its clearing purpose; postings assert it
+(`DIRECTION:PURPOSE`).
+**Verify:** Per-rail posting tests asserting the purpose; the multi-rail storm reconciling each
+clearing position against its own rail's records.
+**Phase:** 7
+
+---
+
+# Disputes — `INV-DSP`
+
+*Catalogued by the Phase 6 → 7 transition (2026-09-24). Decisions in ADR-0061.*
+
+### INV-DSP-01 — Refunds and chargebacks together never take more from the counterparty than the capture credited it
+**Statement:** For every captured card payment, the sum of non-failed refunds and of the
+chargeback amounts debited to the counterparty never exceeds the captured amount, judged under
+the attempt row lock. A chargeback's excess over what remains — value the network took that
+the platform had already returned — posts to `CHARGEBACK_RECOVERABLE`, never to the
+counterparty; a refund that would breach the bound is refused.
+**Why:** The phase's named risk: a merchant that refunded properly would otherwise pay twice,
+and a refund after a chargeback would give away the same money twice (ADR-0061 §3).
+**Enforce:** `DOMAIN` — the combined bound under the attempt lock, both money paths.
+**Verify:** A chargeback on a fully and a partially refunded payment; a refund after a
+chargeback refused; refunds racing a chargeback counted in the tables; a counted refund that
+later fails re-attributing its share.
+**Phase:** 7
+
+### INV-DSP-02 — Every dispute stage posts once, and a resolution reverses exactly what it resolves
+**Statement:** Each financial stage of a dispute — the chargeback, the win, the write-off, a
+reported dispute fee — posts at most once, keyed by the dispute and the stage, behind a
+conditional stage transition; a win's posting is the exact inverse of the chargeback's
+principal lines, and the card rail's clearing position moves by exactly what the network did.
+**Why:** Duplicate and out-of-order notifications are expected (`CLAUDE.md` rule 8); a second
+posting per stage double-debits, and a win that does not mirror its chargeback leaves a
+residue nobody can explain (ADR-0061 §2, §4).
+**Enforce:** `DOMAIN` + `DB-CONSTRAINT` (the posting claim's unique key; `UNIQUE (provider,
+provider_dispute_reference)`).
+**Verify:** Ten-way duplicate notification races counted in the tables; out-of-order stage
+delivery; a win netting its chargeback to zero per account.
+**Phase:** 7
+
+### INV-DSP-03 — Dispute evidence is least-privilege, encrypted, and every access audited
+**Statement:** Representment evidence is readable only by the payment's merchant (tenant-scoped)
+and by operators holding the dispute permission; it is encrypted at rest under a key held
+outside the database, and every read and submission is audited with actor, dispute and outcome.
+**Why:** Dispute evidence carries customer details, receipts and correspondence; it is
+`INV-KYC-06`'s class of material with money attached (ADR-0061 §7).
+**Enforce:** `DOMAIN` + `DB-PRIVILEGE`.
+**Verify:** Cross-tenant and unprivileged negative tests; a ciphertext-at-rest test; the audit
+record per access.
+**Phase:** 7
+
 ---
 
 # Invariant Index
@@ -1100,6 +1218,8 @@ least-share property swept over every completion order; refunds racing on one pa
 | `INV-CNS` | 01–04 | Consent |
 | `INV-PAY` | 01–05 | Payments and providers |
 | `INV-MER` | 01–07 | Merchants and checkout |
+| `INV-RAIL` | 01–04 | Payment rails and routing |
+| `INV-DSP` | 01–03 | Disputes and chargebacks |
 
-**94 invariants.** Every one must be enforced and verified before the phase that owns it can
+**101 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate.

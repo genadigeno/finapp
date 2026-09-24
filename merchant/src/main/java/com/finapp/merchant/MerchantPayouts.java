@@ -133,11 +133,18 @@ public final class MerchantPayouts {
         }
     }
 
-    /** What the dispatch transaction hands the wire. {@code sendTo} empty: nothing to send. */
+    /**
+     * What the dispatch transaction hands the wire. {@code sendTo} empty: nothing to send.
+     *
+     * @param permit the send permit this flight committed, as the database stored it — a refused
+     *     connection fails the payout only while the locked row's permit is still this one (the
+     *     Phase 6 → 7 transition; {@code null} when nothing is sent)
+     */
     private record Dispatch(
             MerchantPayout payout,
             Optional<PayoutDestinationReference> sendTo,
-            boolean firstSend) {}
+            boolean firstSend,
+            Instant permit) {}
 
     @SuppressWarnings("try") // The platform Scope is used for its close side effect (the idiom).
     public Initiated initiate(InitiateCommand command) {
@@ -218,6 +225,7 @@ public final class MerchantPayouts {
                                             locked,
                                             answer.get(),
                                             dispatch.firstSend(),
+                                            dispatch.permit(),
                                             correlation);
                             committed = applied.status();
                             acting = applied.acting();
@@ -278,9 +286,13 @@ public final class MerchantPayouts {
                                                             + " found"));
             // The RECORDED destination, even if superseded since: the payout was bound to the
             // version effective at its dispatch, and a re-send is that same payout.
-            return new Dispatch(found, Optional.of(destination.reference()), false);
+            return new Dispatch(
+                    found,
+                    Optional.of(destination.reference()),
+                    false,
+                    storedPermit(unitOfWork, command.merchant(), found.id()));
         }
-        return new Dispatch(found, Optional.empty(), false);
+        return new Dispatch(found, Optional.empty(), false, null);
     }
 
     private Dispatch dispatch(
@@ -332,7 +344,25 @@ public final class MerchantPayouts {
         payouts.insert(unitOfWork, payout, command.idempotencyKey());
         recordInitiation(unitOfWork, payout, command, actor, correlation);
         outcomes.announceInitiated(unitOfWork, payout, correlation, payout.createdAt());
-        return new Dispatch(payout, Optional.of(destination.reference()), true);
+        return new Dispatch(
+                payout,
+                Optional.of(destination.reference()),
+                true,
+                storedPermit(unitOfWork, command.merchant(), payout.id()));
+    }
+
+    /**
+     * The permit as the database stored it (the Phase 6 → 7 transition): what the outcome later
+     * compares with the locked row's, so it is read back rather than taken from this instance's
+     * clock at a finer precision than the column keeps.
+     */
+    private Instant storedPermit(Connection unitOfWork, MerchantId merchant, MerchantPayoutId id) {
+        return payouts.findForUpdate(unitOfWork, merchant, id)
+                .map(MerchantPayout::lastDispatchedAt)
+                .orElseThrow(
+                        () ->
+                                new MerchantStorageException(
+                                        "a payout written in this transaction is readable in it"));
     }
 
     private void recordInitiation(

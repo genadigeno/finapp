@@ -107,3 +107,9 @@ needed its per-aggregate lock for *ordering*; resolution has no ordering to prot
   the sweeper; `P5-TST-001` demonstrates timeout-then-success end to end with exactly one
   financial effect.
 - The schedule joins `DISTRIBUTED_EXECUTION.md` §3 with the relay's justification shape.
+- *The Phase 6 → 7 transition*: the sweeper gained a **refund** leg — queried by our reference,
+  and a refund the provider does not recognise re-driven with its stored reference under a
+  renewed send permit (payments `V009`, ADR-0057 §4), never concluded — and a
+  **stranded-authorization** leg that chains the capture of an `AUTHORIZED` attempt nothing
+  captured within the bound. Both close the gap `P6-DOC-001` recorded against Phase 5. A zero
+  bound is refused at construction, and a resolver that loses the race records nothing.

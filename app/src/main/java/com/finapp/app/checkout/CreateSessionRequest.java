@@ -26,4 +26,14 @@ import jakarta.validation.constraints.Size;
 public record CreateSessionRequest(
         @NotNull @Positive Long amountMinor,
         @NotNull @Pattern(regexp = "^[A-Z]{3}$") String currency,
-        @NotBlank @Size(max = CheckoutSession.MAX_LINE_SUMMARY_LENGTH) String lineSummary) {}
+        @NotBlank @Size(max = CheckoutSession.MAX_LINE_SUMMARY_LENGTH) String lineSummary) {
+
+    /**
+     * The currency only - never the amount and never the line summary ({@code INV-AUD-02}), the
+     * rule the session aggregate renders itself by (the Phase 6 -> 7 transition).
+     */
+    @Override
+    public String toString() {
+        return "CreateSessionRequest[" + currency + "]";
+    }
+}

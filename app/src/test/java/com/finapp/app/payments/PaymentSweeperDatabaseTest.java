@@ -96,6 +96,15 @@ class PaymentSweeperDatabaseTest {
 
     private static final Clock CLOCK = Clock.systemUTC();
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
+
+    /**
+     * "Due now" is the smallest positive bound, never zero: since the Phase 6 → 7 transition the
+     * sweep refuses a bound that would let it conclude NEVER_RECEIVED of a request still in flight
+     * (the payout suite's constant, for the payout's same finding at `P6-DOC-001`). A microsecond
+     * is below anything these tests can observe between a dispatch and its sweep.
+     */
+    private static final Duration DUE_NOW = Duration.ofNanos(1_000);
+
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
     private static final Money AMOUNT = Money.ofMinorUnits(12_00, EUR);
     private static final byte[] PSP_KEY =
@@ -158,7 +167,7 @@ class PaymentSweeperDatabaseTest {
         PaymentAttempt stranded = strandedDispatch(holder);
         queryAnswers(stranded.authorizationReference(), "approved", "psp_q-auth");
 
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
 
         // Row-scoped, deliberately: the shared database carries other suites' stranded rows,
         // and the tally is telemetry - the count of record is THIS row and ITS tables.
@@ -177,7 +186,7 @@ class PaymentSweeperDatabaseTest {
         String captureReference = captureReference(attemptId);
         queryAnswers(new ProviderIdempotencyReference(captureReference), "approved", "psp_q-cap");
 
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
 
         assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURED");
         assertThat(intentStatus(holder.intent())).isEqualTo("SUCCEEDED");
@@ -186,7 +195,7 @@ class PaymentSweeperDatabaseTest {
         // The second sweep: a terminal is never a candidate, so nothing touches the row and
         // the entry count holds - asserted on the row's own tables (the tally is fleet-wide
         // over a shared test database, so it is telemetry here, not the count of record).
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
         assertThat(entriesByReference(attemptId)).isEqualTo(1);
         assertThat(transitionCount(attemptId, "CAPTURED")).isEqualTo(1);
     }
@@ -220,8 +229,8 @@ class PaymentSweeperDatabaseTest {
                                                                                         .generate(
                                                                                                 IDS)))) {
                                                             return sweeper(
-                                                                            Duration.ZERO,
-                                                                            Duration.ZERO)
+                                                                            DUE_NOW,
+                                                                            DUE_NOW)
                                                                     .sweep();
                                                         }
                                                     }))
@@ -240,6 +249,17 @@ class PaymentSweeperDatabaseTest {
         assertThat(entriesByReference(attemptId)).as("one posting, whoever won").isEqualTo(1);
         assertThat(transitionCount(attemptId, "CAPTURED")).isEqualTo(1);
         assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURED");
+        // And ONE outcome record for the one move (the Phase 6 -> 7 transition): the losers
+        // applied nothing and record nothing - before, each appended a record naming the verdict
+        // it held, ten records for one transition.
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM platform.audit_record"
+                                        + " WHERE operation = 'payments.PaymentOutcomeApplied'"
+                                        + " AND change_summary LIKE ?",
+                                "attempt=" + attemptId + ", %attemptStatus=CAPTURED%"))
+                .as("one outcome record for the one CAPTURED transition")
+                .isEqualTo(1);
     }
 
     @Test
@@ -267,7 +287,7 @@ class PaymentSweeperDatabaseTest {
                                             CorrelationContext.enter(
                                                     Correlation.startingWith(
                                                             CorrelationId.generate(IDS)))) {
-                                        return sweeper(Duration.ZERO, Duration.ZERO).sweep();
+                                        return sweeper(DUE_NOW, DUE_NOW).sweep();
                                     }
                                 }));
                 final int n = i;
@@ -323,7 +343,7 @@ class PaymentSweeperDatabaseTest {
                 200,
                 "{\"status\":\"unrecognised\"}");
 
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
 
         assertThat(attemptStatus(stranded.id())).isEqualTo("FAILED");
         assertThat(failureReason(stranded.id()))
@@ -344,12 +364,12 @@ class PaymentSweeperDatabaseTest {
                 SimulatedCardPspAdapter.OPERATIONS_PATH
                         + strandedBroken.authorizationReference().value(),
                 500);
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
         assertThat(attemptStatus(strandedBroken.id())).isEqualTo("AUTH_UNKNOWN");
 
         // The second sweep: still indeterminate, still AUTH_UNKNOWN, never FAILED - the next
         // tick simply asks again (INV-LIFE-03), and exactly one UNKNOWN transition ever lands.
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
         assertThat(attemptStatus(strandedBroken.id())).isEqualTo("AUTH_UNKNOWN");
         assertThat(transitionCount(strandedBroken.id(), "AUTH_UNKNOWN")).isEqualTo(1);
 
@@ -365,7 +385,7 @@ class PaymentSweeperDatabaseTest {
                         + strandedMisrouted.authorizationReference().value(),
                 404,
                 "<html><body>404 Not Found - gateway</body></html>");
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
         assertThat(attemptStatus(strandedMisrouted.id())).isEqualTo("AUTH_UNKNOWN");
         assertThat(failureReason(strandedMisrouted.id())).isNull();
     }
@@ -433,8 +453,12 @@ class PaymentSweeperDatabaseTest {
                 };
         PaymentSweeper sweeper =
                 new PaymentSweeper(
-                        runner, attempts, intents, evidence, throwingForFirst, outcomes(),
-                        IDS, CLOCK, Duration.ZERO, Duration.ZERO, 50);
+                        runner, attempts, intents, new com.finapp.payments.JdbcRefundStore(),
+                        evidence, throwingForFirst, outcomes(),
+                        new PaymentCapture(
+                                runner, intents, attempts, evidence, throwingForFirst, outcomes(),
+                                new JdbcAuditWriter(), IDS, CLOCK),
+                        IDS, CLOCK, DUE_NOW, DUE_NOW, 50);
 
         PaymentSweeper.SweepResult result = sweeper.sweep();
 
@@ -504,7 +528,8 @@ class PaymentSweeperDatabaseTest {
                                                     new JdbcAuditWriter(),
                                                     new JdbcOutboxWriter(),
                                                     IDS,
-                                                    CLOCK)
+                                                    CLOCK,
+                                                    PaymentCreation.IDEMPOTENCY_SCOPE)
                                             .create(
                                                     uow,
                                                     new PaymentCreation.CreatePaymentCommand(
@@ -583,8 +608,12 @@ class PaymentSweeperDatabaseTest {
 
     private PaymentSweeper sweeper(Duration dispatchedAge, Duration unknownAge) {
         return new PaymentSweeper(
-                runner, attempts, intents, evidence, adapter(), outcomes(), IDS, CLOCK,
-                dispatchedAge, unknownAge, 50);
+                runner, attempts, intents, new com.finapp.payments.JdbcRefundStore(), evidence,
+                adapter(), outcomes(),
+                new PaymentCapture(
+                        runner, intents, attempts, evidence, adapter(), outcomes(),
+                        new JdbcAuditWriter(), IDS, CLOCK),
+                IDS, CLOCK, dispatchedAge, unknownAge, 50);
     }
 
     /** A registry of this suite's own: the meters' wiring is the telemetry suites'. */

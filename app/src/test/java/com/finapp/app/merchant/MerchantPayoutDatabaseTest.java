@@ -119,6 +119,7 @@ class MerchantPayoutDatabaseTest {
     private static SimulatedProvider provider;
 
     @Autowired private MerchantPayouts payouts;
+    @Autowired private com.finapp.merchant.MerchantAdministration administration;
     @Autowired private MerchantPayoutStore<Connection> payoutStore;
     @Autowired private MerchantPayoutOutcomes outcomes;
     @Autowired private PayoutEvidenceStore<Connection> evidence;
@@ -683,6 +684,105 @@ class MerchantPayoutDatabaseTest {
                 .isEqualTo(MerchantPayoutStatus.DISPATCHED);
         assertThat(holdStatuses(merchant)).containsExactly("ACTIVE");
         assertThat(stored(merchant, crashed).failureReason()).isEmpty();
+    }
+
+    /**
+     * The Phase 6 -> 7 transition's I5 finding: a merchant owed money could be closed, and then
+     * nothing could pay it out - payouts refuse any merchant that is not ACTIVE, CLOSED is
+     * terminal, and captures of sessions already paying kept crediting it. A close now requires the
+     * payable settled: zero, no hold standing, nothing on its way (Phase 3's account close).
+     */
+    @Test
+    @DisplayName("a merchant owed money, holding a reservation or with a payment in flight cannot"
+            + " be closed, and a settled one can (the Phase 6 -> 7 transition)")
+    void onlyASettledMerchantCanBeClosed() throws Exception {
+        Funded owed = funded("40.00");
+        assertThatThrownBy(() -> asOperator(uow -> administration.close(uow, owed.id(), "ended")))
+                .isInstanceOf(com.finapp.merchant.MerchantNotSettledException.class);
+
+        Funded inFlight = fundedWithoutDestination("0.00");
+        raw(
+                "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                        + " payment_method_id, wallet_account_id, amount_minor, currency, scale,"
+                        + " status, created_at) VALUES (?, ?, ?, ?, ?, 1000, 'EUR', 2,"
+                        + " 'PROCESSING', now())",
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                inFlight.payable().value());
+        assertThatThrownBy(
+                        () -> asOperator(uow -> administration.close(uow, inFlight.id(), "ended")))
+                .as("a capture on its way would land on a merchant nothing can pay out")
+                .isInstanceOf(com.finapp.merchant.MerchantNotSettledException.class);
+
+        // Settled back to zero while a reservation still stands on it.
+        Funded held = funded("10.00");
+        asOperator(uow -> holds.place(uow, held.payable(), eur("10.00")));
+        post(held, "10.00", Direction.DEBIT);
+        assertThatThrownBy(() -> asOperator(uow -> administration.close(uow, held.id(), "ended")))
+                .isInstanceOf(com.finapp.merchant.MerchantNotSettledException.class);
+
+        for (Funded refused : List.of(owed, inFlight, held)) {
+            assertThat(
+                            count(
+                                    "SELECT count(*) FROM merchant.merchant WHERE id = ?"
+                                            + " AND status = 'ACTIVE'",
+                                    refused.id().value()))
+                    .as("a refused close writes nothing")
+                    .isEqualTo(1);
+        }
+
+        Funded settled = fundedWithoutDestination("0.00");
+        assertThat(
+                        asOperator(uow -> administration.close(uow, settled.id(), "ended"))
+                                .status())
+                .isEqualTo(com.finapp.merchant.MerchantStatus.CLOSED);
+    }
+
+    /**
+     * The first-send rule judged against the ROW, not the request (the Phase 6 -> 7
+     * transition, found by its audits in the payout and in the refund alike): a first flight
+     * stalls past its lease, a takeover renews the permit and re-sends - and may be paid - and
+     * only then does the first flight's refused connection arrive. It is still about the first
+     * flight's own send, which proves nothing about the takeover's. Deterministic: the wire
+     * renews the permit, as the takeover would, on its own connection before answering.
+     */
+    @Test
+    @DisplayName("a first send's refused connection moves nothing once a later permit exists - the"
+            + " locked row's permit decides, not the request's")
+    void aFirstSendsRefusedConnectionAfterARenewalMovesNothing() throws Exception {
+        Funded merchant = funded("100.00");
+        PayoutProvider renewsThenRefuses =
+                new PayoutProvider() {
+                    @Override
+                    public com.finapp.merchant.PayoutAnswer dispatch(PayoutRequest request) {
+                        try {
+                            raw(
+                                    "UPDATE merchant.merchant_payout SET last_dispatched_at ="
+                                            + " last_dispatched_at + interval '1 second'"
+                                            + " WHERE provider_idempotency_reference = ?",
+                                    request.reference().value());
+                        } catch (SQLException failure) {
+                            throw new IllegalStateException(failure);
+                        }
+                        return com.finapp.merchant.PayoutAnswer.nothingSent();
+                    }
+
+                    @Override
+                    public PayoutQueryAnswer query(com.finapp.merchant.PayoutReference ours) {
+                        throw new IllegalStateException("unused");
+                    }
+                };
+
+        MerchantPayouts.Initiated first =
+                initiateWith(payoutsSendingTo(renewsThenRefuses, idempotentExecutor), merchant,
+                        "40.00", key());
+
+        assertThat(first.status())
+                .as("a later permit exists, so this refused connection proves nothing")
+                .isEqualTo(MerchantPayoutStatus.DISPATCHED);
+        assertThat(holdStatuses(merchant)).containsExactly("ACTIVE");
     }
 
     // -----------------------------------------------------------------

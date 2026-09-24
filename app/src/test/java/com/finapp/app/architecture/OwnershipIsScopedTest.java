@@ -1364,6 +1364,63 @@ class OwnershipIsScopedTest {
                                         + " lock-free read admits is arbitrated by V009's"
                                         + " trigger under the advisory lock.")),
                     Map.entry(
+                            "com.finapp.ledger.JdbcLedgerAccountStore.lockForShare",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "The Phase 6 -> 7 transition. lockForUpdate's shared face:"
+                                        + " a payment's confirmation share-locks the account its"
+                                        + " capture will credit, so it serialises with an account"
+                                        + " close's FOR UPDATE. The identifier is the intent's own"
+                                        + " credit account, read after findOwned resolved the"
+                                        + " intent as the caller's - platform-held, never a"
+                                        + " request's; ownership is the commanding surface's, as"
+                                        + " lockForUpdate's.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantStore.findByIdForShare",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "The Phase 6 -> 7 transition. The share-locking face of"
+                                        + " read, for requireTrading: on the creation the"
+                                        + " authenticated key's own tenant, on the customer's"
+                                        + " confirmation the merchant the SESSION names, which the"
+                                        + " token opened - platform-held on both. FOR SHARE is the"
+                                        + " serialisation point against a close's FOR UPDATE,"
+                                        + " never an ownership check.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.anyInFlightCrediting",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
+                                    "The Phase 6 -> 7 transition: a close asks whether a payment"
+                                        + " in flight will credit the account, under the close's"
+                                        + " lock. The account is the customer's own, locked by"
+                                        + " lockOwnedBy's owner predicate; the merchant close asks"
+                                        + " of the payable an operator's MERCHANT_ADMINISTER route"
+                                        + " named. A boolean leaves, and no row of anybody's.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.lockForOutcome",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The Phase 6 -> 7 transition. The refund row locked FOR"
+                                        + " UPDATE before an answer is applied - the command's Tx2,"
+                                        + " the sweep and the webhook - so the permit judged and"
+                                        + " the conditional write see one row. The identifier is"
+                                        + " minted by the command's own Tx1, the sweep's own"
+                                        + " candidate, or the webhook's attribution by our minted"
+                                        + " reference - never a request's.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.renewSendPermit",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The Phase 6 -> 7 transition, payments V009: the send"
+                                        + " permit's conditional renewal before a takeover's or a"
+                                        + " re-drive's own send, forward only and only while the"
+                                        + " refund is resolvable. The identifier is the refund the"
+                                        + " claim's dispatch key converged on, or the sweep's own"
+                                        + " candidate.")),
+                    Map.entry(
                             "com.finapp.ledger.JdbcLedgerAccountStore.lockForUpdate",
                             new Entry(
                                     Scope.NOT_OWNED,

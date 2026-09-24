@@ -33,6 +33,19 @@ public interface PaymentParticipants<T> {
     Optional<InstrumentToken> instrumentOwnedBy(
             T unitOfWork, UUID callerPartyId, UUID paymentMethodId);
 
+    /**
+     * Whether the account a confirmed payment's capture will credit can still receive it —
+     * read {@code FOR SHARE}, so a racing CLOSURE of the account serialises with this read (the
+     * Phase 6 → 7 transition). True only while the ledger account is {@code ACTIVE}.
+     *
+     * <p>Without it, a customer could close the wallet an open top-up credits, then confirm: the
+     * provider authorised and captured the card, the ledger refused the capture's posting, the
+     * capture's transaction rolled back, and the payment sat {@code CAPTURE_DISPATCHED} for good
+     * with the customer charged and nothing booked. The confirmation now asks here before it
+     * dispatches, and account closing refuses while a payment is in flight to the account.
+     */
+    boolean creditable(T unitOfWork, LedgerAccountId account);
+
     /** The wallet's owner, account and currency — what the intent records and judges. */
     record Wallet(UUID customerId, LedgerAccountId account, CurrencyCode currency) {}
 }

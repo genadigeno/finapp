@@ -105,6 +105,17 @@ public final class CheckoutSessions {
             // hold several, and the one to revoke after a leak is the one that did this.
             Objects.requireNonNull(key, "key must not be null");
         }
+
+        /**
+         * The acting key and the currency - never the amount and never the line summary
+         * ({@code INV-AUD-02}; the line summary is {@code RESTRICTED-PII}, what one person is
+         * buying). The aggregate renders itself by the same rule.
+         */
+        @Override
+        public String toString() {
+            return "OpenSessionCommand[key=" + key + ", "
+                    + (amount == null ? null : amount.currency()) + "]";
+        }
     }
 
     /**
@@ -310,8 +321,12 @@ public final class CheckoutSessions {
      * @throws MerchantNotTradingException the merchant is not {@code ACTIVE}
      */
     public void requireTrading(Connection unitOfWork, UUID merchantRef) {
+        // FOR SHARE (the Phase 6 -> 7 transition): the administrative moves write this row
+        // under FOR UPDATE, so a suspension or close either waits for this transaction - and a
+        // close then sees its payment in flight - or commits first and is read here. Unlocked,
+        // an offer read ACTIVE could be paid into a close that committed a moment later.
         if (merchants
-                .findById(unitOfWork, MerchantId.of(merchantRef))
+                .findByIdForShare(unitOfWork, MerchantId.of(merchantRef))
                 .filter(merchant -> merchant.status() == MerchantStatus.ACTIVE)
                 .isEmpty()) {
             throw new MerchantNotTradingException();

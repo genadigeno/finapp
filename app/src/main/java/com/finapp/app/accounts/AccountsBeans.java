@@ -83,7 +83,8 @@ class AccountsBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore) {
         return new AccountClosing(
                 customerAccountStore,
                 ledgerAccountStore,
@@ -91,6 +92,9 @@ class AccountsBeans {
                 // The close judges standing reservations from the authoritative hold rows
                 // (P3-TSK-015); the store is stateless, so a direct instance is the wiring.
                 new JdbcHoldStore(),
+                // THE PAYMENTS IN FLIGHT (the Phase 6 -> 7 transition): accounts cannot see
+                // payments, so the composition root answers the port over the intent store.
+                paymentIntentStore::anyInFlightCrediting,
                 auditWriter,
                 outboxWriter,
                 ids,

@@ -44,6 +44,12 @@ import lombok.RequiredArgsConstructor;
  * scale (the backlog's list; {@code INV-IDEM-03}'s subjects, the actor per ADR-0004). The
  * stored body replays {@code intentId|status}.
  *
+ * <p><strong>A wiring whose keys are derived claims in a scope of its own</strong> (the
+ * Phase 6 → 7 transition): the checkout opens its payment under {@code checkout:<checkoutId>},
+ * and in {@code payment.create} any customer could claim that predictable key first through
+ * the public command, leaving the payer's confirmation a fingerprint it could never match. The
+ * scope is therefore the wiring's decision and a constructor argument, never a default.
+ *
  * <h2>The resolutions are authoritative, and a refusal writes nothing</h2>
  *
  * <p>The wallet (owner, account, currency) and the instrument's liveness come from
@@ -55,7 +61,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public final class PaymentCreation {
 
-    /** The idempotency scope (ADR-0004): one command type, one scope. */
+    /**
+     * The public command's idempotency scope (ADR-0004): one command type, one scope. The
+     * checkout's derived-key wiring claims in its own ({@code CheckoutService}).
+     */
     public static final String IDEMPOTENCY_SCOPE = "payment.create";
 
     static final String CREATED_EVENT_TYPE = "payments.PaymentIntentCreated";
@@ -70,6 +79,12 @@ public final class PaymentCreation {
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+
+    /**
+     * The claim scope - {@link #IDEMPOTENCY_SCOPE} for the public command, a wiring's own where
+     * it derives its keys. Last, so no existing argument moved.
+     */
+    @NonNull private final String scope;
 
     /** The caller's ask: their party, their instrument, the amount, and their retry key. */
     public record CreatePaymentCommand(
@@ -124,9 +139,9 @@ public final class PaymentCreation {
                     command.amount().currency(), wallet.currency());
         }
 
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, command.idempotencyKey());
+        IdempotencyKey key = new IdempotencyKey(scope, command.idempotencyKey());
         RequestFingerprint fingerprint =
-                RequestFingerprint.sha256(canonicalForm(command, wallet, actor));
+                RequestFingerprint.sha256(canonicalForm(scope, command, wallet, actor));
 
         IdempotentExecutor.ExecutionOutcome outcome =
                 executor.execute(
@@ -212,8 +227,11 @@ public final class PaymentCreation {
 
     /** The actor and the money's meaning ({@code INV-IDEM-03}); correlation excluded. */
     private static byte[] canonicalForm(
-            CreatePaymentCommand command, PaymentParticipants.Wallet wallet, Actor actor) {
-        return (IDEMPOTENCY_SCOPE
+            String scope,
+            CreatePaymentCommand command,
+            PaymentParticipants.Wallet wallet,
+            Actor actor) {
+        return (scope
                         + "|" + actor.id()
                         + "|" + command.callerPartyId()
                         + "|" + wallet.account().value()

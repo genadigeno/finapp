@@ -676,6 +676,15 @@ Settlement file ingestion and matching, disputes, BNPL, multi-currency merchant 
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
+*(**Elaborated by [`PHASE_7_PLAN.md`](PHASE_7_PLAN.md)** and ADR-0059…0062 at the Phase 6 → 7
+transition, 2026-09-24: eighteen items across eight milestones in `BACKLOG.md`. This section is
+kept as written and made current where it had fallen behind the decisions: an instant rail is
+**final on acceptance and settled on the scheme's cycle**, never "settled immediately" (ADR-0062,
+`INV-SET-01`); the chargeback ratio per merchant is an operator report, never a metric tag
+(ADR-0018's cardinality rule); disputes are context 29, merged into `payments` (ADR-0061); and
+card issuing — cardholders, card accounts, physical and virtual cards — is external (ADR-0059
+§5).)*
+
 ### 1. Objective
 Generalise from one payment provider to multiple rails with genuinely different lifecycles,
 timing and failure semantics — and introduce disputes.
@@ -692,8 +701,8 @@ Phase 5; Phase 6 (disputes are merchant-affecting).
 
 ### 5. Architecture work
 - Rail abstraction that does not flatten real differences: cards have
-  authorization→capture→clearing→settlement; instant rails settle immediately;
-  A2A may be irrevocable on acceptance.
+  authorization→capture→clearing→settlement; instant rails are final on acceptance and
+  settle on the scheme's cycle; A2A may be irrevocable on acceptance.
 - Irrevocability and finality per rail documented explicitly — this drives reversal
   strategy.
 - Rail selection/routing policy, versioned and explainable.
@@ -717,7 +726,8 @@ PCI scope explicitly documented and minimised; dispute evidence access controlle
 
 ### 10. Observability work
 Per-rail success rate, latency and cost; routing decision distribution; dispute rate and
-win rate; chargeback ratio per merchant (a regulatory-relevant metric).
+win rate; the chargeback ratio per merchant (regulatory-relevant — an operator report, since a
+merchant tag is unbounded cardinality).
 
 ### 11. Testing work
 Per-rail lifecycle tests; irrevocable-rail reversal must be rejected, not silently

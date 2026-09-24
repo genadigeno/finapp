@@ -63,9 +63,11 @@ import lombok.extern.slf4j.Slf4j;
  * <ul>
  *   <li><strong>It is the only terminal escape for a failed payment.</strong> ADR-0053 gave
  *       checkout no failure state, on purpose — a declined payment is the <em>payment's</em>
- *       state and the customer retries on the same intent. So a customer who is declined and
- *       then closes the tab leaves a {@code PAYMENT_PENDING} row that nothing else can ever
- *       end. Without this edge it is stuck for ever, which is precisely what ADR-0044's
+ *       state, and it is terminal: the intent fails with its attempt, a retried confirmation
+ *       answers {@code payments.NotConfirmable}, and a customer who still wants to buy needs a
+ *       new session (ADR-0053 §2 as corrected; this said the customer retried on the same
+ *       intent until the Phase 6 → 7 transition, and no path does). So every declined
+ *       customer leaves a {@code PAYMENT_PENDING} row that nothing else can ever end. Without this edge it is stuck for ever, which is precisely what ADR-0044's
  *       every-state-has-a-producer doctrine exists to prevent.
  *   <li><strong>It is what makes ADR-0053 §5's own scenario reachable.</strong> "The capture
  *       completes after the session expired" requires a session to be {@code EXPIRED} while a

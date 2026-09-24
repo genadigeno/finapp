@@ -72,6 +72,19 @@ public final class CheckoutPaymentParticipants implements PaymentParticipants<Co
                 .map(this::asDestination);
     }
 
+    /**
+     * The merchant's payable, share-locked: postable only while {@code ACTIVE}. Nothing closes a
+     * payable's ledger account today, so this answers true - asked anyway, because the question
+     * the confirmation asks is about the account, whoever owns it.
+     */
+    @Override
+    public boolean creditable(Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {
+        return ledgerAccounts
+                .lockForShare(unitOfWork, account)
+                .map(row -> row.status() == com.finapp.ledger.LedgerAccountStatus.ACTIVE)
+                .orElse(false);
+    }
+
     /** Delegated unchanged: the instrument must still be the paying customer's own. */
     @Override
     public Optional<InstrumentToken> instrumentOwnedBy(

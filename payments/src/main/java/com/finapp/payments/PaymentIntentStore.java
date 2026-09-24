@@ -1,5 +1,6 @@
 package com.finapp.payments;
 
+import com.finapp.ledger.LedgerAccountId;
 import com.finapp.platform.security.Actor;
 import java.time.Instant;
 import java.util.List;
@@ -16,6 +17,14 @@ import java.util.UUID;
  * {@code status} ({@code P5-TSK-008}); everything else was written at birth and never again.
  */
 public interface PaymentIntentStore<T> {
+
+    /**
+     * Whether any intent not yet final - {@code REQUIRES_CONFIRMATION} or {@code PROCESSING} -
+     * credits {@code account} (the Phase 6 → 7 transition): the answer account closing asks
+     * through its {@code PendingCredits} port, under the account's lock. Served by payments
+     * {@code V010}'s partial index, whose predicate is the machine's own non-terminal list.
+     */
+    boolean anyInFlightCrediting(T unitOfWork, LedgerAccountId account);
 
     void insert(T unitOfWork, PaymentIntent intent);
 

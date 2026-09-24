@@ -1192,7 +1192,8 @@ class MerchantCaptureDatabaseTest {
                                                     new JdbcAuditWriter(),
                                                     new JdbcOutboxWriter(),
                                                     IDS,
-                                                    CLOCK)
+                                                    CLOCK,
+                                                    PaymentCreation.IDEMPOTENCY_SCOPE)
                                             .create(
                                                     uow,
                                                     new PaymentCreation.CreatePaymentCommand(
@@ -1357,6 +1358,12 @@ class MerchantCaptureDatabaseTest {
             public Optional<InstrumentToken> instrumentOwnedBy(
                     Connection uow, UUID callerPartyId, UUID paymentMethodId) {
                 return realParticipants.instrumentOwnedBy(uow, callerPartyId, paymentMethodId);
+            }
+
+            /** Real too: the credited account's standing is asked of the ledger (the transition). */
+            @Override
+            public boolean creditable(Connection uow, LedgerAccountId account) {
+                return realParticipants.creditable(uow, account);
             }
         };
     }

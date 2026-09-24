@@ -19,6 +19,8 @@ import com.finapp.merchant.PaymentFeePin;
 import com.finapp.payments.PaymentCreation;
 import com.finapp.payments.PaymentIntentId;
 import com.finapp.payments.PaymentParticipants;
+import com.finapp.payments.PaymentsErrorCode;
+import com.finapp.payments.UnknownPaymentInstrumentException;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditWriter;
@@ -27,6 +29,8 @@ import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.sharedkernel.security.Sensitive;
+import java.io.Serial;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
@@ -69,8 +73,33 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p>Only a session that left the flow <em>without</em> being paid — abandoned, or expired
  * with nothing captured — refuses, because there is no outcome to converge on.
+ *
+ * <p><strong>A confirmation that LOSES the open converges as well</strong> (the Phase 6 → 7
+ * transition). Two confirmations that both read the session {@code OPEN} meet at the claim;
+ * the second replays the first's intent and then finds the session already moved. Until the
+ * transition it answered {@code checkout.NotConfirmable} naming {@code EXPIRED} whatever had
+ * moved it - a double-click told the customer their offer was dead while their payment went
+ * through. Now the losing transaction rolls back and the call reads the session once more,
+ * answering from the state the winner left: nothing moves a session back to {@code OPEN}, so
+ * the second read never reaches the open again.
  */
 public class CheckoutService {
+
+    /**
+     * The claim scope of the payment a confirmation opens (the Phase 6 → 7 transition).
+     *
+     * <p><strong>Its own scope, never {@code payment.create}</strong>. The key is derived -
+     * {@code checkout:<checkoutId>} - and a derived key is predictable: in the public command's
+     * scope any customer could send {@code POST /v1/payments} with that key first, their own
+     * top-up claiming it, and the payer's confirmation would then meet a fingerprint it could
+     * never match and be refused for as long as the session lived. In a scope that only this
+     * class claims, and with a key no client chooses, there is nothing to squat.
+     *
+     * <p>Moving the scope strands no claim: a confirmation whose transaction committed left the
+     * session {@code PAYMENT_PENDING} or paid, and a retry of either converges before it claims;
+     * one that rolled back left no claim at all.
+     */
+    static final String PAYMENT_IDEMPOTENCY_SCOPE = "checkout.payment";
 
     /**
      * A session as its merchant sees it. Never the token, never after creation.
@@ -92,7 +121,18 @@ public class CheckoutService {
             String status,
             String expiresAt,
             String paymentIntentId,
-            String orderId) {}
+            String orderId) {
+
+        /**
+         * The identifier and the state only - never the amount, never the line summary
+         * ({@code INV-AUD-02}), the aggregate's own rule for its own rendering. The line summary
+         * is {@code RESTRICTED-PII}: what one person bought.
+         */
+        @Override
+        public String toString() {
+            return "SessionView[" + checkoutId + ", " + status + "]";
+        }
+    }
 
     /** The creation's answer: the session, and the token exactly once. */
     public record CreatedSessionView(
@@ -100,7 +140,19 @@ public class CheckoutService {
             String status,
             String expiresAt,
             String sessionToken,
-            boolean alreadyCreated) {}
+            boolean alreadyCreated) {
+
+        /**
+         * Masked: the token is the credential that pays this session. The three guards that
+         * exempt this field let it be SERIALISED, never logged, and their exemption rested on
+         * an override this record did not have until the Phase 6 → 7 transition.
+         */
+        @Override
+        public String toString() {
+            return "CreatedSessionView[" + checkoutId + ", " + status + ", alreadyCreated="
+                    + alreadyCreated + ", sessionToken=" + Sensitive.MASK + "]";
+        }
+    }
 
     private final CheckoutSessions checkout;
     private final CheckoutMeters meters;
@@ -304,13 +356,21 @@ public class CheckoutService {
         CheckoutSessionId sessionId;
         boolean alreadyPaid;
         try {
-            Opened opened =
-                    inOneTransaction(unitOfWork -> openPayment(unitOfWork, current, presented, body));
+            Opened opened = opened(current, presented, body);
             intent = opened.intent();
             sessionId = opened.session();
             alreadyPaid = opened.alreadyPaid();
         } catch (UnknownCheckoutSessionException unknown) {
             throw sessionNotFound();
+        } catch (UnknownPaymentInstrumentException foreign) {
+            // The create door's own refusal, answered as that door answers it (the Phase 6 -> 7
+            // transition): an instrument that is unknown, detached or somebody else's writes
+            // nothing and spends no key. It was a 500. The wallet and currency refusals are not
+            // caught, deliberately: the participants resolve the payable in the offer's own
+            // currency, which creation priced, so either one is a broken database.
+            throw new ApiException(
+                    PaymentsErrorCode.UNKNOWN_INSTRUMENT,
+                    "A checkout confirmation named an instrument that is not the payer's");
         } catch (MerchantNotTradingException refused) {
             throw new ApiException(
                     CheckoutErrorCode.NOT_TRADING,
@@ -338,7 +398,25 @@ public class CheckoutService {
         // chained by PaymentService exactly as it is for a wallet top-up - one implementation,
         // so the two cannot drift in how they treat an unknown outcome.
         if (!alreadyPaid) {
-            payments.confirm(current, intent);
+            try {
+                payments.confirm(current, intent);
+            } catch (ApiException refused) {
+                if (refused.errorCode() == PlatformErrorCode.NOT_FOUND) {
+                    // THE CALLER IS NOT THE PAYER (the Phase 6 -> 7 transition): a second holder
+                    // of the token on a session mid-payment. The payments surface answers its
+                    // own 404, and its words - "no such payment" - told that holder the token
+                    // was live and the session being paid. The session's one 404 tells nothing.
+                    throw sessionNotFound();
+                }
+                if (refused.errorCode() != PaymentsErrorCode.NOT_CONFIRMABLE
+                        || !paidMeanwhile(sessionId)) {
+                    throw refused;
+                }
+                // The purchase worked between this call's read and its confirm - a concurrent
+                // confirmation's capture landed. NotConfirmable reaches only the payer (the
+                // payments surface resolves the intent as the caller's first), so rendering the
+                // paid session tells nobody anything they do not own.
+            }
         }
 
         return inOneTransaction(
@@ -347,6 +425,44 @@ public class CheckoutService {
                                 .ownedBySession(unitOfWork, sessionId)
                                 .map(session -> render(unitOfWork, session))
                                 .orElseThrow(CheckoutService::sessionNotFound));
+    }
+
+    /**
+     * The confirming transaction - run once more if it lost the open to a concurrent writer.
+     *
+     * <p>The loser's transaction rolls back whole: an intent it opened, the pin it wrote and a
+     * key it claimed. The second run reads the row the winner left, and since nothing moves a
+     * session back to {@code OPEN} it converges or refuses on that state without reaching the
+     * open again - a second loss would be a broken machine, and surfaces as one.
+     */
+    private Opened opened(
+            Session current, CheckoutSessionToken presented, ConfirmSessionRequest body) {
+        try {
+            return inOneTransaction(unitOfWork -> openPayment(unitOfWork, current, presented, body));
+        } catch (LostTheOpen lost) {
+            return inOneTransaction(unitOfWork -> openPayment(unitOfWork, current, presented, body));
+        }
+    }
+
+    /** Whether the session a call is answering has been paid since it was read. */
+    private boolean paidMeanwhile(CheckoutSessionId sessionId) {
+        return inOneTransaction(
+                unitOfWork ->
+                        checkout.ownedBySession(unitOfWork, sessionId)
+                                .map(session -> session.status().isPaid())
+                                .orElse(false));
+    }
+
+    /**
+     * A confirmation lost the open: another writer moved the session between this call's read
+     * and its conditional transition. Thrown to roll the transaction back, never to a caller.
+     */
+    private static final class LostTheOpen extends RuntimeException {
+        @Serial private static final long serialVersionUID = 1L;
+
+        LostTheOpen() {
+            super("the session left OPEN before this confirmation could move it", null, false, false);
+        }
     }
 
     /**
@@ -428,7 +544,8 @@ public class CheckoutService {
                         audit,
                         outbox,
                         ids,
-                        clock);
+                        clock,
+                        PAYMENT_IDEMPOTENCY_SCOPE);
         PaymentCreation.CreationResult created =
                 creation.create(
                         unitOfWork,
@@ -438,7 +555,8 @@ public class CheckoutService {
                                 session.amount(),
                                 // The session's OWN identifier as the key: deterministic, so a
                                 // retry that reaches here converges on one intent rather than
-                                // opening a second (INV-IDEM-01 through a derived key).
+                                // opening a second (INV-IDEM-01 through a derived key) - in its
+                                // own scope, where no client can claim it first.
                                 "checkout:" + session.id().value()));
 
         // THE PRICE PINNED, in this same transaction (INV-MER-03, INV-HIST-04): the version
@@ -455,9 +573,11 @@ public class CheckoutService {
                         current.identityId().value().toString()));
 
         if (!checkout.paymentOpened(unitOfWork, session, created.intent().value())) {
-            // An expiry sweeper or a concurrent confirmation moved the row first. The whole
-            // transaction rolls back, so nothing was pinned and no intent exists.
-            throw new CheckoutSessionNotOpenException(CheckoutSessionStatus.EXPIRED);
+            // An expiry sweeper, the merchant's withdrawal or a concurrent confirmation moved
+            // the row first. The whole transaction rolls back - nothing pinned, no intent, the
+            // key unspent unless the winner spent it - and the caller reads the row again
+            // rather than guessing which of the three it was.
+            throw new LostTheOpen();
         }
         return new Opened(session.id(), created.intent(), false);
     }

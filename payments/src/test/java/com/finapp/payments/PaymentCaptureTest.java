@@ -330,6 +330,12 @@ class PaymentCaptureTest {
         }
 
         @Override
+        public boolean anyInFlightCrediting(
+                Connection uow, com.finapp.ledger.LedgerAccountId account) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
         public void insert(Connection uow, PaymentIntent fresh) {
             rows.put(fresh.id().value(), fresh);
         }
@@ -376,7 +382,14 @@ class PaymentCaptureTest {
         }
 
         @Override
-        public UnknownReading unknownReading(Connection uow) {
+        public UnknownReading unknownReading(
+                Connection uow, java.time.Duration dispatchedBound) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.List<PaymentAttempt> findStrandedAuthorizations(
+                Connection uow, java.time.Instant authorizedBefore, int limit) {
             throw new UnsupportedOperationException("not exercised here");
         }
 

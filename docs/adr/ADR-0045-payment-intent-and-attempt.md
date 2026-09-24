@@ -109,3 +109,7 @@ named Phase 5 as their home.
 - `P5-TSK-006/-007` implement the machines; `P5-TSK-008` generates the schema from them.
 - Phase 6 revisits `VOIDED` with checkout expiry; Phase 7 revisits multi-attempt with
   routing; Phase 8 attaches settlement facts to captures without touching these machines.
+  *(Phase 6 did not revisit `VOIDED`: an expired session stops new dispatches and lets a landed
+  capture complete late (ADR-0053 §5), and nothing voids an authorization. The Phase 6 → 7
+  transition re-owned the edge to `P7-TSK-004`, the card rail's void, where the revocable rail's
+  declared capability makes it a decision rather than a guess — ADR-0059.)*

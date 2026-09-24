@@ -105,6 +105,8 @@ class CheckoutFlowDatabaseTest {
     @Autowired private com.finapp.payments.ProviderEvidenceStore<java.sql.Connection> evidence;
     @Autowired private com.finapp.payments.PaymentProvider paymentProvider;
     @Autowired private com.finapp.payments.PaymentOutcomes paymentOutcomes;
+    @Autowired private com.finapp.payments.PaymentCapture paymentCapture;
+    @Autowired private com.finapp.payments.RefundStore<java.sql.Connection> refundStore;
     @Autowired private com.finapp.platform.audit.AuditWriter<java.sql.Connection> auditWriter;
     @Autowired private com.finapp.platform.outbox.OutboxWriter<java.sql.Connection> outboxWriter;
     @Autowired private javax.sql.DataSource dataSource;
@@ -433,7 +435,7 @@ class CheckoutFlowDatabaseTest {
 
         int racers = 10;
         CountDownLatch start = new CountDownLatch(1);
-        List<Future<Integer>> results = new ArrayList<>();
+        List<Future<HttpResponse<String>>> results = new ArrayList<>();
         ExecutorService pool = Executors.newFixedThreadPool(racers);
         try {
             for (int i = 0; i < racers; i++) {
@@ -441,14 +443,21 @@ class CheckoutFlowDatabaseTest {
                         pool.submit(
                                 () -> {
                                     start.await();
-                                    return confirm(customer, token).statusCode();
+                                    return confirm(customer, token);
                                 }));
             }
             start.countDown();
-            for (Future<Integer> result : results) {
-                assertThat(result.get(120, TimeUnit.SECONDS))
-                        .as("every racer gets an answer, none an error")
-                        .isBetween(200, 409);
+            for (Future<HttpResponse<String>> result : results) {
+                HttpResponse<String> answer = result.get(120, TimeUnit.SECONDS);
+                // The Phase 6 -> 7 transition: every racer converges on the one purchase. The one
+                // honest exception is the claim's bounded wait - "in progress, retry" - and no
+                // racer is told the session left the flow, which the losers of the open were.
+                if (answer.statusCode() != 200) {
+                    assertThat(answer.body())
+                            .as("every racer converges, or is told honestly that one is in flight")
+                            .contains("api.IdempotencyInProgress");
+                }
+                assertThat(answer.body()).doesNotContain("checkout.");
             }
         } finally {
             pool.shutdownNow();
@@ -488,19 +497,25 @@ class CheckoutFlowDatabaseTest {
                 .isEqualTo(1.0d);
     }
 
-    /** The payments sweeper, with no patience at all — the production outcome path. */
+    /**
+     * The payments sweeper, with the least patience it accepts — the production outcome path. A
+     * microsecond rather than zero: the sweep refuses a zero bound since the Phase 6 → 7
+     * transition, because at zero it could conclude NEVER_RECEIVED of a request still in flight.
+     */
     private com.finapp.payments.PaymentSweeper paymentSweeper() {
         return new com.finapp.payments.PaymentSweeper(
                 paymentTransactionRunner,
                 attempts,
                 intents,
+                refundStore,
                 evidence,
                 paymentProvider,
                 paymentOutcomes,
+                paymentCapture,
                 IDS,
                 CLOCK,
-                java.time.Duration.ZERO,
-                java.time.Duration.ZERO,
+                java.time.Duration.ofNanos(1_000),
+                java.time.Duration.ofNanos(1_000),
                 50);
     }
 
@@ -1862,6 +1877,246 @@ class CheckoutFlowDatabaseTest {
         assertThat(intentsCrediting(merchant))
                 .as("refused before anything was written: no intent, so no pin and no dispatch")
                 .isZero();
+    }
+
+    /**
+     * The standing check's rank beneath the close's own refusal, raced deterministically (the
+     * Phase 6 -> 7 transition): a close that judged before this payment existed holds the merchant
+     * row, mid-transaction, with its move made. The confirmation's FOR SHARE must wait for it, then
+     * read CLOSED and refuse - before this, it read the old ACTIVE row and opened a payment that
+     * would land on a merchant nothing could pay out.
+     */
+    @Test
+    @DisplayName("a confirmation racing the merchant's close waits on the merchant row and then"
+            + " refuses as NotTrading - nothing opened, nothing dispatched")
+    void aConfirmationRacingTheMerchantsCloseWaitsAndRefuses() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        providerAuthorises();
+        providerCaptures();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection closer = DatabaseRoles.application()) {
+            closer.setAutoCommit(false);
+            try (PreparedStatement lock =
+                    closer.prepareStatement(
+                            "SELECT id FROM merchant.merchant WHERE id = ? FOR UPDATE")) {
+                lock.setObject(1, UUID.fromString(merchant.id()));
+                lock.executeQuery().close();
+            }
+            try (PreparedStatement close =
+                    closer.prepareStatement(
+                            "UPDATE merchant.merchant SET status = 'CLOSED',"
+                                    + " status_changed_at = GREATEST(now(), status_changed_at)"
+                                    + " WHERE id = ?")) {
+                close.setObject(1, UUID.fromString(merchant.id()));
+                assertThat(close.executeUpdate()).isEqualTo(1);
+            }
+
+            Future<HttpResponse<String>> confirming =
+                    pool.submit(() -> confirm(customer, field(created, "sessionToken")));
+            awaitLockWaitOn("merchant.merchant", "FOR SHARE");
+            closer.commit();
+
+            HttpResponse<String> refused = confirming.get(60, TimeUnit.SECONDS);
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+            assertThat(refused.body()).contains("checkout.NotTrading");
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(statusAndIntentOf(UUID.fromString(field(created, "checkoutId"))))
+                .as("still the unpaid offer it was, carrying no intent")
+                .isEqualTo("OPEN:null");
+        assertThat(intentsCrediting(merchant)).isZero();
+    }
+
+    /**
+     * I9 of the Phase 6 -> 7 transition: the payment a confirmation opens is claimed under a key
+     * derived from the session, and a derived key is predictable. In the public command's scope a
+     * stranger's own top-up could claim it first, and the payer's confirmation would then meet a
+     * fingerprint it can never match for as long as the session lives.
+     */
+    @Test
+    @DisplayName("a stranger who claims the session's derived key through POST /v1/payments FIRST"
+            + " blocks nothing - the confirmation claims in a scope of its own")
+    void aDerivedKeyClaimedThroughThePublicCommandBlocksNothing() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer payer = payingCustomer();
+        Customer squatter = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+
+        // The squatter's own, perfectly valid top-up - keyed with the value the confirmation
+        // will derive.
+        openWallet(squatter);
+        HttpResponse<String> squatted =
+                post(
+                        "/v1/payments",
+                        "{\"paymentMethodId\":\"" + squatter.methodId()
+                                + "\",\"amount\":\"5.00\",\"currency\":\"EUR\"}",
+                        squatter.token(),
+                        "checkout:" + checkoutId);
+        assertThat(squatted.statusCode()).as(squatted.body()).isEqualTo(201);
+
+        providerAuthorises();
+        providerCaptures();
+        HttpResponse<String> paid = confirm(payer, field(created, "sessionToken"));
+        assertThat(paid.statusCode()).as(paid.body()).isEqualTo(200);
+        assertThat(field(paid.body(), "status")).isEqualTo("COMPLETED");
+        assertThat(field(paid.body(), "paymentIntentId"))
+                .as("the payer's own payment, not the squatter's top-up")
+                .isNotEqualTo(field(squatted.body(), "id"));
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePositionMinor(app, merchant)).isEqualTo(96_80L);
+        }
+    }
+
+    /**
+     * Sibling #9 of the Phase 6 -> 7 transition, raced deterministically: both confirmations read
+     * the session OPEN and are held at the merchant row before either can claim. The first to
+     * claim opens the payment; the second replays that intent at the claim and then finds the
+     * session moved. It was answered checkout.NotConfirmable naming EXPIRED - a double-click told
+     * the customer their offer was dead while their payment went through.
+     */
+    @Test
+    @DisplayName("a confirmation that LOSES the open to a concurrent one converges on the payment"
+            + " the winner opened - never told the session expired")
+    void aConfirmationThatLosesTheOpenConverges() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String token = field(created, "sessionToken");
+        providerAuthorises();
+        providerCaptures();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Future<HttpResponse<String>>> racers = new ArrayList<>();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            try (PreparedStatement lock =
+                    holder.prepareStatement(
+                            "SELECT id FROM merchant.merchant WHERE id = ? FOR UPDATE")) {
+                lock.setObject(1, UUID.fromString(merchant.id()));
+                lock.executeQuery().close();
+            }
+            racers.add(pool.submit(() -> confirm(customer, token)));
+            racers.add(pool.submit(() -> confirm(customer, token)));
+            // Both have read the session OPEN and passed every gate before the standing read.
+            awaitLockWaitOn("merchant.merchant", "FOR SHARE", 2);
+            holder.commit();
+
+            List<String> intents = new ArrayList<>();
+            for (Future<HttpResponse<String>> racer : racers) {
+                HttpResponse<String> answer = racer.get(60, TimeUnit.SECONDS);
+                assertThat(answer.statusCode()).as(answer.body()).isEqualTo(200);
+                assertThat(answer.body()).doesNotContain("checkout.");
+                intents.add(field(answer.body(), "paymentIntentId"));
+            }
+            assertThat(intents).as("one payment between them").doesNotContainNull();
+            assertThat(intents.get(0)).isEqualTo(intents.get(1));
+        } finally {
+            pool.shutdownNow();
+        }
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(orderCountFor(app, merchant)).isEqualTo(1);
+            assertThat(payablePositionMinor(app, merchant)).isEqualTo(96_80L);
+        }
+    }
+
+    /** S-F4 of the Phase 6 -> 7 transition: it was a 500. */
+    @Test
+    @DisplayName("a confirmation naming an instrument that is not the payer's is the create door's"
+            + " UnknownInstrument - nothing written, and the session still pays")
+    void aForeignInstrumentIsRefusedAndWritesNothing() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer payer = payingCustomer();
+        Customer other = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String token = field(created, "sessionToken");
+
+        HttpResponse<String> refused =
+                confirm(new Customer(payer.token(), other.methodId()), token);
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+        assertThat(refused.body()).contains("payments.UnknownInstrument");
+        assertThat(statusAndIntentOf(UUID.fromString(field(created, "checkoutId"))))
+                .as("nothing opened")
+                .isEqualTo("OPEN:null");
+        assertThat(intentsCrediting(merchant)).isZero();
+
+        providerAuthorises();
+        providerCaptures();
+        HttpResponse<String> paid = confirm(payer, token);
+        assertThat(paid.statusCode()).as(paid.body()).isEqualTo(200);
+        assertThat(field(paid.body(), "status")).isEqualTo("COMPLETED");
+    }
+
+    /** S-F5 of the Phase 6 -> 7 transition: the payments surface's own words leaked the state. */
+    @Test
+    @DisplayName("a second holder of the token on a session MID-PAYMENT gets the one session 404 -"
+            + " the same answer as a token that opens nothing")
+    void aStrangerMidPaymentGetsTheOneSessionNotFound() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer payer = payingCustomer();
+        Customer stranger = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String token = field(created, "sessionToken");
+        providerAuthorises();
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.CAPTURES_PATH);
+        HttpResponse<String> pending = confirm(payer, token);
+        assertThat(field(pending.body(), "status")).isEqualTo("PAYMENT_PENDING");
+
+        HttpResponse<String> refused = confirm(stranger, token);
+        HttpResponse<String> unknown = confirm(stranger, UUID.randomUUID().toString());
+        assertThat(refused.statusCode()).isEqualTo(404);
+        assertThat(field(refused.body(), "detail"))
+                .as("nothing distinguishes a live session mid-payment from no session at all")
+                .isEqualTo(field(unknown.body(), "detail"));
+        assertThat(field(refused.body(), "code")).isEqualTo(field(unknown.body(), "code"));
+        assertThat(refused.body())
+                .doesNotContain(field(pending.body(), "paymentIntentId"))
+                .doesNotContain("payment");
+    }
+
+    private void openWallet(Customer customer) throws Exception {
+        HttpResponse<String> opened =
+                post(
+                        "/v1/me/accounts",
+                        "{\"productType\":\"WALLET\",\"currency\":\"EUR\"}",
+                        customer.token(),
+                        someKey());
+        assertThat(opened.statusCode()).as(opened.body()).isEqualTo(201);
+    }
+
+    /** Until a backend waits on a lock for a statement touching {@code table} with {@code marker}. */
+    private static void awaitLockWaitOn(String table, String marker)
+            throws SQLException, InterruptedException {
+        awaitLockWaitOn(table, marker, 1);
+    }
+
+    /** Until {@code backends} wait on a lock for a statement touching {@code table} with {@code marker}. */
+    private static void awaitLockWaitOn(String table, String marker, int backends)
+            throws SQLException, InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        try (Connection observer = DatabaseRoles.application();
+                PreparedStatement select =
+                        observer.prepareStatement(
+                                "SELECT count(*) FROM pg_stat_activity"
+                                        + " WHERE wait_event_type = 'Lock'"
+                                        + " AND query LIKE ? AND query LIKE ?")) {
+            select.setString(1, "%" + table + "%");
+            select.setString(2, "%" + marker + "%");
+            while (System.nanoTime() < deadline) {
+                try (ResultSet row = select.executeQuery()) {
+                    row.next();
+                    if (row.getLong(1) >= backends) {
+                        return;
+                    }
+                }
+                Thread.sleep(25);
+            }
+        }
+        throw new AssertionError(
+                "no statement ever waited on " + table + " " + marker + " - without the lock the"
+                        + " race is decided by a stale snapshot");
     }
 
     @Test

@@ -412,7 +412,7 @@ public class PaymentWebhookService {
      * names.
      */
     private void refundEffect(
-            Connection uow, Refund refund, WebhookPayload payload, Judged judged) {
+            Connection uow, Refund attributed, WebhookPayload payload, Judged judged) {
         Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
         if (verdict.isEmpty()) {
             judged.unmappable();
@@ -420,9 +420,21 @@ public class PaymentWebhookService {
                     "An authenticated payment webhook for refund {} carried a status the"
                             + " total mapping refuses to act on; retained as evidence,"
                             + " nothing transitions (INV-PAY-03)",
-                    refund.id());
+                    attributed.id());
             return;
         }
+        // THE LOCKED ROW is the source state (the Phase 6 -> 7 transition). Judged from the
+        // unlocked attribution read, a delivery racing the synchronous call's move into UNKNOWN
+        // applied from DISPATCHED, lost its conditional, and was still counted processed - so the
+        // provider never redelivered the one answer that would have resolved the refund.
+        com.finapp.payments.RefundStore.LockedRefund locked =
+                refunds.lockForOutcome(uow, attributed.id())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an attributed refund row exists: the attribution"
+                                                        + " read found it"));
+        Refund refund = locked.refund();
         if (!refundResolvable(refund.status())) {
             log.info(
                     "A payment webhook reported on refund {} in state {} which cannot move;"

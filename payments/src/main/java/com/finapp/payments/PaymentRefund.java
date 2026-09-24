@@ -113,9 +113,25 @@ public final class PaymentRefund {
     public record RefundResult(
             RefundId refund, RefundStatus status, boolean replayed, boolean acting) {}
 
-    /** Tx1's yield, carried across the connectionless gap. */
-    private record Dispatch(Refund refund, PaymentIntentId intent, LedgerAccountId wallet,
-            ProviderReference capture) {}
+    /**
+     * Tx1's yield, carried across the connectionless gap.
+     *
+     * @param send whether a send of our reference was permitted — false when a takeover found the
+     *     crashed flight's refund already resolved, and then nothing is sent and the claim answers
+     *     the row's truth
+     * @param firstSend whether this is the dispatch's own birth send — the only send whose
+     *     refused connection can prove that nothing was ever transmitted
+     * @param permit the send permit this flight committed, as stored ({@code V009}); a refused
+     *     connection fails the refund only while the locked row's permit is still this one
+     */
+    private record Dispatch(
+            Refund refund,
+            PaymentIntentId intent,
+            LedgerAccountId wallet,
+            ProviderReference capture,
+            boolean send,
+            boolean firstSend,
+            Instant permit) {}
 
     /**
      * Dispatches (or replays) the refund and applies the provider's answer.
@@ -180,35 +196,44 @@ public final class PaymentRefund {
         Dispatch dispatch = holder[0];
 
         // The provider call - between the transactions, holding no database connection
-        // (ADR-0046, P1-TSK-026). An exception propagates: the dispatch stays committed with
-        // its hold standing and visible - never a fabricated outcome.
-        ProviderAnswer answer =
-                provider.refund(
-                        new PaymentProvider.RefundRequest(
-                                dispatch.refund().providerIdempotencyReference(),
-                                dispatch.capture(),
-                                dispatch.refund().amount()));
+        // (ADR-0046, P1-TSK-026) - and only under a committed permit: a takeover that found the
+        // crashed flight's refund already resolved sends nothing and answers the row's truth.
+        // An exception propagates: the dispatch stays committed with its hold standing and
+        // visible - never a fabricated outcome.
+        Optional<ProviderAnswer> answer =
+                dispatch.send()
+                        ? Optional.of(
+                                provider.refund(
+                                        new PaymentProvider.RefundRequest(
+                                                dispatch.refund().providerIdempotencyReference(),
+                                                dispatch.capture(),
+                                                dispatch.refund().amount())))
+                        : Optional.empty();
 
         // Tx2: the outcome, applied as the platform - a provider's answer has no session
         // (the enumerated enterSystem() site, refund form).
         try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
             return transactions.inTransaction(
                     uow -> {
-                        // The source state read in this transaction: DISPATCHED on the fresh
-                        // flight, and on a taken-over one possibly UNKNOWN - or already
-                        // terminal, when a webhook resolved the crashed flight first, in
-                        // which case this call converges with the truth and applies nothing.
-                        Refund current =
-                                refunds.findById(uow, dispatch.refund().id()).orElseThrow();
+                        // The source state, LOCKED: DISPATCHED on the fresh flight, and on a
+                        // taken-over one possibly UNKNOWN - or already terminal, when another
+                        // resolver finished it, in which case this call converges with the truth
+                        // and applies nothing. Unlocked, a webhook committing between this read
+                        // and the conditional left the claim answering the verdict this flight
+                        // held rather than the row's state (the Phase 6 -> 7 transition).
+                        RefundStore.LockedRefund locked =
+                                refunds.lockForOutcome(uow, dispatch.refund().id())
+                                        .orElseThrow();
+                        Refund current = locked.refund();
                         PaymentOutcomes.RefundApplied applied =
-                                resolvable(current.status())
+                                answer.isPresent() && resolvable(current.status())
                                         ? outcomes.applyRefund(
                                                 uow,
                                                 dispatch.intent(),
-                                                dispatch.refund(),
+                                                current,
                                                 current.status(),
-                                                answer.verdict(),
-                                                answer.providerReference(),
+                                                judged(answer.get().verdict(), dispatch, locked),
+                                                answer.get().providerReference(),
                                                 dispatch.wallet(),
                                                 correlation)
                                         : new PaymentOutcomes.RefundApplied(
@@ -216,7 +241,7 @@ public final class PaymentRefund {
                         RefundStatus committed = applied.status();
                         // Whatever the mapping said, what arrived is retained (INV-HIST-02) -
                         // AFTER the outcome's row lock (the P5-TSK-013 lock-order rule).
-                        answer.evidence()
+                        answer.flatMap(ProviderAnswer::evidence)
                                 .ifPresent(
                                         bytes ->
                                                 evidence.append(
@@ -246,6 +271,28 @@ public final class PaymentRefund {
         return status == RefundStatus.DISPATCHED || status == RefundStatus.UNKNOWN;
     }
 
+    /**
+     * What a verdict proves about THIS refund, judged against the locked row (the Phase 6 → 7
+     * transition; ADR-0057 §3's rule, brought to the flow that had the re-sending takeover first).
+     *
+     * <p>A refused connection proves only that THIS send transmitted nothing. That makes it a
+     * failure only when this was the dispatch's own first send and no later send has been
+     * permitted since — the locked row's permit is still the one this flight committed. After a
+     * takeover's re-send, an earlier send may have reached the provider and been paid: concluding
+     * {@code FAILED} would release the hold on money the customer already has, and free the bound
+     * for a second refund of it. So it counts as what it is — we do not know — and the refund
+     * stays {@code UNKNOWN} with its hold standing for a resolver that does ({@code INV-LIFE-03}).
+     * Every other verdict is the provider's own answer about our reference, and stands.
+     */
+    private static ProviderAnswer.Verdict judged(
+            ProviderAnswer.Verdict verdict, Dispatch dispatch, RefundStore.LockedRefund locked) {
+        if (verdict == ProviderAnswer.Verdict.NOTHING_SENT
+                && !(dispatch.firstSend() && locked.lastDispatchedAt().equals(dispatch.permit()))) {
+            return ProviderAnswer.Verdict.INDETERMINATE;
+        }
+        return verdict;
+    }
+
     /** The claim's stored judgement: {@code <refundId>|<status>}, parsed back on replay. */
     private static byte[] renderedForm(RefundId refund, RefundStatus status) {
         return (refund.value() + "|" + status.name()).getBytes(StandardCharsets.UTF_8);
@@ -273,12 +320,22 @@ public final class PaymentRefund {
     /**
      * The {@code DispatchCommand} contract made real: a lease takeover re-runs this against
      * work the crashed flight already committed, so the first act is the convergence lookup
-     * by the dispatch key ({@code V008}). Found with the same facts and not yet terminal —
-     * the crashed flight's dispatch stands: no second hold, no second row, no duplicate
-     * audit or fact, and the wire re-drives with the reference already stored
-     * ({@code INV-PAY-04}'s whole point). A key resurfacing after the claim's retention
-     * swept it — different facts, or a finished refund — is a NEW command by the retention
-     * contract, and dispatches fresh.
+     * by the dispatch key ({@code V008}). Found with the same facts, the crashed flight's
+     * dispatch stands — no second hold, no second row, no duplicate audit or fact:
+     *
+     * <ul>
+     *   <li>still resolvable, a new send permit is committed ({@code V009}) and the wire
+     *       re-drives with the reference already stored ({@code INV-PAY-04}'s whole point);
+     *   <li>already resolved — a webhook, the sweep, or the crashed flight's own late answer
+     *       finished it — nothing is sent, and the claim answers the row's truth.
+     * </ul>
+     *
+     * <p>Found with DIFFERENT facts, the key is refused ({@link RefundKeyReusedException}):
+     * {@code V008} binds a key to one refund for ever, for longer than the claim that first
+     * carried it. *(This read "a key resurfacing after the claim's retention swept it —
+     * different facts, or a finished refund — is a NEW command, and dispatches fresh" until the
+     * Phase 6 → 7 transition: the unique index made that fresh dispatch a {@code 500}, and a
+     * takeover finding a finished refund took the same path, so its claim never completed.)*
      */
     private Dispatch dispatchOrConverge(
             Connection uow,
@@ -289,25 +346,34 @@ public final class PaymentRefund {
             Actor operator,
             Correlation correlation) {
         Optional<Refund> existing = refunds.findByDispatchKey(uow, dispatchKey);
-        if (existing.isPresent()) {
-            Refund found = existing.get();
-            PaymentAttempt attempt =
-                    attempts.findById(uow, found.attemptId())
-                            .orElseThrow(UnknownPaymentException::new);
-            if (attempt.intentId().equals(intentId)
-                    && found.amount().equals(amount)
-                    && found.reason().equals(reason)
-                    && resolvable(found.status())) {
-                PaymentIntent intent =
-                        intents.findById(uow, intentId).orElseThrow(UnknownPaymentException::new);
-                return new Dispatch(
-                        found,
-                        intentId,
-                        intent.walletAccount(),
-                        attempt.captureProviderReference());
-            }
+        if (existing.isEmpty()) {
+            return dispatch(uow, dispatchKey, intentId, amount, reason, operator, correlation);
         }
-        return dispatch(uow, dispatchKey, intentId, amount, reason, operator, correlation);
+        Refund found = existing.get();
+        PaymentAttempt attempt =
+                attempts.findById(uow, found.attemptId())
+                        .orElseThrow(UnknownPaymentException::new);
+        if (!(attempt.intentId().equals(intentId)
+                && found.amount().equals(amount)
+                && found.reason().equals(reason))) {
+            throw new RefundKeyReusedException();
+        }
+        PaymentIntent intent =
+                intents.findById(uow, intentId).orElseThrow(UnknownPaymentException::new);
+        // The conditional renewal IS the permit: a refund another resolver moved out of the
+        // resolvable states since the lookup matches no row, and then nothing may be sent.
+        Optional<Instant> permit =
+                resolvable(found.status())
+                        ? refunds.renewSendPermit(uow, found.id(), Instant.now(clock))
+                        : Optional.empty();
+        return new Dispatch(
+                found,
+                intentId,
+                intent.walletAccount(),
+                attempt.captureProviderReference(),
+                permit.isPresent(),
+                false,
+                permit.orElse(null));
     }
 
     /** The claimed dispatch: bound under the attempt lock, hold inside the account lock. */
@@ -400,8 +466,25 @@ public final class PaymentRefund {
                                         + ", reference="
                                         + refund.providerIdempotencyReference().value())));
 
+        // The birth permit, as the database stored it (V009): the value a refused connection on
+        // this first send is later judged against, read back rather than taken from this
+        // instance's clock at a finer precision than the column keeps.
+        Instant permit =
+                refunds.lockForOutcome(uow, refund.id())
+                        .map(RefundStore.LockedRefund::lastDispatchedAt)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a refund inserted in this transaction is"
+                                                        + " readable in it"));
         return new Dispatch(
-                refund, intentId, intent.walletAccount(), attempt.captureProviderReference());
+                refund,
+                intentId,
+                intent.walletAccount(),
+                attempt.captureProviderReference(),
+                true,
+                true,
+                permit);
     }
 
     /** The operator and the money's meaning ({@code INV-IDEM-03}); correlation excluded. */

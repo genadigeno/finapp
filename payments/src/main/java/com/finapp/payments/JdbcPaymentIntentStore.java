@@ -25,6 +25,30 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
                     + " currency, scale, status, created_at";
 
     @Override
+    public boolean anyInFlightCrediting(
+            Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {
+        java.util.Objects.requireNonNull(account, "account must not be null");
+        // V010's partial index serves exactly this predicate: the machine's non-terminal states,
+        // generated from its own terminal list so "in flight" has one definition.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT EXISTS (SELECT 1 FROM payments.payment_intent"
+                                + " WHERE wallet_account_id = ?"
+                                + " AND status NOT IN (" + PaymentIntentStatus.sqlTerminalValueList()
+                                + "))")) {
+            read.setObject(1, account.value());
+            try (java.sql.ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading the payments in flight to account " + account, failure));
+        }
+    }
+
+    @Override
     public void insert(Connection unitOfWork, PaymentIntent intent) {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(

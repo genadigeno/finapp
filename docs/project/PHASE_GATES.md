@@ -341,6 +341,78 @@ judged on:*
   financial effects.
 - Chargeback on an already-refunded payment is handled without double-debiting.
 
+*Extended by the Phase 6 → 7 transition (2026-09-24): the five criteria above predate
+ADR-0059…0062 and said nothing measurable about wallets, A2A, the instant rail's abstraction,
+per-rail clearing, the send permit or the four scenarios this gate's own review was asked to
+name — the things Phase 7's review will be judged on:*
+
+- **Card infrastructure.** The card rail runs as a declared rail, its capability descriptor
+  recorded with every routing decision; an authorization is voided on the revocable rail
+  through `VOID_DISPATCHED → VOIDED` with no ledger effect, its ambiguity `VOID_UNKNOWN` and
+  resolved by query; network clearing evidence is recorded once per attempt with no ledger
+  effect (`INV-SET-01`), carrying the acquirer's reference; and card data still stops at the
+  tokenisation boundary (`INV-PAY-02`, the needle extended over every new sink).
+- **Wallet infrastructure.** A checkout paid from a wallet posts in one transaction — DR the
+  wallet, CR the payable and fee revenue — and is refused when unaffordable inside the wallet
+  account's lock with holds counted (`INV-BAL-04`); no balance column exists for any wallet (a
+  schema scan), the pending figure is a view over in-flight payments, and a wallet statement
+  reconciles line by line to journal entries.
+- **A2A.** A withdrawal to a bank account registered through the grant exchange is paid over the
+  simulated scheme — hold-then-dispatch under the send permit, final on acceptance, DR wallet /
+  CR `INSTANT_CLEARING`; a pay-by-bank payment funds a wallet and a checkout through
+  `AWAITING_PAYER`, decided by the payer PSP, and a return payment refunds it; no bank identifier
+  or alias reaches any table, log, event or response (`INV-RAIL-03`, scanned).
+- **Instant-payment abstraction.** The push port is provider-neutral: the rail-name static rule is
+  green with a planted violation refused (`INV-RAIL-01`); the scheme's outcome deadline bounds
+  `EXECUTION_UNKNOWN` and the inquiry past it is authoritative; a reversal of an executed instant
+  payment is refused by the domain before anything is written or sent (`INV-REV-03`, probed).
+- **Payment/ledger integration.** Every completion posts to the clearing position its rail
+  declares (`INV-RAIL-04`); each clearing position reconciles to its rail's completed
+  operations; the trial balance is zero per currency under the multi-rail storm.
+- **Multi-instance execution, concurrency, atomicity and consistency.** Every contended decision
+  in `PHASE_7_PLAN.md` §7 names its PostgreSQL arbiter and has a counted ten-way race; the routing
+  decision commits with the attempt in the confirmation's first transaction; a dispute stage, its
+  posting and its history commit together; nothing correct depends on one process.
+- **Idempotency — the four named scenarios, each a counted test.** The provider succeeds and the
+  response is lost (a card capture, a withdrawal, a pay-in): `UNKNOWN`, resolved, exactly one
+  entry. Two instances attempt one operation (confirm, withdraw, refund, void, dispute stage):
+  one effect. One callback delivered ten times (instant confirmation, clearing, chargeback): one
+  effect. A hold released while a wallet payment and a transfer run on the same wallet: available
+  never negative, every posting explained. Every new money-moving command is keyed at the
+  financial boundary, every provider operation carries our reference stored before the send
+  (`INV-PAY-04`), and every rail callback passes the inbox (`INV-IDEM-04`).
+- **Failure recovery.** Each of `PHASE_7_PLAN.md` §14's fifteen failure scenarios has a test or a
+  documented, accepted rationale; routing advances to another rail only on `NOTHING_SENT` or an
+  eligibility refusal, never after an ambiguous dispatch (`INV-RAIL-02`, probed); every re-sending
+  flow carries a send permit, and a refused connection concludes only on a first send.
+- **Disputes.** Refunded (non-failed) plus charged back never exceeds captured, under a refund
+  racing a chargeback on one attempt (`INV-DSP-01`); a chargeback on an already-refunded payment
+  debits the merchant nothing twice, the excess recorded in `CHARGEBACK_RECOVERABLE`; each stage
+  posts once under duplicate notifications, and a won representment mirrors its chargeback
+  exactly (`INV-DSP-02`).
+- **Routing explainability.** A decision recomputed under its pinned policy version over its
+  stored inputs reproduces the rail chosen and every rejection (`INV-RAIL-02`, `INV-HIST-04`).
+- **Security.** Every new privileged act — routing versions, rail availability, operator voids,
+  dispute acceptance and evidence on behalf — carries a named permission with a negative test and
+  a `RoutePermissionRegisterTest` row; the dispute routes join the merchant tenancy battery;
+  bank-account registration and withdrawal step up when a factor is enrolled; dispute evidence is
+  encrypted under a key held outside the database, every access audited (`INV-DSP-03`); each
+  rail's credentials are confined and pinned by `ConfinedCredentialVariablesTest`.
+- **Audit.** Every privileged and platform act on the new aggregates has a catalogued action,
+  a reason where a person judges, and outcome resolvers record acting transitions only.
+- **Observability.** `PHASE_7_PLAN.md` §15's series are published by a freshly started instance;
+  a stuck withdrawal is alertable — every `UNKNOWN` and every `DISPATCHED` past the sweep's bound,
+  NaN never zero; dashboards query only published series.
+- **Reconciliation readiness.** Each chain in `PHASE_7_PLAN.md` §12 is traceable
+  identifier-to-identifier with no timestamp join: the network's clearing references for cards,
+  the scheme's transaction reference for A2A and instant payments, the provider dispute
+  reference for chargebacks.
+- **Testing.** The multi-rail storm and the dispute battery green and probed; the full battery
+  green fleet-wide at the exit review, counted from fresh results.
+- **Documentation.** Every `Phase: 7` invariant — **read from the catalogue, not from the phase
+  plan** — has a mutation-register row; ADR-0059…0062 read against the code and accepted or
+  amended; `RAIL_AND_DISPUTE_LIFECYCLES.md` matches the machines as built.
+
 ### Phase 8 — Settlement and Reconciliation
 - Every break type in `RECONCILIATION_MODEL.md` is detectable and covered by a test.
 - Duplicate settlement file ingestion produces no duplicate matches or postings.

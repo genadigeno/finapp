@@ -65,7 +65,9 @@ Migrations are **never** run automatically on application startup (ADR-0011). Th
 deliberate step.
 
 Connection details default to the local Compose stack and are overridden by `FINAPP_DB_URL`,
-`FINAPP_DB_USER` and `FINAPP_DB_PASSWORD`.
+`FINAPP_DB_MIGRATOR_USER` and `FINAPP_DB_MIGRATOR_PASSWORD` — Flyway connects as the migrator
+role, never the superuser. *(This named `FINAPP_DB_USER` and `FINAPP_DB_PASSWORD`, the
+container's superuser, until the Phase 6 → 7 transition; no Flyway task reads them.)*
 
 `flywayClean` is permanently disabled. To reset local state, discard the container volume
 with `docker compose down -v`.
@@ -364,8 +366,9 @@ which is a decision about an unfinished command, not a cleanup.
 ## 9. Retention and Expiry — `inbox_message`
 
 **Policy: retain for longer than any producer or broker may redeliver, and no longer.** The
-default is **24 hours** from processing, chosen by the consumer through the retention duration
-passed to `InboxConsumer` rather than by a schema default, because different producers have
+default is **14 days** from processing (`finapp.inbox.retention`, `P14D`), chosen by the consumer
+through the retention duration passed to `InboxConsumer` rather than by a schema default *(this
+said 24 hours until the Phase 6 → 7 transition; the wiring's default was never that)*, because different producers have
 different redelivery windows and a single value would be wrong for most of them.
 
 **The floor is a correctness bound**, and it is the same shape of argument as §8 with a different

@@ -550,6 +550,35 @@ session opens, under the version it will carry, and `net <= 0` is `checkout.Sale
 nothing written and the key unspent; the pin re-asserts it, and a capture is never refused.
 Decides ADR-0054's open item. → [ADR-0058](../adr/ADR-0058-a-sale-must-cover-its-fee.md)
 
+### Rails, routing and disputes (Phase 7, `Proposed` at the Phase 6 → 7 transition)
+**A payment rail declares its capabilities, and the domain acts on them, never on a rail's
+name.** Three interaction models — two-step (the card rail), push (credit transfers) and book (the
+platform's own wallet) — each with its own attempt machine; finality, reversal, refund mode,
+outcome deadline, disputes and the clearing position are the descriptor's to declare. Internal
+completion is never settlement; each external rail has its own clearing position. Card issuing is
+external, and the wallet stays in `accounts`. Gives `INV-REV-03` its subject. →
+[ADR-0059](../adr/ADR-0059-payment-rails-capabilities-and-finality.md)
+
+**Routing is a versioned policy, decided once per payment, pinned and explainable.** The decision
+is born in the confirmation's first transaction with every rejected candidate and its reason; it
+advances to another rail only on knowledge that nothing was sent, never after an ambiguous
+dispatch; rail availability is a recorded database fact, never an instance's opinion. The third
+subject of `INV-HIST-04`. → [ADR-0060](../adr/ADR-0060-rail-routing-pinned-and-explainable.md)
+
+**A dispute is its own lifecycle on a card payment, and a chargeback never takes more than the
+capture credited.** Refunds and chargebacks together are bounded by the capture under the attempt
+lock; the excess, and the share of a counterparty that can no longer take a posting, go to
+`CHARGEBACK_RECOVERABLE`; each stage posts once under its own key, and a win mirrors its
+chargeback exactly. Disputes are context 29, merged into `payments`. →
+[ADR-0061](../adr/ADR-0061-disputes-and-chargeback-accounting.md)
+
+**Account-to-account payments run on a provider-neutral push rail, and bank details never
+enter.** External accounts arrive through the grant exchange as opaque references; an instant
+payment is final on acceptance, with the scheme's outcome deadline, and settled on the scheme's
+cycle; every outbound push carries the send permit; pay-by-bank waits in `AWAITING_PAYER` for the
+payer PSP. The merchant payout keeps its own port. →
+[ADR-0062](../adr/ADR-0062-account-to-account-and-instant-payments.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
@@ -601,10 +630,11 @@ where later capability is structurally needed earlier, the earlier phase defines
 → [ADR-0007](../adr/ADR-0007-phase-gated-delivery.md), [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md)
 
 ### Invariant governance
-Eighty-seven financial, security and operational invariants are catalogued with stable IDs,
-enforcement mechanisms and verification methods. (This line said "seventy-one" until the
-Phase 1 → 2 transition — stale since `INV-IDN-08` — and now derives its correction from the
-catalogue's own index.) Phases declare the invariants they protect
+One hundred and one financial, security and operational invariants are catalogued with stable
+IDs, enforcement mechanisms and verification methods. (This line said "seventy-one" until the
+Phase 1 → 2 transition — stale since `INV-IDN-08` — and "eighty-seven" from the Phase 4 → 5
+transition until the Phase 6 → 7 one, through two groups it never counted; it takes its number
+from the catalogue's own index.) Phases declare the invariants they protect
 at the entry gate and prove them by test at the exit gate. →
 [`FINANCIAL_INVARIANTS.md`](../domain/FINANCIAL_INVARIANTS.md)
 

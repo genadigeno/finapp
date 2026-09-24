@@ -64,6 +64,42 @@ class PaymentSweeperScheduleTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /**
+     * Both of the sweep's bounds license {@code FAILED(NEVER_RECEIVED)}, so neither may be zero:
+     * at zero the sweep can ask about a request still in flight, hear "never saw it" and fail a
+     * payment the provider then performs. Found by the Phase 6 → 7 transition in this guard, a
+     * day after the Phase 6 review had closed the same defect in the payout's sweep.
+     */
+    @Test
+    @DisplayName("a zero or negative bound is refused at construction - either bound can license"
+            + " NEVER_RECEIVED")
+    void aZeroOrNegativeBoundIsRefused() {
+        com.finapp.payments.TransactionRunner never =
+                new com.finapp.payments.TransactionRunner() {
+                    @Override
+                    public <R> R inTransaction(
+                            java.util.function.Function<java.sql.Connection, R> work) {
+                        throw new AssertionError("construction must not touch the database");
+                    }
+                };
+        Duration minute = Duration.ofMinutes(1);
+        assertThatThrownBy(() -> sweeper(never, Duration.ZERO, minute))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("dispatchedAge must be positive");
+        assertThatThrownBy(() -> sweeper(never, minute, Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unknownAge must be positive");
+        assertThatThrownBy(() -> sweeper(never, Duration.ofMillis(-1), minute))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("dispatchedAge must be positive");
+        assertThatThrownBy(() -> sweeper(never, minute, Duration.ofMillis(-1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unknownAge must be positive");
+        // The positive control: the least bound the database suites use constructs.
+        Duration dueNow = Duration.ofNanos(1_000);
+        assertThat(sweeper(never, dueNow, dueNow)).isNotNull();
+    }
+
     private static com.finapp.app.telemetry.PaymentMeters meters() {
         return new com.finapp.app.telemetry.PaymentMeters(
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
@@ -91,18 +127,28 @@ class PaymentSweeperScheduleTest {
                         return empty;
                     }
                 };
-        return new PaymentSweeper(
-                runner,
-                new com.finapp.payments.JdbcPaymentAttemptStore(),
-                new com.finapp.payments.JdbcPaymentIntentStore(),
+        return sweeper(runner, Duration.ofMinutes(10), Duration.ofMinutes(1));
+    }
+
+    /** The production construction, with the bounds this test chooses. */
+    private static PaymentSweeper sweeper(
+            com.finapp.payments.TransactionRunner runner,
+            Duration dispatchedAge,
+            Duration unknownAge) {
+        com.finapp.payments.JdbcPaymentAttemptStore attempts =
+                new com.finapp.payments.JdbcPaymentAttemptStore();
+        com.finapp.payments.JdbcPaymentIntentStore intents =
+                new com.finapp.payments.JdbcPaymentIntentStore();
+        com.finapp.payments.JdbcProviderEvidenceStore evidence =
                 new com.finapp.payments.JdbcProviderEvidenceStore(
                         new com.finapp.payments.EvidenceCipher(
                                 "0123456789abcdef0123456789abcdef"
                                         .getBytes(java.nio.charset.StandardCharsets.UTF_8),
                                 1,
                                 new java.security.SecureRandom()),
-                        ids()),
-                new NoProvider(),
+                        ids());
+        NoProvider provider = new NoProvider();
+        com.finapp.payments.PaymentOutcomes outcomes =
                 new com.finapp.payments.PaymentOutcomes(
                         new com.finapp.payments.JdbcPaymentIntentStore(),
                         new com.finapp.payments.JdbcPaymentAttemptStore(),
@@ -165,11 +211,31 @@ class PaymentSweeperScheduleTest {
                         (uow, record) -> {},
                         (uow, envelope, payload, mediaType) -> {},
                         ids(),
+                        java.time.Clock.systemUTC());
+        return new PaymentSweeper(
+                runner,
+                attempts,
+                intents,
+                new com.finapp.payments.JdbcRefundStore(),
+                evidence,
+                provider,
+                outcomes,
+                // The stranded-authorization leg's command (the Phase 6 -> 7 transition): never
+                // reached here either, because the runner intercepts every read first.
+                new com.finapp.payments.PaymentCapture(
+                        runner,
+                        intents,
+                        attempts,
+                        evidence,
+                        provider,
+                        outcomes,
+                        (uow, record) -> {},
+                        ids(),
                         java.time.Clock.systemUTC()),
                 ids(),
                 java.time.Clock.systemUTC(),
-                Duration.ofMinutes(10),
-                Duration.ofMinutes(1),
+                dispatchedAge,
+                unknownAge,
                 50);
     }
 

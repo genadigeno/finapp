@@ -47,6 +47,17 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
     @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
     @NonNull private final PaymentMethodStore<Connection> instruments;
 
+    /** The wallet's ledger account, share-locked: postable only while {@code ACTIVE}. */
+    @Override
+    public boolean creditable(Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(account, "account must not be null");
+        return ledgerAccounts
+                .lockForShare(unitOfWork, account)
+                .map(row -> row.status() == com.finapp.ledger.LedgerAccountStatus.ACTIVE)
+                .orElse(false);
+    }
+
     @Override
     public Optional<Wallet> walletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

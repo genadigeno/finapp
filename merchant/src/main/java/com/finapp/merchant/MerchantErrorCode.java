@@ -163,6 +163,16 @@ public enum MerchantErrorCode implements ErrorCode {
             409,
             "This merchant cannot initiate payouts while suspended or closed."),
 
+    /**
+     * A close refused while the merchant is owed money or money is in flight (the Phase 6 → 7
+     * transition): a closed merchant can be paid out by nothing.
+     */
+    NOT_SETTLED(
+            "merchant.NotSettled",
+            409,
+            "This merchant is still owed money or has a payment in flight, so it cannot be"
+                    + " closed."),
+
     /** A payout in a currency other than the merchant's settlement currency (one payable). */
     PAYOUT_CURRENCY_MISMATCH(
             "merchant.PayoutCurrencyMismatch",

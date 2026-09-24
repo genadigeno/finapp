@@ -45,10 +45,15 @@ the platform does not own can sell through it and be paid**: 18 of 18 backlog it
 taken in the capture's one entry, refunds funded by the net, payouts bounded by the ledger and
 sent to a destination no one person can change, and tenancy in every statement.
 
-**Phase 7 — Cards, Wallets, A2A and Instant Payments — is next, behind its own entry gate.**
-The Phase 6 → 7 transition is the next act, and it inherits the fleet-wide battery the
-standing instruction skipped all phase, `X-TSK-003`, and Phase 7's own payments work (refund
-resolution by query and the stuck-dispatch gauges).
+**Phase 7 — Cards, Wallets, A2A and Instant Payments — is `READY`**, its entry gate passed by
+the Phase 6 → 7 transition (2026-09-24). The transition's independent audit confirmed Phase 6
+only after repairing what the review had missed — a taken-over refund that released a hold a first
+send may have paid, a wallet that could be closed beneath a card capture, and nine important
+defects besides — and ran the full battery fleet-wide before and after. Phase 7 is planned in
+`PHASE_7_PLAN.md` on ADR-0059…0062: rails that declare their capabilities, routing that is pinned
+and explainable, disputes whose chargebacks can never debit a merchant twice, and account-to-account
+and instant payments that keep bank details out of the platform. Eighteen items across eight
+milestones; first task `P7-TSK-001`. `X-TSK-003` carries the remaining idempotency-scope work.
 
 *(This section read "Phase 6 … is `READY`, first task `P6-TSK-001`" through the whole of Phase 6
 — frozen at the Phase 5 → 6 transition, the stale-second-copy class this section has now fallen

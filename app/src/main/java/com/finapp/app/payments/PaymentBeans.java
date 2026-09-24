@@ -189,7 +189,8 @@ class PaymentBeans {
                 auditWriter,
                 outboxWriter,
                 ids,
-                clock);
+                clock,
+                PaymentCreation.IDEMPOTENCY_SCOPE);
     }
 
     @Bean
@@ -434,7 +435,10 @@ class PaymentBeans {
      * The reconciliation-by-query sweeper (`P5-TSK-014`) — provider-conditional like every
      * consumer of the wire. Bounds explicit with documented defaults: a dispatch younger than
      * {@code dispatched-age} is probably mid-call and left alone; an {@code *_UNKNOWN} is
-     * asked about after {@code unknown-age}. Server-clock judged (ADR-0014).
+     * asked about after {@code unknown-age}. Server-clock judged (ADR-0014). Both must be
+     * positive: either licenses a {@code NEVER_RECEIVED} conclusion, and at zero the sweep
+     * could draw it about a request still in flight (the Phase 6 → 7 transition). Since that
+     * transition it also chains the capture of a stranded authorization and resolves refunds.
      */
     @Bean
     @ConditionalOnProperty("finapp.payments.provider.url")
@@ -442,22 +446,25 @@ class PaymentBeans {
             TransactionRunner paymentTransactionRunner,
             PaymentAttemptStore<Connection> paymentAttemptStore,
             PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentProvider paymentProvider,
             com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            com.finapp.payments.PaymentCapture paymentCapture,
             IdGenerator ids,
             Clock clock,
-            @Value("${finapp.payments.sweeper.dispatched-age:PT10M}")
-                    java.time.Duration dispatchedAge,
+            @Value(PaymentSweeperSchedule.DISPATCHED_AGE) java.time.Duration dispatchedAge,
             @Value("${finapp.payments.sweeper.unknown-age:PT1M}") java.time.Duration unknownAge,
             @Value("${finapp.payments.sweeper.batch:50}") int batchSize) {
         return new com.finapp.payments.PaymentSweeper(
                 paymentTransactionRunner,
                 paymentAttemptStore,
                 paymentIntentStore,
+                refundStore,
                 providerEvidenceStore,
                 paymentProvider,
                 paymentOutcomes,
+                paymentCapture,
                 ids,
                 clock,
                 dispatchedAge,

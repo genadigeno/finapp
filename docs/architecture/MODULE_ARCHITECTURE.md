@@ -124,6 +124,7 @@ evidence says otherwise.
 | 26 | Audit | `platform` | 0 | **Merged.** See M4 |
 | 27 | Reporting | `accounting` | 14 | **Merged.** See M5 |
 | 28 | API / Integration Platform | `platform` + `app` | 0 | **Merged.** See M10 |
+| 29 | Disputes | `payments` | 7 | **Merged.** See M11 (the Phase 6 → 7 transition, ADR-0061 §1) |
 
 ### Merge and separation decisions
 
@@ -199,6 +200,15 @@ The published contract itself — [`docs/api/openapi.json`](../api/openapi.json)
 from the running application on every build and compared against the committed copy
 (ADR-0015). It is an artefact of `app`, because only `app` sees every route; nothing about
 OpenAPI is deployed.
+
+**M11 — Disputes live in `payments`** (the Phase 6 → 7 transition, ADR-0061 §1). A dispute is a
+lifecycle on a captured card payment, and the chargeback's bound and the refund's bound are one
+arithmetic: refunded plus charged back never exceeds captured, judged under the attempt row's
+lock that both paths take. In two modules that lock would have two owners, or the bound a
+cross-module read that races. *Split trigger:* disputes acquiring a lifecycle the payment does
+not share — merchant-initiated arbitration with its own case management, or dispute handling for
+payments this platform did not capture — at which point the bound moves behind a port `payments`
+still arbitrates.
 
 ---
 
@@ -334,7 +344,8 @@ read "modules from Phase 1 onward do not exist yet" until the Phase 6 review, `P
 
 ### `payments` — Phase 5
 - **Responsibility:** money movement whose outcome is determined by an unreliable third party.
-- **Owns:** Payment Intent, Payment Attempt, Authorization, Capture, Refund, Webhook Event (raw evidence), Provider State Mapping.
+- **Owns:** Payment Intent, Payment Attempt, Authorization, Capture, Refund, Webhook Event (raw evidence), Provider State Mapping, Payment Rail, Routing Decision, A2A Payment, Instant Payment, Withdrawal, Dispute, Chargeback.
+- **Phase 7** *(planned by the Phase 6 → 7 transition, ADR-0059…0062; nothing built yet)*: the rail port and its capability descriptor, the per-model attempt machines, routing, the card void and clearing evidence, pay-ins, withdrawals, return payments and disputes — context 29 merged here (M11). Every new join (a dispute's counterparty lines, a pay-in's credit account, a bank instrument's reference) is a port `app` implements, the `CaptureComposition` shape; the build-graph edges do not change.
 - **Transaction:** own. **No transaction spans a provider call**: state is committed before the call and the outcome applied in a separate transaction.
 - **Consistency:** strong internally. Provider truth is eventually consistent and may be permanently unknown.
 - **APIs:** intent create/confirm/cancel, attempt status, refund create. Idempotency mandatory on every money-moving command; terminal-state semantics documented.
@@ -348,6 +359,7 @@ read "modules from Phase 1 onward do not exist yet" until the Phase 6 review, `P
 ### `paymentmethods` — Phase 5
 - **Responsibility:** the tokenised-instrument boundary. Exists so that "no raw card data crosses this line" is a reviewable boundary rather than a convention.
 - **Owns:** Payment Method token references, instrument metadata.
+- **Phase 7** *(planned by the Phase 6 → 7 transition, ADR-0062 §2)*: the `BANK_ACCOUNT` instrument, registered through the grant exchange — an opaque provider reference, a four-character suffix and the confirmation-of-payee result, never an account number or an alias (`INV-RAIL-03`).
 - **Transaction:** own; single-aggregate.
 - **Consistency:** strong.
 - **APIs:** attach, detach, list. Never returns anything from which an instrument could be reconstructed.

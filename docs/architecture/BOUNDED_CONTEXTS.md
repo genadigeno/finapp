@@ -8,6 +8,10 @@ bounded contexts with their own aggregates and lifecycles (`DELIVERY_PLAN.md` Ph
 no declared context. This records decisions already taken elsewhere — it is not a new
 decision.
 
+**Disputes (29)** was added by the Phase 6 → 7 transition (ADR-0061 §1). `DELIVERY_PLAN.md`
+already named it a new context for Phase 7; this list never had. It maps to `payments`, merged,
+with its split trigger recorded (`MODULE_ARCHITECTURE.md` M11).
+
 1. Party & Customer
 2. Identity, Authentication & Authorization
 3. KYC/KYB
@@ -36,6 +40,7 @@ decision.
 26. Audit
 27. Reporting
 28. API / Integration Platform
+29. Disputes
 
 Every context is mapped to exactly one module in
 [`MODULE_ARCHITECTURE.md`](MODULE_ARCHITECTURE.md) §3, with merges justified and split

@@ -109,6 +109,8 @@ class AccountClosingDatabaseTest {
                 ledgerAccounts,
                 new JdbcBalanceDerivation(),
                 new JdbcHoldStore(),
+                // The production answer, over the real intent store (the Phase 6 -> 7 transition).
+                new com.finapp.payments.JdbcPaymentIntentStore()::anyInFlightCrediting,
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
@@ -408,6 +410,59 @@ class AccountClosingDatabaseTest {
                             CLOCK)
                     .release(app, hold.id())
                     .orElseThrow();
+            app.commit();
+
+            AccountClosing.Closure closure =
+                    closing().close(app, holder.customer(), holder.account()).orElseThrow();
+            app.commit();
+            assertThat(closure.closed()).isTrue();
+        }
+    }
+
+    /**
+     * The Phase 6 -> 7 transition's CRITICAL finding (C2): a customer could close the wallet an
+     * open top-up credited, then confirm - the provider captured the card, the ledger refused the
+     * capture's posting, and the payment sat CAPTURE_DISPATCHED with the customer charged and
+     * nothing booked. Empty now means nothing on its way either, judged under the same lock.
+     */
+    @Test
+    @DisplayName("a payment in flight to the account blocks the close, and its becoming final"
+            + " frees it (the Phase 6 -> 7 transition)")
+    void aPaymentInFlightBlocksTheClose() throws Exception {
+        Holder holder = holderWithOpenAccount();
+        UUID intent = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enter(holder.actor());
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            LedgerAccount wallet = walletOf(app, holder);
+            execute(
+                    app,
+                    "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                            + " payment_method_id, wallet_account_id, amount_minor, currency,"
+                            + " scale, status, created_at)"
+                            + " VALUES (?, ?, ?, ?, ?, 500, 'USD', 2, 'REQUIRES_CONFIRMATION',"
+                            + " now())",
+                    intent,
+                    holder.party(),
+                    holder.customer(),
+                    UUID.randomUUID(),
+                    wallet.id().value());
+            app.commit();
+
+            assertThatThrownBy(
+                            () -> closing().close(app, holder.customer(), holder.account()))
+                    .as("a top-up awaiting confirmation is value on its way to the agreement")
+                    .isInstanceOf(AccountNotEmptyException.class);
+            app.rollback();
+            assertThat(productStatusOf(app, holder.account()))
+                    .isEqualTo(CustomerAccountStatus.ACTIVE.name());
+
+            // The customer cancels it: final, and nothing is on its way any more.
+            execute(
+                    app,
+                    "UPDATE payments.payment_intent SET status = 'CANCELLED' WHERE id = ?",
+                    intent);
             app.commit();
 
             AccountClosing.Closure closure =

@@ -17,11 +17,15 @@ immediately below, and described canonically in
 
 ## Where the project is
 
-**Phases 0 through 6 are `COMPLETE`.** Phase 6 — Checkout and Merchant Platform — closed on
-2026-09-24, ruled by its exit review
-([`docs/project/reviews/PHASE_6_REVIEW.md`](docs/project/reviews/PHASE_6_REVIEW.md)), which found
-and fixed more than it was sent and probed every fix. The next act is the **Phase 6 → 7
-transition**, behind which Phase 7 — Cards, Wallets, A2A and Instant Payments — waits.
+**Phases 0 through 6 are `COMPLETE`, and Phase 7 is `READY`.** Phase 6 — Checkout and Merchant
+Platform — closed on 2026-09-24, ruled by its exit review
+([`docs/project/reviews/PHASE_6_REVIEW.md`](docs/project/reviews/PHASE_6_REVIEW.md)) and confirmed
+the same day by the Phase 6 → 7 transition's independent audit
+([`docs/project/reviews/PHASE_6_TO_7_TRANSITION.md`](docs/project/reviews/PHASE_6_TO_7_TRANSITION.md))
+— after that audit found and repaired two critical defects and nine important ones the review had
+not, broke every repair on purpose to prove its test, and ran the full battery before and after.
+Phase 7 — Cards, Wallets, A2A and Instant Payments — is planned, decided and broken into eighteen
+items; its first task, `P7-TSK-001`, has not started.
 
 Every number below is counted from this repository rather than recalled: items from
 [`docs/project/BACKLOG.md`](docs/project/BACKLOG.md), decisions from [`docs/adr/`](docs/adr/README.md),
@@ -32,27 +36,27 @@ description of where the project is; this section is the summary of it.
 
 ```
 Programme    ███████░░░░░░░░░░   7 of 17 phases complete
-Backlog      ██████████████████  199 of 202 elaborated items complete — every phase item; 3 cross-cutting open
+Backlog      ████████████████░░  200 of 220 elaborated items complete — Phase 7's 18 and 2 cross-cutting open
 Phase 6      ██████████████████  18 of 18 items, 7 of 7 milestones closed
-Phase 7      ░░░░░░░░░░░░░░░░░░  behind its entry gate — next: the Phase 6 → 7 transition
+Phase 7      ░░░░░░░░░░░░░░░░░░  0 of 18 items, 0 of 8 milestones — READY, first task P7-TSK-001
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 6 is complete. Next: **the Phase 6 → 7 transition** — the independent audit of Phase 6, the fleet-wide battery, and Phase 7's plan and backlog |
+| 🔨 **Current work** | Phase 7 is `READY`. Next: **`P7-TSK-001`** — the rail port, the capability descriptor, and the card rail declared |
 | 💰 **Business capability** | Money exists and moves: accounts, a double-entry ledger, explainable balances, holds, internal transfers, payments and refunds through an unreliable provider, and merchants who sell through checkout, are charged their fee in the capture's own entry, refund out of their payable and are paid out under the bound |
-| 📐 **Decisions** | 58 ADRs — 57 `Accepted`, and ADR-0055 (Lombok, cross-cutting) `Proposed`, its acceptance the owner's |
-| 🔒 **Invariants** | 94 catalogued; each in scope for a completed phase has a test *demonstrated to fail* when the invariant is broken |
-| 🗄️ **Schema** | 79 forward-only migrations across 12 schema-owning modules |
+| 📐 **Decisions** | 62 ADRs — 57 `Accepted`; ADR-0055 (Lombok, cross-cutting, its acceptance the owner's) and ADR-0059…0062 (Phase 7) `Proposed` |
+| 🔒 **Invariants** | 101 catalogued; each in scope for a completed phase has a test *demonstrated to fail* when the invariant is broken |
+| 🗄️ **Schema** | 81 forward-only migrations across 12 schema-owning modules |
 | 🌐 **API** | 71 published paths, 86 operations, compared byte for byte against the running application on every build |
-| 🧾 **Audit and errors** | 77 auditable actions, 68 error codes, both reconciled with the code by the build |
-| 🧩 **Code** | 14 Gradle modules; 754 production, 380 test and 7 test-fixture source files |
-| 📦 **History** | 298 commits, 2026-08-31 to 2026-09-24 |
+| 🧾 **Audit and errors** | 77 auditable actions, 69 error codes, both reconciled with the code by the build |
+| 🧩 **Code** | 14 Gradle modules; 758 production, 382 test and 7 test-fixture source files |
+| 📦 **History** | 299 commits, 2026-08-31 to 2026-09-24 |
 
 *(This section read "Phase 5 … `IN_PROGRESS`, 5 of 21 items" from 2026-09-20 until the Phase 6
 review's completion gate, `P6-DOC-001` — frozen through the rest of Phase 5, its review, the
 Phase 5 → 6 transition and the whole of Phase 6, the stale-second-copy class. Every number above
-was recounted from the repository at that gate.)*
+was recounted from the repository at that gate, and again at the Phase 6 → 7 transition.)*
 
 ---
 
@@ -71,9 +75,9 @@ vocabulary are [`docs/project/PHASE_GATES.md`](docs/project/PHASE_GATES.md).
 | 2 | KYC/KYB and Consent | COMPLETE 2026-09-13 | Verification lifecycle, screening adapters, append-only consent history |
 | 3 | Accounts and Financial Ledger | COMPLETE 2026-09-17 | Chart of accounts, double-entry ledger, balances, holds, reversals |
 | 4 | Internal Transfers | COMPLETE 2026-09-19 | The first end-to-end money movement on the ledger |
-| 5 | Payment Infrastructure | PLANNED | Payment intent/attempt, provider adapters, auth/capture, refunds, webhooks |
-| 6 | Checkout and Merchant Platform | PLANNED | Merchants, checkout sessions, fees, merchant payouts |
-| 7 | Cards, Wallets, A2A and Instant Payments | PLANNED | Multi-rail abstraction, disputes and chargebacks |
+| 5 | Payment Infrastructure | COMPLETE 2026-09-21 | Payment intent/attempt, provider adapters, auth/capture, refunds, webhooks |
+| 6 | Checkout and Merchant Platform | COMPLETE 2026-09-24 | Merchants, checkout sessions, fees, merchant payouts |
+| 7 | Cards, Wallets, A2A and Instant Payments | READY | Multi-rail abstraction, disputes and chargebacks |
 | 8 | Settlement and Reconciliation | PLANNED | Settlement ingestion, matching, breaks, suspense, investigation |
 | 9 | FX and Cross-Border Payments | PLANNED | Quotes, rate locks, multi-currency conversion, cross-border workflow |
 | 10 | Credit Decisioning | PLANNED | Credit profile, bureau adapters, versioned policy, explainable decisions |
@@ -100,6 +104,8 @@ than a setback. Phase 3 was the first phase whose financial supplement F1–F8 w
 | 2 — KYC/KYB and Consent | 23 of 23 | A Party verified to the standard a regulator requires, with the evidence retained verbatim, the decision defensible and reproducible, and an append-only consent history with an enforcement gate |
 | 3 — Ledger | 25 of 25 | **Money exists**: balanced immutable postings, a balance explainable three independent ways, holds, reversals and four-eyes adjustments that correct mistakes without one committed byte changing, and a trial balance continuously asserted zero per currency |
 | 4 — Internal Transfers | 14 of 14 | **Money moves between customers**: an explicit lifecycle whose every state is earned by a producer, idempotency at the financial boundary proven under concurrent submission, conservation under ten instances moving money **both ways**, a privileged reasoned reversal that corrects by referencing rather than editing, and the limit and risk seams as contracts Phase 13 can honour |
+| 5 — Payment Infrastructure | 21 of 21 | **Money enters and leaves through a party that can fail in every way a third party can**: intents and attempts, dispatch before the call, an honest `UNKNOWN`, a leaderless reconciliation sweeper, bounded refunds that hold the funds they return, authenticated deduplicated webhooks — and the ledger's first touch at capture |
+| 6 — Checkout and Merchant Platform | 18 of 18 | **A merchant the platform does not own can sell through it and be paid**: onboarding behind KYB, immutable versioned fee schedules pinned at the offer, the fee taken in the capture's one entry, refunds funded by the net, payouts under the bound to a destination no one person can change, and tenancy in every statement |
 
 Each phase's review record is in [`docs/project/reviews/`](docs/project/reviews/), alongside the
 transition audit that opened the phase after it.
@@ -148,13 +154,14 @@ status** and the post-flip battery green.
 
 ### Verification state
 
-The standing instruction on Phase 4 was that the full battery is **skipped**; every task was
-verified by targeted tiers and recorded in those words, and the exit review assessed criterion 7
-on that evidence with the deviation stated rather than waived.
+The standing instruction through Phases 4–6 was that the full battery is **skipped** per task;
+every task was verified by targeted tiers and recorded in those words, each exit review assessed
+criterion 7 on that evidence with the deviation stated rather than waived, and each phase's
+transition runs the battery fleet-wide.
 
 | | |
 |---|---|
-| Full battery | **Fleet-wide and current (2026-09-20, the Phase 4 → 5 transition): 1157 hermetic / 729 database / 14 kafka tests, 0 failures** — the first genuine fleet-wide database and kafka count of Phase 4, closing the exit review's recorded deviation. Producing it found and repaired a test-harness defect: the per-JVM PostgreSQL container's default connection ceiling could not carry every cached Spring context's fixed pool, so the fleet-wide `:app:databaseTest` was structurally unable to run — every failure a connection error, zero assertion failures, and the harness now provisions the ceiling the fleet needs |
+| Full battery | **Fleet-wide and current (2026-09-24, the Phase 6 → 7 transition), twice**: before its repairs, on untouched `82b2179`, **1550 hermetic / 1027 database / 14 kafka tests, 0 failures**; after them, from clean, **1558 / 1051 / 14, 0 failures**. Green before repair: the transition's audit found two critical defects in code every test passed over, which is why a phase is not complete because its tests are. *(This row read the Phase 4 → 5 transition's 1157 / 729 / 14 until then.)* |
 | CI | Four gates on every push to `master`: build and tests, migrations against a real PostgreSQL, secret scan over full history, dependency scan of a CycloneDX SBOM (see section 6) |
 
 ---
@@ -257,7 +264,9 @@ next command can fail against a database that is still initialising.
 PostgreSQL container, applies `infra/postgres/initdb/00-roles.sql` and the real migrations, and
 throws it away afterwards — so a test run needs Docker and nothing else. Compose is still what
 `bootRun` and the Flyway build tasks connect to, and it is still useful when you want a database
-that outlives the run: set `FINAPP_DB_URL` and the harness steps aside.
+that outlives the run: set `FINAPP_DB_URL` and `:platform:databaseTest`'s harness steps aside.
+The other modules' database tiers, `:app:databaseTest` among them, start their own container
+whatever it is set to — only the platform module's build passes the URL through.
 
 Everything binds to `127.0.0.1`, never `0.0.0.0`, so the stack is not reachable from the
 network. Default credentials are `finapp` / `local-development-only-not-a-secret` against
@@ -433,8 +442,9 @@ trouble.
 Health responses carry a status and nothing else - no dependency name, no URL, no exception. That
 is a security decision, not an oversight; see `docs/architecture/SECURITY_ARCHITECTURE.md`.
 
-Database settings come from the same `FINAPP_DB_*` environment variables `compose.yaml` uses, and
-the application connects as `finapp_app` - never the superuser.
+Database settings come from `FINAPP_DB_URL` and the application role's own
+`FINAPP_DB_APP_USER` and `FINAPP_DB_APP_PASSWORD` - the application connects as `finapp_app`,
+never as the superuser `compose.yaml`'s `FINAPP_DB_USER` names.
 
 ---
 

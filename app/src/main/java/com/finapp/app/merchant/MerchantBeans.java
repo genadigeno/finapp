@@ -90,8 +90,24 @@ public class MerchantBeans {
 
     @Bean
     MerchantAdministration merchantAdministration(
-            AuditWriter<Connection> auditWriter, IdGenerator ids, Clock clock) {
-        return new MerchantAdministration(new JdbcMerchantStore(), auditWriter, ids, clock);
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.ledger.BalanceDerivation<Connection> balanceDerivation,
+            com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore) {
+        return new MerchantAdministration(
+                new JdbcMerchantStore(),
+                ledgerAccountStore,
+                balanceDerivation,
+                // Stateless, like the close's own (AccountsBeans): a direct instance is the wiring.
+                new com.finapp.ledger.JdbcHoldStore(),
+                // THE PAYMENTS IN FLIGHT (the Phase 6 -> 7 transition): merchant cannot see
+                // payments, so the composition root answers the port over the intent store.
+                paymentIntentStore::anyInFlightCrediting,
+                auditWriter,
+                ids,
+                clock);
     }
 
     @Bean

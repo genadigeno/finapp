@@ -98,3 +98,10 @@ defect classes in payments.
 - Phase 5: apply to payment intents, captures and refunds.
 - Phase 8/11/14: `INV-IDEM-02` period-keyed idempotency for accrual, settlement and close.
 - Revisit retention policy when volume data exists.
+- *The Phase 6 → 7 transition*: a claim whose key the platform **derives** takes a scope no
+  client command claims in. The checkout's payment was keyed `checkout:<checkoutId>` in
+  `payment.create`, where any customer could claim that predictable key first through
+  `POST /v1/payments` and leave the session unpayable; it claims in `checkout.payment` now.
+  `X-TSK-003` carries the rest of this ADR's principal clause, and must account for the
+  refund's `V008` dispatch key — a second rank beneath the refund's claim, and one that is
+  unscoped by principal.

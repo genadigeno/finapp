@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 142 "Previously" blocks, newest first, from `P6-TST-002` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 143 "Previously" blocks, newest first, from `P6-DOC-001` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,55 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P6-DOC-001` — the Phase 6 exit review** — `COMPLETE` (2026-09-24). **M6.7 closes, and with it
+Phase 6, at 18 of 18 items. The review found more than it was sent and waived none of it: four
+defects in production behaviour, a missing constraint, wrong operator instructions, an unpinned
+permission per route, four unraced decisions and drift in six of eight ADRs, each corrected and
+each correction broken on purpose.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The review's verdict flips the status | The review record rules Phase 6 `COMPLETE`; the flip armed the register and meter guards, and was proven non-vacuous: without `INV-HIST-04`'s rows the guard fails naming it, `(currently 6)` |
+| The post-flip battery green | The hermetic tier fleet-wide after the flip, **1550 tests across 14 modules, 0 failures**; the database tier over every merchant and checkout suite, the chart suite and the conservation suites, **224 tests across 23 suites, 0 failures**. No fleet-wide database or kafka count is claimed, the owner's standing instruction recorded as criterion 7's deviation |
+
+### The design
+
+- **Eight inputs, then six read-only audits** of every ADR, register and document against the
+  code, and of every gate criterion, failure scenario, contended decision and privileged route
+  against the test that proves it.
+- **Corrections in the review, not waivers**, the `P2-DOC-001` and `P5-DOC-001` precedent: each
+  small enough to fix here, each tested, each probed.
+- **Assess → corrections → flip → battery**, the flip being the guarded act.
+
+### What the review found, and fixed
+
+- **Behaviour**: a suspended merchant's open offer was still payable (plan §14 scenario 11 said
+  it refused); every paid order was announced `PAYMENT_PENDING`; a zero never-received bound was
+  accepted; the session's claim shared one namespace across merchants and its records named no
+  key.
+- **Schema**: the one-session-per-intent index ADR-0053 named was never built (checkout `V003`).
+- **Operations**: five of eight confined credentials named environment variables nothing binds.
+- **Tests**: nothing pinned which permission a route requires (`RoutePermissionRegisterTest`,
+  32 routes); the four-eyes cooling-off was proven by a read, not a dispatch; four contended
+  decisions had no race; the red chart test was two stale copies, with a recorded fix that would
+  have dropped a seeded account.
+- **Records**: six of eight ADRs had drifted, `DECISIONS.md` had no Phase 6 section, and the
+  plan, architecture, lifecycles, glossary, invariants and four registers each said something
+  untrue. Two deferrals owned by this phase — a debt row whose trigger fired and Phase 5's
+  refund sweeping — had closed unpaid; both re-owned.
+- **Eighteen probes, seventeen caught, the one survivor a correct second rank**, every restore verified byte-identical.
+
+### What the completion gate found
+
+- **`README.md` was frozen in mid-Phase 5** under a sentence promising every number was counted
+  from the repository. Every number is now recounted.
+- **The step-up criterion had been passed without its reading stated.** The step-up is
+  conditional. The reading is now stated, and the gap is a Phase 15 debt row.
+- Two smaller corrections: the review's ADR-0054 row, and a note on the gate's own payable
+  formula.
 
 ### Previously
 

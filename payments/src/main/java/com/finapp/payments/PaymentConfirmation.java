@@ -161,6 +161,14 @@ public final class PaymentConfirmation {
                         .instrumentOwnedBy(uow, callerPartyId, intent.paymentMethodId())
                         .orElseThrow(UnknownPaymentInstrumentException::new);
 
+        // The account the capture will credit, share-locked and still open (the Phase 6 -> 7
+        // transition): a customer who closed the wallet since creation must not be charged for a
+        // posting the ledger will refuse. FOR SHARE serialises with the close's FOR UPDATE, and
+        // the close refuses while this payment is in flight, so the two cannot interleave.
+        if (!participants.creditable(uow, intent.walletAccount())) {
+            throw new NoWalletForPaymentException();
+        }
+
         if (!intents.transition(
                 uow,
                 intentId,

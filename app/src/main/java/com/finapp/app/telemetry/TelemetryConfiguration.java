@@ -221,14 +221,23 @@ class TelemetryConfiguration {
      * because nothing else in this context consumes them as beans.
      */
     @Bean
-    PaymentMetrics paymentMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
+    PaymentMetrics paymentMetrics(
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry,
+            // The sweep's own bound, through the one placeholder it reads (the Phase 6 -> 7
+            // transition, the payout's shape): a dispatched or authorized operation is stuck
+            // only once the sweep would have asked about it.
+            @org.springframework.beans.factory.annotation.Value(
+                            com.finapp.app.payments.PaymentSweeperSchedule.DISPATCHED_AGE)
+                    java.time.Duration dispatchedAge) {
         com.finapp.payments.PaymentAttemptStore<java.sql.Connection> attempts =
                 new com.finapp.payments.JdbcPaymentAttemptStore();
         com.finapp.payments.RefundStore<java.sql.Connection> refunds =
                 new com.finapp.payments.JdbcRefundStore();
         return new PaymentMetrics(
-                connection -> reading(attempts.unknownReading(connection)),
-                connection -> reading(refunds.unknownReading(connection)),
+                connection -> reading(attempts.unknownReading(connection, dispatchedAge)),
+                connection -> reading(refunds.unknownReading(connection, dispatchedAge)),
                 dataSource::getConnection,
                 clock,
                 registry);

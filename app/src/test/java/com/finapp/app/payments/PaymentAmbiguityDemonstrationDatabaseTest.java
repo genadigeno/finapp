@@ -376,7 +376,8 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                                                     new JdbcAuditWriter(),
                                                     new JdbcOutboxWriter(),
                                                     IDS,
-                                                    CLOCK)
+                                                    CLOCK,
+                                                    PaymentCreation.IDEMPOTENCY_SCOPE)
                                             .create(
                                                     uow,
                                                     new PaymentCreation.CreatePaymentCommand(
@@ -457,10 +458,15 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                 new JdbcAuditWriter(), IDS, CLOCK);
     }
 
+    /**
+     * Due now: the smallest positive bound, because the sweep refuses zero (the Phase 6 → 7
+     * transition's finding - at zero it could conclude NEVER_RECEIVED of a request in flight).
+     */
     private PaymentSweeper sweeper() {
+        Duration dueNow = Duration.ofNanos(1_000);
         return new PaymentSweeper(
-                runner, attempts, intents, evidence, adapter(), outcomes(), IDS, CLOCK,
-                Duration.ZERO, Duration.ZERO, 50);
+                runner, attempts, intents, new com.finapp.payments.JdbcRefundStore(), evidence,
+                adapter(), outcomes(), capture(), IDS, CLOCK, dueNow, dueNow, 50);
     }
 
     /** A registry of this suite's own: the meters' wiring is the telemetry suites'. */

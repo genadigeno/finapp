@@ -115,6 +115,12 @@ class ChartOfAccountsTest {
         }
 
         @Override
+        public Optional<LedgerAccount> lockForShare(
+                Object unitOfWork, LedgerAccountId accountId) {
+            throw new UnsupportedOperationException("the chart never locks");
+        }
+
+        @Override
         public boolean moveStatus(
                 Object unitOfWork,
                 LedgerAccountId accountId,

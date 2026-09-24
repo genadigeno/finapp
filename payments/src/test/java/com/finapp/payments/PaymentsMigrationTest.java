@@ -43,6 +43,9 @@ class PaymentsMigrationTest {
             "db/migration/payments/V005__create_provider_evidence.sql";
     private static final String HISTORY_ACTOR =
             "db/migration/payments/V006__history_actor_admits_the_platform.sql";
+    /** The refund edge trigger's CURRENT definition (V004 is applied history). */
+    private static final String REFUND_PERMIT =
+            "db/migration/payments/V009__refund_carries_its_send_permit.sql";
 
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
@@ -102,6 +105,36 @@ class PaymentsMigrationTest {
                 java.util.Arrays.stream(RefundStatus.values())
                         .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
                                 .stream().map(Enum::name).collect(Collectors.toList()))));
+        // V009 REPLACED the refund's function (the Phase 6 -> 7 transition's send permit): the
+        // current definition must carry the machine's edges too, or it could drift from the
+        // enum while V004 - applied history - still matched.
+        assertEdges(migration(REFUND_PERMIT), RefundStatus.values().length,
+                java.util.Arrays.stream(RefundStatus.values())
+                        .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
+                                .stream().map(Enum::name).collect(Collectors.toList()))));
+    }
+
+    @Test
+    @DisplayName("the in-flight index's predicate is the intent machine's own non-terminal set"
+            + " (V010)")
+    void theInFlightIndexPredicateIsGeneratedFromTheMachine() {
+        assertThat(migration("db/migration/payments/V010__intents_in_flight_by_credit_account.sql"))
+                .contains("CREATE INDEX payment_intent_in_flight_by_credit_account")
+                .contains("WHERE status NOT IN ("
+                        + PaymentIntentStatus.sqlTerminalValueList() + ")");
+    }
+
+    @Test
+    @DisplayName("the refund's send permit is forward-only, only while resolvable, and the"
+            + " replaced function still freezes the dispatch (V009)")
+    void theRefundPermitClausesAreInTheCurrentFunction() {
+        assertThat(migration(REFUND_PERMIT))
+                .contains("CREATE OR REPLACE FUNCTION payments.refund_permits_only_machine_edges()")
+                .contains("IF NEW.last_dispatched_at < OLD.last_dispatched_at THEN")
+                .contains("AND OLD.status NOT IN ('DISPATCHED', 'UNKNOWN') THEN")
+                .contains("OR OLD.dispatch_key IS DISTINCT FROM NEW.dispatch_key THEN")
+                .contains("CHECK (last_dispatched_at >= created_at)")
+                .contains("GRANT UPDATE (last_dispatched_at) ON payments.refund TO finapp_app;");
     }
 
     @Test

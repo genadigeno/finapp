@@ -72,7 +72,8 @@ public enum PaymentsAuditAction implements AuditableAction {
             "payments.PaymentOutcomeApplied",
             "The platform applied a provider outcome to a dispatched payment operation through"
                     + " a conditional transition; the record names the operation and the"
-                    + " committed states, never an amount or a provider code.",
+                    + " committed states, never an amount or a provider code. Acting transitions"
+                    + " only: a resolver that lost the race records nothing.",
             false),
 
     /**

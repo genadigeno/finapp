@@ -226,6 +226,14 @@ public final class PaymentService {
             // Detached since creation: nothing written, the intent still awaits confirmation —
             // folded with unknown/not-yours/malformed at create (one refusal, one shape).
             throw unknownInstrument();
+        } catch (NoWalletForPaymentException closed) {
+            // The account this payment credits was closed since creation (the Phase 6 -> 7
+            // transition): nothing written, nothing sent, the intent still cancellable - the
+            // create door's own refusal, because the answer is the same: no account can
+            // receive this payment.
+            throw new ApiException(
+                    PaymentsErrorCode.NO_WALLET,
+                    "A confirmation was refused: the account it credits is no longer open");
         } catch (IllegalPaymentIntentTransitionException refused) {
             throw new ApiException(
                     PaymentsErrorCode.NOT_CONFIRMABLE,
@@ -357,6 +365,17 @@ public final class PaymentService {
                     PaymentsErrorCode.REFUND_UNFUNDED,
                     "A refund could not reserve what it takes from the account it debits"
                             + " (INV-BAL-04, ADR-0054)");
+        } catch (com.finapp.payments.RefundKeyReusedException reused) {
+            // The kernel's own words for a reused key (ApiErrorHandler's
+            // IdempotencyConflictException rendering), so a caller cannot tell whether the
+            // claim or the refund row's key refused it - after the claim's retention the row is
+            // what still remembers the key (V008, the Phase 6 -> 7 transition).
+            throw new ApiException(
+                    com.finapp.platform.api.PlatformErrorCode.CONFLICT,
+                    "A refund key already carries a different refund (INV-IDEM-03)",
+                    "This " + com.finapp.platform.api.IdempotencyKeyHeader.NAME
+                            + " was already used for a different request. Use a new key for a"
+                            + " new action, or resend the original request unchanged.");
         }
         countRefund(result);
         return new RefundView(

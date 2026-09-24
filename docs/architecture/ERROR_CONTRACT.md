@@ -334,6 +334,7 @@ folds into `api.NotFound` exactly as above; the operator learns nothing a custom
 | `merchant.PayoutUnfunded` | 409 | The payable cannot fund this payout. |
 | `merchant.NoEffectiveDestination` | 409 | The merchant has no effective payout destination. |
 | `merchant.NotTrading` | 409 | This merchant cannot initiate payouts while suspended or closed. |
+| `merchant.NotSettled` | 409 | This merchant is still owed money or has a payment in flight, so it cannot be closed. |
 | `merchant.PayoutCurrencyMismatch` | 422 | A payout must be in the merchant's settlement currency. |
 | `merchant.PayoutProviderUnavailable` | 503 | Payouts are unavailable right now; retry later. |
 
@@ -382,6 +383,13 @@ one `api.NotFound`, the merchant surface's standing rule.
   nothing was sent, or `UNKNOWN` with its hold standing when something may have been.
 - Unknown, malformed and another merchant's payout identifiers are one `api.NotFound`; an
   operator naming an unknown merchant is the same.
+
+**The close's code (the Phase 6 → 7 transition).**
+- `merchant.NotSettled` (`409`) refuses a close while the merchant's payable is non-zero, a hold
+  stands on it, or a payment in flight will credit it — judged under the merchant row's and then
+  the payable's lock. A closed merchant can be paid out by nothing, so closing one still owed money
+  left a liability the platform could never settle. Phase 3's `accounts.AccountNotEmpty` is the
+  precedent. Nothing is written.
 
 `merchant.NotKeyable` refuses only a **closed** merchant. A `SUSPENDED` one may still be
 issued keys: suspension is reversible, its keys already refuse at authentication because the
@@ -463,6 +471,15 @@ merchant's, and a token that opens nothing are one `api.NotFound`. For the merch
 that is `INV-MER-01`'s tenancy oracle; for the customer it is stronger still, because a
 checkout token is *guessed at* rather than typed, and telling a guesser that a session exists
 but is not theirs is the only bit they need.
+
+**The confirmation also answers the payments codes it inherits, and two reached a customer
+wrongly until the Phase 6 → 7 transition.** An instrument that is unknown, detached or not the
+payer's is `payments.UnknownInstrument` (422), the create door's own refusal - nothing written,
+the session still payable; it was a `500`. And a second holder of the token on a session
+**mid-payment** reached the payments surface's own `404`, whose detail - *no such payment* -
+told them the token was live and the session being paid; it now gets the session's one `404`,
+the answer a token that opens nothing gets. A confirmation that loses the open to a concurrent
+one converges rather than answering `checkout.NotConfirmable`: a double-click is not a refusal.
 
 ### `ledger` — `LedgerErrorCode`
 

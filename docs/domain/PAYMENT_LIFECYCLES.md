@@ -118,6 +118,15 @@ mid-flight), and the outcome releases it: completion releases-and-posts atomical
 releases with nothing posted. This is the hold-then-capture composition `P3-TSK-015`
 recorded as owed to "the capturing flow — Phase 4/5", arriving.
 
+**Every send carries a permit** (payments `V009`, the Phase 6 → 7 transition — ADR-0057 §4,
+brought from the payout to the refund). `last_dispatched_at` is committed before every send:
+at birth with the dispatch, and renewed by a takeover or a re-drive before its own send. It
+moves forward only, and never on a resolved refund, for every writer. **A refused connection
+fails a refund only when it answered the FIRST send and the locked row's permit is still the
+one that send stored** — a re-send's refused connection proves nothing about the first, which
+may already have paid, so it leaves the refund `UNKNOWN` with its hold standing. Until the
+transition a taken-over re-send's refused connection concluded `FAILED` and released the hold.
+
 ## 5. The financial flows (ADR-0048)
 
 For each operation: business operation → payment transition → ledger effect → provider
@@ -152,9 +161,25 @@ Three resolvers, all conditional, all idempotent, racing harmlessly:
    and `*_UNKNOWN` rows, queries the provider by **our** idempotency reference
    (`INV-PAY-04`), and applies the outcome through the conditional transition. No lease and
    no leader: the query is read-only and the conditional transition's row count arbitrates,
-   so concurrent sweepers are the normal case, not a hazard.
+   so concurrent sweepers are the normal case, not a hazard. **Since the Phase 6 → 7
+   transition it has three legs.** Attempts, as above. **Refunds**, the same way — and a
+   refund the provider does not recognise is **re-driven**, never concluded: the stored
+   reference is sent again under a renewed permit (§4), holding no connection across the
+   wire, because a refund that was never received is still owed. And **stranded
+   authorizations**: an `AUTHORIZED` attempt nothing chained within the bound is captured,
+   converging with any client retry exactly as the surface's own chain does. Phase 5
+   resolved refunds by webhook alone and left an authorization resolved by query or webhook
+   at `AUTHORIZED`, with nothing to capture it.
 2. **A webhook** — authenticated (`INV-PAY-01`), deduplicated, applied through the same
    conditional edges. A webhook for an already-terminal attempt is evidence, never a
    transition.
 3. **Nothing** — an `UNKNOWN` that stays unresolved is a published, aging, alertable fact
-   (the unknown-state age meter), never silently expired into failure.
+   (the unknown-state age meter), never silently expired into failure. The meter counts a
+   `DISPATCHED` operation past the sweep's bound as well, and an `AUTHORIZED` attempt nothing
+   captured - `P6-TSK-013`'s payout shape, brought back to payments by the transition: an
+   unknown-only reading reads zero for a crashed dispatch whenever the sweep is down.
+
+**Only the resolver that moved a row records it.** A resolver that loses the conditional
+transition answers the committed truth and appends nothing: until the transition every loser
+wrote its own `payments.PaymentOutcomeApplied`, so ten racing sweepers left ten records of one
+act.

@@ -30,11 +30,15 @@ class PaymentMetricsDatabaseTest {
     private final PaymentAttemptStore<Connection> attempts = new JdbcPaymentAttemptStore();
     private final JdbcRefundStore refunds = new JdbcRefundStore();
 
+    /** The sweep's own default bound: a dispatch younger than this is mid-question. */
+    private static final java.time.Duration BOUND = java.time.Duration.ofMinutes(10);
+
     @Test
-    @DisplayName("only the honestly-unknown states count, and the age is the state's own")
+    @DisplayName("an unknown state counts at any age, a dispatch inside the sweep's bound does not,"
+            + " and the age is the state's own")
     void onlyUnknownStatesCountAndTheAgeIsTheStates() throws Exception {
         try (Connection app = DatabaseRoles.application()) {
-            PaymentAttemptStore.UnknownReading before = attempts.unknownReading(app);
+            PaymentAttemptStore.UnknownReading before = attempts.unknownReading(app, BOUND);
 
             // Two attempts, both seeded through LEGAL edges only - the machine's own
             // trigger refuses anything else, which is itself worth knowing here: one moved
@@ -45,10 +49,11 @@ class PaymentMetricsDatabaseTest {
             UUID stale = seedAttempt(app, "AUTH_UNKNOWN", "1 hour");
             seedAttempt(app, "AUTH_DISPATCHED", "0 minutes");
 
-            PaymentAttemptStore.UnknownReading after = attempts.unknownReading(app);
+            PaymentAttemptStore.UnknownReading after = attempts.unknownReading(app, BOUND);
             assertThat(after.active() - before.active())
-                    .as("the unknown one only - a dispatched attempt is mid-question, and"
-                            + " the gauge that counted it would alert on healthy traffic")
+                    .as("the unknown one only - a dispatched attempt inside the sweep's bound is"
+                            + " mid-question, and the gauge that counted it would alert on"
+                            + " healthy traffic")
                     .isEqualTo(1);
             assertThat(after.oldestAgeSeconds())
                     .as("aged from the transition that entered the state (the sweeper's own"
@@ -68,9 +73,36 @@ class PaymentMetricsDatabaseTest {
             // the real schema and answers a non-negative count - the arithmetic and the
             // combination are the hermetic suite's, and the refund lifecycle's own suites
             // already drive UNKNOWN refunds end to end (P5-TSK-016).
-            PaymentAttemptStore.UnknownReading reading = refunds.unknownReading(app);
+            PaymentAttemptStore.UnknownReading reading = refunds.unknownReading(app, BOUND);
             assertThat(reading.active()).isGreaterThanOrEqualTo(0);
             assertThat(reading.oldestAgeSeconds()).isGreaterThanOrEqualTo(0);
+        }
+    }
+
+    /**
+     * The Phase 6 -> 7 transition's widening, the payout's shape (P6-TSK-013): a dispatch whose
+     * instance crashed mid-call, and an authorization nothing captured, are stuck exactly as an
+     * unknown one is - and counting only the unknown left both invisible whenever the sweep was
+     * down. Each counts once it is past the sweep's own bound, and not before.
+     */
+    @Test
+    @DisplayName("a dispatch and an authorization past the sweep's bound count as stuck; inside it,"
+            + " neither does")
+    void aDispatchOrAnAuthorizationPastTheBoundCounts() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            PaymentAttemptStore.UnknownReading before = attempts.unknownReading(app, BOUND);
+
+            seedAttempt(app, "AUTH_DISPATCHED", "1 hour");
+            seedAttempt(app, "AUTHORIZED", "1 hour");
+            // The controls, inside the bound: mid-question, and freshly authorized.
+            seedAttempt(app, "AUTH_DISPATCHED", "1 minute");
+            seedAttempt(app, "AUTHORIZED", "1 minute");
+
+            PaymentAttemptStore.UnknownReading after = attempts.unknownReading(app, BOUND);
+            assertThat(after.active() - before.active())
+                    .as("the crashed dispatch and the uncaptured authorization, and neither control")
+                    .isEqualTo(2);
+            assertThat(after.oldestAgeSeconds()).isGreaterThanOrEqualTo(3_500L);
         }
     }
 
@@ -107,20 +139,33 @@ class PaymentMetricsDatabaseTest {
         execute(
                 app,
                 "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
-                        + " status, created_at) VALUES (?, ?, ?, 'AUTH_DISPATCHED', now())",
+                        + " status, created_at)"
+                        + " VALUES (?, ?, ?, 'AUTH_DISPATCHED', now() - INTERVAL '" + ago + "')",
                 attempt,
                 intent,
                 "gauge-" + UUID.randomUUID());
         if (status.equals("AUTH_DISPATCHED")) {
+            // Born dispatched: its age is its birth, the sweeper's own fallback.
             return attempt;
         }
         // The state's entry: the transition and its history row, aged by the SERVER's clock
-        // (ADR-0014) - which is the expression the gauge and the sweeper share.
-        execute(
-                app,
-                "UPDATE payments.payment_attempt SET status = ? WHERE id = ?",
-                status,
-                attempt);
+        // (ADR-0014) - which is the expression the gauge and the sweeper share. AUTHORIZED
+        // carries its stage facts, which V003's stage CHECK demands.
+        if (status.equals("AUTHORIZED")) {
+            execute(
+                    app,
+                    "UPDATE payments.payment_attempt SET status = 'AUTHORIZED',"
+                            + " auth_provider_reference = ?, authorized_amount_minor = 100,"
+                            + " authorized_currency = 'EUR', authorized_scale = 2 WHERE id = ?",
+                    "psp_gauge-" + UUID.randomUUID(),
+                    attempt);
+        } else {
+            execute(
+                    app,
+                    "UPDATE payments.payment_attempt SET status = ? WHERE id = ?",
+                    status,
+                    attempt);
+        }
         execute(
                 app,
                 "INSERT INTO payments.payment_attempt_event (attempt_id, from_status,"

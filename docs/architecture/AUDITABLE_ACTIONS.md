@@ -290,7 +290,7 @@ producer this phase.
 
 | Code | Reason required | What it is |
 |---|---|---|
-| `transfers.TransferExecuted` | No | A transfer execution was judged: COMPLETED with its posting or FAILED with its enumerated reason; the record names the transfer, the accounts and the outcome, never an amount. |
+| `transfers.TransferExecuted` | No | A transfer execution was judged: COMPLETED with its posting or FAILED with its enumerated reason; the record names the transfer, its status, the failure reason or the journal entry, never an amount - the accounts are the transfer row's, which the target names (this said the record names the accounts until the Phase 6 → 7 transition; it never did). |
 | `transfers.BeneficiaryAdded` | No | A party saved a transfer destination; the record names the beneficiary and the destination account by identifier, never the display name. |
 | `transfers.BeneficiaryRemoved` | No | A party removed a saved transfer destination; the removed row survives as evidence. |
 | `transfers.TransferReversed` | **Yes** | An operator reversed a completed transfer with a recorded reason; the record names the transfer, the original entry and the reversal entry, never an amount. |
@@ -341,7 +341,7 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `payments.PaymentConfirmed` | No | A person confirmed a payment intent; the dispatch committed before the provider call, and the record names the intent and the attempt, never an amount. |
 | `payments.PaymentCancelled` | No | A person cancelled a payment intent before confirmation; nothing was dispatched and nothing was posted. |
 | `payments.PaymentCaptureDispatched` | No | The platform dispatched a capture for an authorized attempt; the reference was stored before the provider was asked, and the record names the attempt and the intent, never an amount. |
-| `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. |
+| `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. Written only on an acting transition: a resolver that lost the race records nothing (since the Phase 6 → 7 transition; before, every loser wrote one). |
 | `payments.PaymentRefundDispatched` | **Yes** | An operator dispatched a bounded refund of a captured payment, with the required reason; the record names the refund, the attempt and the intent, never an amount. |
 
 Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
@@ -362,7 +362,7 @@ record nothing.
 
 | Code | Reason required | What it is |
 |---|---|---|
-| `merchant.MerchantOnboarded` | No | An operator onboarded a merchant; the record names the merchant, its organisation party and its payable ledger account by identifier. |
+| `merchant.MerchantOnboarded` | No | An operator onboarded a merchant; the record names the merchant, its organisation party and its settlement currency by identifier - the payable is found from those two, owner-scoped (this said it named the payable ledger account until the Phase 6 → 7 transition; it never did). |
 | `merchant.MerchantSuspended` | **Yes** | An operator suspended a merchant - new dispatches refuse, landed money still lands; the reason is required. |
 | `merchant.MerchantReinstated` | **Yes** | An operator reinstated a suspended merchant; the reason is required. |
 | `merchant.MerchantClosed` | **Yes** | An operator closed a merchant - terminal; the payable position and its history remain; the reason is required. |
@@ -402,7 +402,8 @@ its suffix (`INV-AUD-02`).
 **One of the three payout actions requires a reason, and it is the operator's**
 (`P6-TSK-012`, ADR-0057). A merchant paying out its own payable with its own key is doing the
 ordinary thing the surface exists for, and the record names the key that acted — the first
-merchant act to carry ADR-0052 §2's key id, which the checkout records do not yet carry. An
+merchant act to carry ADR-0052 §2's key id; the checkout session's records carry it too since
+the Phase 6 review (`P6-DOC-001`), which this sentence denied until the Phase 6 → 7 transition. An
 operator moving a merchant's money on its behalf is a judgement the trail must explain, so
 `merchant.MerchantPayoutInitiatedByOperator` requires it, and the payout row keeps it too.
 `merchant.MerchantPayoutOutcomeApplied` is the platform's: the dispatch's own outcome

@@ -159,3 +159,9 @@ owning tasks' rows stand: `INV-LED-01` (`PostingService`, and `V004`'s deferred 
   DEBIT `PAYOUT_CLEARING` / CREDIT payable.
 - A real adapter must honour the idempotency-by-reference contract for at least the sweep's
   resolution horizon.
+- *The Phase 6 → 7 transition*: §4's send permit brought to the refund (payments `V009`), the
+  platform's other re-sending flow. And the payout's own `firstSend` is now judged against the
+  **locked row's** permit — the one the flight stored — rather than the request's belief, which
+  a takeover's renewal could have made stale: a first send's refused connection failed a payout
+  a later permit had already re-sent
+  (`MerchantPayoutDatabaseTest#aFirstSendsRefusedConnectionAfterARenewalMovesNothing`).

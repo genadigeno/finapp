@@ -77,8 +77,13 @@ The variables, and the four files that read them:
 | `FINAPP_DB_MIGRATOR_USER`, `FINAPP_DB_MIGRATOR_PASSWORD` | `platform/build.gradle.kts` (Flyway) |
 | `FINAPP_DB_APP_USER`, `FINAPP_DB_APP_PASSWORD` | `application.yaml`, `platform/build.gradle.kts` |
 
-They are the *same* variables everywhere, so an override moves the container, the migration tool
-and the application together rather than only one of them.
+Each is read wherever its role is used, so an override of the database's name, address or
+superuser moves the container and every tool together. **The two ordinary roles are the
+exception**: `infra/postgres/initdb/00-roles.sql` creates `finapp_migrator` and `finapp_app` with
+the marked local default, because an init script cannot read the environment. Overriding
+`FINAPP_DB_MIGRATOR_PASSWORD` or `FINAPP_DB_APP_PASSWORD` against the local container therefore
+also means altering that role's password to match, or the tool refuses to connect. *(This said
+an override moved everything together until the Phase 6 → 7 transition.)*
 
 The marked local default appears in six files across YAML, Kotlin and SQL, none of which can import
 a Java constant. It is single-sourced by enforcement: the build rejects any *other* local default,

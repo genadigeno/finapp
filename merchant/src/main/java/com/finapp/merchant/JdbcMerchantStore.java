@@ -60,6 +60,11 @@ public final class JdbcMerchantStore implements MerchantStore<Connection> {
     }
 
     @Override
+    public Optional<Merchant> findByIdForShare(Connection unitOfWork, MerchantId id) {
+        return read(unitOfWork, id, " FOR SHARE");
+    }
+
+    @Override
     public boolean transition(Connection unitOfWork, Merchant before, Merchant transitioned) {
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
