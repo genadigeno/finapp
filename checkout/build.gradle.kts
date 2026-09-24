@@ -4,8 +4,8 @@
 // CheckoutSession and Order aggregates and their lifecycles (MODULE_ARCHITECTURE.md §4, bounded
 // context 11; ADR-0053 - two aggregates, because an order that expires is not a fact). A session
 // is a short-lived, expiring OFFER to pay; the order is born only from a paid session; the
-// payment itself is Phase 5's machinery, referenced by identifier and commanded through a port
-// `app` implements - never imported. Expiry gates dispatch; landed money always wins
+// payment itself is Phase 5's machinery, referenced by identifier and commanded by the
+// orchestration in `app` (CheckoutService, CheckoutSessions) - never imported. Expiry gates dispatch; landed money always wins
 // (INV-MER-06): the race rule is the module's defining behaviour, and it is decided by
 // conditional transitions in the database, never by anything process-local.
 //

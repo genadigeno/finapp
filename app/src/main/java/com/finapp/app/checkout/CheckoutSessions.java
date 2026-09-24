@@ -11,6 +11,7 @@ import com.finapp.checkout.Order;
 import com.finapp.checkout.OrderStore;
 import com.finapp.merchant.FeeScheduleVersion;
 import com.finapp.merchant.FeeSchedules;
+import com.finapp.merchant.MerchantApiKeyId;
 import com.finapp.merchant.MerchantId;
 import com.finapp.merchant.MerchantStatus;
 import com.finapp.merchant.MerchantStore;
@@ -73,7 +74,15 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public final class CheckoutSessions {
 
-    static final String IDEMPOTENCY_SCOPE = "checkout.session";
+    /**
+     * The claim's scope is the merchant's own session namespace (ADR-0004: the scope names the
+     * owning principal, so keys cannot collide across clients), the payout's shape
+     * ({@code MerchantPayouts.IDEMPOTENCY_SCOPE_PREFIX}). A constant scope until `P6-DOC-001`:
+     * the fingerprint named the merchant, so another merchant's key value never replayed this
+     * one's session - but it refused this one's request as a conflict, which let one tenant's
+     * key choice deny another's and told the second that the value was taken.
+     */
+    static final String IDEMPOTENCY_SCOPE_PREFIX = "checkout.session:";
     static final String SESSION_TARGET_TYPE = "checkout_session";
     static final String ORDER_TARGET_TYPE = "checkout_order";
     static final String ORDER_PAID_EVENT_TYPE = "checkout.OrderPaid";
@@ -85,7 +94,18 @@ public final class CheckoutSessions {
 
     /** The merchant's new offer, parsed and bounded by the surface before this class runs. */
     public record OpenSessionCommand(
-            String idempotencyKey, MerchantId merchant, Money amount, String lineSummary) {}
+            String idempotencyKey,
+            MerchantId merchant,
+            MerchantApiKeyId key,
+            Money amount,
+            String lineSummary) {
+
+        public OpenSessionCommand {
+            // The audit record names the key that acted (ADR-0052 section 2): a merchant can
+            // hold several, and the one to revoke after a leak is the one that did this.
+            Objects.requireNonNull(key, "key must not be null");
+        }
+    }
 
     /**
      * What creation answers.
@@ -140,12 +160,7 @@ public final class CheckoutSessions {
 
         // The authoritative reads, BEFORE the claim: every refusal here writes nothing and
         // consumes no key (PaymentCreation's recorded order).
-        if (merchants
-                .findById(unitOfWork, command.merchant())
-                .filter(merchant -> merchant.status() == MerchantStatus.ACTIVE)
-                .isEmpty()) {
-            throw new MerchantNotTradingException();
-        }
+        requireTrading(unitOfWork, command.merchant().value());
         FeeScheduleVersion pricing =
                 feeSchedules
                         .effectiveVersionFor(
@@ -172,7 +187,10 @@ public final class CheckoutSessions {
         // returned once. What goes INTO the claim is the session id.
         CheckoutSessionToken token = CheckoutSessionToken.issue(randomness);
 
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, command.idempotencyKey());
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        IDEMPOTENCY_SCOPE_PREFIX + command.merchant().value(),
+                        command.idempotencyKey());
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         (command.merchant().value()
@@ -249,9 +267,10 @@ public final class CheckoutSessions {
                         AuditOutcome.SUCCEEDED,
                         correlation.correlationId(),
                         // Identifiers only: never the token, never the line summary, never the
-                        // amount (INV-AUD-02).
+                        // amount (INV-AUD-02) - and the key that acted (ADR-0052 section 2).
                         Optional.of(
                                 "session=" + session.id() + ", merchant=" + command.merchant()
+                                        + ", key=" + command.key()
                                         + ", pricing=" + pricing.id())));
 
         // THE SESSION ID, NOT THE RESPONSE. See the method javadoc.
@@ -276,6 +295,27 @@ public final class CheckoutSessions {
         return sessions
                 .findByToken(unitOfWork, presented)
                 .orElseThrow(UnknownCheckoutSessionException::new);
+    }
+
+    /**
+     * Refuses new work for a merchant that is not trading - the one predicate the creation and
+     * the confirmation share, an authoritative read of the merchant's standing.
+     *
+     * <p>Suspension gates <strong>new dispatches</strong>, and paying an open session is one:
+     * `P6-DOC-001` found the confirmation never asked, so an offer made before a suspension
+     * could be paid after it (`PHASE_6_PLAN.md` §14, scenario 11, said it refused). What has
+     * already been admitted is not asked again - a session mid-payment converges, and its
+     * capture never reads the merchant's standing, so landed money still lands.
+     *
+     * @throws MerchantNotTradingException the merchant is not {@code ACTIVE}
+     */
+    public void requireTrading(Connection unitOfWork, UUID merchantRef) {
+        if (merchants
+                .findById(unitOfWork, MerchantId.of(merchantRef))
+                .filter(merchant -> merchant.status() == MerchantStatus.ACTIVE)
+                .isEmpty()) {
+            throw new MerchantNotTradingException();
+        }
     }
 
     /**
@@ -364,7 +404,10 @@ public final class CheckoutSessions {
                                 "order=" + order.id() + ", session=" + session.id()
                                         + ", entry=" + capturedEntryRef
                                         + ", completedAs=" + moved.get().status())));
-        announceOrder(unitOfWork, order, session, correlation);
+        // THE MOVED SESSION, not the one read (P6-DOC-001): completedAs is the ending this
+        // transition made. Given the row as it was read, the event announced PAYMENT_PENDING
+        // or EXPIRED - never COMPLETED or COMPLETED_LATE - to every consumer of a paid order.
+        announceOrder(unitOfWork, order, moved.get(), correlation);
         // ON THE ACTING TRANSITION ONLY: the conditional above already returned for every
         // racer that lost, so ten instances applying one capture outcome count ONE ending -
         // and time one conversion (P6-TSK-013), from the offer's creation to this transition.
@@ -409,7 +452,12 @@ public final class CheckoutSessions {
      * @throws IllegalCheckoutSessionTransitionException the session cannot be withdrawn
      */
     public boolean abandon(
-            Connection unitOfWork, MerchantId merchant, CheckoutSessionId id, String reason) {
+            Connection unitOfWork,
+            MerchantId merchant,
+            MerchantApiKeyId key,
+            CheckoutSessionId id,
+            String reason) {
+        Objects.requireNonNull(key, "key must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
         Correlation correlation = resolvedCorrelation();
         Actor actor = SecurityContext.require();
@@ -448,7 +496,8 @@ public final class CheckoutSessions {
                         AuditOutcome.SUCCEEDED,
                         correlation.correlationId(),
                         Optional.of(
-                                "session=" + current.id() + ", merchant=" + merchant)));
+                                "session=" + current.id() + ", merchant=" + merchant
+                                        + ", key=" + key)));
         return true;
     }
 

@@ -986,7 +986,9 @@ resource, assert the one refusal and zero rows touched.
 
 ### INV-MER-02 — The merchant payable is derived from postings, never stored
 **Statement:** What the platform owes a merchant is the merchant's payable ledger account
-position — captured minus fees minus payouts — and exists nowhere else. No table stores a
+position — captured minus fees, minus refunded plus fees returned, minus payouts — and exists
+nowhere else. *(The refund terms were added by the Phase 6 review, `P6-DOC-001`: ADR-0054
+made them part of the position, and this statement predated it.)* No table stores a
 merchant balance; every payout decision derives the available payable inside the account
 lock.
 **Why:** A stored payable is a second balance authority (`INV-BAL-01`'s reasoning at the
@@ -999,13 +1001,18 @@ records; schema sweep asserts no stored-balance column in `merchant`.
 
 ### INV-MER-03 — Fees are deterministic and version-pinned
 **Statement:** Every fee assessment records the fee schedule version that produced it;
-recomputing under that version reproduces the amount to the minor unit; schedules are
-immutable once effective — change creates a new version effective forward, repricing
-nothing.
+recomputing under that version reproduces the amount to the minor unit; schedule versions are
+immutable from creation — change creates a new version effective forward, repricing
+nothing already offered.
 **Why:** `INV-HIST-04` with money attached: an unpinned fee makes revenue unexplainable and
 merchant statements unreproducible, and a repriced history is a restatement.
-**Enforce:** `DOMAIN` (immutable versions) + `DB-CONSTRAINT` (assessment rows carry the
-version `NOT NULL`; schedule versions frozen by trigger).
+**Enforce:** `DOMAIN` (immutable versions) + `DB-CONSTRAINT` (the payment's fee pin,
+`merchant.payment_fee_pin`, carries the version `NOT NULL` and is frozen by trigger; schedule
+versions frozen by trigger; the session carries the version it was priced under). There is no
+assessment row: an assessment is the pinned version applied to the captured gross, posted in
+the capture's entry and announced by `merchant.FeeAssessed` with the version on the wire.
+*(Corrected at the Phase 6 review, `P6-DOC-001`, which found this naming rows that do not
+exist.)*
 **Verify:** Recomputation tests per rounding mode; a schedule-change-mid-flight test
 proving the pinned version priced the capture.
 **Phase:** 6

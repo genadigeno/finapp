@@ -1,6 +1,6 @@
 # ADR-0050 — The fee model: gross capture to the payable, fee assessed in the same entry, net payout
 
-Status: Proposed
+Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; three passages corrected to it first)
 Date: 2026-09-21
 Phase: 6
 Context: Merchant · Checkout · Payments · Ledger
@@ -59,6 +59,8 @@ non-negotiable.
    | Fee | DEBIT | `MERCHANT_PAYABLE` (same account) |
    | Fee | CREDIT | `FEE_REVENUE` |
 
+   A **zero fee posts the first two lines only**: a journal line is never zero, so a schedule
+   that charges nothing leaves the entry at the gross flow alone (`MerchantSettlement.settle`).
    The books show the gross flow and the fee explicitly (the merchant's statement can
    render both); the payable's **position** is net. Payouts (ADR-0051) pay the net
    position. One entry, so `INV-LED-01` holds trivially and a crash cannot separate the
@@ -75,8 +77,12 @@ non-negotiable.
 5. **The schedule version is pinned per assessment** (`INV-MER-03`, `INV-HIST-04`). Every
    assessment records the fee schedule version that produced it; recomputing under that
    version reproduces the amount to the minor unit; changing a schedule creates a **new
-   version** effective forward and reprices nothing. A capture mid-flight when the version
-   changes uses the version pinned at dispatch.
+   version** effective forward and reprices nothing. The version is chosen when the checkout
+   session opens — the price the offer was made at (ADR-0058 §2) — carried onto the payment's
+   pin when the intent is created, and used by the capture, so a version created while the
+   customer is paying or while the capture is in flight prices nothing already offered.
+   *(This read "the version pinned at dispatch" until the phase review, `P6-DOC-001`: the
+   choice moved to the session's opening with ADR-0058.)*
 
 6. **The boundary: `payments` posts lines it is handed, and knows no merchant.** The
    capture's posting lines come from the flow that created the intent: Phase 5's wallet
@@ -87,10 +93,17 @@ non-negotiable.
    vocabulary never enters `payments`' domain model — the `INV-PAY-03` discipline applied
    to a second vocabulary.
 
+*Refined by ADR-0054 (a merchant refund is funded by its net, and the one credit it extends is
+the fee the platform keeps) and ADR-0058 (a sale that does not cover its fee is refused at the
+price, when the session opens).*
+
 ## Consequences
 
 - The merchant payable is **derived from postings** and nothing else (`INV-MER-02`): the
-  account's position *is* captured − fees − payouts, with no stored payable field anywhere.
+  account's position *is* captured − fees − refunded + fees returned − payouts, with no stored
+  payable field anywhere, and under a `RETAINED` refund policy it may stand below zero by
+  exactly the fee a refund kept (ADR-0054). *(The review, `P6-DOC-001`, added the refund terms
+  this sentence predated.)*
   The three-way reconciliation Phase 8 needs (payments ↔ payable ↔ payouts) exists by
   construction.
 - A refund of a merchant-bound capture reverses the same shape — gross out of the payable,

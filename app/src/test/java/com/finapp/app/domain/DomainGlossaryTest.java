@@ -198,8 +198,9 @@ class DomainGlossaryTest {
     @Test
     @DisplayName("every invariant the glossary cites exists")
     void everyCitedInvariantExists() {
-        // A glossary that cites INV-BAL-07 is a glossary somebody stops trusting. Twenty-three
-        // citations, none of which any other check would notice going stale - the invariant
+        // A glossary that cites INV-BAL-07 is a glossary somebody stops trusting. Twenty-five
+        // distinct invariants at the Phase 6 review (twenty-three before Phase 6's entries),
+        // none of which any other check would notice going stale - the invariant
         // catalogue is renumbered by no rule, but an invariant can be superseded.
         Set<String> cited = new TreeSet<>();
         Matcher citation =

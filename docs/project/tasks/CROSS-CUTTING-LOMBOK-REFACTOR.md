@@ -333,7 +333,10 @@ already-converted lower modules. One commit per batch.
   been broken since `P6-TSK-003` added the merchant-owned `MERCHANT_PAYABLE` purpose: the test
   skips only customer-owned purposes. The full database tier found it; Phase 6 task work ran only
   targeted suites. **It blocks acceptance criterion 5 and the Phase 6 exit battery.** Recorded in
-  `CURRENT_STATE.md` §Blockers.
+  `CURRENT_STATE.md` §Blockers. **Fixed by the Phase 6 review** (`P6-DOC-001`, 2026-09-24), in
+  two stale copies rather than one: the resolver's guard (`ChartOfAccounts.resolve`) as well as
+  the test's filter, both now `requiresOwnerRef()`. Criterion 5 now waits only on a fresh full
+  database tier.
 - **`SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` is flaky**, failing about one run in
   three with no change to its module. A batch that meets it re-runs it and says so, rather than
   counting it as a regression.

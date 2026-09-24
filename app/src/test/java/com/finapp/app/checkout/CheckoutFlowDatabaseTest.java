@@ -8,6 +8,7 @@ import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
 import com.finapp.checkout.CheckoutSessionId;
+import com.finapp.merchant.MerchantApiKeyId;
 import com.finapp.merchant.MerchantId;
 import com.finapp.paymentmethods.SimulatedTokenisationAdapter;
 import com.finapp.payments.SimulatedCardPspAdapter;
@@ -25,6 +26,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -191,6 +193,10 @@ class CheckoutFlowDatabaseTest {
             // Announced once, beside merchant.FeeAssessed which the same transaction wrote.
             assertThat(outboxCount(app, "checkout.OrderPaid", orderId)).isEqualTo(1);
             assertThat(outboxCount(app, "merchant.FeeAssessed", merchant.id())).isEqualTo(1);
+            // And it says how the offer ended (P6-DOC-001): the payload was built from the row
+            // as read, so every paid order was announced as PAYMENT_PENDING.
+            assertThat(orderPaidPayload(app, checkoutId))
+                    .contains("\"completedAs\":\"COMPLETED\"");
         }
     }
 
@@ -211,6 +217,34 @@ class CheckoutFlowDatabaseTest {
                 .as("the claim records the session id ALONE, so there is nothing to re-show")
                 .contains("\"sessionToken\":null")
                 .contains("\"alreadyCreated\":true");
+    }
+
+    @Test
+    @DisplayName("two merchants using ONE key value each open their OWN session - the claim is"
+            + " scoped to its merchant, so one tenant's key never refuses another's (ADR-0004)")
+    void oneKeyValueAcrossTwoMerchantsOpensTwoSessions() throws Exception {
+        Merchant one = tradingMerchant("0.029", 30L);
+        Merchant two = tradingMerchant("0.029", 30L);
+        String key = someKey();
+
+        HttpResponse<String> first = createSession(one, AMOUNT_MINOR, key);
+        HttpResponse<String> second = createSession(two, AMOUNT_MINOR, key);
+
+        // P6-DOC-001. Under the constant scope the second answered 409 api.Conflict: the
+        // fingerprint names the merchant, so nothing leaked - but a merchant using its order
+        // numbers as keys was refused for a value another shop had already used.
+        assertThat(first.statusCode()).isEqualTo(201);
+        assertThat(second.statusCode())
+                .as("another tenant's use of the value is not this tenant's replay")
+                .isEqualTo(201);
+        assertThat(field(second.body(), "checkoutId"))
+                .isNotEqualTo(field(first.body(), "checkoutId"));
+        assertThat(second.body())
+                .as("a first creation for its own merchant, shown its own token")
+                .contains("\"alreadyCreated\":false")
+                .doesNotContain("\"sessionToken\":null");
+        assertThat(sessionCount(one)).isEqualTo(1);
+        assertThat(sessionCount(two)).isEqualTo(1);
     }
 
     @Test
@@ -305,6 +339,7 @@ class CheckoutFlowDatabaseTest {
                                         new CheckoutSessions.OpenSessionCommand(
                                                 someKey(),
                                                 MerchantId.of(UUID.fromString(merchant.id())),
+                                                keyIdOf(merchant),
                                                 Money.ofMinorUnits(AMOUNT_MINOR, CurrencyCode.of("EUR")),
                                                 "Two coffees and a pastry")))
                 .isInstanceOf(MerchantNotTradingException.class);
@@ -426,6 +461,12 @@ class CheckoutFlowDatabaseTest {
             assertThat(payablePositionMinor(app, merchant))
                     .as("and the merchant is owed for one purchase, not ten")
                     .isEqualTo(96_80L);
+            // P6-DOC-001: racers that reach the pin carry one intent between them, and the phase
+            // review found nothing counted what they left there - one agreed price per payment,
+            // the pin's primary key converging every racer after the first (merchant V005).
+            assertThat(feePinsForTheSessionsIntent(app, merchant))
+                    .as("one pin for the intent the session carries, however many confirmed")
+                    .isEqualTo(1);
         }
         // THE METERS, THROUGH THE WIRED PATH (P6-TSK-013): one ending, one conversion timed,
         // one fee assessment - each behind the conditional the nine losers never passed.
@@ -534,6 +575,23 @@ class CheckoutFlowDatabaseTest {
             try (ResultSet row = read.executeQuery()) {
                 row.next();
                 return row.getLong(1);
+            }
+        }
+    }
+
+    private static String auditSummaryFor(Connection app, String checkoutId, String operation)
+            throws SQLException {
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT change_summary FROM platform.audit_record WHERE target_id = ?"
+                                + " AND operation = ?")) {
+            read.setString(1, checkoutId);
+            read.setString(2, operation);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).as("one %s record", operation).isTrue();
+                String summary = row.getString(1);
+                assertThat(row.next()).as("and only one").isFalse();
+                return summary;
             }
         }
     }
@@ -846,7 +904,7 @@ class CheckoutFlowDatabaseTest {
     }
 
     /** Drives the withdrawal command itself, past the surface's own tenant-scoped render. */
-    private boolean abandonDirectly(MerchantId merchant, CheckoutSessionId id) throws Exception {
+    private boolean abandonDirectly(Merchant merchant, CheckoutSessionId id) throws Exception {
         try (CorrelationContext.Scope flow =
                         CorrelationContext.enter(
                                 Correlation.startingWith(CorrelationId.generate(IDS)));
@@ -854,7 +912,13 @@ class CheckoutFlowDatabaseTest {
                 Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
             try {
-                boolean acted = sessions.abandon(app, merchant, id, "driven at the command");
+                boolean acted =
+                        sessions.abandon(
+                                app,
+                                MerchantId.of(UUID.fromString(merchant.id())),
+                                keyIdOf(merchant),
+                                id,
+                                "driven at the command");
                 app.commit();
                 return acted;
             } catch (RuntimeException refused) {
@@ -876,6 +940,33 @@ class CheckoutFlowDatabaseTest {
             try {
                 sessions.open(app, command);
                 app.commit();
+            } catch (RuntimeException refused) {
+                app.rollback();
+                throw refused;
+            }
+        }
+    }
+
+    /**
+     * The capture's completion driven at the command - what the composition seam calls inside
+     * the capture's own transaction - under a correlation whose cause is set, as a capture's is.
+     *
+     * @return the order, when this call's own transition created it
+     */
+    private java.util.Optional<com.finapp.checkout.Order> completeDirectly(UUID intent)
+            throws Exception {
+        Correlation capture =
+                Correlation.startingWith(CorrelationId.generate(IDS))
+                        .causing(com.finapp.sharedkernel.correlation.CausationId.generate(IDS));
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(capture);
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try {
+                java.util.Optional<com.finapp.checkout.Order> created =
+                        sessions.completed(app, intent, IDS.next(), capture);
+                app.commit();
+                return created;
             } catch (RuntimeException refused) {
                 app.rollback();
                 throw refused;
@@ -944,14 +1035,14 @@ class CheckoutFlowDatabaseTest {
         assertThatThrownBy(
                         () ->
                                 abandonDirectly(
-                                        MerchantId.of(UUID.fromString(stranger.id())),
+                                        stranger,
                                         CheckoutSessionId.of(UUID.fromString(checkoutId))))
                 .isInstanceOf(UnknownCheckoutSessionException.class);
         assertThat(sessionStatus(checkoutId)).isEqualTo("OPEN");
 
         assertThat(
                         abandonDirectly(
-                                MerchantId.of(UUID.fromString(owner.id())),
+                                owner,
                                 CheckoutSessionId.of(UUID.fromString(checkoutId))))
                 .as("the positive control: the owner withdraws its own offer")
                 .isTrue();
@@ -1748,6 +1839,72 @@ class CheckoutFlowDatabaseTest {
         assertThat(payable(a).body()).contains("\"position\":\"96.80\"");
     }
 
+    // ----------------------------------------------------------------- suspension
+
+    @Test
+    @DisplayName("a SUSPENDED merchant's open offer cannot be PAID - the confirmation refuses as"
+            + " NotTrading and writes nothing (PHASE_6_PLAN section 14, scenario 11)")
+    void aSuspendedMerchantsOpenSessionCannotBePaid() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        suspend(merchant);
+
+        // P6-DOC-001. Only the creation asked the merchant's standing, so an offer made while
+        // the merchant traded could be paid after its suspension: the plan's scenario 11 said
+        // the confirmation refused, and nothing tested it.
+        HttpResponse<String> refused = confirm(customer, field(created, "sessionToken"));
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("checkout.NotTrading");
+        assertThat(statusAndIntentOf(UUID.fromString(field(created, "checkoutId"))))
+                .as("still the unpaid offer it was, carrying no intent")
+                .isEqualTo("OPEN:null");
+        assertThat(intentsCrediting(merchant))
+                .as("refused before anything was written: no intent, so no pin and no dispatch")
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("a payment ADMITTED before the suspension still lands - suspension gates new"
+            + " dispatches, never an arrived outcome (scenario 11's second half)")
+    void aPaymentInFlightAtSuspensionStillLands() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+
+        // Admitted while the merchant trades: the capture is dispatched and its answer lost.
+        providerAuthorises();
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedCardPspAdapter.CAPTURES_PATH);
+        HttpResponse<String> confirmed = confirm(customer, field(created, "sessionToken"));
+        assertThat(field(confirmed.body(), "status")).isEqualTo("PAYMENT_PENDING");
+
+        suspend(merchant);
+
+        String attemptId = attemptIdForSession(checkoutId);
+        String captureRef = captureReference(attemptId);
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + captureRef,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"" + captureRef + "\"}");
+        paymentSweeper().sweep();
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(sessionStatus(checkoutId)).isEqualTo("COMPLETED");
+            assertThat(linePurposes(app, attemptId))
+                    .as("the suspended merchant's capture posts the same four lines")
+                    .containsExactlyInAnyOrder(
+                            "DEBIT:SETTLEMENT_CLEARING",
+                            "CREDIT:MERCHANT_PAYABLE",
+                            "DEBIT:MERCHANT_PAYABLE",
+                            "CREDIT:FEE_REVENUE");
+            assertThat(payablePositionMinor(app, merchant))
+                    .as("the money it was owed before the suspension is still owed to it")
+                    .isEqualTo(96_80L);
+            assertThat(orderCountFor(app, merchant)).isEqualTo(1);
+        }
+    }
+
     // ----------------------------------------------------------------- the phase's race
 
     @Test
@@ -1816,6 +1973,9 @@ class CheckoutFlowDatabaseTest {
             assertThat(historyRow(app, checkoutId, "EXPIRED", "COMPLETED_LATE"))
                     .as("the late edge is in history, named, once")
                     .isEqualTo(1);
+            assertThat(orderPaidPayload(app, checkoutId))
+                    .as("and announced as the late ending it was, not as the EXPIRED it came from")
+                    .contains("\"completedAs\":\"COMPLETED_LATE\"");
         }
 
         // THE METER, THROUGH THE WIRED PATH (PHASE_6_PLAN section 15): finapp.checkout.session
@@ -1834,6 +1994,105 @@ class CheckoutFlowDatabaseTest {
         // after each row's transaction committed, and this test drives the sweeper directly.
         // Its wiring is CheckoutExpirySweeperScheduleTest's, where the schedule is the
         // subject - asserting it here would assert a path this test does not take.
+    }
+
+    @Test
+    @DisplayName("INV-MER-06 UNDER CONTENTION: five expiry sweeps racing five completions of one"
+            + " overdue PAYMENT_PENDING session leave ONE order - COMPLETED, or EXPIRED then"
+            + " COMPLETED_LATE, each edge once")
+    void anExpiryRacingTheCompletionLeavesOneOrder() throws Exception {
+        // P6-DOC-001: the phase review found the two writers of an overdue PAYMENT_PENDING row -
+        // the expiry sweep and the capture's completion - proven one after the other (the test
+        // above) and never against each other. Both lock the row and judge what they find under
+        // the lock, so either may win; whichever does, landed money has its order, once.
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Clock late = Clock.offset(CLOCK, Duration.ofMinutes(31));
+        // DRAINED FIRST, for the race rather than for tidiness: the sweeper walks the queue
+        // oldest deadline first, fifty at a time, so other tests' leftovers could crowd this
+        // session out of every racer's batch - and a race the sweeps never enter has one
+        // possible winner (CheckoutExpiryDatabaseTest's drain, at this fixture's batch).
+        for (int pass = 0; pass < 20; pass++) {
+            if (expirySweeper(late, Duration.ZERO).sweep().candidates() == 0) {
+                break;
+            }
+        }
+        String checkoutId =
+                field(createSession(merchant, AMOUNT_MINOR, someKey()).body(), "checkoutId");
+
+        // PAYMENT_PENDING along the machine's own edge - the confirm-then-transition that
+        // CheckoutSessions.paymentOpened makes - with an intent BY VALUE (ADR-0029): the
+        // completion is driven at the command, so no payment has to stand behind it.
+        UUID intent = IDS.next();
+        com.finapp.checkout.JdbcCheckoutSessionStore store =
+                new com.finapp.checkout.JdbcCheckoutSessionStore();
+        try (SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            com.finapp.checkout.CheckoutSession open =
+                    store.findById(app, CheckoutSessionId.of(UUID.fromString(checkoutId)))
+                            .orElseThrow();
+            assertThat(store.transition(app, open, open.confirm(CLOCK, intent))).isTrue();
+            app.commit();
+        }
+
+        List<java.util.concurrent.Callable<Object>> racers = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            racers.add(() -> expirySweeper(late, Duration.ZERO).sweep());
+            racers.add(() -> completeDirectly(intent));
+        }
+        int expired = 0;
+        int created = 0;
+        for (Object answer : concurrently(racers)) {
+            if (answer instanceof com.finapp.checkout.CheckoutExpirySweeper.SweepResult tick) {
+                assertThat(tick.failedRows()).as("no racer errors; the losers converge").isZero();
+                expired += tick.expired();
+            } else if (answer instanceof java.util.Optional<?> order && order.isPresent()) {
+                created++;
+            }
+        }
+        assertThat(created)
+                .as("exactly one completion's own transition created the order")
+                .isEqualTo(1);
+
+        String ended = sessionStatus(checkoutId);
+        assertThat(ended)
+                .as("never EXPIRED at rest: landed money is not orphaned by a clock")
+                .isIn("COMPLETED", "COMPLETED_LATE");
+        boolean expiredFirst = "COMPLETED_LATE".equals(ended);
+        assertThat(expired)
+                .as("the sweeps' own tally: one acting expiry if the row expired, else none")
+                .isEqualTo(expiredFirst ? 1 : 0);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(orderCountFor(app, merchant))
+                    .as("one order, whichever writer took the lock first")
+                    .isEqualTo(1);
+            assertThat(orderPaidPayload(app, checkoutId))
+                    .as("announced once, as the ending the row reached")
+                    .contains("\"completedAs\":\"" + ended + "\"");
+            if (expiredFirst) {
+                // A sweep took the lock first: one of the five expired the row, and the first
+                // completion after it found EXPIRED and took the late edge.
+                assertThat(historyRow(app, checkoutId, "PAYMENT_PENDING", "EXPIRED"))
+                        .isEqualTo(1);
+                assertThat(historyRow(app, checkoutId, "EXPIRED", "COMPLETED_LATE"))
+                        .isEqualTo(1);
+                assertThat(historyRow(app, checkoutId, "PAYMENT_PENDING", "COMPLETED"))
+                        .isZero();
+                assertThat(auditSummaryFor(app, checkoutId, "checkout.CheckoutSessionExpired"))
+                        .as("one expiry recorded, by the one sweep whose transition fired")
+                        .contains("expiredFrom=PAYMENT_PENDING");
+                assertThat(outboxCount(app, "checkout.CheckoutSessionExpired", checkoutId))
+                        .isEqualTo(1);
+            } else {
+                // A completion took the lock first: the row was terminal before any sweep held
+                // it, so nothing expired at all.
+                assertThat(historyRow(app, checkoutId, "PAYMENT_PENDING", "COMPLETED"))
+                        .isEqualTo(1);
+                assertThat(historyRow(app, checkoutId, "PAYMENT_PENDING", "EXPIRED")).isZero();
+                assertThat(outboxCount(app, "checkout.CheckoutSessionExpired", checkoutId))
+                        .isZero();
+            }
+        }
     }
 
     /** Conversions timed for one outcome, in the application's own registry (`P6-TSK-013`). */
@@ -1909,6 +2168,28 @@ class CheckoutFlowDatabaseTest {
             assertThat(auditReasonFor(app, checkoutId))
                     .as("THE ONE CHECKOUT ACTION WITH A REASON (INV-AUD-03), recorded verbatim")
                     .isEqualTo("the basket changed");
+        }
+    }
+
+    @Test
+    @DisplayName("the session's audit records name the KEY that acted - its creation and its"
+            + " withdrawal both, as the payout's do (ADR-0052 section 2)")
+    void theSessionsAuditRecordsNameTheKey() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        String checkoutId = field(createSession(merchant, AMOUNT_MINOR, someKey()).body(),
+                "checkoutId");
+        assertThat(abandon(merchant, checkoutId, "the basket changed").statusCode())
+                .isEqualTo(200);
+
+        // P6-DOC-001. Until then both records named the merchant and not the key, while the
+        // payout's named both: a merchant holding several keys could not be told which one
+        // opened or withdrew an offer, and after a leak the key to revoke is that one.
+        String key = "key=" + keyIdOf(merchant);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(auditSummaryFor(app, checkoutId, "checkout.CheckoutSessionCreated"))
+                    .contains(key);
+            assertThat(auditSummaryFor(app, checkoutId, "checkout.CheckoutSessionAbandoned"))
+                    .contains(key);
         }
     }
 
@@ -2051,6 +2332,12 @@ class CheckoutFlowDatabaseTest {
                         someKey());
         assertThat(created.statusCode()).isEqualTo(201);
         return field(created.body(), "merchantId");
+    }
+
+    /** The key's public half: a presented key is {@code <keyId>.<secret>} (ADR-0052). */
+    private static MerchantApiKeyId keyIdOf(Merchant merchant) {
+        return MerchantApiKeyId.of(
+                UUID.fromString(merchant.apiKey().substring(0, merchant.apiKey().indexOf('.'))));
     }
 
     private String issueKey(String operator, String merchantId) throws Exception {
@@ -2267,6 +2554,45 @@ class CheckoutFlowDatabaseTest {
             try (ResultSet row = read.executeQuery()) {
                 row.next();
                 return row.getLong(1);
+            }
+        }
+    }
+
+    /**
+     * The fee pins priced for the payment intent this merchant's session carries - merchant
+     * V005 keys the pin by that intent, so one agreed price per payment or a defect.
+     */
+    private static long feePinsForTheSessionsIntent(Connection app, Merchant merchant)
+            throws SQLException {
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT count(*) FROM merchant.payment_fee_pin pin"
+                                + " JOIN checkout.checkout_session s"
+                                + "   ON s.payment_intent_ref = pin.payment_intent_ref"
+                                + " WHERE s.merchant_ref = ?")) {
+            read.setObject(1, UUID.fromString(merchant.id()));
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    /** The one checkout.OrderPaid announcement of this session's order, as its bytes read. */
+    private static String orderPaidPayload(Connection app, String checkoutId)
+            throws SQLException {
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT event.payload FROM platform.outbox_event event"
+                                + " JOIN checkout.checkout_order o ON o.id = event.aggregate_id"
+                                + " WHERE event.event_type = 'checkout.OrderPaid'"
+                                + " AND o.session_ref = ?")) {
+            read.setObject(1, UUID.fromString(checkoutId));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).as("the order was announced").isTrue();
+                String payload = new String(row.getBytes(1), StandardCharsets.UTF_8);
+                assertThat(row.next()).as("once").isFalse();
+                return payload;
             }
         }
     }

@@ -9,8 +9,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p><strong>There is no merchant not-found code, deliberately</strong>: an unknown or
  * malformed merchant identifier on any operator route is {@code api.NotFound}, one answer —
- * and when `P6-TSK-002`'s tenant-scoped surfaces arrive, the same one answer folds
- * another-tenant's into it ({@code INV-MER-01}, the {@code P1-TSK-016} oracle reasoning).
+ * and on the tenant-scoped surfaces `P6-TSK-002` built, the same one answer folds another
+ * tenant's into it ({@code INV-MER-01}, the {@code P1-TSK-016} oracle reasoning).
  */
 @RequiredArgsConstructor
 public enum MerchantErrorCode implements ErrorCode {

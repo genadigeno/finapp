@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 141 "Previously" blocks, newest first, from `P6-TST-001` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 142 "Previously" blocks, newest first, from `P6-TST-002` back to project initiation.
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,42 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P6-TST-002` — the merchant conservation storm** — `COMPLETE` (2026-09-24). **M6.6 closes:
+checkouts, fee-bearing captures, merchant refunds and payouts run at once on three merchants in
+three currencies. Every payable reconciles to the minor unit against records the ledger never
+sees: mid-storm in one snapshot per sweep round, and at rest term by term.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The readings reconcile under load | In every sweep's `REPEATABLE READ` snapshot, each payable equals the independent books and `PAYOUT_CLEARING` equals the completed payouts. At rest, every payable-view term, both clearing accounts and fee revenue reconcile too |
+| Both refusal kinds occur as checked facts | `merchant.PayoutUnfunded` and `payments.RefundUnfunded` against drained payables, and `payments.RefundExceedsCaptured`, each asserted to occur |
+| Every `Phase: 6` row the guard demands is present | The flip was simulated. The guard demanded exactly this item's section 4 row, now landed, and passes |
+
+### The design
+
+- **Ten movers through the application's own routes**: three buyers; four refunders finding
+  payments in the database whatever their state; three payers-out draining every payable. The
+  sweeper ends the storm.
+- **A repricing mid-storm.** Buyers confirm sessions opened two rounds earlier, so sales
+  straddle a dearer version. The oracle prices each sale by its pin.
+- **Every success is replayed once with its key.** A duplicate is harmless, or the readings show
+  its second effect.
+- **Readings on shared accounts are summed over the storm's own entries**, because the
+  application's schedulers may post other suites' leftovers into them.
+
+### What the gate found
+
+- **The storm reconciled only at rest**, while the acceptance says *under load*. Each capture,
+  refund and payout commits its posting with its own status, so one snapshot per round now
+  reconciles every payable exactly under traffic. A probe reading without the snapshot fails.
+- **`P6-TST-001` routed findings to `P6-DOC-001` without writing them into its entry.** They are
+  written in now.
+- **Eleven probes, ten caught.** The survivor is a payout's claim broken alone, held by the
+  dispatch key's schema rank; both ranks broken are caught. Without payers-out the storm saw no
+  `RefundUnfunded` at all: the drain is what makes a refund meet an unfunded payable.
 
 ### Previously
 

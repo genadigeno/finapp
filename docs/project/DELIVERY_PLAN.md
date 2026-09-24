@@ -583,6 +583,19 @@ chargebacks, multi-rail routing, FX.
 
 # Phase 6 — Checkout and Merchant Platform
 
+*(**Superseded by [`PHASE_6_PLAN.md`](PHASE_6_PLAN.md) and the implementation**, recorded at
+the Phase 6 review, `P6-DOC-001`: this pre-phase plan is kept as written, and where it
+disagrees with them they are right. Where it now reads wrong: the data model's "Merchant Ledger
+Accounts (payable, fee income, reserve)" are one per-merchant `MERCHANT_PAYABLE` —
+`FEE_REVENUE` is a platform operational account, and there is no reserve. "Merchant CRUD" has
+no update or delete. The checkout has no "expire" route (the leaderless sweeper expires a
+session) and no "hosted-checkout completion callback" (completion runs inside the capture's
+transaction). `CheckoutSessionCreated` was never built (the session's creation is an audit
+record, not an event), and `FeeReturned` is missing. Step-up on a destination change is
+conditional, required only when the operator has an active TOTP factor. Fee accrual and
+per-merchant error rates were not built. The payable reconciles to captured − fees −
+refunded + fees returned − payouts, not captured − fees − payouts.)*
+
 ### 1. Objective
 Introduce the merchant as a distinct commercial party, and the checkout session as the
 customer-facing purchase experience, including fee economics and merchant payouts.

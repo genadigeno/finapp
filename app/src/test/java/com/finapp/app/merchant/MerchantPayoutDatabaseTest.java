@@ -31,7 +31,11 @@ import com.finapp.merchant.MerchantPayoutUnfundedException;
 import com.finapp.merchant.MerchantPayouts;
 import com.finapp.merchant.NoEffectiveDestinationException;
 import com.finapp.merchant.PayoutCurrencyMismatchException;
+import com.finapp.merchant.PayoutDestinationId;
+import com.finapp.merchant.PayoutDestinationReference;
 import com.finapp.merchant.PayoutDestinationStore;
+import com.finapp.merchant.PayoutDestinationTokenisation;
+import com.finapp.merchant.PayoutDestinations;
 import com.finapp.merchant.PayoutEvidenceStore;
 import com.finapp.merchant.PayoutFailureReason;
 import com.finapp.merchant.PayoutProvider;
@@ -119,6 +123,7 @@ class MerchantPayoutDatabaseTest {
     @Autowired private MerchantPayoutOutcomes outcomes;
     @Autowired private PayoutEvidenceStore<Connection> evidence;
     @Autowired private PayoutDestinationStore<Connection> destinations;
+    @Autowired private PayoutDestinations destinationChanges;
     @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
     @Autowired private HoldService holds;
     @Autowired private PostingService postings;
@@ -880,6 +885,70 @@ class MerchantPayoutDatabaseTest {
     }
 
     @Test
+    @DisplayName("a payout dispatched during the cooling-off is bound to the prior destination;"
+            + " once the change takes effect, the next is bound to the new one")
+    void aPayoutDuringTheCoolingOffGoesToThePriorDestination() throws Exception {
+        // P6-DOC-001: PHASE_GATES asks for the cooling-off gate proven "by a dispatch during the
+        // window using the prior destination", and the proof it had
+        // (PayoutDestinationDatabaseTest#aDispatchDuringTheCoolingOffUsesThePriorDestination)
+        // only READ the effective destination - no payout was ever dispatched while a change
+        // cooled off. This one dispatches for real, on both sides of the deadline.
+        Funded merchant = funded("100.00");
+        provider.succeedsWith(PATH, 200, PAID);
+
+        // The change through the real four-eyes flow: one operator proposes, a SECOND approves
+        // (asOperator is a fresh person on every call), and the approval pins the deadline the
+        // context's cooling-off gives it.
+        String reference = "pdr_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        PayoutDestinationTokenisation.TokenisedDestination account =
+                new PayoutDestinationTokenisation.TokenisedDestination(
+                        PayoutDestinationReference.of(reference), "4000");
+        PayoutDestinationId next =
+                asOperator(
+                        uow ->
+                                destinationChanges
+                                        .propose(
+                                                uow,
+                                                new PayoutDestinations.ProposeCommand(
+                                                        UUID.randomUUID().toString(),
+                                                        merchant.id(),
+                                                        account,
+                                                        "the merchant's new account"))
+                                        .destinationId());
+        PayoutDestinations.Approval approval =
+                asOperator(uow -> destinationChanges.approve(uow, merchant.id(), next, "verified"));
+        assertThat(approval).isInstanceOf(PayoutDestinations.Approved.class);
+        Instant deadline =
+                ((PayoutDestinations.Approved) approval)
+                        .destination()
+                        .coolingOffUntil()
+                        .orElseThrow();
+
+        // DURING THE WINDOW, after a sweep an hour into it: what keeps the prior destination in
+        // place is the pinned deadline, not a sweep that has not run yet.
+        effectuationAt(Duration.ofHours(1)).sweep();
+        assertThat(destinationStatus(next.value())).isEqualTo("APPROVED");
+        MerchantPayouts.Initiated during = initiate(merchant, "10.00", key());
+        assertThat(during.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(stored(merchant, during.payout()).destinationId().value())
+                .as("dispatched while the change cooled off: bound to the PRIOR destination")
+                .isEqualTo(merchant.destination());
+
+        // PAST THE DEADLINE the platform effects the change and supersedes the prior one.
+        effectuationAt(Duration.between(Instant.now(CLOCK), deadline).plusMinutes(1)).sweep();
+        assertThat(destinationStatus(next.value())).isEqualTo("EFFECTIVE");
+        assertThat(destinationStatus(merchant.destination())).isEqualTo("SUPERSEDED");
+        MerchantPayouts.Initiated after = initiate(merchant, "10.00", key());
+        assertThat(after.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(stored(merchant, after.payout()).destinationId())
+                .as("dispatched once the change took effect: bound to the NEW destination")
+                .isEqualTo(next);
+        assertThat(stored(merchant, during.payout()).destinationId().value())
+                .as("and the earlier payout still records where it went: the binding is frozen")
+                .isEqualTo(merchant.destination());
+    }
+
+    @Test
     @DisplayName("a suspension racing a dispatch waits for it: the merchant row is the serialisation point")
     void aSuspensionWaitsForTheDispatch() throws Exception {
         Funded merchant = funded("100.00");
@@ -1170,6 +1239,13 @@ class MerchantPayoutDatabaseTest {
                 CLOCK);
     }
 
+    /**
+     * "Due now" is the smallest positive bound, never zero: since `P6-DOC-001` the sweep refuses
+     * a bound that would let it conclude NEVER_RECEIVED of a send still in flight. A microsecond
+     * is below anything these tests can observe between a dispatch and its sweep.
+     */
+    private static final Duration DUE_NOW = Duration.ofNanos(1_000);
+
     private MerchantPayoutResolution resolution(Duration dispatchedAge) {
         return new MerchantPayoutResolution(
                 new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
@@ -1180,7 +1256,7 @@ class MerchantPayoutDatabaseTest {
                 evidence,
                 IDS,
                 CLOCK,
-                dispatchedAge,
+                dispatchedAge.isZero() ? DUE_NOW : dispatchedAge,
                 Duration.ZERO,
                 1000);
     }
@@ -1227,6 +1303,20 @@ class MerchantPayoutDatabaseTest {
                 auditWriter,
                 IDS,
                 CLOCK,
+                1000);
+    }
+
+    /**
+     * The same sweep on a clock moved forward by {@code offset} - the
+     * {@code PayoutDestinationDatabaseTest} shape, so a cooling-off is crossed, never waited for.
+     */
+    private com.finapp.merchant.PayoutDestinationEffectuation effectuationAt(Duration offset) {
+        return new com.finapp.merchant.PayoutDestinationEffectuation(
+                new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
+                destinations,
+                auditWriter,
+                IDS,
+                Clock.offset(CLOCK, offset),
                 1000);
     }
 

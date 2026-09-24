@@ -80,7 +80,7 @@ public final class MerchantPayoutResolution {
         this.evidence = Objects.requireNonNull(evidence, "evidence must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.dispatchedAge = notNegative(dispatchedAge, "dispatchedAge");
+        this.dispatchedAge = positive(dispatchedAge, "dispatchedAge");
         this.unknownAge = notNegative(unknownAge, "unknownAge");
         if (batchSize <= 0) {
             throw new IllegalArgumentException("batchSize must be positive: " + batchSize);
@@ -193,6 +193,22 @@ public final class MerchantPayoutResolution {
                             ? Optional.of(applied.status())
                             : Optional.<MerchantPayoutStatus>empty();
                 });
+    }
+
+    /**
+     * The dispatched bound must be POSITIVE (`P6-DOC-001`): at zero the sweep could query a
+     * payout the instant its permit committed, hear "unknown reference" for a request still on
+     * its way, and conclude {@code NEVER_RECEIVED} - failing a payout the provider then pays,
+     * with its hold released. A positive bound is necessary, not sufficient: it must still
+     * exceed the send gap and the clock skew, which is the configuration's to get right (the
+     * cooling-off's refusal, ADR-0056 section 4, applied to this bound).
+     */
+    private static Duration positive(Duration value, String what) {
+        Objects.requireNonNull(value, what + " must not be null");
+        if (value.isNegative() || value.isZero()) {
+            throw new IllegalArgumentException(what + " must be positive: " + value);
+        }
+        return value;
     }
 
     private static Duration notNegative(Duration value, String what) {

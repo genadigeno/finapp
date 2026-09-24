@@ -218,7 +218,7 @@ public final class MerchantSettlement {
      * <h2>The two checked assumptions</h2>
      *
      * <p>The merchant's payable must exist, and the account the refund debits must BE that
-     * payable — {@link #compose}'s second and third assumptions at the reversal, for the same
+     * payable — {@link #settle}'s second and third assumptions at the reversal, for the same
      * reason: a refund taking money out of the wrong account is the defect this method exists
      * to make impossible. Both throw, failing the whole refund transaction, because returning
      * the gross out of somewhere else and calling the refund done is the worse answer.
@@ -481,13 +481,13 @@ public final class MerchantSettlement {
      * {@link PaymentFeePin#pricesTheSameAs}'s, and it deliberately ignores who pinned and when.
      *
      * <p>This is the fourth checked assumption, and the only one reachable today: the three in
-     * {@link #compose} guard a capture, and this one guards the agreement the capture will be
+     * {@link #settle} guard a capture, and this one guards the agreement the capture will be
      * settled against.
      *
      * @throws SaleBelowFeeException the fee, priced under the pinned version, meets or exceeds
      *     the gross (`P6-TST-001`, ADR-0058) - nothing is written
      * @throws FeeCurrencyMismatchException the gross is not in the currency the pinned version
-     *     prices - nothing is written, and the capture's backstop in {@link #compose} is never
+     *     prices - nothing is written, and the capture's backstop in {@link #settle} is never
      *     reached through a pin this method judged
      * @throws MerchantSettlementException this intent is already pinned to a different price
      */

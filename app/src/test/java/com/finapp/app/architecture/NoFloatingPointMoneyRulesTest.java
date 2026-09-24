@@ -99,7 +99,8 @@ class NoFloatingPointMoneyRulesTest {
             Set.of("float", "double", "java.lang.Float", "java.lang.Double");
 
     /**
-     * Classes exempted from the rule. Deliberately empty.
+     * Classes exempted from the rule - deliberately few, each named with its argument below. (It
+     * opened "deliberately empty", which it has not been since the first metrics exemption.)
      *
      * <p>An exemption belongs here only if the value provably cannot reach a monetary path — a
      * sampling ratio or a latency percentile, never an amount, a rate, a fee or a balance.

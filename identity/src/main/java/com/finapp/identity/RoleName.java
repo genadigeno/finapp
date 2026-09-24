@@ -51,12 +51,15 @@ public enum RoleName {
     KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW)),
 
     /**
-     * Operates the platform's money and nothing else (`P3-TSK-007`, widened by `P4-TSK-009`):
-     * commands postings, manual adjustments and transfer reversals over the surfaces that check
-     * {@link PermissionName#LEDGER_POST}, {@link PermissionName#LEDGER_ADJUST} and
-     * {@link PermissionName#TRANSFER_REVERSE}.
+     * Operates the platform's money and nothing else (`P3-TSK-007`, widened by `P4-TSK-009`,
+     * `P5-TSK-015` and `P6-TSK-012`): commands postings, manual adjustments, transfer reversals,
+     * refunds and a merchant's payout on its behalf, over the surfaces that check
+     * {@link PermissionName#LEDGER_POST}, {@link PermissionName#LEDGER_ADJUST},
+     * {@link PermissionName#TRANSFER_REVERSE}, {@link PermissionName#PAYMENT_REFUND} and
+     * {@link PermissionName#MERCHANT_PAYOUT}.
      *
-     * <p><strong>One role holding three permissions</strong>, because a role exists when a
+     * <p><strong>One role holding the five money-operating permissions</strong> (it said three
+     * until `P6-DOC-001`), because a role exists when a
      * distinct trust decision does and there is one money-operating population — a new role for
      * the reversal would be a trust decision nothing takes (`P4-TSK-009`'s backlog sentence) —
      * while the permission vocabulary stays precise so `P3-TSK-017`'s adjustment endpoint and

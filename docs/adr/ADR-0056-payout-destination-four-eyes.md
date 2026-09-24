@@ -1,6 +1,6 @@
 # ADR-0056 — A payout destination changes by two operators, a conditional step-up and a cancellable cooling-off; bank details never enter
 
-Status: Proposed
+Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; two passages corrected to it first)
 Date: 2026-09-23
 Phase: 6 (`P6-TSK-011`)
 Context: Merchant (bounded context 12) · Identity · Payments boundary
@@ -63,7 +63,13 @@ was inaccurate, and is corrected with this ADR.
    sweep (ADR-0024's idempotent-per-period half, the checkout expiry sweeper's shape) makes a due
    approval effective and supersedes the previous destination **in the same transaction** —
    supersession first, because the one-effective index is checked per statement. Under MVCC a
-   reader sees either the old destination or the new one, never neither.
+   plain reader sees either the old destination or the new one, never neither. **The
+   dispatch's locking read can see neither, once**: if the sweep has locked the old row, the
+   dispatch waits, re-checks that row - now `SUPERSEDED` - and cannot see the new one, which
+   its statement's snapshot still holds `APPROVED`. The payout is refused as
+   `merchant.NoEffectiveDestination`, everything rolls back and the key is unspent, so a retry
+   a moment later pays to the new destination. Fail-safe, and found by reading the code against
+   PostgreSQL's locking rules at the phase review (`P6-DOC-001`) rather than by a test.
 
 6. **One open change and one `EFFECTIVE` destination per merchant**, each a partial unique
    index. One open change keeps the cooling-off's meaning single: there is never a question of
@@ -82,8 +88,10 @@ was inaccurate, and is corrected with this ADR.
    with only the `DENIED` record and the proposal untouched; the `409` is raised after the
    commit, so the refusal keeps its evidence (`INV-AUD-03`).
 
-9. **The dispatch reads the effective destination in its own transaction**
-   (`PayoutDestinations.effectiveFor`). Every change is its own immutable row, so the id a payout
+9. **The dispatch reads the effective destination in its own transaction**, `FOR SHARE`
+   (`PayoutDestinationStore#findEffectiveForShare`, ADR-0057 §7), so a supersession cannot
+   commit under it. *(This named `PayoutDestinations.effectiveFor` until the phase review,
+   `P6-DOC-001`: that is the operator list's plain read.)* Every change is its own immutable row, so the id a payout
    records is the destination version it was sent to (`P6-TSK-012`'s inherited acceptance).
 
 ## Alternatives Considered
@@ -149,5 +157,5 @@ Financial impact: none directly — nothing is posted. It decides where `P6-TSK-
 
 - When merchant self-service users with MFA arrive, revisit decision 1.
 - Extract the conditional step-up once a fourth caller needs it.
-- `P6-TSK-012`: the dispatch reads `effectiveFor`, refuses when none is effective, and records
-  the destination id.
+- ~~`P6-TSK-012`: the dispatch reads `effectiveFor`, refuses when none is effective, and records
+  the destination id.~~ Done by `P6-TSK-012`, through `findEffectiveForShare` (§9).

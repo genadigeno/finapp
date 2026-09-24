@@ -21,7 +21,7 @@ public final class PayoutEvidenceKey {
             new KeySpec(
                     "payout evidence encryption key",
                     "payout evidence encryption key",
-                    "FINAPP_PAYOUT_EVIDENCE_KEY",
+                    "FINAPP_MERCHANT_PAYOUT_EVIDENCE_KEY",
                     "/payout-evidence",
                     KeyLength.EXACTLY_32,
                     ".");

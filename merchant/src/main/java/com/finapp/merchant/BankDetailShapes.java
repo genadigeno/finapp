@@ -4,7 +4,7 @@ import java.util.regex.Pattern;
 
 /**
  * The shapes raw bank details are written in, refused wherever a payout destination's grant or
- * reference is accepted (`P6-TSK-011`, ADR-0056 §5).
+ * reference is accepted (`P6-TSK-011`, ADR-0056 §7).
  *
  * <p><strong>Bank details never enter the platform</strong>: the operator's client tokenises
  * them at the payout provider and hands the platform a grant, and the platform stores only the

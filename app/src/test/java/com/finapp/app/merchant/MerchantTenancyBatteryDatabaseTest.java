@@ -257,37 +257,50 @@ class MerchantTenancyBatteryDatabaseTest {
                                             null)));
         }
 
-        // AN OPERATOR'S SUBJECT: one merchant, named under a permission.
+        // AN OPERATOR'S SUBJECT: one merchant, named under a permission. WHICH permission is
+        // pinned by RoutePermissionRegisterTest and the refusal of a caller without it proven
+        // once for every route by DenyByDefaultDatabaseTest - the two compose into each
+        // route's negative. P6-DOC-001: these reasons cited per-class negatives, and for seven
+        // of the eleven routes the class named held none for that route.
         for (String route :
                 List.of(
                         "GET /v1/operator/merchants/{id}",
                         "POST /v1/operator/merchants/{id}/suspension",
                         "POST /v1/operator/merchants/{id}/reinstatement",
                         "POST /v1/operator/merchants/{id}/closure")) {
-            table.put(route, subject("MERCHANT_ADMINISTER; MerchantEndpointDatabaseTest"));
+            table.put(route, subject("MERCHANT_ADMINISTER; RoutePermissionRegisterTest"));
         }
         for (String route :
                 List.of(
                         "GET /v1/operator/merchants/{id}/api-keys",
                         "POST /v1/operator/merchants/{id}/api-keys")) {
-            table.put(route, subject("MERCHANT_ADMINISTER; MerchantApiKeyDatabaseTest"));
+            table.put(
+                    route,
+                    subject(
+                            "MERCHANT_ADMINISTER; RoutePermissionRegisterTest,"
+                                    + " MerchantApiKeyDatabaseTest for issuance"));
         }
         for (String route :
                 List.of(
                         "GET /v1/operator/merchants/{merchantId}/fee-schedule",
                         "PUT /v1/operator/merchants/{merchantId}/fee-schedule")) {
-            table.put(route, subject("FEE_ADMINISTER; FeeScheduleDatabaseTest"));
+            table.put(route, subject("FEE_ADMINISTER; RoutePermissionRegisterTest"));
         }
         for (String route :
                 List.of(
                         "GET /v1/operator/merchants/{merchantId}/payout-destinations",
                         "POST /v1/operator/merchants/{merchantId}/payout-destinations")) {
             table.put(
-                    route, subject("MERCHANT_ADMINISTER; PayoutDestinationEndpointDatabaseTest"));
+                    route,
+                    subject(
+                            "MERCHANT_ADMINISTER; RoutePermissionRegisterTest,"
+                                    + " PayoutDestinationEndpointDatabaseTest"));
         }
         table.put(
                 "POST /v1/operator/merchants/{merchantId}/payouts",
-                subject("MERCHANT_PAYOUT; MerchantPayoutEndpointDatabaseTest"));
+                subject(
+                        "MERCHANT_PAYOUT; RoutePermissionRegisterTest,"
+                                + " MerchantPayoutEndpointDatabaseTest"));
         return table;
     }
 

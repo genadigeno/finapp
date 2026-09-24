@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /**
  * The one-time grant a destination proposal exchanges for a stored reference (`P6-TSK-011`,
- * ADR-0056 §5) — the {@code TokenisationGrant} precedent, restated for bank data.
+ * ADR-0056 §7) — the {@code TokenisationGrant} precedent, restated for bank data.
  *
  * <p>The operator's client tokenises the merchant's bank details <em>outside</em> the platform
  * and hands us only this grant; the exchange turns it into the permanent

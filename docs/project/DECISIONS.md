@@ -497,6 +497,59 @@ recorded in Phase 5; `INV-REV-03` has no subject until the second rail (Phase 7)
 port stays one provider wide deliberately. Closes unresolved question 9. →
 [ADR-0049](../adr/ADR-0049-first-provider-simulated-card-psp.md)
 
+### Checkout and merchants
+**The fee model: gross to the books, net to the merchant, in one entry.** A merchant-bound
+capture posts, atomically with the attempt's `CAPTURED` transition, DR `SETTLEMENT_CLEARING` /
+CR `MERCHANT_PAYABLE` for the gross and DR `MERCHANT_PAYABLE` / CR `FEE_REVENUE` for the fee.
+Revenue is recognised at capture. The fee is computed once and the net derived by subtraction, so
+no rounding residual exists to strand. The fee schedule version is chosen when the session opens
+and pinned onto the payment, so nothing already offered is repriced. `payments` posts the lines it
+is handed and knows no merchant. Closes unresolved question 8. →
+[ADR-0050](../adr/ADR-0050-fee-model-gross-capture-net-payable.md)
+
+**A payout is hold-then-dispatch on the payable, and nothing is final before settlement.** The
+bound is judged inside the payable account's lock with every in-flight hold counted, so ten
+concurrent payouts dispatch exactly the affordable set. Completion posts DR `MERCHANT_PAYABLE` /
+CR `PAYOUT_CLEARING`, failure releases the hold, and `UNKNOWN` leaves it standing. →
+[ADR-0051](../adr/ADR-0051-merchant-payout-accounting.md)
+
+**A merchant authenticates with a scoped API key, and tenancy is in the statement.** The key is
+hashed, shown once and revoked immediately. `ActorType.MERCHANT` is its own population, and every
+record a merchant command writes names the key that acted. Every merchant-scoped read and write
+carries the merchant derived from the key, idempotency claims included, and another tenant's row is
+the same one refusal as a row that does not exist. →
+[ADR-0052](../adr/ADR-0052-merchant-api-identity.md)
+
+**The checkout session and the order are two aggregates: expiry gates new work, and landed money
+always wins.** A session expires by a leaderless sweeper's conditional transition, never by a
+filter. A capture that lands after expiry moves the session `EXPIRED → COMPLETED_LATE` and still
+creates the order, never an automatic refund. `checkout` depends on `platform` alone, and the
+orchestration lives in `app`. Closes unresolved question 7. →
+[ADR-0053](../adr/ADR-0053-checkout-session-and-order.md)
+
+**A merchant refund is funded by its net, and the only credit it extends is the fee the platform
+keeps.** The refund holds on the payable what its composition will take; under `RETAINED` the
+payable may end below zero by exactly the fee kept, and a negative payable refuses every payout. →
+[ADR-0054](../adr/ADR-0054-merchant-refund-funded-by-its-net.md)
+
+**A payout destination changes by two operators, a conditional step-up and a cancellable
+cooling-off, and bank details never enter.** The proposer is refused as approver at the aggregate,
+in the statement and by `CHECK`, and the refusal is itself a committed audit record. Approval pins
+a cooling-off that the change can be withdrawn during; a leaderless sweep makes it effective.
+Only an opaque provider reference and a four-character suffix are stored. Second subject of
+`INV-AUD-04`. → [ADR-0056](../adr/ADR-0056-payout-destination-four-eyes.md)
+
+**The payout dispatches behind a send permit, fails only on what it knows, and resolves by
+query.** Every send is preceded by a committed permit, so the sweep concludes `NEVER_RECEIVED` only
+past a positive bound, re-judged under the row lock. A refused connection fails a payout only on
+its first send, and a takeover re-sends the stored reference to the destination it was bound to. →
+[ADR-0057](../adr/ADR-0057-payout-dispatch-and-resolution.md)
+
+**A sale that does not cover its fee is refused at the price.** The offer is priced when the
+session opens, under the version it will carry, and `net <= 0` is `checkout.SaleBelowFee` with
+nothing written and the key unspent; the pin re-asserts it, and a capture is never refused.
+Decides ADR-0054's open item. → [ADR-0058](../adr/ADR-0058-a-sale-must-cover-its-fee.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

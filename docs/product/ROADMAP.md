@@ -34,33 +34,25 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-09-21).** **Phases 0 through 5 are `COMPLETE`.** Phase 5 closed on
-its exit review (`P5-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met,
-19 phase-specific criteria, the ten-instances question over seven contended decisions,
-ADR-0045–0049 read against the code and `Accepted`) and was confirmed by the Phase 5 → 6
-transition's independent audit, whose fleet-wide full battery — **1323 hermetic / 829
-database / 14 kafka tests** — found and repaired one register gap (`refund.dispatch_key`
-unclassified) and is green. **Money enters and leaves against an unreliable third party**:
-21 of 21 backlog items, 5 ADRs `Accepted`, the dispatch-before-call discipline, the honest
-`UNKNOWN`, webhooks, refunds as hold-then-post, and conservation proven under the
-capture/refund storm.
+**Current position (2026-09-24).** **Phases 0 through 6 are `COMPLETE`.** Phase 6 closed on
+its exit review (`P6-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met, 16
+phase-specific criteria, the ten-instances question over every contended decision,
+ADR-0050…0054 and ADR-0056…0058 read against the code, corrected where they had drifted, and
+`Accepted`). The review found and fixed more than it was sent — a suspended merchant still
+payable, an index ADR-0053 named and nothing built, wrong operator instructions for five
+credentials, and four contended decisions nobody had raced — and probed every fix. **A merchant
+the platform does not own can sell through it and be paid**: 18 of 18 backlog items, the fee
+taken in the capture's one entry, refunds funded by the net, payouts bounded by the ledger and
+sent to a destination no one person can change, and tenancy in every statement.
 
-**Phase 6 — Checkout and Merchant Platform — is `READY`** (entry gate passed 2026-09-21,
-all twelve criteria —
-[`PHASE_5_TO_6_TRANSITION.md`](../project/reviews/PHASE_5_TO_6_TRANSITION.md)). Planned in
-full in `PHASE_6_PLAN.md`, with ADR-0050–0053 `Proposed` — the fee model (question 8
-closed: gross capture to the payable, fee assessed in the same entry, net payout), payout
-accounting (hold-then-dispatch on the payable), merchant API identity (keys + tenancy in
-the statement) and the checkout session/order model (question 7 confirmed closed) — plus
-the new `INV-MER-01`–06 group taking the catalogue to **93 invariants**, 16 backlog items
-across seven milestones, and `CHECKOUT_MERCHANT_LIFECYCLES.md` written. First task:
-`P6-TSK-001`, `READY`.
+**Phase 7 — Cards, Wallets, A2A and Instant Payments — is next, behind its own entry gate.**
+The Phase 6 → 7 transition is the next act, and it inherits the fleet-wide battery the
+standing instruction skipped all phase, `X-TSK-003`, and Phase 7's own payments work (refund
+resolution by query and the stuck-dispatch gauges).
 
-*(This section was found frozen at 2026-09-20 — Phase 5 "IN_PROGRESS at M5.1" — by the
-Phase 5 → 6 transition, through twenty task gates and the phase flip: the stale-second-copy
-class this section already fell to once, at the Phase 4 → 5 transition. Corrected here;
-the class now has two occurrences in this file and its repair remains a named
-transition-audit step.)*
+*(This section read "Phase 6 … is `READY`, first task `P6-TSK-001`" through the whole of Phase 6
+— frozen at the Phase 5 → 6 transition, the stale-second-copy class this section has now fallen
+to three times. Corrected at the Phase 6 review.)*
 
 **Phase 4 was the first customer-visible money movement** — and deliberately the *easy* half
 of moving money: both legs internal, one database, one transaction, no third party. Its job

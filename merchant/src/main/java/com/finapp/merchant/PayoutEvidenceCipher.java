@@ -23,7 +23,7 @@ import javax.crypto.spec.SecretKeySpec;
  *
  * <h2>One key per concern</h2>
  *
- * <p>{@code FINAPP_PAYOUT_EVIDENCE_KEY} (the {@code PayoutEvidenceKey} spec in {@code app}) —
+ * <p>{@code FINAPP_MERCHANT_PAYOUT_EVIDENCE_KEY} (the {@code PayoutEvidenceKey} spec in {@code app}) —
  * never the payment-evidence key, never the payout provider's API key — with the key version
  * recorded on every row so a rotation can tell which key wrote which. Tampering and the wrong
  * key are one indistinguishable failure.

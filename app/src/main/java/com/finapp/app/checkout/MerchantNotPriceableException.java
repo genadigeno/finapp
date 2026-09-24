@@ -1,8 +1,8 @@
 package com.finapp.app.checkout;
 
 /**
- * The merchant has no effective fee schedule version, so the platform cannot price this
- * offer (`P6-TSK-007`).
+ * The merchant has no effective fee schedule version, or none that prices the offer's
+ * currency, so the platform cannot price this offer (`P6-TSK-007`, `P6-TST-001`).
  *
  * <p><strong>Refused at creation rather than discovered at capture</strong>, which is the whole
  * reason the check is here: an unpriced session would reach
@@ -15,6 +15,6 @@ public class MerchantNotPriceableException extends RuntimeException {
     @java.io.Serial private static final long serialVersionUID = 1L;
 
     public MerchantNotPriceableException() {
-        super("this merchant has no fee schedule, so a checkout cannot be priced");
+        super("this merchant has no fee schedule for this currency, so a checkout cannot be priced");
     }
 }

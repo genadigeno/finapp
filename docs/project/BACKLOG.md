@@ -6686,17 +6686,20 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 
 # Phase 6 — Checkout and Merchant Platform
 
-Status: `READY` — entry gate passed 2026-09-21 by the Phase 5 → 6 transition
+Status: ✅ `COMPLETE` (2026-09-24, ruled by [`reviews/PHASE_6_REVIEW.md`](reviews/PHASE_6_REVIEW.md) — `P6-DOC-001`) — entry gate passed 2026-09-21 by the Phase 5 → 6 transition
 ([`reviews/PHASE_5_TO_6_TRANSITION.md`](reviews/PHASE_5_TO_6_TRANSITION.md)), elaborated to
-task granularity by the same transition. The engineering plan is
-[`PHASE_6_PLAN.md`](PHASE_6_PLAN.md); decisions are ADR-0050…ADR-0053 (`Proposed`); the
-domain statement is
+task granularity by the same transition, closed at 18 of 18 items across seven milestones. The
+engineering plan is [`PHASE_6_PLAN.md`](PHASE_6_PLAN.md); decisions are ADR-0050…ADR-0054 and
+ADR-0056…ADR-0058 (`Accepted` at the review, each read against the code and corrected where it
+had drifted first; ADR-0055 is cross-cutting); the domain statement is
 [`CHECKOUT_MERCHANT_LIFECYCLES.md`](../domain/CHECKOUT_MERCHANT_LIFECYCLES.md). The
-in-scope invariants are whatever the catalogue marks `Phase: 6` — **eight at planning
-time** (the transition's new `INV-MER-01`…06, `INV-HIST-04`'s fees element, and
-`INV-AUD-04` live for the first time) —
+in-scope invariants are whatever the catalogue marks `Phase: 6` — **nine at the gate** (eight at
+planning — the transition's new `INV-MER-01`…06, `INV-HIST-04`'s fees element, and `INV-AUD-04`
+on its second subject, after Phase 3's adjustments — and `INV-MER-07`, added by `P6-TSK-015`) —
 **read from the catalogue at the gate, never from this file**. The financial supplement
-F1–F8 binds; every task that can affect money carries `DOD-FIN`.
+F1–F8 binds; every task that can affect money carries `DOD-FIN`. *(This header read `READY`, four
+ADRs `Proposed` and "`INV-AUD-04` live for the first time" through the whole phase — corrected at
+the review, the `P5-DOC-001` finding about the backlog's own phase header, again.)*
 
 **Milestones**: M6.1 Foundations (`P6-TSK-001`…`-003`) · M6.2 Fee economics
 (`P6-TSK-004`, `-005`) · M6.3 Checkout (`P6-TSK-006`…`-008`, and `-014` — *added by `P6-TSK-005`'s completion
@@ -8246,7 +8249,7 @@ negative payable** — `COMPLETE` (2026-09-23)
   trial balance. **The full battery was deliberately skipped on the owner's instruction; no
   fleet-wide database or kafka counts are claimed.**
 
-**P6-DOC-001 — Phase 6 review record** — `READY`
+**P6-DOC-001 — Phase 6 review record** — `COMPLETE` (2026-09-24)
 - **Scope**: the exit review per `PHASE_GATES.md` §4 and §5 Phase 6 (original bullets plus
   the transition's extension, **read from the gate at review time**), F1–F8 re-assessed,
   the ten-instances question over the phase's contended decisions, assess → corrections →
@@ -8287,6 +8290,74 @@ negative payable** — `COMPLETE` (2026-09-23)
   review wants either is its call.
 - **Deps**: everything above. **Accept**: the review's verdict flips the status; the
   post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
+- **The review (2026-09-24)** — [`reviews/PHASE_6_REVIEW.md`](reviews/PHASE_6_REVIEW.md). Eight
+  areas, twelve universal criteria, F1–F8 re-assessed, sixteen phase-specific criteria (6 + the
+  10 the transition added, read from the gate), and the ten-instances question over
+  sixteen contended decisions — every one `PASS` or `Met`, several only after the
+  corrections below. **Verdict: Phase 6 `COMPLETE`.**
+- **The inputs, decided**:
+  - `X-TSK-001`'s red chart test: two stale copies of the owner-kind filter (the resolver and the
+    test), fixed with the seed guard's own `requiresOwnerRef()`. The recorded fix would have
+    dropped the seeded `SUSPENSE_UNMATCHED` from the test.
+  - `DECISIONS.md` gains its Phase 6 section.
+  - ADR-0052 §2 wins: the session's audit records name the key.
+  - ADR-0004 wins: the session's claim is scoped per merchant, and every other constant scope
+    is `X-TSK-003`, with the migration hazard recorded.
+  - The code wins on the fee events' amounts: `EVENT_ARCHITECTURE.md` records the wire format,
+    and plan §10 is corrected.
+  - Phase 5's stuck-payment gauges: the payout's shape is right, and the change lands in Phase 7
+    with refund resolution by query.
+  - `checkout.NotPriceable` retitled, a compatible contract change; `NotTrading` retitled with it.
+  - The two-minor-unit batch goes to Phase 9. `INV-HIST-04` is answered by `P6-TST-002`. The
+    storm's one JVM is Phase 16's.
+- **What the assessment found beyond the inputs, and fixed** (six audits, each read-only, each
+  finding verified against the code before it was acted on):
+  - **A suspended merchant's open offer was still payable.** The confirmation never read the
+    merchant's standing, though plan §14 scenario 11 said it refused. It now refuses as
+    `checkout.NotTrading` before anything is written, and a payment admitted earlier still lands.
+  - **One session per intent was never enforced**: ADR-0053's index was never built, and the
+    capture took the first row its unindexed scan met. Now checkout `V003`.
+  - **Every paid order was announced `PAYMENT_PENDING`.** `OrderPaid` was built from the row as
+    read, before its transition.
+  - **A zero never-received bound was accepted.** It is now refused at construction.
+  - **Five of eight confined credentials named variables nothing binds.** They are renamed, and
+    `ConfinedCredentialVariablesTest` pins every pair.
+  - **Nothing pinned which permission a route requires.** `RoutePermissionRegisterTest` now pins
+    all 32 routes, and the tenancy battery's operator rows cite it: seven of eleven had cited
+    negatives that did not exist.
+  - **The cooling-off gate criterion was proven by a read.** A real dispatch inside the window now
+    pays the prior destination.
+  - **Four contended decisions had no race test**: fee-schedule assignment, suspension, key
+    revocation, and expiry against a concurrent capture. Now ten-way.
+  - **Records**: six of eight ADRs had drifted and are corrected before acceptance. Plan,
+    architecture, delivery plan, lifecycles, glossary, invariants (`INV-MER-02`, `-03`), event
+    architecture, four registers and the ADR index are made true. `CURRENT_STATE.md` had two
+    Phase 5 and two Phase 2 paragraphs under the wrong headings. Two deferrals owned by this phase
+    had closed unpaid (a debt row whose trigger fired, and Phase 5's refund sweeping); both are
+    re-owned.
+- **Eighteen probes, seventeen caught, the one survivor a correct second rank**, every restore verified byte-identical. One survived, correctly: the session's conditional transition stands behind its row lock, and with both broken the order's `UNIQUE (session_ref)` caught the race. One was caught a rank below the one broken: the cooling-off read, by `V007`'s trigger.
+- **The flip, performed**: Phase 6 recorded `COMPLETE` armed the register and meter guards, which
+  passed. It was proven non-vacuous against the real status: with `INV-HIST-04`'s rows removed,
+  the guard failed naming it and reporting `(currently 6)`. It was restored byte-identical.
+- **Multi-instance `PASS`**: every contended decision has its arbiter and a counted race.
+- **Verified by the post-flip battery from fresh runs**: the fleet-wide hermetic test task green at **1550 tests across 14 modules, 0 failures**,
+  and **224 targeted database tests across 23 suites, 0 failures**: every merchant, checkout and telemetry suite, the chart suite that was red, the trial balance, deny-by-default and the payment conservation storm.
+  **The full battery was deliberately skipped on the owner's instruction; no fleet-wide
+  database or kafka counts are claimed.**
+- **The completion gate (2026-09-24)** audited the review in its turn. Four findings, each fixed:
+  - (1) **The repository's `README.md` was frozen in mid-Phase 5** ("Phase 5 … `IN_PROGRESS`, 5 of
+    21 items", 87 invariants), under a sentence promising every number was counted from the
+    repository. Every number is now recounted: 7 of 17 phases, 199 of 202 elaborated items, 58
+    ADRs, 94 invariants, 79 migrations, 71 paths and 86 operations, 77 auditable actions, 68 error
+    codes. The stale-second-copy class, at the project's front door.
+  - (2) **The review had passed "destination change requires step-up authorization" without
+    saying how it read it.** The step-up is the platform's conditional one: an operator with no
+    enrolled factor proposes and approves without one. That reading is now stated in the review,
+    and the gap is a debt row owned by Phase 15 (privileged access). Four-eyes and the cancellable
+    cooling-off stand regardless.
+  - (3) The review's ADR table said ADR-0054 was unchanged, although a stale phrase had been dated.
+  - (4) The gate's own payable formula omits fees returned. This is noted, and the gate's words are
+    left as it wrote them.
 
 ---
 
@@ -8336,7 +8407,9 @@ Batches 0–9 applied and verified 2026-09-23; its one failing test predates it.
   - Every acceptance criterion holds except the tiers being green.
   - **It unblocks when** `OperationalChartDatabaseTest`'s stale owner-kind filter is fixed in its
     own change (`CURRENT_STATE.md` §Blockers) and a fresh database tier is green. The task is
-    then `COMPLETE` with no further work.
+    then `COMPLETE` with no further work. **The fix landed in the Phase 6 review** (`P6-DOC-001`,
+    2026-09-24) — in two copies, the resolver's guard as well as the test's filter — so only the
+    fresh database tier remains, which the owner's standing instruction skips.
   - Five convertible classes outside the approved set are recorded for a separately approved pass
     (plan appendix D.2).
 - **Deps**: none for Batch 0. The final acceptance's "all tiers green" needs the pre-existing
@@ -8368,6 +8441,32 @@ Batches 0–9 applied and verified 2026-09-23; its one failing test predates it.
 - **Accept**: the widening applies to every package; every newly visible method is classified,
   each `OWNER_SCOPED` one with a named negative. **Risk**: Low. **Cx**: M.
   **DoD**: `DOD-TEST`, `DOD-SEC`
+
+**X-TSK-003 — Scope every idempotency claim to its principal** — `PLANNED`
+- **Context**: every module with a keyed command; `platform.idempotency_record`. Recorded by
+  `P6-DOC-001`, ADR-0004.
+- **Description**: ADR-0004 decides that a claim's `scope` "identifies the command type and the
+  owning principal, so keys cannot collide across different commands or across clients". The
+  payout (`merchant.payout:<merchantId>`) and, since the Phase 6 review, the checkout session
+  (`checkout.session:<merchantId>`) do. Every other keyed command claims under a constant:
+  `accounts.open`, `payment.create`, `payment.refund`, `transfer.execute`, `merchant.onboard`,
+  `merchant.api-key.issue`, the payout destination's proposal, registration and the ledger's own
+  posting scopes. The fingerprints name the caller, so a collision is refused as `api.Conflict`
+  and nothing is replayed to the wrong principal. What the constant costs is that one client's
+  key value refuses another's request, and tells the second that the value is taken.
+- **The migration hazard, which is why this is its own item**: moving a command's scope moves its
+  namespace. A retry that spans the deploy looks for its claim under the new scope, misses the
+  one written under the old, and runs again. For a checkout session that is a second offer, which
+  expires unpaid. For `payment.refund` or `transfer.execute` it is a second money movement: the
+  refund has no second rank behind its claim (the payout's `UNIQUE (merchant_id, dispatch_key)`
+  is what caught `P6-TST-002`'s probe). So each money-moving scope changes only with a transition
+  path, for example consulting the old scope as well as the new for longer than the claim's
+  retention, and its own duplicate test across the change.
+- **Accept**: every keyed command's scope names its principal; the ledger's system-issued
+  posting keys are either scoped or recorded as system-only with the reason; each money-moving
+  scope moves behind a tested transition path; a two-principals-one-key-value test per command.
+- **Risk**: Medium, because of the money-moving scopes. **Cx**: M. **DoD**: `DOD-FIN`,
+  `DOD-SEC`, `DOD-TEST`
 
 ---
 

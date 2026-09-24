@@ -8,7 +8,6 @@ import com.finapp.ledger.ChartOfAccounts;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountStatus;
-import com.finapp.ledger.OwnerKind;
 import com.finapp.ledger.SupportedCurrencies;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.money.CurrencyCode;
@@ -41,7 +40,14 @@ class OperationalChartDatabaseTest {
     void everyCombinationResolves() throws Exception {
         try (Connection app = DatabaseRoles.application()) {
             for (AccountPurpose purpose : AccountPurpose.values()) {
-                if (purpose.ownerKind() == OwnerKind.CUSTOMER) {
+                if (purpose.ownerKind().requiresOwnerRef()) {
+                    // Owned purposes are opened per owner, never seeded - refused below. The
+                    // predicate is the kind's own (P6-DOC-001): "== CUSTOMER" went stale when
+                    // P6-TSK-003 made MERCHANT a second owning kind, and from then this loop
+                    // died on MERCHANT_PAYABLE before it reached any purpose after it - so
+                    // PAYOUT_CLEARING's seed (P6-TSK-012) was never resolved here. "Not
+                    // OPERATIONAL" would be wrong the other way: it drops the seeded,
+                    // unowned SUSPENSE_UNMATCHED.
                     continue;
                 }
                 for (CurrencyCode currency : SupportedCurrencies.ALL) {
@@ -79,18 +85,18 @@ class OperationalChartDatabaseTest {
     }
 
     @Test
-    @DisplayName("an owned purpose is refused by the operational chart outright")
+    @DisplayName("every owned purpose - a wallet, a payable - is refused by the operational chart")
     void anOwnedPurposeIsRefused() throws Exception {
         try (Connection app = DatabaseRoles.application()) {
-            assertThatThrownBy(
-                            () ->
-                                    chart.resolve(
-                                            app,
-                                            AccountPurpose.CUSTOMER_WALLET,
-                                            CurrencyCode.of("GBP")))
-                    .as("a wallet account is resolved by owner; asking the operational chart"
-                            + " is a programming error, not a lookup miss")
-                    .isInstanceOf(IllegalArgumentException.class);
+            for (AccountPurpose purpose : AccountPurpose.values()) {
+                if (!purpose.ownerKind().requiresOwnerRef()) {
+                    continue;
+                }
+                assertThatThrownBy(() -> chart.resolve(app, purpose, CurrencyCode.of("GBP")))
+                        .as("a %s account is resolved by owner; asking the operational chart"
+                                + " is a programming error, not a lookup miss", purpose)
+                        .isInstanceOf(IllegalArgumentException.class);
+            }
         }
     }
 

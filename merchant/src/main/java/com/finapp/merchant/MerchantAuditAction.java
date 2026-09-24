@@ -42,10 +42,6 @@ public enum MerchantAuditAction implements AuditableAction {
             true),
 
     /**
-     * An operator ended the relationship ({@code ACTIVE → CLOSED}, terminal). Reasoned: the
-     * books survive the relationship ({@code INV-HIST-01}), and so must the why.
-     */
-    /**
      * An operator issued an API credential to a merchant (`P6-TSK-002`). The record names the
      * key by its PUBLIC id and the merchant by identifier — never the secret and never its
      * hash ({@code INV-AUD-02}), which is the reason the key id is public at all: an auditor
@@ -71,6 +67,10 @@ public enum MerchantAuditAction implements AuditableAction {
                     + " is required.",
             true),
 
+    /**
+     * An operator ended the relationship ({@code ACTIVE → CLOSED}, terminal). Reasoned: the
+     * books survive the relationship ({@code INV-HIST-01}), and so must the why.
+     */
     MERCHANT_CLOSED(
             "merchant.MerchantClosed",
             "An operator closed a merchant - terminal; the payable position and its history"

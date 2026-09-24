@@ -25,7 +25,7 @@ public final class PaymentEvidenceKey {
             new KeySpec(
                     "payment evidence encryption key",
                     "payment evidence encryption key",
-                    "FINAPP_PAYMENT_EVIDENCE_KEY",
+                    "FINAPP_PAYMENTS_EVIDENCE_KEY",
                     "/payment-evidence",
                     KeyLength.EXACTLY_32,
                     ".");

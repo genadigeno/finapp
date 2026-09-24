@@ -29,7 +29,7 @@ public final class PaymentWebhookKey {
             new KeySpec(
                     "payment webhook signing key",
                     "payment webhook signing key",
-                    "FINAPP_PAYMENT_WEBHOOK_KEY",
+                    "FINAPP_PAYMENTS_WEBHOOK_KEY",
                     "/payment-webhook",
                     KeyLength.AT_LEAST_32,
                     ".");

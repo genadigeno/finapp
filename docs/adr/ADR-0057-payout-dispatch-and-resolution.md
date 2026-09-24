@@ -1,6 +1,6 @@
 # ADR-0057 — The payout dispatches behind a send permit, fails only on what it knows, and resolves by query
 
-Status: Proposed
+Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; its key variables renamed to the ones the configuration binds, and its bound given a floor, first)
 Date: 2026-09-23
 Phase: 6 (`P6-TSK-012`)
 Context: Merchant (bounded context 12) · Ledger · Identity
@@ -52,7 +52,10 @@ open, and one hazard no earlier flow had:
    **plus the clock skew between instances** — the permit is stamped by the sending instance's
    clock and judged against the sweeping instance's, so a sweeper running ahead sees every
    permit older than it is. Ten minutes is orders of magnitude beyond NTP-disciplined skew; an
-   unsynchronised host is an operational fault this bound does not survive.
+   unsynchronised host is an operational fault this bound does not survive. **A bound of zero
+   is refused at construction** (`MerchantPayoutResolution`, the cooling-off's rule in ADR-0056
+   §4): it would let the sweep hear "unknown reference" for a request still in flight. Only a
+   negative bound was refused until the phase review, `P6-DOC-001`.
 5. **The claim is per merchant.** Scope `merchant.payout:<merchantId>`, the key the client's —
    the owning principal in the scope, as ADR-0004 intends — so two merchants' identical keys are
    two claims. The payout row keeps the key as its `dispatch_key`, unique per merchant: the
@@ -75,10 +78,15 @@ open, and one hazard no earlier flow had:
    ledger `V012`: instructed and not yet settled is an obligation the platform still owes, and
    Phase 8's settlement will debit it against cash.
 9. **The provider's answers are kept verbatim and encrypted** (AES-256-GCM, the plaintext's
-   SHA-256, append-only) under their own key, `FINAPP_PAYOUT_EVIDENCE_KEY`: untrusted bytes the
-   platform does not control, which a real provider could enrich with an account holder's
-   details. The provider's API key is its own too, `FINAPP_PAYOUT_PROVIDER_KEY` — the credential
-   regime the destination tokenisation deferred to the provider that moves money.
+   SHA-256, append-only) under their own key, `FINAPP_MERCHANT_PAYOUT_EVIDENCE_KEY`: untrusted
+   bytes the platform does not control, which a real provider could enrich with an account
+   holder's details. The provider's API key is its own too,
+   `FINAPP_MERCHANT_PAYOUT_PROVIDER_KEY` — the credential regime the destination tokenisation
+   deferred to the provider that moves money. *(These read `FINAPP_PAYOUT_*` until the phase
+   review, `P6-DOC-001`, found that nothing binds them: the configuration reads
+   `finapp.merchant.payout.*`, so setting the named variable changed nothing and a deployment off
+   loopback refused to start while pointing at the wrong fix. The refusals and this text now
+   name the variables that bind, and `ConfinedCredentialVariablesTest` keeps the pair together.)*
 10. **The query sweep is the resolver; the webhook is deferred.** ADR-0051 §5 named "query and
     webhook through the established doors". No accept clause and no Phase 6 item needs the
     webhook, the query path is complete on its own (ADR-0046 §4), and a second provider door

@@ -1,8 +1,10 @@
 # ADR-0058 — A sale that does not cover its fee is refused at the price
 
-Status: Proposed
-
+Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; it describes it)
 Date: 2026-09-23
+Phase: 6 (`P6-TST-001`)
+Context: Merchant · Checkout
+Supersedes: nothing. Decides ADR-0054's open item (a sale whose fee meets or exceeds it).
 
 ## Context
 

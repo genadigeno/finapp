@@ -672,7 +672,7 @@
             }
           }
         },
-        "description": "[422] This merchant has no fee schedule, so a checkout cannot be priced.",
+        "description": "[422] This merchant has no fee schedule for this currency, so a checkout cannot be priced.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -707,7 +707,7 @@
             }
           }
         },
-        "description": "[409] This merchant cannot open new checkout sessions.",
+        "description": "[409] This merchant is not trading, so a checkout cannot be opened or paid.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"

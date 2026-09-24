@@ -214,6 +214,20 @@ execution and attributes nothing to anybody; an actor names a party. Merging the
 customer identifier into every log line and every span, which is a disclosure into systems with
 different access control and retention (`INV-AUD-02`).
 
+## Who may act
+
+Roles grant permissions and ownership is checked separately (ADR-0031), and both halves of the
+permission model are pinned by the build. **Role → permission** is code, not data: `RoleName`,
+whose exact grants `RoleNameTest` holds, so granting a permission is a reviewed change rather than
+a row somebody inserts. **Route → permission** is `RoutePermissionRegisterTest` — every
+`@RequiresPermission` route (32 at the Phase 6 review) with the permission it declares, derived
+from the handler mapping that actually serves requests, so a route added, removed or
+re-permissioned fails the build until the register says so. That is the half
+`EveryEndpointDeclaresARuleTest` (a rule is declared) and `DenyByDefaultDatabaseTest` (a caller
+without it is refused and audited) could not see: the Phase 6 review found that moving a route to
+another permission the same role holds passed every test. *(Added at the Phase 6 review,
+`P6-DOC-001`.)*
+
 ## Signed provider callbacks
 
 `POST /v1/providers/kyc/callbacks` (`P2-TSK-011`) joins the small set of unauthenticated
@@ -267,6 +281,9 @@ The two mechanisms are blind in different directions, which is why both run.
 **A name is not a control.** The marked local default is published deliberately, and
 `DatabaseCredentialGuard` refuses to start the application when it is aimed at a database that is
 not on loopback - closing the one documented way around externalised configuration, which is
-forgetting to set the variable.
+forgetting to set the variable. The eight per-credential confinements (`ConfinedCredential`)
+refuse the same way and name the environment variable to set, and `ConfinedCredentialVariablesTest`
+pins each named variable to the property its configuration actually reads — the Phase 6 review
+found five naming variables nothing bound (`P6-DOC-001`).
 
 Never put secrets, API credentials, private keys, or raw payment credentials in source code.

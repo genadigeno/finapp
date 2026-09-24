@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  *
  * <p><strong>What this aggregate deliberately does not hold: bank details.</strong> It holds the
  * provider's opaque {@link PayoutDestinationReference} and a four-character display suffix; the
- * account itself exists only at the provider (ADR-0056 §5).
+ * account itself exists only at the provider (ADR-0056 §7).
  *
  * <p><strong>One constructor holding the coherence</strong> (the {@link Merchant} idiom): each
  * state's facts present exactly when the state holds, the approver distinct from the proposer,

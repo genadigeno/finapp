@@ -126,6 +126,20 @@ class MerchantPayoutResolutionScheduleTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    @DisplayName("a dispatched bound of zero is refused: it would let the sweep conclude"
+            + " NEVER_RECEIVED of a send still in flight (ADR-0057 section 4)")
+    void aZeroDispatchedBoundIsRefused() {
+        AtomicInteger ticks = new AtomicInteger();
+        // P6-DOC-001: only a negative bound was refused, and ADR-0057 names the bound as the
+        // safety of the never-received conclusion.
+        assertThatThrownBy(() -> ticking(ticks, false, Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("dispatchedAge");
+        assertThatThrownBy(() -> ticking(ticks, false, Duration.ofMillis(-1)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     // -----------------------------------------------------------------
 
     private static MerchantMeters meters() {
@@ -138,6 +152,11 @@ class MerchantPayoutResolutionScheduleTest {
      * collaborators behind it are real types that are never reached.
      */
     private static MerchantPayoutResolution ticking(AtomicInteger ticks, boolean throwing) {
+        return ticking(ticks, throwing, Duration.ofMinutes(10));
+    }
+
+    private static MerchantPayoutResolution ticking(
+            AtomicInteger ticks, boolean throwing, Duration dispatchedAge) {
         MerchantTransactionRunner runner =
                 new MerchantTransactionRunner() {
                     @Override
@@ -194,7 +213,7 @@ class MerchantPayoutResolutionScheduleTest {
                         new PayoutEvidenceCipher(new byte[32], 1, new SecureRandom()), ids),
                 ids,
                 clock,
-                Duration.ofMinutes(10),
+                dispatchedAge,
                 Duration.ofMinutes(1),
                 50);
     }

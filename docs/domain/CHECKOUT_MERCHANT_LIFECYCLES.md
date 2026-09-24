@@ -41,11 +41,11 @@ OPEN ──────────────► PAYMENT_PENDING ────�
 | State | Meaning | Earned by |
 |---|---|---|
 | `OPEN` | The merchant created the session; the customer has not committed | Session creation (merchant API, keyed) |
-| `PAYMENT_PENDING` | The customer confirmed; a payment intent is dispatched and the provider is deciding | The confirmation (customer, by session token) — the transition that creates/confirms the intent through the port |
+| `PAYMENT_PENDING` | The customer confirmed; a payment intent is dispatched and the provider is deciding | The confirmation (customer, by session token) — the transition that creates the intent, in one transaction with it, before the payment is confirmed — composed by `app` *(this read "creates/confirms the intent through the port" until the Phase 6 review, `P6-DOC-001`; there is no port — ADR-0053)* |
 | `COMPLETED` | The payment captured; the order exists; the merchant is credited | The payment outcome (webhook / sync / sweeper resolution reaching the session's conditional edge) |
 | `COMPLETED_LATE` | The capture landed **after** expiry; the order exists anyway | The payment outcome arriving at an `EXPIRED` row — the modelled race loser's win (`INV-MER-06`) |
 | `EXPIRED` | The clock ran out before money landed | The expiry sweeper (leaderless, conditional) |
-| `ABANDONED` | The merchant or customer explicitly cancelled an `OPEN` session | The cancellation |
+| `ABANDONED` | The merchant withdrew an `OPEN` session nobody had paid for | The merchant's abandonment (merchant API, reasoned) — there is no customer route to it *(this read "the merchant or customer" until the Phase 6 review, `P6-DOC-001`)* |
 
 **The race rule (ADR-0053 §5)**: expiry gates *dispatch* — an expired session starts
 nothing new — but **landed money always wins**: a capture that arrives after expiry moves
@@ -108,10 +108,14 @@ provider webhook ADR-0051 §5 named is deferred (ADR-0057 §10).
 
 ## 5. The merchant — three states
 
-`ACTIVE → SUSPENDED → ACTIVE` (reversible, operator, reasoned, audited) and `→ CLOSED`
-(terminal). Suspension gates **new** dispatches — sessions, payouts — and never touches
-arrived outcomes or the payable: a suspended merchant's money stays theirs and stays
-explainable.
+`ACTIVE → SUSPENDED → ACTIVE` (reversible, operator, reasoned, audited) and `ACTIVE → CLOSED`
+(terminal). `CLOSED` is reachable **only from `ACTIVE`** — `V002`'s trigger refuses `SUSPENDED →
+CLOSED`, so a suspended merchant is reinstated before it can be closed. Suspension gates **new** work — session
+creation, the customer's confirmation of an open session, payouts — and never touches arrived
+outcomes or the payable: a payment admitted before the suspension still lands, and a suspended
+merchant's money stays theirs and stays explainable. *(Corrected at the Phase 6 review,
+`P6-DOC-001`: this read as closable from either state, and the confirmation has refused a
+non-`ACTIVE` merchant, `checkout.NotTrading`, only since that review.)*
 
 ## 6. The payout destination — a proposal flow, not a field
 

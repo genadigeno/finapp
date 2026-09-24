@@ -19,7 +19,7 @@ import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Produces {@code EFFECTIVE} (`P6-TSK-011`, ADR-0056 §3): the platform makes an approved payout
+ * Produces {@code EFFECTIVE} (`P6-TSK-011`, ADR-0056 §5): the platform makes an approved payout
  * destination effective once its cooling-off has elapsed, and supersedes the merchant's previous
  * one in the same transaction.
  *

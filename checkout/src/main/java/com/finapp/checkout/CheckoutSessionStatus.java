@@ -28,9 +28,11 @@ import java.util.stream.Collectors;
  * acted on.
  *
  * <p><strong>No failure state at all.</strong> A declined payment is the <em>payment's</em> state
- * (ADR-0045's machines, unchanged). The session stays {@code PAYMENT_PENDING} and the customer
- * retries on the same intent (ADR-0053 §3). A {@code FAILED} session would end an offer the
- * customer has not given up on, and would need a producer for un-failing it.
+ * (ADR-0045's machines, unchanged). The session stays {@code PAYMENT_PENDING} until the sweeper
+ * expires it: the intent failed with its attempt and is terminal (ADR-0045 §4), and the session's
+ * intent reference is set once, so a customer who still wants to buy needs a new session. This
+ * said the customer retried on the same intent until `P6-DOC-001`; no path does. A {@code FAILED}
+ * session would add a state with nothing more to say than the payment's own.
  *
  * <p><strong>No {@code EXPIRED → COMPLETED}, only {@code EXPIRED → COMPLETED_LATE}.</strong> The
  * honest condition stays countable instead of being laundered into the ordinary one: a capture
@@ -69,7 +71,7 @@ public enum CheckoutSessionStatus {
     /** The clock ran out before money landed. Earned by the sweeper, never by a query. */
     EXPIRED,
 
-    /** The merchant or customer cancelled an offer nobody acted on. */
+    /** The merchant withdrew an offer nobody had paid - its act alone; no customer route exists. */
     ABANDONED;
 
     /** The states reachable from this one. */

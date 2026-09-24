@@ -91,8 +91,11 @@ applies to the error-code catalogue, because a second copy drifts while looking 
 
 ## 4. Column register — *Implemented*
 
-Every column in every schema this repository owns — `platform`, `party` and `identity` — at its
-ceiling.
+Every column in every schema this repository owns — twelve at the Phase 6 review: `platform`,
+`party`, `identity`, `kyc`, `consent`, `ledger`, `accounts`, `transfers`, `paymentmethods`,
+`payments`, `merchant` and `checkout` — at its ceiling. The guard derives the schemas from the
+database rather than from this list, so a thirteenth is covered without anyone remembering.
+*(This named only `platform`, `party` and `identity` until the Phase 6 review, `P6-DOC-001`.)*
 `ColumnClassificationTest` fails the build if this table and the live schema disagree in either
 direction — so a migration that adds a column without a classification decision cannot land. That
 guard, not this table, is what makes the scheme "referenced by later data-model tasks".

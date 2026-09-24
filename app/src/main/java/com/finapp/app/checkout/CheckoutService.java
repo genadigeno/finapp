@@ -167,7 +167,11 @@ public class CheckoutService {
         Money amount = Money.ofMinorUnits(body.amountMinor(), CurrencyCode.of(body.currency()));
         CheckoutSessions.OpenSessionCommand command =
                 new CheckoutSessions.OpenSessionCommand(
-                        idempotencyKey, merchant.merchantId(), amount, body.lineSummary());
+                        idempotencyKey,
+                        merchant.merchantId(),
+                        merchant.keyId(),
+                        amount,
+                        body.lineSummary());
         try {
             CheckoutSessions.OpenedSession opened =
                     inOneTransaction(unitOfWork -> checkout.open(unitOfWork, command));
@@ -248,6 +252,7 @@ public class CheckoutService {
                                         checkout.abandon(
                                                 unitOfWork,
                                                 merchant.merchantId(),
+                                                merchant.keyId(),
                                                 id,
                                                 body.reason());
                                 return new Abandonment(
@@ -306,6 +311,11 @@ public class CheckoutService {
             alreadyPaid = opened.alreadyPaid();
         } catch (UnknownCheckoutSessionException unknown) {
             throw sessionNotFound();
+        } catch (MerchantNotTradingException refused) {
+            throw new ApiException(
+                    CheckoutErrorCode.NOT_TRADING,
+                    "A confirmation was refused by the merchant's standing",
+                    "this merchant is not trading, so this checkout cannot be paid.");
         } catch (CheckoutSessionExpiredException expired) {
             throw new ApiException(
                     CheckoutErrorCode.SESSION_EXPIRED,
@@ -398,6 +408,10 @@ public class CheckoutService {
             // which the platform honours a dead offer (ADR-0053 section 5).
             throw new CheckoutSessionExpiredException();
         }
+        // The merchant's standing as well as the session's (P6-DOC-001): an offer made while
+        // the merchant traded is not paid after it was suspended. Before anything is written,
+        // so a refusal leaves no intent and no pin.
+        checkout.requireTrading(unitOfWork, session.merchantRef());
 
         UUID payerParty = partyOf(unitOfWork, current);
         PaymentCreation creation =

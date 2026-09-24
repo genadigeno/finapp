@@ -299,7 +299,7 @@ class FeeScheduleDatabaseTest {
 
     @Test
     @DisplayName("TEN INSTANCES adding a version to one schedule mint ten DISTINCT numbers -"
-            + " the schedule row's lock, with the unique index behind it")
+            + " the unique index is the arbiter and the queue; there is no lock to take")
     void tenConcurrentVersionsMintTenNumbers() throws Exception {
         String admin = administrator();
         String schedule = createSchedule(admin, "Contended " + suffix());
@@ -361,6 +361,67 @@ class FeeScheduleDatabaseTest {
                                         + " 'merchant.MerchantFeeScheduleAssigned' AND target_id"
                                         + " = ?",
                                 merchant))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("TEN INSTANCES assigning one schedule to one merchant make ONE act - one"
+            + " history row, one audit record, one live pointer, and ten 200s")
+    void tenConcurrentAssignmentsMakeOneAct() throws Exception {
+        // P6-DOC-001: the phase review found this convergence proven one retry at a time (the
+        // test above), so the merchant row's FOR UPDATE - what makes nine racers re-read the
+        // pointer the first one wrote and converge on it, instead of each recording an act or
+        // the primary key refusing nine first-assignments - had no race test.
+        String admin = administrator();
+        String merchant = onboarded(admin);
+        String schedule = createSchedule(admin, "Contended assignment " + suffix());
+        int racers = 10;
+
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<HttpResponse<String>>> results = new ArrayList<>();
+        ExecutorService pool = Executors.newFixedThreadPool(racers);
+        try {
+            for (int i = 0; i < racers; i++) {
+                results.add(
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return assign(admin, merchant, schedule, "standard terms");
+                                }));
+            }
+            start.countDown();
+            for (Future<HttpResponse<String>> result : results) {
+                HttpResponse<String> answered = result.get(60, TimeUnit.SECONDS);
+                // A racer that finds the pointer already naming this schedule has nothing to do,
+                // and says so with the same 200 (FeeSchedules.assign's convergence).
+                assertThat(answered.statusCode()).as(answered.body()).isEqualTo(200);
+                assertThat(field(answered.body(), "feeScheduleId")).isEqualTo(schedule);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.merchant_fee_schedule_event WHERE"
+                                        + " merchant_id = ?",
+                                UUID.fromString(merchant)))
+                .as("one act, however many instances asked at once")
+                .isEqualTo(1);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                        + " 'merchant.MerchantFeeScheduleAssigned' AND target_id"
+                                        + " = ?",
+                                merchant))
+                .isEqualTo(1);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.merchant_fee_schedule WHERE"
+                                        + " merchant_id = ? AND fee_schedule_id = ?",
+                                UUID.fromString(merchant),
+                                UUID.fromString(schedule)))
+                .as("one live pointer, naming the schedule")
                 .isEqualTo(1);
     }
 

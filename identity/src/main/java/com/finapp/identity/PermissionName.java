@@ -3,11 +3,13 @@ package com.finapp.identity;
 /**
  * What an actor may do (`P1-TSK-020`, ADR-0031).
  *
- * <h2>Three values, and none invents a capability</h2>
+ * <h2>Every value names catalogued actions, and none invents a capability</h2>
  *
- * <p>Each names privileged actions `AUDITABLE_ACTIONS.md` already declares - identity suspension,
- * role assignment, and the KYC review actions `P2-TSK-003` catalogued - so the vocabulary follows
- * the registry rather than anticipating it. A permission for an action nobody has catalogued would
+ * <p>Each names privileged actions `AUDITABLE_ACTIONS.md` already declares - from identity
+ * suspension, role assignment and the KYC review actions `P2-TSK-003` catalogued to the ledger,
+ * payment and merchant acts of Phases 3 to 6 - so the vocabulary follows the registry rather than
+ * anticipating it. Which route requires which value is pinned by {@code RoutePermissionRegisterTest}
+ * (`P6-DOC-001`). <em>(This heading said "three values" until then; there are thirteen.)</em> A permission for an action nobody has catalogued would
  * be a claim about a capability that does not exist.
  *
  * <p><em>(This javadoc said "two values" and that neither admin endpoint existed - true when
@@ -141,7 +143,9 @@ public enum PermissionName {
     /**
      * Administer an onboarded merchant (`P6-TSK-003`): suspend, reinstate and close - each a
      * reasoned judgement about a counterparty ({@code INV-AUD-03}) - and, from `P6-TSK-002`,
-     * issue and revoke the merchant's API keys. Distinct from {@link #MERCHANT_ONBOARD}
+     * issue and revoke the merchant's API keys, and from `P6-TSK-011` propose, list and withdraw
+     * its payout destinations (approving one is {@link #PAYOUT_DESTINATION_APPROVE}'s).
+     * Distinct from {@link #MERCHANT_ONBOARD}
      * because the checks differ per surface (the state moves demand recorded reasons; the
      * onboarding demands the KYB gate), while one role holds both - one
      * merchant-administering population until a trust decision splits it, the

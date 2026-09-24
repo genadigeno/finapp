@@ -5,7 +5,7 @@ import java.util.Optional;
 
 /**
  * The destination exchange: a one-time grant in, a storable reference out (`P6-TSK-011`,
- * ADR-0056 §5) — the {@code TokenisationProvider} contract restated for bank data. This port is
+ * ADR-0056 §7) — the {@code TokenisationProvider} contract restated for bank data. This port is
  * the boundary that keeps a merchant's bank details out of the platform.
  *
  * <h2>The contract is total, and three answers cover it</h2>

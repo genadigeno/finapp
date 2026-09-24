@@ -24,7 +24,14 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
@@ -159,6 +166,77 @@ class MerchantEndpointDatabaseTest {
                         null);
         assertThat(refused.statusCode()).isEqualTo(409);
         assertThat(refused.body()).contains("merchant.IllegalTransition");
+    }
+
+    @Test
+    @DisplayName("TEN INSTANCES suspending one ACTIVE merchant make ONE move - one history row,"
+            + " one audit record, and ten 200s that all say SUSPENDED")
+    void tenConcurrentSuspensionsMakeOneMove() throws Exception {
+        // P6-DOC-001: the phase review found the standing move's convergence proven one retry at
+        // a time (MerchantOnboardingDatabaseTest), so the merchant row's FOR UPDATE - what makes
+        // nine racers re-read the SUSPENDED the first one wrote and converge on it, rather than
+        // lose the conditional write's row count or be refused the edge - had no race test.
+        String admin = sessionWith(RoleName.MERCHANT_ADMINISTRATOR);
+        HttpResponse<String> created =
+                post(
+                        "/v1/operator/merchants",
+                        onboardBody(verifiedOrganisation()),
+                        admin,
+                        someKey());
+        String merchantId = field(created.body(), "merchantId");
+        int racers = 10;
+
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<HttpResponse<String>>> results = new ArrayList<>();
+        ExecutorService pool = Executors.newFixedThreadPool(racers);
+        try {
+            for (int i = 0; i < racers; i++) {
+                results.add(
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return post(
+                                            "/v1/operator/merchants/" + merchantId
+                                                    + "/suspension",
+                                            "{\"reason\":\"chargeback ratio breached\"}",
+                                            admin,
+                                            null);
+                                }));
+            }
+            start.countDown();
+            for (Future<HttpResponse<String>> result : results) {
+                HttpResponse<String> answered = result.get(60, TimeUnit.SECONDS);
+                // A racer that finds the merchant already SUSPENDED has found its move done
+                // (MerchantAdministration's convergence): the same 200, never a 409.
+                assertThat(answered.statusCode()).as(answered.body()).isEqualTo(200);
+                assertThat(field(answered.body(), "status")).isEqualTo("SUSPENDED");
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        UUID merchant = UUID.fromString(merchantId);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.merchant_event WHERE merchant_id"
+                                        + " = ? AND from_status = 'ACTIVE' AND to_status ="
+                                        + " 'SUSPENDED'",
+                                merchant))
+                .as("one suspension, however many operators asked at once")
+                .isEqualTo(1);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.merchant_event WHERE merchant_id"
+                                        + " = ?",
+                                merchant))
+                .as("and no other history")
+                .isEqualTo(1);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                        + " 'merchant.MerchantSuspended' AND target_id = ?",
+                                merchantId))
+                .isEqualTo(1);
     }
 
     @Test

@@ -23,7 +23,7 @@ public final class PayoutProviderKey {
             new KeySpec(
                     "payout provider API key",
                     "payout provider API key",
-                    "FINAPP_PAYOUT_PROVIDER_KEY",
+                    "FINAPP_MERCHANT_PAYOUT_PROVIDER_KEY",
                     "/payout-provider",
                     KeyLength.AT_LEAST_32,
                     ".");

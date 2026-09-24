@@ -135,11 +135,14 @@ account does. Two modules would duplicate that lifecycle and, worse, give two ow
 sub-balances, third-party wallet custody, or a distinct regulatory treatment.
 *Must resolve by Phase 3* (open question 4).
 
-**M2 — `checkout` is its own module, provisionally.** A checkout session is short-lived and
-expiring; a merchant is long-lived. Different lifecycles usually mean different modules.
-*Merge trigger:* if `checkout` turns out to own no state that outlives a session and merely
-orchestrates `merchant` and `payments`, it is a service inside `merchant`, not a module.
-*Must resolve by Phase 6* (open question 7).
+**M2 — `checkout` is its own module, confirmed by ADR-0053.** A checkout session is short-lived
+and expiring; a merchant is long-lived. Different lifecycles usually mean different modules.
+*Merge trigger, kept as a watchdog:* if `checkout` turns out to own no state that outlives a
+session and merely orchestrates `merchant` and `payments`, it is a service inside `merchant`, not
+a module. It is not met: the order outlives every session, and the orchestration lives in `app`,
+not in `checkout`.
+*Open question 7 is closed* (ADR-0053 §2). *(This read "provisionally" and "must resolve by
+Phase 6" until the Phase 6 review, `P6-DOC-001`.)*
 
 **M3 — Fraud and AML share the `risk` module.** All three contexts consume the same signals,
 evaluate versioned rule sets, and produce decisions and cases. Splitting them would either
@@ -205,8 +208,9 @@ Every module records the nine attributes `CLAUDE.md` §Architecture requires: **
 ownership of state, transaction boundary, consistency boundary, APIs, events, failure
 behaviour, security boundary, operational responsibility.**
 
-Modules from Phase 1 onward do not exist yet. Their entries are the design contract those
-phases must satisfy, not a description of code.
+The entries for modules of Phases 0-6 describe code that exists; the entries for later phases'
+modules are the design contract those phases must satisfy, not a description of code. *(This
+read "modules from Phase 1 onward do not exist yet" until the Phase 6 review, `P6-DOC-001`.)*
 
 ### `app` — Phase 0
 - **Responsibility:** composition root. Wires modules together and hosts the HTTP surface and configuration. Owns no business capability. **It may sequence two modules inside one transaction** where a use case spans bounded contexts and belongs wholly to neither — registration (`P1-TSK-006`) is the first, and `app` is the only module that *can* host it, since either business module hosting it would have to depend on the other and the isolation tests forbid that. The limit is that `app` owns no rule, no event and no audit record: each module writes its own, and `app` contributes two calls and a transaction. A class here that started deciding *what* to write would be a business module wearing the composition root's name.
@@ -339,7 +343,7 @@ phases must satisfy, not a description of code.
 - **Security:** webhook signature verification and replay-window enforcement; provider credentials in secret management; tokenised instruments only — no PAN, ever; refunds are privileged.
 - **Operations:** per-provider success/failure/latency, unknown-state count **and age**, webhook lag and duplicate rate, stuck-attempt alerting.
 - **Providers:** PSP/processor adapters (ADR-0008), retaining raw evidence for `settlement`.
-- **Ports `app` implements:** `PaymentParticipants` (the caller's wallet and instrument, resolved from authoritative state — `P5-TSK-009`) and, from `P6-TSK-005`, **`CaptureComposition`** — *the lines an approved capture posts*. The second exists because a merchant-bound capture settles in four lines (ADR-0050 §3) and composing them here would mean this module knowing what a merchant is, what a fee is and which schedule version priced it. **Fee vocabulary never enters this domain model**, which is `INV-PAY-03`'s discipline at a second vocabulary; the flow that created the intent supplies the lines and the capture posts what it is handed.
+- **Ports `app` implements:** `PaymentParticipants` (the caller's wallet and instrument, resolved from authoritative state — `P5-TSK-009`) and, from `P6-TSK-005`, **`CaptureComposition`** — *the lines an approved capture posts*. The second exists because a merchant-bound capture settles in four lines (ADR-0050 §3) and composing them here would mean this module knowing what a merchant is, what a fee is and which schedule version priced it. **Fee vocabulary never enters this domain model**, which is `INV-PAY-03`'s discipline at a second vocabulary; the flow that created the intent supplies the lines and the capture posts what it is handed. **`RefundComposition`** (`P6-TSK-014`) is the capture port's mirror, for the same reason — *the lines a completed refund posts* and, from `P6-TSK-015`, *the amount its dispatch holds*. *(Added at the Phase 6 review, `P6-DOC-001`.)*
 
 ### `paymentmethods` — Phase 5
 - **Responsibility:** the tokenised-instrument boundary. Exists so that "no raw card data crosses this line" is a reviewable boundary rather than a convention.
@@ -354,26 +358,27 @@ phases must satisfy, not a description of code.
 
 ### `merchant` — Phase 6
 - **Responsibility:** the merchant as a commercial counterparty, its fees and its payouts.
-- **Owns:** Merchant, Merchant Account, Fee Schedule (versioned), Payout Destination (a proposal flow; `P6-TSK-011`, ADR-0056), Merchant Payout (hold-then-dispatch, four states; `P6-TSK-012`, ADR-0051, ADR-0057).
+- **Owns:** Merchant, Merchant API Key (a hash, never a secret; `P6-TSK-002`, ADR-0052), Fee Schedule (versioned — schedule and versions immutable from creation; `P6-TSK-004`) and each merchant's assignment to one, Payment Fee Pin (the schedule version each merchant-bound payment is priced by; `P6-TSK-005`), Payout Destination (a proposal flow; `P6-TSK-011`, ADR-0056), Merchant Payout (hold-then-dispatch, four states, encrypted evidence; `P6-TSK-012`, ADR-0051, ADR-0057) — each machine with its append-only history. *(Corrected at the Phase 6 review, `P6-DOC-001`: this listed a "Merchant Account", which is the ledger's, and omitted the key and the pin.)*
 - **Transaction:** own; a payout's dispatch places a `ledger` hold on the payable, and its completion releases it and requests the `merchant-payout:<payoutId>` posting (DR payable / CR `PAYOUT_CLEARING`) in one transaction.
-- **Consistency:** strong for merchant state. **Payable is derived from `ledger` postings and never stored** — a stored payable would be a second balance authority.
-- **APIs:** merchant CRUD (privileged), payout destination proposal and decisions (operator only — two operators, four-eyes), payout initiation (the merchant's key, or an operator over `MERCHANT_PAYOUT` — two routes) and read, merchant transaction reporting. Strict tenant scoping on every call.
-- **Events:** `MerchantOnboarded`, `FeeAssessed`, `MerchantPayoutInitiated`, `MerchantPayoutCompleted`, `MerchantPayoutFailed` *(pair added by the Phase 5 → 6 transition — terminal facts publish, the `RefundFailed` precedent)*.
+- **Consistency:** strong for merchant state. **Payable is derived from `ledger` postings and never stored** — a stored payable would be a second balance authority. Every account involved is `ledger`'s: each merchant's `MERCHANT_PAYABLE`, and the platform's operational `FEE_REVENUE` and `PAYOUT_CLEARING`; there is no reserve account.
+- **APIs:** merchant administration, operator-only and privileged — onboard, read, suspend, reinstate, close, and nothing else: no update and no delete, because a merchant's identity is frozen (`V002`) — plus API key issuance, listing and revocation, fee schedules, their versions and assignment; payout destination proposal and decisions (operator only — two operators, four-eyes); payout initiation (the merchant's key, or an operator over `MERCHANT_PAYOUT` — two routes) and read; the merchant's own view, payable and transaction report over its key. Strict tenant scoping on every call. *(This read "merchant CRUD" until the Phase 6 review, `P6-DOC-001`.)*
+- **Events:** `MerchantOnboarded`, `FeeAssessed`, `FeeReturned`, `MerchantPayoutInitiated`, `MerchantPayoutCompleted`, `MerchantPayoutFailed` *(pair added by the Phase 5 → 6 transition — terminal facts publish, the `RefundFailed` precedent; `FeeReturned`, a refund returning a fee share since `P6-TSK-014`, added at the Phase 6 review, `P6-DOC-001`)*.
 - **Failure:** a payout against insufficient payable is a domain rejection; duplicate payout initiation produces one effect; an ambiguous payout is `UNKNOWN` with its hold standing until the resolution sweep's query resolves it, and "never received" is concluded only behind the send permit (ADR-0057); the fee schedule version is pinned per transaction so a mid-flight change cannot reprice history (`INV-HIST-04`).
-- **Security:** merchant authentication distinct from customer authentication; cross-tenant access impossible; payout destination change requires step-up, four-eyes and a cooling-off period.
-- **Operations:** fee accrual, payout volume and age, per-merchant error rates, chargeback ratio (regulatory-relevant).
-- **Composes, never orchestrates** (`P6-TSK-005`): `MerchantSettlement` returns ADR-0050 §3's four journal lines and announces `FeeAssessed`, on the capture's own connection, through the `CaptureComposition` port `app` wires. `merchant` knows an intent only as a `UUID` it was handed and cannot see `payments`; `payments` cannot see `merchant`. The join is the composition root's, the `JdbcPaymentParticipants` shape.
+- **Security:** merchant authentication distinct from customer authentication; cross-tenant access impossible; payout destination change requires four-eyes, a cooling-off period and — when the operator has an active TOTP factor — step-up (the conditional `P4-TSK-007` pattern, ADR-0056). *(This read as unconditional step-up until the Phase 6 review, `P6-DOC-001`.)*
+- **Operations:** `finapp.merchant.fee.assessed` (a count of assessments, never an amount), `finapp.merchant.payout` (acting judgements, by outcome), `finapp.merchant.payout.unknown.active` and `.age` (every unknown payout and every dispatch past the sweep's bound — the stuck-payout alert) and `finapp.merchant.destination.pending` (open destination changes). Not built: fee accrual as an amount, per-merchant error rates, and the chargeback ratio — chargebacks are Phase 7's. *(Corrected at the Phase 6 review, `P6-DOC-001`, to the series `P6-TSK-011` and `P6-TSK-013` built.)*
+- **Composes, never orchestrates** (`P6-TSK-005`): `MerchantSettlement` returns ADR-0050 §3's four journal lines and announces `FeeAssessed`, on the capture's own connection, through the `CaptureComposition` port `app` wires. `merchant` knows an intent only as a `UUID` it was handed and cannot see `payments`; `payments` cannot see `merchant`. The join is the composition root's, the `JdbcPaymentParticipants` shape. **The refund's seam sits beside it** (`P6-TSK-014`): `MerchantBoundRefundComposition` in `app` implements `payments`' `RefundComposition` by asking `MerchantSettlement.refund` for the lines — announcing `FeeReturned` when a fee comes back — and, since `P6-TSK-015`, for the net the dispatch holds (ADR-0054); a payment with no fee pin, a wallet top-up, posts Phase 5's two lines unchanged. *(Added at the Phase 6 review, `P6-DOC-001`.)*
 
 ### `checkout` — Phase 6
 - **Responsibility:** the customer-facing purchase experience and the order it produces.
 - **Owns:** Checkout Session, Order.
-- **Transaction:** own. Payment execution belongs to `payments`.
+- **Transaction:** own writes, in the transactions `app` composes (below). Payment execution belongs to `payments`.
 - **Consistency:** strong. Sessions expire; expiry is a domain event, not a side effect of a cleanup job.
-- **APIs:** session create/retrieve/expire, hosted-checkout completion callback.
-- **Events:** `CheckoutSessionCreated`, `CheckoutSessionExpired`, `OrderPaid`.
+- **APIs:** session create, read and abandon (the merchant's key; the abandonment reasoned), and the customer's confirmation (`POST /v1/checkout/sessions/confirmation` — the customer's own session, the session token in the body). There is no expire route — the sweeper expires — and no completion callback: completion runs in the capture's transaction. *(This read "session create/retrieve/expire, hosted-checkout completion callback" until the Phase 6 review, `P6-DOC-001`.)*
+- **Events:** `CheckoutSessionExpired`, `OrderPaid`. *(`CheckoutSessionCreated` struck at the Phase 6 review, `P6-DOC-001`: never built, and no task owns it; a session's creation is audited, `checkout.CheckoutSessionCreated`.)*
 - **Failure:** a payment completing after session expiry is handled deterministically, never dropped; duplicate order creation produces one order.
 - **Security:** session tokens are unguessable and single-purpose; no merchant may read another's sessions.
-- **Operations:** conversion and abandonment, session expiry rate, late-completion count.
+- **Operations:** `finapp.checkout.session` by outcome — completed, completed-late, expired, abandoned, so conversion, abandonment, expiry and late completion are one counted series — and `finapp.checkout.conversion.age`, split by the same outcome (`P6-TSK-008`, `P6-TSK-013`). *(Named at the Phase 6 review, `P6-DOC-001`.)*
+- **Depends on `platform` only** (`CheckoutModuleIsolationTest`, ADR-0053): it cannot see `merchant` or `payments`, and composes with them only through `app` — `CheckoutService` and `CheckoutSessions` open the payment intent in the confirmation's transaction, and the capture's composition seam completes the session and creates its order inside the capture's own. *(Added at the Phase 6 review, `P6-DOC-001`.)*
 
 ### `settlement` — Phase 8
 - **Responsibility:** external evidence of money actually moving, and the expectation that it will.
@@ -519,7 +524,7 @@ is what found the `Instalment` conflict below.
 | Beneficiary, Transfer, transfer lifecycle | `transfers` | — |
 | Payment Intent, Attempt, Authorization, Capture, Refund, Webhook evidence | `payments` | — |
 | Payment Method token reference, instrument metadata | `paymentmethods` | — |
-| Merchant, Merchant Account, Fee Schedule, Merchant Payout | `merchant` | Merchant **payable** is derived from `ledger` postings, never stored |
+| Merchant, Merchant API Key, Fee Schedule (versions, assignment), Payment Fee Pin, Payout Destination, Merchant Payout | `merchant` | Merchant **payable** is derived from `ledger` postings, never stored — the `MERCHANT_PAYABLE` account is `ledger`'s, as are the operational `FEE_REVENUE` and `PAYOUT_CLEARING` *(corrected at the Phase 6 review, `P6-DOC-001`)* |
 | Checkout Session, Order | `checkout` | — |
 | Settlement Batch, File, Line, Expectation | `settlement` | — |
 | Match, Match Rule, Tolerance, Break, Investigation, Resolution | `reconciliation` | — |
@@ -611,7 +616,13 @@ than the "monetary code paths" phrasing there, for the reason below.
 list of financial packages is a denylist, and a denylist fails in the case that matters: a new
 package is unprotected by default and nothing reports the omission. Since this repository is
 financial infrastructure, a package that cannot touch money is the exception. Exemptions live
-in one named, currently empty set in the rule, so each one is a visible diff.
+in one named set in the rule (`EXEMPT_CLASSES`), so each one is a visible diff. **It is not
+empty:** every entry publishes a count, an age in seconds or a verdict — never an amount —
+through the `double` a Micrometer gauge or counter imposes at the registry boundary. They are the
+gauge classes `OutboxMetrics`, `IdentityMetrics`, `KycMetrics`, `LedgerMetrics`,
+`PaymentMetrics`, and Phase 6's `MerchantMetrics` and `MerchantPayoutMetrics`, each with its
+cached readings, and the counters of `OutboxRelaySchedule` and `InboxConsumers$Loop`. *(This said
+"currently empty" until the Phase 6 review, `P6-DOC-001`.)*
 
 Four surfaces are checked:
 
@@ -928,10 +939,10 @@ revisited.
 | Question | Recorded position | Must resolve by |
 |----------|-------------------|-----------------|
 | Are `accounts` and `wallet` one module or two? | One (§3, M1), with a stated split trigger | Phase 3 |
-| Is `checkout` a module or part of `merchant`? | Its own module (§3, M2), with a stated merge trigger | Phase 6 |
+| Is `checkout` a module or part of `merchant`? | Its own module — **closed by ADR-0053** (§3, M2); the merge trigger stays as a watchdog | Phase 6 |
 | Does a shared case store exist, and who owns it? | No shared store: `kyc` owns Review Task, `risk` owns Case (§5) | Phase 13 |
-| Isolation level and locking strategy for concurrent postings | Undecided — ADR required | Phase 3 |
-| Chart-of-accounts structure and its relation to the Phase 14 GL | Undecided — ADR required | Phase 3 |
+| Isolation level and locking strategy for concurrent postings | `READ COMMITTED`, postings as inserts, balance-dependent decisions under the account lock — **closed by ADR-0039** | Phase 3 |
+| Chart-of-accounts structure and its relation to the Phase 14 GL | A flat account with a typed classification, the GL mapping Phase 14's — **closed by ADR-0040** | Phase 3 |
 | Balance projection placement: ledger schema or separate read store | Ledger schema, transactional (ADR-0009) | Phase 3 |
 
 ### What this map does and does not enforce

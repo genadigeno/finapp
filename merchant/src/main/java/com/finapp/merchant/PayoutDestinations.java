@@ -25,8 +25,8 @@ import java.util.UUID;
 
 /**
  * The payout destination commands (`P6-TSK-011`, ADR-0056): propose, approve, reject, withdraw
- * — every one an operator's act, audited with actor, reason and correlation — and the read a
- * payout dispatch makes, {@link #effectiveFor}.
+ * — every one an operator's act, audited with actor, reason and correlation — and the plain
+ * read of the effective destination, {@link #effectiveFor}.
  *
  * <h2>Four-eyes is two authenticated acts, never one request carrying two names</h2>
  *
@@ -276,9 +276,14 @@ public final class PayoutDestinations {
     }
 
     /**
-     * The destination a payout dispatch pays to, read in the dispatch's own transaction
-     * (ADR-0056 §7): the committed {@code EFFECTIVE} row, or empty when the merchant has none. A
-     * change still cooling off changes nothing here until the platform has made it effective.
+     * The merchant's committed {@code EFFECTIVE} destination, or empty when it has none - the
+     * operator's list reads it. A change still cooling off changes nothing here until the
+     * platform has made it effective.
+     *
+     * <p><strong>Not the dispatch's read.</strong> The payout dispatch reads the same row
+     * {@code FOR SHARE} in its own transaction ({@code PayoutDestinationStore#findEffectiveForShare},
+     * ADR-0056 §9 and ADR-0057 §7), so a supersession cannot commit under it. This javadoc said
+     * otherwise until `P6-DOC-001`.
      */
     public Optional<PayoutDestination> effectiveFor(Connection unitOfWork, MerchantId merchant) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

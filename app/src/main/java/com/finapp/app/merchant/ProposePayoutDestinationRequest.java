@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Size;
  * The body of {@code POST /v1/operator/merchants/'{id}'/payout-destinations} (`P6-TSK-011`).
  *
  * <p>{@code destinationToken} is the grant the operator's client obtained from the payout
- * provider for the merchant's bank account — never the account itself (ADR-0056 §5). It is
+ * provider for the merchant's bank account — never the account itself (ADR-0056 §7). It is
  * {@link Sensitive} so every rendering of the request masks it (the
  * {@code AttachPaymentMethodRequest} precedent); its shape rule, including the refusal of
  * account-number-shaped values, is {@code PayoutDestinationGrant}'s, the one definition, mapped

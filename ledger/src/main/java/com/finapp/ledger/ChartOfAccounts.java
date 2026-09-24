@@ -20,8 +20,13 @@ import lombok.RequiredArgsConstructor;
  * does not exist.
  *
  * <p><strong>An owned purpose is refused outright</strong>: {@code CUSTOMER_WALLET} accounts
- * belong to customer products and are resolved by owner (`LedgerAccountStore#findOwned`), so
- * asking the <em>operational</em> chart for one is a programming error, not a lookup miss.
+ * belong to customer products and {@code MERCHANT_PAYABLE} accounts to merchants, each resolved
+ * by owner (`LedgerAccountStore#findOwned`), so asking the <em>operational</em> chart for one is
+ * a programming error, not a lookup miss. The predicate is the kind's own
+ * {@link OwnerKind#requiresOwnerRef()} (`P6-DOC-001`): {@code == CUSTOMER} was correct while
+ * exactly one kind had an owner, and `P6-TSK-003` retired that assumption from the seed's
+ * guard but not from this one - so a merchant payable asked of the chart was answered as a
+ * missing seed, the deployment defect below, rather than as the caller's mistake.
  */
 @RequiredArgsConstructor
 public final class ChartOfAccounts<T> {
@@ -33,10 +38,10 @@ public final class ChartOfAccounts<T> {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(purpose, "purpose must not be null");
         Objects.requireNonNull(currency, "currency must not be null");
-        if (purpose.ownerKind() == OwnerKind.CUSTOMER) {
+        if (purpose.ownerKind().requiresOwnerRef()) {
             throw new IllegalArgumentException(
-                    purpose + " accounts belong to customer products and are resolved by owner,"
-                            + " never from the operational chart");
+                    purpose + " accounts belong to their " + purpose.ownerKind() + " owner and are"
+                            + " resolved by owner, never from the operational chart");
         }
         return store.findOperational(unitOfWork, purpose, currency)
                 .orElseThrow(

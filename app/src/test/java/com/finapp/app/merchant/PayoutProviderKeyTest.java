@@ -31,7 +31,7 @@ class PayoutProviderKeyTest {
                         () -> PayoutProviderKey.decode(ConfinedCredential.MARKED_LOCAL_DEFAULT, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("payout provider API key")
-                .hasMessageContaining("FINAPP_PAYOUT_PROVIDER_KEY");
+                .hasMessageContaining("FINAPP_MERCHANT_PAYOUT_PROVIDER_KEY");
     }
 
     @Test

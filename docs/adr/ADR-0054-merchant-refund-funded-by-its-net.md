@@ -1,6 +1,6 @@
 # ADR-0054 — A merchant refund is funded by its net; the only credit it extends is the fee the platform keeps
 
-Status: Proposed
+Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; it describes it)
 Date: 2026-09-23
 Phase: 6
 Context: Merchant · Payments · Ledger
@@ -108,7 +108,7 @@ Negative:
   may see the last one refused while a sibling is in flight. A retry after the siblings
   resolve reserves the exact remainder.
 - A capture whose fee meets or exceeds its gross (a large fixed part on a small sale, which
-  nothing refuses today) leaves the payable negative at capture. Its refund reserves the
+  nothing refused when this was written) leaves the payable negative at capture. Its refund reserves the
   one-unit floor and is refused while the payable is negative, conservatively. The real fix is
   deciding whether such a price should be accepted at all; recorded with an owner, not decided
   here. **Decided by ADR-0058 (`P6-TST-001`): such a sale is refused at the price**, so no sale

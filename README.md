@@ -6,8 +6,10 @@ rather than by convention.
 
 **Phase 0 delivered no business capability, and that was deliberate** — money representation,
 idempotency, outbox, audit and correlation cannot be retrofitted once financial history exists.
-Four phases on, money does exist: a double-entry ledger, balances explainable from the postings,
-holds, and customer-visible internal transfers over HTTP. Where the project stands is summarised
+Six phases on, money exists and moves: a double-entry ledger, balances explainable from the
+postings, holds, customer-visible internal transfers, payments through a third party that can
+fail in every way a third party can, and merchants who sell through the platform and are paid
+out. Where the project stands is summarised
 immediately below, and described canonically in
 [`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md).
 
@@ -15,13 +17,11 @@ immediately below, and described canonically in
 
 ## Where the project is
 
-**Phases 0 through 4 are `COMPLETE`, and Phase 5 — Payment Infrastructure — is `IN_PROGRESS`**
-(started 2026-09-20 with `P5-TSK-001`; M5.1 and M5.2 closed, 5 of 21 items): the
-Phase 4 → 5 transition was conducted the same day
-([`docs/project/reviews/PHASE_4_TO_5_TRANSITION.md`](docs/project/reviews/PHASE_4_TO_5_TRANSITION.md)),
-confirming Phase 4 with an independent audit and a **fleet-wide full battery** — 1157 hermetic /
-729 database / 14 kafka, 0 failures — and initialising Phase 5 in full: ADR-0045–0049, the
-`INV-PAY` invariant group, `PHASE_5_PLAN.md`, and 21 backlog items across nine milestones.
+**Phases 0 through 6 are `COMPLETE`.** Phase 6 — Checkout and Merchant Platform — closed on
+2026-09-24, ruled by its exit review
+([`docs/project/reviews/PHASE_6_REVIEW.md`](docs/project/reviews/PHASE_6_REVIEW.md)), which found
+and fixed more than it was sent and probed every fix. The next act is the **Phase 6 → 7
+transition**, behind which Phase 7 — Cards, Wallets, A2A and Instant Payments — waits.
 
 Every number below is counted from this repository rather than recalled: items from
 [`docs/project/BACKLOG.md`](docs/project/BACKLOG.md), decisions from [`docs/adr/`](docs/adr/README.md),
@@ -31,23 +31,28 @@ the surface from [`docs/api/openapi.json`](docs/api/openapi.json).
 description of where the project is; this section is the summary of it.
 
 ```
-Programme    █████░░░░░░░░░░░░   5 of 17 phases complete
-Backlog      ████████████████░░  165 of 181 elaborated items complete
-Phase 4      ██████████████     14 of 14 items, 8 of 8 milestones closed
-Phase 5      ████░░░░░░░░░░░░░░   5 of 21 items — M5.1, M5.2 closed; next P5-TSK-006
+Programme    ███████░░░░░░░░░░   7 of 17 phases complete
+Backlog      ██████████████████  199 of 202 elaborated items complete — every phase item; 3 cross-cutting open
+Phase 6      ██████████████████  18 of 18 items, 7 of 7 milestones closed
+Phase 7      ░░░░░░░░░░░░░░░░░░  behind its entry gate — next: the Phase 6 → 7 transition
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 5 in progress — a person attaches, lists and detaches an instrument over HTTP through the tokenisation exchange, under the conditional step-up, with nothing raw ever stored. Next: **`P5-TSK-006`**, the `PaymentIntent` aggregate and machine |
-| 💰 **Business capability** | Money exists: accounts, a double-entry ledger, explainable balances, holds, and customer-visible internal transfers over HTTP |
-| 📐 **Decisions** | 49 ADRs — 44 `Accepted`, and ADR-0045–0049 `Proposed` by the Phase 4 → 5 transition for the phase they open |
-| 🔒 **Invariants** | 87 catalogued — the transition added `INV-PAY-01`–05, Phase 5's gate properties given stable IDs before code is written against prose; each in-scope one has a test *demonstrated to fail* when the invariant is broken |
-| 🗄️ **Schema** | 57 forward-only migrations across 10 schema-owning modules |
-| 🌐 **API** | 39 published paths, 47 operations, compared byte for byte against the running application on every build |
-| 🧾 **Audit and errors** | 46 auditable actions, 35 error codes, both reconciled with the code by the build |
-| 🧩 **Code** | 10 Gradle modules, 491 production and 298 test source files |
-| 📦 **History** | 239 commits, 2026-08-31 to 2026-09-19 |
+| 🔨 **Current work** | Phase 6 is complete. Next: **the Phase 6 → 7 transition** — the independent audit of Phase 6, the fleet-wide battery, and Phase 7's plan and backlog |
+| 💰 **Business capability** | Money exists and moves: accounts, a double-entry ledger, explainable balances, holds, internal transfers, payments and refunds through an unreliable provider, and merchants who sell through checkout, are charged their fee in the capture's own entry, refund out of their payable and are paid out under the bound |
+| 📐 **Decisions** | 58 ADRs — 57 `Accepted`, and ADR-0055 (Lombok, cross-cutting) `Proposed`, its acceptance the owner's |
+| 🔒 **Invariants** | 94 catalogued; each in scope for a completed phase has a test *demonstrated to fail* when the invariant is broken |
+| 🗄️ **Schema** | 79 forward-only migrations across 12 schema-owning modules |
+| 🌐 **API** | 71 published paths, 86 operations, compared byte for byte against the running application on every build |
+| 🧾 **Audit and errors** | 77 auditable actions, 68 error codes, both reconciled with the code by the build |
+| 🧩 **Code** | 14 Gradle modules; 754 production, 380 test and 7 test-fixture source files |
+| 📦 **History** | 298 commits, 2026-08-31 to 2026-09-24 |
+
+*(This section read "Phase 5 … `IN_PROGRESS`, 5 of 21 items" from 2026-09-20 until the Phase 6
+review's completion gate, `P6-DOC-001` — frozen through the rest of Phase 5, its review, the
+Phase 5 → 6 transition and the whole of Phase 6, the stale-second-copy class. Every number above
+was recounted from the repository at that gate.)*
 
 ---
 

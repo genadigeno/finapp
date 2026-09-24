@@ -275,6 +275,43 @@ class CheckoutSessionDatabaseTest {
     }
 
     @Test
+    @DisplayName("ONE SESSION PER PAYMENT INTENT: a second session carrying the same intent is"
+            + " refused at the unique index, for every writer (ADR-0053 section 3)")
+    void anIntentBelongsToOneSession() throws Exception {
+        UUID intent = IDS.next();
+        CheckoutSession first = open(CheckoutSessionToken.issue(RANDOMNESS));
+        runAsPlatform(uow -> sessions.insert(uow, first));
+        runAsPlatform(uow -> sessions.transition(uow, first, first.confirm(CLOCK, intent)));
+        CheckoutSession second = open(CheckoutSessionToken.issue(RANDOMNESS));
+        runAsPlatform(uow -> sessions.insert(uow, second));
+
+        // P6-DOC-001. V002 froze each session's reference but never made it unique ACROSS
+        // sessions, and the capture completes the first row its lookup meets - so a second
+        // row would let landed money complete whichever session the scan found first.
+        try (Connection app = DatabaseRoles.application()) {
+            assertThatThrownBy(
+                            () ->
+                                    execute(
+                                            app,
+                                            // GREATEST: created_at is the host's clock, now()
+                                            // the container's, and they need not agree.
+                                            "UPDATE checkout.checkout_session SET status ="
+                                                    + " 'PAYMENT_PENDING', status_changed_at ="
+                                                    + " GREATEST(now(), created_at),"
+                                                    + " payment_intent_ref = ? WHERE id = ?",
+                                            intent,
+                                            second.id().value()))
+                    .as("landed money must complete exactly one session")
+                    .isInstanceOfSatisfying(
+                            SQLException.class,
+                            refused -> assertThat(refused.getSQLState()).isEqualTo("23505"))
+                    .hasMessageContaining("checkout_session_one_session_per_intent");
+        }
+        assertThat(asPlatform(uow -> sessions.findById(uow, second.id()).orElseThrow()).status())
+                .isEqualTo(CheckoutSessionStatus.OPEN);
+    }
+
+    @Test
     @DisplayName("A GATE FINDING, CLOSED: a transition carrying a DIFFERENT intent than the row"
             + " holds is REFUSED, not silently discarded")
     void aConflictingIntentIsRefusedRatherThanDiscarded() throws Exception {

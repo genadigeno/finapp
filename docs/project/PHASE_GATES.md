@@ -319,7 +319,9 @@ judged on:*
   negative tests assert the one refusal **and zero rows touched** (`INV-MER-01`).
 - **The four-eyes primitive is real**: proposer ≠ approver enforced in the statement, the
   cooling-off gate proven by a dispatch during the window using the prior destination, and
-  the approve-by-proposer refusal negatively tested (`INV-AUD-04`'s first subject).
+  the approve-by-proposer refusal negatively tested (`INV-AUD-04`'s second subject — *"first"
+  until the Phase 6 review, `P6-DOC-001`: `P3-TSK-021` built the first, on manual
+  adjustments*).
 - **Fee determinism is reproducible**: recomputing any assessment under its pinned
   schedule version reproduces the amount to the minor unit; a mid-flight schedule change
   prices nothing already dispatched (`INV-MER-03`).

@@ -40,7 +40,7 @@ class PayoutEvidenceKeyTest {
                         () -> PayoutEvidenceKey.decode(ConfinedCredential.MARKED_LOCAL_DEFAULT, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("payout evidence encryption key")
-                .hasMessageContaining("FINAPP_PAYOUT_EVIDENCE_KEY");
+                .hasMessageContaining("FINAPP_MERCHANT_PAYOUT_EVIDENCE_KEY");
     }
 
     @Test

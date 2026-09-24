@@ -4,7 +4,7 @@ import com.finapp.sharedkernel.security.Sensitive;
 import java.util.Objects;
 
 /**
- * The opaque reference a payout destination is paid to (`P6-TSK-011`, ADR-0056 §5): what the
+ * The opaque reference a payout destination is paid to (`P6-TSK-011`, ADR-0056 §7): what the
  * provider's exchange returned for a grant, resolving at the provider to a merchant's bank
  * account.
  *

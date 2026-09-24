@@ -1,6 +1,6 @@
 # ADR-0051 — Merchant payout: hold-then-dispatch on the payable, nothing final before settlement
 
-Status: Proposed
+Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; one sentence corrected to it first)
 Date: 2026-09-21
 Phase: 6
 Context: Merchant · Ledger · Payments
@@ -83,4 +83,9 @@ Two design temptations must be refused explicitly:
   credit-normal `LIABILITY` (§3). §5's webhook is deferred and the query sweep is the resolver.
   A send permit makes the sweep's "never received" safe beside the takeover's re-send, a refused
   connection fails a payout only on its first send, and the operator initiates over its own
-  route and `MERCHANT_PAYOUT`.
+  route and `MERCHANT_PAYOUT`. **"Currently effective" is the dispatch's rule, not the
+  re-send's** (ADR-0057 §7): a takeover re-sends the stored reference to the destination the
+  payout was bound to when it dispatched, even if that destination has since been superseded -
+  the provider already holds that instruction, and redirecting a payout in flight would be a
+  second payment. *(Added by the phase review, `P6-DOC-001`, where the sentence above about the
+  currently effective destination read as if it bound every send.)*

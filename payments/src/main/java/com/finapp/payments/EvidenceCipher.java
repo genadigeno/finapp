@@ -29,7 +29,7 @@ import javax.crypto.spec.SecretKeySpec;
  *
  * <h2>One key per concern</h2>
  *
- * <p>{@code FINAPP_PAYMENT_EVIDENCE_KEY} (the {@code PaymentEvidenceKey} spec in {@code app}),
+ * <p>{@code FINAPP_PAYMENTS_EVIDENCE_KEY} (the {@code PaymentEvidenceKey} spec in {@code app}),
  * never the document key and never the provider API key: one key per concern is what makes
  * later rotation per concern possible, and the key version is recorded on every row so a
  * rotation can tell which key wrote which ({@code INV-HIST-04}'s rule applied to a key).
