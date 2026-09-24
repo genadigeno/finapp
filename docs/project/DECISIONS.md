@@ -235,6 +235,16 @@ history that points at it. `identity` references `PartyId` **by value**: no cros
 key, because a database-level FK across a module boundary is coupling Gradle and ArchUnit cannot
 see. &rarr; [ADR-0029](../adr/ADR-0029-party-customer-identity-are-three-aggregates.md)
 
+### Recovery channels
+One **verified** contact channel per identity per kind, held by `V011`'s partial unique index
+(`P1-TSK-023`). An unverified channel never blocks another, so a typo is not a lockout. **A second
+verification is refused, not replaced** (`X-TSK-004`, `INV-IDN-06`). A channel is added with a
+session alone, so a verification that displaced the verified channel would turn a stolen password
+into a durable recovery route, with no step-up and no word to the address replaced. The refusal is
+`409 identity.VerifiedChannelAlreadyExists` and writes nothing; the index is the arbiter, so ten
+instances verifying at once verify one. Changing the verified channel is a flow of its own,
+deferred below. &rarr; [`BACKLOG.md`](BACKLOG.md), `X-TSK-004`
+
 ### Sessions and assurance
 Sessions are **server-side and authoritative in PostgreSQL**, so revocation is immediate by
 construction on every instance (`INV-IDN-03`). A self-contained JWT was rejected on exactly that
@@ -653,3 +663,4 @@ Recorded so these are not mistaken for oversights.
 | Machine-learning risk models | Beyond scope | Versioned rules first; models add reproducibility burden without domain insight |
 | Handling raw card data | Never | Tokenised at the boundary; PCI scope deliberately minimised |
 | A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) |
+| Changing the verified contact channel | Phase 15, with the notifier | A safe change needs a step-up, a notice to the channel being replaced and a cooling-off - `INV-IDN-06`'s own enforcement - and the notice needs the channel notifier Phase 15 brings. Until then a second verification is refused (`X-TSK-004`, §Recovery channels). Nothing delivers a challenge before that notifier either, so the refusal cannot yet strand a customer. **The flow must spend every pending challenge of the kind**: a refused verification writes nothing, so its challenge stays live until it expires, and a flow that freed the kind without spending them would let a parked challenge verify the moment the verified channel is gone |

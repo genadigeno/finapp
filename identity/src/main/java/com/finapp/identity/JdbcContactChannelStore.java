@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Objects;
@@ -18,6 +19,9 @@ public final class JdbcContactChannelStore implements ContactChannelStore<Connec
 
     private static final String COLUMNS =
             "id, identity_id, kind, address, verified_at, added_at";
+
+    /** SQLState 23505. The one-verified-per-kind index answering, not a failure (`X-TSK-004`). */
+    private static final String UNIQUE_VIOLATION = "23505";
 
     @Override
     public void add(
@@ -78,16 +82,51 @@ public final class JdbcContactChannelStore implements ContactChannelStore<Connec
                         + " AND verified_at IS NULL"
                         + " AND verification_expires_at > ?"
                         + " RETURNING " + COLUMNS;
+
+        // Behind a savepoint (`X-TSK-004`, JdbcPaymentFeePinStore's shape). Setting verified_at
+        // enters V011's one-verified-per-identity-and-kind index, so verifying a second channel of a
+        // kind is a unique violation - and a unique violation aborts the caller's whole transaction
+        // unless it is rolled back to here. It is an ANSWER, not a failure: the identity already has
+        // a verified channel, and INV-IDN-06 keeps that one rather than letting a second mailbox
+        // displace it. Until X-TSK-004 it was reported as a storage failure, which is a 500.
+        //
+        // SQLState alone is unambiguous for THIS statement, because the only unique index it can
+        // ENTER is that one: it leaves the token-hash index (the hash becomes NULL) and does not touch
+        // the primary key. A unique index this UPDATE could enter would have to be told apart here.
+        Savepoint attempt;
+        try {
+            attempt = unitOfWork.setSavepoint("contact_channel_verification");
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not prepare a contact channel verification", e));
+        }
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setTimestamp(1, Timestamp.from(at));
             update.setString(2, presented.hash().expose());
             update.setTimestamp(3, Timestamp.from(at));
+            Optional<ContactChannel> verified;
             try (ResultSet rows = update.executeQuery()) {
-                return rows.next() ? Optional.of(read(rows)) : Optional.empty();
+                verified = rows.next() ? Optional.of(read(rows)) : Optional.empty();
             }
+            unitOfWork.releaseSavepoint(attempt);
+            return verified;
         } catch (SQLException e) {
+            if (UNIQUE_VIOLATION.equals(e.getSQLState())) {
+                rollbackTo(unitOfWork, attempt);
+                throw new VerifiedChannelAlreadyExistsException();
+            }
             throw new IdentityStorageException(
                     DatabaseFailure.describe("Could not verify a contact channel", e));
+        }
+    }
+
+    private static void rollbackTo(Connection unitOfWork, Savepoint attempt) {
+        try {
+            unitOfWork.rollback(attempt);
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe(
+                            "Could not abandon a refused contact channel verification", e));
         }
     }
 

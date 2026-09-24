@@ -28,6 +28,11 @@ public interface ContactChannelStore<T> {
      * @return the channel now verified, or empty for every reason: unknown token, spent, expired, a
      *     lost race. One answer, because a caller able to tell them apart learns whether a
      *     verification is pending on an account
+     * @throws VerifiedChannelAlreadyExistsException the challenge was live, and the identity already
+     *     has a verified channel of this kind (`X-TSK-004`). Refused rather than replaced
+     *     ({@code INV-IDN-06}). Nothing is written, and the unit of work is still usable: the store
+     *     rolls back to a savepoint before throwing. Not one of the reasons above, because it is
+     *     reachable only by presenting a live challenge - so it tells nobody without one anything
      */
     Optional<ContactChannel> verify(T unitOfWork, SingleUseToken presented, Instant at);
 

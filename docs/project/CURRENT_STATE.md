@@ -383,15 +383,17 @@ summary through generated `toString`s (fixed, with the tests the exemptions clai
 instrument at checkout answered `500` (fixed); a second holder of the token learned a session was
 mid-payment (fixed); a confirmation that lost the open was told `EXPIRED` (fixed); eleven
 documents and registers said something untrue (fixed). A second verified contact channel answers
-`500`, three race tests are missing and a poisoned row can starve a sweep (recorded below).
+`500`, three race tests are missing and a poisoned row can starve a sweep (recorded below; the
+first since paid by `X-TSK-004`).
 
 **`X-TSK-001` is `COMPLETE`**: its one open criterion, a fresh full database tier green, was met by
 this transition's battery — before repair and after.
 
 ### Previously
 
-The per-task completion records behind this one — 143 blocks, from `P6-DOC-001` back to project
-initiation — are archived verbatim in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
+The per-task completion records — 144 blocks: `X-TSK-004`, cross-cutting and completed after this
+one, then `P6-DOC-001` back to project initiation — are archived in
+[`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
 `P6-TSK-015`'s gate.)*
 Each records what the task delivered, the mutations performed, and the findings made on the way.
@@ -429,7 +431,16 @@ phase exit and does not displace the phase's current task). **`COMPLETE`** (2026
   further work, as recorded. ADR-0055 stays `Proposed`, its acceptance the owner's. The plan and its results are
   [`tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`](tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md) §21.
 
-The last work performed was **the Phase 6 → Phase 7 transition** (2026-09-24): Phase 6 audited
+**Cross-cutting — `X-TSK-004`, a second verified contact channel refused** (2026-09-24,
+owner-directed; it belongs to no phase and does not displace `P7-TSK-001`). **`COMPLETE`**
+(2026-09-24). It pays the Phase 15 debt row the transition recorded: a verification that would give
+an identity a second verified channel of a kind is `409 identity.VerifiedChannelAlreadyExists`
+rather than a `500`. The refusal writes nothing, and recovery stays on the channel verified first
+(`INV-IDN-06`). The narrative is in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md), the entry
+in [`BACKLOG.md`](BACKLOG.md).
+
+The last work performed was **`X-TSK-004`** (2026-09-24, above). Before it, **the Phase 6 → Phase 7
+transition** (2026-09-24): Phase 6 audited
 independently, two CRITICAL and nine IMPORTANT defects repaired and probed (thirty-three probes, all
 caught), the full battery fleet-wide before repair and after, and Phase 7 initialised — ADR-0059…0062
 `Proposed`, `INV-RAIL` and `INV-DSP` catalogued (**101 invariants**), `PHASE_7_PLAN.md`,
@@ -680,7 +691,7 @@ carries, what triggers paying it down, and the owning phase.
 | ~~**Payments' stuck-dispatch blindness, and refund resolution by query.**~~ — **paid 2026-09-24** by the Phase 6 → 7 transition, which found the gap behind a CRITICAL defect and could not leave it: the sweep resolves refunds by query and re-drives one the provider never saw under a send permit, chains a stranded `AUTHORIZED` to capture, and both stuck gauges count a `DISPATCHED` operation (and an `AUTHORIZED` one) past the sweep's bound. *As recorded:* **Payments' stuck-dispatch blindness, and refund resolution by query.** Phase 5's gauges (`finapp.payments.unknown.*`) count only `*_UNKNOWN`, so a payment or refund whose instance crashed mid-dispatch is invisible whenever the sweep is down; and an `UNKNOWN` refund is resolved only by webhook — Phase 5 deferred refund sweeping to "Phase 6 or a sweeper extension", and Phase 6 built the payout's sweep but not the refund's | The payout's gauge and sweep are the shape both should take (`P6-TSK-013`, `P6-TSK-012`), but they are Phase 5's components, and a phase review is not where their machinery changes (`P6-DOC-001`) | **An unalerted stuck refund**: its hold stands, so the money is parked and visible in the balance but not paged; a crashed payment dispatch is equally silent until an instance's sweep runs | The Phase 6 → 7 transition's planning, or the first stuck refund in practice | Phase 7 |
 | **The step-up on a payout destination change is conditional.** An operator with no enrolled factor proposes and approves a destination without one — `P4-TSK-007`'s pattern (ADR-0056 §3), which the Phase 6 gate's "requires step-up authorization" was read against at the review (`P6-DOC-001`) | A factor is optional for every identity on the platform, and requiring one of privileged roles is a policy across every operator surface, not a destination task's | **A weaker second rank, not an open door**: two distinct operators, the 72-hour cancellable cooling-off and the audit trail stand regardless, so one compromised operator cannot redirect a merchant's money alone | A privileged-access review, or the first operator population with money-redirecting rights and no factor | Phase 15 |
 | **A refused step-up is not audited.** `403 AssuranceRequired` on a payout destination's proposal or approval, as on the Phase 4 surfaces that share the conditional step-up, leaves no audit record | Recording refusals below the permission check is an audit-completeness question across every step-up surface, not a destination task's | **An attempt without its trail**: an operator without a second factor trying a four-eyes act is refused but not recorded; the permission refusals above it are | Audit completeness verification | Phase 15 |
-| **A second verified contact channel answers `500`.** Verifying an email channel for an identity that already has one verified violates `V011`'s one-verified-per-kind index, and the store reports it as a storage failure; `EmailAddress`'s javadoc also cites a unique index on the address that `V011` never built (found by the Phase 6 → 7 transition's audit, Phase 1's code) | Out of Phase 6's scope, and the right answer — refuse, or replace the verified channel — is a product decision about recovery (`INV-IDN-06`) | **A server fault where a refusal belongs**: nothing is written, and recovery keeps the channel already verified | The first second-channel verification in practice, or Phase 15's hardening | Phase 15 |
+| ~~**A second verified contact channel answers `500`.**~~ - **closed 2026-09-24** by `X-TSK-004`, pulled forward from Phase 15 at the owner's direction. *(Found by the Phase 6 → 7 transition's audit, in Phase 1's code.)* The decision this row left open is taken: **refused, not replaced** (`INV-IDN-06`). A channel is added with a session alone, so a verification that displaced the verified one would let a stolen password redirect recovery, with no step-up and no word to the address replaced. The store now verifies behind a savepoint and answers the index's `23505` with `VerifiedChannelAlreadyExistsException`, which the endpoint returns as `409 identity.VerifiedChannelAlreadyExists`. The refusal writes nothing, and ten instances racing verify exactly one. `EmailAddress`'s javadoc no longer cites a unique index on the address; `V011`'s column comment still does, and stays, because an applied migration is not edited. **The path was latent over HTTP** (nothing delivers a challenge before Phase 15's notifier) and live through the module's API, so it would have gone live with the notifier unchanged. Changing the verified channel is deferred to Phase 15 with that notifier (`DECISIONS.md` §Deliberately Deferred) | - | - | - | - |
 | **Three interleavings on the confirmation have no race test.** An instrument detached, an intent cancelled and a session abandoned while a confirmation runs are each arbitrated by a conditional transition or an in-lock re-read, and none is driven as a race (found by the Phase 6 → 7 transition's audit) | Each arbiter is one already proven elsewhere; the races are coverage, not correctness, and a phase transition is not where tests for them are designed | **An arbiter nobody broke on purpose here**: a regression in one would pass until a storm met it | Phase 7's multi-rail storm (`P7-TST-001`), which drives confirmations under all three | Phase 7 |
 | **A poisoned row can delay a sweep.** The payments and payout sweeps take the oldest candidates first and log a failing row and continue, but a row that fails every tick stays at the head of the queue and takes a slot of every batch | Skipping a failing row needs a failure count or a backoff column, a schema change on the platform's most contended tables | **Delay, not loss**: every other row is still reached, one batch slot short, and the failing row is logged every tick | A row failing repeatedly in practice, or Phase 15's runbooks | Phase 15 |
 

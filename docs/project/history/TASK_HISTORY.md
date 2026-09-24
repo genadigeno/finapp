@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 143 "Previously" blocks, newest first, from `P6-DOC-001` back to project initiation.
+The per-task completion records that accumulated behind `## Current Task` - 144 "Previously" blocks, newest first, from `X-TSK-004` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, whose record stays `CURRENT_STATE.md`'s "Just completed" until `P7-TSK-001` completes; when that record moves here, it belongs below `X-TSK-004`.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,90 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`X-TSK-004` — a second verified contact channel is refused, not a `500`** — `COMPLETE`
+(2026-09-24). **Cross-cutting and owner-directed, run after the Phase 6 → 7 transition while
+`P7-TSK-001` was `READY`; it pays the Phase 15 debt row that transition recorded. Refused, not
+replaced (`INV-IDN-06`): the refusal is a `409` that writes nothing, and ten instances racing verify
+exactly one.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| `409 identity.VerifiedChannelAlreadyExists`, never `500` | `RecoveryEndpointDatabaseTest#aSecondVerifiedChannelIsAConflictNotAServerFault`: `409` with the code, a body naming neither the identity nor the address, and a retry answered the same. Against the pre-fix store, *expected 409 but was 500* |
+| The refusal writes nothing; recovery keeps the first channel | `ContactChannelSecondVerificationDatabaseTest#aSecondVerificationIsRefusedAndWritesNothing`: both channels' rows equal column for column (the pending challenge intact), the channels' audit records equal, `findVerified` still the first |
+| The caller's transaction survives the refusal | `#theRefusalLeavesTheTransactionUsable`: a channel added earlier in the same transaction commits, and the transaction answers after the refusal. Without the rollback to the savepoint, `25P02` |
+| Ten instances, one verified | `#tenConcurrentVerificationsVerifyExactlyOne`: 1 verified, 9 refused as the typed answer, 1 verified row, 9 challenges intact, 1 verification audited. Without the index, *expected 1 but was 10* |
+| Registered and published | `IdentityErrorCode` and `ERROR_CONTRACT.md` §3, `ErrorCodeRegistryTest` 6 of 6; the OpenAPI baseline regenerated, seven differences all `COMPATIBLE`, one response component |
+| `EmailAddress`'s javadoc true | It cited a unique index on the address that `V011` never built. It now says nothing is unique on the address: the per-kind index, not normalisation, holds an identity to one verified address |
+| Probes recorded | `MUTATION_TESTING.md` §2, `INV-IDN-06`: four mutations, four caught |
+
+### The two decisions the task asked for
+
+**Reachable, although not over HTTP today.** The add command does not refuse: `POST /v1/me/channels`
+inserts a second, unverified row unconditionally, and `V011`'s partial index covers verified rows
+only. But no HTTP caller can hold a challenge, because `RecoveryApplicationService.addChannel`
+discards it, the endpoint answers `202` with no body, and the notifier is Phase 15's. So over HTTP
+the `500` was latent. Through the module's API it was live: the database suites verify real
+challenges, and `ContactChannelStore.verify` promised "empty for every reason" and threw instead.
+The notifier attaches without touching the add command or the store, so the `500` would have gone
+live with it unchanged. That is why the owner's javadoc-only alternative was declined.
+
+**Refused, not replaced.** `INV-IDN-06` allows recovery only through *"a previously registered and
+verified channel"*, enforced by *"cooling-off, notification to the registered channel"*. A channel
+is added with a session alone, so a verification that displaced the verified channel would let a
+stolen password redirect recovery with no step-up and no word to the address replaced.
+`PHASE_1_PLAN.md`'s *"changeable, separately-verified email"* separates the email from the login
+identifier and says nothing of replacing a channel on verification. Changing the verified channel
+is deferred to Phase 15 with the notifier its notice needs (`DECISIONS.md` §Deliberately Deferred).
+
+### The mechanism
+
+The store verifies behind a savepoint, in `JdbcPaymentFeePinStore.insertIfAbsent`'s shape. On
+`23505` it rolls back to the savepoint and throws `VerifiedChannelAlreadyExistsException`, which
+carries nothing (no identity, no address, no cause). The typed exception rather than
+`Optional.empty()` is `ActiveCredentialAlreadyExistsException`'s precedent: empty would fold the
+refusal into the uniform `403` and mislead the customer who typed a second address. SQLState alone is
+unambiguous, because the statement can only *enter* the one-verified index. It *leaves* the
+token-hash index.
+
+**The second code does not weaken the uniform refusal.** That refusal stops a caller without a live
+token learning whether a verification is pending. The new one is reachable only by presenting a
+live token.
+
+### What the probes found
+
+- **The savepoint is invisible to every test but one.** Today the refusal leaves a
+  `TransactionTemplate` that rolls back anyway, so M2 (the rollback to the savepoint removed) passes
+  every test except `theRefusalLeavesTheTransactionUsable`. The savepoint is a contract with callers
+  that share the transaction, a notifier or an audit record, and that test is its only witness.
+- **The race does not catch "replace", correctly.** A concurrent displacement cannot see an
+  uncommitted verification, so the index still refuses the losers. The sequential test and the
+  HTTP case catch M3; the race is for the arbiter, and M4 shows it has one.
+
+### Would this remain correct if 10 instances executed it concurrently? `PASS`
+
+The partial unique index is the only arbiter, and no instance reads before it writes. Ten instances
+verifying ten channels of one identity: the losers wait on the winner's index entry and are refused
+when it commits (1 verified, 9 refused, counted). Ten presenting one token where a verified sibling
+already exists is **reasoned, not raced**: each is refused in turn, because rolling back to the
+savepoint aborts the subtransaction that locked the row, and the next waiter re-reads a row still
+pending. A retry after a lost response gets the same `409` (tested over HTTP), because the refusal
+wrote nothing.
+
+### Recorded rather than built
+
+- **The change flow must spend pending challenges.** A refused verification leaves its challenge
+  live until it expires (24 hours), so a flow that freed the kind without spending them would let a
+  parked challenge verify the moment the verified channel is gone. Recorded on the deferral.
+- **Refused verifications are not audited**, the same as every other refused verification
+  (`AUDITABLE_ACTIONS.md` registers none). The attempt is still attributable, through
+  `identity.ContactChannelAdded`, to the session that added the address. Operators see the `409` as
+  a `warn` line carrying the code.
+- **`V011`'s column comment still claims a unique index on the address.** It stays, because an
+  applied migration is not edited (`DATA_MIGRATIONS.md` §3.1). `EmailAddress` carries the
+  correction.
 
 ### Previously
 

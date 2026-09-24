@@ -962,6 +962,41 @@
           }
         }
       },
+      "identity.VerifiedChannelAlreadyExists": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "identity.VerifiedChannelAlreadyExists"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/identity.VerifiedChannelAlreadyExists"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The account already has a verified contact channel of this kind.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "kyc.CaseNotAcceptingOwners": {
         "content": {
           "application/problem+json": {

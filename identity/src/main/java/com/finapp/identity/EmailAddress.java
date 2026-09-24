@@ -17,11 +17,19 @@ import java.util.regex.Pattern;
  *
  * <h2>Normalised on the way in, once</h2>
  *
- * <p>Lower-cased and trimmed at construction, so a capital letter finds the same row the unique
- * index claimed — the {@code LoginIdentifier} argument. The <strong>local part</strong> is
- * technically case-sensitive per RFC 5321 and no mail system anybody uses treats it that way;
- * normalising is the choice that makes "is this the same address?" answerable, and the alternative
- * is two verified channels differing only in capitalisation.
+ * <p>Lower-cased and trimmed at construction, so one mailbox has one spelling wherever it is stored
+ * or compared, and "is this the same address?" is a string comparison. The <strong>local
+ * part</strong> is technically case-sensitive per RFC 5321 and no mail system anybody uses treats it
+ * that way.
+ *
+ * <p><strong>Not the {@code LoginIdentifier} argument, because nothing is unique on the
+ * address.</strong> There, normalising is what lets a unique index refuse a capitalised duplicate.
+ * {@code V011}'s unique indexes are one <em>verified</em> channel per identity per kind and the
+ * pending challenge's token hash, and neither reads the address. So it is the per-kind index, not
+ * this normalisation, that holds an identity to one verified address, and two identities may verify
+ * the same one. This paragraph said otherwise until {@code X-TSK-004}; {@code V011}'s column comment
+ * still does, and stays, because an applied migration is not edited ({@code DATA_MIGRATIONS.md}
+ * §3.1).
  *
  * <h2>Validation is deliberately shallow</h2>
  *

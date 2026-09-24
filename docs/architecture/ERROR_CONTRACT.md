@@ -115,6 +115,7 @@ visible rather than quietly approximated.
 |---|---|---|
 | `identity.AuthenticationFailed` | 401 | Authentication failed. |
 | `identity.AssuranceRequired` | 403 | This operation requires a stronger authentication. |
+| `identity.VerifiedChannelAlreadyExists` | 409 | The account already has a verified contact channel of this kind. |
 
 **One code for every reason an authentication can fail** (`P1-TSK-010`, `INV-IDN-07`): unknown
 identity, wrong password, suspended identity, and an identity that has no credential yet all
@@ -130,6 +131,16 @@ meanings is what §4 forbids.
 
 **401 and not 403**: 403 means authenticated and not permitted, which presupposes an established
 identity — and presupposing one here would disclose that there is one.
+
+**A second verified contact channel is refused, not replaced, and not a server fault**
+(`X-TSK-004`, `INV-IDN-06`). `POST /v1/me/channels/verification` answers every reason a *token* is
+refused — unknown, spent, expired, a lost race — with one `api.Forbidden`, so that a caller without
+a live token cannot learn whether a verification is pending. `identity.VerifiedChannelAlreadyExists`
+is not one of those reasons: the token was live, and the identity already has a verified channel of
+that kind, which recovery keeps. It is reachable only by presenting a live token, so it discloses
+nothing the uniform refusal protects. **It answered `500 api.InternalError` until `X-TSK-004`**: the
+one-verified-per-kind index refused the write, and the store reported the database's answer as the
+platform's failure — a `500` for a request that can never succeed by being retried.
 
 ### `kyc` — `KycErrorCode`
 

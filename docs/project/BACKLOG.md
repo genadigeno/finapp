@@ -9014,6 +9014,66 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
 - **Risk**: Medium, because of the money-moving scopes. **Cx**: M. **DoD**: `DOD-FIN`,
   `DOD-SEC`, `DOD-TEST`
 
+**X-TSK-004 — A second verified contact channel is refused, not a `500`** — `COMPLETE`
+*(2026-09-24. See **Result**)*
+- **Context**: `identity` (contact channels, `P1-TSK-023`) and `app` (the verification endpoint).
+  Owner-directed, 2026-09-24. Pays the Phase 15 debt row the Phase 6 → 7 transition's audit
+  recorded, *A second verified contact channel answers `500`*.
+- **Description**: verifying a channel for an identity that already has a verified channel of that
+  kind violated `V011`'s partial unique index, and `JdbcContactChannelStore.verify` wrapped the
+  `23505` as `IdentityStorageException`, rendered as `500 api.InternalError`. The verification now
+  runs behind a savepoint, in `JdbcPaymentFeePinStore.insertIfAbsent`'s shape: on `23505` it rolls
+  back to the savepoint and throws `VerifiedChannelAlreadyExistsException`, which the endpoint
+  answers as `409 identity.VerifiedChannelAlreadyExists`. The code is registered in
+  `IdentityErrorCode` and `ERROR_CONTRACT.md` §3. `EmailAddress`'s javadoc stops citing a unique
+  index on the address that `V011` never built.
+- **Reachable?** The add command does not refuse a second channel: `POST /v1/me/channels` inserts
+  an unverified row unconditionally, and the partial index covers verified rows only. Over HTTP the
+  path is **latent** rather than live. Nothing delivers a challenge before Phase 15's notifier
+  (`RecoveryApplicationService.addChannel` discards it and the endpoint answers `202` with no body),
+  so no HTTP caller can verify any channel today. Through the module's API it is live: the database
+  suites verify real challenges. The notifier attaches without changing the add command or the
+  store, so the `500` would go live with it unchanged. Treated as reachable, and the javadoc-only
+  alternative declined for that reason.
+- **Why refuse rather than replace**: `INV-IDN-06` allows recovery only through *"a previously
+  registered and verified channel"*, enforced by *"cooling-off, notification to the registered
+  channel"*. Adding a channel needs only a session. A verification that displaced the verified
+  channel would let a stolen password buy a durable recovery route, with no step-up and no word to
+  the address replaced. `PHASE_1_PLAN.md`'s *"changeable, separately-verified email"* separates the
+  email from the login identifier; it says nothing of replacing a channel on verification. Changing
+  the verified channel safely is its own flow (step-up, notice to the old channel, cooling-off),
+  deferred to Phase 15 with the notifier it needs (`DECISIONS.md` §Deliberately Deferred).
+- **Deps**: none.
+- **Accept**:
+  - a verification that would give an identity a second verified channel of a kind answers
+    `409 identity.VerifiedChannelAlreadyExists`, never `500`;
+  - the refusal writes nothing (both channels' rows unchanged, the pending challenge intact, no
+    audit record), and recovery still reaches the channel verified first;
+  - the refusal leaves the caller's transaction usable;
+  - ten instances verifying ten channels of one identity: exactly one verified, nine refused, no
+    other failure;
+  - the code in `IdentityErrorCode` and `ERROR_CONTRACT.md` §3, the OpenAPI baseline regenerated
+    as a compatible change;
+  - `EmailAddress`'s javadoc true;
+  - each protecting test demonstrated to fail against its mutation, recorded in
+    `MUTATION_TESTING.md`.
+- **Result (2026-09-24)**: every criterion holds, and the gate's multi-instance answer is `PASS`.
+  - `ContactChannelSecondVerificationDatabaseTest` holds the refusal, nothing written, the
+    transaction's survival and the ten-instance race.
+    `RecoveryEndpointDatabaseTest#aSecondVerifiedChannelIsAConflictNotAServerFault` holds the
+    `409`, a body naming neither the identity nor the address, and a retry getting the same answer.
+  - Four mutations, four caught (`MUTATION_TESTING.md`, `INV-IDN-06`). The pre-fix store answers
+    *500*. Without the savepoint's rollback the transaction dies with `25P02`, which only the test
+    built for it sees. Replacing instead of refusing answers *204*. Without the index, ten of ten
+    verify.
+  - Fresh runs: the four recovery and channel database suites (25 tests), the fleet-wide
+    architecture tier, `app`'s unit and slice tiers, `identity`'s unit tier, all 0 failures. The
+    OpenAPI baseline gained one response component, all seven differences `COMPATIBLE`.
+  - Found by the gate and recorded rather than built: the deferred change flow must spend every
+    pending challenge of the kind, because a refused verification leaves its challenge live until
+    it expires (`DECISIONS.md` §Deliberately Deferred).
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`
+
 ---
 
 # Phases 8–16 — Epics
