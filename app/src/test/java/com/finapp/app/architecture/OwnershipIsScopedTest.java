@@ -948,6 +948,19 @@ class OwnershipIsScopedTest {
                                     "As JdbcPaymentAttemptStore.capture - the honest-ambiguity"
                                         + " edge, nothing posted (INV-LIFE-03).")),
                     Map.entry(
+                            "com.finapp.payments.JdbcClearingRecordStore.findForAttempt",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentClearing.record",
+                                    "The refused clearing insert's read-back (P7-TSK-005),"
+                                        + " on the identifier the same delivery attributed"
+                                        + " through findByOperationReference over OUR minted"
+                                        + " capture reference (INV-PAY-04 inbound, behind"
+                                        + " the authenticated webhook door) - it tells the"
+                                        + " rail's harmless repetition apart from a foreign"
+                                        + " acquirer-reference claim. No HTTP path takes an"
+                                        + " attempt id.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentAttemptStore.dispatchVoid",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

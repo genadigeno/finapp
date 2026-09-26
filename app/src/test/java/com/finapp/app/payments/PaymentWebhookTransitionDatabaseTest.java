@@ -366,6 +366,197 @@ class PaymentWebhookTransitionDatabaseTest {
                 token, product, intentId, row.id(), row.authReference(), row.captureReference());
     }
 
+
+    // -----------------------------------------------------------------
+    // Clearing: the door's non-transition effect (P7-TSK-005)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("clearing is recorded ONCE with its network references and no posting: the"
+            + " same-id replay absorbed by the inbox, the fresh-id duplicate by the table's"
+            + " arbiter, and only the acting insert announces (P7-TSK-005, INV-SET-01)")
+    void clearingIsRecordedOnceWithItsReferences() throws Exception {
+        Flow captured = capturedFlow();
+        long entriesBefore = entriesReferencing(captured.attemptId());
+        String arn = "arn-" + suffix();
+        String nti = "nti-" + suffix();
+
+        String event = someEvent();
+        assertThat(deliverWebhook(
+                        clearingBody(event, captured.captureReference(), arn, nti))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(clearingCount(captured.attemptId())).isEqualTo(1);
+        assertThat(oneString(
+                        "SELECT acquirer_reference || '|' || network_transaction_id"
+                                + " FROM payments.clearing_record WHERE attempt_id = ?",
+                        captured.attemptId()))
+                .isEqualTo(arn + "|" + nti);
+        // INV-SET-01, both halves: the machine untouched, the journal untouched.
+        assertThat(attemptStatus(captured.intentId())).isEqualTo("CAPTURED");
+        assertThat(entriesReferencing(captured.attemptId())).isEqualTo(entriesBefore);
+        assertThat(clearedEventCount(captured.intentId())).isEqualTo(1);
+
+        // The SAME event id again: the inbox absorbs before the table is even asked.
+        assertThat(deliverWebhook(
+                        clearingBody(event, captured.captureReference(), arn, nti))
+                .statusCode())
+                .isEqualTo(204);
+        // A FRESH event id, same notice: past the inbox, absorbed by V015's arbiter.
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), captured.captureReference(), arn, nti))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(clearingCount(captured.attemptId())).isEqualTo(1);
+        assertThat(clearedEventCount(captured.intentId()))
+                .as("only the acting insert announces")
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("ten deliveries of one clearing notice under ten FRESH event ids record it"
+            + " exactly once - the table's arbiter, not the inbox, decides this race")
+    void tenClearingDeliveriesRecordOnce() throws Exception {
+        Flow captured = capturedFlow();
+        String arn = "arn-race-" + suffix();
+        String nti = "nti-race-" + suffix();
+
+        java.util.List<java.util.concurrent.Callable<Integer>> deliveries =
+                new java.util.ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            deliveries.add(
+                    () ->
+                            deliverWebhook(
+                                            clearingBody(
+                                                    someEvent(),
+                                                    captured.captureReference(),
+                                                    arn,
+                                                    nti))
+                                    .statusCode());
+        }
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(10);
+        try {
+            for (java.util.concurrent.Future<Integer> delivered : pool.invokeAll(deliveries)) {
+                assertThat(delivered.get()).isEqualTo(204);
+            }
+        } finally {
+            pool.shutdown();
+        }
+
+        assertThat(clearingCount(captured.attemptId())).isEqualTo(1);
+        assertThat(clearedEventCount(captured.intentId())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a clearing racing our own capture outcome is recorded on the unconcluded"
+            + " attempt and moves NOTHING - the machine hears its answer later, unchanged")
+    void clearingBeforeTheCaptureConcludes() throws Exception {
+        Flow flow = captureUnknownFlow();
+        assertThat(deliverWebhook(
+                        clearingBody(
+                                someEvent(),
+                                flow.captureReference(),
+                                "arn-early-" + suffix(),
+                                "nti-early-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(clearingCount(flow.attemptId())).isEqualTo(1);
+        assertThat(attemptStatus(flow.intentId()))
+                .as("clearing consults no machine")
+                .isEqualTo("CAPTURE_UNKNOWN");
+
+        // The capture's own answer still lands exactly as it would have.
+        assertThat(deliverWebhook(body(someEvent(), flow.captureReference(), "approved",
+                        "psp_cap-after-clr-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(attemptStatus(flow.intentId())).isEqualTo("CAPTURED");
+        assertThat(clearingCount(flow.attemptId())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a clearing naming no operation we minted, and one missing its references,"
+            + " are evidence-only acknowledgements - nothing recorded (ADR-0047 section 5)")
+    void unusableClearingsAreEvidenceOnly() throws Exception {
+        Flow captured = capturedFlow();
+        String strayArn = "arn-stray-" + suffix();
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), "cap-nobody-" + suffix(), strayArn,
+                                "nti-stray-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(count(
+                        "SELECT count(*) FROM payments.clearing_record"
+                                + " WHERE acquirer_reference = ?",
+                        strayArn))
+                .isZero();
+
+        // Attributed, but no usable references: unactionable is not knowledge.
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), captured.captureReference(), null, null))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(clearingCount(captured.attemptId())).isZero();
+    }
+
+    @Test
+    @DisplayName("an acquirer reference already claimed by ANOTHER capture is absorbed with"
+            + " the first record standing - the integration break rests as evidence")
+    void aForeignAcquirerReferenceClaimIsAbsorbed() throws Exception {
+        Flow first = capturedFlow();
+        Flow second = capturedFlow();
+        String arn = "arn-shared-" + suffix();
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), first.captureReference(), arn,
+                                "nti-first-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), second.captureReference(), arn,
+                                "nti-second-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+
+        assertThat(clearingCount(first.attemptId())).isEqualTo(1);
+        assertThat(clearingCount(second.attemptId()))
+                .as("two captures cannot share one network clearing")
+                .isZero();
+        assertThat(clearedEventCount(second.intentId())).isZero();
+    }
+
+    @Test
+    @DisplayName("the clearing record is append-only for EVERY writer, the migrator included"
+            + " (INV-HIST-02: reconciliation's match keys are never edited)")
+    void theClearingRecordIsImmutableForEveryWriter() throws Exception {
+        Flow captured = capturedFlow();
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), captured.captureReference(),
+                                "arn-frozen-" + suffix(), "nti-frozen-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            for (String sql : new String[] {
+                    "UPDATE payments.clearing_record SET network_transaction_id ="
+                            + " 'rewritten' WHERE attempt_id = ?",
+                    "DELETE FROM payments.clearing_record WHERE attempt_id = ?"}) {
+                org.assertj.core.api.Assertions.assertThatThrownBy(
+                                () -> {
+                                    try (PreparedStatement statement =
+                                            migrator.prepareStatement(sql)) {
+                                        statement.setObject(1, captured.attemptId());
+                                        statement.executeUpdate();
+                                    }
+                                })
+                        .isInstanceOf(SQLException.class)
+                        .extracting(failure -> ((SQLException) failure).getSQLState())
+                        .isEqualTo("P0001");
+            }
+        }
+        assertThat(clearingCount(captured.attemptId())).isEqualTo(1);
+    }
+
     // -----------------------------------------------------------------
     // Fixtures (the PaymentEndpointDatabaseTest ceremony)
     // -----------------------------------------------------------------
@@ -579,6 +770,52 @@ class PaymentWebhookTransitionDatabaseTest {
         return count(
                 "SELECT count(*) FROM payments.payment_attempt_event WHERE attempt_id = ?",
                 attemptId);
+    }
+
+    /** create -> confirm with both legs approved: the chained capture lands CAPTURED. */
+    private Flow capturedFlow() throws Exception {
+        providerAuthorises("psp_auth-" + suffix());
+        providerCaptures("psp_cap-" + suffix());
+        Flow flow = confirmedFlow("9.00");
+        assertThat(attemptStatus(flow.intentId())).isEqualTo("CAPTURED");
+        return flow;
+    }
+
+    /** The clearing statement's wire shape (P7-TSK-005); null fields are omitted. */
+    private static String clearingBody(
+            String eventId, String operation, String arn, String networkTransactionId) {
+        StringBuilder json =
+                new StringBuilder("{\"eventId\":\"").append(eventId)
+                        .append("\",\"operation\":\"").append(operation)
+                        .append("\",\"status\":\"cleared\"");
+        if (arn != null) {
+            json.append(",\"arn\":\"").append(arn).append("\"");
+        }
+        if (networkTransactionId != null) {
+            json.append(",\"networkTransactionId\":\"")
+                    .append(networkTransactionId)
+                    .append("\"");
+        }
+        return json.append("}").toString();
+    }
+
+    private static long clearingCount(UUID attemptId) throws SQLException {
+        return count(
+                "SELECT count(*) FROM payments.clearing_record WHERE attempt_id = ?",
+                attemptId);
+    }
+
+    private static long clearedEventCount(String intentId) throws SQLException {
+        return count(
+                "SELECT count(*) FROM platform.outbox_event WHERE event_type ="
+                        + " 'payments.PaymentClearedOnRail' AND aggregate_id = ?",
+                UUID.fromString(intentId));
+    }
+
+    private static long entriesReferencing(UUID attemptId) throws SQLException {
+        return count(
+                "SELECT count(*) FROM ledger.journal_entry WHERE reference = ?",
+                attemptId.toString());
     }
 
     private static long evidenceCount(UUID attemptId) throws SQLException {

@@ -562,6 +562,11 @@ them are classified at the ceiling regardless.
 | `payment_attempt` | `capture_provider_reference` | `CONFIDENTIAL` | As `auth_provider_reference` |
 | `payment_attempt` | `void_reference` | `INTERNAL` | As `auth_reference` — OUR minted reference for the release, stored before the send (`P7-TSK-004`, `INV-PAY-04`) |
 | `payment_attempt` | `void_provider_reference` | `CONFIDENTIAL` | As `auth_provider_reference` — the provider's acknowledgement of the release (`P7-TSK-004`) |
+| `clearing_record` | `id` | `INTERNAL` | Surrogate identifier (`P7-TSK-005`) |
+| `clearing_record` | `attempt_id` | `INTERNAL` | Foreign key to the cleared capture's attempt |
+| `clearing_record` | `acquirer_reference` | `CONFIDENTIAL` | The acquirer's reference for one cleared card transaction (the ARN class) — the `auth_provider_reference` reasoning: scoped to its own operation, it authorises nothing new, and it is Phase 8's primary match key |
+| `clearing_record` | `network_transaction_id` | `CONFIDENTIAL` | As `acquirer_reference` — the card network's own identifier |
+| `clearing_record` | `recorded_at` | `INTERNAL` | Server clock at recording (ADR-0014) |
 | `payment_attempt` | `authorized_amount_minor` | `RESTRICTED-FINANCIAL` | The issuer's promised amount — a customer amount |
 | `payment_attempt` | `authorized_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
 | `payment_attempt` | `authorized_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |

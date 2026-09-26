@@ -62,6 +62,10 @@ class PaymentsMigrationTest {
     private static final String VOID =
             "db/migration/payments/V014__the_card_void.sql";
 
+    /** V015: the clearing evidence (P7-TSK-005) - insert-only, no machine, no money. */
+    private static final String CLEARING =
+            "db/migration/payments/V015__clearing_record.sql";
+
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
     void intentStatusChecksMatchTheEnum() {
@@ -354,6 +358,31 @@ class PaymentsMigrationTest {
                 // The app writes exactly the two new payload columns - no wider grant.
                 .contains("GRANT UPDATE (void_reference, void_provider_reference)\n"
                         + "    ON payments.payment_attempt TO finapp_app;");
+    }
+
+    @Test
+    @DisplayName("V015's clearing clauses are pinned: one record per attempt, one acquirer"
+            + " reference platform-wide, the reference shapes from the type's bound,"
+            + " append-only for every writer, and no grant beyond SELECT and INSERT"
+            + " (P7-TSK-005)")
+    void theClearingClausesArePinned() {
+        assertThat(migration(CLEARING))
+                .contains("CREATE TABLE payments.clearing_record (")
+                .contains("CONSTRAINT clearing_record_one_per_attempt UNIQUE (attempt_id)")
+                .contains("CONSTRAINT clearing_record_acquirer_reference_is_unique"
+                        + " UNIQUE (acquirer_reference)")
+                // Both references take the provider-reference shape, generated from the
+                // type's own bound (the V003 discipline).
+                .contains("CHECK (acquirer_reference ~ '^[A-Za-z0-9_.:-]{1,"
+                        + ProviderReference.MAX_LENGTH + "}$')")
+                .contains("CHECK (network_transaction_id ~ '^[A-Za-z0-9_.:-]{1,"
+                        + ProviderReference.MAX_LENGTH + "}$')")
+                // Append-only for every writer, the migrator included (INV-HIST-02's
+                // regime): reconciliation's match keys are never edited.
+                .contains("CREATE TRIGGER clearing_record_is_append_only")
+                .contains("BEFORE UPDATE OR DELETE ON payments.clearing_record")
+                .contains("GRANT SELECT, INSERT ON payments.clearing_record TO finapp_app;")
+                .doesNotContain("GRANT UPDATE");
     }
 
     @Test

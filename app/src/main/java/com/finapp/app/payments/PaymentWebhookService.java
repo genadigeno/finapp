@@ -13,6 +13,7 @@ import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.payments.PaymentAttempt;
 import com.finapp.payments.PaymentAttemptId;
 import com.finapp.payments.PaymentAttemptStore;
+import com.finapp.payments.PaymentClearing;
 import com.finapp.payments.ProviderEvidenceStore;
 import com.finapp.payments.ProviderIdempotencyReference;
 import com.finapp.payments.Refund;
@@ -90,6 +91,7 @@ public class PaymentWebhookService {
     private final RefundStore<Connection> refunds;
     private final com.finapp.app.telemetry.PaymentMeters meters;
     private final PaymentOutcomes outcomes;
+    private final PaymentClearing clearing;
     private final InboxConsumer<Connection> inbox;
     private final ObjectMapper json;
     private final Clock clock;
@@ -104,6 +106,7 @@ public class PaymentWebhookService {
             RefundStore<Connection> refundStore,
             com.finapp.app.telemetry.PaymentMeters paymentMeters,
             PaymentOutcomes paymentOutcomes,
+            PaymentClearing paymentClearing,
             InboxConsumer<Connection> inboxConsumer,
             ObjectMapper objectMapper,
             Clock clock,
@@ -121,6 +124,8 @@ public class PaymentWebhookService {
         this.refunds = Objects.requireNonNull(refundStore, "refundStore must not be null");
         this.meters = Objects.requireNonNull(paymentMeters, "paymentMeters must not be null");
         this.outcomes = Objects.requireNonNull(paymentOutcomes, "paymentOutcomes must not be null");
+        this.clearing =
+                Objects.requireNonNull(paymentClearing, "paymentClearing must not be null");
         this.inbox = Objects.requireNonNull(inboxConsumer, "inboxConsumer must not be null");
         this.json = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -136,7 +141,14 @@ public class PaymentWebhookService {
      * status word — untouched here; `P5-TSK-013`'s total mapping owns it ({@code INV-PAY-03}).
      */
     private record WebhookPayload(
-            String eventId, String operation, String status, String reference) {}
+            String eventId,
+            String operation,
+            String status,
+            String reference,
+            // The clearing statement's own fields (P7-TSK-005): the acquirer reference and
+            // the network transaction identifier, present exactly when status is "cleared".
+            String arn,
+            String networkTransactionId) {}
 
     /**
      * Accepts one delivery.
@@ -343,6 +355,14 @@ public class PaymentWebhookService {
             ProviderIdempotencyReference operation,
             WebhookPayload payload,
             Judged judged) {
+        if ("cleared".equals(payload.status())) {
+            // The clearing statement (P7-TSK-005, ADR-0059 section 4): evidence, never an
+            // edge - the machine is not consulted, because a notice racing our own capture
+            // outcome, or contradicting a void, is exactly what Phase 8's matching must
+            // see, and this door acknowledges, so a refused notice never returns.
+            clearingEffect(uow, attempt, payload, judged);
+            return;
+        }
         Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
         if (verdict.isEmpty()) {
             judged.unmappable();
@@ -398,6 +418,69 @@ public class PaymentWebhookService {
                         attempt.id(),
                         attempt.status());
             }
+        }
+    }
+
+    /**
+     * The clearing statement recorded (`P7-TSK-005`): the network's references, once per
+     * attempt, in this delivery's transaction — {@code PaymentClearing} and `V015`'s two
+     * unique arbiters own the once; here the statement is shaped and the three outcomes are
+     * told apart. A notice missing either reference is unactionable — not knowledge (the
+     * {@code mappedVerdict} totality rule, applied to the clearing vocabulary) — and an
+     * acquirer reference already claimed by ANOTHER attempt is the integration break made
+     * loud: the first record stands, this delivery's bytes rest as evidence.
+     */
+    private void clearingEffect(
+            Connection uow, PaymentAttempt attempt, WebhookPayload payload, Judged judged) {
+        Optional<ProviderReference> acquirer = networkReference(payload.arn());
+        Optional<ProviderReference> network = networkReference(payload.networkTransactionId());
+        if (acquirer.isEmpty() || network.isEmpty()) {
+            judged.unmappable();
+            log.warn(
+                    "An authenticated clearing webhook for attempt {} carried no usable"
+                            + " network references; retained as evidence, nothing recorded"
+                            + " (INV-PAY-03's totality, P7-TSK-005)",
+                    attempt.id());
+            return;
+        }
+        PaymentClearing.Outcome recorded =
+                clearing.record(
+                        uow,
+                        attempt,
+                        acquirer.get(),
+                        network.get(),
+                        PaymentCreation.resolvedCorrelation());
+        switch (recorded) {
+            case RECORDED ->
+                    log.info(
+                            "A capture's clearing was recorded with its network references"
+                                    + " (attempt {}, INV-SET-01: no posting, no transition)",
+                            attempt.id());
+            case ALREADY_RECORDED ->
+                    log.info(
+                            "A duplicate clearing notice for attempt {} was absorbed by the"
+                                    + " record that stands (INV-IDEM-04)",
+                            attempt.id());
+            case REFERENCE_CLAIMED_ELSEWHERE -> {
+                judged.unmappable();
+                log.warn(
+                        "A clearing notice for attempt {} named an acquirer reference"
+                                + " already recorded for a DIFFERENT attempt; the first"
+                                + " record stands and this statement rests as evidence -"
+                                + " an integration break reconciliation must see",
+                        attempt.id());
+            }
+        }
+    }
+
+    private static Optional<ProviderReference> networkReference(String value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(new ProviderReference(value));
+        } catch (IllegalArgumentException outOfShape) {
+            return Optional.empty();
         }
     }
 

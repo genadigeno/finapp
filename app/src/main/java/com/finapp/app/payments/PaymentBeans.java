@@ -523,6 +523,8 @@ class PaymentBeans {
             com.finapp.app.telemetry.PaymentMeters paymentMeters,
             com.finapp.payments.PaymentOutcomes paymentOutcomes,
             com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
             tools.jackson.databind.ObjectMapper objectMapper,
             Clock clock,
             TransactionTemplate paymentTransactions,
@@ -535,6 +537,13 @@ class PaymentBeans {
                 refundStore,
                 paymentMeters,
                 paymentOutcomes,
+                // The clearing recorder (P7-TSK-005): the door's non-transition effect,
+                // over the same outbox the outcome events travel.
+                new com.finapp.payments.PaymentClearing(
+                        new com.finapp.payments.JdbcClearingRecordStore(),
+                        outboxWriter,
+                        idGenerator,
+                        clock),
                 inboxConsumer,
                 objectMapper,
                 clock,

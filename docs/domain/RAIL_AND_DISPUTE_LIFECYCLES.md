@@ -183,7 +183,7 @@ Entered at `INQUIRY` or directly at `CHARGED_BACK`. Terminal: `WON`, `LOST`, `AC
 |---|---|---|---|---|---|
 | Card top-up / card checkout | authorize → capture | None at authorization. Capture: DR `SETTLEMENT_CLEARING` / CR wallet, or the payable gross with the fee split (ADR-0050) | Card PSP | Deferred via clearing (Phase 8) | Capture entry ↔ PSP references ↔ clearing references |
 | Card void | `VOIDED` | **None** — orchestration only: nothing was captured | Card PSP | None | Void reference ↔ PSP |
-| Card clearing notice | evidence recorded | **None** — clearing agrees an obligation, it does not move money | Card PSP | Phase 8 | Clearing references stored |
+| Card clearing notice | evidence recorded (shipped `P7-TSK-005`: one `clearing_record` per capture, append-only) | **None** — clearing agrees an obligation, it does not move money (`INV-SET-01`) | Card PSP | Phase 8 | Clearing references stored (`acquirer_reference`, `network_transaction_id`) |
 | Card refund | refund `COMPLETED` | DR wallet or payable (ADR-0054) / CR `SETTLEMENT_CLEARING` | Card PSP | Phase 8 | Refund entry ↔ PSP reference |
 | Chargeback | dispute `CHARGED_BACK` | CR `SETTLEMENT_CLEARING` D; DR counterparty share; DR `CHARGEBACK_RECOVERABLE` excess (ADR-0061 §4) | Card PSP / network | Netted by the PSP (Phase 8) | Dispute reference ↔ stage entries |
 | Dispute won / lost | `WON` / `LOST` | Won: the exact inverse of the principal lines. Lost: excess written off to `DISPUTE_COSTS` | Card PSP | Phase 8 | As above |

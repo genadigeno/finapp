@@ -850,6 +850,11 @@ class PaymentSweeperDatabaseTest {
                 new com.finapp.payments.JdbcRefundStore(),
                 meters(),
                 outcomes(),
+                new com.finapp.payments.PaymentClearing(
+                        new com.finapp.payments.JdbcClearingRecordStore(),
+                        new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                        IDS,
+                        CLOCK),
                 new InboxConsumer<>(new JdbcInboxRecordStore(), CLOCK, Duration.ofDays(14)),
                 new tools.jackson.databind.ObjectMapper(),
                 CLOCK,

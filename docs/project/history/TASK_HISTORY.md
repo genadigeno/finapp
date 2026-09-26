@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 148 "Previously" blocks, newest first, from `P7-TSK-003` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 149 "Previously" blocks, newest first, from `P7-TSK-004` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,90 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P7-TSK-004` — The card void: the revocable half of `INV-REV-03`** — `COMPLETE`
+(2026-09-26). **M7.2 stands at 1 of 2: the reversal the card rail declares is performed —
+an uncaptured authorization is released at the provider through the machine's own states,
+never left to lapse against the customer's funds, and no verdict of it moves a cent.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A declined capture voids | The redirect is the shared outcome path's own arm (`PaymentOutcomes.applyCapture`), capability-gated on the STORED rail: `CAPTURE_* -> VOID_DISPATCHED` commits with its minted reference in the outcome transaction, the port-owning caller sends AFTER that commit, and the end-to-end declined capture concludes `VOIDED` with the journal EMPTY — hermetically and against the real chain (`PaymentCaptureTest`, `PaymentCaptureDatabaseTest#declinedIsRedirectedIntoTheVoid`) |
+| A cancelled authorization voids | `DELETE /v1/payments/{id}` past the confirmation window voids a resting `AUTHORIZED` attempt end to end over HTTP — the resting state produced honestly by the confirmation COMMAND (the crash window the stranded-authorization sweep exists for; `CaptureMode.MANUAL`'s producer is still a future task and its javadoc says so), the retry converges on the released state with nothing sent twice (`PaymentEndpointDatabaseTest#cancellingAnAuthorizedPaymentReleasesThePromise`) |
+| A void against an irrevocable rail is refused with nothing written or sent | `INV-REV-03` is judged from the stored rail's DECLARED capabilities before the transition: a voidless two-step declaration answers `ReversalNotSupportedException` with ZERO transactions committed, zero wire calls and an empty audit trail (`PaymentVoidTest#theCapabilityIsJudgedBeforeAnythingElse`); the surface maps it `payments.ReversalNotSupported` 409 |
+
+- **Ten states, one machine, every writer bound** (payments `V014`): `VOID_DISPATCHED`,
+  `VOID_UNKNOWN`, `VOIDED` join the two-step machine — `AUTHORIZED -> FAILED` deliberately
+  does NOT (no producer exists; abandoning a promise is the void's own act, and the drawn
+  edge in `RAIL_AND_DISPUTE_LIFECYCLES` §3's first version was corrected with provenance).
+  `V014` adds the two payload columns (OUR reference unique, shape-checked in the
+  idempotency charset — a `P7-TSK-001`-era drift the migration review caught before it
+  applied anywhere — and frozen `NULL -> value`; the acknowledgement bound both ways to
+  `VOIDED`), regenerates the model `CHECK`, the stage `CHECK` (`FAILED`'s three legal
+  shapes) and the every-writer trigger from `InteractionModel.edges()`, and widens the
+  one-live predicate with `VOIDED` — the slot freed end to end in the schema suite. `V012`
+  froze as applied history in the migration reconciliation, exactly as `V011` before it.
+- **Two doors, one choreography** (`PaymentVoid`): the customer's own cancellation
+  (`findOwned` — a stranger's and an unknown intent are one refusal) and the operator's
+  reasoned void (`POST /v1/payments/{id}/void` behind `PAYMENT_REFUND`, the refund
+  precedent; no idempotency key, because the machine converges) run Tx1's conditional
+  `AUTHORIZED -> VOID_DISPATCHED` with the reference minted before the send
+  (`INV-PAY-04`), the wire call between transactions, and `applyVoid` as the platform.
+  The race against the capture chain is the conditional's row count — ten racers, five
+  voids against five captures, settle ONE terminal family, counted in the journal: a
+  captured payment posts once, a voided one never.
+- **A refused connection concludes NOTHING** — the deliberate `V009` asymmetry, recorded
+  in `DISTRIBUTED_EXECUTION.md`: the row rests `VOID_DISPATCHED` and any instance's
+  PERMIT-FREE re-send releases it, because re-releasing a released promise converges at
+  the provider while re-paying a paid refund would move money twice. The sweep gained the
+  void's two legs — `VOID_UNKNOWN` queried by OUR stored reference, `VOID_DISPATCHED`
+  re-SENT — and the re-send leg is what guarantees a redirect committed by the port-less
+  webhook door reaches the provider (the stranded redirect, swept to `VOIDED` in-suite).
+- **THE DATABASE CAUGHT WHAT THE FAKES COULD NOT** (the gate's find of the task): the
+  redirect's finisher first ran INSIDE the capture's outcome transaction, and its own
+  read — a second connection — could not see the uncommitted `VOID_DISPATCHED`, so it
+  converged on the stale row; had it seen it, it would have sent holding a transaction
+  open (ADR-0046's exact violation). The hermetic fakes (one shared map, no isolation)
+  passed it. Restructured: Tx2 yields `voidToFinish`, the send runs strictly AFTER the
+  commit on the finisher's own transactions — and the repair is itself pinned by the
+  database declined-capture test that found it.
+- **A second find at the fixture rank**: the refund suite's crashed-flight fixture
+  stamped its send permit with the SERVER clock while the sweep's microsecond test bound
+  judges with the JVM's — under sub-second host/VM skew the fresh permit hid from the
+  candidate list, an intermittent starvation that surfaced under this task's battery
+  timing (diagnosed to the row with both clocks printed). ADR-0057 §4's stated premise —
+  the bound exceeds the skew — violated at the fixture rank, not the design's: the
+  stranded flight is now honestly a minute old on the server clock.
+- **Shared-database citizenship, learned and applied**: the battery's suites share one
+  database per invocation, so the new suites mint UNIQUE provider references (a fixed
+  literal collided with a sibling suite's under the platform-wide UNIQUE — found by the
+  battery as 23505s), the sweep tests drive a TARGETED provider that releases exactly
+  their row and answers `nothingSent` for every foreign candidate (moving nothing), and
+  the void gauge fixtures CONCLUDE their seeded rows on the way out, because a parked
+  `VOID_DISPATCHED` is precisely what the new re-send leg exists to act on.
+- **Nothing posts, structurally**: the hermetic void suite runs over the capture suite's
+  posting tripwire (a real `PostingService` with no database — any ledger touch
+  explodes), and the database suite counts ZERO journal entries for every verdict.
+  `payments.AuthorizationVoided` publishes with the concluding transaction; the dispatch
+  audit names intent, attempt, reference and rail — never an amount — with the operator's
+  reason verbatim and the customer's absent (`INV-AUD-03`).
+- **Registers**: `MUTATION_TESTING` §2 +5 rows; `DATA_CLASSIFICATION` +2
+  (the void pair); `ERROR_CONTRACT` +`payments.ReversalNotSupported` 409;
+  `AUDITABLE_ACTIONS` +`payments.PaymentVoidDispatched`; `RoutePermissionRegisterTest`
+  36 routes; the OpenAPI baseline regenerated (every BREAKING row a required flag on a
+  component that did not exist before); `OwnershipIsScopedTest` +3 entries;
+  `SystemActorCallSitesAreEnumeratedTest` +`PaymentVoid.completeDispatched` (the
+  P5-TSK-009 reasoning, sixth occurrence); `CredentialReachesNoEmittedSinkTest`
+  +`VoidPaymentRequest` (the `RefundRequest` shape); `PaymentMeters` operation `void`
+  registered at construction; `PAYMENT_LIFECYCLES` §3 and `RAIL_AND_DISPUTE_LIFECYCLES`
+  §3 redrawn as the machine's own edge lists with the corrected-edge provenance;
+  `DISTRIBUTED_EXECUTION` §3 rows and the sweeper section extended; `MODULE_ARCHITECTURE`
+  payments events +`AuthorizationVoided`.
+- **Verified** by targeted tiers from fresh runs: the fleet-wide hermetic task green at
+  **1606 tests, 0 failures**, and **186 targeted database tests across
+  14 suites, 0 failures** — the full battery deliberately skipped on the
+  owner's instruction, no fleet-wide database or kafka counts claimed. Probes:
+  thirteen runs, thirteen caught, every restore byte-identical.
 
 **`P7-TSK-003` — Rail routing: the versioned policy, the pinned decision, rail availability** —
 `COMPLETE` (2026-09-26). **M7.1 closes at 3 of 3: every payment is routed once, before anything

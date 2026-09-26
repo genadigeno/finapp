@@ -1868,6 +1868,11 @@ class PaymentRefundDatabaseTest {
                 refunds,
                 paymentMeters,
                 outcomes(),
+                new com.finapp.payments.PaymentClearing(
+                        new com.finapp.payments.JdbcClearingRecordStore(),
+                        new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                        IDS,
+                        CLOCK),
                 new com.finapp.platform.inbox.InboxConsumer<>(
                         new com.finapp.platform.inbox.JdbcInboxRecordStore(),
                         CLOCK,

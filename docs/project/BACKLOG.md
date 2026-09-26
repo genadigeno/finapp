@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (4 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 1 of 2) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (5 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -8599,7 +8599,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   irrevocable rail is refused by the domain with nothing written or sent.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P7-TSK-005 — Card clearing evidence** — `READY`
+**P7-TSK-005 — Card clearing evidence** — `COMPLETE` (2026-09-26)
 - **Objective**: the card rail's later facts preserved for Phase 8 — clearing recorded, never
   mistaken for settlement.
 - **Bounded context**: Payments (9); feeds Settlement (13) in Phase 8.
@@ -8627,7 +8627,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Accept**: clearing recorded once with its references and no posting.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: S.
 
-**P7-TSK-006 — The instant rail: a provider-neutral push port and its simulated scheme** — `PLANNED`
+**P7-TSK-006 — The instant rail: a provider-neutral push port and its simulated scheme** — `READY`
 - **Objective**: ADR-0062 §1 — the second rail, with materially different finality, behind a port
   that keeps every country's specifics in the adapter.
 - **Bounded context**: Payments (9).
