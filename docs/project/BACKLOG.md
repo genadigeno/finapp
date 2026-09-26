@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (5 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (6 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 1 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -8627,7 +8627,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Accept**: clearing recorded once with its references and no posting.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: S.
 
-**P7-TSK-006 — The instant rail: a provider-neutral push port and its simulated scheme** — `READY`
+**P7-TSK-006 — The instant rail: a provider-neutral push port and its simulated scheme** — `COMPLETE` (2026-09-26)
 - **Objective**: ADR-0062 §1 — the second rail, with materially different finality, behind a port
   that keeps every country's specifics in the adapter.
 - **Bounded context**: Payments (9).
@@ -8657,7 +8657,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Accept**: the adapter behaves as its descriptor says under every injected fault.
 - **Definition of done**: `DOD-TEST`, `DOD-SEC`, `DOD-DOC`. **Risk**: Medium. **Cx**: M.
 
-**P7-TSK-007 — External bank accounts as payment instruments, through the grant exchange** — `PLANNED`
+**P7-TSK-007 — External bank accounts as payment instruments, through the grant exchange** — `READY`
 - **Objective**: ADR-0062 §2 — a customer's external account is a `BANK_ACCOUNT` payment method
   known only by an opaque reference; bank details and aliases never enter.
 - **Bounded context**: Payment Methods (10), `paymentmethods`.

@@ -339,62 +339,80 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P7-TSK-006` — The instant rail: a provider-neutral push port and its simulated
-scheme** — `READY`. M7.3, External accounts and the instant rail, stands at 0 of 3. ADR-0062
-§1's second rail, with materially different finality, behind a port that keeps every
-country's specifics in the adapter: the push port, the instant rail's descriptor (push,
-final on acceptance, scheme-reported settlement, the outcome deadline, no disputes), and a
-simulated scheme with fault injection. Its entry is in [`BACKLOG.md`](BACKLOG.md); it runs
-the three-command loop, design first. **Not started.**
+**`P7-TSK-007` — External bank accounts as payment instruments, through the grant
+exchange** — `READY`. M7.3, External accounts and the instant rail, stands at 1 of 3.
+ADR-0062 §2: a customer's external account becomes a `BANK_ACCOUNT` payment method known
+only by an opaque reference — registered from a grant with no connection held during the
+exchange, the display suffix and confirmation-of-payee result stored, `NO_MATCH` requiring
+the customer's recorded acknowledgement, and account-number-, international-identifier- and
+phone-shaped values refused at the surface, in the domain types and by `CHECK`s
+(`INV-RAIL-03`). Its entry is in [`BACKLOG.md`](BACKLOG.md); it runs the three-command
+loop, design first. **Not started.**
 
 ### Just completed
 
-**`P7-TSK-005` — Card clearing evidence** — `COMPLETE` (2026-09-26). **M7.2, The card
-rail completed, closes at 2 of 2: the card rail's later facts are preserved for Phase 8 —
-one clearing record per capture, carrying the network's own match keys, recorded through
-the signed door with no posting, no machine edge, and no way for any writer to edit it.**
+**`P7-TSK-006` — The instant rail: a provider-neutral push port and its simulated
+scheme** — `COMPLETE` (2026-09-26). **M7.3 opens at 1 of 3: the second rail exists behind
+one port — materially different finality, declared and proven — and every country-specific
+detail lives in the adapter, so a second scheme is an adapter plus routing rules, never a
+core change.**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Clearing recorded once with its references and no posting | The end-to-end delivery records `acquirer_reference` and `network_transaction_id` exactly once across a same-event-id replay (absorbed by the inbox, `INV-IDEM-04`'s first rank) and a fresh-event-id duplicate (absorbed by `V015`'s arbiter, its second), with the journal count and the attempt's state byte-unchanged and exactly one `payments.PaymentClearedOnRail` published — and the ten-way fresh-id race counted to one row and one event (`PaymentWebhookTransitionDatabaseTest`, the clearing section) |
+| The adapter behaves as its descriptor says under every injected fault | The contract battery is the sentence executed (`SimulatedInstantSchemeAdapterTest`): accepted with reference AND settlement cycle; rejected; an unmapped word, a malformed body, garbage, a 5xx and a timeout all `INDETERMINATE`; an acceptance missing the scheme reference `INDETERMINATE` (unactionable is not knowledge); received-then-lost `INDETERMINATE` with `requestCount` the oracle; a refused connection `NOTHING_SENT` on all three dispatching operations; timeout-then-accept resolved by the inquiry with the same reference and cycle a fresh acceptance carries; duplicate and late confirmations as idempotent inquiries; the explicit `unrecognised` word — and ONLY it — the future never-executed licence, a 404 never; the exchange's four confirmation-of-payee words, its refusal, and its unusable shapes; the initiation's handle, refusal and handleless ambiguity; a re-send carrying the SAME end-to-end reference on the wire, twice, read back from the harness |
 
-- **The door's one NON-transition effect** (`PaymentWebhookService`): a `cleared`
-  statement branches BEFORE the total mapping and consults no machine — a notice racing
-  our own capture outcome is recorded on the unconcluded attempt and moves NOTHING,
-  proven by the capture's own answer landing unchanged afterwards; a clearing naming no
-  operation we minted, or missing either reference, is an evidence-only acknowledgement
-  (ADR-0047 §5 — unactionable is not knowledge, the totality rule's clearing face).
-- **`V015`, the two arbiters and the freeze**: one record per attempt and one acquirer
-  reference platform-wide decide every race the inbox cannot; a foreign
-  acquirer-reference claim is absorbed with the FIRST record standing and the break
-  logged loud (`REFERENCE_CLAIMED_ELSEWHERE` — two captures cannot share one network
-  clearing); both references take the provider-reference shape from the type's own
-  bound; the table is append-only for every writer — the migrator's `UPDATE` and
-  `DELETE` refused `P0001` live in-suite — and granted nothing beyond `SELECT` and
-  `INSERT`. No amount lives here: the capture row holds the money facts, one fact one
-  place, and Phase 8 matches the file's amount against the capture.
-- **`PaymentClearing` announces only when it acts**: the acting insert publishes
-  `payments.PaymentClearedOnRail` in the recording transaction (identifiers and the
-  rail — never an amount, never the network references, whose home is the classified
-  table); a refused insert is read back apart into the rail's harmless repetition or the
-  foreign claim. `INV-SET-01` is held structurally — the recorder's dependency list
-  contains no ledger, no outcomes, no machine door — with the behavioural pins (journal
-  unchanged, state unchanged, on every clearing test) standing in front of it, and the
-  stance recorded in `MUTATION_TESTING.md` §3.
-- **No audit beyond evidence**, deliberately (the backlog's own line): a provider
-  statement is not a privileged act; the retained bytes are the statement of record.
-- **Registers**: `MUTATION_TESTING` §2 +3 rows and §3 +1 stated stance;
-  `DATA_CLASSIFICATION` +5 rows (the clearing table); `MODULE_ARCHITECTURE` payments
-  events +`PaymentClearedOnRail`; `DISTRIBUTED_EXECUTION` §3 webhook row extended and the
-  payments-schema row +`V015`; `RAIL_AND_DISPUTE_LIFECYCLES` §7's clearing row carries
-  its shipped provenance; `OwnershipIsScopedTest` +1 entry; the migration reconciliation
-  +`V015` pins. No API surface changed: the door's wire gained optional fields, the
-  OpenAPI baseline is untouched, and no new error code, permission or audit action
-  exists.
-- **Probes**: six runs, six caught, every restore byte-identical.
+- **The port** (`PushRail`, ADR-0062 §1 verbatim): `exchange(grant)` → the three values the
+  platform may keep (opaque destination, four-character suffix,
+  `MATCH`/`CLOSE_MATCH`/`NO_MATCH`/`UNAVAILABLE`); `send` and `initiate` carrying our minted
+  `EndToEndReference` (ISO 20022's own 35-character bound); `inquire` and
+  `inquireInitiation` by our reference. Our verdicts — `ACCEPTED`, `REJECTED`,
+  `NOTHING_SENT`, `INDETERMINATE`, plus the inquiry's explicit `UNRECOGNISED` — and the
+  scheme's transaction reference and settlement-cycle identifier carried in every answer
+  (Phase 8's reconciliation keys). No void, no capture: the port's shape says final-on-
+  acceptance itself.
+- **The declaration, pinned field by field**: push; `FINAL_ON_ACCEPTANCE`; no reversals;
+  `RETURN_PAYMENT` refunds; `SCHEME_REPORTED` settlement clearing through
+  `INSTANT_CLEARING`; the declared 90-second outcome deadline (the scheme bounds its own
+  ambiguity — ADR-0062 §3's material difference from the card rail); no disputes. The
+  directory binds BOTH declarations unconditionally — declaration is code, liveness is
+  routing's database fact, and no routing rule names `instant`, so nothing routes there
+  yet.
+- **A second wire, its own class** (`SchemeWireClient`): the card client's classification
+  doctrine restated — only a refused connection is knowledge; every other transport
+  failure, non-200, unmapped or truncated body is `INDETERMINATE` — with the scheme's
+  paths, fields and status words living nowhere else (`INV-PAY-03` per adapter). Our
+  reference travels as the idempotency header AND the `endToEndReference` body field.
+- **The rail guard grew to two rails** (`RailVocabularyIsConfinedTest`): per-rail name
+  confinement with per-rail vacuity, per-constant confinement with a per-constant
+  stale-check on the composition root's binding, and planted violations for BOTH families
+  proven in-suite — the `P7-TSK-001` register row renamed with provenance.
+- **`INSTANT_CLEARING`, the forced chain made explicit**: a settling rail's descriptor
+  must state its clearing position at construction, so the `AccountPurpose` member and its
+  seeded chart rows (ledger `V013`, ASSET per ADR-0062 §4, one per supported currency,
+  the four enum-fed constraints recreated) arrive with the declaration — and the first
+  POSTING stays with `P7-TSK-009`, which is the substance of "added with its first
+  poster"; both ADRs carry the annotation.
+- **Credentials under the confinement mechanism**: `InstantSchemeKey`
+  (`finapp.payments.instant.key`, `FINAPP_PAYMENTS_INSTANT_KEY`, domain
+  `"/instant-scheme"`), pinned in `ConfinedCredentialVariablesTest` and really read by the
+  configured `instantRail` bean (the unconsumed-wiring licence, the `ProviderApiKey`
+  precedent). The per-rail WEBHOOK key is deliberately `P7-TSK-009`'s: a `KeySpec` nothing
+  reads would fail the confinement test's own vacuity pin.
+- **The gate's find, kept**: the secrets rule refused the initiation's authorization
+  handle as a bare `Optional<String>` — and it was right: a capability URL in a log line
+  can complete or observe the payer's flow. It is `Sensitive<>` by construction now, shape
+  judged before it becomes unreadable, its one `expose()` site deferred to the surface
+  that renders it (`P7-TSK-010`).
+- **Registers**: `MUTATION_TESTING` §2 +4 rows (and the `P7-TSK-001` row's method rename
+  with provenance); `ConfinedCredentialVariablesTest` +1; the ledger chart tests repointed
+  to `V013` with `INSTANT_CLEARING`'s pinned ASSET type; ADR-0059 §4 and ADR-0062 §1/§4
+  annotated. No persistence in payments, no API, no events, no audit — the backlog's own
+  lines.
+- **Probes**: eight runs, eight caught, every restore byte-identical — six on the adapter and wire, two on the ledger chart.
 - **Verified** by targeted tiers from fresh runs: the fleet-wide hermetic test task green
-  at **1610 tests across 14 modules, 0 failures**, and **77 targeted database tests
-  across 6 suites, 0 failures** plus the platform classification guard — the full battery
+  at **1627 tests across 14 modules, 0 failures** — this task ships no database-tier
+  surface of its own (adapter only; the ledger chart rows are proven by the hermetic
+  reconciliation and land live with every suite's migration) — the full battery
   deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts
   claimed.
 
@@ -417,7 +435,7 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 7 is `IN_PROGRESS`** (started 2026-09-26) — 5 of 18 items complete; **M7.1, Rail
+**Phase 7 is `IN_PROGRESS`** (started 2026-09-26) — 6 of 18 items complete; **M7.1, Rail
 foundations, opens at 1 of 3** (`P7-TSK-001`). **Next: `P7-TSK-002`.**
 
 **Phase 6 is `COMPLETE`** (2026-09-24) — 18 of 18 items across seven milestones, ruled by
@@ -786,8 +804,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P7-TSK-006` — The instant rail: a provider-neutral push port and its simulated
-scheme** — see
+**`P7-TSK-007` — External bank accounts as payment instruments, through the grant
+exchange** — see
 [§Current Task](#current-task), which this section mirrors. *(It named `P7-TSK-001` from the
 transition's initialisation until `P7-TSK-002`'s gate found it stale — the stale-second-copy
 class in the very section built to mirror rather than lag; kept current since.)*

@@ -32,7 +32,8 @@ class OperationalChartMigrationTest {
     private static final List<String> SEED_MIGRATIONS =
             List.of(
                     "db/migration/ledger/V003__seed_operational_chart.sql",
-                    "db/migration/ledger/V012__payout_clearing_joins_the_chart.sql");
+                    "db/migration/ledger/V012__payout_clearing_joins_the_chart.sql",
+                    "db/migration/ledger/V013__instant_clearing_joins_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
@@ -45,6 +46,9 @@ class OperationalChartMigrationTest {
                     // ADR-0057: instructed and not yet settled is an obligation we still owe,
                     // so it grows on the credit side the payout credits.
                     AccountPurpose.PAYOUT_CLEARING, AccountType.LIABILITY,
+                    // ADR-0062 §4: the net receivable on the instant scheme - pay-ins
+                    // debit it, withdrawals credit it, Phase 8 discharges it per cycle.
+                    AccountPurpose.INSTANT_CLEARING, AccountType.ASSET,
                     AccountPurpose.FEE_REVENUE, AccountType.REVENUE,
                     AccountPurpose.FX_POSITION, AccountType.ASSET,
                     AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE,

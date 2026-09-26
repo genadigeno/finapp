@@ -208,7 +208,30 @@ class PaymentBeans {
     @Bean
     com.finapp.payments.PaymentRails paymentRails() {
         return com.finapp.payments.PaymentRails.of(
-                java.util.List.of(SimulatedCardPspAdapter.RAIL));
+                java.util.List.of(
+                        SimulatedCardPspAdapter.RAIL,
+                        com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL));
+    }
+
+    /**
+     * The instant scheme adapter (`P7-TSK-006`, ADR-0062 §1) — wired when
+     * configured, ahead of its first consumer (`P7-TSK-009`; the {@code ProviderApiKey}
+     * unconsumed-wiring licence): the bean is what makes the confined credential a property
+     * the application really reads, and the port a thing an operator can point at an
+     * environment. No metering decorator yet, deliberately — the decorator wraps
+     * {@code PaymentProvider}, and the push port's meters arrive with its flows.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.instant.url")
+    com.finapp.payments.PushRail instantRail(
+            @Value("${finapp.payments.instant.url}") java.net.URI url,
+            @Value("${finapp.payments.instant.timeout:PT2S}") java.time.Duration timeout,
+            @Value("${finapp.payments.instant.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            Environment environment) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        return new com.finapp.payments.SimulatedInstantSchemeAdapter(
+                url, timeout, InstantSchemeKey.decode(configuredKey, loopback));
     }
 
     @Bean

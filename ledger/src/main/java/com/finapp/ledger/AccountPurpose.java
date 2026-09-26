@@ -52,6 +52,18 @@ public enum AccountPurpose {
      */
     PAYOUT_CLEARING(OwnerKind.OPERATIONAL),
 
+    /**
+     * The instant scheme's own clearing position (ADR-0062 §4, ADR-0059 §4): every
+     * accepted push lands here — a pay-in debits it (the scheme will settle to us), a
+     * withdrawal credits it — and Phase 8 discharges it against the scheme's settlement
+     * reports, per cycle. An operational ASSET: the net receivable on the scheme. The NAME
+     * arrives with the rail's declaration (`P7-TSK-006` — a settling rail's descriptor
+     * must state its clearing position at construction) beside `V013` regenerating the four
+     * constraints and seeding the accounts; the first POSTING stays with the flows
+     * (`P7-TSK-009`), which is the substance of the ADRs' "added with its first poster".
+     */
+    INSTANT_CLEARING(OwnerKind.OPERATIONAL),
+
     /** Fees earned. Phase 6's seam; nothing posts to it before then. */
     FEE_REVENUE(OwnerKind.OPERATIONAL),
 

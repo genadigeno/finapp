@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 149 "Previously" blocks, newest first, from `P7-TSK-004` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 150 "Previously" blocks, newest first, from `P7-TSK-005` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,55 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P7-TSK-005` — Card clearing evidence** — `COMPLETE` (2026-09-26). **M7.2, The card
+rail completed, closes at 2 of 2: the card rail's later facts are preserved for Phase 8 —
+one clearing record per capture, carrying the network's own match keys, recorded through
+the signed door with no posting, no machine edge, and no way for any writer to edit it.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Clearing recorded once with its references and no posting | The end-to-end delivery records `acquirer_reference` and `network_transaction_id` exactly once across a same-event-id replay (absorbed by the inbox, `INV-IDEM-04`'s first rank) and a fresh-event-id duplicate (absorbed by `V015`'s arbiter, its second), with the journal count and the attempt's state byte-unchanged and exactly one `payments.PaymentClearedOnRail` published — and the ten-way fresh-id race counted to one row and one event (`PaymentWebhookTransitionDatabaseTest`, the clearing section) |
+
+- **The door's one NON-transition effect** (`PaymentWebhookService`): a `cleared`
+  statement branches BEFORE the total mapping and consults no machine — a notice racing
+  our own capture outcome is recorded on the unconcluded attempt and moves NOTHING,
+  proven by the capture's own answer landing unchanged afterwards; a clearing naming no
+  operation we minted, or missing either reference, is an evidence-only acknowledgement
+  (ADR-0047 §5 — unactionable is not knowledge, the totality rule's clearing face).
+- **`V015`, the two arbiters and the freeze**: one record per attempt and one acquirer
+  reference platform-wide decide every race the inbox cannot; a foreign
+  acquirer-reference claim is absorbed with the FIRST record standing and the break
+  logged loud (`REFERENCE_CLAIMED_ELSEWHERE` — two captures cannot share one network
+  clearing); both references take the provider-reference shape from the type's own
+  bound; the table is append-only for every writer — the migrator's `UPDATE` and
+  `DELETE` refused `P0001` live in-suite — and granted nothing beyond `SELECT` and
+  `INSERT`. No amount lives here: the capture row holds the money facts, one fact one
+  place, and Phase 8 matches the file's amount against the capture.
+- **`PaymentClearing` announces only when it acts**: the acting insert publishes
+  `payments.PaymentClearedOnRail` in the recording transaction (identifiers and the
+  rail — never an amount, never the network references, whose home is the classified
+  table); a refused insert is read back apart into the rail's harmless repetition or the
+  foreign claim. `INV-SET-01` is held structurally — the recorder's dependency list
+  contains no ledger, no outcomes, no machine door — with the behavioural pins (journal
+  unchanged, state unchanged, on every clearing test) standing in front of it, and the
+  stance recorded in `MUTATION_TESTING.md` §3.
+- **No audit beyond evidence**, deliberately (the backlog's own line): a provider
+  statement is not a privileged act; the retained bytes are the statement of record.
+- **Registers**: `MUTATION_TESTING` §2 +3 rows and §3 +1 stated stance;
+  `DATA_CLASSIFICATION` +5 rows (the clearing table); `MODULE_ARCHITECTURE` payments
+  events +`PaymentClearedOnRail`; `DISTRIBUTED_EXECUTION` §3 webhook row extended and the
+  payments-schema row +`V015`; `RAIL_AND_DISPUTE_LIFECYCLES` §7's clearing row carries
+  its shipped provenance; `OwnershipIsScopedTest` +1 entry; the migration reconciliation
+  +`V015` pins. No API surface changed: the door's wire gained optional fields, the
+  OpenAPI baseline is untouched, and no new error code, permission or audit action
+  exists.
+- **Probes**: six runs, six caught, every restore byte-identical.
+- **Verified** by targeted tiers from fresh runs: the fleet-wide hermetic test task green
+  at **1610 tests across 14 modules, 0 failures**, and **77 targeted database tests
+  across 6 suites, 0 failures** plus the platform classification guard — the full battery
+  deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts
+  claimed.
 
 **`P7-TSK-004` — The card void: the revocable half of `INV-REV-03`** — `COMPLETE`
 (2026-09-26). **M7.2 stands at 1 of 2: the reversal the card rail declares is performed —

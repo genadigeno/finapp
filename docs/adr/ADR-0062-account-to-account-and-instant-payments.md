@@ -49,8 +49,9 @@ The concepts this phase must keep apart:
    hours are adapter configuration. The core sees our verdicts (`ACCEPTED`, `REJECTED`,
    `NOTHING_SENT`, `INDETERMINATE`), our references, and the scheme's transaction reference as a
    stored value. Phase 7 builds one simulated scheme behind the harness (ADR-0008, the programme's
-   no-real-connectivity rule), with fault injection and contract tests. A second scheme is an
-   adapter plus routing rules.
+   no-real-connectivity rule), with fault injection and contract tests *(shipped
+   `P7-TSK-006`: `PushRail`, `SimulatedInstantSchemeAdapter` and its contract battery)*. A
+   second scheme is an adapter plus routing rules.
 
 2. **Bank details and aliases never enter the platform** (ADR-0056 §7, generalised).
    - The customer's client obtains a grant at the rail provider: by linking an account, or by
@@ -80,7 +81,10 @@ The concepts this phase must keep apart:
 
 4. **Accounting: every accepted push lands in the scheme's own clearing position**
    (`INSTANT_CLEARING`, an operational asset per currency, added with its first poster; ADR-0059
-   §4). Phase 8 discharges it against the scheme's settlement reports.
+   §4 — *refined by `P7-TSK-006`: the member and its seeded chart rows arrive with the
+   descriptor that must name a settling rail's position at construction, ledger `V013`; the
+   first POSTING remains `P7-TSK-009`'s, which is this line's substance*). Phase 8 discharges
+   it against the scheme's settlement reports.
 
    | Operation | Lines, in the transaction that commits the outcome |
    |---|---|

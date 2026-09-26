@@ -25,15 +25,15 @@ class LedgerAccountMigrationTest {
     private static final String MIGRATION = "db/migration/ledger/V002__create_ledger_account.sql";
 
     /**
-     * Where the four enum-fed constraints live NOW: `V012` recreated them when
-     * `PAYOUT_CLEARING` widened the purpose enum (`P6-TSK-012`), as `V011` had when
-     * `MERCHANT_PAYABLE` widened two (`P6-TSK-003`), because `V002` and `V011` are applied
-     * history and cannot follow their enums. The reconciliation follows the latest definition —
+     * Where the four enum-fed constraints live NOW: `V013` recreated them when
+     * `INSTANT_CLEARING` widened the purpose enum (`P7-TSK-006`), as `V012` had for
+     * `PAYOUT_CLEARING` and `V011` for `MERCHANT_PAYABLE`, because applied history cannot
+     * follow its enums. The reconciliation follows the latest definition —
      * an enum member added without a fresh recreation migration fails here, which is the
      * entire point.
      */
     private static final String LATEST_CHART_RULES =
-            "db/migration/ledger/V012__payout_clearing_joins_the_chart.sql";
+            "db/migration/ledger/V013__instant_clearing_joins_the_chart.sql";
 
     @Test
     @DisplayName("every enum's CHECK lists exactly the values the enum declares")

@@ -78,7 +78,9 @@ The second is attempting a reversal on an irrevocable rail. Phase 5's attempt ma
    on every rail without an exception. **Each external rail has its own clearing position**: the
    card PSP's is `SETTLEMENT_CLEARING` (its meaning narrowed to the card rail by this ADR), and
    the instant scheme's is `INSTANT_CLEARING`, added by the task that first posts to it (the
-   member's own doctrine, `AccountPurpose`). One counterparty's receivable never nets against
+   member's own doctrine, `AccountPurpose`) *(refined by `P7-TSK-006`: the member and its
+   seeds arrive with the descriptor that must name it — ledger `V013` — and the first
+   posting stays with the flows; the doctrine's substance intact)*. One counterparty's receivable never nets against
    another's payable, because Phase 8 must discharge each against that counterparty's own
    settlement evidence.
 

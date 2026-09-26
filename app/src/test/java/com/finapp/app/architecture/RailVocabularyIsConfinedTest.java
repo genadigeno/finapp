@@ -48,9 +48,15 @@ class RailVocabularyIsConfinedTest {
 
     /** Every declared rail's name, pinned; the declaring file is checked to really declare it. */
     private static final Map<String, String> DECLARED_RAILS =
-            Map.of("card", "SimulatedCardPspAdapter.java");
+            Map.of(
+                    "card", "SimulatedCardPspAdapter.java",
+                    "instant", "SimulatedInstantSchemeAdapter.java");
 
-    private static final String CONSTANT_REFERENCE = "SimulatedCardPspAdapter.RAIL";
+    /** Each declaration constant, confined to its adapter and the composition root. */
+    private static final Map<String, String> DECLARATION_CONSTANTS =
+            Map.of(
+                    "SimulatedCardPspAdapter.RAIL", "SimulatedCardPspAdapter.java",
+                    "SimulatedInstantSchemeAdapter.RAIL", "SimulatedInstantSchemeAdapter.java");
 
     /** The composition root may bind the declaration; nothing else may name it. */
     private static final Set<String> CONFIGURATION_FILES = Set.of("PaymentBeans.java");
@@ -85,40 +91,51 @@ class RailVocabularyIsConfinedTest {
     }
 
     @Test
-    @DisplayName("the declaration constant is referenced only by the adapter and configuration")
-    void theDeclarationConstantIsConfined() {
+    @DisplayName("every declaration constant is referenced only by its adapter and"
+            + " configuration - and each is really bound by the composition root")
+    void theDeclarationConstantsAreConfined() {
         List<String> outside = new ArrayList<>();
-        boolean configured = false;
+        Map<String, Boolean> configured = new java.util.TreeMap<>();
+        DECLARATION_CONSTANTS.keySet().forEach(constant -> configured.put(constant, false));
         for (Path source : mainSources()) {
             String fileName = source.getFileName().toString();
-            if (!codeOf(read(source)).contains(CONSTANT_REFERENCE)) {
-                continue;
-            }
-            if (CONFIGURATION_FILES.contains(fileName)) {
-                configured = true;
-            } else if (!DECLARED_RAILS.containsValue(fileName)) {
-                outside.add(source.toString());
+            String code = codeOf(read(source));
+            for (Map.Entry<String, String> constant : DECLARATION_CONSTANTS.entrySet()) {
+                if (!code.contains(constant.getKey())) {
+                    continue;
+                }
+                if (CONFIGURATION_FILES.contains(fileName)) {
+                    configured.put(constant.getKey(), true);
+                } else if (!constant.getValue().equals(fileName)) {
+                    outside.add(constant.getKey() + " in " + source);
+                }
             }
         }
         assertThat(outside)
-                .as("%s referenced outside the adapter and the composition root is core code"
-                        + " holding a rail by name (INV-RAIL-01)", CONSTANT_REFERENCE)
+                .as("a declaration constant referenced outside its adapter and the"
+                        + " composition root is core code holding a rail by name"
+                        + " (INV-RAIL-01)")
                 .isEmpty();
         assertThat(configured)
-                .as("the permit is not stale: the composition root really binds the"
-                        + " declaration (the P1-TSK-015 rule - an exemption naming nothing"
-                        + " silently stops applying)")
-                .isTrue();
+                .as("no permit is stale: the composition root really binds EVERY declaration"
+                        + " (the P1-TSK-015 rule - an exemption naming nothing silently"
+                        + " stops applying)")
+                .allSatisfy((constant, bound) -> assertThat(bound).as(constant).isTrue());
     }
 
     @Test
     @DisplayName("the scanners reject their violations and ignore prose")
     void scannersRejectTheirViolations() {
-        // A planted branch, in each family the rule claims to see.
+        // A planted branch, in each family the rule claims to see - both rails.
         assertThat(stringLiteralsOf("if (rail.value().equals(\"card\")) { pay(); }").split("\n"))
                 .contains("card");
+        assertThat(stringLiteralsOf("if (rail.value().equals(\"instant\")) { push(); }")
+                        .split("\n"))
+                .contains("instant");
         assertThat(codeOf("Object rail = SimulatedCardPspAdapter.RAIL;"))
-                .contains(CONSTANT_REFERENCE);
+                .contains("SimulatedCardPspAdapter.RAIL");
+        assertThat(codeOf("Object rail = SimulatedInstantSchemeAdapter.RAIL;"))
+                .contains("SimulatedInstantSchemeAdapter.RAIL");
         // Prose is not a control: comments are stripped from both scanners, literals from the
         // code scanner, and only a WHOLE literal matches a name.
         assertThat(stringLiteralsOf("// the \"card\" rail\n/* card */ String s = \"cardigan\";"))
@@ -127,7 +144,7 @@ class RailVocabularyIsConfinedTest {
         assertThat(codeOf("// SimulatedCardPspAdapter.RAIL\n"
                         + "/** SimulatedCardPspAdapter.RAIL */\n"
                         + "String s = \"SimulatedCardPspAdapter.RAIL\";"))
-                .doesNotContain(CONSTANT_REFERENCE);
+                .doesNotContain("SimulatedCardPspAdapter.RAIL");
         assertThat(stringLiteralsOf("String s = \"a card in hand\";").split("\n"))
                 .doesNotContain("card");
     }
