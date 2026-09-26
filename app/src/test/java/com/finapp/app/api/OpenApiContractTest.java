@@ -348,6 +348,12 @@ class OpenApiContractTest {
                         // grant, INV-PAY-02), list, and the ownership-scoped detach.
                         ApiVersion.CURRENT_PREFIX + "/me/payment-methods",
                         ApiVersion.CURRENT_PREFIX + "/me/payment-methods/{id}",
+                        // P7-TSK-007: the bank-account register through the grant exchange
+                        // (the body carries only the one-time grant and the NO_MATCH
+                        // acknowledgement, INV-RAIL-03), keyed because the grant is
+                        // single-use at the provider; detach and list are the shared
+                        // surface above.
+                        ApiVersion.CURRENT_PREFIX + "/me/payment-methods/bank-accounts",
                         // P5-TSK-011: the payment surface - the keyed create, the
                         // confirmation that answers the intent's real state (honestly
                         // PROCESSING), the window-bounded cancel, and the ownership-scoped

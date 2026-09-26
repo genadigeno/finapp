@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 150 "Previously" blocks, newest first, from `P7-TSK-005` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 151 "Previously" blocks, newest first, from `P7-TSK-006` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,73 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P7-TSK-006` — The instant rail: a provider-neutral push port and its simulated
+scheme** — `COMPLETE` (2026-09-26). **M7.3 opens at 1 of 3: the second rail exists behind
+one port — materially different finality, declared and proven — and every country-specific
+detail lives in the adapter, so a second scheme is an adapter plus routing rules, never a
+core change.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The adapter behaves as its descriptor says under every injected fault | The contract battery is the sentence executed (`SimulatedInstantSchemeAdapterTest`): accepted with reference AND settlement cycle; rejected; an unmapped word, a malformed body, garbage, a 5xx and a timeout all `INDETERMINATE`; an acceptance missing the scheme reference `INDETERMINATE` (unactionable is not knowledge); received-then-lost `INDETERMINATE` with `requestCount` the oracle; a refused connection `NOTHING_SENT` on all three dispatching operations; timeout-then-accept resolved by the inquiry with the same reference and cycle a fresh acceptance carries; duplicate and late confirmations as idempotent inquiries; the explicit `unrecognised` word — and ONLY it — the future never-executed licence, a 404 never; the exchange's four confirmation-of-payee words, its refusal, and its unusable shapes; the initiation's handle, refusal and handleless ambiguity; a re-send carrying the SAME end-to-end reference on the wire, twice, read back from the harness |
+
+- **The port** (`PushRail`, ADR-0062 §1 verbatim): `exchange(grant)` → the three values the
+  platform may keep (opaque destination, four-character suffix,
+  `MATCH`/`CLOSE_MATCH`/`NO_MATCH`/`UNAVAILABLE`); `send` and `initiate` carrying our minted
+  `EndToEndReference` (ISO 20022's own 35-character bound); `inquire` and
+  `inquireInitiation` by our reference. Our verdicts — `ACCEPTED`, `REJECTED`,
+  `NOTHING_SENT`, `INDETERMINATE`, plus the inquiry's explicit `UNRECOGNISED` — and the
+  scheme's transaction reference and settlement-cycle identifier carried in every answer
+  (Phase 8's reconciliation keys). No void, no capture: the port's shape says final-on-
+  acceptance itself.
+- **The declaration, pinned field by field**: push; `FINAL_ON_ACCEPTANCE`; no reversals;
+  `RETURN_PAYMENT` refunds; `SCHEME_REPORTED` settlement clearing through
+  `INSTANT_CLEARING`; the declared 90-second outcome deadline (the scheme bounds its own
+  ambiguity — ADR-0062 §3's material difference from the card rail); no disputes. The
+  directory binds BOTH declarations unconditionally — declaration is code, liveness is
+  routing's database fact, and no routing rule names `instant`, so nothing routes there
+  yet.
+- **A second wire, its own class** (`SchemeWireClient`): the card client's classification
+  doctrine restated — only a refused connection is knowledge; every other transport
+  failure, non-200, unmapped or truncated body is `INDETERMINATE` — with the scheme's
+  paths, fields and status words living nowhere else (`INV-PAY-03` per adapter). Our
+  reference travels as the idempotency header AND the `endToEndReference` body field.
+- **The rail guard grew to two rails** (`RailVocabularyIsConfinedTest`): per-rail name
+  confinement with per-rail vacuity, per-constant confinement with a per-constant
+  stale-check on the composition root's binding, and planted violations for BOTH families
+  proven in-suite — the `P7-TSK-001` register row renamed with provenance.
+- **`INSTANT_CLEARING`, the forced chain made explicit**: a settling rail's descriptor
+  must state its clearing position at construction, so the `AccountPurpose` member and its
+  seeded chart rows (ledger `V013`, ASSET per ADR-0062 §4, one per supported currency,
+  the four enum-fed constraints recreated) arrive with the declaration — and the first
+  POSTING stays with `P7-TSK-009`, which is the substance of "added with its first
+  poster"; both ADRs carry the annotation.
+- **Credentials under the confinement mechanism**: `InstantSchemeKey`
+  (`finapp.payments.instant.key`, `FINAPP_PAYMENTS_INSTANT_KEY`, domain
+  `"/instant-scheme"`), pinned in `ConfinedCredentialVariablesTest` and really read by the
+  configured `instantRail` bean (the unconsumed-wiring licence, the `ProviderApiKey`
+  precedent). The per-rail WEBHOOK key is deliberately `P7-TSK-009`'s: a `KeySpec` nothing
+  reads would fail the confinement test's own vacuity pin.
+- **The gate's find, kept**: the secrets rule refused the initiation's authorization
+  handle as a bare `Optional<String>` — and it was right: a capability URL in a log line
+  can complete or observe the payer's flow. It is `Sensitive<>` by construction now, shape
+  judged before it becomes unreadable, its one `expose()` site deferred to the surface
+  that renders it (`P7-TSK-010`).
+- **Registers**: `MUTATION_TESTING` §2 +4 rows (and the `P7-TSK-001` row's method rename
+  with provenance); `ConfinedCredentialVariablesTest` +1; the ledger chart tests repointed
+  to `V013` with `INSTANT_CLEARING`'s pinned ASSET type; ADR-0059 §4 and ADR-0062 §1/§4
+  annotated. No persistence in payments, no API, no events, no audit — the backlog's own
+  lines.
+- **Probes**: eight runs, eight caught, every restore byte-identical — six on the adapter and wire, two on the ledger chart.
+- **Verified** by targeted tiers from fresh runs: the fleet-wide hermetic test task green
+  at **1627 tests across 14 modules, 0 failures** — this task ships no database-tier
+  surface of its own (adapter only; the ledger chart rows are proven by the hermetic
+  reconciliation and land live with every suite's migration) — the full battery
+  deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts
+  claimed.
 
 ### Previously
 

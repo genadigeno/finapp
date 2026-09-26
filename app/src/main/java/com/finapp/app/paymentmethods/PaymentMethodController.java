@@ -5,7 +5,9 @@ import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.identity.Session;
 import com.finapp.paymentmethods.PaymentMethodId;
 import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.PlatformErrorCode;
+import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,6 +65,28 @@ public class PaymentMethodController {
     public PaymentMethodService.PaymentMethodView attach(
             @Valid @RequestBody AttachPaymentMethodRequest body, HttpServletRequest request) {
         return paymentMethods.attach(current(request), body.clientToken());
+    }
+
+    /**
+     * Registers the external bank account the grant links to, or replays this key's recorded
+     * outcome (`P7-TSK-007`, ADR-0062 §2) — {@code 201} for the registration and for the
+     * convergence onto the caller's live row for the same destination (the attach's idiom).
+     *
+     * <p><strong>Keyed, unlike the card attach</strong>, and the asymmetry is the design: the
+     * bank grant is single-use at the rail provider, so a lost-response retry cannot ride a
+     * second exchange — it replays the claim's recorded outcome instead
+     * ({@code INV-IDEM-01}), refusals included. A reused key for a different request is the
+     * distinct {@code 409} ({@code INV-IDEM-03}). The step-up rule is the class's one,
+     * conditional on enrolment, decided in the service at the write.
+     */
+    @PostMapping(path = "/bank-accounts", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public PaymentMethodService.PaymentMethodView registerBankAccount(
+            @Valid @RequestBody RegisterBankAccountRequest body,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            HttpServletRequest request) {
+        return paymentMethods.registerBankAccount(current(request), body, idempotencyKey);
     }
 
     /**

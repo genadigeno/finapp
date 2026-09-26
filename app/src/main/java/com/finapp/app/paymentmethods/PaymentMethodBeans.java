@@ -6,7 +6,9 @@ import com.finapp.paymentmethods.JdbcPaymentMethodStore;
 import com.finapp.paymentmethods.PaymentMethodStore;
 import com.finapp.paymentmethods.SimulatedTokenisationAdapter;
 import com.finapp.paymentmethods.TokenisationProvider;
+import com.finapp.payments.PushRail;
 import com.finapp.platform.audit.AuditWriter;
+import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
@@ -70,14 +72,24 @@ class PaymentMethodBeans {
         return template;
     }
 
+    /**
+     * The instant rail joins the slice for the bank-account register (`P7-TSK-007`): the
+     * grant exchange runs through the {@code PushRail} bean {@code PaymentBeans} conditions
+     * on {@code finapp.payments.instant.url} — the same {@code ObjectProvider} contract as
+     * the tokenisation provider, answering {@code paymentmethods.GrantExchangeUnavailable}
+     * when no scheme is configured. The keyed door shares the platform's one
+     * {@link IdempotentExecutor} (24h retention, the database-owned lease).
+     */
     @Bean
     PaymentMethodService paymentMethodService(
             PaymentMethodStore<Connection> paymentMethodStore,
             ObjectProvider<TokenisationProvider> tokenisationProvider,
+            ObjectProvider<PushRail> instantRail,
             MfaEnrolmentStore<Connection> mfaEnrolmentStore,
             IdentityStore<Connection> identityStore,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
+            IdempotentExecutor idempotentExecutor,
             IdGenerator ids,
             Clock clock,
             TransactionTemplate paymentMethodTransactions,
@@ -85,10 +97,12 @@ class PaymentMethodBeans {
         return new PaymentMethodService(
                 paymentMethodStore,
                 tokenisationProvider,
+                instantRail,
                 mfaEnrolmentStore,
                 identityStore,
                 auditWriter,
                 outboxWriter,
+                idempotentExecutor,
                 ids,
                 clock,
                 paymentMethodTransactions,

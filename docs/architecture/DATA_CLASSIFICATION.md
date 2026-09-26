@@ -505,15 +505,22 @@ one free-text column is the reason the section exists: a person names people.
 | `beneficiary` | `created_at` | `CONFIDENTIAL` | Dates a person's act of saving a destination — `consent_record.recorded_at`'s reasoning |
 | `beneficiary` | `removed_at` | `CONFIDENTIAL` | As `created_at` |
 
-### `paymentmethods.payment_method` — *added by `P5-TSK-004`*
+### `paymentmethods.payment_method` — *added by `P5-TSK-004`; the bank kind by `P7-TSK-007`*
 
 **The PCI boundary's subject** (`INV-PAY-02`): a token reference plus display metadata, every
 column's shape unable to carry a PAN by `CHECK` — which is why the levels below describe
 instrument-linked data and never card data, there being no column that could hold any.
+`P7-TSK-007` extends the same doctrine to bank data (`INV-RAIL-03`): the destination column's
+`CHECK`s refuse account-number, international-identifier and phone shapes, so no column can
+hold a bank identifier either.
 
 | Table | Column | Level | Why |
 |---|---|---|---|
 | `payment_method` | `id` | `INTERNAL` | An aggregate identifier |
+| `payment_method` | `kind` | `INTERNAL` | An enumeration of two values — which registry family the row is, disclosing nothing of the instrument |
+| `payment_method` | `destination_reference` | `RESTRICTED-PII` | **The bank instrument reference itself** (`INV-RAIL-03`) — resolves at the rail provider to a person's account, and paired with the confined scheme credential it is payable-to. `token_reference`'s reasoning verbatim, carried structurally by the wrapped `DestinationReference` |
+| `payment_method` | `payee_check` | `CONFIDENTIAL` | A fact about a person's instrument — the scheme directory's name-check word; `brand`'s tier, and deliberately never the checked name itself, which no column may hold |
+| `payment_method` | `no_match_acknowledged_at` | `CONFIDENTIAL` | Dates a person's explicit consent to a mismatch (ADR-0062 §2) — `consent_record.recorded_at`'s reasoning |
 | `payment_method` | `party_id` | `CONFIDENTIAL` | The `beneficiary.party_id` reasoning: the pairing is the fact — this person holds payment instruments |
 | `payment_method` | `token_reference` | `RESTRICTED-PII` | **The instrument reference itself** — resolves at the provider to a person's card, and paired with the confined API credential it is chargeable. The `document.checksum_sha256` possession-oracle reasoning: never in a log, a message or a rendering, which the wrapped `TokenReference` carries structurally |
 | `payment_method` | `brand` | `CONFIDENTIAL` | A fact about a person's instrument — `beneficiary.created_at`'s tier of disclosure, not an identifier |

@@ -321,7 +321,7 @@ levels, the `P4-TSK-005` layering.
 
 | Code | Reason required | What it is |
 |---|---|---|
-| `paymentmethods.PaymentMethodAttached` | No | A party attached a tokenised payment instrument; the record names the payment method by identifier, never the token or the display metadata. |
+| `paymentmethods.PaymentMethodAttached` | No | A party attached a payment instrument — a card token, or a bank account through the grant exchange (`P7-TSK-007`); the record names the payment method by identifier, never a reference or the display metadata. When the customer's `NO_MATCH` acknowledgement was the gate, the reason carries the enumerated constant `PAYEE_CHECK_NO_MATCH_ACKNOWLEDGED` — a consent fact, never a value (ADR-0062 §2). |
 | `paymentmethods.PaymentMethodDetached` | No | A party detached a payment instrument; the detached row survives as evidence. |
 
 Declared with the surface whose design fixes their meaning (`P5-TSK-005`) rather than with the

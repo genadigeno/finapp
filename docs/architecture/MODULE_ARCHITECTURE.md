@@ -359,10 +359,10 @@ read "modules from Phase 1 onward do not exist yet" until the Phase 6 review, `P
 ### `paymentmethods` — Phase 5
 - **Responsibility:** the tokenised-instrument boundary. Exists so that "no raw card data crosses this line" is a reviewable boundary rather than a convention.
 - **Owns:** Payment Method token references, instrument metadata.
-- **Phase 7** *(planned by the Phase 6 → 7 transition, ADR-0062 §2)*: the `BANK_ACCOUNT` instrument, registered through the grant exchange — an opaque provider reference, a four-character suffix and the confirmation-of-payee result, never an account number or an alias (`INV-RAIL-03`).
+- **Phase 7** *(shipped `P7-TSK-007`, ADR-0062 §2)*: the `BANK_ACCOUNT` instrument, registered through the grant exchange — an opaque provider reference (`DestinationReference`), a four-character suffix and the confirmation-of-payee result (`PayeeCheck`, `NO_MATCH` only with the recorded acknowledgement), never an account number or an alias (`INV-RAIL-03`). One aggregate, two kinds keyed on the frozen `kind` birth fact; the register keyed per party because the grant is single-use at the provider.
 - **Transaction:** own; single-aggregate.
 - **Consistency:** strong.
-- **APIs:** attach, detach, list. Never returns anything from which an instrument could be reconstructed.
+- **APIs:** attach, register bank account (keyed), detach, list. Never returns anything from which an instrument could be reconstructed.
 - **Events:** `PaymentMethodAttached`, `PaymentMethodDetached`.
 - **Failure:** a tokenisation provider being unavailable fails the attach; it never falls back to storing raw detail.
 - **Security:** the platform's PCI boundary. Tokens only; no PAN, CVV or track data is stored, logged or transported anywhere in this platform.

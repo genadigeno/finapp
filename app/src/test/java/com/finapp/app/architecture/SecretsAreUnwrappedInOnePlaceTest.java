@@ -63,6 +63,10 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     "com.finapp.payments.InstrumentToken.expose()",
                     "com.finapp.paymentmethods.TokenReference.expose()",
                     "com.finapp.paymentmethods.TokenisationGrant.expose()",
+                    // P7-TSK-007: the bank account's opaque destination reference - the
+                    // TokenReference idiom at INV-RAIL-03's boundary, named here so
+                    // unwrapping it is governed like a card token.
+                    "com.finapp.paymentmethods.DestinationReference.expose()",
                     // P6-TSK-011: the payout destination's bank reference and its one-time
                     // grant - the paymentmethods pair RESTATED in merchant for bank data
                     // (ADR-0056), named here so unwrapping them is governed like a card token.
@@ -245,6 +249,21 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // which is the one place it legitimately goes - the SimulatedCardPspAdapter
                     // claim one boundary over, for a shorter-lived value.
                     "com.finapp.paymentmethods.SimulatedTokenisationAdapter",
+                    // P7-TSK-007. The bank destination reference, wrapped on the
+                    // TokenReference idiom (INV-RAIL-03): validates its charset and the
+                    // account-number/international-identifier refusals at construction and
+                    // re-exposes; its expose() is an unwrapping method above, so every
+                    // caller is an entry here. The store's entry above already covers its
+                    // columns - writing and converge-binding are the same claim per kind.
+                    "com.finapp.paymentmethods.DestinationReference",
+                    // P7-TSK-007. The bank grant's two legitimate ends of life in app: onto
+                    // the exchange wire through the PushRail port record (the
+                    // SimulatedTokenisationAdapter claim, one rail over - the port carries
+                    // String because payments cannot see a wrapper it would immediately
+                    // hand to the wire), and into the keyed register's canonical form,
+                    // SHA-256-hashed in the same expression and never stored or logged bare
+                    // (the PayoutDestinations claim exactly).
+                    "com.finapp.app.paymentmethods.PaymentMethodService",
                     // P5-TSK-009. The registered bridge across the PCI boundary: the stored
                     // TokenReference comes off in ONE expression and is immediately re-wrapped
                     // as the InstrumentToken the provider port carries - the port app

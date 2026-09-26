@@ -368,6 +368,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // TokenisationGrant type in the domain, one unwrap at the exchange
                         // wire. Never persisted, never in the trail.
                         "AttachPaymentMethodRequest",
+                        // P7-TSK-007. Carries the rail provider's one-time linking grant -
+                        // the AttachPaymentMethodRequest claim at the bank boundary
+                        // (INV-RAIL-03): Sensitive<String> end to end, one unwrap at the
+                        // exchange wire and into the SHA-256 fingerprint, never persisted,
+                        // never in the trail - plus one boolean, the customer's NO_MATCH
+                        // acknowledgement, which is a fact about consent and no secret.
+                        "RegisterBankAccountRequest",
                         // P6-TSK-003. Carries the operator's assertion of a party identifier,
                         // two business NAMES and an ISO currency code - no secret, and no
                         // person's name (PartyKind.ORGANISATION gates onboarding). Here

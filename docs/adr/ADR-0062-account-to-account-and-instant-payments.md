@@ -66,6 +66,16 @@ The concepts this phase must keep apart:
    - A `NO_MATCH` result requires the customer's explicit acknowledgement, recorded with the
      instrument. Risk scoring of it is Phase 13's.
 
+   *(Shipped `P7-TSK-007`: the kinded `PaymentMethod` with `DestinationReference` and
+   `PayeeCheck` restated behind the PCI build-graph isolation, paymentmethods `V003`'s
+   per-kind coherence and shape `CHECK`s, and the keyed
+   `POST /v1/me/payment-methods/bank-accounts` — keyed because the grant is single-use, so
+   the claim, not a re-exchange, answers the retry. Two recorded consequences of this
+   section's rules: an unacknowledged `NO_MATCH` is refused ON THE RECORD and the burned
+   grant means the acknowledged retry re-links — the deliberate cost of refusing a pending
+   half-instrument state — and the exchange's evidence bytes are dropped, because a provider
+   body can carry the payee's name, which is exactly what this section forbids at rest.)*
+
 3. **Final on acceptance; the scheme bounds its own ambiguity.** A send whose answer is lost is
    `EXECUTION_UNKNOWN` (`INV-LIFE-03`), with its hold standing. The scheme declares an outcome
    deadline (ADR-0059's `outcomeDeadline`). Once that deadline has passed since the **latest**

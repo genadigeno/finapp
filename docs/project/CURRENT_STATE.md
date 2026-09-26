@@ -339,90 +339,92 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P7-TSK-007` — External bank accounts as payment instruments, through the grant
-exchange** — `READY`. M7.3, External accounts and the instant rail, stands at 1 of 3.
-ADR-0062 §2: a customer's external account becomes a `BANK_ACCOUNT` payment method known
-only by an opaque reference — registered from a grant with no connection held during the
-exchange, the display suffix and confirmation-of-payee result stored, `NO_MATCH` requiring
-the customer's recorded acknowledgement, and account-number-, international-identifier- and
-phone-shaped values refused at the surface, in the domain types and by `CHECK`s
-(`INV-RAIL-03`). Its entry is in [`BACKLOG.md`](BACKLOG.md); it runs the three-command
-loop, design first. **Not started.**
+**`P7-TSK-008` — Wallet withdrawal over the instant rail** — `READY`. M7.3, External
+accounts and the instant rail, stands at 2 of 3. Money leaves a wallet to the customer's
+bank account, final on acceptance, and `INV-REV-03` gets its irrevocable subject: the
+`Withdrawal` aggregate, hold-then-dispatch on the wallet's ledger account under its lock,
+our end-to-end reference and a send permit committed before the send, completion releasing
+the hold and posting `wallet-withdrawal:<id>` (DR `CUSTOMER_WALLET` / CR
+`INSTANT_CLEARING`), failure concluded only on the scheme's own refusal, on an unovertaken
+first send's refused connection, or past the scheme's declared deadline under the permit
+rule (ADR-0057's, adopted by ADR-0062 §3); the inquiry sweep; a reversal of an accepted
+withdrawal refused by the domain. Its entry is in [`BACKLOG.md`](BACKLOG.md); it runs the
+three-command loop, design first. **Not started.**
 
 ### Just completed
 
-**`P7-TSK-006` — The instant rail: a provider-neutral push port and its simulated
-scheme** — `COMPLETE` (2026-09-26). **M7.3 opens at 1 of 3: the second rail exists behind
-one port — materially different finality, declared and proven — and every country-specific
-detail lives in the adapter, so a second scheme is an adapter plus routing rules, never a
-core change.**
+**`P7-TSK-007` — External bank accounts as payment instruments, through the grant
+exchange** — `COMPLETE` (2026-09-27). **M7.3 stands at 2 of 3: a customer's external
+account is a `BANK_ACCOUNT` payment method known only by the rail provider's opaque
+reference, a four-character suffix and the confirmation-of-payee word — and a bank
+identifier physically cannot rest anywhere** (ADR-0062 §2 shipped; `INV-RAIL-03`,
+`INV-PAY-02` unchanged, `INV-AUD-02`).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| The adapter behaves as its descriptor says under every injected fault | The contract battery is the sentence executed (`SimulatedInstantSchemeAdapterTest`): accepted with reference AND settlement cycle; rejected; an unmapped word, a malformed body, garbage, a 5xx and a timeout all `INDETERMINATE`; an acceptance missing the scheme reference `INDETERMINATE` (unactionable is not knowledge); received-then-lost `INDETERMINATE` with `requestCount` the oracle; a refused connection `NOTHING_SENT` on all three dispatching operations; timeout-then-accept resolved by the inquiry with the same reference and cycle a fresh acceptance carries; duplicate and late confirmations as idempotent inquiries; the explicit `unrecognised` word — and ONLY it — the future never-executed licence, a 404 never; the exchange's four confirmation-of-payee words, its refusal, and its unusable shapes; the initiation's handle, refusal and handleless ambiguity; a re-send carrying the SAME end-to-end reference on the wire, twice, read back from the harness |
+| Registered from a grant, no connection held during the exchange | The keyed two-transaction shape (`IdempotentExecutor.begin` → wire → `complete`, the payout's `P5-TSK-016` idiom): Tx1 commits the claim beside nothing, the exchange runs connectionless through the real `SimulatedInstantSchemeAdapter` against the stubbed scheme, Tx2 attaches/audits/announces and records the claim's outcome in the same transaction (`BankAccountRegistrationDatabaseTest`, the whole chain over HTTP) |
+| The suffix and payee result stored; `NO_MATCH` needs recorded acknowledgement | The exchange keeps exactly the three storable values; `V003` binds `(payee_check IS NOT DISTINCT FROM 'NO_MATCH') = (no_match_acknowledged_at IS NOT NULL)` for every writer, the aggregate's factory refuses an unacknowledged `NO_MATCH` as defence in depth behind the surface's recorded 409 (`paymentmethods.PayeeCheckNoMatch`), and the acknowledged register carries the enumerated audit reason `PAYEE_CHECK_NO_MATCH_ACKNOWLEDGED` |
+| Shaped values refused at the surface, in the domain types and by `CHECK`s | Three independent layers: `DestinationReference` (the `TokenReference` idiom — no-letter values and the ≤34-character international-identifier shape refused, the hex-collision limit and the adapter-prefix contract recorded on the type), `V003`'s three shape `CHECK`s, and the bank-identifier sweep planting account numbers, sort-coded strings, phones and IBANs as the migrator |
+| Ownership-scoped; step-up when a factor is enrolled | `party_id = ?` in every statement (ADR-0031); the `P4-TSK-007` conditional step-up fail-fast in Tx1 and authoritative at the write — and the refusal **rolls the claim back with it**, proven by the same key succeeding after the step-up with exactly one exchange on the wire |
+| Detach | The shared door, kind-agnostic: 204, the destination slot freed (`INV-LIFE-04`), the row surviving as evidence |
 
-- **The port** (`PushRail`, ADR-0062 §1 verbatim): `exchange(grant)` → the three values the
-  platform may keep (opaque destination, four-character suffix,
-  `MATCH`/`CLOSE_MATCH`/`NO_MATCH`/`UNAVAILABLE`); `send` and `initiate` carrying our minted
-  `EndToEndReference` (ISO 20022's own 35-character bound); `inquire` and
-  `inquireInitiation` by our reference. Our verdicts — `ACCEPTED`, `REJECTED`,
-  `NOTHING_SENT`, `INDETERMINATE`, plus the inquiry's explicit `UNRECOGNISED` — and the
-  scheme's transaction reference and settlement-cycle identifier carried in every answer
-  (Phase 8's reconciliation keys). No void, no capture: the port's shape says final-on-
-  acceptance itself.
-- **The declaration, pinned field by field**: push; `FINAL_ON_ACCEPTANCE`; no reversals;
-  `RETURN_PAYMENT` refunds; `SCHEME_REPORTED` settlement clearing through
-  `INSTANT_CLEARING`; the declared 90-second outcome deadline (the scheme bounds its own
-  ambiguity — ADR-0062 §3's material difference from the card rail); no disputes. The
-  directory binds BOTH declarations unconditionally — declaration is code, liveness is
-  routing's database fact, and no routing rule names `instant`, so nothing routes there
-  yet.
-- **A second wire, its own class** (`SchemeWireClient`): the card client's classification
-  doctrine restated — only a refused connection is knowledge; every other transport
-  failure, non-200, unmapped or truncated body is `INDETERMINATE` — with the scheme's
-  paths, fields and status words living nowhere else (`INV-PAY-03` per adapter). Our
-  reference travels as the idempotency header AND the `endToEndReference` body field.
-- **The rail guard grew to two rails** (`RailVocabularyIsConfinedTest`): per-rail name
-  confinement with per-rail vacuity, per-constant confinement with a per-constant
-  stale-check on the composition root's binding, and planted violations for BOTH families
-  proven in-suite — the `P7-TSK-001` register row renamed with provenance.
-- **`INSTANT_CLEARING`, the forced chain made explicit**: a settling rail's descriptor
-  must state its clearing position at construction, so the `AccountPurpose` member and its
-  seeded chart rows (ledger `V013`, ASSET per ADR-0062 §4, one per supported currency,
-  the four enum-fed constraints recreated) arrive with the declaration — and the first
-  POSTING stays with `P7-TSK-009`, which is the substance of "added with its first
-  poster"; both ADRs carry the annotation.
-- **Credentials under the confinement mechanism**: `InstantSchemeKey`
-  (`finapp.payments.instant.key`, `FINAPP_PAYMENTS_INSTANT_KEY`, domain
-  `"/instant-scheme"`), pinned in `ConfinedCredentialVariablesTest` and really read by the
-  configured `instantRail` bean (the unconsumed-wiring licence, the `ProviderApiKey`
-  precedent). The per-rail WEBHOOK key is deliberately `P7-TSK-009`'s: a `KeySpec` nothing
-  reads would fail the confinement test's own vacuity pin.
-- **The gate's find, kept**: the secrets rule refused the initiation's authorization
-  handle as a bare `Optional<String>` — and it was right: a capability URL in a log line
-  can complete or observe the payer's flow. It is `Sensitive<>` by construction now, shape
-  judged before it becomes unreadable, its one `expose()` site deferred to the surface
-  that renders it (`P7-TSK-010`).
-- **Registers**: `MUTATION_TESTING` §2 +4 rows (and the `P7-TSK-001` row's method rename
-  with provenance); `ConfinedCredentialVariablesTest` +1; the ledger chart tests repointed
-  to `V013` with `INSTANT_CLEARING`'s pinned ASSET type; ADR-0059 §4 and ADR-0062 §1/§4
-  annotated. No persistence in payments, no API, no events, no audit — the backlog's own
-  lines.
-- **Probes**: eight runs, eight caught, every restore byte-identical — six on the adapter and wire, two on the ledger chart.
-- **Verified** by targeted tiers from fresh runs: the fleet-wide hermetic test task green
-  at **1627 tests across 14 modules, 0 failures** — this task ships no database-tier
-  surface of its own (adapter only; the ledger chart rows are proven by the hermetic
-  reconciliation and land live with every suite's migration) — the full battery
-  deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts
-  claimed.
+**The kinds share one aggregate under one lifecycle** (the payments per-model discipline at
+the instrument rank): `kind` is a frozen birth fact, backfilled `CARD_TOKEN` over the
+applied history and `NOT NULL` from `V003` on; the one constructor and the coherence
+`CHECK`s refuse a foreign kind's facts in both directions; the display suffix stays but its
+charset is the kind's (digits for last4, alphanumerics for the exchange's bound). **The
+register is keyed per party where the card attach deliberately is not** — the recorded
+asymmetry: the card exchange is grant-idempotent, the bank grant single-use, so the claim
+(scope `payment-method-register:<party>`, the grant SHA-256-hashed into the fingerprint)
+answers the lost-response retry byte for byte, refusals included, and a lease takeover's
+re-exchange meets the spent grant's `REFUSED` honestly. **The exchange's evidence bytes are
+deliberately dropped** — a provider body can carry the payee's name, which is exactly what
+`INV-RAIL-03` refuses at rest.
+
+**The gate's find at the schema rank, repaired and probed**: `V002`'s immutability trigger
+compared `OLD.col <> NEW.col`, which is NULL-blind — on a bank row, `brand NULL → 'Visa'`
+smuggled inside the legal detach edge would have sailed through. `V003` recreates the
+function with `IS DISTINCT FROM` on every frozen column (`kind` and the bank facts
+joining), and the probe reverting one comparison to `<>` reddens the suite on the exact
+edit the old form admitted. **The card confirm's instrument bridge now filters by kind
+structurally**: a `BANK_ACCOUNT` method resolves to no chargeable token at that door
+(`flatMap` over the now-optional token), so the push instrument cannot leak into the
+two-step machine.
+
+**Nine probe runs, nine caught**, every restore verified byte-identical
+(`MUTATION_TESTING.md` §2 +4 rows): the bank-facts coherence clause dropped, the consent
+`CHECK` made vacuous, the destination one-live index dropped against the ten-way race, the
+trigger's NULL-blind revert, the IBAN `CHECK` dropped, the letter rule disarmed in the
+type, the consent gate bypassed at the door (the factory's own refusal surfacing as the
+wrong status — defence in depth visible), the fingerprint unbound from the grant
+(`INV-IDEM-03`'s catcher), the aggregate's bank-coherence clause dropped.
+
+Multi-instance **PASS** — the claim's unique key arbitrates same-key racers, the per-kind
+partial one-live indexes arbitrate different-key duplicates behind the savepoint converge,
+the provider's single-use grant bounds cross-key double exchanges to one `EXCHANGED`, the
+step-up is an authoritative per-decision read, and nothing lives in process state.
+
+Registers: `ERROR_CONTRACT` +3 codes, `DATA_CLASSIFICATION` +4 rows,
+`DISTRIBUTED_EXECUTION` §3 row extended, `MODULE_ARCHITECTURE` and `AUDITABLE_ACTIONS`
+updated with the kind and the consent reason, `OpenApiContractTest` +1 declared path with
+the baseline regenerated (every BREAKING row a required flag on a new component),
+`SecretsAreUnwrappedInOnePlaceTest` +1 method +2 entries,
+`CredentialReachesNoEmittedSinkTest` +1 request body, ADR-0062 §2 annotated. Verified by
+targeted tiers from fresh runs — the fleet-wide hermetic test task green at **1641
+tests across 14 modules, 0 failures**, and **24 targeted database tests across 3 suites, 0
+failures** plus the platform classification guard — the full battery deliberately skipped
+on the owner's instruction, no fleet-wide database or kafka counts claimed.
+
 
 ### Previously
 
-The per-task completion records — 145 blocks: `X-TSK-004` (cross-cutting, newest), then the
-Phase 6 → 7 transition, then `P6-DOC-001` back to project initiation — are archived in
-[`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
+The per-task completion records — 151 blocks, from `P7-TSK-006` back to project initiation
+(`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
+are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
-`P6-TSK-015`'s gate.)*
+`P6-TSK-015`'s gate — and then "145 blocks, `X-TSK-004` newest" through five more, corrected
+by `P7-TSK-007`'s gate: the stale-second-copy class, this time in the pointer whose last
+correction note was sitting right beside the staleness.)*
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
 ---
@@ -804,8 +806,7 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P7-TSK-007` — External bank accounts as payment instruments, through the grant
-exchange** — see
+**`P7-TSK-008` — Wallet withdrawal over the instant rail** — see
 [§Current Task](#current-task), which this section mirrors. *(It named `P7-TSK-001` from the
 transition's initialisation until `P7-TSK-002`'s gate found it stale — the stale-second-copy
 class in the very section built to mirror rather than lag; kept current since.)*

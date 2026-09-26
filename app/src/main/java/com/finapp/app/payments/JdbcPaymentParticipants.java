@@ -9,6 +9,7 @@ import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.party.CustomerStatus;
 import com.finapp.party.PartyId;
 import com.finapp.party.PartyStore;
+import com.finapp.paymentmethods.PaymentMethod;
 import com.finapp.paymentmethods.PaymentMethodId;
 import com.finapp.paymentmethods.PaymentMethodStatus;
 import com.finapp.paymentmethods.PaymentMethodStore;
@@ -98,9 +99,13 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
         return instruments
                 .findOwned(unitOfWork, identifier, callerPartyId)
                 .filter(method -> method.status() == PaymentMethodStatus.ACTIVE)
+                // A BANK_ACCOUNT instrument has no token, so it resolves to no chargeable
+                // instrument HERE - this bridge is the card confirm's (P7-TSK-007: the push
+                // flows present the destination reference at their own doors, P7-TSK-008).
+                .flatMap(PaymentMethod::token)
                 // The registered re-wrapping: off in one expression, wrapped again before it
                 // travels (INV-PAY-02) - the SecretsAreUnwrappedInOnePlaceTest entry.
-                .map(method -> InstrumentToken.of(method.token().expose()));
+                .map(token -> InstrumentToken.of(token.expose()));
     }
 
     /** The product's live customer-wallet account; the transfers precedent's read. */

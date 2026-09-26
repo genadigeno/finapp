@@ -270,6 +270,16 @@ ledger's.
 |---|---|---|
 | `paymentmethods.TokenisationUnavailable` | 503 | The instrument could not be tokenised right now; retry later. |
 | `paymentmethods.InstrumentNotTokenised` | 422 | The tokenisation grant was refused; obtain a fresh grant and retry. |
+| `paymentmethods.GrantExchangeRefused` | 422 | The rail provider refused the grant; obtain a fresh grant and retry. |
+| `paymentmethods.GrantExchangeUnavailable` | 503 | The bank account could not be registered right now; retry later. |
+| `paymentmethods.PayeeCheckNoMatch` | 409 | The payee check found no match; registering needs the customer's explicit acknowledgement. |
+
+`P7-TSK-007` adds the bank door's three (ADR-0062 §2): the refused/unavailable pair restates
+the attach's remedy split at the grant exchange — with the recorded asymmetry that the bank
+grant is single-use, so the 503's retry is a new keyed request and may need a fresh grant —
+and `PayeeCheckNoMatch` (409) is the consent gate: the registration as asked conflicts with a
+recorded judgement that requires the customer's explicit say-so, and the acknowledged retry
+is a different request under a new key.
 
 The attach's two refusals, split by remedy (`P5-TSK-005`): the 503 is the platform's first —
 and deliberate — service-unavailable domain code, because a tokenisation outage is not the

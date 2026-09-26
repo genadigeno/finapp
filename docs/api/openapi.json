@@ -1977,6 +1977,76 @@
           }
         }
       },
+      "paymentmethods.GrantExchangeRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "paymentmethods.GrantExchangeRefused"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/paymentmethods.GrantExchangeRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The rail provider refused the grant; obtain a fresh grant and retry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "paymentmethods.GrantExchangeUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "paymentmethods.GrantExchangeUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/paymentmethods.GrantExchangeUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The bank account could not be registered right now; retry later.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "paymentmethods.InstrumentNotTokenised": {
         "content": {
           "application/problem+json": {
@@ -2003,6 +2073,41 @@
           }
         },
         "description": "[422] The tokenisation grant was refused; obtain a fresh grant and retry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "paymentmethods.PayeeCheckNoMatch": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "paymentmethods.PayeeCheckNoMatch"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/paymentmethods.PayeeCheckNoMatch"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The payee check found no match; registering needs the customer's explicit acknowledgement.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -3733,6 +3838,12 @@
           },
           "id": {
             "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "payeeCheck": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -4072,6 +4183,20 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "RegisterBankAccountRequest": {
+        "properties": {
+          "acknowledgeNoMatch": {
+            "type": "boolean"
+          },
+          "grant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant"
+        ],
         "type": "object"
       },
       "RegistrationRequest": {
@@ -5667,6 +5792,43 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AttachPaymentMethodRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentMethodView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/payment-methods/bank-accounts": {
+      "post": {
+        "operationId": "registerBankAccount",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterBankAccountRequest"
               }
             }
           },

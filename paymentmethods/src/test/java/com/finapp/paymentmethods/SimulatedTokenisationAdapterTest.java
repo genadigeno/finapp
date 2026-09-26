@@ -156,6 +156,16 @@ class SimulatedTokenisationAdapterTest {
         assertThat(impatient.exchange(GRANT).outcome()).isEqualTo(Outcome.UNAVAILABLE);
         // The requestCount oracle: the provider RECEIVED the exchange - which is why a fresh
         // grant, not a retry loop, is the recovery (the grant is one-time on the provider side).
+        // AWAITED, not read instantly (the `P7-TSK-007` gate's find at the fixture rank, the
+        // P7-TSK-004 clock-skew class as a counter race): the client's 200ms timeout firing
+        // does not order the harness thread's receipt bookkeeping, and under a saturated
+        // fleet run the accept lagged the assertion - the oracle's MEANING is "the request
+        // reached the provider", which a bounded await states exactly.
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (provider.requestCount(SimulatedTokenisationAdapter.TOKENISATIONS_PATH) < 1
+                && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
         assertThat(provider.requestCount(SimulatedTokenisationAdapter.TOKENISATIONS_PATH))
                 .isEqualTo(1);
     }

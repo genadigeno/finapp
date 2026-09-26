@@ -3,9 +3,12 @@ package com.finapp.app.paymentmethods;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.paymentmethods.DestinationReference;
 import com.finapp.paymentmethods.JdbcPaymentMethodStore;
+import com.finapp.paymentmethods.PayeeCheck;
 import com.finapp.paymentmethods.PaymentMethod;
 import com.finapp.paymentmethods.PaymentMethodId;
+import com.finapp.paymentmethods.PaymentMethodKind;
 import com.finapp.paymentmethods.PaymentMethodStatus;
 import com.finapp.paymentmethods.PaymentMethodStore;
 import com.finapp.paymentmethods.TokenReference;
@@ -41,9 +44,15 @@ import org.junit.jupiter.api.Test;
  * with its ownership predicate, the every-writer trigger — and <strong>the PAN sweep</strong>:
  * `INV-PAY-02` at {@code DB-CONSTRAINT} rank, proven per column with the column list derived
  * from {@code information_schema} so a column added later is swept without anyone remembering.
+ *
+ * <p>`P7-TSK-007` adds the bank kind's own batteries: the destination arbiter's ten-way race,
+ * the freed destination slot, the <strong>bank-identifier sweep</strong> ({@code INV-RAIL-03}
+ * at {@code DB-CONSTRAINT} rank), the per-kind coherence for every writer, and the recreated
+ * trigger's NULL-safety — the {@code IS DISTINCT FROM} repair proven on the exact edit the
+ * old {@code <>} form let through.
  */
 @Tag("database")
-@DisplayName("payment method schema and store (P5-TSK-004)")
+@DisplayName("payment method schema and store (P5-TSK-004, P7-TSK-007)")
 class PaymentMethodDatabaseTest {
 
     private static final Clock CLOCK = Clock.systemUTC();
@@ -74,7 +83,7 @@ class PaymentMethodDatabaseTest {
                             PaymentMethodStore.Attachment attachment =
                                     store.attachOrConverge(
                                             app,
-                                            PaymentMethod.attach(
+                                            PaymentMethod.attachCard(
                                                     PaymentMethodId.next(IDS),
                                                     party,
                                                     token,
@@ -133,7 +142,7 @@ class PaymentMethodDatabaseTest {
             PaymentMethodStore.Attachment second =
                     store.attachOrConverge(
                             app,
-                            PaymentMethod.attach(
+                            PaymentMethod.attachCard(
                                     PaymentMethodId.next(IDS),
                                     party,
                                     token,
@@ -362,13 +371,460 @@ class PaymentMethodDatabaseTest {
         }
     }
 
+    // ------------------------------------------------------------------
+    // P7-TSK-007: the bank account kind (INV-RAIL-03 at DB-CONSTRAINT rank).
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("ten concurrent registers of one destination produce one live row (P7-TSK-007)")
+    void tenConcurrentBankRegistersProduceOneLiveRow() throws Exception {
+        UUID party = UUID.randomUUID();
+        DestinationReference destination =
+                DestinationReference.of("dest-race-" + UUID.randomUUID());
+
+        List<Callable<PaymentMethodStore.Attachment>> registers = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            registers.add(
+                    () -> {
+                        try (Connection app = DatabaseRoles.application()) {
+                            app.setAutoCommit(false);
+                            PaymentMethodStore.Attachment attachment =
+                                    store.attachOrConverge(
+                                            app, bank(party, destination, PayeeCheck.MATCH));
+                            app.commit();
+                            return attachment;
+                        }
+                    });
+        }
+        ExecutorService racers = Executors.newFixedThreadPool(10);
+        List<PaymentMethodStore.Attachment> outcomes = new ArrayList<>();
+        try {
+            for (Future<PaymentMethodStore.Attachment> outcome : racers.invokeAll(registers)) {
+                outcomes.add(outcome.get());
+            }
+        } finally {
+            racers.shutdown();
+        }
+        assertThat(rowsFor(party)).hasSize(1);
+        assertThat(outcomes.stream().filter(PaymentMethodStore.Attachment::created)).hasSize(1);
+        UUID winner =
+                outcomes.stream()
+                        .filter(PaymentMethodStore.Attachment::created)
+                        .findFirst()
+                        .orElseThrow()
+                        .method()
+                        .id()
+                        .value();
+        assertThat(outcomes)
+                .as("the nine losers converge onto the winner's bank row")
+                .allSatisfy(
+                        outcome -> assertThat(outcome.method().id().value()).isEqualTo(winner));
+    }
+
+    @Test
+    @DisplayName("a bank row round-trips beside a card and its detached slot frees (P7-TSK-007)")
+    void bankRowRoundTripsAndFreesItsSlot() throws Exception {
+        UUID party = UUID.randomUUID();
+        DestinationReference destination =
+                DestinationReference.of("dest-slot-" + UUID.randomUUID());
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            attach(app, party, TokenReference.of("tok_beside-" + UUID.randomUUID()));
+            PaymentMethodStore.Attachment first =
+                    store.attachOrConverge(
+                            app, bank(party, destination, PayeeCheck.NO_MATCH));
+            app.commit();
+            assertThat(first.created()).isTrue();
+
+            // The rehydrate arm, proven on the stored row: kinds, payee word and the consent
+            // instant come back exactly, and the card beside it keeps its own facts.
+            List<PaymentMethod> live = store.listLiveFor(app, party);
+            assertThat(live).hasSize(2);
+            PaymentMethod bankRow =
+                    live.stream()
+                            .filter(m -> m.kind() == PaymentMethodKind.BANK_ACCOUNT)
+                            .findFirst()
+                            .orElseThrow();
+            assertThat(bankRow.payeeCheck()).contains(PayeeCheck.NO_MATCH);
+            assertThat(bankRow.noMatchAcknowledgedAt()).isPresent();
+            assertThat(bankRow.token()).isEmpty();
+            assertThat(bankRow.destination().orElseThrow().expose())
+                    .isEqualTo(destination.expose());
+
+            // INV-LIFE-04's freed-slot asymmetry, at the destination arbiter.
+            assertThat(store.detach(app, first.method().id(), party, Instant.now(CLOCK)))
+                    .isTrue();
+            app.commit();
+            PaymentMethodStore.Attachment second =
+                    store.attachOrConverge(app, bank(party, destination, PayeeCheck.MATCH));
+            app.commit();
+            assertThat(second.created()).isTrue();
+            assertThat(second.method().id()).isNotEqualTo(first.method().id());
+        }
+    }
+
+    @Test
+    @DisplayName("bank identifier shapes cannot be stored in the destination (INV-RAIL-03)")
+    void bankIdentifierShapesCannotBeStored() throws Exception {
+        // The three refusals on an otherwise-coherent BANK row, as the MIGRATOR - the shape
+        // rules bind every writer, not the domain type's callers. An account number, a
+        // sort-coded string and a phone have no letter; the IBAN is the identifier shape.
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            try {
+                for (String identifierShaped :
+                        new String[] {
+                            "12345678",
+                            "12-34-56:12345678",
+                            "447911123456",
+                            "GB29NWBK60161331926819",
+                            "DE89370400440532013000"
+                        }) {
+                    refusedBankInsert(
+                            migrator,
+                            "the destination must refuse " + identifierShaped,
+                            identifierShaped,
+                            "MATCH",
+                            null,
+                            CHECK_VIOLATION);
+                }
+                // And the shape rules' recorded limit holds in the schema exactly as in the
+                // type: past an IBAN's own 34-character bound the reference is lawful.
+                Savepoint before = migrator.setSavepoint();
+                insertBankRow(
+                        migrator, "GB29" + "a".repeat(31), "MATCH", null, "ACTIVE", null);
+                migrator.rollback(before);
+            } finally {
+                migrator.rollback();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the per-kind coherence binds every writer (P7-TSK-007)")
+    void kindCoherenceBindsEveryWriter() throws Exception {
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            try {
+                // A NO_MATCH without its acknowledgement instant - the consent CHECK.
+                refusedBankInsert(
+                        migrator,
+                        "an unacknowledged NO_MATCH instrument cannot exist",
+                        "dest-consent-" + UUID.randomUUID(),
+                        "NO_MATCH",
+                        null,
+                        CHECK_VIOLATION);
+                // An acknowledgement riding a MATCH - the same CHECK's other direction.
+                refusedBankInsert(
+                        migrator,
+                        "consent to a mismatch that did not happen is not a fact",
+                        "dest-consent-" + UUID.randomUUID(),
+                        "MATCH",
+                        Instant.now(CLOCK),
+                        CHECK_VIOLATION);
+                // An unknown payee word.
+                refusedBankInsert(
+                        migrator,
+                        "an unknown payee word is refused",
+                        "dest-word-" + UUID.randomUUID(),
+                        "PARTIAL",
+                        null,
+                        CHECK_VIOLATION);
+                // A bank row missing its own facts (no destination).
+                refusedRawInsert(
+                        migrator,
+                        "a bank row without its destination is incoherent",
+                        "BANK_ACCOUNT",
+                        null,
+                        null,
+                        "6819",
+                        null,
+                        null,
+                        null,
+                        "MATCH",
+                        null,
+                        CHECK_VIOLATION);
+                // A card row dressed in bank facts.
+                refusedRawInsert(
+                        migrator,
+                        "a card row cannot carry a destination",
+                        "CARD_TOKEN",
+                        "tok_dressed-" + UUID.randomUUID(),
+                        "Visa",
+                        "4242",
+                        12,
+                        2030,
+                        "dest-dressed-x1",
+                        "MATCH",
+                        null,
+                        CHECK_VIOLATION);
+                // An unknown kind.
+                refusedRawInsert(
+                        migrator,
+                        "an unknown kind is refused",
+                        "WALLET",
+                        "tok_kind-" + UUID.randomUUID(),
+                        "Visa",
+                        "4242",
+                        12,
+                        2030,
+                        null,
+                        null,
+                        null,
+                        CHECK_VIOLATION);
+                // The per-kind suffix: alphanumerics are the BANK kind's licence, not the
+                // card's; five characters are nobody's.
+                refusedRawInsert(
+                        migrator,
+                        "a card suffix must stay four digits",
+                        "CARD_TOKEN",
+                        "tok_suffix-" + UUID.randomUUID(),
+                        "Visa",
+                        "4a42",
+                        12,
+                        2030,
+                        null,
+                        null,
+                        null,
+                        CHECK_VIOLATION);
+                refusedBankInsert(
+                        migrator,
+                        "a five-character bank suffix is refused",
+                        "dest-suffix-" + UUID.randomUUID(),
+                        "MATCH",
+                        null,
+                        CHECK_VIOLATION,
+                        "68195");
+            } finally {
+                migrator.rollback();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the recreated trigger is NULL-safe: a bank row's NULL card facts are frozen")
+    void triggerFreezesNullColumnsToo() throws Exception {
+        // THE P7-TSK-007 REPAIR'S PROOF: V002's OLD.col <> NEW.col was NULL-blind, so on a
+        // bank row an edit of brand (NULL -> 'Visa') smuggled inside the legal detach edge
+        // would have sailed through. IS DISTINCT FROM catches it - for every writer.
+        UUID party = UUID.randomUUID();
+        UUID bankRow;
+        UUID cardRow;
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            PaymentMethodStore.Attachment registered =
+                    store.attachOrConverge(
+                            app,
+                            bank(
+                                    party,
+                                    DestinationReference.of("dest-frozen-" + UUID.randomUUID()),
+                                    PayeeCheck.MATCH));
+            bankRow = registered.method().id().value();
+            cardRow =
+                    attach(app, party, TokenReference.of("tok_nullsafe-" + UUID.randomUUID()))
+                            .id()
+                            .value();
+            app.commit();
+        }
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            try {
+                refusedUpdate(
+                        migrator,
+                        "a bank row's NULL brand cannot be edited to a value, even on the"
+                                + " legal edge (the IS DISTINCT FROM repair)",
+                        "UPDATE paymentmethods.payment_method SET status = 'DETACHED',"
+                                + " detached_at = created_at, brand = 'Visa' WHERE id = ?",
+                        bankRow,
+                        RAISED);
+                refusedUpdate(
+                        migrator,
+                        "a card row's NULL destination cannot be edited to a value",
+                        "UPDATE paymentmethods.payment_method SET status = 'DETACHED',"
+                                + " detached_at = created_at,"
+                                + " destination_reference = 'dest-smuggled-x1' WHERE id = ?",
+                        cardRow,
+                        RAISED);
+                refusedUpdate(
+                        migrator,
+                        "the kind is a frozen birth fact",
+                        "UPDATE paymentmethods.payment_method SET status = 'DETACHED',"
+                                + " detached_at = created_at, kind = 'CARD_TOKEN',"
+                                + " token_reference = 'tok_rekinded', brand = 'Visa',"
+                                + " expiry_month = 12, expiry_year = 2030,"
+                                + " destination_reference = NULL, payee_check = NULL"
+                                + " WHERE id = ?",
+                        bankRow,
+                        RAISED);
+            } finally {
+                migrator.rollback();
+            }
+        }
+    }
+
     // -----------------------------------------------------------------
+
+    private static PaymentMethod bank(
+            UUID party, DestinationReference destination, PayeeCheck check) {
+        return PaymentMethod.registerBankAccount(
+                PaymentMethodId.next(IDS), party, destination, "6819", check, true, CLOCK);
+    }
+
+    /** A coherent BANK row with one field bent — the refusal isolated to the shape or
+     * consent constraint under test (the P0-TSK-031 isolation lesson). */
+    private void refusedBankInsert(
+            Connection connection,
+            String what,
+            String destination,
+            String payeeCheck,
+            Instant acknowledgedAt,
+            String sqlState)
+            throws SQLException {
+        refusedBankInsert(
+                connection, what, destination, payeeCheck, acknowledgedAt, sqlState, "6819");
+    }
+
+    private void refusedBankInsert(
+            Connection connection,
+            String what,
+            String destination,
+            String payeeCheck,
+            Instant acknowledgedAt,
+            String sqlState,
+            String suffix)
+            throws SQLException {
+        Savepoint before = connection.setSavepoint();
+        assertThatThrownBy(
+                        () ->
+                                insertBankRow(
+                                        connection,
+                                        destination,
+                                        payeeCheck,
+                                        acknowledgedAt,
+                                        "ACTIVE",
+                                        suffix))
+                .as(what)
+                .isInstanceOf(SQLException.class)
+                .extracting(f -> ((SQLException) f).getSQLState())
+                .isEqualTo(sqlState);
+        connection.rollback(before);
+    }
+
+    private void insertBankRow(
+            Connection connection,
+            String destination,
+            String payeeCheck,
+            Instant acknowledgedAt,
+            String status,
+            String suffix)
+            throws SQLException {
+        rawInsert(
+                connection,
+                "BANK_ACCOUNT",
+                null,
+                null,
+                suffix == null ? "6819" : suffix,
+                null,
+                null,
+                destination,
+                payeeCheck,
+                acknowledgedAt,
+                status,
+                null);
+    }
+
+    private void refusedRawInsert(
+            Connection connection,
+            String what,
+            String kind,
+            String token,
+            String brand,
+            String suffix,
+            Integer expiryMonth,
+            Integer expiryYear,
+            String destination,
+            String payeeCheck,
+            Instant acknowledgedAt,
+            String sqlState)
+            throws SQLException {
+        Savepoint before = connection.setSavepoint();
+        assertThatThrownBy(
+                        () ->
+                                rawInsert(
+                                        connection,
+                                        kind,
+                                        token,
+                                        brand,
+                                        suffix,
+                                        expiryMonth,
+                                        expiryYear,
+                                        destination,
+                                        payeeCheck,
+                                        acknowledgedAt,
+                                        "ACTIVE",
+                                        null))
+                .as(what)
+                .isInstanceOf(SQLException.class)
+                .extracting(f -> ((SQLException) f).getSQLState())
+                .isEqualTo(sqlState);
+        connection.rollback(before);
+    }
+
+    private void rawInsert(
+            Connection connection,
+            String kind,
+            String token,
+            String brand,
+            String suffix,
+            Integer expiryMonth,
+            Integer expiryYear,
+            String destination,
+            String payeeCheck,
+            Instant acknowledgedAt,
+            String status,
+            Instant detachedAt)
+            throws SQLException {
+        Instant now = Instant.now(CLOCK);
+        try (PreparedStatement insert =
+                connection.prepareStatement(
+                        "INSERT INTO paymentmethods.payment_method"
+                                + " (id, party_id, kind, token_reference, brand,"
+                                + " display_suffix, expiry_month, expiry_year,"
+                                + " destination_reference, payee_check,"
+                                + " no_match_acknowledged_at, status, created_at, detached_at)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            insert.setObject(1, IDS.next());
+            insert.setObject(2, UUID.randomUUID());
+            insert.setString(3, kind);
+            insert.setString(4, token);
+            insert.setString(5, brand);
+            insert.setString(6, suffix);
+            if (expiryMonth == null) {
+                insert.setNull(7, java.sql.Types.INTEGER);
+            } else {
+                insert.setInt(7, expiryMonth);
+            }
+            if (expiryYear == null) {
+                insert.setNull(8, java.sql.Types.INTEGER);
+            } else {
+                insert.setInt(8, expiryYear);
+            }
+            insert.setString(9, destination);
+            insert.setString(10, payeeCheck);
+            insert.setTimestamp(
+                    11, acknowledgedAt == null ? null : Timestamp.from(acknowledgedAt));
+            insert.setString(12, status);
+            insert.setTimestamp(13, Timestamp.from(now));
+            insert.setTimestamp(14, detachedAt == null ? null : Timestamp.from(detachedAt));
+            insert.executeUpdate();
+        }
+    }
 
     private PaymentMethod attach(Connection app, UUID party, TokenReference token) {
         PaymentMethodStore.Attachment attachment =
                 store.attachOrConverge(
                         app,
-                        PaymentMethod.attach(
+                        PaymentMethod.attachCard(
                                 PaymentMethodId.next(IDS),
                                 party,
                                 token,
@@ -394,25 +850,36 @@ class PaymentMethodDatabaseTest {
                             try (PreparedStatement insert =
                                     connection.prepareStatement(
                                             "INSERT INTO paymentmethods.payment_method"
-                                                + " (id, party_id, token_reference, brand,"
-                                                + " display_suffix, expiry_month, expiry_year,"
-                                                + " status, created_at, detached_at)"
-                                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                                + " (id, party_id, kind, token_reference,"
+                                                + " brand, display_suffix, expiry_month,"
+                                                + " expiry_year, destination_reference,"
+                                                + " payee_check, status, created_at,"
+                                                + " detached_at)"
+                                                + " VALUES"
+                                                + " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
                                 insert.setObject(1, IDS.next());
                                 insert.setObject(2, UUID.randomUUID());
+                                insert.setString(3, "kind".equals(column) ? pan : "CARD_TOKEN");
                                 insert.setString(
-                                        3,
+                                        4,
                                         "token_reference".equals(column)
                                                 ? pan
                                                 : "tok_sweep-" + UUID.randomUUID());
-                                insert.setString(4, "brand".equals(column) ? pan : "Visa");
+                                insert.setString(5, "brand".equals(column) ? pan : "Visa");
                                 insert.setString(
-                                        5, "display_suffix".equals(column) ? pan : "4242");
-                                insert.setInt(6, 12);
-                                insert.setInt(7, 2030);
-                                insert.setString(8, "status".equals(column) ? pan : "ACTIVE");
-                                insert.setTimestamp(9, Timestamp.from(now));
-                                insert.setTimestamp(10, null);
+                                        6, "display_suffix".equals(column) ? pan : "4242");
+                                insert.setInt(7, 12);
+                                insert.setInt(8, 2030);
+                                // A PAN planted into a bank column of a card row is refused
+                                // by the per-kind coherence CHECK - still 23514, still
+                                // physically unstorable; the bank row's own shape sweep is
+                                // bankIdentifierShapesCannotBeStored.
+                                insert.setString(
+                                        9, "destination_reference".equals(column) ? pan : null);
+                                insert.setString(10, "payee_check".equals(column) ? pan : null);
+                                insert.setString(11, "status".equals(column) ? pan : "ACTIVE");
+                                insert.setTimestamp(12, Timestamp.from(now));
+                                insert.setTimestamp(13, null);
                                 insert.executeUpdate();
                             }
                         })
@@ -460,21 +927,23 @@ class PaymentMethodDatabaseTest {
                             try (PreparedStatement insert =
                                     connection.prepareStatement(
                                             "INSERT INTO paymentmethods.payment_method"
-                                                + " (id, party_id, token_reference, brand,"
-                                                + " display_suffix, expiry_month, expiry_year,"
-                                                + " status, created_at, detached_at)"
-                                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                                + " (id, party_id, kind, token_reference,"
+                                                + " brand, display_suffix, expiry_month,"
+                                                + " expiry_year, status, created_at,"
+                                                + " detached_at)"
+                                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
                                 insert.setObject(1, IDS.next());
                                 insert.setObject(2, UUID.randomUUID());
-                                insert.setString(3, token);
-                                insert.setString(4, "Visa");
-                                insert.setString(5, "4242");
-                                insert.setInt(6, 12);
-                                insert.setInt(7, 2030);
-                                insert.setString(8, status);
-                                insert.setTimestamp(9, Timestamp.from(now));
+                                insert.setString(3, "CARD_TOKEN");
+                                insert.setString(4, token);
+                                insert.setString(5, "Visa");
+                                insert.setString(6, "4242");
+                                insert.setInt(7, 12);
+                                insert.setInt(8, 2030);
+                                insert.setString(9, status);
+                                insert.setTimestamp(10, Timestamp.from(now));
                                 insert.setTimestamp(
-                                        10,
+                                        11,
                                         detachedAt == null ? null : Timestamp.from(detachedAt));
                                 insert.executeUpdate();
                             }
