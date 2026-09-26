@@ -234,6 +234,14 @@ public final class PaymentService {
             throw new ApiException(
                     PaymentsErrorCode.NO_WALLET,
                     "A confirmation was refused: the account it credits is no longer open");
+        } catch (com.finapp.payments.NoEligibleRailException refused) {
+            // The refusal IS recorded - a decision with no chosen rail, audited - and the
+            // intent still awaits confirmation, deliberately retryable after an operator
+            // re-enables a rail or ships a version (P7-TSK-003, ADR-0060 section 3).
+            throw new ApiException(
+                    PaymentsErrorCode.NO_ELIGIBLE_RAIL,
+                    "A confirmation was refused: no payment rail can carry this payment"
+                            + " right now");
         } catch (IllegalPaymentIntentTransitionException refused) {
             throw new ApiException(
                     PaymentsErrorCode.NOT_CONFIRMABLE,

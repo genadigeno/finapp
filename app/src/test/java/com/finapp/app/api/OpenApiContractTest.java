@@ -440,6 +440,14 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/merchant/payouts",
                         ApiVersion.CURRENT_PREFIX + "/merchant/payouts/{payoutId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/payouts",
+                        // P7-TSK-003: the routing surface (ADR-0060) - the keyed immutable
+                        // version, the reasoned availability fact, the audited explanation
+                        // read, all behind PAYMENT_ROUTING_ADMINISTER. No PUT and no DELETE
+                        // on the policy: a routing change is a POST of a new version
+                        // effective forward (the fee-schedule sentence, restated).
+                        ApiVersion.CURRENT_PREFIX + "/operator/routing-policy/versions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/rails/{rail}/availability",
+                        ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}/routing",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

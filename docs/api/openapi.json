@@ -2082,6 +2082,41 @@
           }
         }
       },
+      "payments.NoEligibleRail": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.NoEligibleRail"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.NoEligibleRail"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] No payment rail can carry this payment right now.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "payments.NoWallet": {
         "content": {
           "application/problem+json": {
@@ -2327,6 +2362,41 @@
           }
         }
       },
+      "payments.RoutingPolicyNotForward": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.RoutingPolicyNotForward"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.RoutingPolicyNotForward"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A routing policy version takes effect forward, never backward.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "payments.UnknownInstrument": {
         "content": {
           "application/problem+json": {
@@ -2353,6 +2423,41 @@
           }
         },
         "description": "[422] The payment method does not resolve to an active instrument of yours.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.UnknownRail": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.UnknownRail"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.UnknownRail"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The named payment rail is not declared by this platform.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -2625,6 +2730,23 @@
         ],
         "type": "object"
       },
+      "AvailabilityView": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "changedAt": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BalanceLine": {
         "properties": {
           "available": {
@@ -2887,6 +3009,32 @@
         ],
         "type": "object"
       },
+      "CreateRoutingPolicyVersionRequest": {
+        "properties": {
+          "effectiveFrom": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RuleBody"
+            },
+            "maxItems": 50,
+            "minItems": 0,
+            "type": "array"
+          }
+        },
+        "required": [
+          "reason",
+          "rules"
+        ],
+        "type": "object"
+      },
       "CreateSessionRequest": {
         "properties": {
           "amountMinor": {
@@ -3005,6 +3153,49 @@
           },
           "sessionToken": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplanationView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "chosenRail": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "instrumentKind": {
+            "type": "string"
+          },
+          "matchedRuleIndex": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "routingDecisionId": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/StepView"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -3925,6 +4116,74 @@
         ],
         "type": "object"
       },
+      "RuleBody": {
+        "properties": {
+          "ceilingAmountMinor": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "type": "string"
+          },
+          "direction": {
+            "maxLength": 20,
+            "minLength": 0,
+            "type": "string"
+          },
+          "instrumentKind": {
+            "maxLength": 30,
+            "minLength": 0,
+            "type": "string"
+          },
+          "rails": {
+            "items": {
+              "maxLength": 32,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 0,
+            "type": "array"
+          }
+        },
+        "required": [
+          "direction",
+          "instrumentKind",
+          "rails"
+        ],
+        "type": "object"
+      },
+      "RuleView": {
+        "properties": {
+          "ceilingAmountMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "instrumentKind": {
+            "type": "string"
+          },
+          "rails": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ruleIndex": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "SectionView": {
         "properties": {
           "closing": {
@@ -4023,6 +4282,23 @@
         },
         "type": "object"
       },
+      "SetRailAvailabilityRequest": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "reason"
+        ],
+        "type": "object"
+      },
       "StatementLineView": {
         "properties": {
           "amount": {
@@ -4087,6 +4363,31 @@
             "type": "array"
           },
           "opening": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StepView": {
+        "properties": {
+          "descriptorVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "railAvailable": {
+            "type": "boolean"
+          },
+          "rejection": {
+            "type": "string"
+          },
+          "stepIndex": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "verdict": {
             "type": "string"
           }
         },
@@ -4233,6 +4534,30 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "VersionView": {
+        "properties": {
+          "createdBy": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "routingPolicyVersionId": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RuleView"
+            },
+            "type": "array"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -6155,6 +6480,107 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PayoutView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/payments/{intentId}/routing": {
+      "get": {
+        "operationId": "viewPaymentRouting",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExplanationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/rails/{rail}/availability": {
+      "post": {
+        "operationId": "setRailAvailability",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rail",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRailAvailabilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/routing-policy/versions": {
+      "post": {
+        "operationId": "createRoutingPolicyVersion",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoutingPolicyVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionView"
                 }
               }
             },

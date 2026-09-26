@@ -447,9 +447,13 @@ class PaymentCaptureDatabaseTest {
         try {
             PaymentConfirmation.ConfirmationResult confirmed =
                     new PaymentConfirmation(
-                                    runner, intents, attempts, evidence, participants,
-                                    adapter(),
-                                    new com.finapp.payments.PaymentOutcomes(
+                runner,
+                intents,
+                attempts,
+                evidence,
+                participants,
+                adapter(),
+                new com.finapp.payments.PaymentOutcomes(
                                             intents, attempts,
                                             new com.finapp.payments.JdbcRefundStore(),
                                             new com.finapp.ledger.HoldService(
@@ -500,9 +504,13 @@ class PaymentCaptureDatabaseTest {
                                             new JdbcAuditWriter(), new JdbcOutboxWriter(),
                                             IDS, CLOCK,
                                             com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL))),
-                                    new JdbcAuditWriter(),
-                                    IDS, CLOCK,
-                                    SimulatedCardPspAdapter.RAIL.id())
+                new com.finapp.payments.JdbcRoutingStore(),
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
+                IDS,
+                CLOCK,
+                com.finapp.payments.RoutingTelemetry.NONE)
                             .confirm(holder.party(), holder.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
         } finally {

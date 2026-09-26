@@ -88,7 +88,54 @@ public enum PaymentsAuditAction implements AuditableAction {
             "An operator dispatched a bounded refund of a captured payment, with the required"
                     + " reason; the record names the refund, the attempt and the intent, never"
                     + " an amount.",
-            true);
+            true),
+
+    /**
+     * An operator created a routing policy version (`P7-TSK-003`, ADR-0060 §1) — the
+     * privileged, reasoned act: how money travels changed, effective forward. The record
+     * names the version and its rule count; ceilings never appear ({@code INV-AUD-02}).
+     */
+    PAYMENT_ROUTING_VERSION_CREATED(
+            "payments.PaymentRoutingVersionCreated",
+            "An operator created an immutable routing policy version, effective forward, with"
+                    + " the required reason; the record names the version number and rule"
+                    + " count, never a ceiling amount.",
+            true),
+
+    /**
+     * An operator took a rail out of service or returned it (`P7-TSK-003`, ADR-0060 §4) —
+     * the recorded fact every instance routes by. Reasoned, always: silence about why a rail
+     * stopped is exactly what an incident review cannot afford.
+     */
+    RAIL_AVAILABILITY_CHANGED(
+            "payments.RailAvailabilityChanged",
+            "An operator recorded a rail as available or out of service, with the required"
+                    + " reason; the record names the rail and the new state.",
+            true),
+
+    /**
+     * The platform routed a payment and no declared rail could carry it (`P7-TSK-003`,
+     * ADR-0060 §3): the refusal behind {@code payments.NoEligibleRail}, recorded with the
+     * decision that explains it. The chosen path needs no action of its own — the winning
+     * confirmation's {@link #PAYMENT_CONFIRMED} names the decision and the rail.
+     */
+    PAYMENT_ROUTING_REFUSED(
+            "payments.PaymentRoutingRefused",
+            "A payment was refused because no declared rail could carry it; the record names"
+                    + " the intent, the decision, the pinned policy version and the step"
+                    + " count, never an amount.",
+            false),
+
+    /**
+     * An operator read a payment's routing explanation (`P7-TSK-003`) — a read of another
+     * person's payment inputs under {@code PAYMENT_ROUTING_ADMINISTER}, audited like every
+     * privileged read of somebody else's facts.
+     */
+    PAYMENT_ROUTING_EXPLANATION_READ(
+            "payments.PaymentRoutingExplanationRead",
+            "An operator read a payment's routing explanation; the record names the intent"
+                    + " and the decision.",
+            false);
 
     private final String code;
     private final String description;

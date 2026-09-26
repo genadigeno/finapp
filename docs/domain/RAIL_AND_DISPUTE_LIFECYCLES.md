@@ -121,6 +121,14 @@ as ADR-0059 declares them, not as shipped code.
 
 ## 4. The routing decision (ADR-0060)
 
+**Status (`P7-TSK-003`)**: shipped. The policy is versioned and immutable (payments `V013`,
+seeded with version 1 — the standing card pay-in route), availability is a recorded operator
+fact read inside the decision's transaction, and every confirmation pins its decision — the
+version, the judged inputs, every candidate's step — in the same Tx1 as the attempt it
+governs, publishing `RailSelected`. No eligible rail is a recorded refusal (`payments.NoEligibleRail`,
+retryable by design). The fallback trail advances only on `NOTHING_SENT`; the cross-rail
+re-dispatch arrives with the rails that can carry one (`P7-TSK-006`, `-009`).
+
 `policy version` + `stored inputs` → `ordered candidates, each with its reason` → `CHOSEN`.
 Pinned before dispatch, frozen, recomputable. It advances only on `NOTHING_SENT` or an
 eligibility refusal, and never after an ambiguous dispatch.

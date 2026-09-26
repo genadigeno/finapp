@@ -31,6 +31,13 @@ class PaymentMetricsDatabaseTest {
     private final JdbcRefundStore refunds = new JdbcRefundStore();
 
     /** The sweep's own default bound: a dispatch younger than this is mid-question. */
+    /** Raw rows mint UUIDv7 like every honest writer (ADR-0013): a v4 id in this
+     * shared database is a poison pill - the SWEEP's candidate list rehydrates
+     * typed ids, so one corrupt row would stall every later suite's sweeper. */
+    private static final com.finapp.sharedkernel.id.IdGenerator IDS =
+            new com.finapp.sharedkernel.id.IdGenerator(
+                    java.time.Clock.systemUTC(), new java.security.SecureRandom());
+
     private static final java.time.Duration BOUND = java.time.Duration.ofMinutes(10);
 
     @Test
@@ -134,15 +141,15 @@ class PaymentMetricsDatabaseTest {
 
     /** A minimal attempt row in {@code status}, with its state entered {@code ago} ago. */
     private UUID seedAttempt(Connection app, String status, String ago) throws SQLException {
-        UUID party = UUID.randomUUID();
-        UUID intent = UUID.randomUUID();
-        UUID attempt = UUID.randomUUID();
+        UUID party = IDS.next();
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
         execute(
                 app,
                 "INSERT INTO party.party (id, kind, display_name, registered_at)"
                         + " VALUES (?, 'PERSON', 'Gauge Subject', now())",
                 party);
-        UUID customer = UUID.randomUUID();
+        UUID customer = IDS.next();
         execute(
                 app,
                 "INSERT INTO party.customer (id, party_id, status, opened_at,"
@@ -159,8 +166,8 @@ class PaymentMetricsDatabaseTest {
                 intent,
                 party,
                 customer,
-                UUID.randomUUID(),
-                UUID.randomUUID());
+                IDS.next(),
+                IDS.next());
         execute(
                 app,
                 "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
@@ -169,7 +176,7 @@ class PaymentMetricsDatabaseTest {
                         + "', 'card', 'TWO_STEP')",
                 attempt,
                 intent,
-                "gauge-" + UUID.randomUUID());
+                "gauge-" + IDS.next());
         if (status.equals("AUTH_DISPATCHED")) {
             // Born dispatched: its age is its birth, the sweeper's own fallback.
             return attempt;
@@ -183,7 +190,7 @@ class PaymentMetricsDatabaseTest {
                     "UPDATE payments.payment_attempt SET status = 'AUTHORIZED',"
                             + " auth_provider_reference = ?, authorized_amount_minor = 100,"
                             + " authorized_currency = 'EUR', authorized_scale = 2 WHERE id = ?",
-                    "psp_gauge-" + UUID.randomUUID(),
+                    "psp_gauge-" + IDS.next(),
                     attempt);
         } else {
             execute(
@@ -208,10 +215,10 @@ class PaymentMetricsDatabaseTest {
      * (V012's shape), its state entered {@code ago} ago through legal edges only.
      */
     private UUID seedPushAttempt(Connection app, String status, String ago) throws SQLException {
-        UUID party = UUID.randomUUID();
-        UUID customer = UUID.randomUUID();
-        UUID intent = UUID.randomUUID();
-        UUID attempt = UUID.randomUUID();
+        UUID party = IDS.next();
+        UUID customer = IDS.next();
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
         execute(
                 app,
                 "INSERT INTO party.party (id, kind, display_name, registered_at)"
@@ -233,8 +240,8 @@ class PaymentMetricsDatabaseTest {
                 intent,
                 party,
                 customer,
-                UUID.randomUUID(),
-                UUID.randomUUID());
+                IDS.next(),
+                IDS.next());
         execute(
                 app,
                 "INSERT INTO payments.payment_attempt (id, intent_id, status, created_at,"

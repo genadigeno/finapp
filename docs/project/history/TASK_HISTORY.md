@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 146 "Previously" blocks, newest first, from `P7-TSK-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 147 "Previously" blocks, newest first, from `P7-TSK-002` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,53 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P7-TSK-002` — The attempt's machine per interaction model** — `COMPLETE` (2026-09-26).
+**M7.1 stands at 2 of 3: three machines under one aggregate, each under the three-layer
+discipline keyed on a frozen birth fact — and no rail's completion can be mistaken for
+another's, because no non-terminal state name is shared across models.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| An illegal cross-model transition is refused at all three layers | Aggregate: a foreign model's state, payload and door refused in the one constructor and the guard (`InteractionModelMachinesTest`). Schema: `payment_attempt_status_matches_model` binds vocabulary and model each way, and the regenerated every-writer trigger carries each model's own edges — the exhaustive raw sweep drives all 154 (model × from × to) pairs as the migrator, expectations derived from `InteractionModel.edges()`. Writer: the store's guard refuses an edge no machine owns (`anyPermits`, exact by pinned vocabulary disjointness) |
+| The rename done and every Phase 5 and 6 suite green | `wallet_account_id → credit_account_id` in `V012` under the recreated intent trigger (a plpgsql body does not follow renames — the recorded `P6-TSK-005` debt's trigger, paid); the fleet-wide hermetic tier and 194 targeted database tests across 16 suites green, fresh runs (counts in the change log); the full battery deliberately skipped on the owner's instruction |
+
+- **The machines moved onto their owner**: `InteractionModel.edges()` declares all three —
+  `TWO_STEP` Phase 5's seven states and eleven edges verbatim; `PUSH` `AWAITING_PAYER →
+  EXECUTION_DISPATCHED → EXECUTION_UNKNOWN → EXECUTED`, each non-terminal also failing, with
+  `AWAITING_PAYER` only for a pay-in; `BOOK` edgeless, born terminal, never a history row —
+  and `V012`'s `CHECK`s and trigger are generated from them, reconciled model by model by the
+  migration test.
+- **`capture_mode` is the intent's birth fact** (`AUTOMATIC` everywhere today; `MANUAL`'s
+  producer arrives with `P7-TSK-004`'s surface): the sweeper's stranded-authorization chain leg
+  captures `AUTOMATIC` only — a `MANUAL` reservation awaits a person, proven resting beside its
+  moved `AUTOMATIC` sibling — the card sweep and the chain leg select `TWO_STEP` rows only, and
+  the stuck gauges widened by the push mid-flight states with `AWAITING_PAYER` deliberately
+  excluded (the payer PSP's clock; `P7-TSK-009` owns its ageing).
+- **"History rows carry the model" is carried structurally**: the vocabularies are
+  model-exclusive and the book machine writes no history at all, so a history row's own states
+  name its machine; the model lives on the attempt row (`V012`'s recorded decision — no model
+  column on history).
+- **Thirteen probe runs, twelve caught**, every restore byte-identical (`MUTATION_TESTING.md`
+  §2): a trigger edge deleted, the model `CHECK` collapsed, both freeze clauses dropped, the
+  one-live predicate reverted, `EXECUTED` out of the terminals, both aggregate gates removed,
+  `MANUAL` at birth, the chain leg's mode filter dropped, the gauge widen reverted — and the
+  backfill twice: **the comment-out form survived the substring pin** (the statement's text
+  intact inside a `--` line), recorded as that pin's stated limit, and the text-changing form
+  (`WHERE false`, the `V011` precedent) caught.
+- **The gate found and fixed**: §Next Task below still naming `P7-TSK-001` — the
+  stale-second-copy class, two tasks late in the very section built to mirror §Current Task;
+  `CheckoutPaymentParticipants`' javadoc still narrating the
+  rename debt as open — paid with provenance; the weak first backfill probe (above); and the
+  trigger's model keys named honestly in the register — with disjoint vocabularies a
+  model-blind union of the edge lists is extensionally identical on coherent rows, so the
+  falsifiable ranks are the vocabulary `CHECK` and each model's own edge lists, both probed
+  (`MUTATION_TESTING.md` §3).
+- **Migrate-then-deploy note** (the `V009`/`V011` precedent): `V012`'s `NOT NULL` columns land
+  backfilled under disabled triggers in one migration on this single-deployment platform; a
+  production rollout phases nullable → deploy writers → backfill → `NOT NULL`.
 
 ### Previously
 

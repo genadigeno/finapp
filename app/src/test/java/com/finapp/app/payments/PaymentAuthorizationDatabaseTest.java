@@ -48,6 +48,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.sql.Connection;
+import java.time.Instant;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -296,6 +297,18 @@ class PaymentAuthorizationDatabaseTest {
                 assertThat(result.getLong(1)).isEqualTo(1);
             }
         }
+        // ...and ONE routing decision (P7-TSK-003): the losers computed a plan and wrote
+        // nothing - routing runs before the arbiter, inserts run only after winning it -
+        // with the one-chosen partial index standing behind the code path.
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count = app.prepareStatement(
+                        "SELECT count(*) FROM payments.routing_decision WHERE intent_id = ?")) {
+            count.setObject(1, intent.value());
+            try (ResultSet result = count.executeQuery()) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getLong(1)).isEqualTo(1);
+            }
+        }
     }
 
     @Test
@@ -412,6 +425,84 @@ class PaymentAuthorizationDatabaseTest {
     }
 
     @Test
+    @SuppressWarnings("try") // The Scope is used for its close side effect.
+    @DisplayName("the version in force is the newest EFFECTIVE one: a future version routes"
+            + " nothing until its instant arrives (P7-TSK-003, ADR-0060, INV-HIST-04)")
+    void aFutureVersionRoutesNothingUntilEffective() throws Exception {
+        // An operator ships a version effective in an hour. Every confirm before that
+        // instant must still pin the version in force NOW - newest effective_from not after
+        // the decision, ties to the higher number - or a scheduled change would reroute
+        // payments an hour early.
+        com.finapp.payments.RoutingAdministration administration =
+                new com.finapp.payments.RoutingAdministration(
+                        new IdempotentExecutor(
+                                new JdbcIdempotencyRecordStore(),
+                                CLOCK,
+                                Duration.ofDays(1),
+                                Duration.ofMinutes(5)),
+                        new com.finapp.payments.JdbcRoutingStore(),
+                        com.finapp.payments.PaymentRails.of(
+                                java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        new JdbcAuditWriter(),
+                        IDS,
+                        CLOCK);
+        int scheduled;
+        try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
+            scheduled = runner.inTransaction(
+                            uow ->
+                                    administration.createVersion(
+                                            uow,
+                                            new com.finapp.payments.RoutingAdministration
+                                                    .NewVersion(
+                                                    java.util.List.of(
+                                                            new com.finapp.payments
+                                                                    .RoutingPolicyVersion.NewRule(
+                                                                    com.finapp.payments
+                                                                            .PaymentDirection
+                                                                            .PAY_IN,
+                                                                    com.finapp.payments
+                                                                            .InstrumentKind
+                                                                            .CARD_TOKEN,
+                                                                    java.util.Optional.empty(),
+                                                                    java.util.Optional.empty(),
+                                                                    java.util.List.of(
+                                                                            SimulatedCardPspAdapter
+                                                                                    .RAIL
+                                                                                    .id()))),
+                                                    java.util.Optional.of(
+                                                            Instant.now(CLOCK)
+                                                                    .plus(Duration.ofHours(1))),
+                                                    "scheduled routing change (test)"),
+                                            "future-" + UUID.randomUUID()))
+                    .version()
+                    .version();
+        }
+        assertThat(scheduled).isGreaterThanOrEqualTo(2);
+
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.AUTHORIZATIONS_PATH, 200,
+                APPROVED_BODY.formatted("future"));
+        PaymentIntentId intent = createIntent();
+        confirmation(adapter()).confirm(party, intent);
+
+        try (Connection app = DatabaseRoles.application()) {
+            try (PreparedStatement read = app.prepareStatement(
+                    "SELECT v.version FROM payments.routing_decision d"
+                            + " JOIN payments.routing_policy_version v"
+                            + " ON v.id = d.policy_version_id"
+                            + " WHERE d.intent_id = ? AND d.chosen_rail IS NOT NULL")) {
+                read.setObject(1, intent.value());
+                try (ResultSet row = read.executeQuery()) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getInt(1))
+                            .as("the future version exists (%s) and routed nothing", scheduled)
+                            .isEqualTo(1);
+                }
+            }
+        }
+    }
+
+    @Test
     @DisplayName("a stranger's payment intent is one empty answer (the ownership register's negative test)")
     void aStrangersPaymentIntentIsOneEmptyAnswer() throws Exception {
         PaymentIntentId owned = createIntent();
@@ -462,10 +553,13 @@ class PaymentAuthorizationDatabaseTest {
                 participants,
                 provider,
                 outcomes(),
+                new com.finapp.payments.JdbcRoutingStore(),
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                SimulatedCardPspAdapter.RAIL.id());
+                com.finapp.payments.RoutingTelemetry.NONE);
     }
 
     /** The shared outcome component over the real stores (`P5-TSK-013`'s extraction). */

@@ -211,6 +211,54 @@ class PaymentBeans {
                 java.util.List.of(SimulatedCardPspAdapter.RAIL));
     }
 
+    @Bean
+    com.finapp.payments.RoutingStore<Connection> routingStore() {
+        return new com.finapp.payments.JdbcRoutingStore();
+    }
+
+    /**
+     * The operator's routing acts (`P7-TSK-003`, ADR-0060): version creation, availability,
+     * the explanation read - each surfaced under {@code PAYMENT_ROUTING_ADMINISTER}.
+     */
+    @Bean
+    com.finapp.payments.RoutingAdministration routingAdministration(
+            IdempotentExecutor idempotentExecutor,
+            com.finapp.payments.RoutingStore<Connection> routingStore,
+            com.finapp.payments.PaymentRails paymentRails,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.RoutingAdministration(
+                idempotentExecutor, routingStore, paymentRails, auditWriter, ids, clock);
+    }
+
+    /**
+     * The decision meter behind the routing port (`P7-TSK-003`): tags are bounded enums -
+     * the declared rail names and {@code RoutingRejection} - so cardinality is the
+     * vocabulary's. Telemetry only; the counts of record are the decision rows.
+     */
+    @Bean
+    RoutingPolicyOperations routingPolicyOperations(
+            com.finapp.payments.RoutingAdministration routingAdministration,
+            org.springframework.transaction.support.TransactionTemplate paymentTransactions,
+            javax.sql.DataSource dataSource) {
+        return new RoutingPolicyOperations(
+                routingAdministration, paymentTransactions, dataSource);
+    }
+
+    @Bean
+    com.finapp.payments.RoutingTelemetry routingTelemetry(
+            com.finapp.app.telemetry.PaymentMeters paymentMeters) {
+        return (chosen, leadingRejection) ->
+                paymentMeters.routingDecision(
+                        chosen.map(com.finapp.payments.RailId::value).orElse("none"),
+                        chosen.isPresent()
+                                ? "CHOSEN"
+                                : leadingRejection
+                                        .map(Enum::name)
+                                        .orElse("NO_RULE_MATCHED"));
+    }
+
     /**
      * The Phase 3 hold machinery meets its owed production consumer (`P3-TSK-015` →
      * `P5-TSK-015`, ADR-0048 §4): the refund's dispatch reserves the customer's funds inside
@@ -286,9 +334,13 @@ class PaymentBeans {
             PaymentParticipants<Connection> paymentParticipants,
             PaymentProvider paymentProvider,
             com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            com.finapp.payments.RoutingStore<Connection> routingStore,
+            com.finapp.payments.PaymentRails paymentRails,
             AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            com.finapp.payments.RoutingTelemetry routingTelemetry) {
         return new PaymentConfirmation(
                 paymentTransactionRunner,
                 paymentIntentStore,
@@ -297,12 +349,15 @@ class PaymentBeans {
                 paymentParticipants,
                 paymentProvider,
                 paymentOutcomes,
+                // The rail is routing's per-payment decision now (P7-TSK-003, ADR-0060):
+                // the version in force over stored inputs, pinned in Tx1.
+                routingStore,
+                paymentRails,
                 auditWriter,
+                outboxWriter,
                 ids,
                 clock,
-                // The one rail that exists dispatches every confirmation until routing
-                // decides per payment (P7-TSK-003).
-                SimulatedCardPspAdapter.RAIL.id());
+                routingTelemetry);
     }
 
     @Bean

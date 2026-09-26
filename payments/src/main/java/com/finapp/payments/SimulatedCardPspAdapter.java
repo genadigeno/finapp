@@ -51,6 +51,9 @@ public final class SimulatedCardPspAdapter implements PaymentProvider {
     public static final PaymentRail RAIL =
             new PaymentRail(
                     RailId.of("card"),
+                    // Declaration version 1 (P7-TSK-003, ADR-0060 §2): routing steps record
+                    // which declaration they judged; bump it when these capabilities change.
+                    1,
                     new RailCapabilities(
                             InteractionModel.TWO_STEP,
                             RailCapabilities.Finality.REVOCABLE_UNTIL_DISPUTE_WINDOW_ENDS,

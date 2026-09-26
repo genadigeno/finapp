@@ -1237,17 +1237,20 @@ class MerchantCaptureDatabaseTest {
         try (SecurityContext.Scope acting = SecurityContext.enter(payment.payer())) {
             PaymentConfirmation.ConfirmationResult confirmed =
                     new PaymentConfirmation(
-                                    runner,
-                                    intents,
-                                    attempts,
-                                    evidence,
-                                    realParticipants,
-                                    adapter(),
-                                    outcomes(),
-                                    new JdbcAuditWriter(),
-                                    IDS,
-                                    CLOCK,
-                                    SimulatedCardPspAdapter.RAIL.id())
+                runner,
+                intents,
+                attempts,
+                evidence,
+                realParticipants,
+                adapter(),
+                outcomes(),
+                new com.finapp.payments.JdbcRoutingStore(),
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
+                IDS,
+                CLOCK,
+                com.finapp.payments.RoutingTelemetry.NONE)
                             .confirm(payment.party(), payment.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
         }

@@ -84,7 +84,11 @@ public enum RoleName {
                     // P6-TSK-012: the operator-initiated payout joins it too - money leaving
                     // the platform, the refund's reasoning pointed at the merchant. Where it
                     // goes stays four-eyes-guarded (ADR-0056); only when it is asked for moves.
-                    PermissionName.MERCHANT_PAYOUT)),
+                    PermissionName.MERCHANT_PAYOUT,
+                    // P7-TSK-003: routing joins the one money-operating population - how
+                    // money travels is this desk's judgement (ADR-0060; the permission's own
+                    // javadoc carries the future-split reasoning, the FEE_ADMINISTER shape).
+                    PermissionName.PAYMENT_ROUTING_ADMINISTER)),
 
     /**
      * Administers commercial counterparties and nothing else (`P6-TSK-003`): onboards

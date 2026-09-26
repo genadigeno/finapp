@@ -8517,7 +8517,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   debt as open; both fixed with provenance. Evidence: `CURRENT_STATE.md` §Just completed, `MUTATION_TESTING.md` §2/§3, the change
   log's dated row.
 
-**P7-TSK-003 — Rail routing: the versioned policy, the pinned decision, rail availability** — `READY`
+**P7-TSK-003 — Rail routing: the versioned policy, the pinned decision, rail availability** — `COMPLETE` (2026-09-26)
 - **Objective**: ADR-0060 — every payment routed once, before anything is sent, by a pinned policy
   version over stored inputs, explainable and recomputable.
 - **Bounded context**: Payments (9).
@@ -8548,8 +8548,29 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Accept**: gate criterion "routing deterministic, version-pinned and explainable from stored
   data" demonstrable on the card rail alone and re-demonstrated with every later rail.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
+- **Completed (2026-09-26)**: ADR-0060 whole. `RoutingPolicyVersion.decide` is pure over stored
+  and declared facts — the recomputation suite replays it identically and across versions that
+  disagree (`INV-RAIL-02`'s verification); payments `V013` holds the immutable versions (the fee
+  schedule's discipline: `UNIQUE (version)` the minting arbiter AND the queue, ten writers ten
+  gapless numbers, immutability by trigger for every writer), the availability fact, and the
+  pinned decision with its append-only step trail — one CHOSEN per intent by partial index,
+  refused explorations lawfully beneath it. The confirmation ROUTES in Tx1: computed before the
+  arbiter, written only after winning it (ten racers, one decision, counted), the decision and
+  `RailSelected` committed beside the attempt; no eligible rail is a RECORDED refusal
+  (`payments.NoEligibleRail`, the intent untouched and deliberately retryable — proven end to
+  end: rail out, 422 recorded; rail back, the same payment succeeds under the seeded pin). The
+  fallback appends `ABANDONED(NOTHING_SENT)` only on knowledge; `INDETERMINATE` appends nothing
+  (probed). Three operator routes under the new `PAYMENT_ROUTING_ADMINISTER` (held by
+  `LEDGER_OPERATOR` — the decision ADR-0060 left to this design), keyed version creation
+  (`INV-IDEM-01`; the divergence from the unkeyed fee version reasoned at the scope constant),
+  reasoned availability, audited explanation; negatives include the named one (the counterparty
+  administrator cannot reroute money). Fourteen probe runs, thirteen caught; the one survivor
+  analysed — the ORDER-only mutation is extensionally harmless while the `WHERE` stands — and
+  re-run in its falsifiable form (`created_at` for `effective_from`), caught by the
+  future-version test. Evidence: `CURRENT_STATE.md` §Just completed, `MUTATION_TESTING.md`
+  §2/§3, the change log's dated row.
 
-**P7-TSK-004 — The card void: the revocable half of `INV-REV-03`** — `PLANNED`
+**P7-TSK-004 — The card void: the revocable half of `INV-REV-03`** — `READY`
 - **Objective**: a reversal the card rail honours, performed: an uncaptured authorization is voided
   at the provider rather than left to lapse.
 - **Bounded context**: Payments (9).

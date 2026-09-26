@@ -571,6 +571,47 @@ them are classified at the ceiling regardless.
 | `payment_attempt` | `created_at` | `CONFIDENTIAL` | Dates a person's financial act |
 | `payment_attempt` | `rail` | `INTERNAL` | An enumerated name of the way the money travels (ADR-0059, `P7-TSK-001`) — it keys into declared capabilities that are code, and says nothing about a person the row's identifiers do not already say |
 | `payment_attempt` | `interaction_model` | `INTERNAL` | Which machine the attempt lives in (ADR-0059 §2, `P7-TSK-002`) — the `rail` row's reasoning: an enumerated name keying into machines that are code |
+| `routing_policy_version` | `id` | `INTERNAL` | An identifier of a thing — **the value a decision pins** (`INV-HIST-04`), the `fee_schedule_version.id` reasoning verbatim |
+| `routing_policy_version` | `version` | `INTERNAL` | An ordinal |
+| `routing_policy_version` | `effective_from` | `CONFIDENTIAL` | When a routing change starts applying — with the rules it dates an operational shift |
+| `routing_policy_version` | `created_at` | `CONFIDENTIAL` | When the change was decided |
+| `routing_policy_version` | `created_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s model |
+| `routing_policy_version` | `reason` | `CONFIDENTIAL` | The operator's own words about an operational judgement (`fee_schedule`-adjacent: why the platform routes as it does) |
+| `routing_rule` | `id` | `INTERNAL` | An identifier of a thing |
+| `routing_rule` | `policy_version_id` | `INTERNAL` | An identifier of a thing |
+| `routing_rule` | `rule_index` | `INTERNAL` | An ordinal |
+| `routing_rule` | `direction` | `INTERNAL` | A fixed vocabulary (`PaymentDirection`) |
+| `routing_rule` | `instrument_kind` | `INTERNAL` | A fixed vocabulary (`InstrumentKind`) |
+| `routing_rule` | `currency` | `INTERNAL` | An enumeration; part of a matcher with no amount beside it |
+| `routing_rule` | `ceiling_amount_minor` | `CONFIDENTIAL` | An operational bound the platform chose, not a person's amount and not a price — but with the rails it discloses how the platform hedges a rail, which is operational posture |
+| `routing_rule` | `ceiling_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the bound |
+| `routing_rule` | `ceiling_scale` | `INTERNAL` | As `ceiling_currency` |
+| `routing_rule_rail` | `rule_id` | `INTERNAL` | An identifier of a thing |
+| `routing_rule_rail` | `position` | `INTERNAL` | An ordinal |
+| `routing_rule_rail` | `rail` | `INTERNAL` | An enumerated rail name — `payment_attempt.rail`'s reasoning |
+| `rail_availability` | `rail` | `INTERNAL` | An enumerated rail name |
+| `rail_availability` | `available` | `CONFIDENTIAL` | Whether a rail is out of service is operational posture — an outage disclosed is an outage advertised |
+| `rail_availability` | `reason` | `CONFIDENTIAL` | The operator's own words about an incident or a decision |
+| `rail_availability` | `changed_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s model |
+| `rail_availability` | `changed_at` | `CONFIDENTIAL` | Dates the operational act |
+| `routing_decision` | `id` | `INTERNAL` | An identifier of a thing |
+| `routing_decision` | `intent_id` | `INTERNAL` | An identifier of a thing — the payment side of the decision join |
+| `routing_decision` | `policy_version_id` | `INTERNAL` | The pin itself (`INV-HIST-04`): an identifier |
+| `routing_decision` | `direction` | `INTERNAL` | A fixed vocabulary, judged input |
+| `routing_decision` | `instrument_kind` | `INTERNAL` | A fixed vocabulary, judged input |
+| `routing_decision` | `amount_minor` | `RESTRICTED-FINANCIAL` | The judged amount is the intent's commanded amount, snapshotted so the decision recomputes — `payment_intent.amount_minor`'s classification travels with the value |
+| `routing_decision` | `currency` | `RESTRICTED-FINANCIAL` | Meaningless without the amount and meaning-giving with it |
+| `routing_decision` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape (`INV-MON-05`) |
+| `routing_decision` | `matched_rule_index` | `INTERNAL` | An ordinal into the pinned version |
+| `routing_decision` | `chosen_rail` | `INTERNAL` | An enumerated rail name — which way a payment travelled, said by identifiers the row already carries |
+| `routing_decision` | `created_at` | `CONFIDENTIAL` | Dates a person's financial act (`payment_intent.created_at`'s reasoning) |
+| `routing_decision_step` | `decision_id` | `INTERNAL` | An identifier of a thing |
+| `routing_decision_step` | `step_index` | `INTERNAL` | An ordinal |
+| `routing_decision_step` | `rail` | `INTERNAL` | An enumerated rail name |
+| `routing_decision_step` | `verdict` | `INTERNAL` | A fixed vocabulary (`RoutingStepVerdict`) |
+| `routing_decision_step` | `rejection` | `CONFIDENTIAL` | Why a rail refused a payment: with `UNAVAILABLE` it discloses an outage, the `rail_availability.available` reasoning |
+| `routing_decision_step` | `rail_available` | `CONFIDENTIAL` | The availability observation used — as `rail_availability.available` |
+| `routing_decision_step` | `descriptor_version` | `INTERNAL` | An ordinal of a compiled declaration |
 | `payment_attempt_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `payment_attempt_event` | `attempt_id` | `INTERNAL` | An identifier of a thing |
 | `payment_attempt_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |

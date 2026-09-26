@@ -293,6 +293,9 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `payments.NotRefundable` | 409 | The payment has no captured amount to refund. |
 | `payments.RefundExceedsCaptured` | 422 | The refund would exceed the captured amount. |
 | `payments.RefundUnfunded` | 409 | The account cannot fund this refund right now. |
+| `payments.NoEligibleRail` | 422 | No payment rail can carry this payment right now. |
+| `payments.UnknownRail` | 422 | The named payment rail is not declared by this platform. |
+| `payments.RoutingPolicyNotForward` | 422 | A routing policy version takes effect forward, never backward. |
 
 The payment surface's vocabulary (`P5-TSK-011`) is **the refusals only** — requests the
 platform declined to judge, with nothing written. A *judged* failure is never an error code: a

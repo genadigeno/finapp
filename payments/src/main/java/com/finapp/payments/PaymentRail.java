@@ -21,10 +21,16 @@ import java.util.Objects;
  * <p>Declared beside the adapter whose operations it names — the one place a rail's name is
  * written ({@code RailVocabularyIsConfinedTest}) — and registered with {@link PaymentRails}.
  */
-public record PaymentRail(RailId id, RailCapabilities capabilities) {
+public record PaymentRail(RailId id, int declarationVersion, RailCapabilities capabilities) {
 
     public PaymentRail {
         Objects.requireNonNull(id, "a rail's id must not be null");
         Objects.requireNonNull(capabilities, "a rail's capabilities must not be null");
+        if (declarationVersion < 1) {
+            throw new IllegalArgumentException(
+                    "a declaration version is numbered from 1: routing decisions record which"
+                            + " declaration they judged (ADR-0060 section 2, P7-TSK-003), and"
+                            + " an adapter bumps it when its declared capabilities change");
+        }
     }
 }

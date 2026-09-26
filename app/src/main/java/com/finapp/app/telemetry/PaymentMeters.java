@@ -55,6 +55,9 @@ public final class PaymentMeters {
     /** {@code finapp.payments.refund} — acting refund judgements, by outcome. */
     static final String REFUND = "finapp.payments.refund";
 
+    /** {@code finapp.payments.routing.decision} — routing decisions, by rail and outcome. */
+    static final String ROUTING_DECISION = "finapp.payments.routing.decision";
+
     /** What an acting judgement decided about an attempt — the machine's own vocabulary. */
     public enum Judgement {
         AUTHORIZED,
@@ -96,12 +99,26 @@ public final class PaymentMeters {
     private final Map<Operation, Timer> latencies = new EnumMap<>(Operation.class);
 
     /**
+     * Held for the routing counter alone: its rail tag is the declared directory's names,
+     * which this class cannot enumerate at construction — micrometer dedupes by id, so the
+     * per-call register() resolves to one counter per (rail, outcome). Both tags are
+     * bounded vocabularies (ADR-0060's operational note).
+     */
+    private final MeterRegistry registry;
+
+    /**
      * Public because the payment slice's own suites compose the real doors (the
      * {@code TransferMetrics} bean is consumed the same way): a suite driving the webhook
      * resolver or the sweeper schedule constructs this over a {@code SimpleMeterRegistry}
      * of its own, so it exercises the WIRED counting path rather than a double.
      */
     public PaymentMeters(MeterRegistry registry, String provider) {
+        this.registry = registry;
+        // The routing series exists on a FRESHLY STARTED instance (the P2-TSK-020 lesson:
+        // criterion 6 is judged on a fresh boot at the phase flip, not after traffic): a
+        // zero baseline under neutral tags; the real (rail, outcome) series arrive with
+        // real decisions through routingDecision().
+        routingCounter("none", "none");
         for (Judgement judgement : Judgement.values()) {
             attempts.put(
                     judgement,
@@ -172,6 +189,28 @@ public final class PaymentMeters {
     /** An acting attempt judgement, post-commit. */
     public void attempt(Judgement judgement) {
         attempts.get(judgement).increment();
+    }
+
+    /**
+     * One routing decision (`P7-TSK-003`): the chosen rail with outcome {@code chosen}, or
+     * rail {@code none} with the refusal's leading rejection. Telemetry only — the counts
+     * of record are the decision rows.
+     */
+    public void routingDecision(String rail, String outcome) {
+        routingCounter(rail, outcome).increment();
+    }
+
+    private Counter routingCounter(String rail, String outcome) {
+        return Counter.builder(ROUTING_DECISION)
+                .tag("rail", rail)
+                .tag("outcome", lower(outcome))
+                .description(
+                        "Routing decisions by chosen rail and outcome: chosen, or the"
+                            + " refusal's leading rejection reason with rail=none. A refused"
+                            + " confirm records one decision per attempt, so a spike here"
+                            + " with rail=none is a rail outage or a policy gap. Per"
+                            + " instance; rate() and sum() aggregate")
+                .register(registry);
     }
 
     /** A webhook delivery's fate, after its transaction committed (or refused everything). */

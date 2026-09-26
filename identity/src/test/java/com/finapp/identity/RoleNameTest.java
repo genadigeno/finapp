@@ -60,13 +60,15 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("LEDGER_OPERATOR grants exactly the five money-operating permissions")
-    void ledgerOperatorGrantsExactlyFive() {
-        // One role, five permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009;
-        // PAYMENT_REFUND by P5-TSK-015; MERCHANT_PAYOUT by P6-TSK-012): one money-operating
-        // population, and the vocabulary stays precise so the adjustment, reversal, refund and
-        // payout endpoints each check their own. Exact set, so the role quietly gaining
-        // ROLE_ASSIGN - the permission that
+    @DisplayName("LEDGER_OPERATOR grants exactly the six money-operating permissions")
+    void ledgerOperatorGrantsExactlySix() {
+        // One role, six permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009;
+        // PAYMENT_REFUND by P5-TSK-015; MERCHANT_PAYOUT by P6-TSK-012;
+        // PAYMENT_ROUTING_ADMINISTER by P7-TSK-003, how money travels being this desk's
+        // judgement): one money-operating
+        // population, and the vocabulary stays precise so the adjustment, reversal, refund,
+        // payout and routing endpoints each check their own. Exact set, so the role quietly
+        // gaining ROLE_ASSIGN - the permission that
         // grants permissions - is a failing test rather than a silent expansion.
         //
         // THIS PIN WAS RED FROM P5-TSK-015 UNTIL P5-DOC-001's post-flip battery, which is
@@ -82,7 +84,8 @@ class RoleNameTest {
                         PermissionName.LEDGER_ADJUST,
                         PermissionName.TRANSFER_REVERSE,
                         PermissionName.PAYMENT_REFUND,
-                        PermissionName.MERCHANT_PAYOUT);
+                        PermissionName.MERCHANT_PAYOUT,
+                        PermissionName.PAYMENT_ROUTING_ADMINISTER);
     }
 
     @Test

@@ -33,7 +33,10 @@ Two failure shapes make this more than bookkeeping:
    and each naming an ordered list of candidate rails. A version is immutable from creation.
    Change creates a new version, effective forward, and reprices nothing in flight. Creating a
    version is a privileged operator act, with a required reason, audited, under a permission of
-   its own, `PAYMENT_ROUTING_ADMINISTER` (its role decided at `P7-TSK-003`'s design).
+   its own, `PAYMENT_ROUTING_ADMINISTER` *(decided at `P7-TSK-003`'s design: held by `LEDGER_OPERATOR` —
+   how money travels is the money-operating population's judgement, and a role for a split nobody
+   has made is a trust decision nobody took; the permission's own javadoc carries the future-split
+   reasoning, the `FEE_ADMINISTER` shape)*.
 
 2. **A payment is routed once, before anything is sent, and the decision is pinned.** Routing
    happens when an intent is confirmed, and when an outbound payment (a withdrawal, or a return

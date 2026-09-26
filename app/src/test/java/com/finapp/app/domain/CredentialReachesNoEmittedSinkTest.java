@@ -423,7 +423,11 @@ class CredentialReachesNoEmittedSinkTest {
                         "MerchantPayoutRequest",
                         // P6-TSK-012. The operator's payout on the merchant's behalf: the same
                         // two fields plus the free-text reason the audit record requires.
-                        "OperatorPayoutRequest");
+                        "OperatorPayoutRequest",
+                        // P7-TSK-003: the routing surface's bodies - operator matchers, rail
+                        // names and required reasons, no credential-shaped member anywhere.
+                        "CreateRoutingPolicyVersionRequest",
+                        "SetRailAvailabilityRequest");
     }
 
     @Test

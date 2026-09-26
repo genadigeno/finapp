@@ -40,6 +40,7 @@ class PaymentRailsTest {
                                 SimulatedCardPspAdapter.RAIL,
                                 new PaymentRail(
                                         RailId.of("card"),
+                                        1,
                                         SimulatedCardPspAdapter.RAIL.capabilities()))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("card");

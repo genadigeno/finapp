@@ -339,60 +339,60 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P7-TSK-003` — Rail routing: the versioned policy, the pinned decision, rail availability** —
-`READY`. M7.1, Rail foundations, stands at 2 of 3. ADR-0060: every payment routed once, before
-anything is sent, by a pinned policy version over stored inputs — recomputable and explainable —
-with `rail_availability` an operator's recorded fact and fallback only on `NOTHING_SENT` or an
-eligibility refusal; demonstrable on the card rail alone (the acceptance), re-demonstrated with
-every later rail. Its entry is in [`BACKLOG.md`](BACKLOG.md); it runs the three-command loop,
-design first. **Not started.**
+**`P7-TSK-004` — The card void: the revocable half of `INV-REV-03`** — `READY`. M7.2, The card
+rail completed, stands at 0 of 2. A reversal the card rail declares is finally performed: an
+uncaptured authorization is voided at the provider rather than left to lapse — the machine's
+`VOID_DISPATCHED`/`VOID_UNKNOWN`/`VOIDED` states arrive with their producer, and the reversal
+capability check `P7-TSK-001` deliberately left to this task lands with it. Its entry is in
+[`BACKLOG.md`](BACKLOG.md); it runs the three-command loop, design first. **Not started.**
 
 ### Just completed
 
-**`P7-TSK-002` — The attempt's machine per interaction model** — `COMPLETE` (2026-09-26).
-**M7.1 stands at 2 of 3: three machines under one aggregate, each under the three-layer
-discipline keyed on a frozen birth fact — and no rail's completion can be mistaken for
-another's, because no non-terminal state name is shared across models.**
+**`P7-TSK-003` — Rail routing: the versioned policy, the pinned decision, rail availability** —
+`COMPLETE` (2026-09-26). **M7.1 closes at 3 of 3: every payment is routed once, before anything
+is sent, by a pinned policy version over stored inputs — recomputable, explainable, and refused
+on the record when no declared rail can carry it (ADR-0060 whole, `INV-RAIL-02`,
+`INV-HIST-04`'s third subject).**
 
 | Acceptance criterion | Evidence |
 |---|---|
-| An illegal cross-model transition is refused at all three layers | Aggregate: a foreign model's state, payload and door refused in the one constructor and the guard (`InteractionModelMachinesTest`). Schema: `payment_attempt_status_matches_model` binds vocabulary and model each way, and the regenerated every-writer trigger carries each model's own edges — the exhaustive raw sweep drives all 154 (model × from × to) pairs as the migrator, expectations derived from `InteractionModel.edges()`. Writer: the store's guard refuses an edge no machine owns (`anyPermits`, exact by pinned vocabulary disjointness) |
-| The rename done and every Phase 5 and 6 suite green | `wallet_account_id → credit_account_id` in `V012` under the recreated intent trigger (a plpgsql body does not follow renames — the recorded `P6-TSK-005` debt's trigger, paid); the fleet-wide hermetic tier and 194 targeted database tests across 16 suites green, fresh runs (counts in the change log); the full battery deliberately skipped on the owner's instruction |
+| Routing deterministic, version-pinned and explainable from stored data — on the card rail alone, re-demonstrable with every later rail | `RoutingPolicyVersion.decide` is pure; the recomputation suite replays the same plan byte for byte and across two versions that decide the same payment differently (the pin is load-bearing); the end-to-end confirm pins the seeded version 1, its one CHOSEN step, the availability observation and the descriptor version, all read back from `V013`'s rows; the future-effective version routes nothing until its instant (probed in its falsifiable form). The suites drive synthetic push and book declarations, so the demonstration is rail-agnostic by construction |
 
-- **The machines moved onto their owner**: `InteractionModel.edges()` declares all three —
-  `TWO_STEP` Phase 5's seven states and eleven edges verbatim; `PUSH` `AWAITING_PAYER →
-  EXECUTION_DISPATCHED → EXECUTION_UNKNOWN → EXECUTED`, each non-terminal also failing, with
-  `AWAITING_PAYER` only for a pay-in; `BOOK` edgeless, born terminal, never a history row —
-  and `V012`'s `CHECK`s and trigger are generated from them, reconciled model by model by the
-  migration test.
-- **`capture_mode` is the intent's birth fact** (`AUTOMATIC` everywhere today; `MANUAL`'s
-  producer arrives with `P7-TSK-004`'s surface): the sweeper's stranded-authorization chain leg
-  captures `AUTOMATIC` only — a `MANUAL` reservation awaits a person, proven resting beside its
-  moved `AUTOMATIC` sibling — the card sweep and the chain leg select `TWO_STEP` rows only, and
-  the stuck gauges widened by the push mid-flight states with `AWAITING_PAYER` deliberately
-  excluded (the payer PSP's clock; `P7-TSK-009` owns its ageing).
-- **"History rows carry the model" is carried structurally**: the vocabularies are
-  model-exclusive and the book machine writes no history at all, so a history row's own states
-  name its machine; the model lives on the attempt row (`V012`'s recorded decision — no model
-  column on history).
-- **Thirteen probe runs, twelve caught**, every restore byte-identical (`MUTATION_TESTING.md`
-  §2): a trigger edge deleted, the model `CHECK` collapsed, both freeze clauses dropped, the
-  one-live predicate reverted, `EXECUTED` out of the terminals, both aggregate gates removed,
-  `MANUAL` at birth, the chain leg's mode filter dropped, the gauge widen reverted — and the
-  backfill twice: **the comment-out form survived the substring pin** (the statement's text
-  intact inside a `--` line), recorded as that pin's stated limit, and the text-changing form
-  (`WHERE false`, the `V011` precedent) caught.
-- **The gate found and fixed**: §Next Task below still naming `P7-TSK-001` — the
-  stale-second-copy class, two tasks late in the very section built to mirror §Current Task;
-  `CheckoutPaymentParticipants`' javadoc still narrating the
-  rename debt as open — paid with provenance; the weak first backfill probe (above); and the
-  trigger's model keys named honestly in the register — with disjoint vocabularies a
-  model-blind union of the edge lists is extensionally identical on coherent rows, so the
-  falsifiable ranks are the vocabulary `CHECK` and each model's own edge lists, both probed
-  (`MUTATION_TESTING.md` §3).
-- **Migrate-then-deploy note** (the `V009`/`V011` precedent): `V012`'s `NOT NULL` columns land
-  backfilled under disabled triggers in one migration on this single-deployment platform; a
-  production rollout phases nullable → deploy writers → backfill → `NOT NULL`.
+- **The confirmation routes in Tx1** (ADR-0060 §2): the version in force and the availability
+  facts are read in the decision's own transaction; the plan is computed BEFORE the intent's
+  conditional (the unchanged ten-way arbiter — ten racers, one decision, now counted) and
+  written only after winning it; the decision, its steps and `RailSelected` commit beside the
+  attempt. A refusal is recorded WITHOUT the transition — `payments.NoEligibleRail`, the intent
+  untouched, deliberately retryable, the one-chosen partial index ignoring refused rows — and
+  proven end to end: rail out, 422 with the refusal on the record; rail back, the SAME payment
+  succeeds.
+- **Fallback advances only on knowledge** (`INV-RAIL-02`): `ABANDONED(NOTHING_SENT)` appended in
+  the acting resolver's own transaction; `INDETERMINATE` appends nothing — both probed. The
+  cross-rail re-dispatch arrives with the rails that can carry one (`P7-TSK-006`, `-009`).
+- **The operator surface** under the new `PAYMENT_ROUTING_ADMINISTER` (held by
+  `LEDGER_OPERATOR` — ADR-0060's deferred decision, made and recorded in the ADR): the keyed
+  immutable version (replay answers the original; ten concurrent creations mint ten gapless
+  numbers — the fee schedule's arbiter-is-the-queue discipline), the reasoned availability fact
+  (converges; every act audited), the audited explanation read. Negatives include the named
+  one: the merchant administrator cannot reroute money.
+- **Fourteen probe runs, thirteen caught**, every restore byte-identical
+  (`MUTATION_TESTING.md` §2): eligibility inverted, the chosen decision unpinned, the refusal
+  unrecorded, the refusal made to consume the intent, abandonment widened to ambiguity, the
+  one-chosen predicate dropped, decision immutability dropped, the permission swapped, the
+  availability reason unrecorded, the mint blinded to its race, the seed's rail dropped,
+  `RailSelected` unpublished, and effectiveness ignored — whose FIRST form survived and was
+  analysed rather than shrugged at: the ORDER-only mutation is extensionally harmless while the
+  `WHERE` stands, recorded as §3's tie-break limit, and the falsifiable form (`created_at` for
+  `effective_from`) caught.
+- **The gate found and fixed**: the routing meter registered lazily — invisible to
+  `PlannedMetersExistTest` exactly at the Phase 7 flip it exists for (the `P2-TSK-020` lesson) —
+  now a zero baseline on every fresh boot, which also let `MetricConventionTest` refuse the
+  `rail` tag until it was admitted to the closed set deliberately, with the `provider` tag's
+  reasoning; the ten-way confirm race counted attempts but not decisions — now both; and **the
+  battery surfaced a pre-existing rank gap recorded as debt below**: one corrupt (non-UUIDv7)
+  attempt id stalls every instance's whole sweep at the candidate-list read, before the
+  per-row containment starts — no domain writer can produce one (`EntityId` refuses at birth;
+  the offending rows were this repository's own raw test fixtures, now minting v7).
 
 ### Previously
 
@@ -668,6 +668,7 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
+| **One corrupt (non-UUIDv7) `payment_attempt.id` stalls every instance's whole card sweep** — `findSweepable` rehydrates typed ids while LISTING candidates, so the refusal (`EntityId`, ADR-0013) throws before the per-row containment (`P5-TSK-014`'s one-failing-row discipline) ever starts. Surfaced by `P7-TSK-003`'s battery when raw test fixtures minted v4 ids and poisoned every later suite's sweep | No domain writer can produce one — `EntityId` refuses at birth and every store insert goes through it — so the exposure is a raw writer (migrator, operator SQL) corrupting an id, which today would also be caught by nothing else | Bounded: the sweep crashes loudly and repeatedly rather than resolving wrongly; money is not misjudged, it is unattended — the same failure a poisoned row causes, one rank earlier | The fixtures now mint v7 (the immediate repair); the candidate list should skip-and-count an unrehydratable row exactly as the per-row loop does | Phase 15 |
 | **`payment_intent.wallet_account_id` holds a merchant payable for a merchant-bound payment.** The column's own comment defines it as *the wallet's ledger account - where the capture will credit*, so its MEANING is right and its NAME is narrower than its meaning (`P6-TSK-005`) | Renaming a column of applied history needs a new migration plus the every-writer trigger's recreation on the platform's most critical table, and the first PRODUCTION writer of a merchant-bound intent does not exist yet - `P6-TSK-007` brings it. Renaming before its real consumer exists would be guessing at what the consumer wants to call it | **Naming only, and bounded**: nothing reads it as a wallet - the capture credits whatever account it names, and the settlement REFUSES a capture whose credit account is not the pinned merchant's payable, so a mismatch is loud rather than silent. The cost is a reader of the schema being misled | **Re-owned by the Phase 6 review (`P6-DOC-001`)**: `P6-TSK-007`, this row's trigger, completed without the rename. The next migration that must recreate `payment_intent`'s every-writer trigger anyway carries the rename with it | **PAID — `P7-TSK-002`** (payments `V012` renamed the column under the recreated trigger; every reader, writer, test and register row follows the new name, the old one kept only in applied history and provenance notes) |
 | **Every session actor is audited as `CUSTOMER`, including operators.** `SessionAuthenticationInterceptor` enters `new Actor(identityId, ActorType.CUSTOMER)` for every authenticated session, so an operator's privileged acts — a manual adjustment, a transfer reversal, a refund, a merchant suspension, an API-key revocation — are recorded with the wrong actor TYPE. Found at `P6-TSK-002`'s implementation, while asserting that issuance names its operator: the test expected `EMPLOYEE` and the trail said `CUSTOMER` | The identifier is right — `actor_id` is the acting identity, so every record still names the person and `INV-AUD-01`'s attributability holds. What is wrong is the vocabulary that says which POPULATION acted, which is the field an auditor filters on to answer *what did staff do*. Correcting it means deriving the type from the identity's roles at authentication time and touches every audited session path on the platform — not a merchant task's to change, and not a change to make without its own negative tests | **Bounded but real**: no record is missing and none names the wrong person; a report separating staff activity from customers' cannot be built from `actor_type` alone today, and `ActorType.EMPLOYEE`'s own javadoc (*a human acting in an operational or administrative capacity*) describes a value nothing currently produces | An audit-completeness review, or the first report that must distinguish staff from customers | Phase 15 (audit completeness verification) |
 | ~~**Broker adapter behind `EventPublisher`.**~~ - **closed 2026-09-09** by `P2-TSK-001`. `KafkaEventPublisher` publishes every outbox event to Kafka - payload bytes verbatim, envelope as record headers, aggregate as the record key, one topic per producing module - and `OutboxRelaySchedule` polls on every instance, safely, because the per-aggregate advisory lock is the lease (`DISTRIBUTED_EXECUTION.md` §3). Delivery is at-least-once with `finapp.eventId` as the consumer dedupe key, and the crash duplicate is DEMONSTRATED in `KafkaOutboxDeliveryKafkaTest` rather than hidden. | - | - | - | - |
@@ -781,10 +782,10 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P7-TSK-003` — Rail routing: the versioned policy, the pinned decision, rail availability** —
-see [§Current Task](#current-task), which this section mirrors. *(It named `P7-TSK-001` from the
-transition's initialisation until `P7-TSK-002`'s gate found it stale — two tasks late, the
-stale-second-copy class in the very section built to mirror rather than lag.)*
+**`P7-TSK-004` — The card void: the revocable half of `INV-REV-03`** — see
+[§Current Task](#current-task), which this section mirrors. *(It named `P7-TSK-001` from the
+transition's initialisation until `P7-TSK-002`'s gate found it stale — the stale-second-copy
+class in the very section built to mirror rather than lag; kept current since.)*
 
 ### Superseded: the Phase 6 → 7 transition lead (read until 2026-09-24)
 

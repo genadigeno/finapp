@@ -343,6 +343,10 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `payments.PaymentCaptureDispatched` | No | The platform dispatched a capture for an authorized attempt; the reference was stored before the provider was asked, and the record names the attempt, the intent and — since `P7-TSK-001` — the attempt's stored rail, never an amount. |
 | `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. Written only on an acting transition: a resolver that lost the race records nothing (since the Phase 6 → 7 transition; before, every loser wrote one). |
 | `payments.PaymentRefundDispatched` | **Yes** | An operator dispatched a bounded refund of a captured payment, with the required reason; the record names the refund, the attempt and the intent, never an amount. |
+| `payments.PaymentRoutingVersionCreated` | **Yes** | An operator created an immutable routing policy version, effective forward, with the required reason; the record names the version number and rule count, never a ceiling amount. |
+| `payments.RailAvailabilityChanged` | **Yes** | An operator recorded a rail as available or out of service, with the required reason; the record names the rail and the new state. |
+| `payments.PaymentRoutingRefused` | No | A payment was refused because no declared rail could carry it; the record names the intent, the decision, the pinned policy version and the step count, never an amount. |
+| `payments.PaymentRoutingExplanationRead` | No | An operator read a payment's routing explanation; the record names the intent and the decision. |
 
 Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
 dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's

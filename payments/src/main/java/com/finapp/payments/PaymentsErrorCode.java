@@ -147,7 +147,46 @@ public enum PaymentsErrorCode implements ErrorCode {
     REFUND_UNFUNDED(
             "payments.RefundUnfunded",
             409,
-            "The account cannot fund this refund right now.");
+            "The account cannot fund this refund right now."),
+
+    /**
+     * No declared rail can carry the payment (`P7-TSK-003`, ADR-0060 §3): every candidate of
+     * the matched routing rule was refused — or no rule of the version in force matches the
+     * payment's shape — and the refusal is recorded as a decision with its steps.
+     *
+     * <p>A {@code 422}: coherent request, refused by the platform's own recorded state (a
+     * rail out of service, a ceiling, a shape no rule routes). Nothing was dispatched and the
+     * intent still awaits confirmation, so a retry after the operator acts can succeed —
+     * which is why this is not a terminal judgement on the payment.
+     */
+    NO_ELIGIBLE_RAIL(
+            "payments.NoEligibleRail",
+            422,
+            "No payment rail can carry this payment right now."),
+
+    /**
+     * An operator named a rail this build does not declare (`P7-TSK-003`): an availability
+     * act or a policy rule against a rail that does not exist would be a recorded fact about
+     * nothing, so it is refused before anything is written.
+     *
+     * <p>A {@code 422}: the remedy is the caller's — a declared rail's name.
+     */
+    UNKNOWN_RAIL(
+            "payments.UnknownRail",
+            422,
+            "The named payment rail is not declared by this platform."),
+
+    /**
+     * A routing policy version would take effect in the past (`P7-TSK-003`, `INV-HIST-04`;
+     * the `merchant.FeeScheduleNotForward` shape): it would rewrite the explanations of
+     * decisions already made.
+     *
+     * <p>A {@code 422}: the remedy is the caller's — a forward instant, or none for "now".
+     */
+    ROUTING_POLICY_NOT_FORWARD(
+            "payments.RoutingPolicyNotForward",
+            422,
+            "A routing policy version takes effect forward, never backward.");
 
     private final String code;
     private final int status;

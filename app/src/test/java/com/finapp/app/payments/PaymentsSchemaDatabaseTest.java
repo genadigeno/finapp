@@ -44,6 +44,13 @@ import org.junit.jupiter.api.Test;
 @DisplayName("payments schema (P5-TSK-008)")
 class PaymentsSchemaDatabaseTest {
 
+    /** Raw rows mint UUIDv7 like every honest writer (ADR-0013): a v4 id in this
+     * shared database is a poison pill - the SWEEP's candidate list rehydrates
+     * typed ids, so one corrupt row would stall every later suite's sweeper. */
+    private static final com.finapp.sharedkernel.id.IdGenerator IDS =
+            new com.finapp.sharedkernel.id.IdGenerator(
+                    java.time.Clock.systemUTC(), new java.security.SecureRandom());
+
     private static final String CHECK_VIOLATION = "23514";
     private static final String UNIQUE_VIOLATION = "23505";
     private static final String RAISED = "P0001";
@@ -52,7 +59,7 @@ class PaymentsSchemaDatabaseTest {
     @Test
     @DisplayName("the intent's machine edges and freeze bind every writer, the migrator included")
     void intentEdgesAndFreezeBindEveryWriter() throws Exception {
-        UUID intent = UUID.randomUUID();
+        UUID intent = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "REQUIRES_CONFIRMATION");
             try (PreparedStatement confirm = app.prepareStatement(
@@ -121,7 +128,7 @@ class PaymentsSchemaDatabaseTest {
     @Test
     @DisplayName("ten concurrent attempts for one intent land one live row, and a terminal frees the slot")
     void tenConcurrentAttemptsProduceOneLiveRow() throws Exception {
-        UUID intent = UUID.randomUUID();
+        UUID intent = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
         }
@@ -131,7 +138,7 @@ class PaymentsSchemaDatabaseTest {
             races.add(() -> {
                 // Own connection per simulated instance (P0-TST-009).
                 try (Connection instance = DatabaseRoles.application()) {
-                    UUID attempt = UUID.randomUUID();
+                    UUID attempt = IDS.next();
                     insertAttempt(instance, attempt, intent, "AUTH_DISPATCHED");
                     return attempt;
                 }
@@ -165,7 +172,7 @@ class PaymentsSchemaDatabaseTest {
                 assertThat(fail.executeUpdate()).isEqualTo(1);
             }
             assertThatCode(() ->
-                            insertAttempt(app, UUID.randomUUID(), intent, "AUTH_DISPATCHED"))
+                            insertAttempt(app, IDS.next(), intent, "AUTH_DISPATCHED"))
                     .doesNotThrowAnyException();
         }
     }
@@ -173,9 +180,9 @@ class PaymentsSchemaDatabaseTest {
     @Test
     @DisplayName("a payload edit smuggled inside a legal edge is refused for every writer")
     void aSmuggledPayloadEditIsRefused() throws Exception {
-        UUID intent = UUID.randomUUID();
-        UUID honest = UUID.randomUUID();
-        UUID smuggled = UUID.randomUUID();
+        UUID intent = IDS.next();
+        UUID honest = IDS.next();
+        UUID smuggled = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             insertAttempt(app, honest, intent, "CAPTURE_DISPATCHED");
@@ -191,7 +198,7 @@ class PaymentsSchemaDatabaseTest {
             }
         }
         try (Connection migrator = DatabaseRoles.migrator()) {
-            UUID intent2 = UUID.randomUUID();
+            UUID intent2 = IDS.next();
             insertIntent(migrator, intent2, "PROCESSING");
             insertAttempt(migrator, smuggled, intent2, "CAPTURE_DISPATCHED");
 
@@ -217,8 +224,8 @@ class PaymentsSchemaDatabaseTest {
     @DisplayName("the rail is frozen among the birth facts for every writer, the migrator"
             + " included (P7-TSK-001, ADR-0059)")
     void theRailIsFrozenForEveryWriter() throws Exception {
-        UUID intent = UUID.randomUUID();
-        UUID attempt = UUID.randomUUID();
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             insertAttempt(app, attempt, intent, "AUTH_DISPATCHED");
@@ -262,8 +269,8 @@ class PaymentsSchemaDatabaseTest {
             for (InteractionModel model : InteractionModel.values()) {
                 for (PaymentAttemptStatus from : model.statuses()) {
                     for (PaymentAttemptStatus to : PaymentAttemptStatus.values()) {
-                        UUID intent = UUID.randomUUID();
-                        UUID attempt = UUID.randomUUID();
+                        UUID intent = IDS.next();
+                        UUID attempt = IDS.next();
                         insertIntent(migrator, intent, "PROCESSING");
                         if (model == InteractionModel.TWO_STEP) {
                             insertAttempt(migrator, attempt, intent, from.name());
@@ -303,12 +310,12 @@ class PaymentsSchemaDatabaseTest {
     /** The payload a LEGAL move into {@code to} must carry - the smuggle test's knowledge. */
     private static String legalMovePayload(PaymentAttemptStatus to) {
         return switch (to) {
-            case AUTHORIZED -> ", auth_provider_reference = 'psp-swp-" + UUID.randomUUID()
+            case AUTHORIZED -> ", auth_provider_reference = 'psp-swp-" + IDS.next()
                     + "', authorized_amount_minor = 1000, authorized_currency = 'EUR',"
                     + " authorized_scale = 2";
             case CAPTURE_DISPATCHED ->
-                    ", capture_reference = 'cap-swp-" + UUID.randomUUID() + "'";
-            case CAPTURED -> ", capture_provider_reference = 'psp-cap-swp-" + UUID.randomUUID()
+                    ", capture_reference = 'cap-swp-" + IDS.next() + "'";
+            case CAPTURED -> ", capture_provider_reference = 'psp-cap-swp-" + IDS.next()
                     + "', captured_amount_minor = 1000, captured_currency = 'EUR',"
                     + " captured_scale = 2";
             case FAILED -> ", failure_reason = 'DECLINED'";
@@ -320,12 +327,12 @@ class PaymentsSchemaDatabaseTest {
     @DisplayName("vocabulary and model bind each other on the row, and the dispatch reference"
             + " is exactly the two-step birth fact (V012)")
     void theModelBindsVocabularyAndBirthFacts() throws Exception {
-        UUID intent = UUID.randomUUID();
+        UUID intent = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             // A two-step row in a push state: only the model CHECK stands against this shape
             // (the stage CASE has no arm for a foreign status), so the refusal names it.
-            assertThatThrownBy(() -> insertAttemptRow(app, UUID.randomUUID(), intent,
+            assertThatThrownBy(() -> insertAttemptRow(app, IDS.next(), intent,
                             "AWAITING_PAYER", coherentRow("AUTH_DISPATCHED")))
                     .isInstanceOf(SQLException.class)
                     .satisfies(failure -> {
@@ -337,7 +344,7 @@ class PaymentsSchemaDatabaseTest {
             // A push row in a two-step state: refused too (the model CHECK and the stage
             // CHECK both stand against it, so only the state is asserted).
             assertSqlState(CHECK_VIOLATION, () -> insertForeignModelRow(
-                    app, UUID.randomUUID(), intent, InteractionModel.PUSH, "AUTHORIZED"));
+                    app, IDS.next(), intent, InteractionModel.PUSH, "AUTHORIZED"));
             // A model outside the enum's vocabulary (the model CHECK and the model-status
             // CHECK both stand against it).
             assertSqlState(CHECK_VIOLATION, () -> {
@@ -346,7 +353,7 @@ class PaymentsSchemaDatabaseTest {
                                 + " created_at, rail, interaction_model)"
                                 + " VALUES (?, ?, 'AWAITING_PAYER', now(), 'push-test',"
                                 + " 'PULL')")) {
-                    unknown.setObject(1, UUID.randomUUID());
+                    unknown.setObject(1, IDS.next());
                     unknown.setObject(2, intent);
                     unknown.executeUpdate();
                 }
@@ -359,9 +366,9 @@ class PaymentsSchemaDatabaseTest {
                                 + " status, created_at, rail, interaction_model)"
                                 + " VALUES (?, ?, ?, 'AWAITING_PAYER', now(), 'push-test',"
                                 + " 'PUSH')")) {
-                    smuggled.setObject(1, UUID.randomUUID());
+                    smuggled.setObject(1, IDS.next());
                     smuggled.setObject(2, intent);
-                    smuggled.setString(3, "auth-smuggled-" + UUID.randomUUID());
+                    smuggled.setString(3, "auth-smuggled-" + IDS.next());
                     smuggled.executeUpdate();
                 }
             })
@@ -379,7 +386,7 @@ class PaymentsSchemaDatabaseTest {
                                 + " created_at, rail, interaction_model)"
                                 + " VALUES (?, ?, 'AUTH_DISPATCHED', now(), 'card',"
                                 + " 'TWO_STEP')")) {
-                    bare.setObject(1, UUID.randomUUID());
+                    bare.setObject(1, IDS.next());
                     bare.setObject(2, intent);
                     bare.executeUpdate();
                 }
@@ -402,9 +409,9 @@ class PaymentsSchemaDatabaseTest {
                                 + " interaction_model)"
                                 + " VALUES (?, ?, 'AWAITING_PAYER', ?, 1000, 'EUR', 2, now(),"
                                 + " 'push-test', 'PUSH')")) {
-                    promise.setObject(1, UUID.randomUUID());
+                    promise.setObject(1, IDS.next());
                     promise.setObject(2, intent);
-                    promise.setString(3, "psp-auth-" + UUID.randomUUID());
+                    promise.setString(3, "psp-auth-" + IDS.next());
                     promise.executeUpdate();
                 }
             })
@@ -422,15 +429,15 @@ class PaymentsSchemaDatabaseTest {
     @DisplayName("EXECUTED frees the one-live-per-intent slot exactly as the other terminals"
             + " do (V012's regenerated predicate)")
     void executedFreesTheOneLiveSlot() throws Exception {
-        UUID intent = UUID.randomUUID();
-        UUID running = UUID.randomUUID();
+        UUID intent = IDS.next();
+        UUID running = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             insertForeignModelRow(app, running, intent, InteractionModel.PUSH,
                     "EXECUTION_DISPATCHED");
             // The slot is held while the execution is in flight...
             assertSqlState(UNIQUE_VIOLATION, () -> insertForeignModelRow(
-                    app, UUID.randomUUID(), intent, InteractionModel.PUSH, "AWAITING_PAYER"));
+                    app, IDS.next(), intent, InteractionModel.PUSH, "AWAITING_PAYER"));
             // ...and EXECUTED frees it: the third terminal is IN the generated predicate. A
             // hand-list that missed it would hold the intent's slot forever.
             try (PreparedStatement execute = app.prepareStatement(
@@ -439,7 +446,7 @@ class PaymentsSchemaDatabaseTest {
                 execute.setObject(1, running);
                 assertThat(execute.executeUpdate()).isEqualTo(1);
             }
-            assertThatCode(() -> insertForeignModelRow(app, UUID.randomUUID(), intent,
+            assertThatCode(() -> insertForeignModelRow(app, IDS.next(), intent,
                             InteractionModel.PUSH, "AWAITING_PAYER"))
                     .doesNotThrowAnyException();
         }
@@ -449,8 +456,8 @@ class PaymentsSchemaDatabaseTest {
     @DisplayName("the interaction model and the capture mode are frozen among the birth facts"
             + " for every writer, the migrator included (V012)")
     void theModelAndCaptureModeAreFrozenForEveryWriter() throws Exception {
-        UUID intent = UUID.randomUUID();
-        UUID attempt = UUID.randomUUID();
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             insertAttempt(app, attempt, intent, "AUTH_DISPATCHED");
@@ -496,7 +503,7 @@ class PaymentsSchemaDatabaseTest {
     @Test
     @DisplayName("the coherence CHECKs refuse every corrupt shape the constructor refuses")
     void theCoherenceChecksRefuseEveryCorruptShape() throws Exception {
-        UUID intent = UUID.randomUUID();
+        UUID intent = IDS.next();
         try (Connection migrator = DatabaseRoles.migrator()) {
             insertIntent(migrator, intent, "PROCESSING");
 
@@ -547,48 +554,48 @@ class PaymentsSchemaDatabaseTest {
     @Test
     @DisplayName("the refund bound refuses over-refund and the uncaptured subject, for every writer")
     void theRefundBoundRefusesForEveryWriter() throws Exception {
-        UUID intent = UUID.randomUUID();
-        UUID captured = UUID.randomUUID();
-        UUID authorizedOnly = UUID.randomUUID();
+        UUID intent = IDS.next();
+        UUID captured = IDS.next();
+        UUID authorizedOnly = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             insertAttempt(app, captured, intent, "CAPTURED");
-            UUID intent2 = UUID.randomUUID();
+            UUID intent2 = IDS.next();
             insertIntent(app, intent2, "PROCESSING");
             insertAttempt(app, authorizedOnly, intent2, "AUTHORIZED");
 
             // 999 then 1 - refund to the penny is legal, the bound is <=.
-            insertRefund(app, UUID.randomUUID(), captured, 999, "EUR");
-            insertRefund(app, UUID.randomUUID(), captured, 1, "EUR");
+            insertRefund(app, IDS.next(), captured, 999, "EUR");
+            insertRefund(app, IDS.next(), captured, 1, "EUR");
 
             // One minor unit past the capture creates money (INV-PAY-05).
             assertSqlState(CHECK_VIOLATION, () ->
-                    insertRefund(app, UUID.randomUUID(), captured, 1, "EUR"));
+                    insertRefund(app, IDS.next(), captured, 1, "EUR"));
 
             // Only a CAPTURED attempt has anything to return.
             assertSqlState(CHECK_VIOLATION, () ->
-                    insertRefund(app, UUID.randomUUID(), authorizedOnly, 1, "EUR"));
+                    insertRefund(app, IDS.next(), authorizedOnly, 1, "EUR"));
 
             // The capture's currency, or nothing.
             assertSqlState(CHECK_VIOLATION, () ->
-                    insertRefund(app, UUID.randomUUID(), captured, 1, "USD"));
+                    insertRefund(app, IDS.next(), captured, 1, "USD"));
 
             // A refund of a nonexistent attempt is the trigger's refusal before the FK's.
             assertSqlState(CHECK_VIOLATION, () ->
-                    insertRefund(app, UUID.randomUUID(), UUID.randomUUID(), 1, "EUR"));
+                    insertRefund(app, IDS.next(), IDS.next(), 1, "EUR"));
         }
         try (Connection migrator = DatabaseRoles.migrator()) {
             // The bound binds the migrator too - "for every writer" is the accept's own text.
             assertSqlState(CHECK_VIOLATION, () ->
-                    insertRefund(migrator, UUID.randomUUID(), captured, 1, "EUR"));
+                    insertRefund(migrator, IDS.next(), captured, 1, "EUR"));
         }
     }
 
     @Test
     @DisplayName("ten concurrent partial refunds accept exactly the budget")
     void tenConcurrentPartialRefundsAcceptExactlyTheBudget() throws Exception {
-        UUID intent = UUID.randomUUID();
-        UUID attempt = UUID.randomUUID();
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             insertAttempt(app, attempt, intent, "CAPTURED"); // captured 10.00 EUR = 1000
@@ -598,7 +605,7 @@ class PaymentsSchemaDatabaseTest {
         for (int i = 0; i < 10; i++) {
             races.add(() -> {
                 try (Connection instance = DatabaseRoles.application()) {
-                    insertRefund(instance, UUID.randomUUID(), attempt, 300, "EUR");
+                    insertRefund(instance, IDS.next(), attempt, 300, "EUR");
                     return true;
                 }
             });
@@ -639,16 +646,16 @@ class PaymentsSchemaDatabaseTest {
     @Test
     @DisplayName("a FAILED refund frees its budget")
     void aFailedRefundFreesItsBudget() throws Exception {
-        UUID intent = UUID.randomUUID();
-        UUID attempt = UUID.randomUUID();
-        UUID first = UUID.randomUUID();
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
+        UUID first = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             insertAttempt(app, attempt, intent, "CAPTURED");
 
             insertRefund(app, first, attempt, 800, "EUR");
             assertSqlState(CHECK_VIOLATION, () ->
-                    insertRefund(app, UUID.randomUUID(), attempt, 300, "EUR"));
+                    insertRefund(app, IDS.next(), attempt, 300, "EUR"));
 
             // The provider refused the first refund: DISPATCHED -> FAILED releases its budget
             // (the sum counts non-FAILED rows - only a refusal releases money possibly moving).
@@ -657,7 +664,7 @@ class PaymentsSchemaDatabaseTest {
                 fail.setObject(1, first);
                 assertThat(fail.executeUpdate()).isEqualTo(1);
             }
-            assertThatCode(() -> insertRefund(app, UUID.randomUUID(), attempt, 300, "EUR"))
+            assertThatCode(() -> insertRefund(app, IDS.next(), attempt, 300, "EUR"))
                     .doesNotThrowAnyException();
         }
     }
@@ -671,9 +678,9 @@ class PaymentsSchemaDatabaseTest {
     @DisplayName("a refund's send permit moves forward only and never on a resolved refund, and"
             + " the dispatch it records stays frozen - for every writer (V009)")
     void theRefundSendPermitIsForwardOnlyAndOnlyWhileResolvable() throws Exception {
-        UUID intent = UUID.randomUUID();
-        UUID attempt = UUID.randomUUID();
-        UUID refund = UUID.randomUUID();
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
+        UUID refund = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             insertAttempt(app, attempt, intent, "CAPTURED");
@@ -747,10 +754,10 @@ class PaymentsSchemaDatabaseTest {
         com.finapp.sharedkernel.id.IdGenerator ids =
                 new com.finapp.sharedkernel.id.IdGenerator(
                         java.time.Clock.systemUTC(), new java.security.SecureRandom());
-        UUID intent = UUID.randomUUID();
+        UUID intent = IDS.next();
         UUID attempt = ids.next();
-        UUID landed = UUID.randomUUID();
-        UUID inFlight = UUID.randomUUID();
+        UUID landed = IDS.next();
+        UUID inFlight = IDS.next();
         com.finapp.payments.JdbcRefundStore refunds = new com.finapp.payments.JdbcRefundStore();
         com.finapp.payments.PaymentAttemptId attemptId =
                 com.finapp.payments.PaymentAttemptId.of(attempt);
@@ -785,9 +792,9 @@ class PaymentsSchemaDatabaseTest {
     @Test
     @DisplayName("provider evidence is append-only for every writer, and its shape CHECKs hold")
     void evidenceIsAppendOnlyForEveryWriter() throws Exception {
-        UUID intent = UUID.randomUUID();
-        UUID attempt = UUID.randomUUID();
-        UUID evidence = UUID.randomUUID();
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
+        UUID evidence = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             insertAttempt(app, attempt, intent, "AUTH_DISPATCHED");
@@ -795,7 +802,7 @@ class PaymentsSchemaDatabaseTest {
 
             // The unattributable webhook is STILL retained - both subjects NULL is legal.
             assertThatCode(() ->
-                            insertEvidence(app, UUID.randomUUID(), null, null, "WEBHOOK", 10))
+                            insertEvidence(app, IDS.next(), null, null, "WEBHOOK", 10))
                     .doesNotThrowAnyException();
 
             // The application role holds no UPDATE and no DELETE at all.
@@ -813,14 +820,14 @@ class PaymentsSchemaDatabaseTest {
 
             // Two subjects on one row is a claim about two operations - refused.
             assertSqlState(CHECK_VIOLATION, () -> insertEvidence(
-                    app, UUID.randomUUID(), attempt, attempt, "REQUEST", 10));
+                    app, IDS.next(), attempt, attempt, "REQUEST", 10));
             // An unknown kind, a plaintext passed off as ciphertext, a short nonce.
             assertSqlState(CHECK_VIOLATION, () -> insertEvidence(
-                    app, UUID.randomUUID(), attempt, null, "SCREENSHOT", 10));
+                    app, IDS.next(), attempt, null, "SCREENSHOT", 10));
             assertSqlState(CHECK_VIOLATION, () -> insertRawEvidence(
-                    app, UUID.randomUUID(), "RESPONSE", new byte[10], new byte[12], 10));
+                    app, IDS.next(), "RESPONSE", new byte[10], new byte[12], 10));
             assertSqlState(CHECK_VIOLATION, () -> insertRawEvidence(
-                    app, UUID.randomUUID(), "RESPONSE", new byte[26], new byte[11], 10));
+                    app, IDS.next(), "RESPONSE", new byte[26], new byte[11], 10));
         }
         try (Connection migrator = DatabaseRoles.migrator()) {
             // The trigger binds the role the grants cannot (INV-HIST-02: evidence that can be
@@ -842,7 +849,7 @@ class PaymentsSchemaDatabaseTest {
     @Test
     @DisplayName("the lifecycle histories are insert-only for the application role")
     void historiesAreInsertOnlyForTheApplication() throws Exception {
-        UUID intent = UUID.randomUUID();
+        UUID intent = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             insertIntent(app, intent, "PROCESSING");
             try (PreparedStatement event = app.prepareStatement(
@@ -855,7 +862,7 @@ class PaymentsSchemaDatabaseTest {
                             + " VALUES (?, 'REQUIRES_CONFIRMATION', 'PROCESSING', ?, 'CUSTOMER',"
                             + " ?)")) {
                 event.setObject(1, intent);
-                event.setString(2, UUID.randomUUID().toString());
+                event.setString(2, IDS.next().toString());
                 event.setTimestamp(3, Timestamp.from(Instant.now()));
                 assertThat(event.executeUpdate()).isEqualTo(1);
             }
@@ -915,7 +922,7 @@ class PaymentsSchemaDatabaseTest {
         AttemptRow attempt = coherentRow(status);
         corruption.applyTo(attempt);
         assertThatThrownBy(() ->
-                        insertAttemptRow(connection, UUID.randomUUID(), intent, status, attempt))
+                        insertAttemptRow(connection, IDS.next(), intent, status, attempt))
                 .isInstanceOf(SQLException.class)
                 .satisfies(failure -> {
                     assertThat(((SQLException) failure).getSQLState())
@@ -930,19 +937,19 @@ class PaymentsSchemaDatabaseTest {
         switch (status) {
             case "AUTH_DISPATCHED", "AUTH_UNKNOWN" -> { }
             case "AUTHORIZED" -> {
-                attempt.authProviderReference = "psp-auth-" + UUID.randomUUID();
+                attempt.authProviderReference = "psp-auth-" + IDS.next();
                 attempt.authorizedMinor = 1000L;
             }
             case "CAPTURE_DISPATCHED", "CAPTURE_UNKNOWN" -> {
-                attempt.authProviderReference = "psp-auth-" + UUID.randomUUID();
+                attempt.authProviderReference = "psp-auth-" + IDS.next();
                 attempt.authorizedMinor = 1000L;
-                attempt.captureReference = "cap-" + UUID.randomUUID();
+                attempt.captureReference = "cap-" + IDS.next();
             }
             case "CAPTURED" -> {
-                attempt.authProviderReference = "psp-auth-" + UUID.randomUUID();
+                attempt.authProviderReference = "psp-auth-" + IDS.next();
                 attempt.authorizedMinor = 1000L;
-                attempt.captureReference = "cap-" + UUID.randomUUID();
-                attempt.captureProviderReference = "psp-cap-" + UUID.randomUUID();
+                attempt.captureReference = "cap-" + IDS.next();
+                attempt.captureProviderReference = "psp-cap-" + IDS.next();
                 attempt.capturedMinor = 1000L;
             }
             case "FAILED" -> attempt.reason = "DECLINED";
@@ -959,10 +966,10 @@ class PaymentsSchemaDatabaseTest {
                         + " scale, status, created_at, capture_mode)"
                         + " VALUES (?, ?, ?, ?, ?, 1000, 'EUR', 2, ?, ?, 'AUTOMATIC')")) {
             insert.setObject(1, id);
-            insert.setObject(2, UUID.randomUUID());
-            insert.setObject(3, UUID.randomUUID());
-            insert.setObject(4, UUID.randomUUID());
-            insert.setObject(5, UUID.randomUUID());
+            insert.setObject(2, IDS.next());
+            insert.setObject(3, IDS.next());
+            insert.setObject(4, IDS.next());
+            insert.setObject(5, IDS.next());
             insert.setString(6, status);
             insert.setTimestamp(7, Timestamp.from(Instant.now()));
             insert.executeUpdate();
@@ -1042,7 +1049,7 @@ class PaymentsSchemaDatabaseTest {
             insert.setObject(2, attempt);
             insert.setLong(3, amountMinor);
             insert.setString(4, currency);
-            insert.setObject(5, UUID.randomUUID());
+            insert.setObject(5, IDS.next());
             insert.setString(6, "refund-" + id);
             insert.setTimestamp(7, born);
             // The birth permit is the dispatch itself (V009): the same value as created_at.

@@ -81,7 +81,11 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/approval", PermissionName.PAYOUT_DESTINATION_APPROVE),
                     entry("POST /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/rejection", PermissionName.PAYOUT_DESTINATION_APPROVE),
                     // The operator's payout on a merchant's behalf (Phase 6, ADR-0057 section 6)
-                    entry("POST /v1/operator/merchants/{merchantId}/payouts", PermissionName.MERCHANT_PAYOUT)));
+                    entry("POST /v1/operator/merchants/{merchantId}/payouts", PermissionName.MERCHANT_PAYOUT),
+                    // Rail routing: the versioned policy, availability, the explanation (Phase 7, ADR-0060)
+                    entry("POST /v1/operator/routing-policy/versions", PermissionName.PAYMENT_ROUTING_ADMINISTER),
+                    entry("POST /v1/operator/rails/{rail}/availability", PermissionName.PAYMENT_ROUTING_ADMINISTER),
+                    entry("GET /v1/operator/payments/{intentId}/routing", PermissionName.PAYMENT_ROUTING_ADMINISTER)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

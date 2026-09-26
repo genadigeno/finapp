@@ -1,6 +1,7 @@
 package com.finapp.app.payments;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.paymentmethods.SimulatedTokenisationAdapter;
 import com.finapp.payments.SimulatedCardPspAdapter;
@@ -268,6 +269,101 @@ class PaymentEndpointDatabaseTest {
     // -----------------------------------------------------------------
     // The cancellation window
     // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("routing pins the confirm: rail out is a 422 recorded and retryable, rail"
+            + " back and the SAME payment succeeds with its decision, its step trail and"
+            + " RailSelected (P7-TSK-003, INV-RAIL-02, INV-HIST-04)")
+    void routingPinsTheConfirm() throws Exception {
+        providerAuthorises("psp_auth-routed");
+        providerCaptures("psp_cap-routed");
+        String token = verifiedCustomer(someLogin());
+        openAccount(token);
+        String methodId = attachInstrument(token);
+        HttpResponse<String> created = payment(token, body(methodId, "6.00", "USD"), someKey());
+        assertThat(created.statusCode()).isEqualTo(201);
+        String paymentId = field(created.body(), "id");
+
+        // The operator's recorded fact takes the one rail out; the confirm is refused with
+        // the refusal RECORDED - a decision with no chosen rail - and the intent untouched,
+        // deliberately retryable (ADR-0060 section 3). Written as the application role: the
+        // availability row is the one mutable routing fact, and its route is
+        // RoutingPolicyDatabaseTest's subject.
+        recordAvailability(false, "endpoint suite outage");
+        try {
+            HttpResponse<String> refused = confirm(token, paymentId);
+            assertThat(refused.statusCode()).isEqualTo(422);
+            assertThat(refused.body()).contains("payments.NoEligibleRail");
+            assertThat(routingCount(
+                            "SELECT count(*) FROM payments.routing_decision"
+                                    + " WHERE intent_id = ? AND chosen_rail IS NULL",
+                            UUID.fromString(paymentId)))
+                    .isEqualTo(1);
+            assertThat(oneString(
+                            "SELECT status FROM payments.payment_intent WHERE id = ?",
+                            UUID.fromString(paymentId)))
+                    .isEqualTo("REQUIRES_CONFIRMATION");
+            assertThat(oneString(
+                            "SELECT s.rejection FROM payments.routing_decision_step s"
+                                    + " JOIN payments.routing_decision d"
+                                    + " ON d.id = s.decision_id"
+                                    + " WHERE d.intent_id = ?",
+                            UUID.fromString(paymentId)))
+                    .isEqualTo("UNAVAILABLE");
+        } finally {
+            recordAvailability(true, "endpoint suite restore");
+        }
+
+        // The SAME confirm now succeeds, and the choice is pinned beside the dispatch: one
+        // CHOSEN decision, the seeded version, the availability observation it used, the
+        // declared descriptor version, and the decided fact published.
+        HttpResponse<String> confirmed = confirm(token, paymentId);
+        assertThat(confirmed.statusCode()).isEqualTo(200);
+        assertThat(field(confirmed.body(), "status")).isEqualTo("SUCCEEDED");
+
+        String decisionId = oneString(
+                "SELECT id::text FROM payments.routing_decision"
+                        + " WHERE intent_id = ? AND chosen_rail = 'card'",
+                UUID.fromString(paymentId));
+        assertThat(oneString(
+                        "SELECT v.version::text FROM payments.routing_decision d"
+                                + " JOIN payments.routing_policy_version v"
+                                + " ON v.id = d.policy_version_id WHERE d.id = ?",
+                        UUID.fromString(decisionId)))
+                .as("the pin resolves to the seeded version (INV-HIST-04)")
+                .isEqualTo("1");
+        assertThat(oneString(
+                        "SELECT verdict || '|' || rail_available || '|' || descriptor_version"
+                                + " FROM payments.routing_decision_step WHERE decision_id = ?",
+                        UUID.fromString(decisionId)))
+                .isEqualTo("CHOSEN|true|1");
+        assertThat(routingCount(
+                        "SELECT count(*) FROM platform.outbox_event"
+                                + " WHERE event_type = 'payments.RailSelected'"
+                                + " AND aggregate_id = ?",
+                        UUID.fromString(paymentId)))
+                .isEqualTo(1);
+        assertThat(oneString(
+                        "SELECT change_summary FROM platform.audit_record"
+                                + " WHERE operation = 'payments.PaymentConfirmed'"
+                                + " AND target_id = ?",
+                        paymentId))
+                .as("the confirmation names the pin it dispatched under")
+                .contains("policyVersion=1")
+                .contains("decision=");
+
+        // And the decision is frozen for every writer, the migrator included.
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement tamper = migrator.prepareStatement(
+                        "UPDATE payments.routing_decision SET chosen_rail = NULL"
+                                + " WHERE id = ?")) {
+            tamper.setObject(1, UUID.fromString(decisionId));
+            assertThatThrownBy(tamper::executeUpdate)
+                    .isInstanceOf(SQLException.class)
+                    .extracting(failure -> ((SQLException) failure).getSQLState())
+                    .isEqualTo("P0001");
+        }
+    }
 
     @Test
     @DisplayName("cancellation wins only the confirmation window: cancel converges, a cancelled"
@@ -662,6 +758,36 @@ class PaymentEndpointDatabaseTest {
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement read =
                         app.prepareStatement("SELECT count(*) FROM payments.payment_intent")) {
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    /** The one mutable routing fact, written as the application role (`P7-TSK-003`). */
+    private static void recordAvailability(boolean available, String reason)
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement upsert = app.prepareStatement(
+                        "INSERT INTO payments.rail_availability (rail, available, reason,"
+                                + " changed_by, changed_at)"
+                                + " VALUES ('card', ?, ?, 'endpoint-suite', now())"
+                                + " ON CONFLICT (rail) DO UPDATE SET"
+                                + " available = EXCLUDED.available,"
+                                + " reason = EXCLUDED.reason,"
+                                + " changed_by = EXCLUDED.changed_by,"
+                                + " changed_at = EXCLUDED.changed_at")) {
+            upsert.setBoolean(1, available);
+            upsert.setString(2, reason);
+            upsert.executeUpdate();
+        }
+    }
+
+    private static long routingCount(String sql, Object argument) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            read.setObject(1, argument);
             try (ResultSet row = read.executeQuery()) {
                 assertThat(row.next()).isTrue();
                 return row.getLong(1);

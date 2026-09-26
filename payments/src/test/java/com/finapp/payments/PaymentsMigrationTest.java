@@ -50,6 +50,9 @@ class PaymentsMigrationTest {
     private static final String ATTEMPT_RAIL =
             "db/migration/payments/V011__the_attempt_records_its_rail.sql";
     /** The attempt AND intent triggers' CURRENT definitions (P7-TSK-002). */
+    private static final String ROUTING =
+            "db/migration/payments/V013__routing_policy_decision_and_availability.sql";
+
     private static final String MODEL_MACHINES =
             "db/migration/payments/V012__the_machines_per_interaction_model.sql";
 
@@ -208,6 +211,68 @@ class PaymentsMigrationTest {
                 .contains("RENAME COLUMN wallet_account_id TO credit_account_id")
                 .contains("OLD.credit_account_id <> NEW.credit_account_id")
                 .contains("OR OLD.capture_mode <> NEW.capture_mode");
+    }
+
+    @Test
+    @DisplayName("V013's routing CHECKs are generated from the enums, and the decision's"
+            + " monetary snapshot is the MoneyColumns fragment (P7-TSK-003)")
+    void routingChecksAreGeneratedFromTheEnums() {
+        String directions = PaymentDirection.sqlValueList();
+        String kinds = InstrumentKind.sqlValueList();
+        assertThat(migration(ROUTING))
+                // The rule's matchers and the decision's snapshot bind the same vocabularies.
+                .contains("CHECK (direction IN (" + directions + "))")
+                .contains("CHECK (instrument_kind IN (" + kinds + "))")
+                .contains("CHECK (verdict IN (" + RoutingStepVerdict.sqlValueList() + "))")
+                .contains("CHECK (rejection IN (" + RoutingRejection.sqlValueList() + "))")
+                // The judged amount, snapshotted as the standard NOT NULL triple.
+                .contains("amount_minor BIGINT NOT NULL, currency CHAR(3) NOT NULL,"
+                        + " scale SMALLINT NOT NULL")
+                // The rule's optional ceiling: all-or-nothing as a triple, its own names.
+                .contains("CHECK ((ceiling_amount_minor IS NULL) = (ceiling_currency IS NULL)"
+                        + " AND (ceiling_amount_minor IS NULL) = (ceiling_scale IS NULL))");
+        // Both direction CHECKs exist (rule and decision), and both kind CHECKs.
+        assertThat(migration(ROUTING).split(
+                        "CHECK \\(direction IN \\(" + directions + "\\)\\)", -1))
+                .hasSize(3);
+    }
+
+    @Test
+    @DisplayName("V013's clauses are pinned: immutability for every writer, the minting"
+            + " arbiter, one chosen decision per payment, abandonment only on knowledge,"
+            + " and the seeded version 1 (P7-TSK-003)")
+    void theRoutingClausesArePinned() {
+        assertThat(migration(ROUTING))
+                // Immutable for every writer, the migrator included - all five tables.
+                .contains("CREATE FUNCTION payments.routing_records_are_immutable()")
+                .contains("CREATE TRIGGER routing_policy_version_is_immutable")
+                .contains("CREATE TRIGGER routing_rule_is_immutable")
+                .contains("CREATE TRIGGER routing_rule_rail_is_immutable")
+                .contains("CREATE TRIGGER routing_decision_is_immutable")
+                .contains("CREATE TRIGGER routing_decision_step_is_immutable")
+                // The version-minting arbiter and its queue (the fee schedule's discipline).
+                .contains("CONSTRAINT routing_policy_version_number_is_unique")
+                .contains("UNIQUE (version)")
+                // Effective forward - INV-HIST-04's keystone, the INV-MER-03 shape.
+                .contains("CHECK (effective_from >= created_at)")
+                // One CHOSEN decision per payment; refused explorations accumulate lawfully.
+                .contains("CREATE UNIQUE INDEX routing_decision_one_chosen_per_intent")
+                .contains("WHERE chosen_rail IS NOT NULL")
+                // The step's own rules at DB rank: a rejection exactly when not chosen, and
+                // abandonment only on knowledge (INV-RAIL-02 for every writer).
+                .contains("CHECK ((verdict = 'CHOSEN') = (rejection IS NULL))")
+                .contains("CHECK (verdict <> 'ABANDONED' OR rejection = 'NOTHING_SENT')")
+                .contains("CHECK ((rejection = 'UNDECLARED_BY_BUILD') ="
+                        + " (descriptor_version IS NULL))")
+                // The seed: version 1 routes the card pay-in, or INV-HIST-04's NOT NULL
+                // would refuse every confirmation on a fresh database. Textual pins, the
+                // V011 reason: test databases are born after V013.
+                .contains("VALUES ('019992e0-0000-7000-8000-000000000002', 0, 'card')")
+                .contains("0, 'PAY_IN', 'CARD_TOKEN', NULL, NULL, NULL, NULL")
+                // The grants: no UPDATE and no DELETE anywhere but the availability fact.
+                .contains("GRANT SELECT, INSERT, UPDATE ON payments.rail_availability"
+                        + " TO finapp_app;")
+                .contains("GRANT SELECT, INSERT ON payments.routing_decision TO finapp_app;");
     }
 
     @Test

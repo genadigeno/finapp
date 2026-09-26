@@ -304,6 +304,61 @@ class OwnershipIsScopedTest {
                                         + " PaymentRefundEndpointDatabaseTest's permissionless"
                                         + " refusal. Customer HTTP reads go through findOwned.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.findVersionById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-003. The identifier never comes from a request: the"
+                                        + " explanation resolves it from the decision row's"
+                                        + " policy_version_id (a NOT NULL foreign key,"
+                                        + " INV-HIST-04), and the keyed creation re-reads the"
+                                        + " id its own executor recorded. Versions are"
+                                        + " platform-wide configuration with no owner to"
+                                        + " scope by.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.rulesOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-003. A private loader: the version id comes only"
+                                        + " from a version row this store just read - never a"
+                                        + " request value; platform configuration has no owner"
+                                        + " to scope by, and its surfaces are permission-walled"
+                                        + " (RoutingPolicyDatabaseTest's refusals).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.findLatestDecisionForIntent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-003. Two callers. The confirmation's own Tx2, whose"
+                                        + " intent passed findOwned in Tx1's chain and whose"
+                                        + " read is filtered to the decision Tx1 minted. And"
+                                        + " the operator's explanation, where the identifier"
+                                        + " comes from the URL of GET"
+                                        + " /v1/operator/payments/{intentId}/routing and names"
+                                        + " SOMEBODY ELSE'S payment - the operation, not a"
+                                        + " defect (the refund's P1-TSK-028 class). What"
+                                        + " stands in for the missing ownership predicate:"
+                                        + " @RequiresPermission(PAYMENT_ROUTING_ADMINISTER) at"
+                                        + " the boundary, asserted with nothing written by"
+                                        + " RoutingPolicyDatabaseTest's permissionless and"
+                                        + " wrong-role refusals, and every read audited"
+                                        + " (PAYMENT_ROUTING_EXPLANATION_READ).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.stepsOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-003. A private loader: the decision id comes only"
+                                        + " from a decision row this store just read - the"
+                                        + " findLatestDecisionForIntent entry above carries the"
+                                        + " boundary reasoning.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.appendStep",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-003. The abandonment's append: the decision id is"
+                                        + " Tx1's own carried fact (the Dispatch record),"
+                                        + " minted server-side beside the attempt it governs -"
+                                        + " no request value can reach it (INV-RAIL-02's"
+                                        + " trail).")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantApiKeyStore.findLiveFor",
                             new Entry(
                                     Scope.ADMINISTERED,

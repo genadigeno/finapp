@@ -51,6 +51,24 @@ public final class PaymentRails {
         return new PaymentRails(Map.copyOf(byId));
     }
 
+    /**
+     * The declaration a candidate rail resolves to, or empty when this build declares none
+     * (`P7-TSK-003`): routing records the absence as a step
+     * ({@code RoutingRejection#UNDECLARED_BY_BUILD}) and moves to the next candidate, because
+     * a policy may lawfully outlive a build's declarations — where a STORED rail's lookup
+     * ({@link #capabilitiesOf}) stays loud, since rows on an undeclared rail mean a
+     * deployment regressed under live money.
+     */
+    public java.util.Optional<PaymentRail> declared(RailId rail) {
+        Objects.requireNonNull(rail, "rail must not be null");
+        return java.util.Optional.ofNullable(byId.get(rail));
+    }
+
+    /** Every declared rail's id — what the operator surface validates names against. */
+    public java.util.Set<RailId> declaredIds() {
+        return byId.keySet();
+    }
+
     /** The declared capabilities of the rail a stored row names. */
     public RailCapabilities capabilitiesOf(RailId rail) {
         Objects.requireNonNull(rail, "rail must not be null");

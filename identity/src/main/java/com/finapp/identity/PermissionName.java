@@ -9,7 +9,7 @@ package com.finapp.identity;
  * suspension, role assignment and the KYC review actions `P2-TSK-003` catalogued to the ledger,
  * payment and merchant acts of Phases 3 to 6 - so the vocabulary follows the registry rather than
  * anticipating it. Which route requires which value is pinned by {@code RoutePermissionRegisterTest}
- * (`P6-DOC-001`). <em>(This heading said "three values" until then; there are thirteen.)</em> A permission for an action nobody has catalogued would
+ * (`P6-DOC-001`). <em>(This heading said "three values" until then; there are fourteen — thirteen until `P7-TSK-003`.)</em> A permission for an action nobody has catalogued would
  * be a claim about a capability that does not exist.
  *
  * <p><em>(This javadoc said "two values" and that neither admin endpoint existed - true when
@@ -208,5 +208,27 @@ public enum PermissionName {
      * the holder cannot do is choose where the money goes: a payout dispatches only to the
      * merchant's effective destination, which four-eyes and a cooling-off guard (ADR-0056).
      */
-    MERCHANT_PAYOUT
+    MERCHANT_PAYOUT,
+
+    /**
+     * Administer payment routing (`P7-TSK-003`, ADR-0060): create an immutable routing
+     * policy version, record a rail as in or out of service, and read a payment's routing
+     * explanation. Names {@code payments.PaymentRoutingVersionCreated},
+     * {@code payments.RailAvailabilityChanged} and
+     * {@code payments.PaymentRoutingExplanationRead}; ships with its real check sites, the
+     * {@code /v1/operator/routing-policy} and {@code /v1/operator/rails} routes.
+     *
+     * <p><strong>Its own permission, because how money travels is not whether it moves.</strong>
+     * Deciding the rail a payment rides — and taking one out of service — is a payment
+     * -operations judgement; posting, adjusting and refunding are acts on the money itself.
+     * A routing or treasury-operations desk is a real future split, and this permission is
+     * what makes it a one-line change — the {@link #FEE_ADMINISTER} shape, restated not
+     * re-argued.
+     *
+     * <p><strong>Held by {@link RoleName#LEDGER_OPERATOR} today</strong>, because routing is
+     * the money-operating population's concern (the {@link #MERCHANT_PAYOUT} arrival's
+     * reasoning: it shapes what happens to payments, not to counterparties), and a role for
+     * a split nobody has made is a trust decision nobody took.
+     */
+    PAYMENT_ROUTING_ADMINISTER
 }

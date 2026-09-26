@@ -104,7 +104,18 @@ public final class MetricNames {
                     // port's own methods - authorize, capture, refund, query - a closed set
                     // the compiler owns. Never the provider's status vocabulary
                     // (INV-PAY-03): what is tagged is OUR word for the call we made.
-                    "operation");
+                    "operation",
+                    // Which payment rail (P7-TSK-003). Bounded by DEPLOYMENT, the provider
+                    // tag's reasoning verbatim: the value is a declared rail's compile-time
+                    // name from the PaymentRails directory (plus the literal "none" for a
+                    // recorded refusal) - a way money travels, a category shared by
+                    // everyone, structurally never a person, a resource or anything a
+                    // caller supplies. Added deliberately, which is this list's job: the
+                    // Phase 7 plan's own table says the routing meter is "by chosen rail
+                    // and rejection reason" (ADR-0060's operational impact), and a
+                    // name-split would invent a series per rail and make "which rail is
+                    // refusing" unanswerable in one query.
+                    "rail");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling
