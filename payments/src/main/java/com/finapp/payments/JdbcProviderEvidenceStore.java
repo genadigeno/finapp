@@ -40,26 +40,56 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             Instant recordedAt) {
         Objects.requireNonNull(attempt, "attempt must not be null");
         Objects.requireNonNull(refund, "refund must not be null");
+        appendRow(
+                unitOfWork,
+                attempt.map(id -> id.value()).orElse(null),
+                refund.map(id -> id.value()).orElse(null),
+                null,
+                kind,
+                payload,
+                recordedAt);
+    }
+
+    @Override
+    public void appendForWithdrawal(
+            Connection unitOfWork,
+            WithdrawalId withdrawal,
+            EvidenceKind kind,
+            byte[] payload,
+            Instant recordedAt) {
+        Objects.requireNonNull(withdrawal, "withdrawal must not be null");
+        appendRow(unitOfWork, null, null, withdrawal.value(), kind, payload, recordedAt);
+    }
+
+    private void appendRow(
+            Connection unitOfWork,
+            java.util.UUID attemptId,
+            java.util.UUID refundId,
+            java.util.UUID withdrawalId,
+            EvidenceKind kind,
+            byte[] payload,
+            Instant recordedAt) {
         Objects.requireNonNull(kind, "kind must not be null");
         Objects.requireNonNull(payload, "payload must not be null");
         EvidenceCipher.Encrypted encrypted = cipher.encrypt(payload);
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.provider_evidence"
-                                + " (id, attempt_id, refund_id, kind, content_ciphertext,"
-                                + " content_nonce, key_version, checksum_sha256,"
-                                + " content_length, recorded_at)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " (id, attempt_id, refund_id, withdrawal_id, kind,"
+                                + " content_ciphertext, content_nonce, key_version,"
+                                + " checksum_sha256, content_length, recorded_at)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, ids.next());
-            insert.setObject(2, attempt.map(id -> id.value()).orElse(null));
-            insert.setObject(3, refund.map(id -> id.value()).orElse(null));
-            insert.setString(4, kind.name());
-            insert.setBytes(5, encrypted.ciphertext());
-            insert.setBytes(6, encrypted.nonce());
-            insert.setInt(7, encrypted.keyVersion());
-            insert.setBytes(8, sha256(payload));
-            insert.setInt(9, payload.length);
-            insert.setTimestamp(10, Timestamp.from(recordedAt));
+            insert.setObject(2, attemptId);
+            insert.setObject(3, refundId);
+            insert.setObject(4, withdrawalId);
+            insert.setString(5, kind.name());
+            insert.setBytes(6, encrypted.ciphertext());
+            insert.setBytes(7, encrypted.nonce());
+            insert.setInt(8, encrypted.keyVersion());
+            insert.setBytes(9, sha256(payload));
+            insert.setInt(10, payload.length);
+            insert.setTimestamp(11, Timestamp.from(recordedAt));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(

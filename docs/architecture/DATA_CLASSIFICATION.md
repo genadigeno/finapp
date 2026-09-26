@@ -574,6 +574,34 @@ them are classified at the ceiling regardless.
 | `clearing_record` | `acquirer_reference` | `CONFIDENTIAL` | The acquirer's reference for one cleared card transaction (the ARN class) — the `auth_provider_reference` reasoning: scoped to its own operation, it authorises nothing new, and it is Phase 8's primary match key |
 | `clearing_record` | `network_transaction_id` | `CONFIDENTIAL` | As `acquirer_reference` — the card network's own identifier |
 | `clearing_record` | `recorded_at` | `INTERNAL` | Server clock at recording (ADR-0014) |
+| `withdrawal` | `id` | `INTERNAL` | An aggregate identifier (`P7-TSK-008`) |
+| `withdrawal` | `party_id` | `CONFIDENTIAL` | The pairing is the fact — this person withdraws money (the `payment_intent.party_id` reasoning) |
+| `withdrawal` | `customer_id` | `CONFIDENTIAL` | As `party_id` — the owning relationship, by value (ADR-0029) |
+| `withdrawal` | `wallet_account_id` | `CONFIDENTIAL` | Which ledger account funds it — the intent's `credit_account_id` reasoning |
+| `withdrawal` | `payment_method_id` | `CONFIDENTIAL` | Which registered instrument it pays to — an identifier, never the destination |
+| `withdrawal` | `destination_reference` | `RESTRICTED-PII` | **The platform's copy of the bank instrument reference** (`INV-RAIL-03`) — `paymentmethods.payment_method.destination_reference`'s row verbatim: resolves at the rail provider to a person's account; never in a log, an event or a response |
+| `withdrawal` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) |
+| `withdrawal` | `currency` | `INTERNAL` | ISO 4217 |
+| `withdrawal` | `scale` | `INTERNAL` | The amount's scale |
+| `withdrawal` | `end_to_end_reference` | `CONFIDENTIAL` | OUR reference on the scheme's wire (`INV-PAY-04`) — the `provider_idempotency_reference` reasoning: scoped to one operation, Phase 8's join key |
+| `withdrawal` | `rail` | `INTERNAL` | The routed rail's stored literal (the `payment_attempt.rail` row's reasoning) |
+| `withdrawal` | `status` | `INTERNAL` | The machine's word |
+| `withdrawal` | `failure_reason` | `INTERNAL` | An enumerated failure class, never provider text |
+| `withdrawal` | `scheme_reference` | `CONFIDENTIAL` | The scheme's transaction reference (the `acquirer_reference` class) — Phase 8's match key |
+| `withdrawal` | `settlement_cycle` | `INTERNAL` | The scheme's cycle identifier — a bucket name, not an identifier of anyone |
+| `withdrawal` | `dispatch_key` | `INTERNAL` | The client's idempotency key, unique per customer (ADR-0057 §5) |
+| `withdrawal` | `hold_reference` | `INTERNAL` | The ledger hold the dispatch placed |
+| `withdrawal` | `created_at` | `CONFIDENTIAL` | Dates a person's act (the `payment_intent.created_at` reasoning) |
+| `withdrawal` | `last_dispatched_at` | `INTERNAL` | The send permit (ADR-0057 §4) |
+| `withdrawal_event` | `id` | `INTERNAL` | A sequence identifier |
+| `withdrawal_event` | `withdrawal_id` | `INTERNAL` | The trail's subject |
+| `withdrawal_event` | `from_status` | `INTERNAL` | The machine's word |
+| `withdrawal_event` | `to_status` | `INTERNAL` | The machine's word |
+| `withdrawal_event` | `actor_id` | `CONFIDENTIAL` | Who moved it — the audit actor class |
+| `withdrawal_event` | `actor_type` | `INTERNAL` | An enumerated population |
+| `withdrawal_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
+| `provider_evidence` | `withdrawal_id` | `INTERNAL` | The evidence's third subject (`P7-TSK-008`); the bytes' own rows above carry the classification that matters |
+| `routing_decision` | `withdrawal_id` | `INTERNAL` | The decision's second subject (`P7-TSK-008`, ADR-0060 §2) — exactly one of intent and withdrawal, no FK by the refusal-precedes-birth decision `V016` records |
 | `payment_attempt` | `authorized_amount_minor` | `RESTRICTED-FINANCIAL` | The issuer's promised amount — a customer amount |
 | `payment_attempt` | `authorized_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
 | `payment_attempt` | `authorized_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |

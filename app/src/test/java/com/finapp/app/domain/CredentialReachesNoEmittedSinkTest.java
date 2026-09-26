@@ -341,6 +341,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // payment stores is classified in payments.payment_intent's register
                         // rows, not in this vocabulary.
                         "PaymentCreateRequest",
+                        // P7-TSK-008. Carries the caller's own payment-method identifier
+                        // and an amount as an exact decimal string with its ISO currency -
+                        // the PaymentCreateRequest reasoning at the outbound door: no
+                        // secret (a method id is not the destination, INV-RAIL-03; the
+                        // reference stays behind the boundary). What withdrawing stores is
+                        // classified in payments.withdrawal's register rows.
+                        "WithdrawalRequest",
                         // P5-TSK-015. Carries an amount as an exact decimal string, an ISO
                         // currency code, and a REASON (free prose by an operator, bound for
                         // the audit record's reason column and payments.refund's reason

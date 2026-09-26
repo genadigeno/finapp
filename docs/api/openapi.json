@@ -2607,6 +2607,76 @@
           }
         }
       },
+      "payments.WithdrawalCurrencyMismatched": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.WithdrawalCurrencyMismatched"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.WithdrawalCurrencyMismatched"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A withdrawal is priced in its wallet's own currency.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.WithdrawalUnfunded": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.WithdrawalUnfunded"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.WithdrawalUnfunded"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The wallet's available balance cannot cover this withdrawal.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "transfers.NotReversible": {
         "content": {
           "application/problem+json": {
@@ -4734,6 +4804,52 @@
           "reason"
         ],
         "type": "object"
+      },
+      "WithdrawalRequest": {
+        "properties": {
+          "amount": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "minLength": 1,
+            "pattern": "[A-Z]{3}",
+            "type": "string"
+          },
+          "paymentMethodId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "paymentMethodId"
+        ],
+        "type": "object"
+      },
+      "WithdrawalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
       }
     }
   },
@@ -5864,6 +5980,70 @@
         "responses": {
           "204": {
             "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/me/withdrawals": {
+      "post": {
+        "operationId": "createWithdrawal",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawalView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/withdrawals/{id}": {
+      "get": {
+        "operationId": "readWithdrawal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawalView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

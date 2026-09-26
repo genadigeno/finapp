@@ -38,7 +38,7 @@ import java.util.Optional;
 public final class RoutingDecision {
 
     private final RoutingDecisionId id;
-    private final PaymentIntentId intentId;
+    private final RoutingSubject subject;
     private final RoutingPolicyVersionId policyVersionId;
     private final PaymentDirection direction;
     private final InstrumentKind instrumentKind;
@@ -50,7 +50,7 @@ public final class RoutingDecision {
 
     private RoutingDecision(
             RoutingDecisionId id,
-            PaymentIntentId intentId,
+            RoutingSubject subject,
             RoutingPolicyVersionId policyVersionId,
             PaymentDirection direction,
             InstrumentKind instrumentKind,
@@ -60,7 +60,7 @@ public final class RoutingDecision {
             List<RoutingStep> steps,
             Instant createdAt) {
         this.id = Objects.requireNonNull(id, "id must not be null");
-        this.intentId = Objects.requireNonNull(intentId, "intentId must not be null");
+        this.subject = Objects.requireNonNull(subject, "subject must not be null");
         this.policyVersionId = Objects.requireNonNull(
                 policyVersionId,
                 "policyVersionId must not be null - the pin is the decision's defence"
@@ -121,6 +121,18 @@ public final class RoutingDecision {
             RoutingPolicyVersionId policyVersionId,
             RoutingInputs inputs,
             RoutingPlan plan) {
+        return create(
+                ids, clock, RoutingSubject.ofIntent(intentId), policyVersionId, inputs, plan);
+    }
+
+    /** The subject-general form (`P7-TSK-008`): the withdrawal's dispatch pins here too. */
+    public static RoutingDecision create(
+            IdGenerator ids,
+            Clock clock,
+            RoutingSubject subject,
+            RoutingPolicyVersionId policyVersionId,
+            RoutingInputs inputs,
+            RoutingPlan plan) {
         Objects.requireNonNull(ids, "ids must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
         Objects.requireNonNull(inputs, "inputs must not be null");
@@ -131,7 +143,7 @@ public final class RoutingDecision {
         }
         return new RoutingDecision(
                 RoutingDecisionId.next(ids),
-                intentId,
+                subject,
                 policyVersionId,
                 inputs.direction(),
                 inputs.instrumentKind(),
@@ -145,7 +157,7 @@ public final class RoutingDecision {
     /** A decision read back from storage, through the same constructor. */
     public static RoutingDecision rehydrate(
             RoutingDecisionId id,
-            PaymentIntentId intentId,
+            RoutingSubject subject,
             RoutingPolicyVersionId policyVersionId,
             PaymentDirection direction,
             InstrumentKind instrumentKind,
@@ -155,7 +167,7 @@ public final class RoutingDecision {
             List<RoutingStep> steps,
             Instant createdAt) {
         return new RoutingDecision(
-                id, intentId, policyVersionId, direction, instrumentKind, amount,
+                id, subject, policyVersionId, direction, instrumentKind, amount,
                 matchedRuleIndex, chosenRail, steps, createdAt);
     }
 
@@ -196,7 +208,7 @@ public final class RoutingDecision {
                         .orElseThrow()
                         .descriptorVersion()));
         return new RoutingDecision(
-                id, intentId, policyVersionId, direction, instrumentKind, amount,
+                id, subject, policyVersionId, direction, instrumentKind, amount,
                 matchedRuleIndex, chosenRail, extended, createdAt);
     }
 
@@ -204,8 +216,20 @@ public final class RoutingDecision {
         return id;
     }
 
+    /** The decision's one subject: the confirmed intent, or the dispatched withdrawal. */
+    public RoutingSubject subject() {
+        return subject;
+    }
+
+    /** The intent arm's convenience — the confirmation's callers predate the second
+     * subject. A withdrawal's decision has no intent, loudly. */
     public PaymentIntentId intentId() {
-        return intentId;
+        return subject.intent()
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "a withdrawal's routing decision has no intent;"
+                                                + " read subject()"));
     }
 
     /** The pinned version — {@code INV-HIST-04}'s routing element. */

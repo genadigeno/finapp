@@ -66,6 +66,11 @@ class PaymentsMigrationTest {
     private static final String CLEARING =
             "db/migration/payments/V015__clearing_record.sql";
 
+    /** V016: the wallet withdrawal (P7-TSK-008) - the payout machine on the wallet, the
+     * evidence and routing subjects widened, routing version 2 seeded. */
+    private static final String WITHDRAWAL =
+            "db/migration/payments/V016__the_wallet_withdrawal.sql";
+
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
     void intentStatusChecksMatchTheEnum() {
@@ -580,6 +585,80 @@ class PaymentsMigrationTest {
                     .as("the trigger must carry %s's exact edge set", entry.getKey())
                     .contains(condition);
         }
+    }
+
+    @Test
+    @DisplayName("V016's withdrawal clauses are generated from the enums and pinned"
+            + " (P7-TSK-008)")
+    void theWithdrawalClausesArePinned() {
+        String migration = migration(WITHDRAWAL);
+        assertThat(migration)
+                .contains("CREATE TABLE payments.withdrawal (")
+                // Generated lists, one definition each.
+                .contains("CHECK (status IN (" + WithdrawalStatus.sqlValueList() + "))")
+                .contains(
+                        "CHECK (failure_reason IN ("
+                                + WithdrawalFailureReason.sqlValueList()
+                                + "))")
+                // The coherence pairs, both directions.
+                .contains("CHECK ((status = 'FAILED') = (failure_reason IS NOT NULL))")
+                .contains("CHECK ((status = 'COMPLETED') = (scheme_reference IS NOT NULL))")
+                .contains("CHECK (settlement_cycle IS NULL OR status = 'COMPLETED')")
+                // Our reference: ISO 20022's own bound, unique platform-wide.
+                .contains("end_to_end_reference   text        NOT NULL UNIQUE")
+                .contains("CHECK (end_to_end_reference ~ '^[A-Za-z0-9-]{1,"
+                        + EndToEndReference.MAX_LENGTH + "}$')")
+                // INV-RAIL-03's trio on the destination copy (paymentmethods V003's rules).
+                .contains("CHECK (destination_reference ~ '^[A-Za-z0-9_.:-]{1,128}$')")
+                .contains("CHECK (destination_reference !~ '^[0-9_.:-]+$')")
+                .contains("AND destination_reference ~ '^[A-Za-z]{2}[0-9]{2}[A-Za-z0-9]{1,30}$'")
+                // The permit and the takeover key.
+                .contains("CHECK (last_dispatched_at >= created_at)")
+                .contains("UNIQUE INDEX withdrawal_one_per_dispatch_key")
+                .contains("ON payments.withdrawal (customer_id, dispatch_key)")
+                // The machine's edges for every writer, generated from the enum.
+                .contains("(OLD.status = 'DISPATCHED' AND NEW.status IN ('COMPLETED',"
+                        + " 'FAILED', 'UNKNOWN'))")
+                .contains("(OLD.status = 'UNKNOWN' AND NEW.status IN ('COMPLETED',"
+                        + " 'FAILED'))")
+                .contains("a withdrawal''s send permit only moves forward")
+                .contains("a resolved withdrawal is never sent again")
+                // The narrowed grant: outcomes and the permit, nothing else.
+                .contains("GRANT UPDATE (status, failure_reason, scheme_reference,"
+                        + " settlement_cycle, last_dispatched_at)")
+                .doesNotContain("GRANT DELETE");
+        // Every machine edge in the trigger IS the enum's (the exhaustive direction: no
+        // extra edge can hide, because the disjunction is pinned above and the enum sweep
+        // in WithdrawalTest holds the object half).
+        for (WithdrawalStatus from : WithdrawalStatus.values()) {
+            if (from.isTerminal()) {
+                assertThat(migration)
+                        .doesNotContain("(OLD.status = '" + from.name() + "' AND NEW.status");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("V016 widens the evidence and routing subjects with exactly-one rules"
+            + " (P7-TSK-008)")
+    void theSecondSubjectsArePinned() {
+        assertThat(migration(WITHDRAWAL))
+                // The evidence trio: at most one subject, recreated as the current
+                // definition (V005's rule, one wider).
+                .contains("ADD COLUMN withdrawal_id uuid REFERENCES payments.withdrawal (id)")
+                .contains("CHECK (num_nonnulls(attempt_id, refund_id, withdrawal_id) <= 1)")
+                // Routing's XOR: exactly one subject, and the withdrawal's one-chosen twin.
+                .contains("ALTER COLUMN intent_id DROP NOT NULL")
+                .contains("CHECK ((intent_id IS NULL) <> (withdrawal_id IS NULL))")
+                .contains("UNIQUE INDEX routing_decision_one_chosen_per_withdrawal")
+                .contains("WHERE chosen_rail IS NOT NULL AND withdrawal_id IS NOT NULL")
+                // The seed: version 2 carries the standing card route forward AND the
+                // bank pay-out, so neither flow strands on a fresh database.
+                .contains("VALUES\n    ('019992e0-0000-7000-8000-000000000010', 2,")
+                .contains("0, 'PAY_IN', 'CARD_TOKEN', NULL, NULL, NULL, NULL)")
+                .contains("1, 'PAY_OUT', 'BANK_ACCOUNT', NULL, NULL, NULL, NULL)")
+                .contains("('019992e0-0000-7000-8000-000000000011', 0, 'card')")
+                .contains("('019992e0-0000-7000-8000-000000000012', 0, 'instant')");
     }
 
     /** From the classpath, the sibling migration tests' idiom. */

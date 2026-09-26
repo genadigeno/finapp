@@ -99,6 +99,12 @@ open, and one hazard no earlier flow had:
     refund's weaknesses are not inherited: a losing resolver reporting the verdict's status
     instead of the row's, losers writing audit records, and a release whose result is ignored.
 
+*(Adopted beyond the payout by `P7-TSK-008`: the wallet withdrawal (ADR-0062 §6) carries
+§§1–5 and §12 onto the push rail — four states, the failure vocabulary, the first-send rule,
+the send permit judged on the locked row, the per-principal claim scope and dispatch key, and
+one shared outcomes component — with the withdrawal's own bound source: the rail's DECLARED
+outcome deadline plus a configured margin in place of a flat dispatched age.)*
+
 ## Alternatives Considered
 
 - **Let the sweep re-send instead of concluding `NEVER_RECEIVED`.** Removes the race by never

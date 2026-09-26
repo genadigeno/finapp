@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (7 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 2 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (8 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -8686,7 +8686,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Accept**: a bank account registered and used by reference with no identifier at rest anywhere.
 - **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P7-TSK-008 — Wallet withdrawal over the instant rail** — `READY`
+**P7-TSK-008 — Wallet withdrawal over the instant rail** — `COMPLETE` (2026-09-27)
 - **Objective**: money leaves a wallet to the customer's bank account, final on acceptance, and
   `INV-REV-03` gets its irrevocable subject.
 - **Bounded context**: Payments (9), consuming Ledger (7) and Payment Methods (10).
@@ -8721,7 +8721,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`, `DOD-OBS`. **Risk**: High.
   **Cx**: L.
 
-**P7-TSK-009 — Pay-by-bank: A2A pay-ins for wallets and checkout** — `PLANNED`
+**P7-TSK-009 — Pay-by-bank: A2A pay-ins for wallets and checkout** — `READY`
 - **Objective**: money enters through the payer's own PSP, authorized there, final on the scheme's
   confirmation.
 - **Bounded context**: Payments (9), consuming Checkout (11) and Merchant (12) through the existing

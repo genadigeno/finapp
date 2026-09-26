@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 151 "Previously" blocks, newest first, from `P7-TSK-006` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 152 "Previously" blocks, newest first, from `P7-TSK-007` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,70 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P7-TSK-007` — External bank accounts as payment instruments, through the grant
+exchange** — `COMPLETE` (2026-09-27). **M7.3 stands at 2 of 3: a customer's external
+account is a `BANK_ACCOUNT` payment method known only by the rail provider's opaque
+reference, a four-character suffix and the confirmation-of-payee word — and a bank
+identifier physically cannot rest anywhere** (ADR-0062 §2 shipped; `INV-RAIL-03`,
+`INV-PAY-02` unchanged, `INV-AUD-02`).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Registered from a grant, no connection held during the exchange | The keyed two-transaction shape (`IdempotentExecutor.begin` → wire → `complete`, the payout's `P5-TSK-016` idiom): Tx1 commits the claim beside nothing, the exchange runs connectionless through the real `SimulatedInstantSchemeAdapter` against the stubbed scheme, Tx2 attaches/audits/announces and records the claim's outcome in the same transaction (`BankAccountRegistrationDatabaseTest`, the whole chain over HTTP) |
+| The suffix and payee result stored; `NO_MATCH` needs recorded acknowledgement | The exchange keeps exactly the three storable values; `V003` binds `(payee_check IS NOT DISTINCT FROM 'NO_MATCH') = (no_match_acknowledged_at IS NOT NULL)` for every writer, the aggregate's factory refuses an unacknowledged `NO_MATCH` as defence in depth behind the surface's recorded 409 (`paymentmethods.PayeeCheckNoMatch`), and the acknowledged register carries the enumerated audit reason `PAYEE_CHECK_NO_MATCH_ACKNOWLEDGED` |
+| Shaped values refused at the surface, in the domain types and by `CHECK`s | Three independent layers: `DestinationReference` (the `TokenReference` idiom — no-letter values and the ≤34-character international-identifier shape refused, the hex-collision limit and the adapter-prefix contract recorded on the type), `V003`'s three shape `CHECK`s, and the bank-identifier sweep planting account numbers, sort-coded strings, phones and IBANs as the migrator |
+| Ownership-scoped; step-up when a factor is enrolled | `party_id = ?` in every statement (ADR-0031); the `P4-TSK-007` conditional step-up fail-fast in Tx1 and authoritative at the write — and the refusal **rolls the claim back with it**, proven by the same key succeeding after the step-up with exactly one exchange on the wire |
+| Detach | The shared door, kind-agnostic: 204, the destination slot freed (`INV-LIFE-04`), the row surviving as evidence |
+
+**The kinds share one aggregate under one lifecycle** (the payments per-model discipline at
+the instrument rank): `kind` is a frozen birth fact, backfilled `CARD_TOKEN` over the
+applied history and `NOT NULL` from `V003` on; the one constructor and the coherence
+`CHECK`s refuse a foreign kind's facts in both directions; the display suffix stays but its
+charset is the kind's (digits for last4, alphanumerics for the exchange's bound). **The
+register is keyed per party where the card attach deliberately is not** — the recorded
+asymmetry: the card exchange is grant-idempotent, the bank grant single-use, so the claim
+(scope `payment-method-register:<party>`, the grant SHA-256-hashed into the fingerprint)
+answers the lost-response retry byte for byte, refusals included, and a lease takeover's
+re-exchange meets the spent grant's `REFUSED` honestly. **The exchange's evidence bytes are
+deliberately dropped** — a provider body can carry the payee's name, which is exactly what
+`INV-RAIL-03` refuses at rest.
+
+**The gate's find at the schema rank, repaired and probed**: `V002`'s immutability trigger
+compared `OLD.col <> NEW.col`, which is NULL-blind — on a bank row, `brand NULL → 'Visa'`
+smuggled inside the legal detach edge would have sailed through. `V003` recreates the
+function with `IS DISTINCT FROM` on every frozen column (`kind` and the bank facts
+joining), and the probe reverting one comparison to `<>` reddens the suite on the exact
+edit the old form admitted. **The card confirm's instrument bridge now filters by kind
+structurally**: a `BANK_ACCOUNT` method resolves to no chargeable token at that door
+(`flatMap` over the now-optional token), so the push instrument cannot leak into the
+two-step machine.
+
+**Nine probe runs, nine caught**, every restore verified byte-identical
+(`MUTATION_TESTING.md` §2 +4 rows): the bank-facts coherence clause dropped, the consent
+`CHECK` made vacuous, the destination one-live index dropped against the ten-way race, the
+trigger's NULL-blind revert, the IBAN `CHECK` dropped, the letter rule disarmed in the
+type, the consent gate bypassed at the door (the factory's own refusal surfacing as the
+wrong status — defence in depth visible), the fingerprint unbound from the grant
+(`INV-IDEM-03`'s catcher), the aggregate's bank-coherence clause dropped.
+
+Multi-instance **PASS** — the claim's unique key arbitrates same-key racers, the per-kind
+partial one-live indexes arbitrate different-key duplicates behind the savepoint converge,
+the provider's single-use grant bounds cross-key double exchanges to one `EXCHANGED`, the
+step-up is an authoritative per-decision read, and nothing lives in process state.
+
+Registers: `ERROR_CONTRACT` +3 codes, `DATA_CLASSIFICATION` +4 rows,
+`DISTRIBUTED_EXECUTION` §3 row extended, `MODULE_ARCHITECTURE` and `AUDITABLE_ACTIONS`
+updated with the kind and the consent reason, `OpenApiContractTest` +1 declared path with
+the baseline regenerated (every BREAKING row a required flag on a new component),
+`SecretsAreUnwrappedInOnePlaceTest` +1 method +2 entries,
+`CredentialReachesNoEmittedSinkTest` +1 request body, ADR-0062 §2 annotated. Verified by
+targeted tiers from fresh runs — the fleet-wide hermetic test task green at **1641
+tests across 14 modules, 0 failures**, and **24 targeted database tests across 3 suites, 0
+failures** plus the platform classification guard — the full battery deliberately skipped
+on the owner's instruction, no fleet-wide database or kafka counts claimed.
 
 ### Previously
 

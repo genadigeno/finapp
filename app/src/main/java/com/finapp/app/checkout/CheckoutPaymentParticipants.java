@@ -86,6 +86,14 @@ public final class CheckoutPaymentParticipants implements PaymentParticipants<Co
 
     /** Delegated unchanged: the instrument must still be the paying customer's own. */
     @Override
+    public Optional<com.finapp.payments.ProviderReference> bankDestinationOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+        // Delegated unchanged (`P7-TSK-008`): the checkout's substitution is the wallet's,
+        // and the bank destination's path is not this class's concern either way.
+        return instruments.bankDestinationOwnedBy(unitOfWork, callerPartyId, paymentMethodId);
+    }
+
+    @Override
     public Optional<InstrumentToken> instrumentOwnedBy(
             Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
         return instruments.instrumentOwnedBy(unitOfWork, callerPartyId, paymentMethodId);

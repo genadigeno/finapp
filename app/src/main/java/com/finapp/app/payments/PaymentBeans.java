@@ -215,11 +215,11 @@ class PaymentBeans {
 
     /**
      * The instant scheme adapter (`P7-TSK-006`, ADR-0062 §1) — wired when
-     * configured, ahead of its first consumer (`P7-TSK-009`; the {@code ProviderApiKey}
-     * unconsumed-wiring licence): the bean is what makes the confined credential a property
+     * configured: the bean is what makes the confined credential a property
      * the application really reads, and the port a thing an operator can point at an
-     * environment. No metering decorator yet, deliberately — the decorator wraps
-     * {@code PaymentProvider}, and the push port's meters arrive with its flows.
+     * environment. Metered from `P7-TSK-008` on (the flow the `P7-TSK-006` javadoc said the
+     * meters would arrive with): {@code send} is the {@code WITHDRAW} operation, the
+     * inquiries {@code QUERY} — {@code MeteredPaymentProvider}'s shape at the second port.
      */
     @Bean
     @ConditionalOnProperty("finapp.payments.instant.url")
@@ -228,10 +228,146 @@ class PaymentBeans {
             @Value("${finapp.payments.instant.timeout:PT2S}") java.time.Duration timeout,
             @Value("${finapp.payments.instant.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
-            Environment environment) {
+            Environment environment,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters,
+            Clock clock) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new com.finapp.payments.SimulatedInstantSchemeAdapter(
-                url, timeout, InstantSchemeKey.decode(configuredKey, loopback));
+        return new com.finapp.app.telemetry.MeteredPushRail(
+                new com.finapp.payments.SimulatedInstantSchemeAdapter(
+                        url, timeout, InstantSchemeKey.decode(configuredKey, loopback)),
+                paymentMeters,
+                clock);
+    }
+
+    // ------------------------------------------------------------------
+    // The wallet withdrawal (P7-TSK-008, ADR-0062 §6).
+    // ------------------------------------------------------------------
+
+    @Bean
+    com.finapp.payments.WithdrawalStore<Connection> withdrawalStore() {
+        return new com.finapp.payments.JdbcWithdrawalStore();
+    }
+
+    @Bean
+    com.finapp.payments.WithdrawalOutcomes withdrawalOutcomes(
+            com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
+            com.finapp.ledger.HoldService holdService,
+            com.finapp.ledger.PostingService postingService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.WithdrawalOutcomes(
+                withdrawalStore,
+                holdService,
+                postingService,
+                new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock);
+    }
+
+    /**
+     * The withdrawal command engine — present exactly when the push rail is
+     * ({@code finapp.payments.instant.url}): {@link WithdrawalService} takes an
+     * {@code ObjectProvider} and answers the honest {@code payments.ProviderUnavailable}
+     * 503 on an unconfigured deployment (the tokenisation contract's reasoning).
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.instant.url")
+    com.finapp.payments.Withdrawals withdrawals(
+            com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
+            com.finapp.payments.WithdrawalOutcomes withdrawalOutcomes,
+            com.finapp.ledger.HoldService holdService,
+            com.finapp.payments.RoutingStore<Connection> routingStore,
+            com.finapp.payments.PaymentRails paymentRails,
+            com.finapp.payments.PushRail instantRail,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            IdempotentExecutor idempotentExecutor,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock,
+            TransactionRunner paymentTransactionRunner) {
+        return new com.finapp.payments.Withdrawals(
+                withdrawalStore,
+                withdrawalOutcomes,
+                holdService,
+                routingStore,
+                paymentRails,
+                instantRail,
+                com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(),
+                providerEvidenceStore,
+                idempotentExecutor,
+                auditWriter,
+                ids,
+                clock,
+                paymentTransactionRunner);
+    }
+
+    @Bean
+    WithdrawalService withdrawalService(
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.Withdrawals>
+                    withdrawals,
+            com.finapp.payments.PaymentParticipants<Connection> paymentParticipants,
+            com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
+            com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            TransactionRunner paymentTransactionRunner) {
+        return new WithdrawalService(
+                withdrawals,
+                paymentParticipants,
+                withdrawalStore,
+                mfaEnrolmentStore,
+                identityStore,
+                paymentTransactionRunner);
+    }
+
+    /**
+     * The inquiry sweep and its schedule (`P7-TSK-008`, ADR-0062 §3) — present with the
+     * rail, leaderless on every instance. The margin rides ON TOP of the rail's DECLARED
+     * outcome deadline; a zero bound is refused at construction (ADR-0057 §4's rule).
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.instant.url")
+    com.finapp.payments.WithdrawalResolution withdrawalResolution(
+            com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
+            com.finapp.payments.WithdrawalOutcomes withdrawalOutcomes,
+            com.finapp.payments.PushRail instantRail,
+            com.finapp.payments.PaymentRails paymentRails,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            @Value("${finapp.payments.withdrawal.sweeper.dispatched-age:PT10M}")
+                    java.time.Duration dispatchedAge,
+            @Value("${finapp.payments.withdrawal.sweeper.unknown-age:PT2M}")
+                    java.time.Duration unknownAge,
+            @Value("${finapp.payments.withdrawal.sweeper.margin:PT5M}")
+                    java.time.Duration margin,
+            @Value("${finapp.payments.withdrawal.sweeper.batch:25}") int batchSize,
+            IdGenerator ids,
+            Clock clock,
+            TransactionRunner paymentTransactionRunner) {
+        return new com.finapp.payments.WithdrawalResolution(
+                withdrawalStore,
+                withdrawalOutcomes,
+                instantRail,
+                paymentRails,
+                com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(),
+                providerEvidenceStore,
+                new com.finapp.payments.WithdrawalResolution.Config(
+                        dispatchedAge, unknownAge, margin, batchSize),
+                ids,
+                clock,
+                paymentTransactionRunner);
+    }
+
+    @Bean
+    @ConditionalOnProperty("finapp.payments.instant.url")
+    WithdrawalResolutionSchedule withdrawalResolutionSchedule(
+            com.finapp.payments.WithdrawalResolution withdrawalResolution,
+            @Value("${finapp.payments.withdrawal.sweeper.poll:PT30S}")
+                    java.time.Duration pollInterval) {
+        return new WithdrawalResolutionSchedule(withdrawalResolution, pollInterval);
     }
 
     @Bean

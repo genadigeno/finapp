@@ -34,6 +34,18 @@ public interface ProviderEvidenceStore<T> {
             Instant recordedAt);
 
     /**
+     * Retains a withdrawal's scheme bytes verbatim (`P7-TSK-008`) — the third subject, its
+     * own door so the two-subject callers above ripple nowhere. `V016` widens the
+     * at-most-one-subject rule to the trio.
+     */
+    void appendForWithdrawal(
+            T unitOfWork,
+            WithdrawalId withdrawal,
+            EvidenceKind kind,
+            byte[] payload,
+            Instant recordedAt);
+
+    /**
      * The attempt's retained payloads, oldest first, decrypted and checksum-verified — a
      * mismatch is corruption and throws rather than yielding bytes that are not the evidence.
      */

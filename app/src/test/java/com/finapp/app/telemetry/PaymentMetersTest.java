@@ -54,7 +54,7 @@ class PaymentMetersTest {
                         .collect(Collectors.toCollection(TreeSet::new));
         assertThat(operations)
                 .containsExactlyInAnyOrder(
-                        "authorize", "capture", "refund", "query", "void");
+                        "authorize", "capture", "refund", "query", "void", "withdraw");
 
         assertThat(registry.find(PaymentMeters.ATTEMPT).counters())
                 .allSatisfy(counter -> assertThat(counter.count()).isZero());

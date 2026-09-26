@@ -155,7 +155,15 @@ class NoSingleInstanceAssumptionRulesTest {
                     // losers converge - so N schedules, the synchronous answer and a takeover's
                     // re-send are one counted race. Register row: DISTRIBUTED_EXECUTION.md
                     // section 3; the ten-sweeper race is MerchantPayoutDatabaseTest's.
-                    "com.finapp.app.merchant.MerchantPayoutResolutionSchedule");
+                    "com.finapp.app.merchant.MerchantPayoutResolutionSchedule",
+                    // P7-TSK-008: the MerchantPayoutResolutionSchedule half at the push
+                    // rail. The scheme inquiry is read-only and idempotent by OUR
+                    // reference, and every write is a conditional transition on a locked
+                    // withdrawal row whose losers converge - N schedules, the synchronous
+                    // answer and a takeover's re-send are one counted race. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the race is
+                    // WithdrawalDatabaseTest's.
+                    "com.finapp.app.payments.WithdrawalResolutionSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

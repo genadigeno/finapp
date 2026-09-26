@@ -63,7 +63,7 @@ class RoutingDecisionTest {
     void decisionCoherence() {
         assertThatThrownBy(() -> RoutingDecision.rehydrate(
                         RoutingDecisionId.next(IDS),
-                        PaymentIntentId.next(IDS),
+                        RoutingSubject.ofIntent(PaymentIntentId.next(IDS)),
                         RoutingPolicyVersionId.next(IDS),
                         PaymentDirection.PAY_IN,
                         InstrumentKind.CARD_TOKEN,
@@ -77,7 +77,7 @@ class RoutingDecisionTest {
                 .hasMessageContaining("denormalised");
         assertThatThrownBy(() -> RoutingDecision.rehydrate(
                         RoutingDecisionId.next(IDS),
-                        PaymentIntentId.next(IDS),
+                        RoutingSubject.ofIntent(PaymentIntentId.next(IDS)),
                         RoutingPolicyVersionId.next(IDS),
                         PaymentDirection.PAY_IN,
                         InstrumentKind.CARD_TOKEN,
@@ -90,7 +90,7 @@ class RoutingDecisionTest {
                 .hasMessageContaining("contiguous");
         assertThatThrownBy(() -> RoutingDecision.rehydrate(
                         RoutingDecisionId.next(IDS),
-                        PaymentIntentId.next(IDS),
+                        RoutingSubject.ofIntent(PaymentIntentId.next(IDS)),
                         RoutingPolicyVersionId.next(IDS),
                         PaymentDirection.PAY_IN,
                         InstrumentKind.CARD_TOKEN,
@@ -109,7 +109,7 @@ class RoutingDecisionTest {
     void theAbandonDoor() {
         RoutingDecision refused = RoutingDecision.rehydrate(
                 RoutingDecisionId.next(IDS),
-                PaymentIntentId.next(IDS),
+                RoutingSubject.ofIntent(PaymentIntentId.next(IDS)),
                 RoutingPolicyVersionId.next(IDS),
                 PaymentDirection.PAY_IN,
                 InstrumentKind.CARD_TOKEN,
@@ -126,7 +126,7 @@ class RoutingDecisionTest {
 
         RoutingDecision dispatched = RoutingDecision.rehydrate(
                 RoutingDecisionId.next(IDS),
-                PaymentIntentId.next(IDS),
+                RoutingSubject.ofIntent(PaymentIntentId.next(IDS)),
                 RoutingPolicyVersionId.next(IDS),
                 PaymentDirection.PAY_IN,
                 InstrumentKind.CARD_TOKEN,

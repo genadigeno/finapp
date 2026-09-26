@@ -566,6 +566,13 @@ class PaymentCaptureTest {
         }
 
         @Override
+        public void appendForWithdrawal(
+                Connection uow, WithdrawalId withdrawal, EvidenceKind kind, byte[] payload,
+                Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
         public List<byte[]> payloadsFor(Connection uow, PaymentAttemptId attempt) {
             return List.copyOf(payloads);
         }

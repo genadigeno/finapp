@@ -223,7 +223,26 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " PaymentSweeper case, eighth occurrence - and the same outcome"
                         + " applied by the synchronous answer is already the platform's act."
                         + " The scope wraps each row's query-and-resolve; the candidate read"
-                        + " before it claims nothing."));
+                        + " before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.payments.Withdrawals.withdraw",
+                    "The withdrawal's outcome transaction (P7-TSK-008, ADR-0062 section 6):"
+                        + " the MerchantPayouts.initiate reasoning, pointed at a customer's"
+                        + " wallet. The person is recorded as the asker in the dispatch"
+                        + " transaction's own audit record; the scheme's answer is then"
+                        + " applied by the platform, because the same answer applied by the"
+                        + " inquiry sweep is the platform's act too, and attribution must"
+                        + " not depend on which resolver wins the harmless race. The scope"
+                        + " wraps the outcome transaction only; the dispatch before it runs"
+                        + " as the person."),
+                    Map.entry(
+                            "com.finapp.payments.WithdrawalResolution.sweep",
+                    "The swept withdrawal inquiry (P7-TSK-008, ADR-0062 section 3): a"
+                        + " scheduled inquiry by our reference has no person at all - the"
+                        + " MerchantPayoutResolution case at the push rail - and the same"
+                        + " outcome applied by the synchronous answer is already the"
+                        + " platform's act. The scope wraps each row's inquire-and-resolve;"
+                        + " the candidate read before it claims nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

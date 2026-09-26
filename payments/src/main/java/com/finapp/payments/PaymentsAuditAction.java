@@ -148,6 +148,30 @@ public enum PaymentsAuditAction implements AuditableAction {
             "payments.PaymentVoidDispatched",
             "A void of an uncaptured authorization was dispatched; the record names the"
                     + " intent, the attempt, the reference and the rail, never an amount.",
+            false),
+
+    /**
+     * A wallet withdrawal was dispatched (`P7-TSK-008`): judged under the wallet's lock,
+     * held, routed and committed with our minted reference before the scheme is asked
+     * ({@code INV-PAY-04}, ADR-0062 §6). The person's own act; every outcome that follows
+     * is the platform's ({@link #WITHDRAWAL_OUTCOME_APPLIED}).
+     */
+    WITHDRAWAL_DISPATCHED(
+            "payments.WithdrawalDispatched",
+            "A wallet withdrawal was dispatched; the record names the withdrawal, the"
+                    + " wallet account, the instrument and the rail, never an amount.",
+            false),
+
+    /**
+     * The scheme's word landed on a withdrawal (`P7-TSK-008`): applied by the dispatching
+     * flight, a takeover or the inquiry sweep — the platform's act whichever resolver wins,
+     * on the locked row, acting once.
+     */
+    WITHDRAWAL_OUTCOME_APPLIED(
+            "payments.WithdrawalOutcomeApplied",
+            "A withdrawal outcome was applied on the locked row; the record names the"
+                    + " withdrawal, the status, the failure class and the resolver, never"
+                    + " an amount or a reference.",
             false);
 
     private final String code;

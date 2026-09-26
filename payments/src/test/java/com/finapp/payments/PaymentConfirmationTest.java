@@ -425,6 +425,12 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public Optional<ProviderReference> bankDestinationOwnedBy(
+                Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+            return Optional.empty();
+        }
+
+        @Override
         public boolean creditable(Connection uow, LedgerAccountId account) {
             return true;
         }
@@ -557,6 +563,16 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public Optional<RoutingDecision> findLatestDecisionForWithdrawal(
+                Connection unitOfWork, WithdrawalId withdrawal) {
+            return decisions.values().stream()
+                    .filter(d -> d.subject().withdrawal()
+                            .map(withdrawal::equals)
+                            .orElse(false))
+                    .reduce((first, second) -> second);
+        }
+
+        @Override
         public Optional<RoutingDecision> findLatestDecisionForIntent(
                 Connection uow, PaymentIntentId intent) {
             RoutingDecision latest = null;
@@ -577,7 +593,7 @@ class PaymentConfirmationTest {
                     id.value(),
                     RoutingDecision.rehydrate(
                             current.id(),
-                            current.intentId(),
+                            current.subject(),
                             current.policyVersionId(),
                             current.direction(),
                             current.instrumentKind(),
@@ -793,6 +809,13 @@ class PaymentConfirmationTest {
         public void append(
                 Connection uow, Optional<PaymentAttemptId> attempt, Optional<RefundId> refund,
                 EvidenceKind kind, byte[] payload, Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
+        public void appendForWithdrawal(
+                Connection uow, WithdrawalId withdrawal, EvidenceKind kind, byte[] payload,
+                Instant recordedAt) {
             payloads.add(payload.clone());
         }
 

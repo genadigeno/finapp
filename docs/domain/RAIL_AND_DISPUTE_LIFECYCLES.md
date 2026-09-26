@@ -147,19 +147,23 @@ re-dispatch arrives with the rails that can carry one (`P7-TSK-006`, `-009`).
 Pinned before dispatch, frozen, recomputable. It advances only on `NOTHING_SENT` or an
 eligibility refusal, and never after an ambiguous dispatch.
 
-## 5. The withdrawal (ADR-0062 §6)
+## 5. The withdrawal (ADR-0062 §6) — *shipped `P7-TSK-008`*
 
-```
-DISPATCHED ──> UNKNOWN ──> COMPLETED
-     │             │
-     └─────────────┴──> FAILED
-```
+The machine's own edge list, from `WithdrawalStatus.permittedTransitions()` (`V016`'s trigger
+carries the same disjunction for every writer; `PaymentsMigrationTest` reconciles):
+
+- `DISPATCHED → COMPLETED | FAILED | UNKNOWN`
+- `UNKNOWN → COMPLETED | FAILED`
+- `COMPLETED → ∅` and `FAILED → ∅` — nothing leaves a terminal, and the empty edge set out of
+  `COMPLETED` **is** `INV-REV-03` on a final-on-acceptance rail.
 
 The dispatch holds the amount on the wallet account in its lock, commits `DISPATCHED` with our
 end-to-end reference and a send permit, and only then sends. `COMPLETED` releases and posts;
 `FAILED` releases only on the scheme's own refusal, or on a first send's refused connection that
-no later permit has overtaken, or past the scheme's deadline under the permit rule. An accepted
-withdrawal is irrevocable: a reversal of it is refused by the domain (`INV-REV-03`).
+no later permit has overtaken, or past the scheme's **declared** deadline plus the configured
+margin under the permit rule — judged on the locked row, never a clock alone. An accepted
+withdrawal is irrevocable: a reversal of it is refused by the domain (`INV-REV-03`) — the
+declaration gate before anything exists, and the machine's own shape after.
 
 ## 6. The dispute (ADR-0061 §2)
 

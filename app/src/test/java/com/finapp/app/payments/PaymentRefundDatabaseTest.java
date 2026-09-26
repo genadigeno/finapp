@@ -1686,9 +1686,9 @@ class PaymentRefundDatabaseTest {
                             + " now() - interval '1 hour', now() - interval '1 hour')",
                     customer, party);
             execute(app,
-                    "INSERT INTO paymentmethods.payment_method (id, party_id, token_reference,"
+                    "INSERT INTO paymentmethods.payment_method (id, party_id, kind, token_reference,"
                             + " brand, display_suffix, expiry_month, expiry_year, status,"
-                            + " created_at) VALUES (?, ?, ?, 'Visa', '4242', 12, 2030,"
+                            + " created_at) VALUES (?, ?, 'CARD_TOKEN', ?, 'Visa', '4242', 12, 2030,"
                             + " 'ACTIVE', now())",
                     method, party, "tok-rfd-" + UUID.randomUUID());
         }

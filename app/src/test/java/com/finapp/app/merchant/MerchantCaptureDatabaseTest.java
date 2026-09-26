@@ -1172,9 +1172,9 @@ class MerchantCaptureDatabaseTest {
                     party);
             execute(
                     app,
-                    "INSERT INTO paymentmethods.payment_method (id, party_id, token_reference,"
+                    "INSERT INTO paymentmethods.payment_method (id, party_id, kind, token_reference,"
                             + " brand, display_suffix, expiry_month, expiry_year, status,"
-                            + " created_at) VALUES (?, ?, ?, 'Visa', '4242', 12, 2030, 'ACTIVE',"
+                            + " created_at) VALUES (?, ?, 'CARD_TOKEN', ?, 'Visa', '4242', 12, 2030, 'ACTIVE',"
                             + " now())",
                     method,
                     party,
@@ -1362,6 +1362,13 @@ class MerchantCaptureDatabaseTest {
             public Optional<InstrumentToken> instrumentOwnedBy(
                     Connection uow, UUID callerPartyId, UUID paymentMethodId) {
                 return realParticipants.instrumentOwnedBy(uow, callerPartyId, paymentMethodId);
+            }
+
+            @Override
+            public Optional<com.finapp.payments.ProviderReference> bankDestinationOwnedBy(
+                    Connection uow, UUID callerPartyId, UUID paymentMethodId) {
+                return realParticipants.bankDestinationOwnedBy(
+                        uow, callerPartyId, paymentMethodId);
             }
 
             /** Real too: the credited account's standing is asked of the ledger (the transition). */

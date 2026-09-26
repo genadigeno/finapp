@@ -46,6 +46,16 @@ public interface PaymentParticipants<T> {
      */
     boolean creditable(T unitOfWork, LedgerAccountId account);
 
+    /**
+     * The caller's BANK_ACCOUNT instrument, resolved to the opaque destination the push
+     * wire presents (`P7-TSK-008`, ADR-0062 §6) — present only for a live instrument of the
+     * caller's whose kind is the bank account. The reference crosses the PCI boundary at
+     * the implementing bridge's one registered re-wrap ({@code INV-RAIL-03}), exactly as
+     * the card token does at {@link #instrumentOwnedBy}.
+     */
+    Optional<ProviderReference> bankDestinationOwnedBy(
+            T unitOfWork, UUID callerPartyId, UUID paymentMethodId);
+
     /** The wallet's owner, account and currency — what the intent records and judges. */
     record Wallet(UUID customerId, LedgerAccountId account, CurrencyCode currency) {}
 }

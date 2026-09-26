@@ -354,6 +354,13 @@ class OpenApiContractTest {
                         // single-use at the provider; detach and list are the shared
                         // surface above.
                         ApiVersion.CURRENT_PREFIX + "/me/payment-methods/bank-accounts",
+                        // P7-TSK-008: the wallet withdrawal - the keyed dispatch answering
+                        // the honest judged status (COMPLETED, FAILED, UNKNOWN with the
+                        // amount held), and the ownership-scoped read. No cancel and no
+                        // reversal route, deliberately (INV-REV-03: the rail declares
+                        // final-on-acceptance).
+                        ApiVersion.CURRENT_PREFIX + "/me/withdrawals",
+                        ApiVersion.CURRENT_PREFIX + "/me/withdrawals/{id}",
                         // P5-TSK-011: the payment surface - the keyed create, the
                         // confirmation that answers the intent's real state (honestly
                         // PROCESSING), the window-bounded cancel, and the ownership-scoped

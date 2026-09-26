@@ -324,31 +324,50 @@ class OwnershipIsScopedTest {
                                         + " to scope by, and its surfaces are permission-walled"
                                         + " (RoutingPolicyDatabaseTest's refusals).")),
                     Map.entry(
-                            "com.finapp.payments.JdbcRoutingStore.findLatestDecisionForIntent",
-                            new Entry(
-                                    Scope.ADMINISTERED,
-                                    "P7-TSK-003. Two callers. The confirmation's own Tx2, whose"
-                                        + " intent passed findOwned in Tx1's chain and whose"
-                                        + " read is filtered to the decision Tx1 minted. And"
-                                        + " the operator's explanation, where the identifier"
-                                        + " comes from the URL of GET"
-                                        + " /v1/operator/payments/{intentId}/routing and names"
-                                        + " SOMEBODY ELSE'S payment - the operation, not a"
-                                        + " defect (the refund's P1-TSK-028 class). What"
-                                        + " stands in for the missing ownership predicate:"
-                                        + " @RequiresPermission(PAYMENT_ROUTING_ADMINISTER) at"
-                                        + " the boundary, asserted with nothing written by"
-                                        + " RoutingPolicyDatabaseTest's permissionless and"
-                                        + " wrong-role refusals, and every read audited"
-                                        + " (PAYMENT_ROUTING_EXPLANATION_READ).")),
-                    Map.entry(
                             "com.finapp.payments.JdbcRoutingStore.stepsOf",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P7-TSK-003. A private loader: the decision id comes only"
-                                        + " from a decision row this store just read - the"
-                                        + " findLatestDecisionForIntent entry above carries the"
-                                        + " boundary reasoning.")),
+                                    "P7-TSK-003; the subject-general read since P7-TSK-008."
+                                        + " A private loader: the decision id comes only from"
+                                        + " a decision row this store just read. The boundary"
+                                        + " reasoning that lived on the"
+                                        + " findLatestDecisionForIntent entry moved here when"
+                                        + " that method became a one-line delegate the sweep"
+                                        + " no longer sees (P7-TSK-008): the confirmation's"
+                                        + " own Tx2 reads the decision its Tx1 minted; the"
+                                        + " operator's explanation names SOMEBODY ELSE'S"
+                                        + " payment BY DESIGN (the refund's P1-TSK-028"
+                                        + " class), with"
+                                        + " @RequiresPermission(PAYMENT_ROUTING_ADMINISTER)"
+                                        + " standing in for the ownership predicate -"
+                                        + " asserted by RoutingPolicyDatabaseTest's"
+                                        + " permissionless and wrong-role refusals - and"
+                                        + " every read audited"
+                                        + " (PAYMENT_ROUTING_EXPLANATION_READ); the"
+                                        + " withdrawal's arm reads the decision its own"
+                                        + " dispatch pinned.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.findForUpdate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-008, the JdbcMerchantPayoutStore.findForUpdate"
+                                        + " reasoning at the wallet: the lock every resolver"
+                                        + " takes before applying the scheme's word. Its id"
+                                        + " comes only from a committed dispatch this flight"
+                                        + " made (Withdrawals.withdraw), a takeover's"
+                                        + " dispatch-key convergence read (owner-scoped by"
+                                        + " customer_id = ?), or a candidate the inquiry"
+                                        + " sweep read and then locked the same way - never"
+                                        + " a request's raw identifier: the surface read is"
+                                        + " findOwned, whose statement carries the customer.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-008, the JdbcMerchantPayoutStore.appendHistory"
+                                        + " shape: a private trail writer whose id comes only"
+                                        + " from the conditional transition that just fired"
+                                        + " on the locked row.")),
                     Map.entry(
                             "com.finapp.payments.JdbcRoutingStore.appendStep",
                             new Entry(

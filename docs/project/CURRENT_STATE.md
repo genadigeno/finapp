@@ -339,86 +339,84 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P7-TSK-008` — Wallet withdrawal over the instant rail** — `READY`. M7.3, External
-accounts and the instant rail, stands at 2 of 3. Money leaves a wallet to the customer's
-bank account, final on acceptance, and `INV-REV-03` gets its irrevocable subject: the
-`Withdrawal` aggregate, hold-then-dispatch on the wallet's ledger account under its lock,
-our end-to-end reference and a send permit committed before the send, completion releasing
-the hold and posting `wallet-withdrawal:<id>` (DR `CUSTOMER_WALLET` / CR
-`INSTANT_CLEARING`), failure concluded only on the scheme's own refusal, on an unovertaken
-first send's refused connection, or past the scheme's declared deadline under the permit
-rule (ADR-0057's, adopted by ADR-0062 §3); the inquiry sweep; a reversal of an accepted
-withdrawal refused by the domain. Its entry is in [`BACKLOG.md`](BACKLOG.md); it runs the
-three-command loop, design first. **Not started.**
+**`P7-TSK-009` — Pay-by-bank: A2A pay-ins for wallets and checkout** — `READY`. Money
+enters through the payer's own PSP, authorized there, final on the scheme's confirmation
+(ADR-0062 §5): an initiation (`AWAITING_PAYER`) with the payer's authorization handle, the
+inquiry sweep asking the payer PSP and never concluding expiry by our clock
+(`INV-LIFE-03`), confirmation crediting the wallet (DR `INSTANT_CLEARING` / CR
+`CUSTOMER_WALLET`) or the checkout's payable with ADR-0050's fee split, a late execution
+landing `COMPLETED_LATE` (`INV-MER-06`'s second rail), and an unattributable confirmation
+retained and parked in `SUSPENSE_UNMATCHED` (`INV-REC-05`). Payments `V017`; the rail's
+signed confirmation callback; `PaymentExecuted`. Its entry is in
+[`BACKLOG.md`](BACKLOG.md); it runs the three-command loop, design first.
+**Not started.**
 
 ### Just completed
 
-**`P7-TSK-007` — External bank accounts as payment instruments, through the grant
-exchange** — `COMPLETE` (2026-09-27). **M7.3 stands at 2 of 3: a customer's external
-account is a `BANK_ACCOUNT` payment method known only by the rail provider's opaque
-reference, a four-character suffix and the confirmation-of-payee word — and a bank
-identifier physically cannot rest anywhere** (ADR-0062 §2 shipped; `INV-RAIL-03`,
-`INV-PAY-02` unchanged, `INV-AUD-02`).
+**`P7-TSK-008` — Wallet withdrawal over the instant rail** — `COMPLETE` (2026-09-27).
+**M7.3, External accounts and the instant rail, closes at 3 of 3: money leaves a wallet to
+the customer's bank account over the push rail, final on acceptance — and `INV-REV-03` has
+its irrevocable subject, refused from the declaration with zero effects and shaped into the
+machine itself** (ADR-0062 §§3/6 shipped; ADR-0057 adopted beyond the payout; `INV-RAIL-02`,
+`INV-RAIL-04`, `INV-BAL-04`, `INV-PAY-04`, `INV-LIFE-03`).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Registered from a grant, no connection held during the exchange | The keyed two-transaction shape (`IdempotentExecutor.begin` → wire → `complete`, the payout's `P5-TSK-016` idiom): Tx1 commits the claim beside nothing, the exchange runs connectionless through the real `SimulatedInstantSchemeAdapter` against the stubbed scheme, Tx2 attaches/audits/announces and records the claim's outcome in the same transaction (`BankAccountRegistrationDatabaseTest`, the whole chain over HTTP) |
-| The suffix and payee result stored; `NO_MATCH` needs recorded acknowledgement | The exchange keeps exactly the three storable values; `V003` binds `(payee_check IS NOT DISTINCT FROM 'NO_MATCH') = (no_match_acknowledged_at IS NOT NULL)` for every writer, the aggregate's factory refuses an unacknowledged `NO_MATCH` as defence in depth behind the surface's recorded 409 (`paymentmethods.PayeeCheckNoMatch`), and the acknowledged register carries the enumerated audit reason `PAYEE_CHECK_NO_MATCH_ACKNOWLEDGED` |
-| Shaped values refused at the surface, in the domain types and by `CHECK`s | Three independent layers: `DestinationReference` (the `TokenReference` idiom — no-letter values and the ≤34-character international-identifier shape refused, the hex-collision limit and the adapter-prefix contract recorded on the type), `V003`'s three shape `CHECK`s, and the bank-identifier sweep planting account numbers, sort-coded strings, phones and IBANs as the migrator |
-| Ownership-scoped; step-up when a factor is enrolled | `party_id = ?` in every statement (ADR-0031); the `P4-TSK-007` conditional step-up fail-fast in Tx1 and authoritative at the write — and the refusal **rolls the claim back with it**, proven by the same key succeeding after the step-up with exactly one exchange on the wire |
-| Detach | The shared door, kind-agnostic: 204, the destination slot freed (`INV-LIFE-04`), the row surviving as evidence |
+| A withdrawal completes over the simulated scheme and reconciles | The whole deployed chain over HTTP — funded by a real card payment, the bank account registered through the real grant exchange, withdrawn through the REAL adapter against the stubbed scheme: 201 `COMPLETED`, the scheme's reference and cycle on the row (Phase 8's keys), the hold `RELEASED`, **exactly one** entry keyed `wallet-withdrawal:<id>` DR wallet / CR `INSTANT_CLEARING`, the balance explained to the cent, the pinned decision naming `instant` under seeded version 2 (`WithdrawalDatabaseTest#theAcceptanceChainHolds`) |
+| Its reversal is refused with nothing written or sent | `ReversalNotSupportedException` from the DECLARATION before anything exists — audit, outbox, journal and wire counts all byte-unchanged — no reversal route exists on the surface (the void door refuses, the collection takes no `DELETE`), and the machine's own shape is the second half: no edge leaves `COMPLETED`, asserted from the enum |
+| A lost answer resolves by inquiry to one entry | `receivesTheRequestThenLosesTheResponse` → 201 honestly `UNKNOWN`, the hold STANDING, nothing posted, nothing announced terminal (`INV-LIFE-03`); the sweep asks by OUR reference, completes on the locked row, posts **once**, retains the scheme's bytes as the evidence's third subject, and a second sweep converges quietly |
 
-**The kinds share one aggregate under one lifecycle** (the payments per-model discipline at
-the instrument rank): `kind` is a frozen birth fact, backfilled `CARD_TOKEN` over the
-applied history and `NOT NULL` from `V003` on; the one constructor and the coherence
-`CHECK`s refuse a foreign kind's facts in both directions; the display suffix stays but its
-charset is the kind's (digits for last4, alphanumerics for the exchange's bound). **The
-register is keyed per party where the card attach deliberately is not** — the recorded
-asymmetry: the card exchange is grant-idempotent, the bank grant single-use, so the claim
-(scope `payment-method-register:<party>`, the grant SHA-256-hashed into the fingerprint)
-answers the lost-response retry byte for byte, refusals included, and a lease takeover's
-re-exchange meets the spent grant's `REFUSED` honestly. **The exchange's evidence bytes are
-deliberately dropped** — a provider body can carry the payee's name, which is exactly what
-`INV-RAIL-03` refuses at rest.
+**The payout's protocols, transplanted deliberately** (ADR-0057 §§1–5, §12 annotated as
+adopted): four states, the failure vocabulary, the per-customer claim scope and dispatch
+key, the send permit forward-only for every writer, one shared `WithdrawalOutcomes` every
+resolver locks through. **The withdrawal's own three additions**: it ROUTES (ADR-0060 §2's
+outbound moment — `RoutingSubject` widens the decision to exactly-one-of intent/withdrawal
+under `V016`'s XOR, seeded version 2 carries the standing card route forward beside the
+bank pay-out, and an unroutable withdrawal commits the refused decision AND the claim's
+failed outcome with the wallet untouched); its rail is IRREVOCABLE; and its bound source is
+the rail's **declared** outcome deadline plus a configured margin — `NEVER_RECEIVED` only
+past it, judged against the locked row's permit, never a clock alone, with the thirty-
+second-old permit surviving the sweep as the falsifiable twin.
 
-**The gate's find at the schema rank, repaired and probed**: `V002`'s immutability trigger
-compared `OLD.col <> NEW.col`, which is NULL-blind — on a bank row, `brand NULL → 'Visa'`
-smuggled inside the legal detach edge would have sailed through. `V003` recreates the
-function with `IS DISTINCT FROM` on every frozen column (`kind` and the bank facts
-joining), and the probe reverting one comparison to `<>` reddens the suite on the exact
-edit the old form admitted. **The card confirm's instrument bridge now filters by kind
-structurally**: a `BANK_ACCOUNT` method resolves to no chargeable token at that door
-(`flatMap` over the now-optional token), so the push instrument cannot leak into the
-two-step machine.
+**The resolver runs inside the dispatch transaction** (the `P7-TSK-007` idiom handed to
+`payments` as a callback): party, step-up, wallet and instrument refusals roll the claim
+back — the same key succeeds after elevation with exactly one send on the wire, and an
+unfunded wallet retries the same key honestly after a top-up. **The affordability race is
+counted**: ten different-key withdrawals at a 10.00 wallet admit exactly three (the four
+gate scenarios' hold arithmetic), and ten same-key racers produce one row, one entry.
 
-**Nine probe runs, nine caught**, every restore verified byte-identical
-(`MUTATION_TESTING.md` §2 +4 rows): the bank-facts coherence clause dropped, the consent
-`CHECK` made vacuous, the destination one-live index dropped against the ten-way race, the
-trigger's NULL-blind revert, the IBAN `CHECK` dropped, the letter rule disarmed in the
-type, the consent gate bypassed at the door (the factory's own refusal surfacing as the
-wrong status — defence in depth visible), the fingerprint unbound from the grant
-(`INV-IDEM-03`'s catcher), the aggregate's bank-coherence clause dropped.
+**Found and fixed on the way**: the scheme-reference UNIQUE met the shared-stub collision
+class (references now minted from OUR idempotency header — unique per withdrawal, stable
+across re-sends, the dedupe premise made test-visible); permits are truncated to the
+column's microsecond resolution AT MINT (the `P7-TSK-004` clock-precision class, prevented
+rather than met); and the ownership register's `findLatestDecisionForIntent` entry had
+silently stopped being swept when the method became a delegate — its boundary reasoning
+moved to the surviving entry rather than left pointing at nothing.
 
-Multi-instance **PASS** — the claim's unique key arbitrates same-key racers, the per-kind
-partial one-live indexes arbitrate different-key duplicates behind the savepoint converge,
-the provider's single-use grant bounds cross-key double exchanges to one `EXCHANGED`, the
-step-up is an authoritative per-decision read, and nothing lives in process state.
+Multi-instance **PASS** — every arbiter is the database's: the claim per customer, the
+dispatch-key convergence, the hold under the wallet account's lock, the permit's
+conditional renewal against the sweep's locked-row conclusion (ADR-0057 §4's either/or),
+the posting key, the one-chosen-per-withdrawal partial index; the schedule is enumerated
+leaderless; nothing lives in process state.
 
-Registers: `ERROR_CONTRACT` +3 codes, `DATA_CLASSIFICATION` +4 rows,
-`DISTRIBUTED_EXECUTION` §3 row extended, `MODULE_ARCHITECTURE` and `AUDITABLE_ACTIONS`
-updated with the kind and the consent reason, `OpenApiContractTest` +1 declared path with
-the baseline regenerated (every BREAKING row a required flag on a new component),
-`SecretsAreUnwrappedInOnePlaceTest` +1 method +2 entries,
-`CredentialReachesNoEmittedSinkTest` +1 request body, ADR-0062 §2 annotated. Verified by
-targeted tiers from fresh runs — the fleet-wide hermetic test task green at **1641
-tests across 14 modules, 0 failures**, and **24 targeted database tests across 3 suites, 0
-failures** plus the platform classification guard — the full battery deliberately skipped
-on the owner's instruction, no fleet-wide database or kafka counts claimed.
+Registers: `ERROR_CONTRACT` +2, `AUDITABLE_ACTIONS` +2, `DATA_CLASSIFICATION` +29 rows,
+`DISTRIBUTED_EXECUTION` §3 +1 row, `MODULE_ARCHITECTURE` +3 events,
+`RAIL_AND_DISPUTE_LIFECYCLES` §5 redrawn as the machine's own edge list with shipped
+provenance, ADR-0057 and ADR-0062 annotated, `OwnershipIsScopedTest` +2 (and the stale
+entry folded), `SystemActorCallSitesAreEnumeratedTest` +2, `PaymentMeters` +`WITHDRAW`
+(zero-baselined; the push port metered from this task on, as the `P7-TSK-006` javadoc
+promised), the OpenAPI baseline regenerated (+`/v1/me/withdrawals` pair; every BREAKING row
+a required flag on a new component; the handler named `createWithdrawal` so the consent
+surface's published `withdraw` keeps its identity). Verified by targeted tiers from fresh
+runs — the fleet-wide hermetic test task green at **1650 tests across 14 modules, 0
+failures**, and **137 targeted database tests across 14 suites, 0 failures** plus the platform classification guard — the full battery
+deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts
+claimed.
 
 
 ### Previously
 
-The per-task completion records — 151 blocks, from `P7-TSK-006` back to project initiation
+The per-task completion records — 152 blocks, from `P7-TSK-007` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -806,7 +804,7 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P7-TSK-008` — Wallet withdrawal over the instant rail** — see
+**`P7-TSK-009` — Pay-by-bank: A2A pay-ins for wallets and checkout** — see
 [§Current Task](#current-task), which this section mirrors. *(It named `P7-TSK-001` from the
 transition's initialisation until `P7-TSK-002`'s gate found it stale — the stale-second-copy
 class in the very section built to mirror rather than lag; kept current since.)*

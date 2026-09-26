@@ -63,6 +63,10 @@ public interface RoutingStore<T> {
      */
     Optional<RoutingDecision> findLatestDecisionForIntent(T unitOfWork, PaymentIntentId intent);
 
+    /** The withdrawal subject's same read (`P7-TSK-008`, ADR-0060 §2's outbound moment). */
+    Optional<RoutingDecision> findLatestDecisionForWithdrawal(
+            T unitOfWork, WithdrawalId withdrawal);
+
     /**
      * Appends one step to a decision's trail — the fallback's abandonment on
      * {@code NOTHING_SENT} (`INV-RAIL-02`; the aggregate door is

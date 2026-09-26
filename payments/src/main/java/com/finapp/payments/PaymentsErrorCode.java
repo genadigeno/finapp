@@ -189,6 +189,31 @@ public enum PaymentsErrorCode implements ErrorCode {
             "A routing policy version takes effect forward, never backward."),
 
     /**
+     * The wallet's available balance cannot cover the withdrawal (`P7-TSK-008`,
+     * {@code INV-BAL-04}): judged under the wallet account's lock, refused with nothing
+     * written and the claim rolled back — a top-up and the same keyed retry can succeed.
+     *
+     * <p>A {@code 422}: coherent request, refused by the caller's own balance. The refusal
+     * names no amount and no balance beyond this sentence's fact.
+     */
+    WITHDRAWAL_UNFUNDED(
+            "payments.WithdrawalUnfunded",
+            422,
+            "The wallet's available balance cannot cover this withdrawal."),
+
+    /**
+     * A withdrawal priced in a currency its wallet does not hold (`P7-TSK-008`): the hold,
+     * the posting and the scheme dispatch carry one {@code Money}, and FX is no part of
+     * this flow.
+     *
+     * <p>A {@code 422}: the remedy is the caller's — the wallet's own currency.
+     */
+    WITHDRAWAL_CURRENCY_MISMATCHED(
+            "payments.WithdrawalCurrencyMismatched",
+            422,
+            "A withdrawal is priced in its wallet's own currency."),
+
+    /**
      * A reversal was asked of a rail whose declared capabilities do not list it
      * (`P7-TSK-004`, `INV-REV-03`): refused before anything is written or sent, never
      * attempted-and-failed at a provider.

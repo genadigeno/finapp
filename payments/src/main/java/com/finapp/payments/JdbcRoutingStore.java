@@ -39,8 +39,9 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
             "id, policy_version_id, rule_index, direction, instrument_kind, currency,"
                     + " ceiling_amount_minor, ceiling_currency, ceiling_scale";
     private static final String DECISION_COLUMNS =
-            "id, intent_id, policy_version_id, direction, instrument_kind, amount_minor,"
-                    + " currency, scale, matched_rule_index, chosen_rail, created_at";
+            "id, intent_id, withdrawal_id, policy_version_id, direction, instrument_kind,"
+                    + " amount_minor, currency, scale, matched_rule_index, chosen_rail,"
+                    + " created_at";
     private static final String STEP_COLUMNS =
             "decision_id, step_index, rail, verdict, rejection, rail_available,"
                     + " descriptor_version";
@@ -316,18 +317,22 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.routing_decision (" + DECISION_COLUMNS
-                                + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, decision.id().value());
-            insert.setObject(2, decision.intentId().value());
-            insert.setObject(3, decision.policyVersionId().value());
-            insert.setString(4, decision.direction().name());
-            insert.setString(5, decision.instrumentKind().name());
-            insert.setLong(6, MoneyColumns.amountMinorOf(decision.amount()));
-            insert.setString(7, MoneyColumns.currencyOf(decision.amount()));
-            insert.setShort(8, MoneyColumns.scaleOf(decision.amount()));
-            insert.setObject(9, decision.matchedRuleIndex().orElse(null));
-            insert.setString(10, decision.chosenRail().map(RailId::value).orElse(null));
-            insert.setTimestamp(11, Timestamp.from(decision.createdAt()));
+            // Exactly one subject (V016's XOR): the confirmed intent, or the withdrawal.
+            insert.setObject(
+                    2, decision.subject().intent().map(PaymentIntentId::value).orElse(null));
+            insert.setObject(
+                    3, decision.subject().withdrawal().map(WithdrawalId::value).orElse(null));
+            insert.setObject(4, decision.policyVersionId().value());
+            insert.setString(5, decision.direction().name());
+            insert.setString(6, decision.instrumentKind().name());
+            insert.setLong(7, MoneyColumns.amountMinorOf(decision.amount()));
+            insert.setString(8, MoneyColumns.currencyOf(decision.amount()));
+            insert.setShort(9, MoneyColumns.scaleOf(decision.amount()));
+            insert.setObject(10, decision.matchedRuleIndex().orElse(null));
+            insert.setString(11, decision.chosenRail().map(RailId::value).orElse(null));
+            insert.setTimestamp(12, Timestamp.from(decision.createdAt()));
             insert.executeUpdate();
             for (RoutingStep step : decision.steps()) {
                 appendStep(unitOfWork, decision.id(), step);
@@ -341,12 +346,25 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
     @Override
     public Optional<RoutingDecision> findLatestDecisionForIntent(
             Connection unitOfWork, PaymentIntentId intent) {
+        return findLatestDecisionBy(unitOfWork, "intent_id", intent.value());
+    }
+
+    @Override
+    public Optional<RoutingDecision> findLatestDecisionForWithdrawal(
+            Connection unitOfWork, WithdrawalId withdrawal) {
+        return findLatestDecisionBy(unitOfWork, "withdrawal_id", withdrawal.value());
+    }
+
+    /** {@code subjectColumn} is one of the two class constants above, never caller text. */
+    private Optional<RoutingDecision> findLatestDecisionBy(
+            Connection unitOfWork, String subjectColumn, UUID subjectId) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT " + DECISION_COLUMNS + " FROM payments.routing_decision"
-                                + " WHERE intent_id = ? ORDER BY created_at DESC, id DESC"
+                                + " WHERE " + subjectColumn + " = ?"
+                                + " ORDER BY created_at DESC, id DESC"
                                 + " LIMIT 1")) {
-            read.setObject(1, intent.value());
+            read.setObject(1, subjectId);
             try (ResultSet row = read.executeQuery()) {
                 if (!row.next()) {
                     return Optional.empty();
@@ -355,10 +373,16 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                         RoutingDecisionId.of(row.getObject("id", UUID.class));
                 Integer matched = row.getObject("matched_rule_index", Integer.class);
                 String chosen = row.getString("chosen_rail");
+                UUID intentId = row.getObject("intent_id", UUID.class);
+                UUID withdrawalId = row.getObject("withdrawal_id", UUID.class);
                 return Optional.of(
                         RoutingDecision.rehydrate(
                                 decisionId,
-                                PaymentIntentId.of(row.getObject("intent_id", UUID.class)),
+                                new RoutingSubject(
+                                        Optional.ofNullable(intentId)
+                                                .map(PaymentIntentId::of),
+                                        Optional.ofNullable(withdrawalId)
+                                                .map(WithdrawalId::of)),
                                 RoutingPolicyVersionId.of(
                                         row.getObject("policy_version_id", UUID.class)),
                                 PaymentDirection.valueOf(row.getString("direction")),
@@ -374,7 +398,7 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
-                    DatabaseFailure.describe("reading a payment's routing decision", failure));
+                    DatabaseFailure.describe("reading a routing decision", failure));
         }
     }
 

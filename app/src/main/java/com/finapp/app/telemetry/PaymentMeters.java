@@ -92,7 +92,9 @@ public final class PaymentMeters {
         REFUND,
         /** The card rail's reversal (`P7-TSK-004`) — the port's fifth method. */
         VOID,
-        QUERY
+        QUERY,
+        /** The push rail's outbound credit transfer (`P7-TSK-008`, ADR-0062 §6). */
+        WITHDRAW
     }
 
     private final Map<Judgement, Counter> attempts = new EnumMap<>(Judgement.class);

@@ -31,6 +31,7 @@ import com.finapp.payments.PaymentIntentId;
 import com.finapp.payments.PaymentIntentStatus;
 import com.finapp.payments.PaymentParticipants;
 import com.finapp.payments.PaymentProvider;
+import com.finapp.payments.ProviderReference;
 import com.finapp.payments.ProviderAnswer;
 import com.finapp.payments.ProviderIdempotencyReference;
 import com.finapp.payments.QueryAnswer;
@@ -496,7 +497,10 @@ class PaymentAuthorizationDatabaseTest {
                     assertThat(row.next()).isTrue();
                     assertThat(row.getInt(1))
                             .as("the future version exists (%s) and routed nothing", scheduled)
-                            .isEqualTo(1);
+                            // Version 2 since P7-TSK-008: V016's whole-version seed carries
+                            // the standing route; the property under test is unchanged -
+                            // the future version routed NOTHING.
+                            .isEqualTo(2);
                 }
             }
         }
@@ -701,6 +705,12 @@ class PaymentAuthorizationDatabaseTest {
             return callerPartyId.equals(party)
                     ? Optional.of(new Wallet(customerId, wallet, EUR))
                     : Optional.empty();
+        }
+
+        @Override
+        public Optional<ProviderReference> bankDestinationOwnedBy(
+                Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+            return Optional.empty();
         }
 
         @Override

@@ -15,6 +15,7 @@ import com.finapp.paymentmethods.PaymentMethodStatus;
 import com.finapp.paymentmethods.PaymentMethodStore;
 import com.finapp.payments.InstrumentToken;
 import com.finapp.payments.PaymentParticipants;
+import com.finapp.payments.ProviderReference;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Objects;
@@ -106,6 +107,28 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
                 // The registered re-wrapping: off in one expression, wrapped again before it
                 // travels (INV-PAY-02) - the SecretsAreUnwrappedInOnePlaceTest entry.
                 .map(token -> InstrumentToken.of(token.expose()));
+    }
+
+    @Override
+    public Optional<ProviderReference> bankDestinationOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+        PaymentMethodId identifier;
+        try {
+            identifier = PaymentMethodId.of(paymentMethodId);
+        } catch (IllegalArgumentException notAPlatformIdentifier) {
+            return Optional.empty();
+        }
+        return instruments
+                .findOwned(unitOfWork, identifier, callerPartyId)
+                .filter(method -> method.status() == PaymentMethodStatus.ACTIVE)
+                // The BANK_ACCOUNT arm of the same bridge (P7-TSK-008): a card resolves to
+                // no push destination, exactly as a bank account resolves to no card token.
+                .flatMap(PaymentMethod::destination)
+                // The second registered re-wrapping across the PCI boundary: off in one
+                // expression, wrapped again before it travels (INV-RAIL-03) - the same
+                // SecretsAreUnwrappedInOnePlaceTest entry, its claim widened to both
+                // references.
+                .map(destination -> new ProviderReference(destination.expose()));
     }
 
     /** The product's live customer-wallet account; the transfers precedent's read. */

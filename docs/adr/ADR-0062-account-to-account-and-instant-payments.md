@@ -89,6 +89,12 @@ The concepts this phase must keep apart:
      older than the scheme's deadline plus the configured margin;
    - a takeover whose conditional permit renewal loses does not send.
 
+   *(Shipped for the withdrawal by `P7-TSK-008`: the permit rules live in `V016`'s
+   forward-only trigger and `WithdrawalOutcomes`' two re-judged arms — the first-send rule
+   compared against the LOCKED row's permit, and `NEVER_RECEIVED` only past the rail's
+   declared deadline plus the configured margin, both proven on seeded rows and a dead-port
+   engine.)*
+
 4. **Accounting: every accepted push lands in the scheme's own clearing position**
    (`INSTANT_CLEARING`, an operational asset per currency, added with its first poster; ADR-0059
    §4 — *refined by `P7-TSK-006`: the member and its seeded chart rows arrive with the
@@ -124,6 +130,12 @@ The concepts this phase must keep apart:
    - the routing decision is pinned (ADR-0060);
    - an accepted withdrawal is irrevocable, so a reversal of it is refused by the domain
      (`INV-REV-03`, ADR-0059 §3).
+
+   *(Shipped `P7-TSK-008`: the `Withdrawal` aggregate and `V016`, the keyed customer door
+   with the resolver inside the dispatch transaction, routing's second subject pinned beside
+   the row, the posting keyed `wallet-withdrawal:<id>` into `INSTANT_CLEARING`, and the
+   reversal refused from the declaration with zero transactions and zero wire calls — plus
+   the machine's own shape: no edge leaves `COMPLETED`.)*
 
 7. **Payouts keep their port.** The merchant payout (ADR-0057) stays on `PayoutProvider`. The
    push rail can implement that port in `app` without any `merchant` change. Converging the two
