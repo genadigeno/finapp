@@ -1020,6 +1020,12 @@ class PaymentRefundDatabaseTest {
                     }
 
                     @Override
+                    public com.finapp.payments.ProviderAnswer voidAuthorization(
+                            VoidRequest request) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
                     public com.finapp.payments.QueryAnswer query(
                             com.finapp.payments.ProviderIdempotencyReference ourReference) {
                         throw new UnsupportedOperationException();
@@ -1497,12 +1503,22 @@ class PaymentRefundDatabaseTest {
                 outcomes(),
                 new PaymentCapture(
                         runner, intents, attempts, evidence, adapter(), outcomes(),
-                        new JdbcAuditWriter(), IDS, CLOCK),
+                        voids(), new JdbcAuditWriter(), IDS, CLOCK),
+                voids(),
                 IDS,
                 CLOCK,
                 dueNow,
                 dueNow,
                 50);
+    }
+
+    /** The void command over the same stores (P7-TSK-004) - the capture idiom's sibling. */
+    private com.finapp.payments.PaymentVoid voids() {
+        return new com.finapp.payments.PaymentVoid(
+                runner, intents, attempts, evidence, adapter(), outcomes(),
+                com.finapp.payments.PaymentRails.of(
+                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcAuditWriter(), IDS, CLOCK);
     }
 
     private static void queryAnswers(String reference, String status, String pspReference) {
@@ -1552,8 +1568,13 @@ class PaymentRefundDatabaseTest {
                             + " scale, reason, hold_reference,"
                             + " provider_idempotency_reference, status, created_at,"
                             + " dispatch_key, last_dispatched_at)"
-                            + " VALUES (?, ?, ?, 'EUR', 2, ?, ?, ?, 'DISPATCHED', now(), ?,"
-                            + " now())",
+                            // A minute old on the SERVER clock: the sweep's bound is the
+                            // JVM's, and a permit born "now()" can hide behind host/VM
+                            // skew under the microsecond test bound (ADR-0057 section 4's
+                            // premise, at the fixture rank). A stranded flight is old.
+                            + " VALUES (?, ?, ?, 'EUR', 2, ?, ?, ?, 'DISPATCHED',"
+                            + " now() - interval '1 minute', ?,"
+                            + " now() - interval '1 minute')",
                     refundId,
                     captured.attempt().value(),
                     amount.minorUnits(),
@@ -1641,7 +1662,7 @@ class PaymentRefundDatabaseTest {
                             + "\"}");
             new PaymentCapture(
                             runner, intents, attempts, evidence, adapter(), outcomes(),
-                            new JdbcAuditWriter(), IDS, CLOCK)
+                            voids(), new JdbcAuditWriter(), IDS, CLOCK)
                     .capture(attemptId);
         }
         psp.reset();

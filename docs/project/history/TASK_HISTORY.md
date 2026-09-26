@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 147 "Previously" blocks, newest first, from `P7-TSK-002` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 148 "Previously" blocks, newest first, from `P7-TSK-003` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,52 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P7-TSK-003` — Rail routing: the versioned policy, the pinned decision, rail availability** —
+`COMPLETE` (2026-09-26). **M7.1 closes at 3 of 3: every payment is routed once, before anything
+is sent, by a pinned policy version over stored inputs — recomputable, explainable, and refused
+on the record when no declared rail can carry it (ADR-0060 whole, `INV-RAIL-02`,
+`INV-HIST-04`'s third subject).**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Routing deterministic, version-pinned and explainable from stored data — on the card rail alone, re-demonstrable with every later rail | `RoutingPolicyVersion.decide` is pure; the recomputation suite replays the same plan byte for byte and across two versions that decide the same payment differently (the pin is load-bearing); the end-to-end confirm pins the seeded version 1, its one CHOSEN step, the availability observation and the descriptor version, all read back from `V013`'s rows; the future-effective version routes nothing until its instant (probed in its falsifiable form). The suites drive synthetic push and book declarations, so the demonstration is rail-agnostic by construction |
+
+- **The confirmation routes in Tx1** (ADR-0060 §2): the version in force and the availability
+  facts are read in the decision's own transaction; the plan is computed BEFORE the intent's
+  conditional (the unchanged ten-way arbiter — ten racers, one decision, now counted) and
+  written only after winning it; the decision, its steps and `RailSelected` commit beside the
+  attempt. A refusal is recorded WITHOUT the transition — `payments.NoEligibleRail`, the intent
+  untouched, deliberately retryable, the one-chosen partial index ignoring refused rows — and
+  proven end to end: rail out, 422 with the refusal on the record; rail back, the SAME payment
+  succeeds.
+- **Fallback advances only on knowledge** (`INV-RAIL-02`): `ABANDONED(NOTHING_SENT)` appended in
+  the acting resolver's own transaction; `INDETERMINATE` appends nothing — both probed. The
+  cross-rail re-dispatch arrives with the rails that can carry one (`P7-TSK-006`, `-009`).
+- **The operator surface** under the new `PAYMENT_ROUTING_ADMINISTER` (held by
+  `LEDGER_OPERATOR` — ADR-0060's deferred decision, made and recorded in the ADR): the keyed
+  immutable version (replay answers the original; ten concurrent creations mint ten gapless
+  numbers — the fee schedule's arbiter-is-the-queue discipline), the reasoned availability fact
+  (converges; every act audited), the audited explanation read. Negatives include the named
+  one: the merchant administrator cannot reroute money.
+- **Fourteen probe runs, thirteen caught**, every restore byte-identical
+  (`MUTATION_TESTING.md` §2): eligibility inverted, the chosen decision unpinned, the refusal
+  unrecorded, the refusal made to consume the intent, abandonment widened to ambiguity, the
+  one-chosen predicate dropped, decision immutability dropped, the permission swapped, the
+  availability reason unrecorded, the mint blinded to its race, the seed's rail dropped,
+  `RailSelected` unpublished, and effectiveness ignored — whose FIRST form survived and was
+  analysed rather than shrugged at: the ORDER-only mutation is extensionally harmless while the
+  `WHERE` stands, recorded as §3's tie-break limit, and the falsifiable form (`created_at` for
+  `effective_from`) caught.
+- **The gate found and fixed**: the routing meter registered lazily — invisible to
+  `PlannedMetersExistTest` exactly at the Phase 7 flip it exists for (the `P2-TSK-020` lesson) —
+  now a zero baseline on every fresh boot, which also let `MetricConventionTest` refuse the
+  `rail` tag until it was admitted to the closed set deliberately, with the `provider` tag's
+  reasoning; the ten-way confirm race counted attempts but not decisions — now both; and **the
+  battery surfaced a pre-existing rank gap recorded as debt below**: one corrupt (non-UUIDv7)
+  attempt id stalls every instance's whole sweep at the candidate-list read, before the
+  per-row containment starts — no domain writer can produce one (`EntityId` refuses at birth;
+  the offending rows were this repository's own raw test fixtures, now minting v7).
 
 **`P7-TSK-002` — The attempt's machine per interaction model** — `COMPLETE` (2026-09-26).
 **M7.1 stands at 2 of 3: three machines under one aggregate, each under the three-layer

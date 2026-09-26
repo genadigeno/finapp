@@ -2362,6 +2362,41 @@
           }
         }
       },
+      "payments.ReversalNotSupported": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.ReversalNotSupported"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.ReversalNotSupported"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This payment's rail does not support reversal.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "payments.RoutingPolicyNotForward": {
         "content": {
           "application/problem+json": {
@@ -4560,6 +4595,19 @@
             "type": "integer"
           }
         },
+        "type": "object"
+      },
+      "VoidPaymentRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
         "type": "object"
       }
     }
@@ -6764,6 +6812,43 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/payments/{id}/void": {
+      "post": {
+        "operationId": "voidPayment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidPaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

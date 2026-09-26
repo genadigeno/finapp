@@ -787,6 +787,15 @@ class PaymentConservationDatabaseTest {
     private PaymentCapture capture() {
         return new PaymentCapture(
                 runner, intents, attempts, evidence, adapter(), outcomes(),
+                voids(), new JdbcAuditWriter(), IDS, CLOCK);
+    }
+
+    /** The void command over the same stores (P7-TSK-004) - the capture idiom's sibling. */
+    private com.finapp.payments.PaymentVoid voids() {
+        return new com.finapp.payments.PaymentVoid(
+                runner, intents, attempts, evidence, adapter(), outcomes(),
+                com.finapp.payments.PaymentRails.of(
+                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcAuditWriter(), IDS, CLOCK);
     }
 

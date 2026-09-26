@@ -87,6 +87,7 @@ public final class PaymentSweeper {
     private final PaymentProvider provider;
     private final PaymentOutcomes outcomes;
     private final PaymentCapture capture;
+    private final PaymentVoid voids;
     private final IdGenerator ids;
     private final Clock clock;
     private final Duration dispatchedAge;
@@ -102,6 +103,7 @@ public final class PaymentSweeper {
             PaymentProvider provider,
             PaymentOutcomes outcomes,
             PaymentCapture capture,
+            PaymentVoid voids,
             IdGenerator ids,
             Clock clock,
             Duration dispatchedAge,
@@ -115,6 +117,7 @@ public final class PaymentSweeper {
         this.provider = Objects.requireNonNull(provider, "provider must not be null");
         this.outcomes = Objects.requireNonNull(outcomes, "outcomes must not be null");
         this.capture = Objects.requireNonNull(capture, "capture must not be null");
+        this.voids = Objects.requireNonNull(voids, "voids must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.dispatchedAge = requirePositive(dispatchedAge, "dispatchedAge");
@@ -214,6 +217,15 @@ public final class PaymentSweeper {
                     skipped++;
                 }
                 resolution.acting().ifPresent(acting::add);
+                if (resolution.voidToFinish().isPresent()) {
+                    // The declined-capture redirect this resolution committed: send the
+                    // void now, holding no candidate-list state - its own Tx1-call-Tx2.
+                    PaymentVoid.VoidResult sent =
+                            voids.completeDispatched(resolution.voidToFinish().get());
+                    if (sent.acting()) {
+                        acting.add(sent.attempt());
+                    }
+                }
             } catch (RuntimeException oneRowsFailure) {
                 // The anti-stall posture: the rows behind this one are other customers'
                 // money. Identifiers and class only - never provider bytes (INV-AUD-02).
@@ -442,7 +454,14 @@ public final class PaymentSweeper {
      * What one row's sweep did: whether an application was submitted, and — when this call's
      * own conditional fired — the state it committed (`P5-TSK-017`'s counting seam).
      */
-    private record Resolution(boolean submitted, Optional<PaymentAttemptStatus> acting) {
+    private record Resolution(
+            boolean submitted,
+            Optional<PaymentAttemptStatus> acting,
+            Optional<PaymentAttemptId> voidToFinish) {
+
+        Resolution(boolean submitted, Optional<PaymentAttemptStatus> acting) {
+            this(submitted, acting, Optional.empty());
+        }
 
         static Resolution skipped() {
             return new Resolution(false, Optional.empty());
@@ -451,12 +470,30 @@ public final class PaymentSweeper {
 
     /** Submitted or skipped, and the judgement this call itself committed, if any. */
     private Resolution resolve(PaymentAttempt candidate) {
+        // THE VOID'S SEND LEG (P7-TSK-004): a VOID_DISPATCHED past the bound is RE-SENT,
+        // not queried - idempotent at the provider by the stored reference, so any
+        // instance may finish it. This is what guarantees a redirect committed by a
+        // port-less resolver (the webhook door) actually releases the authorization, and
+        // it is deliberately permit-free: releasing a released promise converges, the
+        // recorded asymmetry with the refund's V009.
+        if (candidate.status() == PaymentAttemptStatus.VOID_DISPATCHED) {
+            PaymentVoid.VoidResult sent = voids.completeDispatched(candidate.id());
+            return new Resolution(
+                    !sent.converged(),
+                    sent.acting() ? Optional.of(sent.attempt()) : Optional.empty());
+        }
+
         // Which operation the state is stranded in decides which reference we ask about.
         boolean authStage =
                 candidate.status() == PaymentAttemptStatus.AUTH_DISPATCHED
                         || candidate.status() == PaymentAttemptStatus.AUTH_UNKNOWN;
+        boolean voidStage = candidate.status() == PaymentAttemptStatus.VOID_UNKNOWN;
         ProviderIdempotencyReference reference =
-                authStage ? candidate.authorizationReference() : candidate.captureReference();
+                authStage
+                        ? candidate.authorizationReference()
+                        : voidStage
+                                ? candidate.voidReference()
+                                : candidate.captureReference();
 
         // The provider query - HOLDING NO DATABASE CONNECTION (the P1-TSK-026 discipline,
         // the dispatch-before-call shape inverted into read-before-ask).
@@ -527,6 +564,15 @@ public final class PaymentSweeper {
                 true, applied.acting() ? Optional.of(applied.attempt()) : Optional.empty());
     }
 
+    /** The redirect's follow-up rides out of the transaction with the resolution. */
+    private static Resolution submitted(
+            PaymentOutcomes.Applied applied, PaymentAttemptId attemptId) {
+        return new Resolution(
+                true,
+                applied.acting() ? Optional.of(applied.attempt()) : Optional.empty(),
+                applied.voidPending() ? Optional.of(attemptId) : Optional.empty());
+    }
+
     private Resolution applyStage(
             Connection uow,
             boolean authStage,
@@ -552,6 +598,19 @@ public final class PaymentSweeper {
                             intent.amount(),
                             correlation));
         }
+        if (current.status() == PaymentAttemptStatus.VOID_UNKNOWN) {
+            return submitted(
+                    outcomes.applyVoid(
+                            uow,
+                            intent.id(),
+                            current.id(),
+                            current.status(),
+                            verdict,
+                            answer.providerReference(),
+                            correlation));
+        }
+        // A capture stage's DECLINED may redirect into the void (P7-TSK-004): the follow-up
+        // send rides out with the resolution, performed after this transaction commits.
         return submitted(
                 outcomes.applyCapture(
                         uow,
@@ -564,7 +623,8 @@ public final class PaymentSweeper {
                         // The capture is the authorized promise, in full (one attempt, no
                         // partial capture until its producer exists - ADR-0045 §4).
                         current.authorizedAmount(),
-                        correlation));
+                        correlation),
+                current.id());
     }
 
     private Resolution markUnknown(

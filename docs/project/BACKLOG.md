@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (1 of 18 items complete, M7.1 at
-1 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (4 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 1 of 2) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -8570,7 +8570,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   future-version test. Evidence: `CURRENT_STATE.md` §Just completed, `MUTATION_TESTING.md`
   §2/§3, the change log's dated row.
 
-**P7-TSK-004 — The card void: the revocable half of `INV-REV-03`** — `READY`
+**P7-TSK-004 — The card void: the revocable half of `INV-REV-03`** — `COMPLETE` (2026-09-26)
 - **Objective**: a reversal the card rail honours, performed: an uncaptured authorization is voided
   at the provider rather than left to lapse.
 - **Bounded context**: Payments (9).
@@ -8599,7 +8599,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   irrevocable rail is refused by the domain with nothing written or sent.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P7-TSK-005 — Card clearing evidence** — `PLANNED`
+**P7-TSK-005 — Card clearing evidence** — `READY`
 - **Objective**: the card rail's later facts preserved for Phase 8 — clearing recorded, never
   mistaken for settlement.
 - **Bounded context**: Payments (9); feeds Settlement (13) in Phase 8.

@@ -135,6 +135,19 @@ public enum PaymentsAuditAction implements AuditableAction {
             "payments.PaymentRoutingExplanationRead",
             "An operator read a payment's routing explanation; the record names the intent"
                     + " and the decision.",
+            false),
+
+    /**
+     * A void was dispatched (`P7-TSK-004`): the release of an uncaptured authorization,
+     * committed with its minted reference before the provider is asked ({@code INV-PAY-04}).
+     * The actor is the customer withdrawing their own authorized payment, the operator (whose
+     * reason is recorded verbatim), or the platform performing the declined-capture redirect;
+     * the outcome that follows is the platform's ({@link #PAYMENT_OUTCOME_APPLIED}).
+     */
+    PAYMENT_VOID_DISPATCHED(
+            "payments.PaymentVoidDispatched",
+            "A void of an uncaptured authorization was dispatched; the record names the"
+                    + " intent, the attempt, the reference and the rail, never an amount.",
             false);
 
     private final String code;

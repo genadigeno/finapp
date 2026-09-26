@@ -348,6 +348,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // secret; here because the set is every schema REACHABLE from a
                         // request body. The TransferReversalRequest shape, at the refund.
                         "RefundRequest",
+                        // P7-TSK-004. Carries only a REASON (free prose by an operator,
+                        // bound for the audit record's reason column - RESTRICTED-FINANCIAL,
+                        // never rendered by any toString). No secret; here because the set
+                        // is every schema REACHABLE from a request body. The RefundRequest
+                        // shape, at the void.
+                        "VoidPaymentRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/

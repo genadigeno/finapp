@@ -90,6 +90,9 @@ public final class PaymentCapture {
     @NonNull private final ProviderEvidenceStore<Connection> evidence;
     @NonNull private final PaymentProvider provider;
     @NonNull private final PaymentOutcomes outcomes;
+
+    /** The redirect's finisher (`P7-TSK-004`): a declined capture's void, sent by this port-owning resolver. */
+    @NonNull private final PaymentVoid voids;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
@@ -151,8 +154,26 @@ public final class PaymentCapture {
                                     dispatch.authorization(),
                                     dispatch.amount()));
 
-            return transactions.inTransaction(
-                    uow -> applyCaptureOutcome(uow, dispatch, attemptId, answer, correlation));
+            Outcome outcome =
+                    transactions.inTransaction(
+                            uow ->
+                                    applyCaptureOutcome(
+                                            uow, dispatch, attemptId, answer, correlation));
+            if (outcome.voidToFinish()) {
+                // The declined capture redirected into the void (P7-TSK-004): this
+                // resolver owns a provider port, so it finishes what its outcome
+                // committed - AFTER that commit, on the finisher's own transactions,
+                // holding nothing of this one (ADR-0046; the database race suite caught
+                // the nested form reading its own uncommitted redirect on a second
+                // connection and converging on the stale row).
+                PaymentVoid.VoidResult voided = voids.completeDispatched(attemptId);
+                return new CaptureResult(
+                        voided.intent(),
+                        voided.attempt(),
+                        false,
+                        outcome.result().acting() || voided.acting());
+            }
+            return outcome.result();
         }
     }
 
@@ -240,7 +261,10 @@ public final class PaymentCapture {
      * ({@link PaymentOutcomes} — `P5-TSK-013`'s extraction: for APPROVED the transition, THE
      * POSTING and the intent's {@code SUCCEEDED} stay one commit, whichever resolver calls).
      */
-    private CaptureResult applyCaptureOutcome(
+    /** Tx2's yield: the committed answer, and whether a redirected void awaits its send. */
+    private record Outcome(CaptureResult result, boolean voidToFinish) {}
+
+    private Outcome applyCaptureOutcome(
             Connection uow,
             Dispatch dispatch,
             PaymentAttemptId attemptId,
@@ -272,7 +296,9 @@ public final class PaymentCapture {
                                         EvidenceKind.RESPONSE,
                                         bytes,
                                         Instant.now(clock)));
-        return new CaptureResult(
-                applied.intent(), applied.attempt(), false, applied.acting());
+        return new Outcome(
+                new CaptureResult(
+                        applied.intent(), applied.attempt(), false, applied.acting()),
+                applied.voidPending());
     }
 }

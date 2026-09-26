@@ -739,6 +739,11 @@ class PaymentAuthorizationDatabaseTest {
         }
 
         @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public QueryAnswer query(ProviderIdempotencyReference ourReference) {
             throw new UnsupportedOperationException();
         }
@@ -770,6 +775,11 @@ class PaymentAuthorizationDatabaseTest {
         @Override
         public ProviderAnswer refund(RefundRequest request) {
             return delegate.refund(request);
+        }
+
+        @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
+            return delegate.voidAuthorization(request);
         }
 
         @Override

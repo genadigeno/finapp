@@ -86,7 +86,7 @@ class PaymentCaptureTest {
                         SimulatedCardPspAdapter.RAIL.id(),
                         InteractionModel.TWO_STEP,
                         new ProviderIdempotencyReference("auth-" + IDS.next()), null,
-                        new ProviderReference("psp-auth-1"), AMOUNT, null, null, null,
+                        new ProviderReference("psp-auth-1"), AMOUNT, null, null, null, null, null,
                         PaymentAttemptStatus.AUTHORIZED, Instant.now(CLOCK));
         attempts.rows.put(authorized.id().value(), authorized);
     }
@@ -99,13 +99,7 @@ class PaymentCaptureTest {
     private PaymentCapture capture() {
         // The tripwire: a REAL PostingService and chart over stores with no database - any
         // touch explodes, so "nothing posted" is structural in this suite (class javadoc).
-        return new PaymentCapture(
-                runner,
-                intents,
-                attempts,
-                evidence,
-                provider,
-                new PaymentOutcomes(
+        PaymentOutcomes outcomes = new PaymentOutcomes(
                         intents,
                         attempts,
                         new com.finapp.payments.JdbcRefundStore(),
@@ -140,7 +134,26 @@ class PaymentCaptureTest {
                         (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS,
                         CLOCK,
-                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL))),
+                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+        return new PaymentCapture(
+                runner,
+                intents,
+                attempts,
+                evidence,
+                provider,
+                outcomes,
+                // The redirect's finisher (P7-TSK-004), over the same fakes.
+                new com.finapp.payments.PaymentVoid(
+                        runner,
+                        intents,
+                        attempts,
+                        evidence,
+                        provider,
+                        outcomes,
+                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        (uow, record) -> auditTrail.add(record),
+                        IDS,
+                        CLOCK),
                 (uow, record) -> auditTrail.add(record),
                 IDS,
                 CLOCK);
@@ -166,16 +179,28 @@ class PaymentCaptureTest {
     }
 
     @Test
-    @DisplayName("declined and refused-connection fail both rows; ambiguity posts nothing")
+    @DisplayName("a DECLINED capture on the void-declaring rail RELEASES the promise -"
+            + " redirected into the void and concluded VOIDED (P7-TSK-004); a refused"
+            + " connection fails both rows; ambiguity posts nothing")
     void nonApprovedVerdictsCommitTheirStates() {
         provider.answer = ProviderAnswer.declined("declined-bytes".getBytes());
         PaymentCapture.CaptureResult declined = capture().capture(authorized.id());
-        assertThat(declined.attempt()).isEqualTo(PaymentAttemptStatus.FAILED);
+        // The redirect (capability-gated on the STORED rail): the outcome transaction
+        // committed VOID_DISPATCHED with its minted reference, this port-owning resolver
+        // sent the void, and the release concluded the payment - the authorization is no
+        // longer held against the customer for a capture that will never happen.
+        assertThat(declined.attempt()).isEqualTo(PaymentAttemptStatus.VOIDED);
         assertThat(declined.intent()).isEqualTo(PaymentIntentStatus.FAILED);
-        assertThat(attempts.single().failureReason()).isEqualTo(PaymentFailureReason.DECLINED);
+        assertThat(provider.voidCalls).as("the redirect's send happened").isEqualTo(1);
+        assertThat(attempts.single().voidReference()).isNotNull();
+        assertThat(attempts.single().voidProviderReference()).isNotNull();
+        assertThat(attempts.single().failureReason())
+                .as("VOIDED is a release, not a failure - no mapped reason")
+                .isNull();
         assertThat(intents.rows.get(intent.id().value()).status())
                 .isEqualTo(PaymentIntentStatus.FAILED);
-        assertThat(events).anyMatch(e -> e.eventType().equals("payments.PaymentFailed"));
+        assertThat(events)
+                .anyMatch(e -> e.eventType().equals("payments.AuthorizationVoided"));
 
         reset();
         provider.answer = ProviderAnswer.nothingSent();
@@ -240,7 +265,7 @@ class PaymentCaptureTest {
             case AUTH_DISPATCHED ->
                     PaymentAttempt.rehydrate(
                             authorized.id(), intent.id(), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, authorized.authorizationReference(),
-                            null, null, null, null, null, null,
+                            null, null, null, null, null, null, null, null,
                             PaymentAttemptStatus.AUTH_DISPATCHED, authorized.createdAt());
             case CAPTURE_DISPATCHED ->
                     authorized.dispatchCapture(
@@ -316,6 +341,17 @@ class PaymentCaptureTest {
         @Override
         public ProviderAnswer refund(RefundRequest request) {
             throw new UnsupportedOperationException();
+        }
+
+        /** The declined-capture redirect's send (P7-TSK-004): scripted like the capture. */
+        ProviderAnswer voidAnswer =
+                ProviderAnswer.approved(new ProviderReference("psp-void-scripted"), "voided".getBytes());
+        int voidCalls;
+
+        @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
+            voidCalls++;
+            return voidAnswer;
         }
 
         @Override
@@ -460,6 +496,26 @@ class PaymentCaptureTest {
         public boolean markCaptureUnknown(Connection uow, PaymentAttemptId id) {
             return move(id, PaymentAttemptStatus.CAPTURE_DISPATCHED,
                     PaymentAttempt::captureOutcomeUnknown);
+        }
+
+        @Override
+        public boolean dispatchVoid(
+                Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
+                ProviderIdempotencyReference reference) {
+            return move(id, from, row -> row.dispatchVoid(reference));
+        }
+
+        @Override
+        public boolean voided(
+                Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
+                ProviderReference reference) {
+            return move(id, from, row -> row.voided(reference));
+        }
+
+        @Override
+        public boolean markVoidUnknown(Connection uow, PaymentAttemptId id) {
+            return move(id, PaymentAttemptStatus.VOID_DISPATCHED,
+                    PaymentAttempt::voidOutcomeUnknown);
         }
 
         @Override

@@ -75,15 +75,24 @@ twice), `DISPUTED` (Phase 7's lifecycle, not an intent state).
 ## 3. The attempt lifecycle (ADR-0045, ADR-0046)
 
 ```
-AUTH_DISPATCHED ──> AUTHORIZED ──> CAPTURE_DISPATCHED ──> CAPTURED
-     │    │                             │      │
-     │    └──> AUTH_UNKNOWN ──┐         │      └──> CAPTURE_UNKNOWN ──> CAPTURED
-     │              │         │         │                   │
-     └──> FAILED <──┘         └──> AUTHORIZED               └──> FAILED
+AUTH_DISPATCHED    -> AUTH_UNKNOWN | AUTHORIZED | FAILED
+AUTH_UNKNOWN       -> AUTHORIZED | FAILED
+AUTHORIZED         -> CAPTURE_DISPATCHED | VOID_DISPATCHED
+CAPTURE_DISPATCHED -> CAPTURE_UNKNOWN | CAPTURED | FAILED | VOID_DISPATCHED
+CAPTURE_UNKNOWN    -> CAPTURED | FAILED | VOID_DISPATCHED
+VOID_DISPATCHED    -> VOIDED | VOID_UNKNOWN | FAILED
+VOID_UNKNOWN       -> VOIDED | FAILED
+
+terminals: CAPTURED, VOIDED, FAILED
 ```
 
-Seven states: `AUTH_DISPATCHED`, `AUTH_UNKNOWN`, `AUTHORIZED`, `CAPTURE_DISPATCHED`,
-`CAPTURE_UNKNOWN`, `CAPTURED`, `FAILED`. Since `P7-TSK-001` every attempt also records its
+Ten states since `P7-TSK-004`: Phase 5's seven plus the void trio —
+`VOID_DISPATCHED`, `VOID_UNKNOWN`, `VOIDED` — the card rail's declared reversal
+performed (`INV-REV-03`'s revocable half, ADR-0059 §1). `AUTHORIZED -> FAILED` is
+deliberately NOT an edge: no producer exists — abandoning a promise is the void's own
+act — and a declined or never-received void lands `FAILED` from the void states.
+`CAPTURE_* -> VOID_DISPATCHED` is the declined-capture redirect: the promise released
+rather than left to lapse. Since `P7-TSK-001` every attempt also records its
 **rail** as a frozen birth fact (ADR-0059, payments `V011`): which way the money travels is
 stamped in the dispatching transaction, no writer can rewrite it, and every capability
 decision — the clearing position an outcome posts to, the mode a refund executes in — keys on
@@ -109,16 +118,25 @@ arrive with their rails' tasks; nothing dispatches on them yet.
   expiry metadata. No ledger effect (ADR-0048).
 - **`CAPTURED`** is stable with no outgoing edge — refunds reference it and bound
   themselves by it. Captured is **not settled** (`INV-SET-01`).
+- **`VOIDED`** is the release acknowledged (`P7-TSK-004`): the promise died, nothing was
+  taken, nothing posts and nothing needs reversing. The provider's acknowledgement is
+  stored exactly with this state, the intent concludes `FAILED`, and the attempt carries
+  no mapped reason — a release is not a failure of the attempt's own doing.
 - **`FAILED`** carries the **mapped, enumerated** reason (`INV-PAY-03`: never the provider's
   own code — that lives in the retained evidence).
 - A connection **refused before anything was sent** is knowledge, not ambiguity: the
   dispatch fails into `FAILED(PROVIDER_UNAVAILABLE)`. Anything after send is `*_UNKNOWN`.
+  **The void is the recorded exception** (`P7-TSK-004`): its refused connection concludes
+  NOTHING — the row rests `VOID_DISPATCHED` and any instance's permit-free re-send
+  releases it. Concluding `FAILED` would abandon a live promise one more send releases
+  for free, and re-releasing a released promise converges (the `V009` asymmetry,
+  recorded in `DISTRIBUTED_EXECUTION.md`).
 
-Absent with reasons: `VOIDED` (abandoning an authorization has no producer in the top-up
-flow — once owed to checkout expiry, which turned out not to need it: an expired session lets a
-landed capture complete late rather than voiding anything, ADR-0053 §5, and the void is the
-card rail's own reversal, `P7-TSK-004`, ADR-0059 — ADR-0045's follow-up as corrected at the
-Phase 6 → 7 transition; this line still said Phase 6 until `P7-TSK-001`'s gate), multi-attempt
+Absent with reasons — `VOIDED`'s long-owed arrival recorded first: absent through
+Phases 5 and 6 (no producer in the top-up flow; once owed to checkout expiry, which
+turned out not to need it, ADR-0053 §5), it shipped at `P7-TSK-004` as the card rail's
+declared reversal (ADR-0059) and is a state above, not an absence. Still absent:
+multi-attempt
 retry (the schema admits N
 attempts per intent with a one-live partial index as the arbiter, but Phase 5 ships exactly
 one attempt per intent: an automatic retry policy is a versioned artefact with nothing to

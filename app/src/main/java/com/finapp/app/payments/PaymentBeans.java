@@ -360,6 +360,37 @@ class PaymentBeans {
                 routingTelemetry);
     }
 
+    /**
+     * The void command (`P7-TSK-004`): the card rail's declared reversal, ADR-0046's
+     * choreography. Conditional like every provider-calling command; the capability check
+     * ({@code INV-REV-03}) is the command's own, from the stored rail's declaration.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.PaymentVoid paymentVoid(
+            TransactionRunner paymentTransactionRunner,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            PaymentProvider paymentProvider,
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            com.finapp.payments.PaymentRails paymentRails,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.PaymentVoid(
+                paymentTransactionRunner,
+                paymentIntentStore,
+                paymentAttemptStore,
+                providerEvidenceStore,
+                paymentProvider,
+                paymentOutcomes,
+                paymentRails,
+                auditWriter,
+                ids,
+                clock);
+    }
+
     @Bean
     @ConditionalOnProperty("finapp.payments.provider.url")
     com.finapp.payments.PaymentCapture paymentCapture(
@@ -369,6 +400,7 @@ class PaymentBeans {
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentProvider paymentProvider,
             com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            com.finapp.payments.PaymentVoid paymentVoid,
             AuditWriter<Connection> auditWriter,
             IdGenerator ids,
             Clock clock) {
@@ -379,6 +411,7 @@ class PaymentBeans {
                 providerEvidenceStore,
                 paymentProvider,
                 paymentOutcomes,
+                paymentVoid,
                 auditWriter,
                 ids,
                 clock);
@@ -398,6 +431,8 @@ class PaymentBeans {
                     paymentConfirmation,
             org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PaymentCapture>
                     paymentCapture,
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PaymentVoid>
+                    paymentVoid,
             org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PaymentRefund>
                     paymentRefundCommand,
             PaymentIntentStore<Connection> paymentIntentStore,
@@ -412,6 +447,7 @@ class PaymentBeans {
                 paymentCancellation,
                 paymentConfirmation,
                 paymentCapture,
+                paymentVoid,
                 paymentRefundCommand,
                 paymentIntentStore,
                 paymentAttemptStore,
@@ -526,6 +562,7 @@ class PaymentBeans {
             PaymentProvider paymentProvider,
             com.finapp.payments.PaymentOutcomes paymentOutcomes,
             com.finapp.payments.PaymentCapture paymentCapture,
+            com.finapp.payments.PaymentVoid paymentVoid,
             IdGenerator ids,
             Clock clock,
             @Value(PaymentSweeperSchedule.DISPATCHED_AGE) java.time.Duration dispatchedAge,
@@ -540,6 +577,7 @@ class PaymentBeans {
                 paymentProvider,
                 paymentOutcomes,
                 paymentCapture,
+                paymentVoid,
                 ids,
                 clock,
                 dispatchedAge,

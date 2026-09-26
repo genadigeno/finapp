@@ -70,6 +70,9 @@ public final class SimulatedCardPspAdapter implements PaymentProvider {
     public static final String AUTHORIZATIONS_PATH = "/authorizations";
     public static final String CAPTURES_PATH = "/captures";
     public static final String REFUNDS_PATH = "/refunds";
+
+    /** The void's own path (`P7-TSK-004`): releasing an authorization, never money. */
+    public static final String VOIDS_PATH = "/voids";
     /** Query prefix; the platform-minted reference is the path segment (`INV-PAY-04`). */
     public static final String OPERATIONS_PATH = "/operations/";
 
@@ -123,6 +126,18 @@ public final class SimulatedCardPspAdapter implements PaymentProvider {
                         + "\","
                         + amountOf(request.amount())
                         + "}");
+    }
+
+    @Override
+    public ProviderAnswer voidAuthorization(VoidRequest request) {
+        // No amount on the wire, deliberately: the void releases the whole authorization
+        // the provider reference names (P7-TSK-004).
+        return client.dispatch(
+                VOIDS_PATH,
+                request.reference(),
+                "{\"authorization\":\""
+                        + request.authorization().value()
+                        + "\"}");
     }
 
     @Override

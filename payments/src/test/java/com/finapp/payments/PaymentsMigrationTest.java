@@ -49,12 +49,18 @@ class PaymentsMigrationTest {
     /** V011: the rail joined the birth facts (V003 is applied history). */
     private static final String ATTEMPT_RAIL =
             "db/migration/payments/V011__the_attempt_records_its_rail.sql";
-    /** The attempt AND intent triggers' CURRENT definitions (P7-TSK-002). */
+    /** V013: routing policy, decision and availability (P7-TSK-003). */
     private static final String ROUTING =
             "db/migration/payments/V013__routing_policy_decision_and_availability.sql";
 
+    /** The intent trigger's CURRENT definition (P7-TSK-002); the attempt's moved on. */
     private static final String MODEL_MACHINES =
             "db/migration/payments/V012__the_machines_per_interaction_model.sql";
+
+    /** The attempt trigger, model CHECK and one-live predicate's CURRENT definitions
+     * (P7-TSK-004: the void joined the two-step machine). */
+    private static final String VOID =
+            "db/migration/payments/V014__the_card_void.sql";
 
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
@@ -67,23 +73,34 @@ class PaymentsMigrationTest {
     }
 
     @Test
-    @DisplayName("the attempt's status CHECKs are generated from the machines - V012 holds the"
-            + " current definitions (V003 is applied history)")
+    @DisplayName("the attempt's status CHECKs are generated from the machines - V014 holds the"
+            + " current definitions (V003, V011 and V012 are applied history)")
     void attemptStatusChecksMatchTheEnum() {
-        // V003 was written against the seven-state vocabulary; the enum widened at
-        // P7-TSK-002, so the reconciliation follows the constraints to V012: the row's
-        // status binds vocabulary AND model in one CHECK, each list generated from
-        // InteractionModel.sqlStatusList(), and the history's from/to take the whole
-        // vocabulary (edge legality is the trigger's, and the models' vocabularies bind
-        // each other on the row).
-        String all = PaymentAttemptStatus.sqlValueList();
+        // V012 bound vocabulary AND model in one CHECK, each list generated from what
+        // InteractionModel.sqlStatusList() said THEN: the eleven-value vocabulary and the
+        // seven-state two-step machine. The enum widened again at P7-TSK-004, so V012's
+        // lists freeze here as applied history and the live reconciliation follows the
+        // constraints to V014.
+        String elevenValues = "'AUTH_DISPATCHED', 'AUTH_UNKNOWN', 'AUTHORIZED',"
+                + " 'CAPTURE_DISPATCHED', 'CAPTURE_UNKNOWN', 'CAPTURED', 'FAILED',"
+                + " 'AWAITING_PAYER', 'EXECUTION_DISPATCHED', 'EXECUTION_UNKNOWN',"
+                + " 'EXECUTED'";
         assertThat(migration(MODEL_MACHINES))
                 .contains("CHECK (interaction_model IN (" + InteractionModel.sqlValueList()
                         + "))")
+                .contains("CHECK (from_status IN (" + elevenValues + "))")
+                .contains("CHECK (to_status IN (" + elevenValues + "))")
+                .contains("AND status IN ('AUTH_DISPATCHED', 'AUTH_UNKNOWN', 'AUTHORIZED',"
+                        + " 'CAPTURE_DISPATCHED', 'CAPTURE_UNKNOWN', 'CAPTURED', 'FAILED')")
+                .contains("AND status IN (" + InteractionModel.PUSH.sqlStatusList() + ")")
+                .contains("AND status IN (" + InteractionModel.BOOK.sqlStatusList() + ")");
+        // V014: the current definitions, generated from the live machine.
+        String all = PaymentAttemptStatus.sqlValueList();
+        assertThat(migration(VOID))
                 .contains("CHECK (from_status IN (" + all + "))")
                 .contains("CHECK (to_status IN (" + all + "))");
         for (InteractionModel model : InteractionModel.values()) {
-            assertThat(migration(MODEL_MACHINES))
+            assertThat(migration(VOID))
                     .contains("(interaction_model = '" + model.name() + "'")
                     .contains("status IN (" + model.sqlStatusList() + ")");
         }
@@ -120,11 +137,10 @@ class PaymentsMigrationTest {
                         .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
                                 .stream().map(Enum::name).collect(Collectors.toList()))));
         // The attempt's V003 and V011 functions are applied history holding the two-step
-        // machine; V012 holds the current, model-keyed definition (P7-TSK-002). Each file's
-        // conditions are generated from the machine that was current when it was written -
-        // InteractionModel.TWO_STEP's, which is Phase 5's verbatim.
-        assertEdges(migration(ATTEMPT), InteractionModel.TWO_STEP.statuses().size(),
-                twoStepEdgeNames());
+        // machine as it stood when each was written - Phase 5's seven states, frozen
+        // below: the live machine gained the void at P7-TSK-004, and an applied file
+        // cannot follow it.
+        assertEdges(migration(ATTEMPT), 7, phaseFiveTwoStepEdgeNames());
         assertEdges(migration(REFUND), RefundStatus.values().length,
                 java.util.Arrays.stream(RefundStatus.values())
                         .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
@@ -139,23 +155,44 @@ class PaymentsMigrationTest {
         // V011 REPLACED the attempt's function (P7-TSK-001: the rail joined the birth facts):
         // the current definition must carry the machine's edges too, or it could drift from
         // the enum while V003 - applied history - still matched.
-        assertEdges(migration(ATTEMPT_RAIL), InteractionModel.TWO_STEP.statuses().size(),
-                twoStepEdgeNames());
-        // V012: each model's own edges, in the one model-keyed disjunction.
+        assertEdges(migration(ATTEMPT_RAIL), 7, phaseFiveTwoStepEdgeNames());
+        // V012's two-step disjunction is applied history - Phase 5's machine verbatim;
+        // its push and book arms still match the live models, which have not widened.
+        assertEdges(migration(MODEL_MACHINES), 7, phaseFiveTwoStepEdgeNames());
+        assertEdges(migration(MODEL_MACHINES), InteractionModel.PUSH.statuses().size(),
+                edgeNames(InteractionModel.PUSH));
+        assertEdges(migration(MODEL_MACHINES), InteractionModel.BOOK.statuses().size(),
+                edgeNames(InteractionModel.BOOK));
+        // V014 REPLACED the function (P7-TSK-004: the void joined the two-step machine):
+        // the current definition carries every model's live edges.
         for (InteractionModel model : InteractionModel.values()) {
-            assertEdges(migration(MODEL_MACHINES), model.statuses().size(),
-                    model.edges().entrySet().stream()
-                            .collect(Collectors.toMap(entry -> entry.getKey().name(),
-                                    entry -> entry.getValue().stream().map(Enum::name)
-                                            .collect(Collectors.toList()))));
+            assertEdges(migration(VOID), model.statuses().size(), edgeNames(model));
         }
     }
 
-    private static java.util.Map<String, java.util.List<String>> twoStepEdgeNames() {
-        return InteractionModel.TWO_STEP.edges().entrySet().stream()
+    private static java.util.Map<String, java.util.List<String>> edgeNames(
+            InteractionModel model) {
+        return model.edges().entrySet().stream()
                 .collect(Collectors.toMap(entry -> entry.getKey().name(),
                         entry -> entry.getValue().stream().map(Enum::name)
                                 .collect(Collectors.toList())));
+    }
+
+    /**
+     * Phase 5's seven-state two-step machine, frozen: V003, V011 and V012 are applied
+     * history written against it. Target order is what {@code permittedTransitions()}
+     * iterated when those files were generated - declaration order, then as now.
+     */
+    private static java.util.Map<String, java.util.List<String>> phaseFiveTwoStepEdgeNames() {
+        return java.util.Map.of(
+                "AUTH_DISPATCHED", java.util.List.of("AUTH_UNKNOWN", "AUTHORIZED", "FAILED"),
+                "AUTH_UNKNOWN", java.util.List.of("AUTHORIZED", "FAILED"),
+                "AUTHORIZED", java.util.List.of("CAPTURE_DISPATCHED"),
+                "CAPTURE_DISPATCHED",
+                        java.util.List.of("CAPTURE_UNKNOWN", "CAPTURED", "FAILED"),
+                "CAPTURE_UNKNOWN", java.util.List.of("CAPTURED", "FAILED"),
+                "CAPTURED", java.util.List.of(),
+                "FAILED", java.util.List.of());
     }
 
     @Test
@@ -276,6 +313,50 @@ class PaymentsMigrationTest {
     }
 
     @Test
+    @DisplayName("V014's void clauses are pinned: the two facts' shapes from the reference"
+            + " types, uniqueness, the payload freeze for every writer, the stage shapes"
+            + " with FAILED's three, the acknowledgement pair, and the narrowed grant"
+            + " (P7-TSK-004)")
+    void theVoidClausesArePinned() {
+        assertThat(migration(VOID))
+                // OUR reference and the provider's, each shaped by its own type's bound
+                // (the auth_reference / auth_provider_reference split, V003's discipline).
+                .contains("CHECK (void_reference ~ '^[A-Za-z0-9-]{1,"
+                        + ProviderIdempotencyReference.MAX_LENGTH + "}$')")
+                .contains("CHECK (void_provider_reference ~ '^[A-Za-z0-9_.:-]{1,"
+                        + ProviderReference.MAX_LENGTH + "}$')")
+                // One void, one acknowledgement, platform-wide - the capture's discipline.
+                .contains("ADD CONSTRAINT payment_attempt_void_reference_is_unique"
+                        + " UNIQUE (void_reference)")
+                .contains("CONSTRAINT payment_attempt_void_provider_reference_is_unique")
+                // The payload freeze admits the two new columns for EVERY writer.
+                .contains("OR (OLD.void_reference IS NOT NULL AND NEW.void_reference"
+                        + " IS DISTINCT FROM OLD.void_reference)")
+                .contains("OR (OLD.void_provider_reference IS NOT NULL AND"
+                        + " NEW.void_provider_reference IS DISTINCT FROM"
+                        + " OLD.void_provider_reference)")
+                // The stage shapes: a void state holds the promise and OUR reference and
+                // never a captured pair; FAILED has exactly three legal shapes.
+                .contains("WHEN 'VOID_DISPATCHED'    THEN authorized_amount_minor IS NOT NULL"
+                        + " AND void_reference IS NOT NULL AND captured_amount_minor IS NULL")
+                .contains("WHEN 'FAILED'             THEN (void_reference IS NOT NULL"
+                        + " AND authorized_amount_minor IS NOT NULL)")
+                .contains("OR (void_reference IS NULL AND (authorized_amount_minor IS NULL)"
+                        + " = (capture_reference IS NULL))")
+                // The acknowledgement exactly when VOIDED, both directions.
+                .contains(
+                        "ADD CONSTRAINT payment_attempt_void_ack_arrives_exactly_when_voided")
+                .contains("CHECK ((status = 'VOIDED') = (void_provider_reference"
+                        + " IS NOT NULL))")
+                // The foreign-model wall re-ADDed with the void's columns in its list.
+                .contains("AND void_reference IS NULL\n"
+                        + "                AND void_provider_reference IS NULL))")
+                // The app writes exactly the two new payload columns - no wider grant.
+                .contains("GRANT UPDATE (void_reference, void_provider_reference)\n"
+                        + "    ON payments.payment_attempt TO finapp_app;");
+    }
+
+    @Test
     @DisplayName("the in-flight index's predicate is the intent machine's own non-terminal set"
             + " (V010)")
     void theInFlightIndexPredicateIsGeneratedFromTheMachine() {
@@ -299,10 +380,14 @@ class PaymentsMigrationTest {
     }
 
     @Test
-    @DisplayName("the one-live-attempt predicate is generated from the terminal list - V012"
-            + " holds the current definition (EXECUTED joined the terminals, P7-TSK-002)")
+    @DisplayName("the one-live-attempt predicate is generated from the terminal list - V014"
+            + " holds the current definition (VOIDED joined the terminals, P7-TSK-004)")
     void oneLiveAttemptPredicateMatchesTheTerminals() {
+        // V012's index is applied history, written when the terminals were three.
         assertThat(migration(MODEL_MACHINES))
+                .contains("CREATE UNIQUE INDEX payment_attempt_one_live_per_intent")
+                .contains("WHERE status NOT IN ('CAPTURED', 'FAILED', 'EXECUTED')");
+        assertThat(migration(VOID))
                 .contains("CREATE UNIQUE INDEX payment_attempt_one_live_per_intent")
                 .contains("WHERE status NOT IN ("
                         + PaymentAttemptStatus.sqlTerminalValueList() + ")");

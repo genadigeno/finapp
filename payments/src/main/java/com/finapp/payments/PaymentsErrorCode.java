@@ -186,7 +186,20 @@ public enum PaymentsErrorCode implements ErrorCode {
     ROUTING_POLICY_NOT_FORWARD(
             "payments.RoutingPolicyNotForward",
             422,
-            "A routing policy version takes effect forward, never backward.");
+            "A routing policy version takes effect forward, never backward."),
+
+    /**
+     * A reversal was asked of a rail whose declared capabilities do not list it
+     * (`P7-TSK-004`, `INV-REV-03`): refused before anything is written or sent, never
+     * attempted-and-failed at a provider.
+     *
+     * <p>A {@code 409}: well formed, refused by what the rail IS — the remedy, where one
+     * exists, is a refund after completion, not a retry of the impossible.
+     */
+    REVERSAL_NOT_SUPPORTED(
+            "payments.ReversalNotSupported",
+            409,
+            "This payment's rail does not support reversal.");
 
     private final String code;
     private final int status;

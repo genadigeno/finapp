@@ -258,7 +258,7 @@ class PaymentsSchemaDatabaseTest {
             + " sweep, expectations derived from the enum (P7-TSK-002, ADR-0059)")
     void theMachinesBindEveryWriterEdgeByEdge() throws Exception {
         // The migrator is the writer no grant can bind, so the trigger is the rank on trial.
-        // For EACH model, every (from, to) pair of the FULL eleven-state vocabulary runs
+        // For EACH model, every (from, to) pair of the FULL fourteen-state vocabulary runs
         // against a fresh row per pair, and exactly the model's own edges succeed - the
         // DB-rank reconciliation of InteractionModel.edges(), the same machine that generated
         // the trigger's disjunction. Cross-model moves are inside the cross-product (a
@@ -318,6 +318,8 @@ class PaymentsSchemaDatabaseTest {
             case CAPTURED -> ", capture_provider_reference = 'psp-cap-swp-" + IDS.next()
                     + "', captured_amount_minor = 1000, captured_currency = 'EUR',"
                     + " captured_scale = 2";
+            case VOID_DISPATCHED -> ", void_reference = 'void-swp-" + IDS.next() + "'";
+            case VOIDED -> ", void_provider_reference = 'psp-void-swp-" + IDS.next() + "'";
             case FAILED -> ", failure_reason = 'DECLINED'";
             default -> "";
         };
@@ -453,6 +455,32 @@ class PaymentsSchemaDatabaseTest {
     }
 
     @Test
+    @DisplayName("VOIDED frees the one-live-per-intent slot exactly as the other terminals do"
+            + " (V014's regenerated predicate, P7-TSK-004)")
+    void voidedFreesTheOneLiveSlot() throws Exception {
+        UUID intent = IDS.next();
+        UUID running = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "PROCESSING");
+            insertAttempt(app, running, intent, "VOID_DISPATCHED");
+            // The slot is held while the release is in flight...
+            assertSqlState(UNIQUE_VIOLATION, () -> insertAttempt(
+                    app, IDS.next(), intent, "AUTH_DISPATCHED"));
+            // ...and VOIDED frees it: the fourth terminal is IN the generated predicate. A
+            // hand-list that missed it would hold the intent's slot forever.
+            try (PreparedStatement release = app.prepareStatement(
+                    "UPDATE payments.payment_attempt SET status = 'VOIDED',"
+                            + " void_provider_reference = ? WHERE id = ?")) {
+                release.setString(1, "psp-void-slot-" + IDS.next());
+                release.setObject(2, running);
+                assertThat(release.executeUpdate()).isEqualTo(1);
+            }
+            assertThatCode(() -> insertAttempt(app, IDS.next(), intent, "AUTH_DISPATCHED"))
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    @Test
     @DisplayName("the interaction model and the capture mode are frozen among the birth facts"
             + " for every writer, the migrator included (V012)")
     void theModelAndCaptureModeAreFrozenForEveryWriter() throws Exception {
@@ -548,6 +576,49 @@ class PaymentsSchemaDatabaseTest {
             assertCheck(migrator, intent, "AUTHORIZED", attempt -> {
                 attempt.authorizedMinor = -1000L;
             }, "payment_attempt_amounts_are_positive");
+
+            // The void's shapes (P7-TSK-004, V014): a void state without OUR reference, and
+            // the FAILED void without the promise it tried to release.
+            assertCheck(migrator, intent, "VOID_DISPATCHED", attempt -> {
+                attempt.voidReference = null;
+            }, "payment_attempt_stage_facts_match_status");
+            assertCheck(migrator, intent, "FAILED", attempt -> {
+                attempt.voidReference = "void-orphan-" + IDS.next();
+            }, "payment_attempt_stage_facts_match_status");
+            // A void reference on a capture-stage row - the redirect is a STATE, not a flag.
+            assertCheck(migrator, intent, "CAPTURE_DISPATCHED", attempt -> {
+                attempt.voidReference = "void-early-" + IDS.next();
+            }, "payment_attempt_stage_facts_match_status");
+            // The acknowledgement exactly when VOIDED, both directions.
+            assertCheck(migrator, intent, "VOIDED", attempt -> {
+                attempt.voidProviderReference = null;
+            }, "payment_attempt_void_ack_arrives_exactly_when_voided");
+            assertCheck(migrator, intent, "VOID_UNKNOWN", attempt -> {
+                attempt.voidProviderReference = "psp-void-early-" + IDS.next();
+            }, "payment_attempt_void_ack_arrives_exactly_when_voided");
+
+            // No void fact rides another model's row (V014's re-ADDed wall).
+            assertThatThrownBy(() -> {
+                try (PreparedStatement insert = migrator.prepareStatement(
+                        "INSERT INTO payments.payment_attempt (id, intent_id, status,"
+                                + " created_at, rail, interaction_model, void_reference)"
+                                + " VALUES (?, ?, 'AWAITING_PAYER', now(), 'push-test',"
+                                + " 'PUSH', ?)")) {
+                    insert.setObject(1, IDS.next());
+                    insert.setObject(2, intent);
+                    insert.setString(3, "void-foreign-" + IDS.next());
+                    insert.executeUpdate();
+                }
+            })
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(failure -> {
+                        assertThat(((SQLException) failure).getSQLState())
+                                .isEqualTo(CHECK_VIOLATION);
+                        assertThat(failure.getMessage())
+                                .contains(
+                                        "payment_attempt_foreign_model_carries_no_two_step"
+                                                + "_facts");
+                    });
         }
     }
 
@@ -892,6 +963,8 @@ class PaymentsSchemaDatabaseTest {
         String captureReference;
         String captureProviderReference;
         Long capturedMinor;
+        String voidReference;
+        String voidProviderReference;
         String reason;
     }
 
@@ -952,6 +1025,17 @@ class PaymentsSchemaDatabaseTest {
                 attempt.captureProviderReference = "psp-cap-" + IDS.next();
                 attempt.capturedMinor = 1000L;
             }
+            case "VOID_DISPATCHED", "VOID_UNKNOWN" -> {
+                attempt.authProviderReference = "psp-auth-" + IDS.next();
+                attempt.authorizedMinor = 1000L;
+                attempt.voidReference = "void-" + IDS.next();
+            }
+            case "VOIDED" -> {
+                attempt.authProviderReference = "psp-auth-" + IDS.next();
+                attempt.authorizedMinor = 1000L;
+                attempt.voidReference = "void-" + IDS.next();
+                attempt.voidProviderReference = "psp-void-" + IDS.next();
+            }
             case "FAILED" -> attempt.reason = "DECLINED";
             default -> throw new IllegalArgumentException(status);
         }
@@ -990,8 +1074,10 @@ class PaymentsSchemaDatabaseTest {
                         + " capture_provider_reference, authorized_amount_minor,"
                         + " authorized_currency, authorized_scale, captured_amount_minor,"
                         + " captured_currency, captured_scale, failure_reason, status,"
-                        + " created_at, rail, interaction_model)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        + " created_at, rail, interaction_model, void_reference,"
+                        + " void_provider_reference)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                        + " ?)")) {
             insert.setObject(1, id);
             insert.setObject(2, intent);
             insert.setString(3, "auth-" + id);
@@ -1009,6 +1095,8 @@ class PaymentsSchemaDatabaseTest {
             insert.setTimestamp(15, Timestamp.from(Instant.now()));
             insert.setString(16, "card");
             insert.setString(17, "TWO_STEP");
+            insert.setString(18, attempt.voidReference);
+            insert.setString(19, attempt.voidProviderReference);
             insert.executeUpdate();
         }
     }

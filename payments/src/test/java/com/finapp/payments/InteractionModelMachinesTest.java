@@ -136,7 +136,7 @@ class InteractionModelMachinesTest {
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS),
                         RailId.of("push-test"), InteractionModel.PUSH, null, null,
-                        new ProviderReference("psp-x"), AMOUNT, null, null, null,
+                        new ProviderReference("psp-x"), AMOUNT, null, null, null, null, null,
                         PaymentAttemptStatus.AWAITING_PAYER, Instant.now(CLOCK)))
                 .as("a push row holding the issuer's promise")
                 .isInstanceOf(IllegalArgumentException.class)
@@ -174,6 +174,8 @@ class InteractionModelMachinesTest {
                 model,
                 authorizationReference,
                 null, null, null, null, null,
+                null,
+                null,
                 status == PaymentAttemptStatus.FAILED
                         ? PaymentFailureReason.PROVIDER_UNAVAILABLE
                         : null,

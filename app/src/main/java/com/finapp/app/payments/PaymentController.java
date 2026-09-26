@@ -120,6 +120,23 @@ public class PaymentController {
         return payments.refundPayment(parsedOrAbsent(id), body, idempotencyKey);
     }
 
+    /**
+     * The operator's reasoned void of an uncaptured authorization (`P7-TSK-004`): the refund
+     * surface's shape — the URL names somebody else's payment, the wall is
+     * {@code PAYMENT_REFUND} (the money-operating population; releasing a promise is that
+     * desk's judgement exactly as taking money back is). Converges by machine; a rail
+     * without the reversal answers 409 {@code payments.ReversalNotSupported} with nothing
+     * written or sent ({@code INV-REV-03}). No idempotency key, deliberately: the void is
+     * state-driven like the capture — the conditional out of AUTHORIZED admits one, and a
+     * retry converges on the machine's truth.
+     */
+    @PostMapping(path = "/{id}/void", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.PAYMENT_REFUND)
+    public PaymentService.PaymentView voidPayment(
+            @PathVariable("id") String id, @Valid @RequestBody VoidPaymentRequest body) {
+        return payments.operatorVoid(parsedOrAbsent(id), body.reason());
+    }
+
     /** The caller's payment — its current state, the mapped reason included when it failed. */
     @GetMapping("/{id}")
     public PaymentService.PaymentView findPayment(

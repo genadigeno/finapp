@@ -55,9 +55,10 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
                     entry("DELETE /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
                     entry("POST /v1/ledger/adjustments/{id}/approval", PermissionName.LEDGER_ADJUST),
-                    // Transfer reversal (Phase 4) and refund (Phase 5)
+                    // Transfer reversal (Phase 4), refund (Phase 5), void (P7-TSK-004)
                     entry("POST /v1/transfers/{id}/reversal", PermissionName.TRANSFER_REVERSE),
                     entry("POST /v1/payments/{id}/refund", PermissionName.PAYMENT_REFUND),
+                    entry("POST /v1/payments/{id}/void", PermissionName.PAYMENT_REFUND),
                     // Merchant onboarding and administration (Phase 6)
                     entry("POST /v1/operator/merchants", PermissionName.MERCHANT_ONBOARD),
                     entry("GET /v1/operator/merchants/{id}", PermissionName.MERCHANT_ADMINISTER),

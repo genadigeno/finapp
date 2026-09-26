@@ -358,6 +358,7 @@ class OpenApiContractTest {
                         // P5-TSK-015: the privileged refund - PAYMENT_REFUND at the boundary,
                         // the reason and the key required, hold-then-post beneath.
                         ApiVersion.CURRENT_PREFIX + "/payments/{id}/refund",
+                        ApiVersion.CURRENT_PREFIX + "/payments/{id}/void",
                         // P6-TSK-003: the counterparty's operator surface - onboarding behind
                         // MERCHANT_ONBOARD and keyed (a duplicate would be a second merchant
                         // AND a second payable account), the read and the three reasoned

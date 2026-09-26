@@ -24,7 +24,7 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                     + " capture_provider_reference, authorized_amount_minor,"
                     + " authorized_currency, authorized_scale, captured_amount_minor,"
                     + " captured_currency, captured_scale, failure_reason, status, created_at,"
-                    + " rail, interaction_model";
+                    + " rail, interaction_model, void_reference, void_provider_reference";
 
     /** {@link #COLUMNS}, each qualified as {@code a.<column>} — for the joined reads. */
     private static String qualified() {
@@ -38,7 +38,7 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.payment_attempt (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, attempt.id().value());
             insert.setObject(2, attempt.intentId().value());
             insert.setString(
@@ -69,6 +69,14 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
             insert.setTimestamp(15, Timestamp.from(attempt.createdAt()));
             insert.setString(16, attempt.rail().value());
             insert.setString(17, attempt.interactionModel().name());
+            insert.setString(
+                    18,
+                    attempt.voidReference() == null ? null : attempt.voidReference().value());
+            insert.setString(
+                    19,
+                    attempt.voidProviderReference() == null
+                            ? null
+                            : attempt.voidProviderReference().value());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -138,9 +146,11 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                                 // reference, which a push row does not even carry - its
                                 // resolution arrives with its rail (P7-TSK-006, -009).
                                 + " WHERE a.interaction_model = 'TWO_STEP'"
-                                + " AND ((a.status IN ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED')"
+                                + " AND ((a.status IN ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED',"
+                                + "                    'VOID_DISPATCHED')"
                                 + "        AND COALESCE(h.entered, a.created_at) <= ?)"
-                                + "    OR (a.status IN ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN')"
+                                + "    OR (a.status IN ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN',"
+                                + "                     'VOID_UNKNOWN')"
                                 + "        AND COALESCE(h.entered, a.created_at) <= ?))"
                                 + " ORDER BY a.created_at, a.id"
                                 + " LIMIT ?")) {
@@ -230,10 +240,12 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                                 // payer's PSP is not stuck by our clock (P7-TSK-009 owns
                                 // its ageing).
                                 + " WHERE a.status IN"
-                                + "     ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN', 'EXECUTION_UNKNOWN')"
+                                + "     ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN', 'EXECUTION_UNKNOWN',"
+                                + "      'VOID_UNKNOWN')"
                                 + "    OR (a.status IN"
                                 + "          ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED',"
-                                + "           'EXECUTION_DISPATCHED', 'AUTHORIZED')"
+                                + "           'EXECUTION_DISPATCHED', 'AUTHORIZED',"
+                                + "           'VOID_DISPATCHED')"
                                 + "        AND COALESCE(h.entered, a.created_at)"
                                 + "            <= now() - make_interval(secs => ?))")) {
             read.setLong(1, dispatchedBound.toSeconds());
@@ -351,6 +363,67 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
             throw new PaymentsStorageException(
                     DatabaseFailure.describe(
                             "marking the capture of attempt " + attempt + " unknown", failure));
+        }
+    }
+
+    @Override
+    public boolean dispatchVoid(
+            Connection unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderIdempotencyReference reference) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.payment_attempt SET status = ?, void_reference = ?"
+                                + " WHERE id = ? AND status = ?")) {
+            update.setString(1, PaymentAttemptStatus.VOID_DISPATCHED.name());
+            update.setString(2, reference.value());
+            update.setObject(3, attempt.value());
+            update.setString(4, from.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "dispatching the void of attempt " + attempt, failure));
+        }
+    }
+
+    @Override
+    public boolean voided(
+            Connection unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderReference providerReference) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.payment_attempt SET status = ?,"
+                                + " void_provider_reference = ? WHERE id = ? AND status = ?")) {
+            update.setString(1, PaymentAttemptStatus.VOIDED.name());
+            update.setString(2, providerReference.value());
+            update.setObject(3, attempt.value());
+            update.setString(4, from.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "concluding the void of attempt " + attempt, failure));
+        }
+    }
+
+    @Override
+    public boolean markVoidUnknown(Connection unitOfWork, PaymentAttemptId attempt) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.payment_attempt SET status = ?"
+                                + " WHERE id = ? AND status = ?")) {
+            update.setString(1, PaymentAttemptStatus.VOID_UNKNOWN.name());
+            update.setObject(2, attempt.value());
+            update.setString(3, PaymentAttemptStatus.VOID_DISPATCHED.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "marking the void of attempt " + attempt + " unknown", failure));
         }
     }
 
@@ -483,6 +556,8 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         String captureReference = row.getString("capture_reference");
         String authProviderReference = row.getString("auth_provider_reference");
         String captureProviderReference = row.getString("capture_provider_reference");
+        String voidReference = row.getString("void_reference");
+        String voidProviderReference = row.getString("void_provider_reference");
         String reason = row.getString("failure_reason");
         return PaymentAttempt.rehydrate(
                 PaymentAttemptId.of(row.getObject("id", UUID.class)),
@@ -502,6 +577,12 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                         ? null
                         : new ProviderReference(captureProviderReference),
                 readMoney(row, "captured_amount_minor", "captured_currency", "captured_scale"),
+                voidReference == null
+                        ? null
+                        : new ProviderIdempotencyReference(voidReference),
+                voidProviderReference == null
+                        ? null
+                        : new ProviderReference(voidProviderReference),
                 reason == null ? null : PaymentFailureReason.valueOf(reason),
                 PaymentAttemptStatus.valueOf(row.getString("status")),
                 row.getTimestamp("created_at").toInstant());

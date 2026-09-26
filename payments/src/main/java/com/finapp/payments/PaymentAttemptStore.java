@@ -108,6 +108,27 @@ public interface PaymentAttemptStore<T> {
     /** {@code CAPTURE_DISPATCHED → CAPTURE_UNKNOWN} — the second {@code INV-LIFE-03} state. */
     boolean markCaptureUnknown(T unitOfWork, PaymentAttemptId attempt);
 
+    /**
+     * {@code from → VOID_DISPATCHED}, the void's idempotency reference arriving with the
+     * transition (`P7-TSK-004`, {@code INV-PAY-04}): from {@code AUTHORIZED} (a cancellation,
+     * an operator) or a capture stage (the declined-capture redirect).
+     */
+    boolean dispatchVoid(
+            T unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderIdempotencyReference reference);
+
+    /** {@code from → VOIDED}, the provider's acknowledgement arriving with the transition. */
+    boolean voided(
+            T unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderReference providerReference);
+
+    /** {@code VOID_DISPATCHED → VOID_UNKNOWN} ({@code INV-LIFE-03}). */
+    boolean markVoidUnknown(T unitOfWork, PaymentAttemptId attempt);
+
     /** {@code from → AUTHORIZED}, the issuer's promise arriving with the transition. */
     boolean authorize(
             T unitOfWork,

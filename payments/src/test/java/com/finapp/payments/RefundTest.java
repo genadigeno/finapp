@@ -333,7 +333,7 @@ class RefundTest {
                 new ProviderReference("psp-auth-1"),
                 CAPTURED,
                 new ProviderReference("psp-cap-1"),
-                CAPTURED,
+                CAPTURED, null, null,
                 null,
                 PaymentAttemptStatus.CAPTURED,
                 Instant.now(CLOCK));
@@ -350,7 +350,7 @@ class RefundTest {
                 new ProviderReference("psp-auth-2"),
                 CAPTURED,
                 null,
-                null,
+                null, null, null,
                 null,
                 PaymentAttemptStatus.AUTHORIZED,
                 Instant.now(CLOCK));

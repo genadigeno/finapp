@@ -444,6 +444,11 @@ class PaymentSweeperDatabaseTest {
                     }
 
                     @Override
+                    public ProviderAnswer voidAuthorization(VoidRequest request) {
+                        return delegate.voidAuthorization(request);
+                    }
+
+                    @Override
                     public QueryAnswer query(ProviderIdempotencyReference ourReference) {
                         if (ourReference.equals(poisoned.authorizationReference())) {
                             throw new IllegalStateException("poisoned row");
@@ -457,7 +462,8 @@ class PaymentSweeperDatabaseTest {
                         evidence, throwingForFirst, outcomes(),
                         new PaymentCapture(
                                 runner, intents, attempts, evidence, throwingForFirst, outcomes(),
-                                new JdbcAuditWriter(), IDS, CLOCK),
+                                voids(), new JdbcAuditWriter(), IDS, CLOCK),
+                        voids(),
                         IDS, CLOCK, DUE_NOW, DUE_NOW, 50);
 
         PaymentSweeper.SweepResult result = sweeper.sweep();
@@ -719,7 +725,7 @@ class PaymentSweeperDatabaseTest {
                                             .id());
             new PaymentCapture(
                             runner, intents, attempts, evidence, adapter(), outcomes(),
-                            new JdbcAuditWriter(), IDS, CLOCK)
+                            voids(), new JdbcAuditWriter(), IDS, CLOCK)
                     .capture(attemptId);
             assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURE_UNKNOWN");
             psp.reset();
@@ -730,13 +736,23 @@ class PaymentSweeperDatabaseTest {
         }
     }
 
+    /** The void command over the same stores (P7-TSK-004) - the capture idiom's sibling. */
+    private com.finapp.payments.PaymentVoid voids() {
+        return new com.finapp.payments.PaymentVoid(
+                runner, intents, attempts, evidence, adapter(), outcomes(),
+                com.finapp.payments.PaymentRails.of(
+                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcAuditWriter(), IDS, CLOCK);
+    }
+
     private PaymentSweeper sweeper(Duration dispatchedAge, Duration unknownAge) {
         return new PaymentSweeper(
                 runner, attempts, intents, new com.finapp.payments.JdbcRefundStore(), evidence,
                 adapter(), outcomes(),
                 new PaymentCapture(
                         runner, intents, attempts, evidence, adapter(), outcomes(),
-                        new JdbcAuditWriter(), IDS, CLOCK),
+                        voids(), new JdbcAuditWriter(), IDS, CLOCK),
+                voids(),
                 IDS, CLOCK, dispatchedAge, unknownAge, 50);
     }
 

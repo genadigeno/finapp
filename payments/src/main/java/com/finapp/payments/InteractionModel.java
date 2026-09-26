@@ -61,13 +61,32 @@ public enum InteractionModel {
                 edges.put(PaymentAttemptStatus.AUTH_UNKNOWN,
                         EnumSet.of(PaymentAttemptStatus.AUTHORIZED, PaymentAttemptStatus.FAILED));
                 edges.put(PaymentAttemptStatus.AUTHORIZED,
-                        EnumSet.of(PaymentAttemptStatus.CAPTURE_DISPATCHED));
+                        EnumSet.of(PaymentAttemptStatus.CAPTURE_DISPATCHED,
+                                PaymentAttemptStatus.VOID_DISPATCHED));
+                // The capture stages may enter the void (P7-TSK-004): a DECLINED capture on
+                // a VOID-declaring rail releases the standing authorization rather than
+                // leaving it to lapse - the redirect PaymentOutcomes performs, capability
+                // -gated, never by rail name (INV-RAIL-01).
                 edges.put(PaymentAttemptStatus.CAPTURE_DISPATCHED,
                         EnumSet.of(PaymentAttemptStatus.CAPTURED, PaymentAttemptStatus.FAILED,
-                                PaymentAttemptStatus.CAPTURE_UNKNOWN));
+                                PaymentAttemptStatus.CAPTURE_UNKNOWN,
+                                PaymentAttemptStatus.VOID_DISPATCHED));
                 edges.put(PaymentAttemptStatus.CAPTURE_UNKNOWN,
-                        EnumSet.of(PaymentAttemptStatus.CAPTURED, PaymentAttemptStatus.FAILED));
+                        EnumSet.of(PaymentAttemptStatus.CAPTURED, PaymentAttemptStatus.FAILED,
+                                PaymentAttemptStatus.VOID_DISPATCHED));
+                // The void trio (P7-TSK-004, ADR-0059 section 2 as refined by its
+                // implementing task): a DECLINED or never-received void lands FAILED from
+                // the void states - the drawn AUTHORIZED -> FAILED edge had no producer and
+                // is deliberately not implemented (the correction is recorded in the ADR
+                // and the lifecycle document with provenance).
+                edges.put(PaymentAttemptStatus.VOID_DISPATCHED,
+                        EnumSet.of(PaymentAttemptStatus.VOIDED, PaymentAttemptStatus.FAILED,
+                                PaymentAttemptStatus.VOID_UNKNOWN));
+                edges.put(PaymentAttemptStatus.VOID_UNKNOWN,
+                        EnumSet.of(PaymentAttemptStatus.VOIDED, PaymentAttemptStatus.FAILED));
                 edges.put(PaymentAttemptStatus.CAPTURED,
+                        EnumSet.noneOf(PaymentAttemptStatus.class));
+                edges.put(PaymentAttemptStatus.VOIDED,
                         EnumSet.noneOf(PaymentAttemptStatus.class));
                 edges.put(PaymentAttemptStatus.FAILED,
                         EnumSet.noneOf(PaymentAttemptStatus.class));

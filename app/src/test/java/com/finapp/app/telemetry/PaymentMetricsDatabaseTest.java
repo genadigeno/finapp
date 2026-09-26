@@ -137,6 +137,35 @@ class PaymentMetricsDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("the void states read on the same gauges: VOID_UNKNOWN at any age,"
+            + " VOID_DISPATCHED past the bound, a fresh dispatch never (P7-TSK-004)")
+    void theVoidStatesReadOnTheSameGauges() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            PaymentAttemptStore.UnknownReading before = attempts.unknownReading(app, BOUND);
+
+            // An ambiguous release counts the moment it exists: the promise may or may not
+            // still stand, and only the query resolves it.
+            UUID unknown = seedVoidAttempt(app, "VOID_UNKNOWN", "1 minute");
+            UUID aged = seedVoidAttempt(app, "VOID_DISPATCHED", "1 hour");
+            // The control: a fresh void dispatch is mid-question.
+            UUID fresh = seedVoidAttempt(app, "VOID_DISPATCHED", "1 minute");
+
+            PaymentAttemptStore.UnknownReading after = attempts.unknownReading(app, BOUND);
+            assertThat(after.active() - before.active())
+                    .as("the young ambiguous void and the aged dispatch; not the fresh one")
+                    .isEqualTo(2);
+
+            // Concluded on the way out: this database is persistent and shared, and a
+            // parked VOID_DISPATCHED left behind would be re-sent by every later suite's
+            // sweep (the re-send leg exists precisely for stranded rows) - a gauge
+            // fixture must not become another suite's candidate.
+            for (UUID seeded : new UUID[] {unknown, aged, fresh}) {
+                concludeVoidSeed(app, seeded);
+            }
+        }
+    }
+
     // -----------------------------------------------------------------
 
     /** A minimal attempt row in {@code status}, with its state entered {@code ago} ago. */
@@ -278,6 +307,50 @@ class PaymentMetricsDatabaseTest {
                 from,
                 status);
         return attempt;
+    }
+
+    /** A void-stage row, seeded through legal edges only - the machine's own path. */
+    private UUID seedVoidAttempt(Connection app, String status, String ago)
+            throws SQLException {
+        UUID attempt = seedAttempt(app, "AUTHORIZED", ago);
+        execute(
+                app,
+                "UPDATE payments.payment_attempt SET status = 'VOID_DISPATCHED',"
+                        + " void_reference = ? WHERE id = ?",
+                "void-gauge-" + IDS.next(),
+                attempt);
+        String from = "AUTHORIZED";
+        String to = "VOID_DISPATCHED";
+        if (status.equals("VOID_UNKNOWN")) {
+            execute(
+                    app,
+                    "UPDATE payments.payment_attempt SET status = 'VOID_UNKNOWN'"
+                            + " WHERE id = ?",
+                    attempt);
+            from = "VOID_DISPATCHED";
+            to = "VOID_UNKNOWN";
+        }
+        execute(
+                app,
+                "INSERT INTO payments.payment_attempt_event (attempt_id, from_status,"
+                        + " to_status, actor_id, actor_type, occurred_at)"
+                        + " VALUES (?, ?, ?, 'platform', 'PLATFORM',"
+                        + " now() - INTERVAL '" + ago + "')",
+                attempt,
+                from,
+                to);
+        return attempt;
+    }
+
+    /** VOIDED via the machine's own edge, so the row stops being anyone's candidate. */
+    private void concludeVoidSeed(Connection app, UUID attempt) throws SQLException {
+        execute(
+                app,
+                "UPDATE payments.payment_attempt SET status = 'VOIDED',"
+                        + " void_provider_reference = ? WHERE id = ?"
+                        + " AND status IN ('VOID_DISPATCHED', 'VOID_UNKNOWN')",
+                "psp-void-gauge-" + IDS.next(),
+                attempt);
     }
 
     private static void execute(Connection connection, String sql, Object... arguments)

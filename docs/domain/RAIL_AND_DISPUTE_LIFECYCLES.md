@@ -87,15 +87,29 @@ settlement (on the scheme's cycle) and return (a new payment).
 
 ## 3. The attempt's three machines (ADR-0059 §2)
 
-**Two-step (card)** — Phase 5's machine, extended by the void:
+**Two-step (card)** — Phase 5's machine, extended by the void (`P7-TSK-004`, shipped;
+the lists are exactly `InteractionModel.edges()`, which `V014` regenerates into the
+schema):
 
 ```
-AUTH_DISPATCHED ─> AUTH_UNKNOWN ─> AUTHORIZED ─> CAPTURE_DISPATCHED ─> CAPTURE_UNKNOWN ─> CAPTURED
-       │                 │              │                 │                    │
-       └─────────────────┴──> FAILED    ├─> VOID_DISPATCHED ─> VOID_UNKNOWN ─> VOIDED
-                                        │                 └──────────────────> VOIDED
-                                        └─> FAILED
+AUTH_DISPATCHED    -> AUTH_UNKNOWN | AUTHORIZED | FAILED
+AUTH_UNKNOWN       -> AUTHORIZED | FAILED
+AUTHORIZED         -> CAPTURE_DISPATCHED | VOID_DISPATCHED
+CAPTURE_DISPATCHED -> CAPTURE_UNKNOWN | CAPTURED | FAILED | VOID_DISPATCHED
+CAPTURE_UNKNOWN    -> CAPTURED | FAILED | VOID_DISPATCHED
+VOID_DISPATCHED    -> VOIDED | VOID_UNKNOWN | FAILED
+VOID_UNKNOWN       -> VOIDED | FAILED
+
+terminals: CAPTURED, VOIDED, FAILED
 ```
+
+Two edges deserve their provenance. `AUTHORIZED -> FAILED`, drawn in this section's first
+version, was removed by the implementing task: no producer exists — abandoning a promise
+is the void's own act, and a declined or never-received void lands `FAILED` from the void
+states, carrying its mapped reason. `CAPTURE_* -> VOID_DISPATCHED` is the
+**declined-capture redirect**: on a rail whose declared reversals contain `VOID`, a
+declined capture releases the standing authorization instead of leaving it to lapse
+against the customer's funds.
 
 **Push (instant, A2A)**:
 
@@ -111,13 +125,13 @@ waits for that PSP's answer — never for our clock. A withdrawal and a return p
 
 **Book (wallet)**: born `EXECUTED` or `FAILED` inside the confirmation's transaction.
 
-**Status (`P7-TSK-002`)**: the three machines are code — `InteractionModel.edges()`
-owns them, payments `V012` regenerates the schema's `CHECK`s and every-writer edge
-trigger from them, and the model is a frozen birth fact on every attempt row. The
-two-step machine runs end to end; the push and book **operations** (doors, payload
-columns, births) arrive with their rails (`P7-TSK-006`, `-009`, `-011`), the void's
-states with `P7-TSK-004` — until then the two-step diagram above shows the void edges
-as ADR-0059 declares them, not as shipped code.
+**Status (`P7-TSK-004`)**: the three machines are code — `InteractionModel.edges()`
+owns them, payments `V014` regenerates the schema's `CHECK`s and every-writer edge
+trigger from them (`V012` is applied history), and the model is a frozen birth fact on
+every attempt row. The two-step machine runs end to end INCLUDING the void — both
+doors, the declined-capture redirect, the sweep's re-send and query legs; the push and
+book **operations** (doors, payload columns, births) arrive with their rails
+(`P7-TSK-006`, `-009`, `-011`).
 
 ## 4. The routing decision (ADR-0060)
 

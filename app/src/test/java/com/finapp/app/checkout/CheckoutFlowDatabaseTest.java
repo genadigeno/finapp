@@ -106,6 +106,7 @@ class CheckoutFlowDatabaseTest {
     @Autowired private com.finapp.payments.PaymentProvider paymentProvider;
     @Autowired private com.finapp.payments.PaymentOutcomes paymentOutcomes;
     @Autowired private com.finapp.payments.PaymentCapture paymentCapture;
+    @Autowired private com.finapp.payments.PaymentVoid paymentVoid;
     @Autowired private com.finapp.payments.RefundStore<java.sql.Connection> refundStore;
     @Autowired private com.finapp.platform.audit.AuditWriter<java.sql.Connection> auditWriter;
     @Autowired private com.finapp.platform.outbox.OutboxWriter<java.sql.Connection> outboxWriter;
@@ -512,6 +513,7 @@ class CheckoutFlowDatabaseTest {
                 paymentProvider,
                 paymentOutcomes,
                 paymentCapture,
+                paymentVoid,
                 IDS,
                 CLOCK,
                 java.time.Duration.ofNanos(1_000),

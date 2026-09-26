@@ -170,6 +170,18 @@ class SystemActorCallSitesAreEnumeratedTest {
                                 + " provider's decision. The scope wraps only Tx2, the outcome"
                                 + " application."),
                     Map.entry(
+                            "com.finapp.payments.PaymentVoid.completeDispatched",
+                            "The void outcome's transaction (P7-TSK-004): the dispatch is"
+                                + " audited as its own actor - the cancelling customer or the"
+                                + " reasoned operator - in Tx1, but the provider's answer has"
+                                + " no session (the P5-TSK-009 reasoning, sixth occurrence),"
+                                + " and the same outcome the sweeper's re-send or a racing"
+                                + " finisher may apply is already the platform's act, so"
+                                + " attributing VOIDED/VOID_UNKNOWN/FAILED to the dispatching"
+                                + " caller would record them as the author of the provider's"
+                                + " decision. The scope wraps only Tx2, the outcome"
+                                + " application."),
+                    Map.entry(
                             "com.finapp.checkout.CheckoutExpirySweeper.sweep",
                     "The expiry sweep (P6-TSK-008, ADR-0053 section 4): a deadline passing is"
                         + " the CLEANEST case on the platform of the P5-TSK-009 reasoning,"

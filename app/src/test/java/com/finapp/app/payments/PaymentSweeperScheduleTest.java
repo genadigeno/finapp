@@ -213,6 +213,12 @@ class PaymentSweeperScheduleTest {
                         ids(),
                         java.time.Clock.systemUTC(),
                         com.finapp.payments.PaymentRails.of(java.util.List.of(com.finapp.payments.SimulatedCardPspAdapter.RAIL)));
+        com.finapp.payments.PaymentVoid voids =
+                new com.finapp.payments.PaymentVoid(
+                        runner, intents, attempts, evidence, provider, outcomes,
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(
+                                com.finapp.payments.SimulatedCardPspAdapter.RAIL)),
+                        (uow, record) -> {}, ids(), java.time.Clock.systemUTC());
         return new PaymentSweeper(
                 runner,
                 attempts,
@@ -230,9 +236,11 @@ class PaymentSweeperScheduleTest {
                         evidence,
                         provider,
                         outcomes,
+                        voids,
                         (uow, record) -> {},
                         ids(),
                         java.time.Clock.systemUTC()),
+                voids,
                 ids(),
                 java.time.Clock.systemUTC(),
                 dispatchedAge,
@@ -264,6 +272,11 @@ class PaymentSweeperScheduleTest {
 
         @Override
         public com.finapp.payments.ProviderAnswer refund(RefundRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public com.finapp.payments.ProviderAnswer voidAuthorization(VoidRequest request) {
             throw new UnsupportedOperationException();
         }
 

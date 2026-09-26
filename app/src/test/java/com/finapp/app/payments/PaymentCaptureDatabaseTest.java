@@ -267,22 +267,31 @@ class PaymentCaptureDatabaseTest {
     }
 
     @Test
-    @DisplayName("declined fails both rows with nothing posted; the customer's answer is honest")
-    void declinedFailsBothRows() throws Exception {
+    @DisplayName("a DECLINED capture on the void-declaring rail RELEASES the promise: the"
+            + " redirect concludes VOIDED with nothing posted (P7-TSK-004)")
+    void declinedIsRedirectedIntoTheVoid() throws Exception {
         Holder holder = holder();
         PaymentAttemptId attempt = authorizedAttempt(holder);
         psp.succeedsWith(
                 SimulatedCardPspAdapter.CAPTURES_PATH,
                 200,
                 "{\"status\":\"declined\",\"reason\":\"limit_exceeded\"}");
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.VOIDS_PATH,
+                200,
+                APPROVED_BODY.formatted("void-redirect"));
 
         PaymentCapture.CaptureResult result = capture(adapter()).capture(attempt);
 
-        assertThat(result.attempt()).isEqualTo(PaymentAttemptStatus.FAILED);
+        assertThat(result.attempt()).isEqualTo(PaymentAttemptStatus.VOIDED);
         assertThat(result.intent()).isEqualTo(PaymentIntentStatus.FAILED);
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(attempts.findById(app, attempt).orElseThrow().failureReason())
-                    .isEqualTo(PaymentFailureReason.DECLINED);
+            PaymentAttempt released = attempts.findById(app, attempt).orElseThrow();
+            assertThat(released.voidReference()).isNotNull();
+            assertThat(released.voidProviderReference()).isNotNull();
+            assertThat(released.failureReason())
+                    .as("VOIDED is a release, not a failure - no mapped reason")
+                    .isNull();
             // The ROW, not the result object: the mutation that drops the intent's write
             // while still CLAIMING FAILED in the return value is exactly what an in-memory
             // assertion cannot see (found by this gate's own battery).
@@ -528,12 +537,7 @@ class PaymentCaptureDatabaseTest {
     }
 
     private PaymentCapture capture(PaymentProvider provider, OutboxWriter<Connection> outbox) {
-        return new PaymentCapture(
-                runner,
-                intents,
-                attempts,
-                evidence,
-                provider,
+        com.finapp.payments.PaymentOutcomes outcomes =
                 new com.finapp.payments.PaymentOutcomes(
                         intents,
                         attempts,
@@ -589,7 +593,19 @@ class PaymentCaptureDatabaseTest {
                         outbox,
                         IDS,
                         CLOCK,
-                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL))),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+        return new PaymentCapture(
+                runner,
+                intents,
+                attempts,
+                evidence,
+                provider,
+                outcomes,
+                new com.finapp.payments.PaymentVoid(
+                        runner, intents, attempts, evidence, provider, outcomes,
+                        com.finapp.payments.PaymentRails.of(
+                                java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        new JdbcAuditWriter(), IDS, CLOCK),
                 new JdbcAuditWriter(),
                 IDS,
                 CLOCK);
@@ -702,6 +718,11 @@ class PaymentCaptureDatabaseTest {
 
         @Override
         public ProviderAnswer refund(RefundRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
             throw new UnsupportedOperationException();
         }
 

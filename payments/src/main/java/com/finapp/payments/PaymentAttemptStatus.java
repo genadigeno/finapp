@@ -115,7 +115,28 @@ public enum PaymentAttemptStatus {
      * the book machine, whose rows are born here. Terminal by structure, in the one-live
      * index's predicate with the other two.
      */
-    EXECUTED;
+    EXECUTED,
+
+    /**
+     * The void's dispatch is committed (`P7-TSK-004`, ADR-0046's discipline on the card
+     * rail's reversal): our void reference is minted and stored before the provider is
+     * asked to release the authorization ({@code INV-PAY-04}). Entered from
+     * {@code AUTHORIZED} (a cancelled or operator-voided authorization) and from the capture
+     * stages (a DECLINED capture on a rail whose declared reversals contain {@code VOID} -
+     * the promise is released rather than left to lapse against the customer's funds).
+     */
+    VOID_DISPATCHED,
+
+    /** The void's outcome is unknown ({@code INV-LIFE-03}) - resolved by query, like every
+     * ambiguous operation. */
+    VOID_UNKNOWN,
+
+    /**
+     * The authorization is released at the issuer (`INV-REV-03`'s revocable half performed):
+     * the promise is gone, nothing was captured, nothing posts - a terminal with no ledger
+     * effect, in the one-live index's predicate with the other three.
+     */
+    VOIDED;
 
     /**
      * Whether no model's machine has an edge out of this state (`P7-TSK-002`: the machines
@@ -124,7 +145,7 @@ public enum PaymentAttemptStatus {
      */
     public boolean isTerminal() {
         return switch (this) {
-            case CAPTURED, FAILED, EXECUTED -> true;
+            case CAPTURED, FAILED, EXECUTED, VOIDED -> true;
             default -> false;
         };
     }

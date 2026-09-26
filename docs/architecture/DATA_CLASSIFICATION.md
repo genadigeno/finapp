@@ -560,6 +560,8 @@ them are classified at the ceiling regardless.
 | `payment_attempt` | `capture_reference` | `INTERNAL` | As `auth_reference` |
 | `payment_attempt` | `auth_provider_reference` | `CONFIDENTIAL` | The provider's name for one operation on a person's instrument (the section header's recorded distinction from the token: scoped to its own operation, it authorises nothing new). A fact about a person's payment, handled like `status` |
 | `payment_attempt` | `capture_provider_reference` | `CONFIDENTIAL` | As `auth_provider_reference` |
+| `payment_attempt` | `void_reference` | `INTERNAL` | As `auth_reference` — OUR minted reference for the release, stored before the send (`P7-TSK-004`, `INV-PAY-04`) |
+| `payment_attempt` | `void_provider_reference` | `CONFIDENTIAL` | As `auth_provider_reference` — the provider's acknowledgement of the release (`P7-TSK-004`) |
 | `payment_attempt` | `authorized_amount_minor` | `RESTRICTED-FINANCIAL` | The issuer's promised amount — a customer amount |
 | `payment_attempt` | `authorized_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
 | `payment_attempt` | `authorized_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |

@@ -70,6 +70,8 @@ public final class PaymentAttempt {
     private final Money authorizedAmount;
     private final ProviderReference captureProviderReference;
     private final Money capturedAmount;
+    private final ProviderIdempotencyReference voidReference;
+    private final ProviderReference voidProviderReference;
     private final PaymentFailureReason failureReason;
     private final PaymentAttemptStatus status;
     private final Instant createdAt;
@@ -85,6 +87,8 @@ public final class PaymentAttempt {
             Money authorizedAmount,
             ProviderReference captureProviderReference,
             Money capturedAmount,
+            ProviderIdempotencyReference voidReference,
+            ProviderReference voidProviderReference,
             PaymentFailureReason failureReason,
             PaymentAttemptStatus status,
             Instant createdAt) {
@@ -104,6 +108,8 @@ public final class PaymentAttempt {
         this.authorizedAmount = authorizedAmount;
         this.captureProviderReference = captureProviderReference;
         this.capturedAmount = capturedAmount;
+        this.voidReference = voidReference;
+        this.voidProviderReference = voidProviderReference;
         this.failureReason = failureReason;
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
@@ -131,7 +137,9 @@ public final class PaymentAttempt {
                         || authorizationProviderReference != null
                         || authorizedAmount != null
                         || captureProviderReference != null
-                        || capturedAmount != null)) {
+                        || capturedAmount != null
+                        || voidReference != null
+                        || voidProviderReference != null)) {
             throw new IllegalArgumentException(
                     "a " + interactionModel + " attempt carries no two-step fact: its own"
                             + " facts arrive with its rail's task (P7-TSK-002)");
@@ -155,12 +163,13 @@ public final class PaymentAttempt {
         // Which facts each stage requires and forbids - the machine's shape, held on the row.
         boolean authorized = authorizedAmount != null;
         boolean captureDispatched = captureReference != null;
+        boolean voidDispatched = voidReference != null;
         switch (status) {
             case AUTH_DISPATCHED, AUTH_UNKNOWN -> {
-                if (authorized || captureDispatched) {
+                if (authorized || captureDispatched || voidDispatched) {
                     throw new IllegalArgumentException(
                             "an attempt in " + status + " carries nothing beyond its birth"
-                                    + " facts - an authorization or capture fact here is"
+                                    + " facts - an authorization, capture or void fact here is"
                                     + " incoherent");
                 }
             }
@@ -170,10 +179,11 @@ public final class PaymentAttempt {
                             "an AUTHORIZED attempt must carry the issuer's promise - the"
                                     + " provider reference and authorized amount");
                 }
-                if (captureDispatched) {
+                if (captureDispatched || voidDispatched) {
                     throw new IllegalArgumentException(
-                            "an AUTHORIZED attempt has no capture reference yet -"
-                                    + " dispatchCapture is the act that mints it");
+                            "an AUTHORIZED attempt has no capture or void reference yet -"
+                                    + " dispatchCapture and dispatchVoid are the acts that"
+                                    + " mint them");
                 }
             }
             case CAPTURE_DISPATCHED, CAPTURE_UNKNOWN, CAPTURED -> {
@@ -182,19 +192,56 @@ public final class PaymentAttempt {
                             "an attempt in " + status + " must carry the authorization pair and"
                                     + " the capture's idempotency reference");
                 }
+                if (voidDispatched) {
+                    throw new IllegalArgumentException(
+                            "an attempt in " + status + " carries no void reference - the"
+                                    + " void, once dispatched, is the row's state"
+                                    + " (P7-TSK-004)");
+                }
+            }
+            case VOID_DISPATCHED, VOID_UNKNOWN, VOIDED -> {
+                // The void releases a standing authorization (P7-TSK-004): the promise is
+                // required; the capture reference MAY be present (the declined-capture
+                // redirect's history) but the captured pair never is - nothing was taken.
+                if (!authorized || !voidDispatched) {
+                    throw new IllegalArgumentException(
+                            "an attempt in " + status + " must carry the authorization pair"
+                                    + " and the void's idempotency reference (INV-PAY-04)");
+                }
+                if (capturedAmount != null) {
+                    throw new IllegalArgumentException(
+                            "a voided attempt captured nothing: a captured amount in "
+                                    + status + " is incoherent (INV-REV-03's whole premise)");
+                }
             }
             case FAILED -> {
-                // Two shapes and only two: failed at authorization (bare) or failed at capture
-                // (promise + capture reference). AUTHORIZED -> FAILED is not an edge - VOIDED's
-                // job, Phase 6 - so a FAILED row holding the promise without a capture dispatch
-                // was written by no path this machine permits.
-                if (authorized != captureDispatched) {
+                // Three shapes now (P7-TSK-004): failed at authorization (bare), failed at
+                // capture (promise + capture reference, no void), or failed at the void
+                // (promise + void reference; the capture reference may ride along from the
+                // declined-capture redirect). A FAILED row holding the promise with NEITHER
+                // a capture nor a void dispatch was written by no path this machine permits.
+                if (voidDispatched) {
+                    if (!authorized) {
+                        throw new IllegalArgumentException(
+                                "a FAILED void carries the authorization pair it tried to"
+                                        + " release - a void reference without the promise is"
+                                        + " incoherent");
+                    }
+                } else if (authorized != captureDispatched) {
                     throw new IllegalArgumentException(
                             "a FAILED attempt failed at authorization (no authorization facts)"
                                     + " or at capture (authorization pair and capture reference"
-                                    + " both present) - this row is neither shape");
+                                    + " both present) or at the void (void reference present) -"
+                                    + " this row is none of those shapes");
                 }
             }
+        }
+
+        // The void's provider acknowledgement exists exactly when VOIDED, both directions.
+        if ((voidProviderReference != null) != (status == PaymentAttemptStatus.VOIDED)) {
+            throw new IllegalArgumentException(
+                    "an attempt carries the void's provider reference exactly when VOIDED -"
+                            + " status " + status + " is incoherent with what this row holds");
         }
 
         // Captured amount <=> capture provider reference <=> CAPTURED, both directions.
@@ -260,7 +307,7 @@ public final class PaymentAttempt {
                 // other models' births arrive with their rails' tasks (P7-TSK-002).
                 InteractionModel.TWO_STEP,
                 authorizationReference,
-                null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null,
                 PaymentAttemptStatus.AUTH_DISPATCHED,
                 Instant.now(clock));
     }
@@ -280,13 +327,16 @@ public final class PaymentAttempt {
             Money authorizedAmount,
             ProviderReference captureProviderReference,
             Money capturedAmount,
+            ProviderIdempotencyReference voidReference,
+            ProviderReference voidProviderReference,
             PaymentFailureReason failureReason,
             PaymentAttemptStatus status,
             Instant createdAt) {
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
-                capturedAmount, failureReason, status, createdAt);
+                capturedAmount, voidReference, voidProviderReference, failureReason,
+                status, createdAt);
     }
 
     /** The issuer's promise arrived: reference and amount together, one fact. */
@@ -295,6 +345,7 @@ public final class PaymentAttempt {
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 providerReference, amount, captureProviderReference, capturedAmount,
+                voidReference, voidProviderReference,
                 failureReason, PaymentAttemptStatus.AUTHORIZED, createdAt);
     }
 
@@ -304,7 +355,8 @@ public final class PaymentAttempt {
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
-                capturedAmount, failureReason, PaymentAttemptStatus.AUTH_UNKNOWN, createdAt);
+                capturedAmount, voidReference, voidProviderReference, failureReason,
+                PaymentAttemptStatus.AUTH_UNKNOWN, createdAt);
     }
 
     /** The capture dispatch, its idempotency reference minted by this act ({@code INV-PAY-04}). */
@@ -314,8 +366,8 @@ public final class PaymentAttempt {
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, reference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
-                capturedAmount, failureReason, PaymentAttemptStatus.CAPTURE_DISPATCHED,
-                createdAt);
+                capturedAmount, voidReference, voidProviderReference, failureReason,
+                PaymentAttemptStatus.CAPTURE_DISPATCHED, createdAt);
     }
 
     /** The capture's outcome is unknown — the second {@code INV-LIFE-03} state. */
@@ -324,7 +376,8 @@ public final class PaymentAttempt {
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
-                capturedAmount, failureReason, PaymentAttemptStatus.CAPTURE_UNKNOWN, createdAt);
+                capturedAmount, voidReference, voidProviderReference, failureReason,
+                PaymentAttemptStatus.CAPTURE_UNKNOWN, createdAt);
     }
 
     /**
@@ -336,6 +389,7 @@ public final class PaymentAttempt {
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, providerReference, amount,
+                voidReference, voidProviderReference,
                 failureReason, PaymentAttemptStatus.CAPTURED, createdAt);
     }
 
@@ -346,7 +400,46 @@ public final class PaymentAttempt {
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
-                capturedAmount, reason, PaymentAttemptStatus.FAILED, createdAt);
+                capturedAmount, voidReference, voidProviderReference, reason,
+                PaymentAttemptStatus.FAILED, createdAt);
+    }
+
+    /**
+     * The void dispatch (`P7-TSK-004`): our reference minted by this act and stored with the
+     * transition, before the provider is asked to release the authorization
+     * ({@code INV-PAY-04}). Legal from {@code AUTHORIZED} (a cancellation, an operator) and
+     * from the capture stages (the declined-capture redirect, capability-gated by the
+     * caller - this door holds the machine, {@code PaymentOutcomes} holds the capability).
+     */
+    public PaymentAttempt dispatchVoid(ProviderIdempotencyReference reference) {
+        Objects.requireNonNull(reference, "the void's idempotency reference must not be null");
+        requireLegal(PaymentAttemptStatus.VOID_DISPATCHED);
+        return new PaymentAttempt(
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
+                authorizationProviderReference, authorizedAmount, captureProviderReference,
+                capturedAmount, reference, voidProviderReference, failureReason,
+                PaymentAttemptStatus.VOID_DISPATCHED, createdAt);
+    }
+
+    /** The provider released the authorization: the void's acknowledgement, one fact. */
+    public PaymentAttempt voided(ProviderReference providerReference) {
+        Objects.requireNonNull(providerReference, "the void's provider reference must not be null");
+        requireLegal(PaymentAttemptStatus.VOIDED);
+        return new PaymentAttempt(
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
+                authorizationProviderReference, authorizedAmount, captureProviderReference,
+                capturedAmount, voidReference, providerReference, failureReason,
+                PaymentAttemptStatus.VOIDED, createdAt);
+    }
+
+    /** The void's outcome is unknown — the third {@code INV-LIFE-03} state on this machine. */
+    public PaymentAttempt voidOutcomeUnknown() {
+        requireLegal(PaymentAttemptStatus.VOID_UNKNOWN);
+        return new PaymentAttempt(
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
+                authorizationProviderReference, authorizedAmount, captureProviderReference,
+                capturedAmount, voidReference, voidProviderReference, failureReason,
+                PaymentAttemptStatus.VOID_UNKNOWN, createdAt);
     }
 
     /** The machine's one check ({@code INV-LIFE-02}), whichever door the transition arrives by. */
@@ -390,6 +483,17 @@ public final class PaymentAttempt {
     }
 
     /** Minted by {@link #dispatchCapture}; {@code null} until then. */
+    /** Our void reference (`P7-TSK-004`, {@code INV-PAY-04}) — stored beside the
+     * authorization's for reconciliation, minted by {@link #dispatchVoid}. */
+    public ProviderIdempotencyReference voidReference() {
+        return voidReference;
+    }
+
+    /** The provider's acknowledgement of the release — exactly when {@code VOIDED}. */
+    public ProviderReference voidProviderReference() {
+        return voidProviderReference;
+    }
+
     public ProviderIdempotencyReference captureReference() {
         return captureReference;
     }

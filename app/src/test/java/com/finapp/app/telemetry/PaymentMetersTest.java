@@ -53,7 +53,8 @@ class PaymentMetersTest {
                         .map(timer -> timer.getId().getTag("operation"))
                         .collect(Collectors.toCollection(TreeSet::new));
         assertThat(operations)
-                .containsExactlyInAnyOrder("authorize", "capture", "refund", "query");
+                .containsExactlyInAnyOrder(
+                        "authorize", "capture", "refund", "query", "void");
 
         assertThat(registry.find(PaymentMeters.ATTEMPT).counters())
                 .allSatisfy(counter -> assertThat(counter.count()).isZero());
@@ -104,6 +105,11 @@ class PaymentMetersTest {
 
                     @Override
                     public ProviderAnswer refund(RefundRequest request) {
+                        throw new UnsupportedOperationException("not exercised here");
+                    }
+
+                    @Override
+                    public ProviderAnswer voidAuthorization(VoidRequest request) {
                         throw new UnsupportedOperationException("not exercised here");
                     }
 

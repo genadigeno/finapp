@@ -63,6 +63,14 @@ public interface PaymentProvider {
     ProviderAnswer refund(RefundRequest request);
 
     /**
+     * Asks the provider to void (release) a previously approved, uncaptured authorization
+     * (`P7-TSK-004`, ADR-0059 §1: the card rail's declared reversal). Idempotent at the
+     * provider by our reference — releasing a released promise is a converged no-op — which
+     * is what lets any instance re-send a stranded void without a permit.
+     */
+    ProviderAnswer voidAuthorization(VoidRequest request);
+
+    /**
      * Asks the provider what happened to the operation <strong>our</strong> reference names —
      * ADR-0046's resolution by query. Read-only and idempotent at the provider, so every
      * instance may ask concurrently: no lease, no leader.
@@ -114,6 +122,19 @@ public interface PaymentProvider {
                     + ", "
                     + amount.currency()
                     + "]";
+        }
+    }
+
+    /**
+     * A void dispatch: our reference and the authorization's provider reference. No amount,
+     * structurally — a void releases the WHOLE promise (partial captures are out of
+     * `P7-TSK-004`'s scope, and a partial release is not a thing the card rail offers).
+     */
+    record VoidRequest(
+            ProviderIdempotencyReference reference, ProviderReference authorization) {
+        public VoidRequest {
+            Objects.requireNonNull(reference, "reference must not be null");
+            Objects.requireNonNull(authorization, "authorization must not be null");
         }
     }
 

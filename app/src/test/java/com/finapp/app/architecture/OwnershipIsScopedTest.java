@@ -948,6 +948,35 @@ class OwnershipIsScopedTest {
                                     "As JdbcPaymentAttemptStore.capture - the honest-ambiguity"
                                         + " edge, nothing posted (INV-LIFE-03).")),
                     Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.dispatchVoid",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentVoid.voidAuthorized",
+                                    "The void dispatch's conditional write (P7-TSK-004):"
+                                        + " AUTHORIZED -> VOID_DISPATCHED with the minted"
+                                        + " reference, the row count arbitrating the race"
+                                        + " against the capture chain - on the identifier the"
+                                        + " command just read behind the intent's owner-scoped"
+                                        + " read (the customer door) or the operator's"
+                                        + " PAYMENT_REFUND wall. The redirect's writer is the"
+                                        + " outcome transaction, same discipline.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.voided",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentVoid.completeDispatched",
+                                    "The void outcome's conditional write (P7-TSK-004): the"
+                                        + " same minted identifier, carried across the"
+                                        + " provider call - the release acknowledged, nothing"
+                                        + " posted.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.markVoidUnknown",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentVoid.completeDispatched",
+                                    "As JdbcPaymentAttemptStore.voided - the honest-ambiguity"
+                                        + " edge, nothing concluded (INV-LIFE-03).")),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentAttemptStore.authorize",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

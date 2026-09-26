@@ -55,20 +55,36 @@ class PaymentAttemptTest {
         assertThat(twoStep.get(PaymentAttemptStatus.AUTH_UNKNOWN))
                 .containsExactlyInAnyOrder(
                         PaymentAttemptStatus.AUTHORIZED, PaymentAttemptStatus.FAILED);
-        // AUTHORIZED has exactly ONE exit. AUTHORIZED -> FAILED is not an edge: abandoning an
-        // authorization is the void's job, the card rail's own reversal (`P7-TSK-004`,
-        // ADR-0059) — an edge added here is that decision taken silently.
+        // AUTHORIZED exits to the capture and to the void, and STILL never to FAILED
+        // directly (P7-TSK-004): abandoning an authorization is the void's job, performed
+        // now - a direct AUTHORIZED -> FAILED edge would have no producer, and the drawn
+        // one in ADR-0059's first diagram was corrected by its implementing task. A
+        // declined or never-received void lands FAILED from the VOID states.
         assertThat(twoStep.get(PaymentAttemptStatus.AUTHORIZED))
-                .as("AUTHORIZED exits only to CAPTURE_DISPATCHED (no void yet, P7-TSK-004)")
-                .containsExactly(PaymentAttemptStatus.CAPTURE_DISPATCHED);
+                .as("AUTHORIZED exits to the capture and the void, never FAILED directly")
+                .containsExactlyInAnyOrder(
+                        PaymentAttemptStatus.CAPTURE_DISPATCHED,
+                        PaymentAttemptStatus.VOID_DISPATCHED);
+        // The capture stages may enter the void: the declined-capture redirect releases
+        // the promise instead of leaving it to lapse (P7-TSK-004).
         assertThat(twoStep.get(PaymentAttemptStatus.CAPTURE_DISPATCHED))
                 .containsExactlyInAnyOrder(
                         PaymentAttemptStatus.CAPTURED,
                         PaymentAttemptStatus.FAILED,
-                        PaymentAttemptStatus.CAPTURE_UNKNOWN);
+                        PaymentAttemptStatus.CAPTURE_UNKNOWN,
+                        PaymentAttemptStatus.VOID_DISPATCHED);
         assertThat(twoStep.get(PaymentAttemptStatus.CAPTURE_UNKNOWN))
                 .containsExactlyInAnyOrder(
-                        PaymentAttemptStatus.CAPTURED, PaymentAttemptStatus.FAILED);
+                        PaymentAttemptStatus.CAPTURED, PaymentAttemptStatus.FAILED,
+                        PaymentAttemptStatus.VOID_DISPATCHED);
+        assertThat(twoStep.get(PaymentAttemptStatus.VOID_DISPATCHED))
+                .containsExactlyInAnyOrder(
+                        PaymentAttemptStatus.VOIDED, PaymentAttemptStatus.FAILED,
+                        PaymentAttemptStatus.VOID_UNKNOWN);
+        assertThat(twoStep.get(PaymentAttemptStatus.VOID_UNKNOWN))
+                .containsExactlyInAnyOrder(
+                        PaymentAttemptStatus.VOIDED, PaymentAttemptStatus.FAILED);
+        assertThat(twoStep.get(PaymentAttemptStatus.VOIDED)).isEmpty();
 
         // CAPTURED is the attempt's stable state: NO outgoing edge. Refunds reference the
         // captured attempt and never transition it (ADR-0045) — the SUCCEEDED pin's argument,
@@ -78,8 +94,8 @@ class PaymentAttemptTest {
                 .isEmpty();
         assertThat(twoStep.get(PaymentAttemptStatus.FAILED)).isEmpty();
         assertThat(twoStep.keySet())
-                .as("the two-step vocabulary is exactly Phase 5's seven")
-                .hasSize(7);
+                .as("the two-step vocabulary is Phase 5's seven plus the void trio")
+                .hasSize(10);
 
         // Nothing transitions TO AUTH_DISPATCHED in ANY machine — birth is the only door.
         for (InteractionModel model : InteractionModel.values()) {
@@ -98,7 +114,8 @@ class PaymentAttemptTest {
                 .containsExactlyInAnyOrder(
                         PaymentAttemptStatus.CAPTURED,
                         PaymentAttemptStatus.FAILED,
-                        PaymentAttemptStatus.EXECUTED);
+                        PaymentAttemptStatus.EXECUTED,
+                        PaymentAttemptStatus.VOIDED);
 
         // The deliberately-absent states asserted absent: exactly these eleven, the push four
         // appended after the two-step seven so every generated list only extends — no VOIDED
@@ -115,7 +132,10 @@ class PaymentAttemptTest {
                         PaymentAttemptStatus.AWAITING_PAYER,
                         PaymentAttemptStatus.EXECUTION_DISPATCHED,
                         PaymentAttemptStatus.EXECUTION_UNKNOWN,
-                        PaymentAttemptStatus.EXECUTED);
+                        PaymentAttemptStatus.EXECUTED,
+                        PaymentAttemptStatus.VOID_DISPATCHED,
+                        PaymentAttemptStatus.VOID_UNKNOWN,
+                        PaymentAttemptStatus.VOIDED);
     }
 
     @Test
@@ -145,7 +165,8 @@ class PaymentAttemptTest {
         // CAPTURED is terminal AND the stable state; FAILED is terminal. Swept by name so the
         // acceptance criterion's wording is what the test says.
         for (PaymentAttemptStatus terminal :
-                EnumSet.of(PaymentAttemptStatus.CAPTURED, PaymentAttemptStatus.FAILED)) {
+                EnumSet.of(PaymentAttemptStatus.CAPTURED, PaymentAttemptStatus.FAILED,
+                        PaymentAttemptStatus.VOIDED)) {
             for (Map.Entry<PaymentAttemptStatus, UnaryOperator<PaymentAttempt>> target :
                     transitionDoors().entrySet()) {
                 PaymentAttempt attempt = attemptAt(terminal);
@@ -229,12 +250,12 @@ class PaymentAttemptTest {
 
         // FAILED without its mapped reason — the reason is THIS row's fact (INV-PAY-03).
         assertThatThrownBy(() -> rehydrated(
-                        null, null, null, null, null, null, PaymentAttemptStatus.FAILED))
+                        null, null, null, null, null, null, null, null, PaymentAttemptStatus.FAILED))
                 .as("FAILED without a reason")
                 .isInstanceOf(IllegalArgumentException.class);
         // A reason on a live row — failure data on a row that has not failed.
         assertThatThrownBy(() -> rehydrated(
-                        null, authRef(), AMOUNT, null, null,
+                        null, authRef(), AMOUNT, null, null, null, null,
                         PaymentFailureReason.DECLINED, PaymentAttemptStatus.AUTHORIZED))
                 .as("a reason outside FAILED")
                 .isInstanceOf(IllegalArgumentException.class);
@@ -242,50 +263,51 @@ class PaymentAttemptTest {
         // The issuer's promise split in half — reference without amount, amount without
         // reference: one fact, refused in both directions.
         assertThatThrownBy(() -> rehydrated(
-                        null, authRef(), null, null, null, null,
+                        null, authRef(), null, null, null, null, null, null,
                         PaymentAttemptStatus.AUTHORIZED))
                 .as("a provider reference without its amount")
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> rehydrated(
-                        null, null, AMOUNT, null, null, null, PaymentAttemptStatus.AUTHORIZED))
+                        null, null, AMOUNT, null, null, null, null, null, PaymentAttemptStatus.AUTHORIZED))
                 .as("an authorized amount without its reference")
                 .isInstanceOf(IllegalArgumentException.class);
 
         // Pre-auth states carry nothing beyond birth; AUTHORIZED has no capture reference yet;
         // capture-stage states require one.
         assertThatThrownBy(() -> rehydrated(
-                        null, authRef(), AMOUNT, null, null, null,
+                        null, authRef(), AMOUNT, null, null, null, null, null,
                         PaymentAttemptStatus.AUTH_DISPATCHED))
                 .as("AUTH_DISPATCHED holding an authorization")
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> rehydrated(
-                        idem(), authRef(), AMOUNT, null, null, null,
+                        idem(), authRef(), AMOUNT, null, null, null, null, null,
                         PaymentAttemptStatus.AUTHORIZED))
                 .as("AUTHORIZED already holding a capture reference")
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> rehydrated(
-                        null, authRef(), AMOUNT, null, null, null,
+                        null, authRef(), AMOUNT, null, null, null, null, null,
                         PaymentAttemptStatus.CAPTURE_DISPATCHED))
                 .as("CAPTURE_DISPATCHED without the capture's idempotency reference")
                 .isInstanceOf(IllegalArgumentException.class);
 
-        // The unreachable FAILED shape: the issuer's promise held, no capture dispatched.
-        // AUTHORIZED -> FAILED is not an edge, so no path writes this row — rehydrate refuses
+        // The unreachable FAILED shape: the issuer's promise held, no capture and no
+        // void dispatched. AUTHORIZED -> FAILED is still not an edge - abandoning a promise
+        // is the void's job (P7-TSK-004) - so no path writes this row — rehydrate refuses
         // it as corruption rather than trusting the database.
         assertThatThrownBy(() -> rehydrated(
-                        null, authRef(), AMOUNT, null, null,
+                        null, authRef(), AMOUNT, null, null, null, null,
                         PaymentFailureReason.DECLINED, PaymentAttemptStatus.FAILED))
                 .as("FAILED holding the promise but no capture dispatch — no path writes this")
                 .isInstanceOf(IllegalArgumentException.class);
 
         // CAPTURED must hold the capture pair; a captured amount anywhere else is incoherent.
         assertThatThrownBy(() -> rehydrated(
-                        idem(), authRef(), AMOUNT, null, null, null,
+                        idem(), authRef(), AMOUNT, null, null, null, null, null,
                         PaymentAttemptStatus.CAPTURED))
                 .as("CAPTURED without the capture pair")
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> rehydrated(
-                        idem(), authRef(), AMOUNT, capRef(), AMOUNT, null,
+                        idem(), authRef(), AMOUNT, capRef(), AMOUNT, null, null, null,
                         PaymentAttemptStatus.CAPTURE_DISPATCHED))
                 .as("a captured amount before CAPTURED")
                 .isInstanceOf(IllegalArgumentException.class);
@@ -293,7 +315,7 @@ class PaymentAttemptTest {
         // The stored over-capture — the schema bypass INV-PAY-05's constructor placement
         // exists for: caught on read-back ALONE if the door check were ever weakened.
         assertThatThrownBy(() -> rehydrated(
-                        idem(), authRef(), AMOUNT, capRef(), Money.ofMinorUnits(98_77, EUR),
+                        idem(), authRef(), AMOUNT, capRef(), Money.ofMinorUnits(98_77, EUR), null, null,
                         null, PaymentAttemptStatus.CAPTURED))
                 .as("a stored captured amount exceeding the authorization")
                 .isInstanceOf(IllegalArgumentException.class)
@@ -303,22 +325,64 @@ class PaymentAttemptTest {
 
         // A stored non-positive promise.
         assertThatThrownBy(() -> rehydrated(
-                        null, authRef(), Money.ofMinorUnits(-98_76, EUR), null, null, null,
+                        null, authRef(), Money.ofMinorUnits(-98_76, EUR), null, null, null, null, null,
                         PaymentAttemptStatus.AUTHORIZED))
                 .as("a stored non-positive authorized amount")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("EUR")
                 .hasMessageNotContaining("9876");
 
+        // The void's shapes (P7-TSK-004): each void state requires the promise and the
+        // void's idempotency reference, the provider's acknowledgement exists exactly when
+        // VOIDED, and nothing voided ever holds a captured pair (INV-REV-03).
+        assertThatThrownBy(() -> rehydrated(
+                        null, authRef(), AMOUNT, null, null, null, null, null,
+                        PaymentAttemptStatus.VOID_DISPATCHED))
+                .as("VOID_DISPATCHED without the void's idempotency reference")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> rehydrated(
+                        null, authRef(), AMOUNT, null, null, voidRef(),
+                        new ProviderReference("psp-void-live"), null,
+                        PaymentAttemptStatus.VOID_UNKNOWN))
+                .as("a void acknowledgement outside VOIDED")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> rehydrated(
+                        null, authRef(), AMOUNT, null, null, voidRef(), null, null,
+                        PaymentAttemptStatus.VOIDED))
+                .as("VOIDED without the provider's acknowledgement")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> rehydrated(
+                        idem(), authRef(), AMOUNT, capRef(), AMOUNT, voidRef(), null, null,
+                        PaymentAttemptStatus.VOID_DISPATCHED))
+                .as("a captured pair on a void-stage row")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> rehydrated(
+                        idem(), authRef(), AMOUNT, null, null, voidRef(), null, null,
+                        PaymentAttemptStatus.CAPTURE_DISPATCHED))
+                .as("a void reference on a capture-stage row")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> rehydrated(
+                        null, null, null, null, null, voidRef(), null,
+                        PaymentFailureReason.DECLINED, PaymentAttemptStatus.FAILED))
+                .as("a FAILED void without the promise it tried to release")
+                .isInstanceOf(IllegalArgumentException.class);
+        // And the legal third FAILED shape constructs: the declined void, the capture
+        // reference riding along from the declined-capture redirect (P7-TSK-004).
+        assertThat(rehydrated(
+                        idem(), authRef(), AMOUNT, null, null, voidRef(), null,
+                        PaymentFailureReason.DECLINED, PaymentAttemptStatus.FAILED)
+                        .status())
+                .isEqualTo(PaymentAttemptStatus.FAILED);
+
         // Absent identity facts are refused whatever the status.
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
-                        PaymentAttemptId.next(IDS), null, SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, idem(), null, null, null, null, null,
+                        PaymentAttemptId.next(IDS), null, SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, idem(), null, null, null, null, null, null, null,
                         null, PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK)))
                 .as("no intent reference")
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, null, null, null,
-                        null, null, null, null, PaymentAttemptStatus.AUTH_DISPATCHED,
+                        null, null, null, null, null, null, PaymentAttemptStatus.AUTH_DISPATCHED,
                         Instant.now(CLOCK)))
                 .as("no authorization idempotency reference on a two-step row - the"
                         + " model's coherence rule since P7-TSK-002")
@@ -326,7 +390,7 @@ class PaymentAttemptTest {
                 .hasMessageContaining("two-step");
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, idem(), null,
-                        null, null, null, null, null, null, Instant.now(CLOCK)))
+                        null, null, null, null, null, null, null, null, Instant.now(CLOCK)))
                 .as("no status")
                 .isInstanceOf(NullPointerException.class);
     }
@@ -369,12 +433,12 @@ class PaymentAttemptTest {
                 .isEqualTo("'AUTH_DISPATCHED', 'AUTH_UNKNOWN', 'AUTHORIZED',"
                         + " 'CAPTURE_DISPATCHED', 'CAPTURE_UNKNOWN', 'CAPTURED', 'FAILED',"
                         + " 'AWAITING_PAYER', 'EXECUTION_DISPATCHED', 'EXECUTION_UNKNOWN',"
-                        + " 'EXECUTED'");
-        // CAPTURED is IN the terminal list — the enum's recorded decision - and EXECUTED
-        // joined it at P7-TSK-002: the appended push states keep every earlier fragment a
-        // prefix, which is what lets V003 and V011 stay reconciled as applied history.
+                        + " 'EXECUTED', 'VOID_DISPATCHED', 'VOID_UNKNOWN', 'VOIDED'");
+        // CAPTURED is IN the terminal list — the enum's recorded decision - EXECUTED joined it at
+        // P7-TSK-002, VOIDED at P7-TSK-004: appended states keep every earlier fragment a
+        // prefix, which is what lets V003, V011 and V012 stay reconciled as applied history.
         assertThat(PaymentAttemptStatus.sqlTerminalValueList())
-                .isEqualTo("'CAPTURED', 'FAILED', 'EXECUTED'");
+                .isEqualTo("'CAPTURED', 'FAILED', 'EXECUTED', 'VOIDED'");
     }
 
     /** The six doors out of a state, keyed by the state each targets. */
@@ -390,7 +454,12 @@ class PaymentAttemptTest {
                 PaymentAttemptStatus.CAPTURED,
                         attempt -> attempt.capture(new ProviderReference("psp-cap-1"), AMOUNT),
                 PaymentAttemptStatus.FAILED,
-                        attempt -> attempt.fail(PaymentFailureReason.DECLINED));
+                        attempt -> attempt.fail(PaymentFailureReason.DECLINED),
+                PaymentAttemptStatus.VOID_DISPATCHED,
+                        attempt -> attempt.dispatchVoid(idem()),
+                PaymentAttemptStatus.VOID_UNKNOWN, PaymentAttempt::voidOutcomeUnknown,
+                PaymentAttemptStatus.VOIDED,
+                        attempt -> attempt.voided(new ProviderReference("psp-void-1")));
     }
 
     /**
@@ -402,19 +471,37 @@ class PaymentAttemptTest {
     private static PaymentAttempt attemptAt(PaymentAttemptStatus status) {
         return switch (status) {
             case AUTH_DISPATCHED, AUTH_UNKNOWN ->
-                    rehydrated(null, null, null, null, null, null, status);
-            case AUTHORIZED -> rehydrated(null, authRef(), AMOUNT, null, null, null, status);
+                    rehydrated(null, null, null, null, null, null, null, null, status);
+            case AUTHORIZED ->
+                    rehydrated(null, authRef(), AMOUNT, null, null, null, null, null, status);
             case CAPTURE_DISPATCHED, CAPTURE_UNKNOWN ->
-                    rehydrated(idem(), authRef(), AMOUNT, null, null, null, status);
+                    rehydrated(idem(), authRef(), AMOUNT, null, null, null, null, null, status);
             case CAPTURED ->
-                    rehydrated(idem(), authRef(), AMOUNT, capRef(), AMOUNT, null, status);
+                    rehydrated(
+                            idem(), authRef(), AMOUNT, capRef(), AMOUNT, null, null, null,
+                            status);
+            // The void shapes (P7-TSK-004): the promise plus OUR void reference; the
+            // acknowledgement exactly when VOIDED. The redirect's capture-reference-bearing
+            // variant is proven by the doors sweep out of the capture-stage fixtures.
+            case VOID_DISPATCHED, VOID_UNKNOWN ->
+                    rehydrated(null, authRef(), AMOUNT, null, null, voidRef(), null, null,
+                            status);
+            case VOIDED ->
+                    rehydrated(
+                            null, authRef(), AMOUNT, null, null, voidRef(),
+                            new ProviderReference("psp-void-evidence"), null, status);
             case FAILED -> rehydrated(
-                    null, null, null, null, null, PaymentFailureReason.DECLINED, status);
+                    null, null, null, null, null, null, null,
+                    PaymentFailureReason.DECLINED, status);
             // The push and book states have no two-step shape at all: this helper serves the
             // TWO_STEP sweeps, and their own fixtures rehydrate with their model directly.
             default -> throw new IllegalArgumentException(
                     status + " is not a two-step state");
         };
+    }
+
+    private static ProviderIdempotencyReference voidRef() {
+        return new ProviderIdempotencyReference("void-" + UUID.randomUUID());
     }
 
     private static PaymentAttempt rehydrated(
@@ -423,6 +510,8 @@ class PaymentAttemptTest {
             Money authorizedAmount,
             ProviderReference captureProviderReference,
             Money capturedAmount,
+            ProviderIdempotencyReference voidReference,
+            ProviderReference voidProviderReference,
             PaymentFailureReason failureReason,
             PaymentAttemptStatus status) {
         return PaymentAttempt.rehydrate(
@@ -436,6 +525,8 @@ class PaymentAttemptTest {
                 authorizedAmount,
                 captureProviderReference,
                 capturedAmount,
+                voidReference,
+                voidProviderReference,
                 failureReason,
                 status,
                 Instant.now(CLOCK));
@@ -474,7 +565,7 @@ class PaymentAttemptTest {
                 .hasMessageContaining("rail");
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), null, InteractionModel.TWO_STEP, idem(),
-                        null, null, null, null, null, null,
+                        null, null, null, null, null, null, null, null,
                         PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK)))
                 .as("no rail on read-back: a corrupt row is refused ahead of the schema")
                 .isInstanceOf(NullPointerException.class)

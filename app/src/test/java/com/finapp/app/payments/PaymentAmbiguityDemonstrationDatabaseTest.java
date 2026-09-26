@@ -468,6 +468,15 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
     private PaymentCapture capture() {
         return new PaymentCapture(
                 runner, intents, attempts, evidence, adapter(), outcomes(),
+                voids(), new JdbcAuditWriter(), IDS, CLOCK);
+    }
+
+    /** The void command over the same stores (P7-TSK-004) - the capture idiom's sibling. */
+    private com.finapp.payments.PaymentVoid voids() {
+        return new com.finapp.payments.PaymentVoid(
+                runner, intents, attempts, evidence, adapter(), outcomes(),
+                com.finapp.payments.PaymentRails.of(
+                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcAuditWriter(), IDS, CLOCK);
     }
 
@@ -479,7 +488,8 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
         Duration dueNow = Duration.ofNanos(1_000);
         return new PaymentSweeper(
                 runner, attempts, intents, new com.finapp.payments.JdbcRefundStore(), evidence,
-                adapter(), outcomes(), capture(), IDS, CLOCK, dueNow, dueNow, 50);
+                adapter(), outcomes(), capture(), voids(), IDS, CLOCK, dueNow, dueNow,
+                50);
     }
 
     /** A registry of this suite's own: the meters' wiring is the telemetry suites'. */

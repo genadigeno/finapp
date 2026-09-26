@@ -296,6 +296,7 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `payments.NoEligibleRail` | 422 | No payment rail can carry this payment right now. |
 | `payments.UnknownRail` | 422 | The named payment rail is not declared by this platform. |
 | `payments.RoutingPolicyNotForward` | 422 | A routing policy version takes effect forward, never backward. |
+| `payments.ReversalNotSupported` | 409 | The payment's rail does not support reversal. |
 
 The payment surface's vocabulary (`P5-TSK-011`) is **the refusals only** — requests the
 platform declined to judge, with nothing written. A *judged* failure is never an error code: a

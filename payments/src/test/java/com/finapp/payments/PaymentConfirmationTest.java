@@ -478,6 +478,11 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
+            throw new UnsupportedOperationException("this suite scripts no voids");
+        }
+
+        @Override
         public QueryAnswer query(ProviderIdempotencyReference ourReference) {
             throw new UnsupportedOperationException();
         }
@@ -713,6 +718,27 @@ class PaymentConfirmationTest {
                 Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
                 ProviderReference reference, Money amount) {
             return move(id, from, row -> row.capture(reference, amount));
+        }
+
+
+        @Override
+        public boolean dispatchVoid(
+                Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
+                ProviderIdempotencyReference reference) {
+            return move(id, from, row -> row.dispatchVoid(reference));
+        }
+
+        @Override
+        public boolean voided(
+                Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
+                ProviderReference reference) {
+            return move(id, from, row -> row.voided(reference));
+        }
+
+        @Override
+        public boolean markVoidUnknown(Connection uow, PaymentAttemptId id) {
+            return move(id, PaymentAttemptStatus.VOID_DISPATCHED,
+                    PaymentAttempt::voidOutcomeUnknown);
         }
 
         @Override

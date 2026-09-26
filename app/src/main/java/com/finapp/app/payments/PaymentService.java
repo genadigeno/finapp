@@ -83,6 +83,7 @@ public final class PaymentService {
     private final ObjectProvider<PaymentConfirmation> confirmation;
     private final ObjectProvider<PaymentCapture> capture;
     private final ObjectProvider<PaymentRefund> refund;
+    private final ObjectProvider<com.finapp.payments.PaymentVoid> voids;
     private final PaymentIntentStore<Connection> intents;
     private final PaymentAttemptStore<Connection> attempts;
     private final com.finapp.payments.RefundStore<Connection> refunds;
@@ -96,6 +97,7 @@ public final class PaymentService {
             PaymentCancellation cancellation,
             ObjectProvider<PaymentConfirmation> confirmation,
             ObjectProvider<PaymentCapture> capture,
+            ObjectProvider<com.finapp.payments.PaymentVoid> voids,
             ObjectProvider<PaymentRefund> refund,
             PaymentIntentStore<Connection> intents,
             PaymentAttemptStore<Connection> attempts,
@@ -108,6 +110,7 @@ public final class PaymentService {
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation must not be null");
         this.confirmation = Objects.requireNonNull(confirmation, "confirmation must not be null");
         this.capture = Objects.requireNonNull(capture, "capture must not be null");
+        this.voids = Objects.requireNonNull(voids, "voids must not be null");
         this.refund = Objects.requireNonNull(refund, "refund must not be null");
         this.intents = Objects.requireNonNull(intents, "intents must not be null");
         this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
@@ -295,24 +298,107 @@ public final class PaymentService {
     public PaymentView cancel(Session current, PaymentIntentId intentId) {
         Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(intentId, "intentId must not be null");
+        UUID partyId = inOneTransaction(unitOfWork -> partyOf(unitOfWork, current));
+        try {
+            PaymentIntentStatus cancelled = inOneTransaction(
+                    unitOfWork -> {
+                        try {
+                            return cancellation.cancel(unitOfWork, partyId, intentId).status();
+                        } catch (IllegalPaymentIntentTransitionException processing) {
+                            // Not the confirmation window any more: the void's territory,
+                            // judged outside this transaction (P7-TSK-004).
+                            return null;
+                        }
+                    });
+            if (cancelled == null) {
+                cancelAuthorized(partyId, intentId);
+            }
+        } catch (UnknownPaymentException unknown) {
+            throw paymentNotFound();
+        }
         return inOneTransaction(
-                unitOfWork -> {
-                    UUID partyId = partyOf(unitOfWork, current);
-                    try {
-                        cancellation.cancel(unitOfWork, partyId, intentId);
-                    } catch (UnknownPaymentException unknown) {
-                        throw paymentNotFound();
-                    } catch (IllegalPaymentIntentTransitionException refused) {
-                        throw new ApiException(
-                                PaymentsErrorCode.NOT_CANCELLABLE,
-                                "A cancellation was refused by the intent's state ("
-                                        + refused.from() + ")",
-                                "the payment is " + refused.from()
-                                        + " and can no longer be cancelled.");
-                    }
-                    return currentView(unitOfWork, intentId, partyId)
-                            .orElseThrow(PaymentService::paymentNotFound);
-                });
+                unitOfWork ->
+                        currentView(unitOfWork, intentId, partyId)
+                                .orElseThrow(PaymentService::paymentNotFound));
+    }
+
+    /**
+     * Cancellation past the confirmation window (`P7-TSK-004`): an AUTHORIZED, uncaptured
+     * attempt is voided at the provider - the customer withdrawing the promise they made.
+     * Runs the command's own Tx1 / provider call / Tx2 choreography, so it is deliberately
+     * NOT inside a wrapping transaction (the confirm's ADR-0046 posture). The capability is
+     * judged first ({@code INV-REV-03}); a rail without the reversal answers 409 with
+     * nothing written and nothing sent.
+     */
+    private void cancelAuthorized(UUID partyId, PaymentIntentId intentId) {
+        com.finapp.payments.PaymentVoid command = voids.getIfAvailable();
+        if (command == null) {
+            throw providerUnavailable();
+        }
+        try {
+            command.voidAuthorized(Optional.of(partyId), intentId, Optional.empty());
+        } catch (com.finapp.payments.ReversalNotSupportedException notSupported) {
+            throw new ApiException(
+                    PaymentsErrorCode.REVERSAL_NOT_SUPPORTED,
+                    "A cancellation was refused: this payment's rail does not support"
+                            + " reversal",
+                    "the payment's rail does not support reversal; a completed payment can"
+                            + " be refunded instead.");
+        } catch (com.finapp.payments.IllegalPaymentAttemptTransitionException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_CANCELLABLE,
+                    "A cancellation was refused by the attempt's state",
+                    "the payment can no longer be cancelled.");
+        } catch (IllegalPaymentIntentTransitionException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_CANCELLABLE,
+                    "A cancellation was refused by the intent's state (" + refused.from() + ")",
+                    "the payment is " + refused.from()
+                            + " and can no longer be cancelled.");
+        }
+    }
+
+    /**
+     * The operator's reasoned void (`P7-TSK-004`) - the refund surface's shape: the URL
+     * names somebody else's payment, the wall is
+     * {@code @RequiresPermission(PAYMENT_REFUND)} at the boundary, and the actor and reason
+     * travel into the command's audit record.
+     */
+    public PaymentView operatorVoid(PaymentIntentId intentId, String reason) {
+        Objects.requireNonNull(intentId, "intentId must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+        com.finapp.payments.PaymentVoid command = voids.getIfAvailable();
+        if (command == null) {
+            throw providerUnavailable();
+        }
+        try {
+            command.voidAuthorized(Optional.empty(), intentId, Optional.of(reason));
+        } catch (UnknownPaymentException unknown) {
+            throw paymentNotFound();
+        } catch (com.finapp.payments.ReversalNotSupportedException notSupported) {
+            throw new ApiException(
+                    PaymentsErrorCode.REVERSAL_NOT_SUPPORTED,
+                    "A void was refused: this payment's rail does not support reversal",
+                    "the payment's rail does not support reversal.");
+        } catch (com.finapp.payments.IllegalPaymentAttemptTransitionException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_CANCELLABLE,
+                    "A void was refused by the attempt's state",
+                    "the payment is not an uncaptured authorization.");
+        } catch (IllegalPaymentIntentTransitionException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_CANCELLABLE,
+                    "A void was refused by the intent's state (" + refused.from() + ")",
+                    "the payment is not an uncaptured authorization.");
+        }
+        return inOneTransaction(
+                unitOfWork ->
+                        intents.findById(unitOfWork, intentId)
+                                .map(row ->
+                                        view(row, row.status(),
+                                                reasonFor(unitOfWork, row),
+                                                liveTotals(unitOfWork, row)))
+                                .orElseThrow(PaymentService::paymentNotFound));
     }
 
     /**

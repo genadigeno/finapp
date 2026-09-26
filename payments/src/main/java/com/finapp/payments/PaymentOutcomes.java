@@ -68,6 +68,9 @@ public final class PaymentOutcomes {
     static final String CAPTURED_EVENT_TYPE = "payments.PaymentCaptured";
     static final String FAILED_EVENT_TYPE = "payments.PaymentFailed";
     static final String UNKNOWN_EVENT_TYPE = "payments.PaymentStateUnknown";
+
+    /** The void's terminal fact (`P7-TSK-004`): the authorization released, nothing captured. */
+    static final String VOIDED_EVENT_TYPE = "payments.AuthorizationVoided";
     // The refund vocabulary (P5-TSK-016; plan §10, MODULE_ARCHITECTURE's register): the two
     // terminal facts, and the dispatch - legitimate where TransferInitiated was not, because
     // under ADR-0046 the dispatch commits durably before its own outcome exists. UNKNOWN
@@ -105,7 +108,26 @@ public final class PaymentOutcomes {
      *     owner, which is why the counting seam is the door, post-commit.
      */
     public record Applied(
-            PaymentIntentStatus intent, PaymentAttemptStatus attempt, boolean acting) {}
+            PaymentIntentStatus intent,
+            PaymentAttemptStatus attempt,
+            boolean acting,
+            boolean voidPending) {
+
+        Applied(PaymentIntentStatus intent, PaymentAttemptStatus attempt, boolean acting) {
+            this(intent, attempt, acting, false);
+        }
+
+        /**
+         * The declined-capture redirect committed {@code VOID_DISPATCHED} and the send is
+         * now the caller's (`P7-TSK-004`): a resolver that owns a provider port performs it
+         * ({@code PaymentVoid.completeDispatched}); one that does not - the webhook door -
+         * leaves the row visibly dispatched for the sweeper's void leg, which re-sends
+         * idempotently by the stored reference.
+         */
+        Applied withVoidPending() {
+            return new Applied(intent, attempt, acting, true);
+        }
+    }
 
     /** The refund's committed status, and whether this call's conditional made it so. */
     public record RefundApplied(RefundStatus status, boolean acting) {}
@@ -294,6 +316,45 @@ public final class PaymentOutcomes {
                 committedIntent = PaymentIntentStatus.SUCCEEDED;
             }
             case DECLINED -> {
+                // THE REDIRECT (P7-TSK-004, ADR-0059): on a rail whose DECLARED reversals
+                // contain VOID - judged from the stored rail, never a name (INV-RAIL-01) -
+                // a declined capture releases the standing authorization instead of leaving
+                // it to lapse against the customer's funds. The redirect commits
+                // VOID_DISPATCHED with its minted reference (INV-PAY-04) in THIS outcome
+                // transaction; the send is the caller's, and the sweeper's void leg
+                // finishes any redirect whose caller has no provider port (the webhook
+                // door). A two-step rail that declares no VOID keeps the Phase 5
+                // conclusion: FAILED(DECLINED), the intent with it.
+                RailId railOfRow =
+                        attempts.findById(uow, attemptId)
+                                .orElseThrow(
+                                        () ->
+                                                new IllegalStateException(
+                                                        "an attempt an outcome is applied to"
+                                                                + " exists"))
+                                .rail();
+                if (rails.capabilitiesOf(railOfRow)
+                        .reversals()
+                        .contains(RailCapabilities.Reversal.VOID)) {
+                    ProviderIdempotencyReference voidReference =
+                            new ProviderIdempotencyReference("void-" + ids.next());
+                    acting = attempts.dispatchVoid(uow, attemptId, from, voidReference);
+                    if (acting) {
+                        attempts.recordTransition(
+                                uow,
+                                attemptId,
+                                from,
+                                PaymentAttemptStatus.VOID_DISPATCHED,
+                                platform,
+                                now);
+                    }
+                    Applied redirected =
+                            answered(uow, intentId, attemptId, verdict.name(),
+                                    PaymentAttemptStatus.VOID_DISPATCHED,
+                                    PaymentIntentStatus.PROCESSING, acting, platform,
+                                    correlation, now);
+                    return acting ? redirected.withVoidPending() : redirected;
+                }
                 Failed failed =
                         failBoth(uow, intentId, attemptId, from, PaymentFailureReason.DECLINED,
                                 correlation, platform, now);
@@ -356,6 +417,94 @@ public final class PaymentOutcomes {
         return answered(uow, intentId, attemptId, QueryAnswer.Verdict.UNRECOGNISED.name(),
                 failed.status(), PaymentIntentStatus.FAILED, failed.acting(), platform,
                 correlation, now);
+    }
+
+    /**
+     * Applies a void outcome from {@code from} — {@code VOID_DISPATCHED} or
+     * {@code VOID_UNKNOWN} (`P7-TSK-004`). {@code APPROVED} concludes the payment: the
+     * authorization is released, nothing was captured, nothing posts — {@code VOIDED} on the
+     * attempt, {@code FAILED} on the intent (the customer's rail-agnostic machine has no
+     * voided vocabulary, ADR-0059 §2), and {@code AuthorizationVoided} publishes with the
+     * acting transition. {@code DECLINED} fails both with the mapped reason.
+     * {@code INDETERMINATE} commits the honest {@code VOID_UNKNOWN} ({@code INV-LIFE-03}).
+     * <strong>{@code NOTHING_SENT} concludes NOTHING</strong>, deliberately: the row stays
+     * {@code VOID_DISPATCHED} and the sweeper re-sends by the stored reference — a duplicate
+     * void is harmless by definition (releasing a released promise), which is why no send
+     * permit exists here where the refund needed `V009`'s (the recorded asymmetry).
+     */
+    public Applied applyVoid(
+            Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttemptId attemptId,
+            PaymentAttemptStatus from,
+            ProviderAnswer.Verdict verdict,
+            Optional<ProviderReference> providerReference,
+            Correlation correlation) {
+        Actor platform = SecurityContext.require();
+        Instant now = Instant.now(clock);
+
+        PaymentAttemptStatus committedAttempt;
+        PaymentIntentStatus committedIntent = PaymentIntentStatus.PROCESSING;
+        boolean acting;
+        switch (verdict) {
+            case APPROVED -> {
+                acting = attempts.voided(uow, attemptId, from, providerReference.orElseThrow());
+                if (acting) {
+                    attempts.recordTransition(
+                            uow, attemptId, from, PaymentAttemptStatus.VOIDED, platform, now);
+                    if (intents.transition(
+                            uow,
+                            intentId,
+                            PaymentIntentStatus.PROCESSING,
+                            PaymentIntentStatus.FAILED)) {
+                        intents.recordTransition(
+                                uow,
+                                intentId,
+                                PaymentIntentStatus.PROCESSING,
+                                PaymentIntentStatus.FAILED,
+                                platform,
+                                now);
+                    }
+                    announce(uow, VOIDED_EVENT_TYPE, intentId, "VOIDED", Optional.empty(),
+                            correlation, now);
+                }
+                committedAttempt = PaymentAttemptStatus.VOIDED;
+                committedIntent = PaymentIntentStatus.FAILED;
+            }
+            case DECLINED -> {
+                Failed failed =
+                        failBoth(uow, intentId, attemptId, from, PaymentFailureReason.DECLINED,
+                                correlation, platform, now);
+                committedAttempt = failed.status();
+                acting = failed.acting();
+                committedIntent = PaymentIntentStatus.FAILED;
+            }
+            case NOTHING_SENT -> {
+                // No conclusion, structurally: the connection was refused before anything
+                // left, the promise still stands, and the next send - any instance's - will
+                // release it. answered() with acting=false reads and reports the truth.
+                return answered(uow, intentId, attemptId, verdict.name(),
+                        PaymentAttemptStatus.VOID_DISPATCHED, PaymentIntentStatus.PROCESSING,
+                        false, platform, correlation, now);
+            }
+            default -> {
+                acting = attempts.markVoidUnknown(uow, attemptId);
+                if (acting) {
+                    attempts.recordTransition(
+                            uow,
+                            attemptId,
+                            PaymentAttemptStatus.VOID_DISPATCHED,
+                            PaymentAttemptStatus.VOID_UNKNOWN,
+                            platform,
+                            now);
+                    announce(uow, UNKNOWN_EVENT_TYPE, intentId, "VOID_UNKNOWN",
+                            Optional.empty(), correlation, now);
+                }
+                committedAttempt = PaymentAttemptStatus.VOID_UNKNOWN;
+            }
+        }
+        return answered(uow, intentId, attemptId, verdict.name(), committedAttempt,
+                committedIntent, acting, platform, correlation, now);
     }
 
     /**

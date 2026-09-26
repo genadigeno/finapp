@@ -90,6 +90,8 @@ public final class PaymentMeters {
         AUTHORIZE,
         CAPTURE,
         REFUND,
+        /** The card rail's reversal (`P7-TSK-004`) — the port's fifth method. */
+        VOID,
         QUERY
     }
 
