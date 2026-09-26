@@ -14,9 +14,11 @@ import java.util.Objects;
  * {@link ProviderAnswer}/{@link QueryAnswer} plus the raw bytes retained as evidence. Provider
  * wire vocabulary — paths, field names, verdict strings — lives only in an adapter, so swapping
  * a provider is an adapter change and a provider's odd day cannot become the domain's
- * vocabulary. The port is deliberately <strong>one provider wide</strong>: multi-rail routing,
- * capability declaration and per-rail finality modelling are Phase 7's (ADR-0049 §4), and
- * building them against a sample of one is how the sample becomes the design.
+ * vocabulary. Since `P7-TSK-001` this is the <strong>two-step model's operations
+ * contract</strong> (ADR-0059 §2), bound at the composition root to the {@link PaymentRail}
+ * declaration the domain consults ({@code INV-RAIL-01}); it was deliberately one provider wide
+ * until then, because building the abstraction against a sample of one is how the sample
+ * becomes the design (ADR-0049 §4). Its operations are exactly Phase 5's.
  *
  * <h2>The contract is total: provider misbehaviour is a result, never an exception</h2>
  *

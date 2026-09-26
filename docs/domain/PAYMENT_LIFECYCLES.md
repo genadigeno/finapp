@@ -75,7 +75,12 @@ AUTH_DISPATCHED ──> AUTHORIZED ──> CAPTURE_DISPATCHED ──> CAPTURED
 ```
 
 Seven states: `AUTH_DISPATCHED`, `AUTH_UNKNOWN`, `AUTHORIZED`, `CAPTURE_DISPATCHED`,
-`CAPTURE_UNKNOWN`, `CAPTURED`, `FAILED`.
+`CAPTURE_UNKNOWN`, `CAPTURED`, `FAILED`. Since `P7-TSK-001` every attempt also records its
+**rail** as a frozen birth fact (ADR-0059, payments `V011`): which way the money travels is
+stamped in the dispatching transaction, no writer can rewrite it, and every capability
+decision — the clearing position an outcome posts to, the mode a refund executes in — keys on
+the stored name through the build's declared `RailCapabilities`, never on the resolving
+instance's wiring.
 
 - **The `*_DISPATCHED` states are durable on purpose** — the exact inversion of ADR-0044's
   refusal of `PROCESSING`. Each is committed *before* the provider is asked (ADR-0046), so a
@@ -97,7 +102,11 @@ Seven states: `AUTH_DISPATCHED`, `AUTH_UNKNOWN`, `AUTHORIZED`, `CAPTURE_DISPATCH
   dispatch fails into `FAILED(PROVIDER_UNAVAILABLE)`. Anything after send is `*_UNKNOWN`.
 
 Absent with reasons: `VOIDED` (abandoning an authorization has no producer in the top-up
-flow — it arrives with checkout expiry, Phase 6), multi-attempt retry (the schema admits N
+flow — once owed to checkout expiry, which turned out not to need it: an expired session lets a
+landed capture complete late rather than voiding anything, ADR-0053 §5, and the void is the
+card rail's own reversal, `P7-TSK-004`, ADR-0059 — ADR-0045's follow-up as corrected at the
+Phase 6 → 7 transition; this line still said Phase 6 until `P7-TSK-001`'s gate), multi-attempt
+retry (the schema admits N
 attempts per intent with a one-live partial index as the arbiter, but Phase 5 ships exactly
 one attempt per intent: an automatic retry policy is a versioned artefact with nothing to
 calibrate it, and routing is Phase 7's).

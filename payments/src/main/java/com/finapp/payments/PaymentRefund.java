@@ -102,6 +102,9 @@ public final class PaymentRefund {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
 
+    /** The build's declared rails (`P7-TSK-001`, ADR-0059): the refund mode is the rail's call. */
+    @NonNull private final PaymentRails rails;
+
     /**
      * What the operator learns — the status honestly, {@code UNKNOWN} included.
      *
@@ -397,6 +400,20 @@ public final class PaymentRefund {
                 attempts.lockById(uow, loose.id()).orElseThrow(UnknownPaymentException::new);
         if (attempt.status() != PaymentAttemptStatus.CAPTURED) {
             throw new PaymentNotRefundableException(attempt.status());
+        }
+
+        // THE RAIL'S REFUND MODE, read from the STORED rail under the lock just taken
+        // (P7-TSK-001, ADR-0059 section 1): this command IS the provider-refund execution -
+        // dispatch against the capture, resolve by query - so any other declared mode reaching
+        // it is a wiring fault, judged before the hold so it writes nothing. The return-payment
+        // and book-refund executions land with their own rails (P7-TSK-010, P7-TSK-011), and
+        // the card descriptor's own coherence makes this branch unreachable today.
+        RailCapabilities.RefundMode refundMode =
+                rails.capabilitiesOf(attempt.rail()).refundMode();
+        if (refundMode != RailCapabilities.RefundMode.PROVIDER_REFUND) {
+            throw new IllegalStateException(
+                    "refund mode " + refundMode + " has no execution path yet: this command"
+                            + " executes PROVIDER_REFUND only (ADR-0059)");
         }
         Money alreadyRefunded =
                 refunds.sumNonFailedFor(uow, attempt.id(), attempt.capturedAmount().currency());

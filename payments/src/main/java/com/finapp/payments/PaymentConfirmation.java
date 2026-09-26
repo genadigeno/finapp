@@ -72,6 +72,13 @@ public final class PaymentConfirmation {
     @NonNull private final Clock clock;
 
     /**
+     * The rail this command dispatches on (`P7-TSK-001`, ADR-0059) — stamped onto the attempt
+     * at birth, in Tx1, so every later resolver reads the stored decision. The wiring's to
+     * supply, and routing's to decide when it exists (`P7-TSK-003`).
+     */
+    @NonNull private final RailId rail;
+
+    /**
      * What the caller learns — statuses honestly, {@code PROCESSING} included (ADR-0046).
      *
      * @param converged this call lost Tx1's conditional dispatch and never asked the provider
@@ -192,6 +199,7 @@ public final class PaymentConfirmation {
                         ids,
                         clock,
                         intentId,
+                        rail,
                         new ProviderIdempotencyReference("auth-" + ids.next()));
         attempts.insert(uow, attempt);
 
@@ -220,7 +228,8 @@ public final class PaymentConfirmation {
                                 "intent=" + intentId
                                         + ", attempt=" + attempt.id()
                                         + ", reference="
-                                        + attempt.authorizationReference().value())));
+                                        + attempt.authorizationReference().value()
+                                        + ", rail=" + attempt.rail().value())));
         return new Tx1Outcome(
                 Optional.of(new Dispatch(attempt, token, intent.amount())), Optional.empty());
     }

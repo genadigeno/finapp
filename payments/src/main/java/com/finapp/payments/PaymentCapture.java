@@ -213,7 +213,8 @@ public final class PaymentCapture {
                         Optional.of(
                                 "intent=" + attempt.intentId()
                                         + ", attempt=" + attemptId
-                                        + ", reference=" + reference.value())));
+                                        + ", reference=" + reference.value()
+                                        + ", rail=" + attempt.rail().value())));
         return new Tx1Outcome(
                 Optional.of(
                         new Dispatch(

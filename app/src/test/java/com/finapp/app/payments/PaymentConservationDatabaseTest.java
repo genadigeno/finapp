@@ -769,7 +769,8 @@ class PaymentConservationDatabaseTest {
     private PaymentConfirmation confirmation() {
         return new PaymentConfirmation(
                 runner, intents, attempts, evidence, participants, adapter(), outcomes(),
-                new JdbcAuditWriter(), IDS, CLOCK);
+                new JdbcAuditWriter(), IDS, CLOCK,
+                SimulatedCardPspAdapter.RAIL.id());
     }
 
     private PaymentCapture capture() {
@@ -781,7 +782,8 @@ class PaymentConservationDatabaseTest {
     private PaymentRefund refund() {
         return new PaymentRefund(
                 runner, executor(), intents, attempts, refunds, evidence, holdService(),
-                adapter(), outcomes(), new JdbcAuditWriter(), IDS, CLOCK);
+                adapter(), outcomes(), new JdbcAuditWriter(), IDS, CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
     }
 
     private PaymentOutcomes outcomes() {
@@ -819,7 +821,8 @@ class PaymentConservationDatabaseTest {
                                 IDS),
                         new com.finapp.payments.WalletRefundComposition()),
                 new JdbcAuditWriter(),
-                new JdbcOutboxWriter(), IDS, CLOCK);
+                new JdbcOutboxWriter(), IDS, CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
     }
 
     private HoldService holdService() {

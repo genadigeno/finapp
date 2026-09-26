@@ -199,6 +199,19 @@ class PaymentBeans {
     }
 
     /**
+     * The rails this build declares (`P7-TSK-001`, ADR-0059 §1) — deliberately
+     * <strong>unconditional</strong>: the declaration is code, not deployment configuration,
+     * so an outcome resolver can key a stored rail back into capabilities even where no
+     * provider endpoint is configured. Which rails are LIVE is routing's recorded database
+     * fact when it exists (`P7-TSK-003`, ADR-0060), never this directory's.
+     */
+    @Bean
+    com.finapp.payments.PaymentRails paymentRails() {
+        return com.finapp.payments.PaymentRails.of(
+                java.util.List.of(SimulatedCardPspAdapter.RAIL));
+    }
+
+    /**
      * The Phase 3 hold machinery meets its owed production consumer (`P3-TSK-015` →
      * `P5-TSK-015`, ADR-0048 §4): the refund's dispatch reserves the customer's funds inside
      * the account-row lock, so the composition that was built and proven two phases ago is
@@ -245,7 +258,8 @@ class PaymentBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            com.finapp.payments.PaymentRails paymentRails) {
         return new com.finapp.payments.PaymentOutcomes(
                 paymentIntentStore,
                 paymentAttemptStore,
@@ -258,7 +272,8 @@ class PaymentBeans {
                 auditWriter,
                 outboxWriter,
                 ids,
-                clock);
+                clock,
+                paymentRails);
     }
 
     @Bean
@@ -284,7 +299,10 @@ class PaymentBeans {
                 paymentOutcomes,
                 auditWriter,
                 ids,
-                clock);
+                clock,
+                // The one rail that exists dispatches every confirmation until routing
+                // decides per payment (P7-TSK-003).
+                SimulatedCardPspAdapter.RAIL.id());
     }
 
     @Bean
@@ -367,7 +385,8 @@ class PaymentBeans {
             com.finapp.payments.PaymentOutcomes paymentOutcomes,
             AuditWriter<Connection> auditWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            com.finapp.payments.PaymentRails paymentRails) {
         return new com.finapp.payments.PaymentRefund(
                 paymentTransactionRunner,
                 idempotentExecutor,
@@ -380,7 +399,8 @@ class PaymentBeans {
                 paymentOutcomes,
                 auditWriter,
                 ids,
-                clock);
+                clock,
+                paymentRails);
     }
 
     /**

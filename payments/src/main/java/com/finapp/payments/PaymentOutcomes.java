@@ -90,6 +90,9 @@ public final class PaymentOutcomes {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
 
+    /** The build's declared rails (`P7-TSK-001`, ADR-0059): the stored rail's key back to capabilities. */
+    @NonNull private final PaymentRails rails;
+
     /**
      * What committed (or was found committed by the loser of a harmless race).
      *
@@ -244,7 +247,9 @@ public final class PaymentOutcomes {
                     // many resolvers raced.
                     LedgerAccount clearing =
                             chart.resolve(
-                                    uow, AccountPurpose.SETTLEMENT_CLEARING, amount.currency());
+                                    uow,
+                                    clearingPurposeOf(uow, attemptId),
+                                    amount.currency());
                     LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
                     CaptureSettlement settlement =
                             new CaptureSettlement(
@@ -396,7 +401,7 @@ public final class PaymentOutcomes {
                     LedgerAccount clearing =
                             chart.resolve(
                                     uow,
-                                    AccountPurpose.SETTLEMENT_CLEARING,
+                                    clearingPurposeOf(uow, refund.attemptId()),
                                     refund.amount().currency());
                     LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
 
@@ -694,5 +699,34 @@ public final class PaymentOutcomes {
                         correlation.cause().orElseThrow()),
                 payload.toBytes(),
                 EventPayload.MEDIA_TYPE);
+    }
+
+    /**
+     * The clearing position of the rail the <strong>stored</strong> attempt names
+     * (`P7-TSK-001`, ADR-0059 §4) — read off the row, never off the resolving instance's
+     * wiring, because any instance may carry this outcome and the posting must land where the
+     * dispatch decided ({@code INV-RAIL-04}'s shape, one rail early). Both refusals are wiring
+     * faults and fail this transaction loudly before a line posts to a guessed account.
+     */
+    private AccountPurpose clearingPurposeOf(
+            Connection uow, PaymentAttemptId attemptId) {
+        RailId rail =
+                attempts.findById(uow, attemptId)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an outcome is being applied to attempt "
+                                                        + attemptId
+                                                        + ", which no longer reads back"))
+                        .rail();
+        return rails.capabilitiesOf(rail)
+                .clearingPurpose()
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "rail '" + rail.value() + "' declares no clearing"
+                                                + " position: a book rail's completion posts"
+                                                + " directly, and resolving clearing for one"
+                                                + " is a wiring fault (ADR-0059 section 4)"));
     }
 }

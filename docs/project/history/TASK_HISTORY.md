@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 144 "Previously" blocks, newest first, from `X-TSK-004` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, whose record stays `CURRENT_STATE.md`'s "Just completed" until `P7-TSK-001` completes; when that record moves here, it belongs below `X-TSK-004`.)*
+The per-task completion records that accumulated behind `## Current Task` - 145 "Previously" blocks, newest first, from `X-TSK-004` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands first; the transition's record sits directly below it - moved here by `P7-TSK-001`'s gate, exactly as this note said it would be.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -96,6 +96,49 @@ wrote nothing.
 - **`V011`'s column comment still claims a unique index on the address.** It stays, because an
   applied migration is not edited (`DATA_MIGRATIONS.md` §3.1). `EmailAddress` carries the
   correction.
+
+### Previously
+
+**The Phase 6 → Phase 7 transition** — conducted 2026-09-24
+([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)). **Phase 6 confirmed
+`COMPLETE` after repair, and Phase 7 initialised `READY`.**
+
+| Part | Outcome |
+|---|---|
+| The independent audit of Phase 6 | **Two CRITICAL and nine IMPORTANT defects the exit review had not found**, each repaired, tested and broken on purpose: **thirty-three probes, all caught**, every restore verified byte-identical |
+| *"Would Phase 6 remain correct if 10 instances executed it concurrently?"* | `FAIL` as found — the refund's re-send, the closed wallet, the finished refund's takeover, the merchant's close, the payout's permit, the losing resolvers' audit, the squatted checkout key — **`PASS`** after repair |
+| The full battery, fleet-wide | Before repair, on untouched `82b2179`: **1550 hermetic / 1027 database / 14 kafka, 0 failures**. After repair, from clean: **1558 hermetic / 1051 database / 14 kafka, 0 failures** |
+| Phase 7 | Entry gate, all twelve criteria → **`READY`**; ADR-0059…0062 `Proposed`; 101 invariants; 18 items; first task `P7-TSK-001` |
+
+**CRITICAL, repaired.**
+- **A taken-over refund's refused re-send concluded `FAILED` and released the hold**, though the
+  first send may already have paid. Every refund send now carries a permit (payments `V009`,
+  ADR-0057 §4), and a refused connection concludes only when it answered the first send and the
+  locked row's permit is still that send's.
+- **A customer could close the wallet an open top-up credits**: the card was then captured into a
+  posting the ledger refused — the customer charged, the books silent, the payment stuck
+  `CAPTURE_DISPATCHED`. The close now asks whether a payment in flight credits the account (payments
+  `V010`), and the confirmation share-locks the account and refuses a closed one.
+
+**IMPORTANT, repaired.** Refunds resolve by query, and a refund the provider never saw is re-driven
+under a permit, never concluded; the stuck-dispatch gauges count a `DISPATCHED` operation past the
+bound (Phase 5's debt, paid). A stranded `AUTHORIZED` is chained to capture by the sweep. The
+payments sweeper refuses a zero bound. A permission denial no longer leaves the identity on the
+worker thread. A takeover that finds its refund finished sends nothing. A merchant still owed money
+cannot be closed (`merchant.NotSettled`). The payout's first send is judged on the locked row's
+permit. A losing resolver records nothing. The checkout's derived payment key claims in its own
+scope, where no customer can claim it first.
+
+**MINOR, repaired or recorded.** The checkout's records printed the token, the amount and the line
+summary through generated `toString`s (fixed, with the tests the exemptions claimed); a foreign
+instrument at checkout answered `500` (fixed); a second holder of the token learned a session was
+mid-payment (fixed); a confirmation that lost the open was told `EXPIRED` (fixed); eleven
+documents and registers said something untrue (fixed). A second verified contact channel answers
+`500`, three race tests are missing and a poisoned row can starve a sweep (recorded below; the
+first since paid by `X-TSK-004`).
+
+**`X-TSK-001` is `COMPLETE`**: its one open criterion, a fresh full database tier green, was met by
+this transition's battery — before repair and after.
 
 ### Previously
 

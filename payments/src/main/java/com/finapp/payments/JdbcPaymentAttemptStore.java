@@ -23,14 +23,15 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
             "id, intent_id, auth_reference, capture_reference, auth_provider_reference,"
                     + " capture_provider_reference, authorized_amount_minor,"
                     + " authorized_currency, authorized_scale, captured_amount_minor,"
-                    + " captured_currency, captured_scale, failure_reason, status, created_at";
+                    + " captured_currency, captured_scale, failure_reason, status, created_at,"
+                    + " rail";
 
     @Override
     public void insert(Connection unitOfWork, PaymentAttempt attempt) {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.payment_attempt (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, attempt.id().value());
             insert.setObject(2, attempt.intentId().value());
             insert.setString(3, attempt.authorizationReference().value());
@@ -55,6 +56,7 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                     13, attempt.failureReason() == null ? null : attempt.failureReason().name());
             insert.setString(14, attempt.status().name());
             insert.setTimestamp(15, Timestamp.from(attempt.createdAt()));
+            insert.setString(16, attempt.rail().value());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -449,6 +451,7 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         return PaymentAttempt.rehydrate(
                 PaymentAttemptId.of(row.getObject("id", UUID.class)),
                 PaymentIntentId.of(row.getObject("intent_id", UUID.class)),
+                RailId.of(row.getString("rail")),
                 new ProviderIdempotencyReference(row.getString("auth_reference")),
                 captureReference == null
                         ? null

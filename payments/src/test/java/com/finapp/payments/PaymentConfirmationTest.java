@@ -95,7 +95,8 @@ class PaymentConfirmationTest {
                 outcomes(),
                 (uow, record) -> auditTrail.add(record),
                 IDS,
-                CLOCK);
+                CLOCK,
+                SimulatedCardPspAdapter.RAIL.id());
     }
 
     /**
@@ -141,7 +142,8 @@ class PaymentConfirmationTest {
                 (uow, record) -> auditTrail.add(record),
                 (uow, envelope, payload, mediaType) -> events.add(envelope),
                 IDS,
-                CLOCK);
+                CLOCK,
+                PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
     }
 
     @Test
@@ -248,7 +250,8 @@ class PaymentConfirmationTest {
                         runner, intents, attempts, evidence, noInstrument, provider,
                         outcomes(),
                         (uow, record) -> auditTrail.add(record),
-                        IDS, CLOCK);
+                        IDS, CLOCK,
+                        SimulatedCardPspAdapter.RAIL.id());
         assertThatThrownBy(() -> withoutInstrument.confirm(party, intent.id()))
                 .isInstanceOf(UnknownPaymentInstrumentException.class);
         assertThat(intents.rows.get(intent.id().value()).status())
@@ -273,6 +276,7 @@ class PaymentConfirmationTest {
         intents.refuseNextTransition = true;
         PaymentAttempt winners =
                 PaymentAttempt.create(IDS, CLOCK, intent.id(),
+                        SimulatedCardPspAdapter.RAIL.id(),
                         new ProviderIdempotencyReference("auth-" + IDS.next()));
         attempts.rows.put(winners.id().value(), winners);
 

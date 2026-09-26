@@ -326,6 +326,7 @@ class RefundTest {
         return PaymentAttempt.rehydrate(
                 PaymentAttemptId.next(IDS),
                 PaymentIntentId.next(IDS),
+                SimulatedCardPspAdapter.RAIL.id(),
                 idem(),
                 idem(),
                 new ProviderReference("psp-auth-1"),
@@ -341,6 +342,7 @@ class RefundTest {
         return PaymentAttempt.rehydrate(
                 PaymentAttemptId.next(IDS),
                 PaymentIntentId.next(IDS),
+                SimulatedCardPspAdapter.RAIL.id(),
                 idem(),
                 null,
                 new ProviderReference("psp-auth-2"),

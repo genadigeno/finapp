@@ -147,7 +147,7 @@ class PaymentAttemptTest {
     void creationIsCoherent() {
         ProviderIdempotencyReference reference = idem();
         PaymentAttempt attempt =
-                PaymentAttempt.create(IDS, CLOCK, PaymentIntentId.next(IDS), reference);
+                PaymentAttempt.create(IDS, CLOCK, PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), reference);
         assertThat(attempt.status()).isEqualTo(PaymentAttemptStatus.AUTH_DISPATCHED);
         assertThat(attempt.authorizationReference()).isEqualTo(reference);
         assertThat(attempt.id()).isNotNull();
@@ -158,9 +158,9 @@ class PaymentAttemptTest {
         // No attempt without its dispatch reference — the dispatch commits before the provider
         // is asked (ADR-0046), and the reference is what a sweeper queries by (INV-PAY-04).
         assertThatThrownBy(() ->
-                        PaymentAttempt.create(IDS, CLOCK, PaymentIntentId.next(IDS), null))
+                        PaymentAttempt.create(IDS, CLOCK, PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), null))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> PaymentAttempt.create(IDS, CLOCK, null, idem()))
+        assertThatThrownBy(() -> PaymentAttempt.create(IDS, CLOCK, null, SimulatedCardPspAdapter.RAIL.id(), idem()))
                 .isInstanceOf(NullPointerException.class);
     }
 
@@ -295,18 +295,18 @@ class PaymentAttemptTest {
 
         // Absent identity facts are refused whatever the status.
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
-                        PaymentAttemptId.next(IDS), null, idem(), null, null, null, null, null,
+                        PaymentAttemptId.next(IDS), null, SimulatedCardPspAdapter.RAIL.id(), idem(), null, null, null, null, null,
                         null, PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK)))
                 .as("no intent reference")
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
-                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), null, null, null,
+                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), null, null, null,
                         null, null, null, null, PaymentAttemptStatus.AUTH_DISPATCHED,
                         Instant.now(CLOCK)))
                 .as("no authorization idempotency reference")
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
-                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), idem(), null,
+                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), idem(), null,
                         null, null, null, null, null, null, Instant.now(CLOCK)))
                 .as("no status")
                 .isInstanceOf(NullPointerException.class);
@@ -319,7 +319,7 @@ class PaymentAttemptTest {
         // ONLY that fact. Asserted per field so a stamp or extra payload added to a door is a
         // decision, not a drift; P5-TSK-008 reads its UPDATE grant off this shape.
         PaymentAttempt born =
-                PaymentAttempt.create(IDS, CLOCK, PaymentIntentId.next(IDS), idem());
+                PaymentAttempt.create(IDS, CLOCK, PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), idem());
         ProviderReference promise = new ProviderReference("psp-auth-42");
         PaymentAttempt authorized = born.authorize(promise, AMOUNT);
         assertThat(authorized.status()).isEqualTo(PaymentAttemptStatus.AUTHORIZED);
@@ -401,6 +401,7 @@ class PaymentAttemptTest {
         return PaymentAttempt.rehydrate(
                 PaymentAttemptId.next(IDS),
                 PaymentIntentId.next(IDS),
+                SimulatedCardPspAdapter.RAIL.id(),
                 idem(),
                 captureReference,
                 authorizationProviderReference,
@@ -422,5 +423,33 @@ class PaymentAttemptTest {
 
     private static ProviderReference capRef() {
         return new ProviderReference("psp-cap-evidence");
+    }
+
+    @Test
+    @DisplayName("the rail is a birth fact: stamped at creation, carried by every transition,"
+            + " refused absent (P7-TSK-001, ADR-0059)")
+    void theRailIsABirthFact() {
+        PaymentAttempt born =
+                PaymentAttempt.create(
+                        IDS, CLOCK, PaymentIntentId.next(IDS),
+                        SimulatedCardPspAdapter.RAIL.id(), idem());
+        assertThat(born.rail()).isEqualTo(SimulatedCardPspAdapter.RAIL.id());
+        assertThat(born.authorize(new ProviderReference("psp-rail-1"), AMOUNT).rail())
+                .as("a transition carries the birth fact, never re-decides it")
+                .isEqualTo(born.rail());
+
+        assertThatThrownBy(() ->
+                        PaymentAttempt.create(
+                                IDS, CLOCK, PaymentIntentId.next(IDS), null, idem()))
+                .as("no rail at birth")
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("rail");
+        assertThatThrownBy(() -> PaymentAttempt.rehydrate(
+                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), null, idem(),
+                        null, null, null, null, null, null,
+                        PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK)))
+                .as("no rail on read-back: a corrupt row is refused ahead of the schema")
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("rail");
     }
 }

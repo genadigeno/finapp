@@ -139,8 +139,9 @@ class PaymentMetricsDatabaseTest {
         execute(
                 app,
                 "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
-                        + " status, created_at)"
-                        + " VALUES (?, ?, ?, 'AUTH_DISPATCHED', now() - INTERVAL '" + ago + "')",
+                        + " status, created_at, rail)"
+                        + " VALUES (?, ?, ?, 'AUTH_DISPATCHED', now() - INTERVAL '" + ago
+                        + "', 'card')",
                 attempt,
                 intent,
                 "gauge-" + UUID.randomUUID());

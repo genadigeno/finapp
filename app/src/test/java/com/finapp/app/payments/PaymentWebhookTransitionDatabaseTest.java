@@ -245,8 +245,8 @@ class PaymentWebhookTransitionDatabaseTest {
                     intent, IDS.next(), IDS.next(), IDS.next(), IDS.next());
             execute(app,
                     "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
-                            + " status, created_at)"
-                            + " VALUES (?, ?, ?, 'AUTH_DISPATCHED', now())",
+                            + " status, created_at, rail)"
+                            + " VALUES (?, ?, ?, 'AUTH_DISPATCHED', now(), 'card')",
                     attempt, intent, reference);
         }
 

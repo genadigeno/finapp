@@ -1155,7 +1155,8 @@ class PaymentRefundDatabaseTest {
                                 new PaymentConfirmation(
                                                 runner, intents, attempts, evidence, participants,
                                                 adapter(), outcomes(), new JdbcAuditWriter(), IDS,
-                                                CLOCK)
+                                                CLOCK,
+                                                SimulatedCardPspAdapter.RAIL.id())
                                         .confirm(created.party(), created.intent()))
                 .isInstanceOf(com.finapp.payments.NoWalletForPaymentException.class);
         assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
@@ -1219,7 +1220,8 @@ class PaymentRefundDatabaseTest {
                                     new PaymentConfirmation(
                                                     runner, intents, attempts, evidence,
                                                     participants, adapter(), outcomes(),
-                                                    new JdbcAuditWriter(), IDS, CLOCK)
+                                                    new JdbcAuditWriter(), IDS, CLOCK,
+                                                    SimulatedCardPspAdapter.RAIL.id())
                                             .confirm(created.party(), created.intent());
                                 }
                                 return null;
@@ -1591,7 +1593,8 @@ class PaymentRefundDatabaseTest {
                 "{\"status\":\"approved\",\"reference\":\"psp_ra-" + UUID.randomUUID() + "\"}");
         new PaymentConfirmation(
                         runner, intents, attempts, evidence, participants, adapter(),
-                        outcomes(), new JdbcAuditWriter(), IDS, CLOCK)
+                        outcomes(), new JdbcAuditWriter(), IDS, CLOCK,
+                        SimulatedCardPspAdapter.RAIL.id())
                 .confirm(party, created.intent());
         PaymentAttemptId attemptId =
                 runner.inTransaction(
@@ -1693,7 +1696,8 @@ class PaymentRefundDatabaseTest {
                 outcomes(),
                 new JdbcAuditWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
     }
 
     private HoldService holdService() {
@@ -1777,7 +1781,8 @@ class PaymentRefundDatabaseTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
     }
 
     private SimulatedCardPspAdapter adapter() {

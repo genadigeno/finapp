@@ -46,6 +46,9 @@ class PaymentsMigrationTest {
     /** The refund edge trigger's CURRENT definition (V004 is applied history). */
     private static final String REFUND_PERMIT =
             "db/migration/payments/V009__refund_carries_its_send_permit.sql";
+    /** The attempt edge trigger's CURRENT definition (V003 is applied history). */
+    private static final String ATTEMPT_RAIL =
+            "db/migration/payments/V011__the_attempt_records_its_rail.sql";
 
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
@@ -112,6 +115,34 @@ class PaymentsMigrationTest {
                 java.util.Arrays.stream(RefundStatus.values())
                         .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
                                 .stream().map(Enum::name).collect(Collectors.toList()))));
+        // V011 REPLACED the attempt's function (P7-TSK-001: the rail joined the birth facts):
+        // the current definition must carry the machine's edges too, or it could drift from
+        // the enum while V003 - applied history - still matched.
+        assertEdges(migration(ATTEMPT_RAIL), PaymentAttemptStatus.values().length,
+                java.util.Arrays.stream(PaymentAttemptStatus.values())
+                        .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
+                                .stream().map(Enum::name).collect(Collectors.toList()))));
+    }
+
+    @Test
+    @DisplayName("the attempt's rail is backfilled as the card rail, NOT NULL, shape-checked,"
+            + " and frozen among the birth facts (V011)")
+    void theAttemptRailClausesAreInTheCurrentFunction() {
+        assertThat(migration(ATTEMPT_RAIL))
+                .contains("CREATE OR REPLACE FUNCTION"
+                        + " payments.payment_attempt_permits_only_machine_edges()")
+                .contains("OR OLD.rail <> NEW.rail")
+                .contains(
+                        "DISABLE TRIGGER payment_attempt_permits_only_machine_edges")
+                .contains(
+                        "ENABLE TRIGGER payment_attempt_permits_only_machine_edges")
+                .contains("ALTER COLUMN rail SET NOT NULL")
+                .contains("CHECK (rail ~ '^[a-z][a-z0-9-]{0,31}$')")
+                // The backfill records history rather than guessing: every existing attempt
+                // was dispatched on the one rail the platform ever had (ADR-0049) - and the
+                // literal IS the adapter's declaration, so the two cannot drift apart.
+                .contains("UPDATE payments.payment_attempt SET rail = '"
+                        + SimulatedCardPspAdapter.RAIL.id().value() + "';");
     }
 
     @Test

@@ -212,6 +212,39 @@ class PaymentsSchemaDatabaseTest {
     }
 
     @Test
+    @DisplayName("the rail is frozen among the birth facts for every writer, the migrator"
+            + " included (P7-TSK-001, ADR-0059)")
+    void theRailIsFrozenForEveryWriter() throws Exception {
+        UUID intent = UUID.randomUUID();
+        UUID attempt = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "PROCESSING");
+            insertAttempt(app, attempt, intent, "AUTH_DISPATCHED");
+        }
+        // The trigger is the rank that binds EVERY writer, so it is proven on the migrator,
+        // which no grant can bind (the intentEdgesAndFreeze idiom) - once smuggled inside a
+        // legal edge, once as a bare rewrite.
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            assertSqlState(RAISED, () -> {
+                try (PreparedStatement smuggled = migrator.prepareStatement(
+                        "UPDATE payments.payment_attempt SET status = 'AUTH_UNKNOWN',"
+                                + " rail = 'switched' WHERE id = ?")) {
+                    smuggled.setObject(1, attempt);
+                    smuggled.executeUpdate();
+                }
+            });
+            assertSqlState(RAISED, () -> {
+                try (PreparedStatement rewrite = migrator.prepareStatement(
+                        "UPDATE payments.payment_attempt SET rail = 'switched'"
+                                + " WHERE id = ?")) {
+                    rewrite.setObject(1, attempt);
+                    rewrite.executeUpdate();
+                }
+            });
+        }
+    }
+
+    @Test
     @DisplayName("the coherence CHECKs refuse every corrupt shape the constructor refuses")
     void theCoherenceChecksRefuseEveryCorruptShape() throws Exception {
         UUID intent = UUID.randomUUID();
@@ -701,8 +734,8 @@ class PaymentsSchemaDatabaseTest {
                         + " capture_provider_reference, authorized_amount_minor,"
                         + " authorized_currency, authorized_scale, captured_amount_minor,"
                         + " captured_currency, captured_scale, failure_reason, status,"
-                        + " created_at)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        + " created_at, rail)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, id);
             insert.setObject(2, intent);
             insert.setString(3, "auth-" + id);
@@ -718,6 +751,7 @@ class PaymentsSchemaDatabaseTest {
             insert.setString(13, attempt.reason);
             insert.setString(14, status);
             insert.setTimestamp(15, Timestamp.from(Instant.now()));
+            insert.setString(16, "card");
             insert.executeUpdate();
         }
     }

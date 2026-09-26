@@ -464,7 +464,8 @@ class PaymentAuthorizationDatabaseTest {
                 outcomes(),
                 new JdbcAuditWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                SimulatedCardPspAdapter.RAIL.id());
     }
 
     /** The shared outcome component over the real stores (`P5-TSK-013`'s extraction). */
@@ -530,7 +531,8 @@ class PaymentAuthorizationDatabaseTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
     }
 
     private PaymentCancellation cancellation() {
@@ -679,6 +681,45 @@ class PaymentAuthorizationDatabaseTest {
         @Override
         public QueryAnswer query(ProviderIdempotencyReference ourReference) {
             return delegate.query(ourReference);
+        }
+    }
+
+    @Test
+    @DisplayName("the attempt records the rail it was dispatched on, and the dispatch audit"
+            + " names it (P7-TSK-001, ADR-0059)")
+    void theAttemptRecordsItsRail() throws Exception {
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.AUTHORIZATIONS_PATH, 200,
+                APPROVED_BODY.formatted(UUID.randomUUID()));
+        PaymentIntentId intent = createIntent();
+        confirmation(adapter()).confirm(party, intent);
+        try (Connection app = DatabaseRoles.application()) {
+            // The STORED decision every resolver on any instance reads (V011): the domain's
+            // read-back and the raw column agree, and the value is the adapter's declaration,
+            // never a re-derivation from whatever is wired.
+            PaymentAttempt row = attempts.findForIntent(app, intent).orElseThrow();
+            assertThat(row.rail()).isEqualTo(SimulatedCardPspAdapter.RAIL.id());
+            try (PreparedStatement read = app.prepareStatement(
+                    "SELECT rail FROM payments.payment_attempt WHERE id = ?")) {
+                read.setObject(1, row.id().value());
+                try (ResultSet stored = read.executeQuery()) {
+                    assertThat(stored.next()).isTrue();
+                    assertThat(stored.getString("rail"))
+                            .isEqualTo(SimulatedCardPspAdapter.RAIL.id().value());
+                }
+            }
+            try (PreparedStatement audit = app.prepareStatement(
+                    "SELECT count(*) FROM platform.audit_record"
+                            + " WHERE operation = 'payments.PaymentConfirmed'"
+                            + " AND target_id = ? AND change_summary LIKE '%rail=card%'")) {
+                audit.setString(1, intent.value().toString());
+                try (ResultSet counted = audit.executeQuery()) {
+                    assertThat(counted.next()).isTrue();
+                    assertThat(counted.getLong(1))
+                            .as("the dispatch audit names the rail")
+                            .isEqualTo(1);
+                }
+            }
         }
     }
 }

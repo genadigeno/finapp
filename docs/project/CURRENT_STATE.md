@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-24 (the Phase 6 → 7 transition — **Phase 6 confirmed `COMPLETE` after repair; Phase 7 `READY`**, first task `P7-TSK-001`)
+Last updated: 2026-09-26 (`P7-TSK-001` — the rail port, the descriptor and the declared card rail; **M7.1 opens at 1 of 3**, next `P7-TSK-002`)
 
 ---
 
@@ -308,8 +308,8 @@ before repair and after. The status did not move; the review's verdict now rests
 phase.
 
 **Phase 7 — Cards, Wallets, A2A and Instant Payments**
-Status: **`READY`** (2026-09-24) — entry gate passed, all twelve criteria, by the Phase 6 → 7
-transition ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)). Planned
+Status: **`IN_PROGRESS`** (started 2026-09-26 with `P7-TSK-001`; entry gate passed 2026-09-24,
+all twelve criteria, by the Phase 6 → 7 transition ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)). Planned
 in [`PHASE_7_PLAN.md`](PHASE_7_PLAN.md); decisions in ADR-0059…0062 (`Proposed`): a payment rail
 declares its capabilities and the domain acts on them, never on a rail's name — three interaction
 models (two-step, push, book), finality modelled per rail, and each external rail its own clearing
@@ -322,8 +322,9 @@ on acceptance and settled on the scheme's cycle. Card issuing is external, and t
 platform to **101 invariants**; the in-scope set is whatever the catalogue marks `Phase: 7`, **ten**
 at planning. 18 backlog items across eight milestones (M7.1–M7.8);
 [`RAIL_AND_DISPUTE_LIFECYCLES.md`](../domain/RAIL_AND_DISPUTE_LIFECYCLES.md) states the machines;
-context 29, Disputes, merged into `payments`. First task: **`P7-TSK-001`**, `READY`. **Nothing of
-Phase 7 is implemented.**
+context 29, Disputes, merged into `payments`. First task **`P7-TSK-001`** `COMPLETE`
+(2026-09-26) — the rail port, the capability descriptor and the declared card rail, with no
+behaviour change; **M7.1 opens at 1 of 3**, next **`P7-TSK-002`** `READY`.
 
 ## Current Milestone
 
@@ -338,61 +339,50 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P7-TSK-001` — The rail port, the capability descriptor, and the card rail declared** — `READY`.
-Phase 7 — Cards, Wallets, A2A and Instant Payments — is `READY`, its entry gate passed by the
-Phase 6 → 7 transition (below). The task opens M7.1, Rail foundations: ADR-0059 §1 made real with
-**no behaviour change** — the payments domain acts on a rail's declared capabilities, and the one
-rail that exists, the simulated card PSP, declares them (payments `V011`, `payment_attempt.rail`).
-Its entry, with every field the gate names, is in [`BACKLOG.md`](BACKLOG.md); it runs the
+**`P7-TSK-002` — The attempt's machine per interaction model** — `READY`. M7.1, Rail
+foundations, stands at 1 of 3. The task builds the per-model attempt machines ADR-0059 §2
+decided — `TWO_STEP` unchanged, `PUSH` and `BOOK` with their own vocabularies, no state name
+shared across models, the three-layer discipline keyed on the model — on the rail and
+descriptor `P7-TSK-001` landed. Its entry is in [`BACKLOG.md`](BACKLOG.md); it runs the
 three-command loop, design first. **Not started.**
 
 ### Just completed
 
-**The Phase 6 → Phase 7 transition** — conducted 2026-09-24
-([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)). **Phase 6 confirmed
-`COMPLETE` after repair, and Phase 7 initialised `READY`.**
+**`P7-TSK-001` — The rail port, the capability descriptor, and the card rail declared** —
+`COMPLETE` (2026-09-26). **M7.1 opens at 1 of 3: the payments domain acts on a rail's declared
+capabilities, and the one rail that exists declares them — with no behaviour change.**
 
-| Part | Outcome |
+| Acceptance criterion | Evidence |
 |---|---|
-| The independent audit of Phase 6 | **Two CRITICAL and nine IMPORTANT defects the exit review had not found**, each repaired, tested and broken on purpose: **thirty-three probes, all caught**, every restore verified byte-identical |
-| *"Would Phase 6 remain correct if 10 instances executed it concurrently?"* | `FAIL` as found — the refund's re-send, the closed wallet, the finished refund's takeover, the merchant's close, the payout's permit, the losing resolvers' audit, the squatted checkout key — **`PASS`** after repair |
-| The full battery, fleet-wide | Before repair, on untouched `82b2179`: **1550 hermetic / 1027 database / 14 kafka, 0 failures**. After repair, from clean: **1558 hermetic / 1051 database / 14 kafka, 0 failures** |
-| Phase 7 | Entry gate, all twelve criteria → **`READY`**; ADR-0059…0062 `Proposed`; 101 invariants; 18 items; first task `P7-TSK-001` |
+| The card rail runs as a declared rail | `SimulatedCardPspAdapter.RAIL` — id `card`, ADR-0049 §2's semantics field by field, pinned in the adapter's contract suite; `payment_attempt.rail` stamped in the dispatching transaction (payments `V011`), frozen for every writer, and read back by every capability decision through `PaymentRails` |
+| Every Phase 5 and 6 suite green unchanged | The fleet-wide hermetic tier and the targeted database tier, fresh runs, 0 failures (counts in the change log); the full battery deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts claimed |
+| A planted rail-name branch in the core fails the build | Proven twice, once per token family: a `"card"` literal comparison in `PaymentOutcomes` and a `SimulatedCardPspAdapter.RAIL` reference in `PaymentSweeper`, each caught by `RailVocabularyIsConfinedTest` naming the file |
 
-**CRITICAL, repaired.**
-- **A taken-over refund's refused re-send concluded `FAILED` and released the hold**, though the
-  first send may already have paid. Every refund send now carries a permit (payments `V009`,
-  ADR-0057 §4), and a refused connection concludes only when it answered the first send and the
-  locked row's permit is still that send's.
-- **A customer could close the wallet an open top-up credits**: the card was then captured into a
-  posting the ledger refused — the customer charged, the books silent, the payment stuck
-  `CAPTURE_DISPATCHED`. The close now asks whether a payment in flight credits the account (payments
-  `V010`), and the confirmation share-locks the account and refuses a closed one.
-
-**IMPORTANT, repaired.** Refunds resolve by query, and a refund the provider never saw is re-driven
-under a permit, never concluded; the stuck-dispatch gauges count a `DISPATCHED` operation past the
-bound (Phase 5's debt, paid). A stranded `AUTHORIZED` is chained to capture by the sweep. The
-payments sweeper refuses a zero bound. A permission denial no longer leaves the identity on the
-worker thread. A takeover that finds its refund finished sends nothing. A merchant still owed money
-cannot be closed (`merchant.NotSettled`). The payout's first send is judged on the locked row's
-permit. A losing resolver records nothing. The checkout's derived payment key claims in its own
-scope, where no customer can claim it first.
-
-**MINOR, repaired or recorded.** The checkout's records printed the token, the amount and the line
-summary through generated `toString`s (fixed, with the tests the exemptions claimed); a foreign
-instrument at checkout answered `500` (fixed); a second holder of the token learned a session was
-mid-payment (fixed); a confirmation that lost the open was told `EXPIRED` (fixed); eleven
-documents and registers said something untrue (fixed). A second verified contact channel answers
-`500`, three race tests are missing and a poisoned row can starve a sweep (recorded below; the
-first since paid by `X-TSK-004`).
-
-**`X-TSK-001` is `COMPLETE`**: its one open criterion, a fresh full database tier green, was met by
-this transition's battery — before repair and after.
+- **The three decision points the backlog names now read the descriptor**: both clearing
+  resolutions (capture and refund completion) resolve the STORED rail's declared purpose —
+  still `SETTLEMENT_CLEARING`, proven by the posting suites unchanged and by the
+  bent-descriptor probe failing the capture suite's end-to-end replay; the refund mode is
+  judged on the locked attempt row; the reversal check deliberately arrives with the void
+  (`P7-TSK-004`), so nothing dead shipped.
+- **Eight probes, all caught**, every restore byte-identical (`MUTATION_TESTING.md` §2), the
+  backfill's catch honestly recorded as the textual pin's alone — test databases are born
+  after `V011`.
+- **Decided at design**: no rail in the API views until routing makes it customer-meaningful
+  (`P7-TSK-003`); `interaction_model` is stored by `P7-TSK-002`, whose machines key on it;
+  `PaymentRail` is declared data bound to its operations at the composition root, because the
+  wired provider bean is the metering decorator and a capability face on the undecorated
+  instance would be one the running system cannot see.
+- **The gate found and fixed**: the Phase 7 status still `READY` after the phase's first task
+  had started, in this document AND in the backlog's section header — the stale-second-copy
+  class, in two copies at once (both now `IN_PROGRESS`); `PAYMENT_LIFECYCLES.md` §3 silent on
+  the rail birth fact; and its `VOIDED` absence-note still saying the void "arrives with
+  checkout expiry, Phase 6" — the drift the Phase 6 → 7 transition corrected in ADR-0045 but
+  missed in this second copy, now corrected with provenance.
 
 ### Previously
 
-The per-task completion records — 144 blocks: `X-TSK-004`, cross-cutting and completed after this
-one, then `P6-DOC-001` back to project initiation — are archived in
+The per-task completion records — 145 blocks: `X-TSK-004` (cross-cutting, newest), then the
+Phase 6 → 7 transition, then `P6-DOC-001` back to project initiation — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
 `P6-TSK-015`'s gate.)*
@@ -408,8 +398,8 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 7 is `READY`** (2026-09-24) — entry gate passed by the Phase 6 → 7 transition; 18 items
-across eight milestones, none started. **Next: `P7-TSK-001`.**
+**Phase 7 is `IN_PROGRESS`** (started 2026-09-26) — 1 of 18 items complete; **M7.1, Rail
+foundations, opens at 1 of 3** (`P7-TSK-001`). **Next: `P7-TSK-002`.**
 
 **Phase 6 is `COMPLETE`** (2026-09-24) — 18 of 18 items across seven milestones, ruled by
 `P6-DOC-001`'s exit review and confirmed after repair by the transition's independent audit: M6.1 `CLOSED` at 3 of 3; M6.2 at 2 of 2 (`P6-TSK-004`, `-005`); M6.3
@@ -439,7 +429,11 @@ rather than a `500`. The refusal writes nothing, and recovery stays on the chann
 (`INV-IDN-06`). The narrative is in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md), the entry
 in [`BACKLOG.md`](BACKLOG.md).
 
-The last work performed was **`X-TSK-004`** (2026-09-24, above). Before it, **the Phase 6 → Phase 7
+The last work performed was **`P7-TSK-001`** (2026-09-26): the rail port and capability
+descriptor (ADR-0059 §1 made real with no behaviour change), the card rail declared by its
+adapter, `payment_attempt.rail` as a frozen birth fact (payments `V011`), the capability
+decision points moved onto the stored rail's declaration, and `INV-RAIL-01`'s static rule —
+eight probes, all caught. Before that, **`X-TSK-004`** (2026-09-24, above), and before it, **the Phase 6 → Phase 7
 transition** (2026-09-24): Phase 6 audited
 independently, two CRITICAL and nine IMPORTANT defects repaired and probed (thirty-three probes, all
 caught), the full battery fleet-wide before repair and after, and Phase 7 initialised — ADR-0059…0062

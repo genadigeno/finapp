@@ -8363,7 +8363,10 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `READY` — entry gate passed 2026-09-24 by the Phase 6 → 7 transition
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (1 of 18 items complete, M7.1 at
+1 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
+2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
 granularity by the same transition. The engineering plan is [`PHASE_7_PLAN.md`](PHASE_7_PLAN.md);
 decisions are ADR-0059…ADR-0062 (`Proposed`); the domain statement is
@@ -8386,7 +8389,7 @@ Pay-ins by bank (`P7-TSK-009`, `-010`) · M7.5 The wallet as an instrument (`P7-
 Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TSK-015`, `P7-TST-001`,
 `P7-TST-002`) · M7.8 The gate (`P7-DOC-001`). Acceptance per milestone in `PHASE_7_PLAN.md` §16.
 
-**P7-TSK-001 — The rail port, the capability descriptor, and the card rail declared** — `READY`
+**P7-TSK-001 — The rail port, the capability descriptor, and the card rail declared** — `COMPLETE`
 - **Objective**: ADR-0059 §1 made real, with no behaviour change: the payments domain acts on a
   rail's declared capabilities, and the one rail that exists declares them.
 - **Bounded context**: Payments (9), `payments`.
@@ -8422,8 +8425,44 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Accept**: the card rail runs as a declared rail; every Phase 5 and 6 suite green unchanged; a
   planted rail-name branch in the core fails the build.
 - **Definition of done**: `DOD-ARCH`, `DOD-FIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
+- **Gate evidence (2026-09-26)**: the card rail runs as a declared rail — `RailId`,
+  `RailCapabilities` (coherence refused at construction, every impossible combination from
+  ADR-0059 §1's table), the `PaymentRail` declaration and the `PaymentRails` directory;
+  `SimulatedCardPspAdapter.RAIL` declares ADR-0049 §2's semantics field by field, pinned by the
+  adapter's contract suite. `payment_attempt.rail` (`V011`): backfilled `card`, `NOT NULL`,
+  shape-checked, frozen among the birth facts by the replaced every-writer trigger, whose edge
+  conditions the migration test regenerates from the machine against `V011` exactly as against
+  `V003`. The three capability decision points consult the descriptor: both clearing
+  resolutions in `PaymentOutcomes` read the STORED attempt's rail through the directory (an
+  undeclared rail is a loud wiring fault before anything posts), and `PaymentRefund` judges the
+  refund mode on the locked row; the reversal check deliberately lands with the void itself
+  (`P7-TSK-004`), so no dead refusal code shipped. The dispatch audits name the rail.
+  `INV-RAIL-01`'s static rule (`RailVocabularyIsConfinedTest`) scans every module's main
+  sources comment-stripped: a whole-literal rail name outside its declaring adapter and a
+  declaration-constant reference outside the composition root both fail the build, with
+  in-suite planted violations and stale-permit checks. **Design decisions recorded**: the rail
+  is NOT in any API view (a constant column inside a no-behaviour-change task; it joins the
+  views when routing makes it customer-meaningful, `P7-TSK-003`); `interaction_model` is not
+  stored (derivable with one rail; `P7-TSK-002`, which builds the machines that key on it, owns
+  its column); `PaymentRail` is declared data rather than an adapter-implemented interface,
+  because the wired provider bean is the metering decorator and a capability face on the
+  undecorated instance would be one the running system cannot see. **Deviation recorded**: the
+  entry's "full battery green" is met per the owner's standing skip instruction by the
+  fleet-wide hermetic tier (1573 tests across 14 modules, 0 failures, fresh) and 107 targeted
+  database tests across 11 suites (payments schema,
+  authorization, capture, refund, sweeper, webhooks, metrics, conservation, ambiguity, merchant
+  capture, checkout flow, platform column classification), 0 failures — no fleet-wide database
+  or kafka count claimed. **Eight probes, all caught**, restores byte-identical
+  (`MUTATION_TESTING.md` §2): two planted rail-name branches (each family), the descriptor's
+  clearing purpose bent (caught at the posting's own assertions — the money rank), the freeze
+  clause dropped, the backfill disarmed (the textual pin alone can catch it: test databases are
+  born after `V011`, the recorded reason the pin exists), the insert writing no rail, the audit
+  naming none, the refund-mode gate inverted. **Multi-instance PASS**: the descriptor is
+  compiled data identical on every instance; the per-payment fact is the frozen stored `rail`
+  every resolver keys on; no cache, no process state; the migrate-then-deploy sequencing note
+  (`NOT NULL` versus old writers) recorded as V009's precedent.
 
-**P7-TSK-002 — The attempt's machine per interaction model** — `PLANNED`
+**P7-TSK-002 — The attempt's machine per interaction model** — `READY`
 - **Objective**: ADR-0059 §2 — three machines under one aggregate root, each under the
   three-layer discipline, so no rail's completion can be mistaken for another's.
 - **Bounded context**: Payments (9).

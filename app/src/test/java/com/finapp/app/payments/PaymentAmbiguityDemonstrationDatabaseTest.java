@@ -440,6 +440,7 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                                     IDS,
                                     CLOCK,
                                     holder.intent(),
+                                    SimulatedCardPspAdapter.RAIL.id(),
                                     new ProviderIdempotencyReference("amb-" + IDS.next()));
                     attempts.insert(uow, attempt);
                     return attempt;
@@ -449,7 +450,8 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
     private PaymentConfirmation confirmation() {
         return new PaymentConfirmation(
                 runner, intents, attempts, evidence, participants, adapter(),
-                outcomes(), new JdbcAuditWriter(), IDS, CLOCK);
+                outcomes(), new JdbcAuditWriter(), IDS, CLOCK,
+                SimulatedCardPspAdapter.RAIL.id());
     }
 
     private PaymentCapture capture() {
@@ -534,7 +536,8 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
     }
 
     private SimulatedCardPspAdapter adapter() {

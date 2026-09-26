@@ -83,6 +83,7 @@ class PaymentCaptureTest {
         authorized =
                 PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), intent.id(),
+                        SimulatedCardPspAdapter.RAIL.id(),
                         new ProviderIdempotencyReference("auth-" + IDS.next()), null,
                         new ProviderReference("psp-auth-1"), AMOUNT, null, null, null,
                         PaymentAttemptStatus.AUTHORIZED, Instant.now(CLOCK));
@@ -137,7 +138,8 @@ class PaymentCaptureTest {
                         (uow, record) -> auditTrail.add(record),
                         (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS,
-                        CLOCK),
+                        CLOCK,
+                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL))),
                 (uow, record) -> auditTrail.add(record),
                 IDS,
                 CLOCK);
@@ -236,7 +238,7 @@ class PaymentCaptureTest {
         return switch (status) {
             case AUTH_DISPATCHED ->
                     PaymentAttempt.rehydrate(
-                            authorized.id(), intent.id(), authorized.authorizationReference(),
+                            authorized.id(), intent.id(), SimulatedCardPspAdapter.RAIL.id(), authorized.authorizationReference(),
                             null, null, null, null, null, null,
                             PaymentAttemptStatus.AUTH_DISPATCHED, authorized.createdAt());
             case CAPTURE_DISPATCHED ->

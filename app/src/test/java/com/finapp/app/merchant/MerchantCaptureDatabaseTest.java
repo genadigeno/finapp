@@ -1246,7 +1246,8 @@ class MerchantCaptureDatabaseTest {
                                     outcomes(),
                                     new JdbcAuditWriter(),
                                     IDS,
-                                    CLOCK)
+                                    CLOCK,
+                                    SimulatedCardPspAdapter.RAIL.id())
                             .confirm(payment.party(), payment.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
         }
@@ -1441,7 +1442,8 @@ class MerchantCaptureDatabaseTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
     }
 
     private PaymentCapture capture() {

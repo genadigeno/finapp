@@ -1,8 +1,12 @@
 package com.finapp.payments;
 
+import com.finapp.ledger.AccountPurpose;
 import com.finapp.sharedkernel.money.Money;
 import java.net.URI;
 import java.time.Duration;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * The simulated card-style PSP — the platform's first {@link PaymentProvider} (`P5-TSK-003`,
@@ -31,6 +35,33 @@ public final class SimulatedCardPspAdapter implements PaymentProvider {
 
     /** The stable provider name: the evidence scope and, from `P5-TSK-017`, the meter tag value. */
     public static final String NAME = "simulated-card";
+
+    /**
+     * The card rail this adapter operates, declared as data (`P7-TSK-001`, ADR-0059 §1) — the
+     * one place the rail's name is written ({@code RailVocabularyIsConfinedTest}), and the
+     * descriptor written from what ADR-0049 §2 already decided: two-step; revocable until the
+     * scheme's dispute window ends, chargebacks being that window; the void of an uncaptured
+     * authorization the one reversal (`P7-TSK-004` enforces it); refunds against the capture
+     * at the provider; settlement deferred through clearing, with {@code SETTLEMENT_CLEARING}
+     * this rail's own position (its meaning narrowed to the card rail by ADR-0059 §4); no
+     * outcome deadline — a card's ambiguity ends only when the provider or a query says so;
+     * and no currency restriction or ceiling declared, because the simulated PSP accepts what
+     * it is sent and eligibility is routing's to judge when it exists (`P7-TSK-003`).
+     */
+    public static final PaymentRail RAIL =
+            new PaymentRail(
+                    RailId.of("card"),
+                    new RailCapabilities(
+                            InteractionModel.TWO_STEP,
+                            RailCapabilities.Finality.REVOCABLE_UNTIL_DISPUTE_WINDOW_ENDS,
+                            Set.of(RailCapabilities.Reversal.VOID),
+                            RailCapabilities.RefundMode.PROVIDER_REFUND,
+                            RailCapabilities.SettlementModel.DEFERRED_VIA_CLEARING,
+                            Optional.empty(),
+                            RailCapabilities.DisputeModel.CARD_SCHEME_CHARGEBACKS,
+                            Optional.empty(),
+                            Map.of(),
+                            Optional.of(AccountPurpose.SETTLEMENT_CLEARING)));
 
     // The simulated wire paths - published for tests that stub the provider.
     public static final String AUTHORIZATIONS_PATH = "/authorizations";

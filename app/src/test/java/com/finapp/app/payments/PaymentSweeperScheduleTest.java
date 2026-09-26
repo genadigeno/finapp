@@ -211,7 +211,8 @@ class PaymentSweeperScheduleTest {
                         (uow, record) -> {},
                         (uow, envelope, payload, mediaType) -> {},
                         ids(),
-                        java.time.Clock.systemUTC());
+                        java.time.Clock.systemUTC(),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(com.finapp.payments.SimulatedCardPspAdapter.RAIL)));
         return new PaymentSweeper(
                 runner,
                 attempts,

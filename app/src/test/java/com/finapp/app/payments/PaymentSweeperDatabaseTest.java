@@ -564,6 +564,7 @@ class PaymentSweeperDatabaseTest {
                                     IDS,
                                     CLOCK,
                                     holder.intent(),
+                                    SimulatedCardPspAdapter.RAIL.id(),
                                     new ProviderIdempotencyReference("swp-" + IDS.next()));
                     attempts.insert(uow, attempt);
                     return attempt;
@@ -585,7 +586,8 @@ class PaymentSweeperDatabaseTest {
         try {
             new PaymentConfirmation(
                             runner, intents, attempts, evidence, participants, adapter(),
-                            outcomes(), new JdbcAuditWriter(), IDS, CLOCK)
+                            outcomes(), new JdbcAuditWriter(), IDS, CLOCK,
+                            SimulatedCardPspAdapter.RAIL.id())
                     .confirm(holder.party(), holder.intent());
             PaymentAttemptId attemptId =
                     runner.inTransaction(
@@ -681,7 +683,8 @@ class PaymentSweeperDatabaseTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
     }
 
     private SimulatedCardPspAdapter adapter() {

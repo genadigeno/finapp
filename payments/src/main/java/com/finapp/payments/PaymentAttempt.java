@@ -62,6 +62,7 @@ public final class PaymentAttempt {
 
     private final PaymentAttemptId id;
     private final PaymentIntentId intentId;
+    private final RailId rail;
     private final ProviderIdempotencyReference authorizationReference;
     private final ProviderIdempotencyReference captureReference;
     private final ProviderReference authorizationProviderReference;
@@ -75,6 +76,7 @@ public final class PaymentAttempt {
     private PaymentAttempt(
             PaymentAttemptId id,
             PaymentIntentId intentId,
+            RailId rail,
             ProviderIdempotencyReference authorizationReference,
             ProviderIdempotencyReference captureReference,
             ProviderReference authorizationProviderReference,
@@ -86,6 +88,10 @@ public final class PaymentAttempt {
             Instant createdAt) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.intentId = Objects.requireNonNull(intentId, "intentId must not be null");
+        this.rail = Objects.requireNonNull(
+                rail,
+                "rail must not be null - which rail the money travels on is a birth fact, and"
+                        + " every capability decision keys on it (ADR-0059, P7-TSK-001)");
         this.authorizationReference = Objects.requireNonNull(
                 authorizationReference,
                 "authorizationReference must not be null - the dispatch is committed before the"
@@ -210,12 +216,14 @@ public final class PaymentAttempt {
             IdGenerator ids,
             Clock clock,
             PaymentIntentId intentId,
+            RailId rail,
             ProviderIdempotencyReference authorizationReference) {
         Objects.requireNonNull(ids, "ids must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
         return new PaymentAttempt(
                 PaymentAttemptId.next(ids),
                 intentId,
+                rail,
                 authorizationReference,
                 null, null, null, null, null, null,
                 PaymentAttemptStatus.AUTH_DISPATCHED,
@@ -229,6 +237,7 @@ public final class PaymentAttempt {
     public static PaymentAttempt rehydrate(
             PaymentAttemptId id,
             PaymentIntentId intentId,
+            RailId rail,
             ProviderIdempotencyReference authorizationReference,
             ProviderIdempotencyReference captureReference,
             ProviderReference authorizationProviderReference,
@@ -239,7 +248,7 @@ public final class PaymentAttempt {
             PaymentAttemptStatus status,
             Instant createdAt) {
         return new PaymentAttempt(
-                id, intentId, authorizationReference, captureReference,
+                id, intentId, rail, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, failureReason, status, createdAt);
     }
@@ -248,7 +257,7 @@ public final class PaymentAttempt {
     public PaymentAttempt authorize(ProviderReference providerReference, Money amount) {
         requireLegal(PaymentAttemptStatus.AUTHORIZED);
         return new PaymentAttempt(
-                id, intentId, authorizationReference, captureReference,
+                id, intentId, rail, authorizationReference, captureReference,
                 providerReference, amount, captureProviderReference, capturedAmount,
                 failureReason, PaymentAttemptStatus.AUTHORIZED, createdAt);
     }
@@ -257,7 +266,7 @@ public final class PaymentAttempt {
     public PaymentAttempt authorizationOutcomeUnknown() {
         requireLegal(PaymentAttemptStatus.AUTH_UNKNOWN);
         return new PaymentAttempt(
-                id, intentId, authorizationReference, captureReference,
+                id, intentId, rail, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, failureReason, PaymentAttemptStatus.AUTH_UNKNOWN, createdAt);
     }
@@ -267,7 +276,7 @@ public final class PaymentAttempt {
         Objects.requireNonNull(reference, "the capture's idempotency reference must not be null");
         requireLegal(PaymentAttemptStatus.CAPTURE_DISPATCHED);
         return new PaymentAttempt(
-                id, intentId, authorizationReference, reference,
+                id, intentId, rail, authorizationReference, reference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, failureReason, PaymentAttemptStatus.CAPTURE_DISPATCHED,
                 createdAt);
@@ -277,7 +286,7 @@ public final class PaymentAttempt {
     public PaymentAttempt captureOutcomeUnknown() {
         requireLegal(PaymentAttemptStatus.CAPTURE_UNKNOWN);
         return new PaymentAttempt(
-                id, intentId, authorizationReference, captureReference,
+                id, intentId, rail, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, failureReason, PaymentAttemptStatus.CAPTURE_UNKNOWN, createdAt);
     }
@@ -289,7 +298,7 @@ public final class PaymentAttempt {
     public PaymentAttempt capture(ProviderReference providerReference, Money amount) {
         requireLegal(PaymentAttemptStatus.CAPTURED);
         return new PaymentAttempt(
-                id, intentId, authorizationReference, captureReference,
+                id, intentId, rail, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, providerReference, amount,
                 failureReason, PaymentAttemptStatus.CAPTURED, createdAt);
     }
@@ -299,7 +308,7 @@ public final class PaymentAttempt {
         Objects.requireNonNull(reason, "a FAILED attempt requires its mapped reason");
         requireLegal(PaymentAttemptStatus.FAILED);
         return new PaymentAttempt(
-                id, intentId, authorizationReference, captureReference,
+                id, intentId, rail, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, reason, PaymentAttemptStatus.FAILED, createdAt);
     }
@@ -317,6 +326,16 @@ public final class PaymentAttempt {
 
     public PaymentIntentId intentId() {
         return intentId;
+    }
+
+    /**
+     * The rail this attempt was dispatched on — a birth fact, frozen for every writer
+     * (`P7-TSK-001`, ADR-0059). The name keys into the build's declared
+     * {@link RailCapabilities} through {@link PaymentRails}, so an outcome resolver on any
+     * instance reads the stored decision, never its own wiring.
+     */
+    public RailId rail() {
+        return rail;
     }
 
     /** Minted at birth; what the provider is queried by ({@code INV-PAY-04}, §7 resolvers). */

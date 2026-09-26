@@ -568,6 +568,7 @@ them are classified at the ceiling regardless.
 | `payment_attempt` | `failure_reason` | `CONFIDENTIAL` | `DECLINED` is a fact about a person's finances, not an enumeration technicality — `transfer.failure_reason`'s reasoning verbatim |
 | `payment_attempt` | `status` | `CONFIDENTIAL` | What happened to a person's payment operation |
 | `payment_attempt` | `created_at` | `CONFIDENTIAL` | Dates a person's financial act |
+| `payment_attempt` | `rail` | `INTERNAL` | An enumerated name of the way the money travels (ADR-0059, `P7-TSK-001`) — it keys into declared capabilities that are code, and says nothing about a person the row's identifiers do not already say |
 | `payment_attempt_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `payment_attempt_event` | `attempt_id` | `INTERNAL` | An identifier of a thing |
 | `payment_attempt_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
