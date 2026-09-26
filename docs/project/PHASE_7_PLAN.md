@@ -150,7 +150,8 @@ the same change (the `refund.dispatch_key` lesson, and payments `V009`'s own pra
 - The ledger chart gains `INSTANT_CLEARING`, `CHARGEBACK_RECOVERABLE` and `DISPUTE_COSTS`, each
   with its constraint-regenerating migration (the `V011`/`V012` precedent).
 - The `payment_intent.wallet_account_id` rename (a recorded debt) lands with the first
-  migration that recreates the intent's every-writer trigger.
+  migration that recreates the intent's every-writer trigger *(landed: `P7-TSK-002`,
+  payments `V012`)*.
 
 Forward-only migrations (ADR-0011); explicit SQL (ADR-0033); money as minor units, currency
 and scale (ADR-0003).

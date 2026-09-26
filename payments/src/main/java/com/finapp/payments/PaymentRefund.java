@@ -372,7 +372,7 @@ public final class PaymentRefund {
         return new Dispatch(
                 found,
                 intentId,
-                intent.walletAccount(),
+                intent.creditAccount(),
                 attempt.captureProviderReference(),
                 permit.isPresent(),
                 false,
@@ -434,7 +434,7 @@ public final class PaymentRefund {
                         new RefundReservation(
                                 intentId,
                                 attempt.id(),
-                                intent.walletAccount(),
+                                intent.creditAccount(),
                                 amount,
                                 refunds.sumCompletedFor(uow, attempt.id(), amount.currency())));
 
@@ -442,7 +442,7 @@ public final class PaymentRefund {
         // very figure the bound judges: from this commit until the outcome, what the refund
         // will take is unspendable (INV-BAL-04). Throws with nothing written when the account
         // cannot fund it.
-        com.finapp.ledger.Hold hold = holds.place(uow, intent.walletAccount(), reservation);
+        com.finapp.ledger.Hold hold = holds.place(uow, intent.creditAccount(), reservation);
 
         Refund refund =
                 Refund.create(
@@ -497,7 +497,7 @@ public final class PaymentRefund {
         return new Dispatch(
                 refund,
                 intentId,
-                intent.walletAccount(),
+                intent.creditAccount(),
                 attempt.captureProviderReference(),
                 true,
                 true,

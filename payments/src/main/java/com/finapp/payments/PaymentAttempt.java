@@ -63,6 +63,7 @@ public final class PaymentAttempt {
     private final PaymentAttemptId id;
     private final PaymentIntentId intentId;
     private final RailId rail;
+    private final InteractionModel interactionModel;
     private final ProviderIdempotencyReference authorizationReference;
     private final ProviderIdempotencyReference captureReference;
     private final ProviderReference authorizationProviderReference;
@@ -77,6 +78,7 @@ public final class PaymentAttempt {
             PaymentAttemptId id,
             PaymentIntentId intentId,
             RailId rail,
+            InteractionModel interactionModel,
             ProviderIdempotencyReference authorizationReference,
             ProviderIdempotencyReference captureReference,
             ProviderReference authorizationProviderReference,
@@ -92,10 +94,11 @@ public final class PaymentAttempt {
                 rail,
                 "rail must not be null - which rail the money travels on is a birth fact, and"
                         + " every capability decision keys on it (ADR-0059, P7-TSK-001)");
-        this.authorizationReference = Objects.requireNonNull(
-                authorizationReference,
-                "authorizationReference must not be null - the dispatch is committed before the"
-                        + " provider is asked, so no attempt exists without one (ADR-0046)");
+        this.interactionModel = Objects.requireNonNull(
+                interactionModel,
+                "interactionModel must not be null - which machine this attempt lives in is a"
+                        + " birth fact (ADR-0059, P7-TSK-002)");
+        this.authorizationReference = authorizationReference;
         this.captureReference = captureReference;
         this.authorizationProviderReference = authorizationProviderReference;
         this.authorizedAmount = authorizedAmount;
@@ -104,6 +107,35 @@ public final class PaymentAttempt {
         this.failureReason = failureReason;
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
+
+        // WHICH MACHINE, FIRST (P7-TSK-002, ADR-0059 section 2): the status must be the
+        // model's own; the authorization dispatch reference exists exactly on the two-step
+        // model (ADR-0046 - committed before the provider is asked, so no two-step attempt
+        // exists without one; a push execution's and a book movement's own references arrive
+        // with their rails' tasks, in their own columns); and no two-step fact rides another
+        // model's row.
+        if (!interactionModel.statuses().contains(status)) {
+            throw new IllegalArgumentException(
+                    "a " + interactionModel + " attempt cannot be " + status
+                            + " - the status is another machine's (ADR-0059, INV-LIFE-02)");
+        }
+        if ((interactionModel == InteractionModel.TWO_STEP)
+                != (authorizationReference != null)) {
+            throw new IllegalArgumentException(
+                    "the authorization dispatch reference exists exactly on the two-step model"
+                            + " (ADR-0046, ADR-0059): a two-step attempt never lacks one, and"
+                            + " no other model carries one");
+        }
+        if (interactionModel != InteractionModel.TWO_STEP
+                && (captureReference != null
+                        || authorizationProviderReference != null
+                        || authorizedAmount != null
+                        || captureProviderReference != null
+                        || capturedAmount != null)) {
+            throw new IllegalArgumentException(
+                    "a " + interactionModel + " attempt carries no two-step fact: its own"
+                            + " facts arrive with its rail's task (P7-TSK-002)");
+        }
 
         // Mapped reason <=> FAILED, both directions (the Transfer.failureReason idiom). The
         // reason is THIS row's fact - the intent's FAILED carries no copy (one fact, one place).
@@ -224,6 +256,9 @@ public final class PaymentAttempt {
                 PaymentAttemptId.next(ids),
                 intentId,
                 rail,
+                // The two-step birth door: this command IS the card-shaped dispatch. The
+                // other models' births arrive with their rails' tasks (P7-TSK-002).
+                InteractionModel.TWO_STEP,
                 authorizationReference,
                 null, null, null, null, null, null,
                 PaymentAttemptStatus.AUTH_DISPATCHED,
@@ -238,6 +273,7 @@ public final class PaymentAttempt {
             PaymentAttemptId id,
             PaymentIntentId intentId,
             RailId rail,
+            InteractionModel interactionModel,
             ProviderIdempotencyReference authorizationReference,
             ProviderIdempotencyReference captureReference,
             ProviderReference authorizationProviderReference,
@@ -248,7 +284,7 @@ public final class PaymentAttempt {
             PaymentAttemptStatus status,
             Instant createdAt) {
         return new PaymentAttempt(
-                id, intentId, rail, authorizationReference, captureReference,
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, failureReason, status, createdAt);
     }
@@ -257,7 +293,7 @@ public final class PaymentAttempt {
     public PaymentAttempt authorize(ProviderReference providerReference, Money amount) {
         requireLegal(PaymentAttemptStatus.AUTHORIZED);
         return new PaymentAttempt(
-                id, intentId, rail, authorizationReference, captureReference,
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 providerReference, amount, captureProviderReference, capturedAmount,
                 failureReason, PaymentAttemptStatus.AUTHORIZED, createdAt);
     }
@@ -266,7 +302,7 @@ public final class PaymentAttempt {
     public PaymentAttempt authorizationOutcomeUnknown() {
         requireLegal(PaymentAttemptStatus.AUTH_UNKNOWN);
         return new PaymentAttempt(
-                id, intentId, rail, authorizationReference, captureReference,
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, failureReason, PaymentAttemptStatus.AUTH_UNKNOWN, createdAt);
     }
@@ -276,7 +312,7 @@ public final class PaymentAttempt {
         Objects.requireNonNull(reference, "the capture's idempotency reference must not be null");
         requireLegal(PaymentAttemptStatus.CAPTURE_DISPATCHED);
         return new PaymentAttempt(
-                id, intentId, rail, authorizationReference, reference,
+                id, intentId, rail, interactionModel, authorizationReference, reference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, failureReason, PaymentAttemptStatus.CAPTURE_DISPATCHED,
                 createdAt);
@@ -286,7 +322,7 @@ public final class PaymentAttempt {
     public PaymentAttempt captureOutcomeUnknown() {
         requireLegal(PaymentAttemptStatus.CAPTURE_UNKNOWN);
         return new PaymentAttempt(
-                id, intentId, rail, authorizationReference, captureReference,
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, failureReason, PaymentAttemptStatus.CAPTURE_UNKNOWN, createdAt);
     }
@@ -298,7 +334,7 @@ public final class PaymentAttempt {
     public PaymentAttempt capture(ProviderReference providerReference, Money amount) {
         requireLegal(PaymentAttemptStatus.CAPTURED);
         return new PaymentAttempt(
-                id, intentId, rail, authorizationReference, captureReference,
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, providerReference, amount,
                 failureReason, PaymentAttemptStatus.CAPTURED, createdAt);
     }
@@ -308,14 +344,14 @@ public final class PaymentAttempt {
         Objects.requireNonNull(reason, "a FAILED attempt requires its mapped reason");
         requireLegal(PaymentAttemptStatus.FAILED);
         return new PaymentAttempt(
-                id, intentId, rail, authorizationReference, captureReference,
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, reason, PaymentAttemptStatus.FAILED, createdAt);
     }
 
     /** The machine's one check ({@code INV-LIFE-02}), whichever door the transition arrives by. */
     private void requireLegal(PaymentAttemptStatus target) {
-        if (!status.canTransitionTo(target)) {
+        if (!interactionModel.permits(status, target)) {
             throw new IllegalPaymentAttemptTransitionException(id, status, target);
         }
     }
@@ -336,6 +372,16 @@ public final class PaymentAttempt {
      */
     public RailId rail() {
         return rail;
+    }
+
+    /**
+     * Which machine this attempt lives in — a birth fact beside the rail (`P7-TSK-002`,
+     * ADR-0059 §2). The legal edges are the model's own ({@link InteractionModel#edges}), and
+     * every layer keys on it: this aggregate's guard, the store's writer-side check, and
+     * `V012`'s generated trigger.
+     */
+    public InteractionModel interactionModel() {
+        return interactionModel;
     }
 
     /** Minted at birth; what the provider is queried by ({@code INV-PAY-04}, §7 resolvers). */

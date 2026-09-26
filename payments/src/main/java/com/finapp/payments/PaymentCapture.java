@@ -219,7 +219,7 @@ public final class PaymentCapture {
                 Optional.of(
                         new Dispatch(
                                 attempt.intentId(),
-                                intent.walletAccount(),
+                                intent.creditAccount(),
                                 reference,
                                 attempt.authorizationProviderReference(),
                                 attempt.authorizedAmount())),

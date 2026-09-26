@@ -130,6 +130,9 @@ class PaymentIntentTest {
         assertThat(intent.id()).isNotNull();
         assertThat(intent.amount()).isEqualTo(AMOUNT);
         assertThat(intent.createdAt()).isNotNull();
+        // Every intent any current door creates captures without a further decision;
+        // MANUAL's producer arrives with the surface that owns it (P7-TSK-002, ADR-0059).
+        assertThat(intent.captureMode()).isEqualTo(CaptureMode.AUTOMATIC);
 
         // Zero asserts nothing; negative is a credit wearing a debit's clothes. Never a
         // committed outcome — the boundary's 422 (P5-TSK-009) — refused here as defence in
@@ -165,6 +168,7 @@ class PaymentIntentTest {
         assertThatThrownBy(() -> PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
                         LedgerAccountId.next(IDS),
+                        CaptureMode.AUTOMATIC,
                         Money.ofMinorUnits(-98_76, EUR),
                         PaymentIntentStatus.SUCCEEDED,
                         Instant.now(CLOCK)))
@@ -177,15 +181,22 @@ class PaymentIntentTest {
         // status is not an intent, whoever wrote it.
         assertThatThrownBy(() -> PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), null, IDS.next(), IDS.next(),
-                        LedgerAccountId.next(IDS), AMOUNT,
+                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
                         PaymentIntentStatus.PROCESSING, Instant.now(CLOCK)))
                 .as("a rehydrated row with no party")
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
-                        LedgerAccountId.next(IDS), AMOUNT, null, Instant.now(CLOCK)))
+                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT, null, Instant.now(CLOCK)))
                 .as("a rehydrated row with no status")
                 .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> PaymentIntent.rehydrate(
+                        PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
+                        LedgerAccountId.next(IDS), null, AMOUNT,
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK)))
+                .as("a rehydrated row with no capture mode - the birth fact V012 backfilled")
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("captureMode");
     }
 
     @Test
@@ -203,7 +214,8 @@ class PaymentIntentTest {
         assertThat(confirmed.partyId()).isEqualTo(created.partyId());
         assertThat(confirmed.customerId()).isEqualTo(created.customerId());
         assertThat(confirmed.paymentMethodId()).isEqualTo(created.paymentMethodId());
-        assertThat(confirmed.walletAccount()).isEqualTo(created.walletAccount());
+        assertThat(confirmed.creditAccount()).isEqualTo(created.creditAccount());
+        assertThat(confirmed.captureMode()).isEqualTo(created.captureMode());
         assertThat(confirmed.amount()).isEqualTo(created.amount());
         assertThat(confirmed.createdAt()).isEqualTo(created.createdAt());
     }
@@ -237,6 +249,7 @@ class PaymentIntentTest {
                 IDS.next(),
                 IDS.next(),
                 LedgerAccountId.next(IDS),
+                CaptureMode.AUTOMATIC,
                 AMOUNT,
                 status,
                 Instant.now(CLOCK));

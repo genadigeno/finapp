@@ -2906,7 +2906,7 @@ class CheckoutFlowDatabaseTest {
                         app.prepareStatement(
                                 "SELECT count(*) FROM payments.payment_intent intent"
                                         + " JOIN ledger.ledger_account account"
-                                        + "   ON account.id = intent.wallet_account_id"
+                                        + "   ON account.id = intent.credit_account_id"
                                         + " WHERE account.owner_ref = ?"
                                         + "   AND account.purpose = 'MERCHANT_PAYABLE'")) {
             read.setObject(1, UUID.fromString(merchant.id()));

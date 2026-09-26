@@ -471,9 +471,120 @@ class PaymentSweeperDatabaseTest {
                 .isEqualTo("AUTH_DISPATCHED");
     }
 
+    @Test
+    @DisplayName("the stranded-authorization chain leg honours the capture mode: MANUAL rests,"
+            + " AUTOMATIC moves (P7-TSK-002)")
+    void theChainLegHonoursTheCaptureMode() throws Exception {
+        UUID manualAttempt = IDS.next();
+        UUID automaticAttempt = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            seedAgedAuthorized(app, manualAttempt, "MANUAL");
+            seedAgedAuthorized(app, automaticAttempt, "AUTOMATIC");
+        }
+
+        sweeper(DUE_NOW, DUE_NOW).sweep();
+
+        // Row-scoped, as ever. The MANUAL intent's authorization is a reservation awaiting a
+        // person, and the sweeper is not that person (ADR-0059; the mode is V012's birth
+        // fact): resting is the correct outcome, not a missed row.
+        assertThat(oneString(STATUS_BY_ID, manualAttempt)).isEqualTo("AUTHORIZED");
+        assertThat(count(EVIDENCE_BY_ID, manualAttempt)).as("not even dispatched").isZero();
+        // The AUTOMATIC sibling - same age, same shape, differing in nothing but the mode -
+        // is exactly what the leg is FOR: capture follows authorization without a further
+        // decision, so the leg moved it (whatever the provider then answered).
+        assertThat(oneString(STATUS_BY_ID, automaticAttempt)).isNotEqualTo("AUTHORIZED");
+    }
+
+    @Test
+    @DisplayName("the card sweep is the two-step machine's own: another machine's aged rows"
+            + " rest, never queried (P7-TSK-002, INV-RAIL-01)")
+    void anotherMachinesRowsAreNotSwept() throws Exception {
+        UUID awaiting = IDS.next();
+        UUID unknown = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            seedAgedPushRow(app, awaiting, "AWAITING_PAYER");
+            seedAgedPushRow(app, unknown, "EXECUTION_UNKNOWN");
+        }
+
+        sweeper(DUE_NOW, DUE_NOW).sweep();
+
+        // A push execution has no dispatch reference to query by (V012 binds that fact to
+        // the two-step model), so the card sweep selecting one would already be a crash. Its
+        // ageing and resolution arrive with its rail's sweep (P7-TSK-009).
+        assertThat(oneString(STATUS_BY_ID, awaiting)).isEqualTo("AWAITING_PAYER");
+        assertThat(oneString(STATUS_BY_ID, unknown)).isEqualTo("EXECUTION_UNKNOWN");
+        assertThat(count(EVIDENCE_BY_ID, awaiting) + count(EVIDENCE_BY_ID, unknown))
+                .as("not even queried")
+                .isZero();
+    }
+
     // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------
+
+    private static final String STATUS_BY_ID =
+            "SELECT status FROM payments.payment_attempt WHERE id = ?";
+    private static final String EVIDENCE_BY_ID =
+            "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ?";
+
+    /** A raw aged AUTHORIZED attempt on an intent born with {@code captureMode} (V012). */
+    private static void seedAgedAuthorized(Connection app, UUID attempt, String captureMode)
+            throws SQLException {
+        UUID intent = seedRawIntent(app, captureMode);
+        execute(app,
+                "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
+                        + " auth_provider_reference, authorized_amount_minor,"
+                        + " authorized_currency, authorized_scale, status, created_at, rail,"
+                        + " interaction_model)"
+                        + " VALUES (?, ?, ?, ?, 1200, 'EUR', 2, 'AUTHORIZED',"
+                        + " now() - interval '2 hour', 'card', 'TWO_STEP')",
+                attempt, intent,
+                "auth-chain-" + UUID.randomUUID(), "psp-chain-" + UUID.randomUUID());
+    }
+
+    /** A raw aged PUSH-model row: no dispatch reference, no two-step fact (V012's shape). */
+    private static void seedAgedPushRow(Connection app, UUID attempt, String status)
+            throws SQLException {
+        UUID intent = seedRawIntent(app, "AUTOMATIC");
+        execute(app,
+                "INSERT INTO payments.payment_attempt (id, intent_id, status, created_at,"
+                        + " rail, interaction_model)"
+                        + " VALUES (?, ?, 'AWAITING_PAYER', now() - interval '2 hour',"
+                        + " 'push-test', 'PUSH')",
+                attempt, intent);
+        if (!status.equals("AWAITING_PAYER")) {
+            execute(app, "UPDATE payments.payment_attempt SET status ="
+                    + " 'EXECUTION_DISPATCHED' WHERE id = ?", attempt);
+        }
+        if (status.equals("EXECUTION_UNKNOWN")) {
+            execute(app, "UPDATE payments.payment_attempt SET status = 'EXECUTION_UNKNOWN'"
+                    + " WHERE id = ?", attempt);
+        }
+    }
+
+    /** The party -> customer -> intent chain, raw - the metrics suite's seeding idiom. */
+    private static UUID seedRawIntent(Connection app, String captureMode) throws SQLException {
+        // Every identifier a store may rehydrate into a typed id must be a UUIDv7
+        // (ADR-0013) - the chain leg loads these rows through the real stores.
+        UUID party = IDS.next();
+        UUID customer = IDS.next();
+        UUID intent = IDS.next();
+        execute(app,
+                "INSERT INTO party.party (id, kind, display_name, registered_at)"
+                        + " VALUES (?, 'PERSON', 'Sweep Mode Subject', now())",
+                party);
+        execute(app,
+                "INSERT INTO party.customer (id, party_id, status, opened_at,"
+                        + " status_changed_at) VALUES (?, ?, 'ACTIVE', now(), now())",
+                customer, party);
+        execute(app,
+                "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                        + " payment_method_id, credit_account_id, amount_minor, currency,"
+                        + " scale, status, created_at, capture_mode)"
+                        + " VALUES (?, ?, ?, ?, ?, 1200, 'EUR', 2, 'PROCESSING', now(), ?)",
+                intent, party, customer, IDS.next(), IDS.next(), captureMode);
+        return intent;
+    }
 
     private record Holder(
             UUID party, Actor person, PaymentIntentId intent, LedgerAccountId wallet) {}
@@ -542,7 +653,7 @@ class PaymentSweeperDatabaseTest {
                             uow ->
                                     intents.findById(uow, created.intent())
                                             .orElseThrow()
-                                            .walletAccount());
+                                            .creditAccount());
             return new Holder(party, person, created.intent(), wallet);
         } finally {
             flow.close();

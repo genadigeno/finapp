@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.payments.InteractionModel;
+import com.finapp.payments.PaymentAttemptStatus;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -239,6 +241,253 @@ class PaymentsSchemaDatabaseTest {
                                 + " WHERE id = ?")) {
                     rewrite.setObject(1, attempt);
                     rewrite.executeUpdate();
+                }
+            });
+        }
+    }
+
+    @Test
+    @DisplayName("the three machines bind every writer edge by edge - the exhaustive raw"
+            + " sweep, expectations derived from the enum (P7-TSK-002, ADR-0059)")
+    void theMachinesBindEveryWriterEdgeByEdge() throws Exception {
+        // The migrator is the writer no grant can bind, so the trigger is the rank on trial.
+        // For EACH model, every (from, to) pair of the FULL eleven-state vocabulary runs
+        // against a fresh row per pair, and exactly the model's own edges succeed - the
+        // DB-rank reconciliation of InteractionModel.edges(), the same machine that generated
+        // the trigger's disjunction. Cross-model moves are inside the cross-product (a
+        // two-step row asked to enter the push machine, and the reverse); the book loop is
+        // the no-edges proof: born terminal, every move refused. A LEGAL move carries its
+        // target's payload (the trigger raises before any CHECK, so illegal moves need none).
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            for (InteractionModel model : InteractionModel.values()) {
+                for (PaymentAttemptStatus from : model.statuses()) {
+                    for (PaymentAttemptStatus to : PaymentAttemptStatus.values()) {
+                        UUID intent = UUID.randomUUID();
+                        UUID attempt = UUID.randomUUID();
+                        insertIntent(migrator, intent, "PROCESSING");
+                        if (model == InteractionModel.TWO_STEP) {
+                            insertAttempt(migrator, attempt, intent, from.name());
+                        } else {
+                            insertForeignModelRow(migrator, attempt, intent, model,
+                                    from.name());
+                        }
+                        boolean legal = model.permits(from, to);
+                        String move = "UPDATE payments.payment_attempt SET status = ?"
+                                + (legal ? legalMovePayload(to) : "")
+                                + " WHERE id = ?";
+                        if (legal) {
+                            try (PreparedStatement update = migrator.prepareStatement(move)) {
+                                update.setString(1, to.name());
+                                update.setObject(2, attempt);
+                                assertThat(update.executeUpdate())
+                                        .as("%s: %s -> %s is the machine's own edge",
+                                                model, from, to)
+                                        .isEqualTo(1);
+                            }
+                        } else {
+                            assertSqlState(RAISED, () -> {
+                                try (PreparedStatement update =
+                                        migrator.prepareStatement(move)) {
+                                    update.setString(1, to.name());
+                                    update.setObject(2, attempt);
+                                    update.executeUpdate();
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** The payload a LEGAL move into {@code to} must carry - the smuggle test's knowledge. */
+    private static String legalMovePayload(PaymentAttemptStatus to) {
+        return switch (to) {
+            case AUTHORIZED -> ", auth_provider_reference = 'psp-swp-" + UUID.randomUUID()
+                    + "', authorized_amount_minor = 1000, authorized_currency = 'EUR',"
+                    + " authorized_scale = 2";
+            case CAPTURE_DISPATCHED ->
+                    ", capture_reference = 'cap-swp-" + UUID.randomUUID() + "'";
+            case CAPTURED -> ", capture_provider_reference = 'psp-cap-swp-" + UUID.randomUUID()
+                    + "', captured_amount_minor = 1000, captured_currency = 'EUR',"
+                    + " captured_scale = 2";
+            case FAILED -> ", failure_reason = 'DECLINED'";
+            default -> "";
+        };
+    }
+
+    @Test
+    @DisplayName("vocabulary and model bind each other on the row, and the dispatch reference"
+            + " is exactly the two-step birth fact (V012)")
+    void theModelBindsVocabularyAndBirthFacts() throws Exception {
+        UUID intent = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "PROCESSING");
+            // A two-step row in a push state: only the model CHECK stands against this shape
+            // (the stage CASE has no arm for a foreign status), so the refusal names it.
+            assertThatThrownBy(() -> insertAttemptRow(app, UUID.randomUUID(), intent,
+                            "AWAITING_PAYER", coherentRow("AUTH_DISPATCHED")))
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(failure -> {
+                        assertThat(((SQLException) failure).getSQLState())
+                                .isEqualTo(CHECK_VIOLATION);
+                        assertThat(failure.getMessage())
+                                .contains("payment_attempt_status_matches_model");
+                    });
+            // A push row in a two-step state: refused too (the model CHECK and the stage
+            // CHECK both stand against it, so only the state is asserted).
+            assertSqlState(CHECK_VIOLATION, () -> insertForeignModelRow(
+                    app, UUID.randomUUID(), intent, InteractionModel.PUSH, "AUTHORIZED"));
+            // A model outside the enum's vocabulary (the model CHECK and the model-status
+            // CHECK both stand against it).
+            assertSqlState(CHECK_VIOLATION, () -> {
+                try (PreparedStatement unknown = app.prepareStatement(
+                        "INSERT INTO payments.payment_attempt (id, intent_id, status,"
+                                + " created_at, rail, interaction_model)"
+                                + " VALUES (?, ?, 'AWAITING_PAYER', now(), 'push-test',"
+                                + " 'PULL')")) {
+                    unknown.setObject(1, UUID.randomUUID());
+                    unknown.setObject(2, intent);
+                    unknown.executeUpdate();
+                }
+            });
+            // The dispatch reference on a push row: ADR-0046's birth fact belongs to the
+            // two-step model alone, and the CHECK holds both directions by name.
+            assertThatThrownBy(() -> {
+                try (PreparedStatement smuggled = app.prepareStatement(
+                        "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
+                                + " status, created_at, rail, interaction_model)"
+                                + " VALUES (?, ?, ?, 'AWAITING_PAYER', now(), 'push-test',"
+                                + " 'PUSH')")) {
+                    smuggled.setObject(1, UUID.randomUUID());
+                    smuggled.setObject(2, intent);
+                    smuggled.setString(3, "auth-smuggled-" + UUID.randomUUID());
+                    smuggled.executeUpdate();
+                }
+            })
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(failure -> {
+                        assertThat(((SQLException) failure).getSQLState())
+                                .isEqualTo(CHECK_VIOLATION);
+                        assertThat(failure.getMessage()).contains(
+                                "payment_attempt_two_step_carries_its_dispatch_reference");
+                    });
+            // ...and a two-step row without it, the other direction of the same CHECK.
+            assertThatThrownBy(() -> {
+                try (PreparedStatement bare = app.prepareStatement(
+                        "INSERT INTO payments.payment_attempt (id, intent_id, status,"
+                                + " created_at, rail, interaction_model)"
+                                + " VALUES (?, ?, 'AUTH_DISPATCHED', now(), 'card',"
+                                + " 'TWO_STEP')")) {
+                    bare.setObject(1, UUID.randomUUID());
+                    bare.setObject(2, intent);
+                    bare.executeUpdate();
+                }
+            })
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(failure -> {
+                        assertThat(((SQLException) failure).getSQLState())
+                                .isEqualTo(CHECK_VIOLATION);
+                        assertThat(failure.getMessage()).contains(
+                                "payment_attempt_two_step_carries_its_dispatch_reference");
+                    });
+            // No two-step fact rides a foreign row: the issuer's promise on a push row is
+            // refused by the closing CHECK, by name (the pair itself coherent, so nothing
+            // else stands against the shape).
+            assertThatThrownBy(() -> {
+                try (PreparedStatement promise = app.prepareStatement(
+                        "INSERT INTO payments.payment_attempt (id, intent_id, status,"
+                                + " auth_provider_reference, authorized_amount_minor,"
+                                + " authorized_currency, authorized_scale, created_at, rail,"
+                                + " interaction_model)"
+                                + " VALUES (?, ?, 'AWAITING_PAYER', ?, 1000, 'EUR', 2, now(),"
+                                + " 'push-test', 'PUSH')")) {
+                    promise.setObject(1, UUID.randomUUID());
+                    promise.setObject(2, intent);
+                    promise.setString(3, "psp-auth-" + UUID.randomUUID());
+                    promise.executeUpdate();
+                }
+            })
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(failure -> {
+                        assertThat(((SQLException) failure).getSQLState())
+                                .isEqualTo(CHECK_VIOLATION);
+                        assertThat(failure.getMessage()).contains(
+                                "payment_attempt_foreign_model_carries_no_two_step_facts");
+                    });
+        }
+    }
+
+    @Test
+    @DisplayName("EXECUTED frees the one-live-per-intent slot exactly as the other terminals"
+            + " do (V012's regenerated predicate)")
+    void executedFreesTheOneLiveSlot() throws Exception {
+        UUID intent = UUID.randomUUID();
+        UUID running = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "PROCESSING");
+            insertForeignModelRow(app, running, intent, InteractionModel.PUSH,
+                    "EXECUTION_DISPATCHED");
+            // The slot is held while the execution is in flight...
+            assertSqlState(UNIQUE_VIOLATION, () -> insertForeignModelRow(
+                    app, UUID.randomUUID(), intent, InteractionModel.PUSH, "AWAITING_PAYER"));
+            // ...and EXECUTED frees it: the third terminal is IN the generated predicate. A
+            // hand-list that missed it would hold the intent's slot forever.
+            try (PreparedStatement execute = app.prepareStatement(
+                    "UPDATE payments.payment_attempt SET status = 'EXECUTED'"
+                            + " WHERE id = ?")) {
+                execute.setObject(1, running);
+                assertThat(execute.executeUpdate()).isEqualTo(1);
+            }
+            assertThatCode(() -> insertForeignModelRow(app, UUID.randomUUID(), intent,
+                            InteractionModel.PUSH, "AWAITING_PAYER"))
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    @DisplayName("the interaction model and the capture mode are frozen among the birth facts"
+            + " for every writer, the migrator included (V012)")
+    void theModelAndCaptureModeAreFrozenForEveryWriter() throws Exception {
+        UUID intent = UUID.randomUUID();
+        UUID attempt = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "PROCESSING");
+            insertAttempt(app, attempt, intent, "AUTH_DISPATCHED");
+        }
+        // The rail-freeze idiom, extended to the two facts this task births: bare rewrites
+        // and rewrites smuggled inside a legal edge, both refused for the migrator.
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            assertSqlState(RAISED, () -> {
+                try (PreparedStatement rewrite = migrator.prepareStatement(
+                        "UPDATE payments.payment_attempt SET interaction_model = 'PUSH'"
+                                + " WHERE id = ?")) {
+                    rewrite.setObject(1, attempt);
+                    rewrite.executeUpdate();
+                }
+            });
+            assertSqlState(RAISED, () -> {
+                try (PreparedStatement smuggled = migrator.prepareStatement(
+                        "UPDATE payments.payment_attempt SET status = 'AUTH_UNKNOWN',"
+                                + " interaction_model = 'PUSH' WHERE id = ?")) {
+                    smuggled.setObject(1, attempt);
+                    smuggled.executeUpdate();
+                }
+            });
+            assertSqlState(RAISED, () -> {
+                try (PreparedStatement rewrite = migrator.prepareStatement(
+                        "UPDATE payments.payment_intent SET capture_mode = 'MANUAL'"
+                                + " WHERE id = ?")) {
+                    rewrite.setObject(1, intent);
+                    rewrite.executeUpdate();
+                }
+            });
+            assertSqlState(RAISED, () -> {
+                try (PreparedStatement smuggled = migrator.prepareStatement(
+                        "UPDATE payments.payment_intent SET status = 'SUCCEEDED',"
+                                + " capture_mode = 'MANUAL' WHERE id = ?")) {
+                    smuggled.setObject(1, intent);
+                    smuggled.executeUpdate();
                 }
             });
         }
@@ -706,9 +955,9 @@ class PaymentsSchemaDatabaseTest {
             throws SQLException {
         try (PreparedStatement insert = connection.prepareStatement(
                 "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
-                        + " payment_method_id, wallet_account_id, amount_minor, currency,"
-                        + " scale, status, created_at)"
-                        + " VALUES (?, ?, ?, ?, ?, 1000, 'EUR', 2, ?, ?)")) {
+                        + " payment_method_id, credit_account_id, amount_minor, currency,"
+                        + " scale, status, created_at, capture_mode)"
+                        + " VALUES (?, ?, ?, ?, ?, 1000, 'EUR', 2, ?, ?, 'AUTOMATIC')")) {
             insert.setObject(1, id);
             insert.setObject(2, UUID.randomUUID());
             insert.setObject(3, UUID.randomUUID());
@@ -734,8 +983,8 @@ class PaymentsSchemaDatabaseTest {
                         + " capture_provider_reference, authorized_amount_minor,"
                         + " authorized_currency, authorized_scale, captured_amount_minor,"
                         + " captured_currency, captured_scale, failure_reason, status,"
-                        + " created_at, rail)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        + " created_at, rail, interaction_model)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, id);
             insert.setObject(2, intent);
             insert.setString(3, "auth-" + id);
@@ -752,6 +1001,29 @@ class PaymentsSchemaDatabaseTest {
             insert.setString(14, status);
             insert.setTimestamp(15, Timestamp.from(Instant.now()));
             insert.setString(16, "card");
+            insert.setString(17, "TWO_STEP");
+            insert.executeUpdate();
+        }
+    }
+
+    /**
+     * A push or book row: no dispatch reference, no two-step fact, the mapped reason iff
+     * FAILED - the foreign models' one coherent shape until their rails land (P7-TSK-002).
+     */
+    private static void insertForeignModelRow(
+            Connection connection, UUID id, UUID intent, InteractionModel model, String status)
+            throws SQLException {
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO payments.payment_attempt (id, intent_id, status, failure_reason,"
+                        + " created_at, rail, interaction_model)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            insert.setObject(1, id);
+            insert.setObject(2, intent);
+            insert.setString(3, status);
+            insert.setString(4, "FAILED".equals(status) ? "DECLINED" : null);
+            insert.setTimestamp(5, Timestamp.from(Instant.now()));
+            insert.setString(6, model == InteractionModel.PUSH ? "push-test" : "book-test");
+            insert.setString(7, model.name());
             insert.executeUpdate();
         }
     }

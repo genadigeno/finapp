@@ -682,7 +682,7 @@ class PaymentConservationDatabaseTest {
                         app.prepareStatement(
                                 "SELECT a.id, a.intent_id FROM payments.payment_attempt a"
                                         + " JOIN payments.payment_intent i ON i.id = a.intent_id"
-                                        + " WHERE i.wallet_account_id = ANY (?)"
+                                        + " WHERE i.credit_account_id = ANY (?)"
                                         + " ORDER BY a.created_at DESC LIMIT ?")) {
             read.setArray(1, accountArray(app, stormWallets));
             read.setInt(2, RECENT_CAPTURES);
@@ -955,7 +955,7 @@ class PaymentConservationDatabaseTest {
                 "SELECT COALESCE(SUM(a.captured_amount_minor), 0)"
                         + " FROM payments.payment_attempt a"
                         + " JOIN payments.payment_intent i ON i.id = a.intent_id"
-                        + " WHERE a.status = 'CAPTURED' AND i.wallet_account_id = ANY (?)");
+                        + " WHERE a.status = 'CAPTURED' AND i.credit_account_id = ANY (?)");
     }
 
     private static long completedRefundMinorFor(Connection app, List<Wallet> wallets)
@@ -966,7 +966,7 @@ class PaymentConservationDatabaseTest {
                 "SELECT COALESCE(SUM(r.amount_minor), 0) FROM payments.refund r"
                         + " JOIN payments.payment_attempt a ON a.id = r.attempt_id"
                         + " JOIN payments.payment_intent i ON i.id = a.intent_id"
-                        + " WHERE r.status = 'COMPLETED' AND i.wallet_account_id = ANY (?)");
+                        + " WHERE r.status = 'COMPLETED' AND i.credit_account_id = ANY (?)");
     }
 
     private static long overRefundedAttempts(Connection app, List<Wallet> wallets)
@@ -978,7 +978,7 @@ class PaymentConservationDatabaseTest {
                         + "  SELECT a.id FROM payments.payment_attempt a"
                         + "  JOIN payments.payment_intent i ON i.id = a.intent_id"
                         + "  JOIN payments.refund r ON r.attempt_id = a.id"
-                        + "  WHERE i.wallet_account_id = ANY (?) AND r.status <> 'FAILED'"
+                        + "  WHERE i.credit_account_id = ANY (?) AND r.status <> 'FAILED'"
                         + "  GROUP BY a.id, a.captured_amount_minor"
                         + "  HAVING SUM(r.amount_minor) > a.captured_amount_minor) breaches");
     }
@@ -991,7 +991,7 @@ class PaymentConservationDatabaseTest {
                         "SELECT r.status, count(*) FROM payments.refund r"
                                 + " JOIN payments.payment_attempt a ON a.id = r.attempt_id"
                                 + " JOIN payments.payment_intent i ON i.id = a.intent_id"
-                                + " WHERE i.wallet_account_id = ANY (?) GROUP BY r.status")) {
+                                + " WHERE i.credit_account_id = ANY (?) GROUP BY r.status")) {
             read.setArray(1, accountArray(app, wallets));
             try (ResultSet rows = read.executeQuery()) {
                 while (rows.next()) {

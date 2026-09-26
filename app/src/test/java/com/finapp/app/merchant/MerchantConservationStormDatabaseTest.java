@@ -629,7 +629,7 @@ class MerchantConservationStormDatabaseTest {
         assertThat(sum(app, "SELECT count(*) FROM payments.refund refund"
                         + " JOIN payments.payment_attempt attempt ON attempt.id = refund.attempt_id"
                         + " JOIN payments.payment_intent intent ON intent.id = attempt.intent_id"
-                        + " WHERE intent.wallet_account_id = ?"
+                        + " WHERE intent.credit_account_id = ?"
                         + " AND refund.status NOT IN ('COMPLETED', 'FAILED')",
                         tenant.payable().value()))
                 .as("%s: no refund left in flight", code)
@@ -685,7 +685,7 @@ class MerchantConservationStormDatabaseTest {
                                 + "   ON pin.payment_intent_ref = intent.id"
                                 + " JOIN merchant.fee_schedule_version version"
                                 + "   ON version.id = pin.fee_schedule_version_id"
-                                + " WHERE intent.wallet_account_id = ?"
+                                + " WHERE intent.credit_account_id = ?"
                                 + "   AND attempt.status = 'CAPTURED'")) {
             read.setObject(1, tenant.payable().value());
             try (ResultSet rows = read.executeQuery()) {
@@ -800,7 +800,7 @@ class MerchantConservationStormDatabaseTest {
                 PreparedStatement read =
                         app.prepareStatement(
                                 "SELECT id, currency FROM payments.payment_intent"
-                                        + " WHERE wallet_account_id = ANY (?)"
+                                        + " WHERE credit_account_id = ANY (?)"
                                         + " ORDER BY created_at DESC LIMIT ?")) {
             read.setArray(
                     1,

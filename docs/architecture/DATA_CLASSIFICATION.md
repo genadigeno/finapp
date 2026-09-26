@@ -540,7 +540,8 @@ them are classified at the ceiling regardless.
 | `payment_intent` | `party_id` | `CONFIDENTIAL` | The `payment_method.party_id` reasoning: the pairing is the fact — this person pays from a saved instrument |
 | `payment_intent` | `customer_id` | `INTERNAL` | The `customer_account.customer_id` reasoning: an identifier of a thing, not a fact about it |
 | `payment_intent` | `payment_method_id` | `INTERNAL` | An identifier of a thing; what it resolves to is `payment_method`'s to classify |
-| `payment_intent` | `wallet_account_id` | `INTERNAL` | A ledger-account identifier by value — `transfer.destination_account_id`'s reasoning |
+| `payment_intent` | `credit_account_id` | `INTERNAL` | A ledger-account identifier by value — `transfer.destination_account_id`'s reasoning *(named `wallet_account_id` until `P7-TSK-002` paid the `P6-TSK-005` rename debt, payments `V012`)* |
+| `payment_intent` | `capture_mode` | `INTERNAL` | An enumerated processing decision (ADR-0059, `P7-TSK-002`) — whether capture follows authorization without a further decision; nothing about a person |
 | `payment_intent` | `amount_minor` | `RESTRICTED-FINANCIAL` | A customer's commanded amount — `transfer.amount_minor`'s reasoning verbatim |
 | `payment_intent` | `currency` | `RESTRICTED-FINANCIAL` | Meaningless without the amount and meaning-giving with it |
 | `payment_intent` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape (`INV-MON-05`) |
@@ -569,6 +570,7 @@ them are classified at the ceiling regardless.
 | `payment_attempt` | `status` | `CONFIDENTIAL` | What happened to a person's payment operation |
 | `payment_attempt` | `created_at` | `CONFIDENTIAL` | Dates a person's financial act |
 | `payment_attempt` | `rail` | `INTERNAL` | An enumerated name of the way the money travels (ADR-0059, `P7-TSK-001`) — it keys into declared capabilities that are code, and says nothing about a person the row's identifiers do not already say |
+| `payment_attempt` | `interaction_model` | `INTERNAL` | Which machine the attempt lives in (ADR-0059 §2, `P7-TSK-002`) — the `rail` row's reasoning: an enumerated name keying into machines that are code |
 | `payment_attempt_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `payment_attempt_event` | `attempt_id` | `INTERNAL` | An identifier of a thing |
 | `payment_attempt_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |

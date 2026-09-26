@@ -24,17 +24,28 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                     + " capture_provider_reference, authorized_amount_minor,"
                     + " authorized_currency, authorized_scale, captured_amount_minor,"
                     + " captured_currency, captured_scale, failure_reason, status, created_at,"
-                    + " rail";
+                    + " rail, interaction_model";
+
+    /** {@link #COLUMNS}, each qualified as {@code a.<column>} — for the joined reads. */
+    private static String qualified() {
+        return java.util.Arrays.stream(COLUMNS.split(", "))
+                .map(column -> "a." + column.strip())
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
 
     @Override
     public void insert(Connection unitOfWork, PaymentAttempt attempt) {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.payment_attempt (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, attempt.id().value());
             insert.setObject(2, attempt.intentId().value());
-            insert.setString(3, attempt.authorizationReference().value());
+            insert.setString(
+                    3,
+                    attempt.authorizationReference() == null
+                            ? null
+                            : attempt.authorizationReference().value());
             insert.setString(
                     4,
                     attempt.captureReference() == null
@@ -57,6 +68,7 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
             insert.setString(14, attempt.status().name());
             insert.setTimestamp(15, Timestamp.from(attempt.createdAt()));
             insert.setString(16, attempt.rail().value());
+            insert.setString(17, attempt.interactionModel().name());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -121,10 +133,15 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                                 + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
                                 + "   FROM payments.payment_attempt_event e"
                                 + "   WHERE e.attempt_id = a.id) h ON true"
-                                + " WHERE (a.status IN ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED')"
+                                // TWO_STEP only (P7-TSK-002, INV-RAIL-01): this sweep
+                                // resolves by querying the CARD provider with our stored
+                                // reference, which a push row does not even carry - its
+                                // resolution arrives with its rail (P7-TSK-006, -009).
+                                + " WHERE a.interaction_model = 'TWO_STEP'"
+                                + " AND ((a.status IN ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED')"
                                 + "        AND COALESCE(h.entered, a.created_at) <= ?)"
                                 + "    OR (a.status IN ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN')"
-                                + "        AND COALESCE(h.entered, a.created_at) <= ?)"
+                                + "        AND COALESCE(h.entered, a.created_at) <= ?))"
                                 + " ORDER BY a.created_at, a.id"
                                 + " LIMIT ?")) {
             read.setTimestamp(1, java.sql.Timestamp.from(dispatchedBefore));
@@ -154,11 +171,18 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         // with birth as the fallback.
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT " + COLUMNS + " FROM payments.payment_attempt a"
+                        "SELECT " + qualified() + " FROM payments.payment_attempt a"
+                                + " JOIN payments.payment_intent i ON i.id = a.intent_id"
                                 + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
                                 + "   FROM payments.payment_attempt_event e"
                                 + "   WHERE e.attempt_id = a.id) h ON true"
+                                // AUTHORIZED is two-step vocabulary by CHECK; stated anyway,
+                                // and the intent's capture mode is the leg's licence
+                                // (P7-TSK-002): a resting authorization is a person's to
+                                // take, never a sweep's.
                                 + " WHERE a.status = 'AUTHORIZED'"
+                                + "   AND a.interaction_model = 'TWO_STEP'"
+                                + "   AND i.capture_mode = 'AUTOMATIC'"
                                 + "   AND COALESCE(h.entered, a.created_at) <= ?"
                                 + " ORDER BY a.created_at, a.id"
                                 + " LIMIT ?")) {
@@ -200,9 +224,16 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                                 + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
                                 + "   FROM payments.payment_attempt_event e"
                                 + "   WHERE e.attempt_id = a.id) h ON true"
-                                + " WHERE a.status IN ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN')"
+                                // The push model's stuck states count too (P7-TSK-002):
+                                // visibility precedes the rails that will produce them.
+                                // AWAITING_PAYER is deliberately absent - waiting on the
+                                // payer's PSP is not stuck by our clock (P7-TSK-009 owns
+                                // its ageing).
+                                + " WHERE a.status IN"
+                                + "     ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN', 'EXECUTION_UNKNOWN')"
                                 + "    OR (a.status IN"
-                                + "          ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED', 'AUTHORIZED')"
+                                + "          ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED',"
+                                + "           'EXECUTION_DISPATCHED', 'AUTHORIZED')"
                                 + "        AND COALESCE(h.entered, a.created_at)"
                                 + "            <= now() - make_interval(secs => ?))")) {
             read.setLong(1, dispatchedBound.toSeconds());
@@ -425,7 +456,11 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     /** The machine's legality in the writer too — an illegal ask is a caller defect, loud. */
     private static void requireLegal(
             PaymentAttemptId attempt, PaymentAttemptStatus from, PaymentAttemptStatus to) {
-        if (!from.canTransitionTo(to)) {
+        // Exact although the row is not in hand (P7-TSK-002): non-terminal states are
+        // model-exclusive, so an edge belongs to at most one machine -
+        // InteractionModelMachinesTest pins the disjointness this rests on. The trigger is
+        // the rank beneath, holding the row's own model against every writer.
+        if (!InteractionModel.anyPermits(from, to)) {
             throw new IllegalPaymentAttemptTransitionException(attempt, from, to);
         }
     }
@@ -444,6 +479,7 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     }
 
     private static PaymentAttempt rehydrate(ResultSet row) throws SQLException {
+        String authReference = row.getString("auth_reference");
         String captureReference = row.getString("capture_reference");
         String authProviderReference = row.getString("auth_provider_reference");
         String captureProviderReference = row.getString("capture_provider_reference");
@@ -452,7 +488,8 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                 PaymentAttemptId.of(row.getObject("id", UUID.class)),
                 PaymentIntentId.of(row.getObject("intent_id", UUID.class)),
                 RailId.of(row.getString("rail")),
-                new ProviderIdempotencyReference(row.getString("auth_reference")),
+                InteractionModel.valueOf(row.getString("interaction_model")),
+                authReference == null ? null : new ProviderIdempotencyReference(authReference),
                 captureReference == null
                         ? null
                         : new ProviderIdempotencyReference(captureReference),

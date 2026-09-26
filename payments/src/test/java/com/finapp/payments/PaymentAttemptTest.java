@@ -43,56 +43,66 @@ class PaymentAttemptTest {
     private static final Money AMOUNT = Money.ofMinorUnits(98_76, EUR);
 
     @Test
-    @DisplayName("the machine is pinned: seven states, eleven edges, CAPTURED with no exit")
+    @DisplayName("the two-step machine is pinned on its model: seven states, eleven edges,"
+            + " CAPTURED with no exit (P7-TSK-002 moved the edges to InteractionModel)")
     void theMachineIsPinned() {
-        assertThat(PaymentAttemptStatus.AUTH_DISPATCHED.permittedTransitions())
+        var twoStep = InteractionModel.TWO_STEP.edges();
+        assertThat(twoStep.get(PaymentAttemptStatus.AUTH_DISPATCHED))
                 .containsExactlyInAnyOrder(
                         PaymentAttemptStatus.AUTHORIZED,
                         PaymentAttemptStatus.FAILED,
                         PaymentAttemptStatus.AUTH_UNKNOWN);
-        assertThat(PaymentAttemptStatus.AUTH_UNKNOWN.permittedTransitions())
+        assertThat(twoStep.get(PaymentAttemptStatus.AUTH_UNKNOWN))
                 .containsExactlyInAnyOrder(
                         PaymentAttemptStatus.AUTHORIZED, PaymentAttemptStatus.FAILED);
         // AUTHORIZED has exactly ONE exit. AUTHORIZED -> FAILED is not an edge: abandoning an
-        // authorization is VOIDED's job, absent until its producer arrives (checkout expiry,
-        // Phase 6, ADR-0045 §5) — an edge added here is that decision taken silently.
-        assertThat(PaymentAttemptStatus.AUTHORIZED.permittedTransitions())
-                .as("AUTHORIZED exits only to CAPTURE_DISPATCHED (no VOIDED yet, ADR-0045)")
+        // authorization is the void's job, the card rail's own reversal (`P7-TSK-004`,
+        // ADR-0059) — an edge added here is that decision taken silently.
+        assertThat(twoStep.get(PaymentAttemptStatus.AUTHORIZED))
+                .as("AUTHORIZED exits only to CAPTURE_DISPATCHED (no void yet, P7-TSK-004)")
                 .containsExactly(PaymentAttemptStatus.CAPTURE_DISPATCHED);
-        assertThat(PaymentAttemptStatus.CAPTURE_DISPATCHED.permittedTransitions())
+        assertThat(twoStep.get(PaymentAttemptStatus.CAPTURE_DISPATCHED))
                 .containsExactlyInAnyOrder(
                         PaymentAttemptStatus.CAPTURED,
                         PaymentAttemptStatus.FAILED,
                         PaymentAttemptStatus.CAPTURE_UNKNOWN);
-        assertThat(PaymentAttemptStatus.CAPTURE_UNKNOWN.permittedTransitions())
+        assertThat(twoStep.get(PaymentAttemptStatus.CAPTURE_UNKNOWN))
                 .containsExactlyInAnyOrder(
                         PaymentAttemptStatus.CAPTURED, PaymentAttemptStatus.FAILED);
 
         // CAPTURED is the attempt's stable state: NO outgoing edge. Refunds reference the
         // captured attempt and never transition it (ADR-0045) — the SUCCEEDED pin's argument,
         // and the assertion a machine-derived sweep cannot make.
-        assertThat(PaymentAttemptStatus.CAPTURED.permittedTransitions())
+        assertThat(twoStep.get(PaymentAttemptStatus.CAPTURED))
                 .as("CAPTURED is stable with no outgoing edge (ADR-0045)")
                 .isEmpty();
-        assertThat(PaymentAttemptStatus.FAILED.permittedTransitions()).isEmpty();
+        assertThat(twoStep.get(PaymentAttemptStatus.FAILED)).isEmpty();
+        assertThat(twoStep.keySet())
+                .as("the two-step vocabulary is exactly Phase 5's seven")
+                .hasSize(7);
 
-        // Nothing transitions TO AUTH_DISPATCHED — birth is the only door.
-        for (PaymentAttemptStatus from : PaymentAttemptStatus.values()) {
-            assertThat(from.canTransitionTo(PaymentAttemptStatus.AUTH_DISPATCHED))
-                    .as("%s -> AUTH_DISPATCHED must not exist", from)
-                    .isFalse();
+        // Nothing transitions TO AUTH_DISPATCHED in ANY machine — birth is the only door.
+        for (InteractionModel model : InteractionModel.values()) {
+            for (PaymentAttemptStatus from : PaymentAttemptStatus.values()) {
+                assertThat(model.permits(from, PaymentAttemptStatus.AUTH_DISPATCHED))
+                        .as("%s: %s -> AUTH_DISPATCHED must not exist", model, from)
+                        .isFalse();
+            }
         }
 
-        // Terminal is the structural derivation, so CAPTURED is IN the set — captured is not
-        // settled (INV-SET-01), and settlement attaches in Phase 8 without touching this enum.
+        // Terminal is the structural union across the machines, so CAPTURED is IN the set —
+        // captured is not settled (INV-SET-01) — and EXECUTED joins it (P7-TSK-002): final
+        // on its rails, and in the one-live index's predicate with the other two.
         assertThat(EnumSet.allOf(PaymentAttemptStatus.class).stream()
                         .filter(PaymentAttemptStatus::isTerminal))
                 .containsExactlyInAnyOrder(
-                        PaymentAttemptStatus.CAPTURED, PaymentAttemptStatus.FAILED);
+                        PaymentAttemptStatus.CAPTURED,
+                        PaymentAttemptStatus.FAILED,
+                        PaymentAttemptStatus.EXECUTED);
 
-        // The deliberately-absent states asserted absent (the backlog's acceptance): exactly
-        // these seven, in machine order — no VOIDED, no REQUIRES_ACTION, no CLEARING/SETTLED,
-        // no retry states. A state without a producer fails here before anything consumes it.
+        // The deliberately-absent states asserted absent: exactly these eleven, the push four
+        // appended after the two-step seven so every generated list only extends — no VOIDED
+        // (P7-TSK-004), no REQUIRES_ACTION, no CLEARING/SETTLED (Phase 8), no retry states.
         assertThat(PaymentAttemptStatus.values())
                 .containsExactly(
                         PaymentAttemptStatus.AUTH_DISPATCHED,
@@ -101,18 +111,22 @@ class PaymentAttemptTest {
                         PaymentAttemptStatus.CAPTURE_DISPATCHED,
                         PaymentAttemptStatus.CAPTURE_UNKNOWN,
                         PaymentAttemptStatus.CAPTURED,
-                        PaymentAttemptStatus.FAILED);
+                        PaymentAttemptStatus.FAILED,
+                        PaymentAttemptStatus.AWAITING_PAYER,
+                        PaymentAttemptStatus.EXECUTION_DISPATCHED,
+                        PaymentAttemptStatus.EXECUTION_UNKNOWN,
+                        PaymentAttemptStatus.EXECUTED);
     }
 
     @Test
     @DisplayName("every transition in the cross-product behaves as the machine declares")
     void everyTransitionIsEnforced() {
-        for (PaymentAttemptStatus from : PaymentAttemptStatus.values()) {
+        for (PaymentAttemptStatus from : InteractionModel.TWO_STEP.statuses()) {
             for (Map.Entry<PaymentAttemptStatus, UnaryOperator<PaymentAttempt>> target :
                     transitionDoors().entrySet()) {
                 PaymentAttempt attempt = attemptAt(from);
                 PaymentAttemptStatus to = target.getKey();
-                if (from.canTransitionTo(to)) {
+                if (InteractionModel.TWO_STEP.permits(from, to)) {
                     assertThat(target.getValue().apply(attempt).status())
                             .as("%s -> %s is permitted by the machine", from, to)
                             .isEqualTo(to);
@@ -155,11 +169,14 @@ class PaymentAttemptTest {
         assertThat(attempt.authorizedAmount()).isNull();
         assertThat(attempt.failureReason()).isNull();
 
-        // No attempt without its dispatch reference — the dispatch commits before the provider
-        // is asked (ADR-0046), and the reference is what a sweeper queries by (INV-PAY-04).
+        // No two-step attempt without its dispatch reference — the dispatch commits before
+        // the provider is asked (ADR-0046), and the reference is what a sweeper queries by
+        // (INV-PAY-04). Since P7-TSK-002 the rule is the model's (only the two-step model
+        // carries one at all), so the refusal is the coherence IllegalArgumentException.
         assertThatThrownBy(() ->
                         PaymentAttempt.create(IDS, CLOCK, PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), null))
-                .isInstanceOf(NullPointerException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("two-step");
         assertThatThrownBy(() -> PaymentAttempt.create(IDS, CLOCK, null, SimulatedCardPspAdapter.RAIL.id(), idem()))
                 .isInstanceOf(NullPointerException.class);
     }
@@ -206,7 +223,7 @@ class PaymentAttemptTest {
     void rehydrateRefusesTheCorruptRow() {
         // Every status's coherent shape constructs — the shapes the fixture defines are the
         // shapes the machine's paths produce.
-        for (PaymentAttemptStatus status : PaymentAttemptStatus.values()) {
+        for (PaymentAttemptStatus status : InteractionModel.TWO_STEP.statuses()) {
             assertThat(attemptAt(status).status()).isEqualTo(status);
         }
 
@@ -295,18 +312,20 @@ class PaymentAttemptTest {
 
         // Absent identity facts are refused whatever the status.
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
-                        PaymentAttemptId.next(IDS), null, SimulatedCardPspAdapter.RAIL.id(), idem(), null, null, null, null, null,
+                        PaymentAttemptId.next(IDS), null, SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, idem(), null, null, null, null, null,
                         null, PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK)))
                 .as("no intent reference")
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
-                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), null, null, null,
+                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, null, null, null,
                         null, null, null, null, PaymentAttemptStatus.AUTH_DISPATCHED,
                         Instant.now(CLOCK)))
-                .as("no authorization idempotency reference")
-                .isInstanceOf(NullPointerException.class);
+                .as("no authorization idempotency reference on a two-step row - the"
+                        + " model's coherence rule since P7-TSK-002")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("two-step");
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
-                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), idem(), null,
+                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, idem(), null,
                         null, null, null, null, null, null, Instant.now(CLOCK)))
                 .as("no status")
                 .isInstanceOf(NullPointerException.class);
@@ -348,10 +367,14 @@ class PaymentAttemptTest {
     void theSqlFragmentsArePinned() {
         assertThat(PaymentAttemptStatus.sqlValueList())
                 .isEqualTo("'AUTH_DISPATCHED', 'AUTH_UNKNOWN', 'AUTHORIZED',"
-                        + " 'CAPTURE_DISPATCHED', 'CAPTURE_UNKNOWN', 'CAPTURED', 'FAILED'");
-        // CAPTURED is IN the terminal list — the enum's recorded decision.
+                        + " 'CAPTURE_DISPATCHED', 'CAPTURE_UNKNOWN', 'CAPTURED', 'FAILED',"
+                        + " 'AWAITING_PAYER', 'EXECUTION_DISPATCHED', 'EXECUTION_UNKNOWN',"
+                        + " 'EXECUTED'");
+        // CAPTURED is IN the terminal list — the enum's recorded decision - and EXECUTED
+        // joined it at P7-TSK-002: the appended push states keep every earlier fragment a
+        // prefix, which is what lets V003 and V011 stay reconciled as applied history.
         assertThat(PaymentAttemptStatus.sqlTerminalValueList())
-                .isEqualTo("'CAPTURED', 'FAILED'");
+                .isEqualTo("'CAPTURED', 'FAILED', 'EXECUTED'");
     }
 
     /** The six doors out of a state, keyed by the state each targets. */
@@ -387,6 +410,10 @@ class PaymentAttemptTest {
                     rehydrated(idem(), authRef(), AMOUNT, capRef(), AMOUNT, null, status);
             case FAILED -> rehydrated(
                     null, null, null, null, null, PaymentFailureReason.DECLINED, status);
+            // The push and book states have no two-step shape at all: this helper serves the
+            // TWO_STEP sweeps, and their own fixtures rehydrate with their model directly.
+            default -> throw new IllegalArgumentException(
+                    status + " is not a two-step state");
         };
     }
 
@@ -402,6 +429,7 @@ class PaymentAttemptTest {
                 PaymentAttemptId.next(IDS),
                 PaymentIntentId.next(IDS),
                 SimulatedCardPspAdapter.RAIL.id(),
+                InteractionModel.TWO_STEP,
                 idem(),
                 captureReference,
                 authorizationProviderReference,
@@ -445,7 +473,7 @@ class PaymentAttemptTest {
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("rail");
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
-                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), null, idem(),
+                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), null, InteractionModel.TWO_STEP, idem(),
                         null, null, null, null, null, null,
                         PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK)))
                 .as("no rail on read-back: a corrupt row is refused ahead of the schema")

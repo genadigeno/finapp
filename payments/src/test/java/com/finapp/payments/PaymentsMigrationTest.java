@@ -46,9 +46,12 @@ class PaymentsMigrationTest {
     /** The refund edge trigger's CURRENT definition (V004 is applied history). */
     private static final String REFUND_PERMIT =
             "db/migration/payments/V009__refund_carries_its_send_permit.sql";
-    /** The attempt edge trigger's CURRENT definition (V003 is applied history). */
+    /** V011: the rail joined the birth facts (V003 is applied history). */
     private static final String ATTEMPT_RAIL =
             "db/migration/payments/V011__the_attempt_records_its_rail.sql";
+    /** The attempt AND intent triggers' CURRENT definitions (P7-TSK-002). */
+    private static final String MODEL_MACHINES =
+            "db/migration/payments/V012__the_machines_per_interaction_model.sql";
 
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
@@ -61,13 +64,26 @@ class PaymentsMigrationTest {
     }
 
     @Test
-    @DisplayName("the attempt's status CHECKs are generated from the machine, on all three columns")
+    @DisplayName("the attempt's status CHECKs are generated from the machines - V012 holds the"
+            + " current definitions (V003 is applied history)")
     void attemptStatusChecksMatchTheEnum() {
-        String list = PaymentAttemptStatus.sqlValueList();
-        assertThat(migration(ATTEMPT))
-                .contains("CHECK (status IN (" + list + "))")
-                .contains("CHECK (from_status IN (" + list + "))")
-                .contains("CHECK (to_status IN (" + list + "))");
+        // V003 was written against the seven-state vocabulary; the enum widened at
+        // P7-TSK-002, so the reconciliation follows the constraints to V012: the row's
+        // status binds vocabulary AND model in one CHECK, each list generated from
+        // InteractionModel.sqlStatusList(), and the history's from/to take the whole
+        // vocabulary (edge legality is the trigger's, and the models' vocabularies bind
+        // each other on the row).
+        String all = PaymentAttemptStatus.sqlValueList();
+        assertThat(migration(MODEL_MACHINES))
+                .contains("CHECK (interaction_model IN (" + InteractionModel.sqlValueList()
+                        + "))")
+                .contains("CHECK (from_status IN (" + all + "))")
+                .contains("CHECK (to_status IN (" + all + "))");
+        for (InteractionModel model : InteractionModel.values()) {
+            assertThat(migration(MODEL_MACHINES))
+                    .contains("(interaction_model = '" + model.name() + "'")
+                    .contains("status IN (" + model.sqlStatusList() + ")");
+        }
     }
 
     @Test
@@ -100,10 +116,12 @@ class PaymentsMigrationTest {
                 java.util.Arrays.stream(PaymentIntentStatus.values())
                         .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
                                 .stream().map(Enum::name).collect(Collectors.toList()))));
-        assertEdges(migration(ATTEMPT), PaymentAttemptStatus.values().length,
-                java.util.Arrays.stream(PaymentAttemptStatus.values())
-                        .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
-                                .stream().map(Enum::name).collect(Collectors.toList()))));
+        // The attempt's V003 and V011 functions are applied history holding the two-step
+        // machine; V012 holds the current, model-keyed definition (P7-TSK-002). Each file's
+        // conditions are generated from the machine that was current when it was written -
+        // InteractionModel.TWO_STEP's, which is Phase 5's verbatim.
+        assertEdges(migration(ATTEMPT), InteractionModel.TWO_STEP.statuses().size(),
+                twoStepEdgeNames());
         assertEdges(migration(REFUND), RefundStatus.values().length,
                 java.util.Arrays.stream(RefundStatus.values())
                         .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
@@ -118,10 +136,23 @@ class PaymentsMigrationTest {
         // V011 REPLACED the attempt's function (P7-TSK-001: the rail joined the birth facts):
         // the current definition must carry the machine's edges too, or it could drift from
         // the enum while V003 - applied history - still matched.
-        assertEdges(migration(ATTEMPT_RAIL), PaymentAttemptStatus.values().length,
-                java.util.Arrays.stream(PaymentAttemptStatus.values())
-                        .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
-                                .stream().map(Enum::name).collect(Collectors.toList()))));
+        assertEdges(migration(ATTEMPT_RAIL), InteractionModel.TWO_STEP.statuses().size(),
+                twoStepEdgeNames());
+        // V012: each model's own edges, in the one model-keyed disjunction.
+        for (InteractionModel model : InteractionModel.values()) {
+            assertEdges(migration(MODEL_MACHINES), model.statuses().size(),
+                    model.edges().entrySet().stream()
+                            .collect(Collectors.toMap(entry -> entry.getKey().name(),
+                                    entry -> entry.getValue().stream().map(Enum::name)
+                                            .collect(Collectors.toList()))));
+        }
+    }
+
+    private static java.util.Map<String, java.util.List<String>> twoStepEdgeNames() {
+        return InteractionModel.TWO_STEP.edges().entrySet().stream()
+                .collect(Collectors.toMap(entry -> entry.getKey().name(),
+                        entry -> entry.getValue().stream().map(Enum::name)
+                                .collect(Collectors.toList())));
     }
 
     @Test
@@ -143,6 +174,40 @@ class PaymentsMigrationTest {
                 // literal IS the adapter's declaration, so the two cannot drift apart.
                 .contains("UPDATE payments.payment_attempt SET rail = '"
                         + SimulatedCardPspAdapter.RAIL.id().value() + "';");
+    }
+
+    @Test
+    @DisplayName("the model and capture-mode birth facts are backfilled, NOT NULL, frozen for"
+            + " every writer, and the credit account is frozen under its new name (V012)")
+    void theModelAndCaptureModeClausesAreInTheCurrentFunctions() {
+        assertThat(migration(MODEL_MACHINES))
+                // The attempt's half: the backfill runs under the disabled trigger (recording
+                // history, not moving a machine), then the model joins the frozen birth facts.
+                .contains("DISABLE TRIGGER payment_attempt_permits_only_machine_edges")
+                .contains("UPDATE payments.payment_attempt SET interaction_model = 'TWO_STEP';")
+                .contains("ENABLE TRIGGER payment_attempt_permits_only_machine_edges")
+                .contains("ALTER COLUMN interaction_model SET NOT NULL")
+                .contains("OR OLD.interaction_model <> NEW.interaction_model")
+                // auth_reference is the two-step model's fact now: nullable on the row, bound
+                // to the model by one CHECK each way, its freeze surviving nullability.
+                .contains("ALTER COLUMN auth_reference DROP NOT NULL")
+                .contains(
+                        "ADD CONSTRAINT payment_attempt_two_step_carries_its_dispatch_reference")
+                .contains(
+                        "ADD CONSTRAINT payment_attempt_foreign_model_carries_no_two_step_facts")
+                .contains("OR OLD.auth_reference IS DISTINCT FROM NEW.auth_reference")
+                // The intent's half: the same backfill discipline, the mode's CHECK generated
+                // from the enum, and the renamed credit account frozen under its new name -
+                // the rename lands HERE because a plpgsql body does not follow renames
+                // (the P6-TSK-005 debt, paid).
+                .contains("DISABLE TRIGGER payment_intent_permits_only_machine_edges")
+                .contains("UPDATE payments.payment_intent SET capture_mode = 'AUTOMATIC';")
+                .contains("ENABLE TRIGGER payment_intent_permits_only_machine_edges")
+                .contains("ALTER COLUMN capture_mode SET NOT NULL")
+                .contains("CHECK (capture_mode IN (" + CaptureMode.sqlValueList() + "))")
+                .contains("RENAME COLUMN wallet_account_id TO credit_account_id")
+                .contains("OLD.credit_account_id <> NEW.credit_account_id")
+                .contains("OR OLD.capture_mode <> NEW.capture_mode");
     }
 
     @Test
@@ -169,9 +234,10 @@ class PaymentsMigrationTest {
     }
 
     @Test
-    @DisplayName("the one-live-attempt predicate is generated from the terminal list")
+    @DisplayName("the one-live-attempt predicate is generated from the terminal list - V012"
+            + " holds the current definition (EXECUTED joined the terminals, P7-TSK-002)")
     void oneLiveAttemptPredicateMatchesTheTerminals() {
-        assertThat(migration(ATTEMPT))
+        assertThat(migration(MODEL_MACHINES))
                 .contains("CREATE UNIQUE INDEX payment_attempt_one_live_per_intent")
                 .contains("WHERE status NOT IN ("
                         + PaymentAttemptStatus.sqlTerminalValueList() + ")");

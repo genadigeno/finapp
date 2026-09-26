@@ -111,6 +111,14 @@ waits for that PSP's answer — never for our clock. A withdrawal and a return p
 
 **Book (wallet)**: born `EXECUTED` or `FAILED` inside the confirmation's transaction.
 
+**Status (`P7-TSK-002`)**: the three machines are code — `InteractionModel.edges()`
+owns them, payments `V012` regenerates the schema's `CHECK`s and every-writer edge
+trigger from them, and the model is a frozen birth fact on every attempt row. The
+two-step machine runs end to end; the push and book **operations** (doors, payload
+columns, births) arrive with their rails (`P7-TSK-006`, `-009`, `-011`), the void's
+states with `P7-TSK-004` — until then the two-step diagram above shows the void edges
+as ADR-0059 declares them, not as shipped code.
+
 ## 4. The routing decision (ADR-0060)
 
 `policy version` + `stored inputs` → `ordered candidates, each with its reason` → `CHOSEN`.

@@ -106,6 +106,30 @@ class PaymentMetricsDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("the push machine's states read on the same gauges: EXECUTION_UNKNOWN at any"
+            + " age, EXECUTION_DISPATCHED past the bound, a waiting payer never (P7-TSK-002)")
+    void thePushStatesReadOnTheSameGauges() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            PaymentAttemptStore.UnknownReading before = attempts.unknownReading(app, BOUND);
+
+            seedPushAttempt(app, "EXECUTION_UNKNOWN", "1 hour");
+            seedPushAttempt(app, "EXECUTION_DISPATCHED", "1 hour");
+            // The controls: a payer still deciding is NOT stuck platform-side whatever the
+            // age - AWAITING_PAYER's ageing is the rail's own product decision (P7-TSK-009)
+            // - and a fresh dispatch is mid-question.
+            seedPushAttempt(app, "AWAITING_PAYER", "3 hour");
+            seedPushAttempt(app, "EXECUTION_DISPATCHED", "1 minute");
+
+            PaymentAttemptStore.UnknownReading after = attempts.unknownReading(app, BOUND);
+            assertThat(after.active() - before.active())
+                    .as("the stranded unknown and the aged dispatch; neither the waiting"
+                            + " payer nor the fresh dispatch")
+                    .isEqualTo(2);
+            assertThat(after.oldestAgeSeconds()).isGreaterThanOrEqualTo(3_500L);
+        }
+    }
+
     // -----------------------------------------------------------------
 
     /** A minimal attempt row in {@code status}, with its state entered {@code ago} ago. */
@@ -128,9 +152,10 @@ class PaymentMetricsDatabaseTest {
         execute(
                 app,
                 "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
-                        + " payment_method_id, wallet_account_id, amount_minor, currency,"
-                        + " scale, status, created_at)"
-                        + " VALUES (?, ?, ?, ?, ?, 100, 'EUR', 2, 'PROCESSING', now())",
+                        + " payment_method_id, credit_account_id, amount_minor, currency,"
+                        + " scale, status, created_at, capture_mode)"
+                        + " VALUES (?, ?, ?, ?, ?, 100, 'EUR', 2, 'PROCESSING', now(),"
+                        + " 'AUTOMATIC')",
                 intent,
                 party,
                 customer,
@@ -139,9 +164,9 @@ class PaymentMetricsDatabaseTest {
         execute(
                 app,
                 "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
-                        + " status, created_at, rail)"
+                        + " status, created_at, rail, interaction_model)"
                         + " VALUES (?, ?, ?, 'AUTH_DISPATCHED', now() - INTERVAL '" + ago
-                        + "', 'card')",
+                        + "', 'card', 'TWO_STEP')",
                 attempt,
                 intent,
                 "gauge-" + UUID.randomUUID());
@@ -174,6 +199,76 @@ class PaymentMetricsDatabaseTest {
                         + " VALUES (?, 'AUTH_DISPATCHED', ?, 'platform', 'PLATFORM',"
                         + " now() - INTERVAL '" + ago + "')",
                 attempt,
+                status);
+        return attempt;
+    }
+
+    /**
+     * A minimal PUSH-model row in {@code status}: no dispatch reference, no two-step fact
+     * (V012's shape), its state entered {@code ago} ago through legal edges only.
+     */
+    private UUID seedPushAttempt(Connection app, String status, String ago) throws SQLException {
+        UUID party = UUID.randomUUID();
+        UUID customer = UUID.randomUUID();
+        UUID intent = UUID.randomUUID();
+        UUID attempt = UUID.randomUUID();
+        execute(
+                app,
+                "INSERT INTO party.party (id, kind, display_name, registered_at)"
+                        + " VALUES (?, 'PERSON', 'Gauge Subject', now())",
+                party);
+        execute(
+                app,
+                "INSERT INTO party.customer (id, party_id, status, opened_at,"
+                        + " status_changed_at) VALUES (?, ?, 'ACTIVE', now(), now())",
+                customer,
+                party);
+        execute(
+                app,
+                "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                        + " payment_method_id, credit_account_id, amount_minor, currency,"
+                        + " scale, status, created_at, capture_mode)"
+                        + " VALUES (?, ?, ?, ?, ?, 100, 'EUR', 2, 'PROCESSING', now(),"
+                        + " 'AUTOMATIC')",
+                intent,
+                party,
+                customer,
+                UUID.randomUUID(),
+                UUID.randomUUID());
+        execute(
+                app,
+                "INSERT INTO payments.payment_attempt (id, intent_id, status, created_at,"
+                        + " rail, interaction_model)"
+                        + " VALUES (?, ?, 'AWAITING_PAYER', now() - INTERVAL '" + ago
+                        + "', 'push-test', 'PUSH')",
+                attempt,
+                intent);
+        if (status.equals("AWAITING_PAYER")) {
+            // Born waiting: no history row, no gauge reading - the payer's clock, not ours.
+            return attempt;
+        }
+        execute(
+                app,
+                "UPDATE payments.payment_attempt SET status = 'EXECUTION_DISPATCHED'"
+                        + " WHERE id = ?",
+                attempt);
+        String from = "AWAITING_PAYER";
+        if (status.equals("EXECUTION_UNKNOWN")) {
+            execute(
+                    app,
+                    "UPDATE payments.payment_attempt SET status = 'EXECUTION_UNKNOWN'"
+                            + " WHERE id = ?",
+                    attempt);
+            from = "EXECUTION_DISPATCHED";
+        }
+        execute(
+                app,
+                "INSERT INTO payments.payment_attempt_event (attempt_id, from_status,"
+                        + " to_status, actor_id, actor_type, occurred_at)"
+                        + " VALUES (?, ?, ?, 'platform', 'PLATFORM',"
+                        + " now() - INTERVAL '" + ago + "')",
+                attempt,
+                from,
                 status);
         return attempt;
     }

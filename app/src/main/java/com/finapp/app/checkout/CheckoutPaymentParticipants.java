@@ -31,14 +31,13 @@ import lombok.RequiredArgsConstructor;
  * request — and the instrument half delegates unchanged, because the token's path is not this
  * class's business and substituting it would weaken a shipped guarantee.
  *
- * <h2>The naming debt this makes visible, stated rather than hidden</h2>
+ * <h2>The naming debt this made visible — paid</h2>
  *
- * <p>The intent records this account in {@code payment_intent.wallet_account_id}, whose own
- * comment already defines it as <em>where the capture will credit</em> — so the meaning is
- * right and the name is narrower than the meaning. Recorded in {@code CURRENT_STATE.md}
- * §Known Architectural Debt at {@code P6-TSK-005}, owned by this task's successor, and bounded
- * by the check that makes a mismatch loud: {@code MerchantSettlement} refuses a capture whose
- * credit account is not the pinned merchant's payable.
+ * <p>The intent records this account in {@code payment_intent.credit_account_id} — named
+ * {@code wallet_account_id} until {@code P7-TSK-002} paid the {@code P6-TSK-005} rename debt
+ * (payments {@code V012}), the meaning always <em>where the capture will credit</em>. The
+ * check that made a mismatch loud stands unchanged: {@code MerchantSettlement} refuses a
+ * capture whose credit account is not the pinned merchant's payable.
  */
 @RequiredArgsConstructor
 public final class CheckoutPaymentParticipants implements PaymentParticipants<Connection> {

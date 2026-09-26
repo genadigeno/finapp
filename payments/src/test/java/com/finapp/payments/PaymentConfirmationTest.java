@@ -431,7 +431,7 @@ class PaymentConfirmationTest {
             PaymentIntent moved =
                     PaymentIntent.rehydrate(
                             row.id(), row.partyId(), row.customerId(), row.paymentMethodId(),
-                            row.walletAccount(), row.amount(), to, row.createdAt());
+                            row.creditAccount(), CaptureMode.AUTOMATIC, row.amount(), to, row.createdAt());
             rows.put(id.value(), moved);
             return true;
         }

@@ -41,6 +41,14 @@ REQUIRES_CONFIRMATION ──> PROCESSING ──> SUCCEEDED
           └──────────────────> CANCELLED
 ```
 
+Since `P7-TSK-002` every intent also records its **capture mode** (`AUTOMATIC` |
+`MANUAL`) as a frozen birth fact (ADR-0059, payments `V012`): whether the authorization
+is an instruction to take the money or a reservation awaiting a person. Every current
+door births `AUTOMATIC` — `MANUAL`'s producer arrives with the surface that owns that
+decision (`P7-TSK-004`'s territory) — and the sweeper's stranded-authorization chain
+leg captures `AUTOMATIC` intents only, so a `MANUAL` reservation rests until its owner
+acts.
+
 Five states, four edges, every state earned by a producer and durably observable —
 ADR-0044's doctrine, applied to the machine it was written to precede:
 
@@ -80,7 +88,12 @@ Seven states: `AUTH_DISPATCHED`, `AUTH_UNKNOWN`, `AUTHORIZED`, `CAPTURE_DISPATCH
 stamped in the dispatching transaction, no writer can rewrite it, and every capability
 decision — the clearing position an outcome posts to, the mode a refund executes in — keys on
 the stored name through the build's declared `RailCapabilities`, never on the resolving
-instance's wiring.
+instance's wiring. Since `P7-TSK-002` this machine is one of **three** the attempt table
+hosts, keyed by the frozen **interaction model** birth fact (`TWO_STEP` here): the push
+and book machines live in `RAIL_AND_DISPUTE_LIFECYCLES.md` §3, declared on
+`InteractionModel` and regenerated into payments `V012`'s `CHECK`s and edge trigger,
+their vocabularies model-exclusive so a row's states name its machine. Their operations
+arrive with their rails' tasks; nothing dispatches on them yet.
 
 - **The `*_DISPATCHED` states are durable on purpose** — the exact inversion of ADR-0044's
   refusal of `PROCESSING`. Each is committed *before* the provider is asked (ADR-0046), so a

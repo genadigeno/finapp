@@ -8462,7 +8462,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   every resolver keys on; no cache, no process state; the migrate-then-deploy sequencing note
   (`NOT NULL` versus old writers) recorded as V009's precedent.
 
-**P7-TSK-002 — The attempt's machine per interaction model** — `READY`
+**P7-TSK-002 — The attempt's machine per interaction model** — `COMPLETE` (2026-09-26)
 - **Objective**: ADR-0059 §2 — three machines under one aggregate root, each under the
   three-layer discipline, so no rail's completion can be mistaken for another's.
 - **Bounded context**: Payments (9).
@@ -8493,8 +8493,31 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   every Phase 5 and 6 suite green.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Medium (the platform's most
   critical table's triggers are recreated). **Cx**: M.
+- **Completed (2026-09-26)**: all three layers per model. `InteractionModel.edges()` owns the
+  machines (`TWO_STEP` Phase 5's verbatim; `PUSH` with `AWAITING_PAYER` for a pay-in; `BOOK`
+  edgeless — born terminal, never a history row), `permits`/`anyPermits` exact because no
+  non-terminal state name is shared across models (pinned structurally). The aggregate refuses a
+  foreign model's state, payload and door; payments `V012` binds vocabulary and model in one
+  `CHECK`, regenerates the every-writer trigger as each model's own edge disjunction (the book
+  machine contributing none), freezes `interaction_model` and the intent's new `capture_mode`
+  among the birth facts, widens the one-live predicate with `EXECUTED`, and lands the
+  `wallet_account_id → credit_account_id` rename under the recreated intent trigger (the
+  `P6-TSK-005` debt, paid). The sweeps are model-keyed: the card sweep and the
+  stranded-authorization chain leg select `TWO_STEP` only, the chain leg captures `AUTOMATIC`
+  intents only, and the stuck gauges widened (+`EXECUTION_UNKNOWN` at any age,
+  +`EXECUTION_DISPATCHED` past the bound; `AWAITING_PAYER` deliberately excluded — the payer
+  PSP's clock, `P7-TSK-009` owns its ageing). **"History rows carry the model" is carried
+  structurally**: model-exclusive vocabularies and an edgeless book machine make a history row's
+  own states name its machine — `V012`'s recorded decision, no model column on history. The
+  exhaustive raw sweep drives all 154 (model × from × to) pairs as the migrator; thirteen probe
+  runs, twelve caught (the backfill's comment-out form survived the substring pin with the
+  statement text intact — recorded as that pin's stated limit — and the text-changing form
+  caught). The gate also found `CURRENT_STATE.md` §Next Task still naming `P7-TSK-001` — the
+  stale-second-copy class, two tasks late — and the participants javadoc narrating the rename
+  debt as open; both fixed with provenance. Evidence: `CURRENT_STATE.md` §Just completed, `MUTATION_TESTING.md` §2/§3, the change
+  log's dated row.
 
-**P7-TSK-003 — Rail routing: the versioned policy, the pinned decision, rail availability** — `PLANNED`
+**P7-TSK-003 — Rail routing: the versioned policy, the pinned decision, rail availability** — `READY`
 - **Objective**: ADR-0060 — every payment routed once, before anything is sent, by a pinned policy
   version over stored inputs, explainable and recomputable.
 - **Bounded context**: Payments (9).

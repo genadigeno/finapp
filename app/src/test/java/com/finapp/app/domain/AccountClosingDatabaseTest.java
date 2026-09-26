@@ -439,10 +439,10 @@ class AccountClosingDatabaseTest {
             execute(
                     app,
                     "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
-                            + " payment_method_id, wallet_account_id, amount_minor, currency,"
-                            + " scale, status, created_at)"
+                            + " payment_method_id, credit_account_id, amount_minor, currency,"
+                            + " scale, status, created_at, capture_mode)"
                             + " VALUES (?, ?, ?, ?, ?, 500, 'USD', 2, 'REQUIRES_CONFIRMATION',"
-                            + " now())",
+                            + " now(), 'AUTOMATIC')",
                     intent,
                     holder.party(),
                     holder.customer(),

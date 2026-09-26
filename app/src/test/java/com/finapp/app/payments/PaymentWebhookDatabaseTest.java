@@ -271,15 +271,16 @@ class PaymentWebhookDatabaseTest {
             execute(
                     app,
                     "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
-                            + " payment_method_id, wallet_account_id, amount_minor, currency,"
-                            + " scale, status, created_at)"
-                            + " VALUES (?, ?, ?, ?, ?, 500, 'USD', 2, 'PROCESSING', now())",
+                            + " payment_method_id, credit_account_id, amount_minor, currency,"
+                            + " scale, status, created_at, capture_mode)"
+                            + " VALUES (?, ?, ?, ?, ?, 500, 'USD', 2, 'PROCESSING', now(),"
+                            + " 'AUTOMATIC')",
                     intent, IDS.next(), IDS.next(), IDS.next(), IDS.next());
             execute(
                     app,
                     "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
-                            + " status, created_at, rail)"
-                            + " VALUES (?, ?, ?, 'AUTH_DISPATCHED', now(), 'card')",
+                            + " status, created_at, rail, interaction_model)"
+                            + " VALUES (?, ?, ?, 'AUTH_DISPATCHED', now(), 'card', 'TWO_STEP')",
                     attempt, intent, reference);
         }
         return new Seeded(attempt, reference);

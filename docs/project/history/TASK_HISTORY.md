@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 145 "Previously" blocks, newest first, from `X-TSK-004` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands first; the transition's record sits directly below it - moved here by `P7-TSK-001`'s gate, exactly as this note said it would be.)*
+The per-task completion records that accumulated behind `## Current Task` - 146 "Previously" blocks, newest first, from `P7-TSK-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,39 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P7-TSK-001` — The rail port, the capability descriptor, and the card rail declared** —
+`COMPLETE` (2026-09-26). **M7.1 opens at 1 of 3: the payments domain acts on a rail's declared
+capabilities, and the one rail that exists declares them — with no behaviour change.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The card rail runs as a declared rail | `SimulatedCardPspAdapter.RAIL` — id `card`, ADR-0049 §2's semantics field by field, pinned in the adapter's contract suite; `payment_attempt.rail` stamped in the dispatching transaction (payments `V011`), frozen for every writer, and read back by every capability decision through `PaymentRails` |
+| Every Phase 5 and 6 suite green unchanged | The fleet-wide hermetic tier and the targeted database tier, fresh runs, 0 failures (counts in the change log); the full battery deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts claimed |
+| A planted rail-name branch in the core fails the build | Proven twice, once per token family: a `"card"` literal comparison in `PaymentOutcomes` and a `SimulatedCardPspAdapter.RAIL` reference in `PaymentSweeper`, each caught by `RailVocabularyIsConfinedTest` naming the file |
+
+- **The three decision points the backlog names now read the descriptor**: both clearing
+  resolutions (capture and refund completion) resolve the STORED rail's declared purpose —
+  still `SETTLEMENT_CLEARING`, proven by the posting suites unchanged and by the
+  bent-descriptor probe failing the capture suite's end-to-end replay; the refund mode is
+  judged on the locked attempt row; the reversal check deliberately arrives with the void
+  (`P7-TSK-004`), so nothing dead shipped.
+- **Eight probes, all caught**, every restore byte-identical (`MUTATION_TESTING.md` §2), the
+  backfill's catch honestly recorded as the textual pin's alone — test databases are born
+  after `V011`.
+- **Decided at design**: no rail in the API views until routing makes it customer-meaningful
+  (`P7-TSK-003`); `interaction_model` is stored by `P7-TSK-002`, whose machines key on it;
+  `PaymentRail` is declared data bound to its operations at the composition root, because the
+  wired provider bean is the metering decorator and a capability face on the undecorated
+  instance would be one the running system cannot see.
+- **The gate found and fixed**: the Phase 7 status still `READY` after the phase's first task
+  had started, in this document AND in the backlog's section header — the stale-second-copy
+  class, in two copies at once (both now `IN_PROGRESS`); `PAYMENT_LIFECYCLES.md` §3 silent on
+  the rail birth fact; and its `VOIDED` absence-note still saying the void "arrives with
+  checkout expiry, Phase 6" — the drift the Phase 6 → 7 transition corrected in ADR-0045 but
+  missed in this second copy, now corrected with provenance.
 
 ### Previously
 

@@ -703,9 +703,9 @@ class MerchantPayoutDatabaseTest {
         Funded inFlight = fundedWithoutDestination("0.00");
         raw(
                 "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
-                        + " payment_method_id, wallet_account_id, amount_minor, currency, scale,"
-                        + " status, created_at) VALUES (?, ?, ?, ?, ?, 1000, 'EUR', 2,"
-                        + " 'PROCESSING', now())",
+                        + " payment_method_id, credit_account_id, amount_minor, currency, scale,"
+                        + " status, created_at, capture_mode) VALUES (?, ?, ?, ?, ?, 1000, 'EUR', 2,"
+                        + " 'PROCESSING', now(), 'AUTOMATIC')",
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 UUID.randomUUID(),

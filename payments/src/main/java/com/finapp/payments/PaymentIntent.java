@@ -64,7 +64,8 @@ public final class PaymentIntent {
     private final UUID partyId;
     private final UUID customerId;
     private final UUID paymentMethodId;
-    private final LedgerAccountId walletAccount;
+    private final LedgerAccountId creditAccount;
+    private final CaptureMode captureMode;
     private final Money amount;
     private final PaymentIntentStatus status;
     private final Instant createdAt;
@@ -74,7 +75,8 @@ public final class PaymentIntent {
             UUID partyId,
             UUID customerId,
             UUID paymentMethodId,
-            LedgerAccountId walletAccount,
+            LedgerAccountId creditAccount,
+            CaptureMode captureMode,
             Money amount,
             PaymentIntentStatus status,
             Instant createdAt) {
@@ -83,8 +85,12 @@ public final class PaymentIntent {
         this.customerId = Objects.requireNonNull(customerId, "customerId must not be null");
         this.paymentMethodId =
                 Objects.requireNonNull(paymentMethodId, "paymentMethodId must not be null");
-        this.walletAccount =
-                Objects.requireNonNull(walletAccount, "walletAccount must not be null");
+        this.creditAccount =
+                Objects.requireNonNull(creditAccount, "creditAccount must not be null");
+        this.captureMode = Objects.requireNonNull(
+                captureMode,
+                "captureMode must not be null - whether the authorization is an instruction"
+                        + " or a reservation is a birth fact (P7-TSK-002, ADR-0059)");
         this.amount = Objects.requireNonNull(amount, "amount must not be null");
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
@@ -112,7 +118,7 @@ public final class PaymentIntent {
             UUID partyId,
             UUID customerId,
             UUID paymentMethodId,
-            LedgerAccountId walletAccount,
+            LedgerAccountId creditAccount,
             Money amount) {
         Objects.requireNonNull(ids, "ids must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
@@ -121,7 +127,11 @@ public final class PaymentIntent {
                 partyId,
                 customerId,
                 paymentMethodId,
-                walletAccount,
+                creditAccount,
+                // Every intent any current door creates: capture follows authorization
+                // without a further decision. MANUAL's producer arrives with the surface
+                // that owns that decision (P7-TSK-004's territory), never before.
+                CaptureMode.AUTOMATIC,
                 amount,
                 PaymentIntentStatus.REQUIRES_CONFIRMATION,
                 Instant.now(clock));
@@ -136,13 +146,14 @@ public final class PaymentIntent {
             UUID partyId,
             UUID customerId,
             UUID paymentMethodId,
-            LedgerAccountId walletAccount,
+            LedgerAccountId creditAccount,
+            CaptureMode captureMode,
             Money amount,
             PaymentIntentStatus status,
             Instant createdAt) {
         return new PaymentIntent(
-                id, partyId, customerId, paymentMethodId, walletAccount, amount, status,
-                createdAt);
+                id, partyId, customerId, paymentMethodId, creditAccount, captureMode, amount,
+                status, createdAt);
     }
 
     /** Confirmed: {@code PROCESSING}, the outcome now a third party's (ADR-0046 dispatches). */
@@ -171,8 +182,8 @@ public final class PaymentIntent {
             throw new IllegalPaymentIntentTransitionException(id, status, target);
         }
         return new PaymentIntent(
-                id, partyId, customerId, paymentMethodId, walletAccount, amount, target,
-                createdAt);
+                id, partyId, customerId, paymentMethodId, creditAccount, captureMode, amount,
+                target, createdAt);
     }
 
     public PaymentIntentId id() {
@@ -197,9 +208,23 @@ public final class PaymentIntent {
         return paymentMethodId;
     }
 
-    /** The wallet's ledger account — where the capture will credit (ADR-0048). */
-    public LedgerAccountId walletAccount() {
-        return walletAccount;
+    /**
+     * The ledger account the capture will credit (ADR-0048): the customer's wallet for a
+     * top-up, the merchant's payable for a checkout payment (ADR-0050 §6). Named
+     * {@code walletAccount} until `P7-TSK-002` paid the `P6-TSK-005` debt — the meaning was
+     * always this; the name is now the meaning's.
+     */
+    public LedgerAccountId creditAccount() {
+        return creditAccount;
+    }
+
+    /**
+     * Whether the authorization is an instruction to take the money or a reservation awaiting
+     * a person — a birth fact (`P7-TSK-002`, ADR-0059); the sweeper's stranded-chain leg
+     * captures {@link CaptureMode#AUTOMATIC} intents only.
+     */
+    public CaptureMode captureMode() {
+        return captureMode;
     }
 
     public Money amount() {

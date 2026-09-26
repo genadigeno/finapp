@@ -202,7 +202,7 @@ public final class PaymentCreation {
                         Optional.of(
                                 "intent=" + intent.id()
                                         + ", instrument=" + intent.paymentMethodId()
-                                        + ", wallet=" + intent.walletAccount()
+                                        + ", creditAccount=" + intent.creditAccount()
                                         + ", status=" + intent.status())));
         outbox.write(
                 uow,

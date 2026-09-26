@@ -172,7 +172,7 @@ public final class PaymentConfirmation {
         // transition): a customer who closed the wallet since creation must not be charged for a
         // posting the ledger will refuse. FOR SHARE serialises with the close's FOR UPDATE, and
         // the close refuses while this payment is in flight, so the two cannot interleave.
-        if (!participants.creditable(uow, intent.walletAccount())) {
+        if (!participants.creditable(uow, intent.creditAccount())) {
             throw new NoWalletForPaymentException();
         }
 

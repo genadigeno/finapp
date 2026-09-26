@@ -77,13 +77,14 @@ class PaymentCaptureTest {
         intent =
                 PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), UUID.randomUUID(), UUID.randomUUID(),
-                        UUID.randomUUID(), LedgerAccountId.next(IDS), AMOUNT,
+                        UUID.randomUUID(), LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
                         PaymentIntentStatus.PROCESSING, Instant.now(CLOCK));
         intents.rows.put(intent.id().value(), intent);
         authorized =
                 PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), intent.id(),
                         SimulatedCardPspAdapter.RAIL.id(),
+                        InteractionModel.TWO_STEP,
                         new ProviderIdempotencyReference("auth-" + IDS.next()), null,
                         new ProviderReference("psp-auth-1"), AMOUNT, null, null, null,
                         PaymentAttemptStatus.AUTHORIZED, Instant.now(CLOCK));
@@ -238,7 +239,7 @@ class PaymentCaptureTest {
         return switch (status) {
             case AUTH_DISPATCHED ->
                     PaymentAttempt.rehydrate(
-                            authorized.id(), intent.id(), SimulatedCardPspAdapter.RAIL.id(), authorized.authorizationReference(),
+                            authorized.id(), intent.id(), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, authorized.authorizationReference(),
                             null, null, null, null, null, null,
                             PaymentAttemptStatus.AUTH_DISPATCHED, authorized.createdAt());
             case CAPTURE_DISPATCHED ->
@@ -365,7 +366,7 @@ class PaymentCaptureTest {
                     id.value(),
                     PaymentIntent.rehydrate(
                             row.id(), row.partyId(), row.customerId(), row.paymentMethodId(),
-                            row.walletAccount(), row.amount(), to, row.createdAt()));
+                            row.creditAccount(), CaptureMode.AUTOMATIC, row.amount(), to, row.createdAt()));
             return true;
         }
 

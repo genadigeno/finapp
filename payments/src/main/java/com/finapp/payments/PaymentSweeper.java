@@ -402,7 +402,7 @@ public final class PaymentSweeper {
                                         current.status(),
                                         verdict,
                                         reference,
-                                        intent.walletAccount(),
+                                        intent.creditAccount(),
                                         correlation);
                         resolution =
                                 new RefundResolution(
@@ -560,7 +560,7 @@ public final class PaymentSweeper {
                         current.status(),
                         verdict,
                         answer.providerReference(),
-                        intent.walletAccount(),
+                        intent.creditAccount(),
                         // The capture is the authorized promise, in full (one attempt, no
                         // partial capture until its producer exists - ADR-0045 §4).
                         current.authorizedAmount(),
@@ -599,7 +599,7 @@ public final class PaymentSweeper {
                         current.status(),
                         ProviderAnswer.Verdict.INDETERMINATE,
                         Optional.empty(),
-                        intent.walletAccount(),
+                        intent.creditAccount(),
                         current.authorizedAmount(),
                         correlation));
     }

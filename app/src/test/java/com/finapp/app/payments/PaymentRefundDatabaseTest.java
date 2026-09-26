@@ -1675,7 +1675,7 @@ class PaymentRefundDatabaseTest {
                         uow ->
                                 intents.findById(uow, created.intent())
                                         .orElseThrow()
-                                        .walletAccount());
+                                        .creditAccount());
         return new Created(party, created.intent(), wallet);
     }
 

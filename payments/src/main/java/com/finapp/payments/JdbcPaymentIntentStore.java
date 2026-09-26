@@ -21,8 +21,8 @@ import java.util.UUID;
 public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connection> {
 
     private static final String COLUMNS =
-            "id, party_id, customer_id, payment_method_id, wallet_account_id, amount_minor,"
-                    + " currency, scale, status, created_at";
+            "id, party_id, customer_id, payment_method_id, credit_account_id, capture_mode,"
+                    + " amount_minor, currency, scale, status, created_at";
 
     @Override
     public boolean anyInFlightCrediting(
@@ -33,7 +33,7 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT EXISTS (SELECT 1 FROM payments.payment_intent"
-                                + " WHERE wallet_account_id = ?"
+                                + " WHERE credit_account_id = ?"
                                 + " AND status NOT IN (" + PaymentIntentStatus.sqlTerminalValueList()
                                 + "))")) {
             read.setObject(1, account.value());
@@ -53,17 +53,18 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.payment_intent (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, intent.id().value());
             insert.setObject(2, intent.partyId());
             insert.setObject(3, intent.customerId());
             insert.setObject(4, intent.paymentMethodId());
-            insert.setObject(5, intent.walletAccount().value());
-            insert.setLong(6, intent.amount().minorUnits());
-            insert.setString(7, intent.amount().currency().code());
-            insert.setShort(8, (short) intent.amount().scale());
-            insert.setString(9, intent.status().name());
-            insert.setTimestamp(10, Timestamp.from(intent.createdAt()));
+            insert.setObject(5, intent.creditAccount().value());
+            insert.setString(6, intent.captureMode().name());
+            insert.setLong(7, intent.amount().minorUnits());
+            insert.setString(8, intent.amount().currency().code());
+            insert.setShort(9, (short) intent.amount().scale());
+            insert.setString(10, intent.status().name());
+            insert.setTimestamp(11, Timestamp.from(intent.createdAt()));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -196,7 +197,8 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
                 row.getObject("party_id", UUID.class),
                 row.getObject("customer_id", UUID.class),
                 row.getObject("payment_method_id", UUID.class),
-                LedgerAccountId.of(row.getObject("wallet_account_id", UUID.class)),
+                LedgerAccountId.of(row.getObject("credit_account_id", UUID.class)),
+                CaptureMode.valueOf(row.getString("capture_mode")),
                 // The STORED scale, never re-derived (INV-MON-05).
                 Money.ofPersisted(
                         row.getLong("amount_minor"),

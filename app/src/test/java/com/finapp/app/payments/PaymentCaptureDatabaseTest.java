@@ -426,7 +426,7 @@ class PaymentCaptureDatabaseTest {
                             uow ->
                                     intents.findById(uow, created.intent())
                                             .orElseThrow()
-                                            .walletAccount());
+                                            .creditAccount());
             return new Holder(party, person, created.intent(), wallet);
         } finally {
             flow.close();

@@ -385,7 +385,7 @@ public class PaymentWebhookService {
                         attempt.status(),
                         verdict.get(),
                         providerReference(payload),
-                        intent.walletAccount(),
+                        intent.creditAccount(),
                         // The capture is the authorized promise, in full (one attempt, no
                         // partial capture until its producer exists - ADR-0045 §4).
                         attempt.authorizedAmount(),
@@ -466,7 +466,7 @@ public class PaymentWebhookService {
                         refund.status(),
                         verdict.get(),
                         providerReference(payload),
-                        intent.walletAccount(),
+                        intent.creditAccount(),
                         PaymentCreation.resolvedCorrelation()));
     }
 
