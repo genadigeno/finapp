@@ -150,9 +150,16 @@ class SimulatedTokenisationAdapterTest {
     void aTimeoutIsUnavailable() {
         provider.neverResponds(SimulatedTokenisationAdapter.TOKENISATIONS_PATH);
 
+        // The budget carries two constraints, not one. Far below the stub's five-minute hang,
+        // so the exchange provably ends as the client giving up - which is all the UNAVAILABLE
+        // mapping needs, whatever the value. And generous enough that connecting and writing
+        // the request always fit inside it, because the adapter spends the same duration as its
+        // connect timeout: a 200ms budget under full-suite load could expire during connection
+        // establishment, so the request was never written and the received-count oracle below
+        // read 0 - a flake that looked like a provider fault.
         SimulatedTokenisationAdapter impatient =
                 new SimulatedTokenisationAdapter(
-                        URI.create(provider.baseUrl()), Duration.ofMillis(200));
+                        URI.create(provider.baseUrl()), Duration.ofSeconds(2));
         assertThat(impatient.exchange(GRANT).outcome()).isEqualTo(Outcome.UNAVAILABLE);
         // The requestCount oracle: the provider RECEIVED the exchange - which is why a fresh
         // grant, not a retry loop, is the recovery (the grant is one-time on the provider side).
