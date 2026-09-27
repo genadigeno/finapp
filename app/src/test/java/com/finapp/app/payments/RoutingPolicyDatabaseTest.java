@@ -307,12 +307,39 @@ class RoutingPolicyDatabaseTest {
         return sessionWith(RoleName.LEDGER_OPERATOR);
     }
 
+    /**
+     * When this suite's versions take effect unless a test names another instant: far enough
+     * ahead that none ever becomes LIVE while the test JVM runs (a fixed instant, so a keyed
+     * replay's body stays byte-identical).
+     */
+    private static final Instant DORMANT = Instant.parse("2099-01-01T00:00:00Z");
+
+    /**
+     * A DORMANT, WHOLE version. The versions this suite publishes are SHARED OPERATIONAL
+     * STATE — the test JVM runs one database for every suite, and the newest-effective
+     * resolution makes a live published version THE policy for every suite that follows,
+     * exactly why this suite restores rail availability. So they are published dormant
+     * ({@link #DORMANT}): no suite's routing, and no suite's pinned version number, can see
+     * them. And whole — the standing policy's four rules, rule for rule the seeded version 4
+     * (payments `V019`) — so a version that did become live would route exactly as the seed.
+     * Until `P7-TSK-012`'s gate these were card-only and effective NOW: every withdrawal,
+     * pay-by-bank and wallet payment in a later suite was refused `NoEligibleRail` and every
+     * later version pin read this suite's number — found when a battery first ran this suite
+     * ahead of `WithdrawalDatabaseTest` (the signature `P7-TSK-011`'s gate had read as clock
+     * skew).
+     */
     private static String versionBody(String reason, Instant effectiveFrom) {
-        return "{\"rules\":[{\"direction\":\"PAY_IN\",\"instrumentKind\":\"CARD_TOKEN\","
-                + "\"rails\":[\"card\"]}]"
-                + (effectiveFrom == null
-                        ? ""
-                        : ",\"effectiveFrom\":\"" + effectiveFrom + "\"")
+        return "{\"rules\":["
+                + "{\"direction\":\"PAY_IN\",\"instrumentKind\":\"CARD_TOKEN\","
+                + "\"rails\":[\"card\"]},"
+                + "{\"direction\":\"PAY_OUT\",\"instrumentKind\":\"BANK_ACCOUNT\","
+                + "\"rails\":[\"instant\"]},"
+                + "{\"direction\":\"PAY_IN\",\"instrumentKind\":\"BANK_ACCOUNT\","
+                + "\"rails\":[\"instant\"]},"
+                + "{\"direction\":\"PAY_IN\",\"instrumentKind\":\"WALLET\","
+                + "\"rails\":[\"book\"]}]"
+                + ",\"effectiveFrom\":\"" + (effectiveFrom == null ? DORMANT : effectiveFrom)
+                + "\""
                 + ",\"reason\":\"" + reason + "\"}";
     }
 

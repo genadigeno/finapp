@@ -179,7 +179,7 @@ margin under the permit rule — judged on the locked row, never a clock alone. 
 withdrawal is irrevocable: a reversal of it is refused by the domain (`INV-REV-03`) — the
 declaration gate before anything exists, and the machine's own shape after.
 
-## 6. The dispute (ADR-0061 §2)
+## 6. The dispute (ADR-0061 §2) — *shipped `P7-TSK-012`*
 
 ```
 INQUIRY ──> CHARGED_BACK ──> REPRESENTED ──> WON
@@ -190,7 +190,33 @@ INQUIRY ──> CHARGED_BACK ──> REPRESENTED ──> WON
 ```
 
 Entered at `INQUIRY` or directly at `CHARGED_BACK`. Terminal: `WON`, `LOST`, `ACCEPTED`,
-`CLOSED`.
+`CLOSED`. The lists are exactly `DisputeStage.permittedTransitions()`, which `V020` generates
+into its every-writer trigger; the birth trigger admits only the two entry stages.
+
+**How a notification lands** (`P7-TSK-012`, `DisputeNotifications`), every stage the card PSP's
+word alone — the platform never decides one:
+
+| The notified stage against the dispute's current one | What happens |
+|---|---|
+| No dispute yet | Born at the entry stage on the shortest walk to the notified stage, then walked to it — a `WON` heard first opens at `CHARGED_BACK` and passes `REPRESENTED` |
+| The same stage | Nothing: the network repeating itself (`INV-IDEM-04`) |
+| A stage ahead | Every stage between applied in order, each its own conditional edge, trail row and audit record (ADR-0061 §2) |
+| A stage the dispute has passed | Nothing, quietly: a late delivery is ordering, not breakage |
+| Any other stage | Nothing, **loudly** (the webhook meter's `unmappable`): a second outcome, a chargeback on a closed inquiry — the first record stands (`INV-LIFE-04`) |
+
+The shortest walk is exactly the stages the target *implies* (it lies inside every walk to it,
+asserted for every pair), so no stage the network did not need to pass through is ever
+invented. The opening statement — provider, reference, attempt, reason category — is frozen
+for every writer. **The chargeback's amount arrives with the chargeback** (the captured
+amount's discipline, `NULL → value`): an inquiry records none, a chargeback — at birth or on
+the inquiry's escalation — records what the network took, which may be less than the
+transaction, and it never moves after; it is the figure `P7-TSK-013` posts. A later statement
+of another chargeback amount, another payment's operation or another currency moves nothing,
+loudly; a late inquiry repeating the transaction's full amount is ordering, not a
+contradiction. A dispute is
+recorded against whatever card attempt the network names, whatever its state: the external
+fact first (ADR-0061 §4), attribution being the combined bound's (`P7-TSK-013`). A second
+cycle arrives with a new reference and is a new dispute, never a reopened one.
 
 ## 7. The financial flows, per rail and instrument
 
@@ -203,7 +229,7 @@ Entered at `INQUIRY` or directly at `CHARGED_BACK`. Terminal: `WON`, `LOST`, `AC
 | Card void | `VOIDED` | **None** — orchestration only: nothing was captured | Card PSP | None | Void reference ↔ PSP |
 | Card clearing notice | evidence recorded (shipped `P7-TSK-005`: one `clearing_record` per capture, append-only) | **None** — clearing agrees an obligation, it does not move money (`INV-SET-01`) | Card PSP | Phase 8 | Clearing references stored (`acquirer_reference`, `network_transaction_id`) |
 | Card refund | refund `COMPLETED` | DR wallet or payable (ADR-0054) / CR `SETTLEMENT_CLEARING` | Card PSP | Phase 8 | Refund entry ↔ PSP reference |
-| Chargeback | dispute `CHARGED_BACK` | CR `SETTLEMENT_CLEARING` D; DR counterparty share; DR `CHARGEBACK_RECOVERABLE` excess (ADR-0061 §4) | Card PSP / network | Netted by the PSP (Phase 8) | Dispute reference ↔ stage entries |
+| Chargeback | dispute `CHARGED_BACK` (the stage shipped `P7-TSK-012`: from notifications alone, one row per provider dispute reference; its posting is `P7-TSK-013`'s) | CR `SETTLEMENT_CLEARING` D; DR counterparty share; DR `CHARGEBACK_RECOVERABLE` excess (ADR-0061 §4) | Card PSP / network | Netted by the PSP (Phase 8) | Dispute reference (stored, unique per provider) ↔ stage entries |
 | Dispute won / lost | `WON` / `LOST` | Won: the exact inverse of the principal lines. Lost: excess written off to `DISPUTE_COSTS` | Card PSP | Phase 8 | As above |
 | Pay-in to a wallet (pay-by-bank) | push `EXECUTED` | DR `INSTANT_CLEARING` / CR wallet | Instant scheme | Scheme cycle (Phase 8) | End-to-end reference ↔ scheme reference |
 | Pay-in to a checkout | push `EXECUTED` | DR `INSTANT_CLEARING` gross / CR payable gross; DR payable fee / CR `FEE_REVENUE` fee | Instant scheme | Scheme cycle | As above, plus the order |

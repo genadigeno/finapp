@@ -627,6 +627,23 @@ them are classified at the ceiling regardless.
 | `unmatched_confirmation` | `scale` | `INTERNAL` | The amount's scale |
 | `unmatched_confirmation` | `received_at` | `INTERNAL` | Server clock at parking (ADR-0014) — the age the `INV-REC-05` gauge reads |
 | `unmatched_confirmation` | `entry_ref` | `INTERNAL` | The suspense entry this parking posted — the chain stays walkable by stored id |
+| `dispute` | `id` | `INTERNAL` | An aggregate identifier (`P7-TSK-012`) — from `P7-TSK-013`, the suffix of each stage's posting key |
+| `dispute` | `provider` | `INTERNAL` | The PSP's stable adapter name: the scope its dispute references are unique in |
+| `dispute` | `provider_dispute_reference` | `CONFIDENTIAL` | The PSP's identifier for one dispute on a person's payment — the `acquirer_reference` class: scoped to its own dispute, it authorises nothing, and it is Phase 8's join to the stage entries. Shown to operators only, never to the merchant |
+| `dispute` | `attempt_id` | `INTERNAL` | Foreign key to the contested attempt |
+| `dispute` | `reason` | `CONFIDENTIAL` | The platform's reason category, never the network's code — `FRAUD` is an allegation about a person's payment (`payment_attempt.failure_reason`'s reasoning) |
+| `dispute` | `stage` | `CONFIDENTIAL` | What is happening to a person's payment — `payment_attempt.status`'s reasoning |
+| `dispute` | `chargeback_amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) — what the network took, present exactly once the funds are taken (`payment_attempt.captured_amount_minor`'s reasoning: the posting's own number, from `P7-TSK-013`) |
+| `dispute` | `chargeback_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape (the captured amount's row) |
+| `dispute` | `chargeback_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `opened_at` | `CONFIDENTIAL` | Dates a contest of a person's payment (the `payment_attempt.created_at` reasoning) |
+| `dispute_event` | `id` | `INTERNAL` | A sequence identifier |
+| `dispute_event` | `dispute_id` | `INTERNAL` | The trail's subject |
+| `dispute_event` | `from_stage` | `CONFIDENTIAL` | `dispute.stage`'s reasoning — history is the same facts, older |
+| `dispute_event` | `to_stage` | `CONFIDENTIAL` | As `from_stage` |
+| `dispute_event` | `actor_id` | `CONFIDENTIAL` | Who moved it — the audit actor class (the platform for every notified stage) |
+| `dispute_event` | `actor_type` | `INTERNAL` | An enumerated population |
+| `dispute_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
 | `routing_policy_version` | `id` | `INTERNAL` | An identifier of a thing — **the value a decision pins** (`INV-HIST-04`), the `fee_schedule_version.id` reasoning verbatim |
 | `routing_policy_version` | `version` | `INTERNAL` | An ordinal |
 | `routing_policy_version` | `effective_from` | `CONFIDENTIAL` | When a routing change starts applying — with the rules it dates an operational shift |

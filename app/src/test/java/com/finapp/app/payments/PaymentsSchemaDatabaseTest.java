@@ -1047,6 +1047,140 @@ class PaymentsSchemaDatabaseTest {
         void applyTo(AttemptRow attempt);
     }
 
+    @Test
+    @DisplayName("V020 binds EVERY writer (P7-TSK-012): a dispute is born only at an entry"
+            + " stage, moves only along the machine's edges, never leaves a terminal stage,"
+            + " its opening statement never moves - inside a legal edge included - its"
+            + " reference names one dispute, and the trail is append-only")
+    void theDisputeSchemaBindsEveryWriter() throws Exception {
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
+        UUID dispute = IDS.next();
+        String reference = someDisputeReference();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "SUCCEEDED");
+            insertAttempt(app, attempt, intent, "CAPTURED");
+            // Born at an entry stage and nowhere else (INV-LIFE-02 at birth).
+            for (String stage : List.of("REPRESENTED", "WON", "LOST", "ACCEPTED", "CLOSED")) {
+                assertSqlState(CHECK_VIOLATION,
+                        () -> insertDispute(app, IDS.next(), attempt, someDisputeReference(),
+                                stage));
+            }
+            insertDispute(app, dispute, attempt, reference, "CHARGED_BACK");
+            // The network's reference names ONE dispute - the opening's arbiter.
+            assertSqlState(UNIQUE_VIOLATION,
+                    () -> insertDispute(app, IDS.next(), attempt, reference, "INQUIRY"));
+            // A sibling edge and a backward one are refused (P0001).
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute SET stage = 'CLOSED' WHERE id = ?", dispute));
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute SET stage = 'INQUIRY' WHERE id = ?", dispute));
+            // A legal edge moves - and then the terminal refuses every stage (INV-LIFE-04).
+            assertThat(updated(app,
+                            "UPDATE payments.dispute SET stage = 'LOST' WHERE id = ?", dispute))
+                    .isEqualTo(1);
+            for (String stage :
+                    List.of("INQUIRY", "CHARGED_BACK", "REPRESENTED", "WON", "ACCEPTED",
+                            "CLOSED")) {
+                assertSqlState(RAISED, () -> updated(app,
+                        "UPDATE payments.dispute SET stage = '" + stage + "' WHERE id = ?",
+                        dispute));
+            }
+            // The application role cannot name a frozen column at all: its grant is the stage
+            // and the arriving chargeback.
+            assertSqlState(INSUFFICIENT_PRIVILEGE, () -> updated(app,
+                    "UPDATE payments.dispute SET reason = 'AUTHORIZATION' WHERE id = ?",
+                    dispute));
+            // The chargeback's amount it CAN name moves only NULL -> value: a recorded one is
+            // never revised or removed, for this role as for every other (P0001).
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute SET chargeback_amount_minor ="
+                            + " chargeback_amount_minor + 1 WHERE id = ?",
+                    dispute));
+            assertSqlState(INSUFFICIENT_PRIVILEGE, () -> updated(app,
+                    "DELETE FROM payments.dispute WHERE id = ?", dispute));
+            // The trail is append-only by privilege.
+            assertSqlState(INSUFFICIENT_PRIVILEGE, () -> updated(app,
+                    "UPDATE payments.dispute_event SET to_stage = to_stage WHERE dispute_id = ?",
+                    dispute));
+            assertSqlState(INSUFFICIENT_PRIVILEGE, () -> updated(app,
+                    "DELETE FROM payments.dispute_event WHERE dispute_id = ?", dispute));
+        }
+
+        UUID inquiry = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            insertDispute(app, inquiry, attempt, someDisputeReference(), "INQUIRY");
+            // The chargeback's amount exists exactly when the funds are taken: an inquiry
+            // born with one, a chargeback born without one, and an escalation that brings
+            // none are all refused by the coherence CHECK (23514).
+            assertSqlState(CHECK_VIOLATION,
+                    () -> insertDispute(app, IDS.next(), attempt, someDisputeReference(),
+                            "INQUIRY", 1000L));
+            assertSqlState(CHECK_VIOLATION,
+                    () -> insertDispute(app, IDS.next(), attempt, someDisputeReference(),
+                            "CHARGED_BACK", null));
+            assertSqlState(CHECK_VIOLATION, () -> updated(app,
+                    "UPDATE payments.dispute SET stage = 'CHARGED_BACK' WHERE id = ?", inquiry));
+        }
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            // The freeze binds the table's owner: a stage-preserving edit...
+            assertSqlState(RAISED, () -> updated(migrator,
+                    "UPDATE payments.dispute SET reason = 'AUTHORIZATION' WHERE id = ?",
+                    inquiry));
+            // ...and one smuggled inside a LEGAL edge, where only the freeze clause can refuse
+            // (the P7-TSK-011 lesson: the edge clause and the coherence CHECK would both pass
+            // an escalation that brings its chargeback).
+            assertSqlState(RAISED, () -> updated(migrator,
+                    "UPDATE payments.dispute SET stage = 'CHARGED_BACK',"
+                            + " chargeback_amount_minor = 800, chargeback_currency = 'EUR',"
+                            + " chargeback_scale = 2, reason = 'AUTHORIZATION' WHERE id = ?",
+                    inquiry));
+            // An illegal edge and an illegal birth, for the migrator too.
+            assertSqlState(RAISED, () -> updated(migrator,
+                    "UPDATE payments.dispute SET stage = 'WON' WHERE id = ?", inquiry));
+            assertSqlState(CHECK_VIOLATION,
+                    () -> insertDispute(migrator, IDS.next(), attempt, someDisputeReference(),
+                            "WON"));
+        }
+    }
+
+    /** A coherent dispute row: the chargeback's amount present exactly when charged back. */
+    private static void insertDispute(
+            Connection connection, UUID id, UUID attempt, String reference, String stage)
+            throws SQLException {
+        insertDispute(connection, id, attempt, reference, stage,
+                stage.equals("INQUIRY") || stage.equals("CLOSED") ? null : 1000L);
+    }
+
+    private static void insertDispute(
+            Connection connection,
+            UUID id,
+            UUID attempt,
+            String reference,
+            String stage,
+            Long chargebackMinor)
+            throws SQLException {
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO payments.dispute (id, provider, provider_dispute_reference,"
+                        + " attempt_id, reason, stage, chargeback_amount_minor,"
+                        + " chargeback_currency, chargeback_scale, opened_at)"
+                        + " VALUES (?, 'simulated-card', ?, ?, 'FRAUD', ?, ?, ?, ?, ?)")) {
+            insert.setObject(1, id);
+            insert.setString(2, reference);
+            insert.setObject(3, attempt);
+            insert.setString(4, stage);
+            insert.setObject(5, chargebackMinor);
+            insert.setString(6, chargebackMinor == null ? null : "EUR");
+            insert.setObject(7, chargebackMinor == null ? null : (short) 2);
+            insert.setTimestamp(8, Timestamp.from(Instant.now()));
+            insert.executeUpdate();
+        }
+    }
+
+    private static String someDisputeReference() {
+        return "dp_" + IDS.next().toString().replace("-", "");
+    }
+
     @FunctionalInterface
     private interface SqlAction {
         void run() throws Exception;

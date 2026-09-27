@@ -3613,6 +3613,78 @@
         },
         "type": "object"
       },
+      "MerchantDisputeList": {
+        "properties": {
+          "disputes": {
+            "items": {
+              "$ref": "#/components/schemas/MerchantDisputeSummary"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "MerchantDisputeSummary": {
+        "properties": {
+          "chargebackAmount": {
+            "type": "string"
+          },
+          "chargebackCurrency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MerchantDisputeView": {
+        "properties": {
+          "chargebackAmount": {
+            "type": "string"
+          },
+          "chargebackCurrency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/StageChangeView"
+            },
+            "type": "array"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MerchantFeeScheduleView": {
         "properties": {
           "feeScheduleId": {
@@ -3764,6 +3836,55 @@
           "partyId",
           "settlementCurrency"
         ],
+        "type": "object"
+      },
+      "OperatorDisputeList": {
+        "properties": {
+          "disputes": {
+            "items": {
+              "$ref": "#/components/schemas/OperatorDisputeView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "OperatorDisputeView": {
+        "properties": {
+          "attemptId": {
+            "type": "string"
+          },
+          "chargebackAmount": {
+            "type": "string"
+          },
+          "chargebackCurrency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/StageChangeView"
+            },
+            "type": "array"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "providerDisputeReference": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "OperatorPayoutRequest": {
@@ -4570,6 +4691,20 @@
           "available",
           "reason"
         ],
+        "type": "object"
+      },
+      "StageChangeView": {
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "StatementLineView": {
@@ -6091,6 +6226,50 @@
         }
       }
     },
+    "/v1/merchant/disputes": {
+      "get": {
+        "operationId": "listMerchantDisputes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantDisputeList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes/{disputeId}": {
+      "get": {
+        "operationId": "viewMerchantDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantDisputeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/merchant/me": {
       "get": {
         "operationId": "me",
@@ -6216,6 +6395,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TransactionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}": {
+      "get": {
+        "operationId": "viewDisputeAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorDisputeView"
                 }
               }
             },
@@ -6917,6 +7123,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/payments/{intentId}/disputes": {
+      "get": {
+        "operationId": "listPaymentDisputesAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorDisputeList"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

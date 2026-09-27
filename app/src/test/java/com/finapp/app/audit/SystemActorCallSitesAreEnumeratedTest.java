@@ -152,7 +152,11 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " act already (the P5-TSK-009 reasoning, third occurrence), so the"
                         + " attribution must not depend on which resolver wins the harmless"
                         + " race. The scope wraps only the effect: authentication, evidence and"
-                        + " dedupe run before it and claim nothing."),
+                        + " dedupe run before it and claim nothing. Since P7-TSK-012 the same"
+                        + " one site applies the network's dispute stages (ADR-0061 section 6):"
+                        + " an unsolicited chargeback statement has no session either, and the"
+                        + " stage trail and its audit records name the platform whichever"
+                        + " delivery wins the race."),
                     Map.entry(
                             "com.finapp.payments.PaymentSweeper.sweep",
                     "The swept resolution (P5-TSK-014, ADR-0046 section 4): a scheduled"

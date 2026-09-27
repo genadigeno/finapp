@@ -207,6 +207,10 @@ class MerchantTenancyBatteryDatabaseTest {
         table.put(
                 "POST /v1/merchant/payouts",
                 derived("from the key's own payable to the key's own effective destination"));
+        table.put(
+                "GET /v1/merchant/disputes",
+                derived("the disputes on payments that credited the key's own payable"
+                        + " (P7-TSK-012)"));
 
         // THE MERCHANT KEY, A RESOURCE NAMED: the tenant predicate in the statement.
         table.put(
@@ -229,6 +233,13 @@ class MerchantTenancyBatteryDatabaseTest {
                 addressed(
                         World::payout,
                         (caller, id) -> get("/v1/merchant/payouts/" + id, caller.key())));
+        // P7-TSK-012: the dispute's tenant is the disputed payment's credit account, and the
+        // predicate rides the statement - a read, so the fingerprint must not move either way.
+        table.put(
+                "GET /v1/merchant/disputes/{disputeId}",
+                addressed(
+                        World::dispute,
+                        (caller, id) -> get("/v1/merchant/disputes/" + id, caller.key())));
 
         // AN OPERATOR'S PAIRING: a merchant and one of its resources, both in the path.
         table.put(
@@ -430,7 +441,7 @@ class MerchantTenancyBatteryDatabaseTest {
         }
         assertThat(probed)
                 .as("every addressed route was probed, and there are some")
-                .hasSize(7);
+                .hasSize(8);
     }
 
     @Test
@@ -446,18 +457,21 @@ class MerchantTenancyBatteryDatabaseTest {
         String today = LocalDate.now(CLOCK).toString();
         String transactions =
                 get("/v1/merchant/transactions?from=" + today + "&to=" + today, a.key()).body();
+        String disputes = get("/v1/merchant/disputes", a.key()).body();
         HttpResponse<String> opened = openSession(a);
 
         assertThat(me).contains(a.id());
         assertThat(payable).contains("\"position\":\"100.00\"");
         assertThat(transactions).contains(a.fundingEntry());
-        for (String body : List.of(me, payable, transactions)) {
+        assertThat(disputes).contains(a.dispute());
+        for (String body : List.of(me, payable, transactions, disputes)) {
             assertThat(body)
                     .as("nothing of B's reaches A's derived reads")
                     .doesNotContain(b.id())
                     .doesNotContain(b.payable().value().toString())
                     .doesNotContain(b.fundingEntry())
-                    .doesNotContain(b.payout());
+                    .doesNotContain(b.payout())
+                    .doesNotContain(b.dispute());
         }
         assertThat(opened.statusCode()).as(opened.body()).isEqualTo(201);
         assertThat(merchantOfSession(field(opened.body(), "checkoutId")))
@@ -586,7 +600,8 @@ class MerchantTenancyBatteryDatabaseTest {
             String session,
             String effectiveDestination,
             String proposedDestination,
-            String payout) {}
+            String payout,
+            String dispute) {}
 
     /**
      * A trading merchant with a funded payable, two API keys, the platform's pricing and an open
@@ -651,14 +666,15 @@ class MerchantTenancyBatteryDatabaseTest {
 
         World partial =
                 new World(id.toString(), key, spareKeyId, payable, fundingEntry, null, null, null,
-                        null);
+                        null, null);
         HttpResponse<String> opened = openSession(partial);
         assertThat(opened.statusCode()).as(opened.body()).isEqualTo(201);
         String session = field(opened.body(), "checkoutId");
+        String dispute = disputeOn(payable);
         if (!full) {
             return new World(
                     id.toString(), key, spareKeyId, payable, fundingEntry, session, null, null,
-                    null);
+                    null, dispute);
         }
 
         UUID effective = IDS.next();
@@ -683,12 +699,46 @@ class MerchantTenancyBatteryDatabaseTest {
         World funded =
                 new World(
                         id.toString(), key, spareKeyId, payable, fundingEntry, session,
-                        effective.toString(), proposed.toString(), null);
+                        effective.toString(), proposed.toString(), null, dispute);
         HttpResponse<String> paid = payout(funded);
         assertThat(paid.statusCode()).as(paid.body()).isEqualTo(201);
         return new World(
                 id.toString(), key, spareKeyId, payable, fundingEntry, session,
-                effective.toString(), proposed.toString(), field(paid.body(), "id"));
+                effective.toString(), proposed.toString(), field(paid.body(), "id"), dispute);
+    }
+
+    /**
+     * A chargeback on a sale that credited {@code payable} (`P7-TSK-012`): a captured card
+     * payment and its dispute, seeded raw as the application role — the rows the notification
+     * would write, whose tenant is the payment's credit account.
+     */
+    private static String disputeOn(LedgerAccountId payable) throws SQLException {
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
+        UUID dispute = IDS.next();
+        raw(
+                "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                        + " payment_method_id, credit_account_id, amount_minor, currency, scale,"
+                        + " status, created_at, capture_mode) VALUES (?, ?, ?, ?, ?, 1000, 'EUR',"
+                        + " 2, 'SUCCEEDED', now(), 'AUTOMATIC')",
+                intent, IDS.next(), IDS.next(), IDS.next(), payable.value());
+        raw(
+                "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
+                        + " capture_reference, auth_provider_reference, capture_provider_reference,"
+                        + " authorized_amount_minor, authorized_currency, authorized_scale,"
+                        + " captured_amount_minor, captured_currency, captured_scale, status,"
+                        + " created_at, rail, interaction_model) VALUES (?, ?, ?, ?, ?, ?, 1000,"
+                        + " 'EUR', 2, 1000, 'EUR', 2, 'CAPTURED', now(), 'card', 'TWO_STEP')",
+                attempt, intent, "auth-" + IDS.next(), "cap-" + IDS.next(),
+                "psp-auth-" + IDS.next(), "psp-cap-" + IDS.next());
+        raw(
+                "INSERT INTO payments.dispute (id, provider, provider_dispute_reference,"
+                        + " attempt_id, reason, stage, chargeback_amount_minor,"
+                        + " chargeback_currency, chargeback_scale, opened_at)"
+                        + " VALUES (?, 'simulated-card', ?, ?, 'FRAUD', 'CHARGED_BACK', 1000,"
+                        + " 'EUR', 2, now())",
+                dispute, "dp_" + IDS.next().toString().replace("-", ""), attempt);
+        return dispute.toString();
     }
 
     /**

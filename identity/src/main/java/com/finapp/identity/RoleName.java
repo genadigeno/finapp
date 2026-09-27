@@ -52,14 +52,17 @@ public enum RoleName {
 
     /**
      * Operates the platform's money and nothing else (`P3-TSK-007`, widened by `P4-TSK-009`,
-     * `P5-TSK-015` and `P6-TSK-012`): commands postings, manual adjustments, transfer reversals,
-     * refunds and a merchant's payout on its behalf, over the surfaces that check
+     * `P5-TSK-015`, `P6-TSK-012`, `P7-TSK-003` and `P7-TSK-012`): commands postings, manual
+     * adjustments, transfer reversals, refunds and a merchant's payout on its behalf, routes
+     * payments and administers disputes, over the surfaces that check
      * {@link PermissionName#LEDGER_POST}, {@link PermissionName#LEDGER_ADJUST},
-     * {@link PermissionName#TRANSFER_REVERSE}, {@link PermissionName#PAYMENT_REFUND} and
-     * {@link PermissionName#MERCHANT_PAYOUT}.
+     * {@link PermissionName#TRANSFER_REVERSE}, {@link PermissionName#PAYMENT_REFUND},
+     * {@link PermissionName#MERCHANT_PAYOUT}, {@link PermissionName#PAYMENT_ROUTING_ADMINISTER}
+     * and {@link PermissionName#DISPUTE_ADMINISTER}.
      *
-     * <p><strong>One role holding the five money-operating permissions</strong> (it said three
-     * until `P6-DOC-001`), because a role exists when a
+     * <p><strong>One role holding the seven money-operating permissions</strong> (it said three
+     * until `P6-DOC-001`, and five until `P7-TSK-012` - the routing arrival went uncounted
+     * here), because a role exists when a
      * distinct trust decision does and there is one money-operating population — a new role for
      * the reversal would be a trust decision nothing takes (`P4-TSK-009`'s backlog sentence) —
      * while the permission vocabulary stays precise so `P3-TSK-017`'s adjustment endpoint and
@@ -88,7 +91,11 @@ public enum RoleName {
                     // P7-TSK-003: routing joins the one money-operating population - how
                     // money travels is this desk's judgement (ADR-0060; the permission's own
                     // javadoc carries the future-split reasoning, the FEE_ADMINISTER shape).
-                    PermissionName.PAYMENT_ROUTING_ADMINISTER)),
+                    PermissionName.PAYMENT_ROUTING_ADMINISTER,
+                    // P7-TSK-012: disputes join it too - a chargeback is money forced back
+                    // through the rail, and answering it is payment operations (ADR-0061;
+                    // the permission's javadoc carries the future dispute-desk split).
+                    PermissionName.DISPUTE_ADMINISTER)),
 
     /**
      * Administers commercial counterparties and nothing else (`P6-TSK-003`): onboards

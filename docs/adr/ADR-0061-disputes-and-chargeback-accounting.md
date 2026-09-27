@@ -42,6 +42,15 @@ the customer has spent the money.
    `UNIQUE (provider, provider_dispute_reference)`. The dispute references the attempt it
    contests.
 
+   *(Shipped `P7-TSK-012`: `payments.dispute` in `V020`, the unique key the opening's arbiter
+   under ten fresh-id deliveries; the network's opening statement — provider, reference,
+   attempt, reason category — frozen for every writer, and the chargeback's amount D arriving
+   WITH the chargeback (`NULL → value`, the captured amount's discipline): an inquiry states
+   only the transaction it asks about, and a chargeback may take less, so the figure point 4
+   posts is what the network took, recorded once and never revised. The dispute is recorded
+   against whatever card attempt the network names, whatever its state: the external fact
+   first (point 4), attribution being the combined bound's.)*
+
 2. **The lifecycle has a financial effect at each stage, and only there.**
    - `INQUIRY`: the issuer asks; nothing has moved. No effect.
    - `CHARGED_BACK`: the network has taken the funds. **The chargeback posting.**
@@ -56,6 +65,13 @@ the customer has spent the money.
    A notification that names a stage later than the dispute's current one applies the intervening
    effects in order, in one transaction. A "won" arriving before its chargeback therefore posts
    both, and the history shows both.
+
+   *(The stages shipped `P7-TSK-012` — their postings are `P7-TSK-013`'s: the machine is
+   `DisputeStage`, generated into `V020`'s every-writer trigger; "the intervening stages" is
+   the shortest walk along its edges, which is exactly the stages the notified one implies —
+   a "won" heard first opens at `CHARGED_BACK` and walks through `REPRESENTED`, each stage its
+   own edge, trail row and audit record. A stage the dispute has passed is a late delivery and
+   moves nothing quietly; any other contradicts the record and moves nothing loudly.)*
 
 3. **The combined bound: refunds and chargebacks together never take more from the counterparty
    than the capture credited it.** For every captured card payment:
@@ -128,6 +144,15 @@ the customer has spent the money.
    (`INV-HIST-02`), applied through conditional stage transitions. Provider dispute vocabulary
    (reason codes, stage words) stays in the adapter (`INV-PAY-03`); the core sees our stages and
    our reason categories.
+
+   *(Shipped `P7-TSK-012`: the card door's fourth statement kind (`status: "disputed"`), its
+   stage words and reason codes mapped through `CardDisputeVocabulary`'s total tables — an
+   unknown stage word moves nothing, an unknown reason code is `UNCATEGORISED` — onto
+   `DisputeReason`'s four network groupings; evidence attributed to the disputed attempt;
+   applied by `DisputeNotifications` inside the delivery's transaction as the platform. Read by
+   the merchant over its key, the tenant predicate the payment's credit account among its own
+   payables (`INV-MER-01`), and by operators under the new `DISPUTE_ADMINISTER`, every dispute
+   shown audited.)*
 
 7. **Representment is a dispatch like any other.**
    - The merchant (over its key, tenant-scoped, `INV-MER-01`), or an operator for a payment with

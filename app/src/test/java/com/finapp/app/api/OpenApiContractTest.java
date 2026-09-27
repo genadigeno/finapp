@@ -468,6 +468,14 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/routing-policy/versions",
                         ApiVersion.CURRENT_PREFIX + "/operator/rails/{rail}/availability",
                         ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}/routing",
+                        // P7-TSK-012: the dispute reads (ADR-0061) - the merchant's pair on
+                        // its key, tenant-scoped in the statement; the operator's pair behind
+                        // DISPUTE_ADMINISTER, every dispute shown audited. Read-only: the
+                        // stages arrive from the network, and contesting is P7-TSK-014's.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes/{disputeId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}/disputes",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

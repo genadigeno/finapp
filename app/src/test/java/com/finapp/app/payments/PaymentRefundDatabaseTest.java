@@ -1890,7 +1890,16 @@ class PaymentRefundDatabaseTest {
                 new tools.jackson.databind.ObjectMapper(),
                 CLOCK,
                 template,
-                dataSource);
+                dataSource,
+                new com.finapp.payments.DisputeNotifications(
+                        new com.finapp.payments.JdbcDisputeStore(),
+                        intents,
+                        com.finapp.payments.PaymentRails.of(
+                                java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        new JdbcAuditWriter(),
+                        new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                        IDS,
+                        CLOCK));
     }
 
     private static void deliverWebhook(PaymentWebhookService webhooks, String body) {

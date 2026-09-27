@@ -351,6 +351,8 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `payments.RailAvailabilityChanged` | **Yes** | An operator recorded a rail as available or out of service, with the required reason; the record names the rail and the new state. |
 | `payments.PaymentRoutingRefused` | No | A payment was refused because no declared rail could carry it; the record names the intent, the decision, the pinned policy version and the step count, never an amount. |
 | `payments.PaymentRoutingExplanationRead` | No | An operator read a payment's routing explanation; the record names the intent and the decision. |
+| `payments.DisputeStageApplied` | No | The platform applied a dispute stage the card PSP notified (`P7-TSK-012`, ADR-0061 §6) — opening the dispute at its entry stage, or moving it along one edge of its machine; one record per stage applied, so a later stage's intervening ones each stand on the record, in order. As the platform, through the webhook door's enumerated `enterSystem()` site; acting only — a duplicate, late or contradicting delivery moves nothing and records nothing. The record names the dispute, the attempt and the stages as the platform's own names, never an amount or a provider code. |
+| `payments.DisputeRead` | No | An operator read a dispute under `DISPUTE_ADMINISTER` (`P7-TSK-012`) — somebody else's contested payment, its reason and its amount; one record per dispute shown, a refusal records nothing. The record names the dispute and its attempt. |
 
 Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
 dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's

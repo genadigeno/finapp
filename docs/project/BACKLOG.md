@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (11 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (12 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 1 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -8752,7 +8752,6 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   callbacks; provider success with a lost response; probes.
 - **Accept**: a wallet funded and a checkout paid by bank, each reconciled; a late execution lands.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-TEST`. **Risk**: High. **Cx**: L.
-**P7-TSK-009 — Pay-by-bank: A2A pay-ins for wallets and checkout** — `COMPLETE` (2026-09-27)
 - **Gate**: all three acceptance criteria proven over the deployed chain — the wallet funded
   by bank and explained to the cent (`PayByBankDatabaseTest#theWalletChainHolds`), the
   checkout paid by bank with ADR-0050's four lines on the INSTANT rail's own position
@@ -8798,7 +8797,6 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Testing**: a full and a partial return; a return's lost answer; probes.
 - **Accept**: a pay-by-bank payment refunded by return payment and reconciled.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
-**P7-TSK-010 — Refunds on push rails are return payments** — `COMPLETE` (2026-09-27)
 - **Gate**: the acceptance proven over the deployed chain — a pay-by-bank payment refunded by
   return payment and reconciled: the operator's refund of an EXECUTED pay-in dispatched
   through the REAL push adapter as a NEW transfer carrying OUR minted 32-hex reference as the
@@ -8864,7 +8862,6 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   probes.
 - **Accept**: a checkout paid from a wallet with the fee split in one entry, and refunded.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
-**P7-TSK-011 — The wallet as an instrument: pay a checkout from the wallet** — `COMPLETE` (2026-09-27)
 - **Design corrections to this entry** (the `P6-TSK-001` precedent): *Persistence* is payments
   `V019`, not "none beyond the model's states" — the instrument is the INTENT's shape
   (`payment_method_id` XOR `debit_account_id`), the NULL-blind intent freeze had to be
@@ -8916,7 +8913,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   owner's instruction.
 
 
-**P7-TSK-012 — The dispute aggregate, its notifications and its stages** — `READY`
+**P7-TSK-012 — The dispute aggregate, its notifications and its stages** — `COMPLETE` (2026-09-27)
 - **Objective**: ADR-0061 §1–§2, §6 — a dispute is its own lifecycle on a card payment, driven by
   authenticated, deduplicated, order-blind notifications.
 - **Bounded context**: Disputes (29), in `payments`.
@@ -8945,8 +8942,77 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   new rows; probes.
 - **Accept**: a dispute runs its stages from notifications alone, one row however often notified.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+- **Design corrections to this entry** (the `P6-TSK-001` precedent): *API*'s operator reads are
+  `GET /v1/operator/disputes/{disputeId}` and `GET /v1/operator/payments/{intentId}/disputes`,
+  behind a new `DISPUTE_ADMINISTER` (held by `LEDGER_OPERATOR`, the money-operating population)
+  with every dispute shown audited as `payments.DisputeRead`; the merchant's pair is
+  `GET /v1/merchant/disputes` (newest 100, `truncated` saying when there were more) and
+  `GET /v1/merchant/disputes/{disputeId}`, the tenant predicate the disputed payment's credit
+  account among the merchant's own payables (`credit_account_id = ANY (?)`, the accounts from
+  the ledger's owner-scoped read — `payments` still never learns what a merchant is); *Audit*
+  is `payments.DisputeStageApplied`, one record per stage applied, the birth included, as the
+  platform; a dispute is recorded against WHATEVER card attempt the network names, whatever its
+  state (the external fact first, ADR-0061 §4 — attribution is `-013`'s bound); evidence stays
+  attributed to the disputed attempt (`V005`'s rule, no fourth subject); the respond-by
+  deadline is `-014`'s, end to end. **The gate corrected the design's own amount rule**: the
+  chargeback's amount ARRIVES with the chargeback (`NULL → value`, the captured amount's
+  discipline) rather than being frozen at birth — see the gate block. `P7-TSK-014`'s planned
+  migration is renumbered `V021`, with provenance.
+- **Gate**: the acceptance proven over the deployed chain — a dispute runs its stages from the
+  card PSP's signed notifications ALONE, one row per `(provider, provider_dispute_reference)`
+  however often notified: every path through the machine delivered in order, each edge a
+  conditional transition with its trail row, its `DisputeStageApplied` record and its facts
+  (`DisputeNotificationDatabaseTest#everyStageRunsFromNotificationsAlone`); ADR-0061 §2's own
+  sentence — a `WON` heard first opens at `CHARGED_BACK` and walks through `REPRESENTED`, the
+  history showing both, the facts in causal order (`#aLaterStageAppliesTheInterveningOnesInOrder`);
+  ten deliveries under ONE event id absorbed by the inbox and ten under FRESH ids arbitrated by
+  the unique reference — one row, one record, one fact each, every statement retained
+  (`#tenIdenticalDeliveriesHaveOneEffect`, `#tenFreshIdDeliveriesHaveOneEffect`); ten racing
+  deliveries of DIFFERENT consistent stages converging on one row at `WON` with a legal,
+  duplicate-free trail (`#aMixedStageRaceConverges`); a late stage quiet and a contradiction
+  loud (`#lateIsQuietAndAContradictionIsLoud`); the door total — an unknown stage word moves
+  nothing, an unknown reason is `UNCATEGORISED` (`#theDoorIsTotal`); every writer bound by
+  `V020` — birth only at an entry stage, only the machine's edges, terminal stages refusing
+  everything, the opening statement frozen inside a legal edge included
+  (`PaymentsSchemaDatabaseTest#theDisputeSchemaBindsEveryWriter`); the merchant's reads
+  tenant-scoped in the statement and probed in the tenancy battery (+2 routes, 8 addressed
+  probes), the operator's refused to another population with nothing recorded; no journal
+  entry anywhere. **The gate's own find**: the design froze the disputed amount at BIRTH, so a
+  dispute opened as an inquiry stored the inquired TRANSACTION amount — and a partial
+  chargeback on its escalation would have been refused as a contradiction, the dispute stuck
+  at `INQUIRY` while the network had taken the funds (refusing to record what the network did,
+  ADR-0061's rejected alternative) and `-013` handed the wrong figure to post. Now the
+  chargeback's amount arrives WITH the chargeback — nullable, present exactly when the funds
+  are taken (`V020`'s coherence `CHECK`, generated), moving only `NULL → value` for every
+  writer — and a late inquiry repeating the transaction's full amount is quiet ordering, not a
+  contradiction (`#theChargebackAmountArrivesWithTheChargeback`, asserted and probed). Also
+  closed at the gate: the external-fact-first decision pinned (a dispute recorded on a
+  `CAPTURE_UNKNOWN`, a `VOIDED` and an `AUTHORIZED` attempt alike, the attempt untouched), the
+  ignored later reason code pinned, a forged dispute statement's one 401 with nothing written,
+  the merchant listing's truncation exercised, the platform asserted as every stage's actor,
+  and the identical-id redelivery loop bounded. **And a pre-existing test-isolation leak the
+  gate's one-invocation battery exposed**: `RoutingPolicyDatabaseTest` published CARD-ONLY
+  routing versions effective NOW into the test JVM's one shared database, and the
+  newest-effective resolution made them the live policy for every later suite — reproduced
+  deterministically (that suite then `WithdrawalDatabaseTest`: nine of ten refused
+  `NoEligibleRail`, and every later version pin read the routing suite's number). Its
+  versions are now published DORMANT (effective 2099) and WHOLE (the standing four rules,
+  version 4's), so neither routing nor any pin can see them; the pair passes in one JVM. This
+  re-diagnoses `P7-TSK-011`'s "cross-clock" `NoEligibleRail` storm — the exact signature, a
+  card-only policy — which that gate chipped as clock skew. 19 probes, all caught in valid runs — every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical (`MUTATION_TESTING.md` §2 +19
+  rows). Multi-instance PASS — the inbox's key, the unique reference with its waiting
+  `ON CONFLICT`, the row lock and the conditional stage transitions are the arbiters, all in
+  PostgreSQL; nothing lives in process state and nothing is scheduled. **Design inputs for
+  `P7-TSK-013`, recorded here and on its entry**: take the attempt `FOR UPDATE` FIRST, before
+  the dispute insert (the insert and the evidence each take `FOR KEY SHARE` on the attempt —
+  key-share-then-update across racers is the `P7-TSK-011` deadlock class); decide the posting
+  for a chargeback on an attempt whose capture is still `CAPTURE_DISPATCHED`/`CAPTURE_UNKNOWN`
+  (the bound's `captured` term would read zero); post from `Dispute#chargeback()`, never the
+  notice's figure; the per-stage `entered` seam is where each stage's posting attaches. Fleet
+  hermetic 1689 tests across 14 modules, 0 failures; 270 targeted database tests across 22 suites, 0 failures; the platform classification guard green. The full battery
+  deliberately skipped on the owner's instruction.
 
-**P7-TSK-013 — Chargeback accounting and the combined bound** — `PLANNED`
+**P7-TSK-013 — Chargeback accounting and the combined bound** — `READY`
 - **Objective**: ADR-0061 §3–§5 — a chargeback never takes more from the counterparty than the
   capture credited it, and every stage posts exactly once.
 - **Bounded context**: Disputes (29), `payments`; Merchant (12) and Accounts (5/6) through the
@@ -8979,6 +9045,18 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Accept**: gate criteria "duplicate chargeback notification produces a single financial effect"
   and "a chargeback on an already-refunded payment does not double-debit", demonstrated and probed.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: High. **Cx**: L.
+- **Design inputs recorded by `P7-TSK-012`** (read at design, not binding decisions):
+  (1) **the lock order** — take the attempt `FOR UPDATE` FIRST, before the dispute insert:
+  the dispute insert and the evidence insert each take `FOR KEY SHARE` on the attempt, and
+  key-share-then-update across two racing deliveries is the `P7-TSK-011` deadlock class;
+  keep the door's effect-before-evidence order; (2) **a chargeback on an attempt whose
+  capture is still `CAPTURE_DISPATCHED`/`CAPTURE_UNKNOWN`** — the dispute is recorded (the
+  external fact first), but the bound's `captured` term would read zero: decide, e.g. answer
+  the delivery unacknowledged until the capture resolves; (3) post from
+  `Dispute#chargeback()` — present exactly when the funds are taken, `NULL → value` —
+  never the notice's figure; (4) `DisputeNotifications`' per-stage `entered` seam runs once
+  per stage applied, in order, inside the delivery's transaction: each stage's posting
+  attaches there, keyed by the dispute and its stage.
 
 **P7-TSK-014 — Representment and dispute evidence** — `PLANNED`
 - **Objective**: ADR-0061 §7 — the merchant (or an operator) contests a chargeback with evidence,
@@ -8990,7 +9068,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   never deciding an outcome; accept (not contest); refusal after the deadline or resolution.
 - **Out of scope**: automated evidence assembly; case management (Phase 13).
 - **Domain changes**: `DisputeEvidence`, `Representment`.
-- **Persistence**: payments `V019`; classification rows.
+- **Persistence**: payments `V021` (planned as `V019` at the transition — the payments sequence reached `V020` with `P7-TSK-012`'s dispute; the stale-plan-number class, recorded by that task's gate); classification rows.
 - **API**: merchant routes (tenant-scoped) and operator routes, with OpenAPI and permission rows.
 - **Events**: `DisputeEvidenceSubmitted`.
 - **Financial impact**: none directly (the outcome's posting is `-013`'s).

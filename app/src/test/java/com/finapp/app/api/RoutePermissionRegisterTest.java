@@ -86,7 +86,10 @@ class RoutePermissionRegisterTest {
                     // Rail routing: the versioned policy, availability, the explanation (Phase 7, ADR-0060)
                     entry("POST /v1/operator/routing-policy/versions", PermissionName.PAYMENT_ROUTING_ADMINISTER),
                     entry("POST /v1/operator/rails/{rail}/availability", PermissionName.PAYMENT_ROUTING_ADMINISTER),
-                    entry("GET /v1/operator/payments/{intentId}/routing", PermissionName.PAYMENT_ROUTING_ADMINISTER)));
+                    entry("GET /v1/operator/payments/{intentId}/routing", PermissionName.PAYMENT_ROUTING_ADMINISTER),
+                    // Disputes: the operator's reads, each dispute shown audited (Phase 7, ADR-0061)
+                    entry("GET /v1/operator/disputes/{disputeId}", PermissionName.DISPUTE_ADMINISTER),
+                    entry("GET /v1/operator/payments/{intentId}/disputes", PermissionName.DISPUTE_ADMINISTER)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired
@@ -116,7 +119,9 @@ class RoutePermissionRegisterTest {
                         PermissionName.MERCHANT_ADMINISTER,
                         PermissionName.FEE_ADMINISTER,
                         PermissionName.PAYOUT_DESTINATION_APPROVE,
-                        PermissionName.MERCHANT_PAYOUT);
+                        PermissionName.MERCHANT_PAYOUT,
+                        PermissionName.PAYMENT_ROUTING_ADMINISTER,
+                        PermissionName.DISPUTE_ADMINISTER);
     }
 
     private Map<String, PermissionName> declared() {

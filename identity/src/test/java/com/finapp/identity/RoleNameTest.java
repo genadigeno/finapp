@@ -60,14 +60,15 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("LEDGER_OPERATOR grants exactly the six money-operating permissions")
-    void ledgerOperatorGrantsExactlySix() {
-        // One role, six permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009;
+    @DisplayName("LEDGER_OPERATOR grants exactly the seven money-operating permissions")
+    void ledgerOperatorGrantsExactlySeven() {
+        // One role, seven permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009;
         // PAYMENT_REFUND by P5-TSK-015; MERCHANT_PAYOUT by P6-TSK-012;
         // PAYMENT_ROUTING_ADMINISTER by P7-TSK-003, how money travels being this desk's
-        // judgement): one money-operating
+        // judgement; DISPUTE_ADMINISTER by P7-TSK-012, answering money the rail forced back
+        // being payment operations): one money-operating
         // population, and the vocabulary stays precise so the adjustment, reversal, refund,
-        // payout and routing endpoints each check their own. Exact set, so the role quietly
+        // payout, routing and dispute endpoints each check their own. Exact set, so the role quietly
         // gaining ROLE_ASSIGN - the permission that
         // grants permissions - is a failing test rather than a silent expansion.
         //
@@ -85,7 +86,8 @@ class RoleNameTest {
                         PermissionName.TRANSFER_REVERSE,
                         PermissionName.PAYMENT_REFUND,
                         PermissionName.MERCHANT_PAYOUT,
-                        PermissionName.PAYMENT_ROUTING_ADMINISTER);
+                        PermissionName.PAYMENT_ROUTING_ADMINISTER,
+                        PermissionName.DISPUTE_ADMINISTER);
     }
 
     @Test

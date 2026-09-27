@@ -553,6 +553,55 @@ class PaymentBeans {
     }
 
     @Bean
+    com.finapp.payments.DisputeStore<Connection> disputeStore() {
+        return new com.finapp.payments.JdbcDisputeStore();
+    }
+
+    /**
+     * The dispute notifications' command (`P7-TSK-012`, ADR-0061 §6): applied inside the card
+     * door's delivery transaction, its stages the network's word alone. Unconditional - it
+     * holds no credential and calls nothing; the door that feeds it is the conditional half.
+     */
+    @Bean
+    com.finapp.payments.DisputeNotifications disputeNotifications(
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.PaymentRails paymentRails,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.payments.DisputeNotifications(
+                disputeStore,
+                paymentIntentStore,
+                paymentRails,
+                auditWriter,
+                outboxWriter,
+                idGenerator,
+                clock);
+    }
+
+    /** The dispute read surfaces (`P7-TSK-012`): the merchant's, tenant-scoped in the
+     * statement, and the operator's, audited per dispute shown. */
+    @Bean
+    DisputeOperations disputeOperations(
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            TransactionTemplate paymentTransactions,
+            DataSource dataSource) {
+        return new DisputeOperations(
+                new com.finapp.payments.DisputeReads(
+                        disputeStore, paymentIntentStore, auditWriter, idGenerator, clock),
+                ledgerAccountStore,
+                paymentTransactions,
+                dataSource);
+    }
+
+    @Bean
     com.finapp.payments.RoutingTelemetry routingTelemetry(
             com.finapp.app.telemetry.PaymentMeters paymentMeters) {
         return (chosen, leadingRejection) ->
@@ -854,7 +903,8 @@ class PaymentBeans {
             tools.jackson.databind.ObjectMapper objectMapper,
             Clock clock,
             TransactionTemplate paymentTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.payments.DisputeNotifications disputeNotifications) {
         return new PaymentWebhookService(
                 webhookSignature,
                 providerEvidenceStore,
@@ -874,7 +924,9 @@ class PaymentBeans {
                 objectMapper,
                 clock,
                 paymentTransactions,
-                dataSource);
+                dataSource,
+                // The dispute notifications (P7-TSK-012): the door's fourth statement kind.
+                disputeNotifications);
     }
 
     /**

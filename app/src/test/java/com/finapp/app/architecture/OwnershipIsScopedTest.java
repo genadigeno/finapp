@@ -369,6 +369,60 @@ class OwnershipIsScopedTest {
                                         + " from the conditional transition that just fired"
                                         + " on the locked row.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.findForCounterparties",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/merchant/disputes/{disputeId} (P7-TSK-012) - the"
+                                        + " identifier comes from the path, and"
+                                        + " credit_account_id = ANY (?) in the statement is"
+                                        + " the tenant check (INV-MER-01): the accounts are the"
+                                        + " authenticated merchant's own payables, from the"
+                                        + " ledger's owner_ref-scoped read in the same"
+                                        + " transaction. Another tenant's dispute, unknown and"
+                                        + " malformed are one empty answer and one 404.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-012. The operator's read of one dispute names"
+                                        + " SOMEBODY ELSE'S contested payment by design (the"
+                                        + " routing explanation's class):"
+                                        + " @RequiresPermission(DISPUTE_ADMINISTER) stands in"
+                                        + " for the ownership predicate - asserted by"
+                                        + " DisputeNotificationDatabaseTest's wrong-role"
+                                        + " refusal and DenyByDefaultDatabaseTest - and every"
+                                        + " dispute shown is audited (DISPUTE_READ). No merchant"
+                                        + " surface reaches it: theirs is"
+                                        + " findForCounterparties.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.listForIntent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-012. The operator's read of one payment's"
+                                        + " disputes, as JdbcDisputeStore.findById: the"
+                                        + " DISPUTE_ADMINISTER wall stands in for the"
+                                        + " predicate and every dispute shown is audited.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.historyOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-012. A dispute's trail, read only for a dispute a"
+                                        + " scoped or permissioned read returned a statement"
+                                        + " earlier in the same transaction - the merchant's"
+                                        + " findForCounterparties (tenant predicate in the"
+                                        + " statement) or the operator's findById/listForIntent"
+                                        + " (the DISPUTE_ADMINISTER wall) - never a request's"
+                                        + " raw identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-012, the JdbcWithdrawalStore.appendHistory shape: a"
+                                        + " private trail writer whose id comes only from the"
+                                        + " conditional transition that just fired on the row"
+                                        + " this delivery inserted or locked - the network's"
+                                        + " reference attributed it behind the signed door.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentAttemptStore.openInitiation",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2029,6 +2083,10 @@ class OwnershipIsScopedTest {
                             "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"
                                     + ".aPayoutPaysOnlyItsOwnMerchantsDestination"),
                     Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.findForCounterparties",
+                            "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"
+                                    + ".everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown"),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantPayoutStore.findByDispatchKey",
                             "com.finapp.app.merchant.MerchantPayoutEndpointDatabaseTest"
                                     + ".aClientKeyIsEachMerchantsOwn"),
@@ -2127,6 +2185,14 @@ class OwnershipIsScopedTest {
      * {@code uuid} column named {@code _ref} rather than a typed {@code _id} — the isolation
      * showing up in the schema. Two spellings for one rule is a cost worth naming; the
      * alternative is a module depending on another module to say whose row this is.
+     *
+     * <p>{@code credit_account_id = ANY (?)} is <strong>the third spelling</strong>
+     * (`P7-TSK-012`): {@code payments} cannot see {@code merchant} at all, and a payment's
+     * counterparty is the account it credited — so a merchant's disputes are the disputes on
+     * payments that credited ITS payables, and the set bound here is resolved from the
+     * authenticated merchant through the ledger's {@code owner_ref = ?} read in the same
+     * transaction ({@code MerchantPayable}'s precedent). The spelling differs; the proof is the
+     * same, and the tenancy battery's probe is what shows the right set is bound.
      */
     private static final Set<String> OWNERSHIP_PREDICATES =
             Set.of(
@@ -2135,7 +2201,8 @@ class OwnershipIsScopedTest {
                     "customer_id = ?",
                     "party_id = ?",
                     "merchant_id = ?",
-                    "merchant_ref = ?");
+                    "merchant_ref = ?",
+                    "credit_account_id = ANY (?)");
 
     /**
      * The tenant's packages (`P6-TST-001`): where every statement over a tenant column lives, and

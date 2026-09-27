@@ -9,7 +9,7 @@ package com.finapp.identity;
  * suspension, role assignment and the KYC review actions `P2-TSK-003` catalogued to the ledger,
  * payment and merchant acts of Phases 3 to 6 - so the vocabulary follows the registry rather than
  * anticipating it. Which route requires which value is pinned by {@code RoutePermissionRegisterTest}
- * (`P6-DOC-001`). <em>(This heading said "three values" until then; there are fourteen — thirteen until `P7-TSK-003`.)</em> A permission for an action nobody has catalogued would
+ * (`P6-DOC-001`). <em>(This heading said "three values" until then; there are fifteen — thirteen until `P7-TSK-003`, fourteen until `P7-TSK-012`.)</em> A permission for an action nobody has catalogued would
  * be a claim about a capability that does not exist.
  *
  * <p><em>(This javadoc said "two values" and that neither admin endpoint existed - true when
@@ -230,5 +230,23 @@ public enum PermissionName {
      * reasoning: it shapes what happens to payments, not to counterparties), and a role for
      * a split nobody has made is a trust decision nobody took.
      */
-    PAYMENT_ROUTING_ADMINISTER
+    PAYMENT_ROUTING_ADMINISTER,
+
+    /**
+     * Administer disputes (`P7-TSK-012`, ADR-0061): read any dispute — somebody else's
+     * contested payment, its reason and its amount — and, from `P7-TSK-014`, accept one or
+     * submit evidence on a payment with no merchant. Names {@code payments.DisputeRead}; ships
+     * with its real check sites, {@code GET /v1/operator/disputes/'{disputeId}'} and
+     * {@code GET /v1/operator/payments/'{intentId}'/disputes}.
+     *
+     * <p><strong>Its own permission, because contesting money is not moving it.</strong> A
+     * dispute desk answering the network with evidence is a real future split from the desk
+     * that posts, refunds and routes — the {@link #PAYMENT_ROUTING_ADMINISTER} shape, restated
+     * not re-argued.
+     *
+     * <p><strong>Held by {@link RoleName#LEDGER_OPERATOR} today</strong>: a chargeback is
+     * money forced back through the rail, and answering it is payment operations — the
+     * money-operating population's concern until a trust decision splits it.
+     */
+    DISPUTE_ADMINISTER
 }

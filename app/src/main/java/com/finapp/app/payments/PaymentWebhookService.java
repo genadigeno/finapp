@@ -1,5 +1,7 @@
 package com.finapp.app.payments;
 
+import com.finapp.payments.DisputeNotice;
+import com.finapp.payments.DisputeNotifications;
 import com.finapp.payments.EvidenceKind;
 import com.finapp.payments.PaymentIntent;
 import com.finapp.payments.PaymentIntentStore;
@@ -26,6 +28,8 @@ import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.inbox.InboxConsumer;
 import com.finapp.platform.inbox.InboxKey;
+import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
@@ -98,6 +102,9 @@ public class PaymentWebhookService {
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
 
+    /** The dispute notifications' command (`P7-TSK-012`) — the door's fourth statement kind. */
+    private final DisputeNotifications disputes;
+
     public PaymentWebhookService(
             WebhookSignature webhookSignature,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
@@ -111,7 +118,8 @@ public class PaymentWebhookService {
             ObjectMapper objectMapper,
             Clock clock,
             TransactionTemplate paymentTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            DisputeNotifications disputeNotifications) {
         this.signature =
                 Objects.requireNonNull(webhookSignature, "webhookSignature must not be null");
         this.evidence =
@@ -132,6 +140,9 @@ public class PaymentWebhookService {
         this.transactions =
                 Objects.requireNonNull(paymentTransactions, "paymentTransactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.disputes =
+                Objects.requireNonNull(
+                        disputeNotifications, "disputeNotifications must not be null");
     }
 
     /**
@@ -148,7 +159,20 @@ public class PaymentWebhookService {
             // The clearing statement's own fields (P7-TSK-005): the acquirer reference and
             // the network transaction identifier, present exactly when status is "cleared".
             String arn,
-            String networkTransactionId) {}
+            String networkTransactionId,
+            // The dispute statement's own fields (P7-TSK-012), present when status is
+            // "disputed": the PSP's dispute reference, its stage word and reason code (both
+            // CardDisputeVocabulary's to map), and the disputed amount in the outbound
+            // wire's own shape - minor units as a JSON string, currency, scale.
+            String dispute,
+            String stage,
+            String reasonCode,
+            String amountMinor,
+            String currency,
+            Integer scale) {}
+
+    /** Minor units as the wire carries them: digits only, and short enough for a long. */
+    private static final Pattern MINOR_UNITS = Pattern.compile("[0-9]{1,18}");
 
     /**
      * Accepts one delivery.
@@ -363,6 +387,13 @@ public class PaymentWebhookService {
             clearingEffect(uow, attempt, payload, judged);
             return;
         }
+        if ("disputed".equals(payload.status())) {
+            // The dispute statement (P7-TSK-012, ADR-0061 section 6): the dispute's own
+            // machine, never the attempt's - a chargeback contests the payment, it does not
+            // move the operation that took it.
+            disputeEffect(uow, attempt, payload, judged);
+            return;
+        }
         Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
         if (verdict.isEmpty()) {
             judged.unmappable();
@@ -480,6 +511,101 @@ public class PaymentWebhookService {
         try {
             return Optional.of(new ProviderReference(value));
         } catch (IllegalArgumentException outOfShape) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The dispute statement applied (`P7-TSK-012`, ADR-0061 §6): the PSP's words translated
+     * through {@link CardDisputeVocabulary}'s total tables, then {@link DisputeNotifications}
+     * owns the once and the order inside this delivery's transaction. A statement missing its
+     * reference, carrying a stage word we cannot read or an amount we cannot parse is
+     * unactionable — not knowledge — and moves nothing; a statement the dispute's record
+     * contradicts moves nothing either, and both are counted as the integration break they
+     * are. A late or repeated stage is ordering, not breakage.
+     */
+    private void disputeEffect(
+            Connection uow, PaymentAttempt attempt, WebhookPayload payload, Judged judged) {
+        Optional<DisputeNotice> notice = disputeNotice(payload);
+        if (notice.isEmpty()) {
+            judged.unmappable();
+            log.warn(
+                    "An authenticated dispute webhook for attempt {} carried no usable"
+                            + " reference, stage or amount; retained as evidence, nothing"
+                            + " recorded (INV-PAY-03's totality, P7-TSK-012)",
+                    attempt.id());
+            return;
+        }
+        DisputeNotifications.Outcome applied =
+                disputes.apply(uow, attempt, notice.get(), PaymentCreation.resolvedCorrelation());
+        switch (applied) {
+            case OPENED, ADVANCED ->
+                    log.info(
+                            "A dispute on attempt {} was {} at the network's word (P7-TSK-012;"
+                                    + " no posting until P7-TSK-013)",
+                            attempt.id(),
+                            applied == DisputeNotifications.Outcome.OPENED ? "opened" : "advanced");
+            case UNCHANGED ->
+                    log.info(
+                            "A repeated dispute statement for attempt {} changed nothing"
+                                    + " (INV-IDEM-04)",
+                            attempt.id());
+            case LATE ->
+                    log.info(
+                            "A dispute statement for attempt {} names a stage the dispute has"
+                                    + " already passed; the statement stands as evidence and"
+                                    + " changes nothing (INV-LIFE-04's ordering)",
+                            attempt.id());
+            case STAGE_CONTRADICTED, FACTS_CONTRADICTED, NOT_DISPUTABLE -> {
+                judged.unmappable();
+                log.warn(
+                        "A dispute statement for attempt {} contradicts what the platform"
+                                + " holds ({}); the record stands and the statement rests as"
+                                + " evidence - an integration break reconciliation must see",
+                        attempt.id(),
+                        applied);
+            }
+        }
+    }
+
+    /** Total: an unusable statement is empty, never a throw — the anti-stall class. */
+    private static Optional<DisputeNotice> disputeNotice(WebhookPayload payload) {
+        Optional<ProviderReference> reference = networkReference(payload.dispute());
+        Optional<com.finapp.payments.DisputeStage> stage =
+                CardDisputeVocabulary.stage(payload.stage());
+        Optional<Money> amount = disputedAmount(payload);
+        if (reference.isEmpty() || stage.isEmpty() || amount.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(
+                new DisputeNotice(
+                        SimulatedCardPspAdapter.NAME,
+                        reference.get(),
+                        stage.get(),
+                        CardDisputeVocabulary.reason(payload.reasonCode()),
+                        amount.get()));
+    }
+
+    /**
+     * The disputed amount in the outbound wire's own shape, total: digits only, a currency we
+     * know, and exactly that currency's scale — an amount created now from an external
+     * statement, so {@code ofMinorUnits}, never a persisted scale taken on trust.
+     */
+    private static Optional<Money> disputedAmount(WebhookPayload payload) {
+        if (payload.amountMinor() == null
+                || payload.currency() == null
+                || payload.scale() == null
+                || !MINOR_UNITS.matcher(payload.amountMinor()).matches()) {
+            return Optional.empty();
+        }
+        try {
+            CurrencyCode currency = CurrencyCode.of(payload.currency());
+            if (payload.scale() != currency.minorUnits()) {
+                return Optional.empty();
+            }
+            Money amount = Money.ofMinorUnits(Long.parseLong(payload.amountMinor()), currency);
+            return amount.isPositive() ? Optional.of(amount) : Optional.empty();
+        } catch (RuntimeException unusable) {
             return Optional.empty();
         }
     }

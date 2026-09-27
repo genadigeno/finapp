@@ -88,6 +88,9 @@ class PaymentsMigrationTest {
     private static final String WALLET_INSTRUMENT =
             "db/migration/payments/V019__the_wallet_as_an_instrument.sql";
 
+    /** V020: the dispute (P7-TSK-012) - its machine, birth list, freeze and trail. */
+    private static final String DISPUTE = "db/migration/payments/V020__the_dispute.sql";
+
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
     void intentStatusChecksMatchTheEnum() {
@@ -843,6 +846,83 @@ class PaymentsMigrationTest {
                 .contains("('019992e0-0000-7000-8000-000000000022', 0, 'instant')")
                 .contains("('019992e0-0000-7000-8000-000000000023', 0, 'instant')")
                 .doesNotContain("GRANT DELETE");
+    }
+
+    @Test
+    @DisplayName("V020's dispute clauses are generated from the enums and pinned: the stage and"
+            + " reason lists, the birth list, every machine edge, the NULL-SAFE freeze, the"
+            + " network-reference arbiter, and the one-column UPDATE grant (P7-TSK-012)")
+    void theDisputeClausesArePinned() {
+        String v020 = migration(DISPUTE);
+        assertThat(v020)
+                .contains("CREATE TABLE payments.dispute (")
+                // Generated lists, one definition each: the row and both trail columns.
+                .contains("CHECK (reason IN (" + DisputeReason.sqlValueList() + "))")
+                .contains("CHECK (stage IN (" + DisputeStage.sqlValueList() + "))")
+                .contains("CHECK (from_stage IN (" + DisputeStage.sqlValueList() + "))")
+                .contains("CHECK (to_stage IN (" + DisputeStage.sqlValueList() + "))")
+                // The chargeback's amount: the NULLABLE fragment, present exactly when the
+                // funds have been taken (generated), positive, moving only NULL -> value.
+                .contains(MoneyColumns.columnsFor("chargeback").nullableDdl())
+                .contains("CHECK ((stage IN (" + DisputeStage.notChargedBackSqlValueList()
+                        + ")) = (chargeback_amount_minor IS NULL))")
+                .contains("CHECK (chargeback_amount_minor IS NULL OR chargeback_amount_minor > 0)")
+                .contains("(OLD.chargeback_amount_minor IS NOT NULL\n"
+                        + "                AND NEW.chargeback_amount_minor IS DISTINCT FROM"
+                        + " OLD.chargeback_amount_minor)")
+                .contains("(OLD.chargeback_currency IS NOT NULL\n"
+                        + "                AND NEW.chargeback_currency IS DISTINCT FROM"
+                        + " OLD.chargeback_currency)")
+                .contains("(OLD.chargeback_scale IS NOT NULL\n"
+                        + "                AND NEW.chargeback_scale IS DISTINCT FROM"
+                        + " OLD.chargeback_scale)")
+                // The network's reference: ProviderReference's own shape, and THE arbiter.
+                .contains("CHECK (provider_dispute_reference ~ '^[A-Za-z0-9_.:-]{1,"
+                        + ProviderReference.MAX_LENGTH + "}$')")
+                .contains("CONSTRAINT dispute_one_per_provider_reference UNIQUE (provider,"
+                        + " provider_dispute_reference)")
+                .contains("NOT NULL REFERENCES payments.payment_attempt (id)")
+                // Born at an entry stage, for every writer.
+                .contains("IF NEW.stage NOT IN (" + DisputeStage.entrySqlValueList() + ") THEN")
+                // The trail's actor model: the audit table's.
+                .contains("CHECK (length(actor_id) BETWEEN 1 AND 200)")
+                .contains("CHECK (length(actor_type) BETWEEN 1 AND 50)");
+        // Every machine edge IS the enum's, and no terminal stage is a source.
+        for (DisputeStage from : DisputeStage.values()) {
+            if (from.isTerminal()) {
+                assertThat(v020)
+                        .as("INV-LIFE-04: terminal %s must be no edge condition's source", from)
+                        .doesNotContain("(OLD.stage = '" + from.name() + "' AND NEW.stage");
+                continue;
+            }
+            String condition = "(OLD.stage = '" + from.name() + "' AND NEW.stage IN ("
+                    + from.permittedTransitions().stream()
+                            .map(to -> "'" + to.name() + "'")
+                            .collect(Collectors.joining(", "))
+                    + "))";
+            assertThat(v020).as("the trigger must carry %s's exact edge set", from)
+                    .contains(condition);
+        }
+        // The freeze, NULL-safely on every frozen column (the P7-TSK-007 class prevented).
+        for (String frozen :
+                java.util.List.of(
+                        "id", "provider", "provider_dispute_reference", "attempt_id", "reason",
+                        "opened_at")) {
+            assertThat(v020).contains("NEW." + frozen + " IS DISTINCT FROM OLD." + frozen);
+        }
+        assertThat(v020)
+                .as("never the NULL-blind comparison")
+                .doesNotContain("<> OLD.")
+                .doesNotContain("OLD.id <>");
+        // The grants: only the stage and the arriving chargeback move; the trail is
+        // append-only by privilege.
+        assertThat(v020)
+                .contains("GRANT SELECT, INSERT ON payments.dispute TO finapp_app;")
+                .contains("GRANT UPDATE (stage, chargeback_amount_minor, chargeback_currency,"
+                        + " chargeback_scale)\n    ON payments.dispute TO finapp_app;")
+                .contains("GRANT SELECT, INSERT ON payments.dispute_event TO finapp_app;")
+                .doesNotContain("GRANT DELETE")
+                .doesNotContain("GRANT UPDATE ON");
     }
 
     /** From the classpath, the sibling migration tests' idiom. */

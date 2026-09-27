@@ -185,6 +185,32 @@ public enum PaymentsAuditAction implements AuditableAction {
             "The platform parked an unattributable pay-in confirmation in the unmatched"
                     + " suspense position; the record names the rail and the suspense entry,"
                     + " never an amount.",
+            false),
+
+    /**
+     * The platform applied a dispute stage the card PSP notified (`P7-TSK-012`, ADR-0061 §6):
+     * opening the dispute at its entry stage, or moving it along one edge of its machine —
+     * one record per stage applied, so a later stage's intervening ones each stand on the
+     * record. As the platform, through the webhook door's enumerated {@code enterSystem()}
+     * site: an unsolicited network statement has no session. Acting only; a duplicate or
+     * late delivery moves nothing and records nothing.
+     */
+    DISPUTE_STAGE_APPLIED(
+            "payments.DisputeStageApplied",
+            "The platform applied a notified dispute stage through a conditional transition;"
+                    + " the record names the dispute, the attempt and the stages as the"
+                    + " platform's own names, never an amount or a provider code.",
+            false),
+
+    /**
+     * An operator read a dispute (`P7-TSK-012`) — somebody else's contested payment, its
+     * reason and its amount, under {@code DISPUTE_ADMINISTER}: audited per dispute shown, like
+     * every privileged read of another's facts ({@link #PAYMENT_ROUTING_EXPLANATION_READ}'s
+     * reasoning).
+     */
+    DISPUTE_READ(
+            "payments.DisputeRead",
+            "An operator read a dispute; the record names the dispute and its attempt.",
             false);
 
     private final String code;
