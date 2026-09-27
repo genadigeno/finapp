@@ -84,6 +84,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0060](ADR-0060-rail-routing-pinned-and-explainable.md) | Rail routing is a versioned policy, decided once per payment, pinned and explainable from stored data | Proposed | 7 | Payments |
 | [0061](ADR-0061-disputes-and-chargeback-accounting.md) | A dispute is its own lifecycle; a chargeback never takes more than was credited, and every stage posts once | Proposed | 7 | Payments · Merchant · Accounts · Ledger |
 | [0062](ADR-0062-account-to-account-and-instant-payments.md) | Account-to-account payments on a provider-neutral push rail; bank details never enter; instant is final on acceptance | Proposed | 7 | Payments · Payment Methods · Accounts · Ledger |
+| [0063](ADR-0063-business-stamps-never-contradict-the-order-of-facts.md) | The order of an aggregate's facts is the database's; a business stamp never contradicts it | Proposed | 7 | Distributed execution |
 
 ## Anticipated ADRs
 

@@ -9489,6 +9489,140 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
     it expires (`DECISIONS.md` §Deliberately Deferred).
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`
 
+**X-TSK-005 — Database fixtures stamp from the clock that judges them; the ordering question decided** — `COMPLETE`
+*(2026-09-27. See **Result**)*
+- **Context**: the database tier (`app` and `platform` suites), and every aggregate that orders two
+  business stamps. Owner-directed, 2026-09-27, chipped by `P7-TSK-014`'s gate: its battery failed
+  `MerchantPayoutDatabaseTest#onlyASettledMerchantCanBeClosed` with *"statusChangedAt must not
+  precede createdAt"*. The fixture had stamped the merchant with the database's `now()`, and
+  `close()` stamped from the JVM's clock.
+- **Description**:
+  1. Audit every fixture that stamps a row with the database's `now()` which the test then
+     transitions, or judges, on another clock. Stamp each from the clock that judges it, and leave
+     deliberately distant times alone.
+  2. Decide, through the repository's process, what production does when instance B's clock trails
+     instance A's inside the skew: record a bounded-skew premise, or change the stamp.
+  3. Run the affected suites fresh and read the verdicts from the JUnit XML.
+- **Deps**: none. It does not displace `P7-TSK-015`.
+- **Accept**:
+  - every `now()` in the database suites mapped to its table and column, and every read that
+    another clock judges (or that a later read of a stepping clock judges) classified, with its
+    margin;
+  - each hazardous fixture stamped from the clock that judges it, or given minutes of margin where
+    only the database judges;
+  - the multi-instance question decided and recorded, nothing implemented beyond the tests;
+  - the affected suites green from fresh runs, their verdicts read from the XML.
+- **Result (2026-09-27)**: every criterion holds.
+  - **Measured first.** A throwaway container answered host pings with its clock, for 539 samples
+    over 30 s at a 1.3 ms half round trip. The host's wall clock was steady (0 µs against its
+    monotonic clock). The VM's clock gained 61 ms a second and was stepped back 1.7 s at once, from
+    650 ms ahead to 1.05 s behind: a sawtooth about 28 s long, ahead 35 % of the time.
+    `CURRENT_STATE.md`'s catalogued entry ("drifts behind", 542 ms) was wrong in direction and a
+    third of the size, and is corrected. A first attempt used BusyBox `date`, which ignores `%N`;
+    the "sawtooth" it drew was whole-second truncation, and it was discarded.
+  - **The audit.** There were 464 database-clock reads in 102 of 125 `app` suites (the chip's
+    "60" predates Phase 7). They were extracted mechanically: every SQL concatenation joined, and
+    each `now()` mapped to its table and column. Then every read another clock judges was followed
+    to its judge. Three shapes were found:
+    1. *A database stamp the domain judges* (`P7-TSK-014`'s shape).
+       `MerchantTenancyBatteryDatabaseTest`'s proposed destination is approved and withdrawn by the
+       positive controls through `PayoutDestination`. That is a `500` whenever the database leads
+       by more than the probe loop's runtime.
+    2. *Two clocks in one statement, masking the constraint under test.*
+       `PayoutDestinationDatabaseTest.insertRaw` stamped `proposed_at` with `now()` and `ended_at`
+       with `Instant.now()`. Whenever the database led, V006's `ended_at >= proposed_at` refused the
+       row with a `23514` of its own, so the bank-detail refusals passed whatever the account CHECK
+       did: the "would still pass if the invariant were removed" anti-pattern, intermittently. The
+       raw self-approval did the same on `approved_at >= proposed_at` whenever the database trailed.
+    3. *Two database reads in two transactions, on a clock that steps back* (`P1-TSK-031`'s
+       shape), sized against the measured 1.7 s:
+       - `AdjustmentProposalSchemaDatabaseTest`, with no margin at all;
+       - `AuthenticationLockoutDatabaseTest.expireTheLock`, with 1 s;
+       - the `-1 s` negative leases, in `PaymentRefundDatabaseTest` (two) and in `platform`'s
+         `IdempotentExecutorTest` and `IdempotencyFailureModeTest`;
+       - `DisputeNotificationDatabaseTest`'s 101-dispute listing, seeded 1 s apart;
+       - gauge ages asserted equal to their back-dating, in `OutboxMetricsDatabaseTest` (two) and
+         `MerchantPayoutMetricsDatabaseTest`, which also counted a 1-second dispatch under a zero
+         bound.
+  - **Clear, with the reason.**
+    - The merchant rows six suites seed at `now()` are never transitioned.
+    - Every identity, customer and account a fixture moves was already back-dated an hour
+      (`P1-TSK-031`), and the rest never move. About fifteen fixture updates already clamp with
+      `GREATEST(now(), …)`.
+    - Refusal tests stamp both sides in one statement, or expect the edge trigger, which fires
+      before any CHECK.
+    - Payment methods are never detached.
+    - Payments' sweep-judged seeds are hours old; deadlines are stamped from the test clock with
+      days of margin; the refund's and the dispute response's permit renewals clamp in production.
+    - Consent orders by sequence, and session liveness is judged on the JVM against JVM-stamped
+      expiries.
+    - Every other offset (hours or days, a few minutes) was left alone, as the chip asked.
+  - **Fixed, in ten suites.** Each row a domain transitions or judges is now stamped from the test's
+    clock. Each row only the database judges is back-dated by minutes, where it had been seconds or
+    nothing. Each gauge's asserted age is now a minute inside its back-dating. Every change carries
+    a comment naming the mechanism.
+  - **Probes** (`MUTATION_TESTING.md`), each restore byte-identical:
+    - V006's account-shape CHECK removed: the new fixture was caught, at the IBAN assertion.
+    - The same removal under the old fixture survived with the database 5 s ahead, and was caught
+      with it 0.5 s ahead over a live lag: the clock's phase decided.
+    - `P6-TSK-011`'s self-approval tautology, re-performed on the fixed fixture: caught.
+  - **Found by this task's own battery, not a clock hazard, and fixed.**
+    `PaymentRefundDatabaseTest#theSweepChainsAStrandedAuthorization` failed (`CAPTURE_UNKNOWN`)
+    whenever `DisputeNotificationDatabaseTest` ran first in the JVM. That suite leaves an
+    `AUTHORIZED` card attempt, which the sweep rightly chains, and one fixed capture body gave both
+    captures `psp_cap-stranded` against `capture_provider_reference UNIQUE`. The second capture,
+    this test's own, was a `23505`. The failure reproduced deterministically, including on
+    unmodified `HEAD`: the pair failed identically with this task's edits removed, and the edits
+    were then restored byte-identical. It is fixed with the harness's own
+    `succeedsWithMintedReference`. Other suites that sweep with a fixed capture body are recorded,
+    not audited (`CURRENT_STATE.md` §Known Architectural Debt).
+  - **Found in passing, and corrected.**
+    - `DISTRIBUTED_EXECUTION.md` §3 said the server's clock decides session liveness; the
+      interceptor judges it at `Instant.now(clock)`.
+    - §5's audit said no client clock decides anything across instances any more. ADR-0063 is the
+      correction.
+    - `CURRENT_STATE.md`'s header still read `P7-TSK-001`, thirteen tasks on: the stale-second-copy
+      class.
+  - **The decision**: change the stamp, don't record a premise.
+    [ADR-0063](../adr/ADR-0063-business-stamps-never-contradict-the-order-of-facts.md), `Proposed`:
+    the database decides the order of an aggregate's facts, and a later fact's stamp is
+    `max(now, latest)`. That honours ADR-0014 as written, turns the platform's three clamps (the
+    supersession, and the refund's and dispute response's renewals) from exceptions into the rule,
+    and leaves the twenty-one ordering CHECKs as corruption guards that hold by construction.
+    Judgements stay bounded-skew premises. `X-TSK-006` carries the implementation.
+  - **Verified** by fresh runs, verdicts read from the XML: the nine affected `app` suites, 106
+    tests, 0 failures, run in the order that exposed the leak (`MerchantPayoutDatabaseTest`,
+    `P7-TSK-014`'s fixture, included); and the two `platform` suites, 23 tests, 0 failures. No
+    fleet-wide count is claimed.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-ARCH`, `DOD-DOC`
+
+**X-TSK-006 — Business stamps never contradict the order of facts (ADR-0063)** — `PLANNED`
+- **Context**: every aggregate that stamps a later fact: the twenty-one tables and ten
+  constructors ADR-0063 lists. Recorded by `X-TSK-005`.
+- **Description**: implement ADR-0063's decision (2). Every transition, terminal stamp and permit
+  renewal stamps `max(now, latest)`. In an aggregate that is `PayoutDestination.supersede`'s form;
+  where a renewal is written in SQL it is `GREATEST(column, ?)`, the refund's form. The schema's
+  CHECKs and the constructors' checks stay. The payout's, withdrawal's and pay-in's renewals change
+  from a quiet refusal to a clamped renewal: a liveness change on money-moving rails, safe under
+  ADR-0057 §4's premise because a later permit only postpones a `NEVER_RECEIVED` conclusion.
+- **Why not in `X-TSK-005`**: it changes domain code in eleven modules and three money-moving send
+  protocols, which is a decision for the owner to accept first. The fixtures no longer depend on it.
+- **Deps**: ADR-0063 accepted by the owner. It displaces no phase task.
+- **Accept**:
+  - every later-fact stamp in the class is `max(now, latest)`, found by reading each transition,
+    not by grep alone;
+  - for each aggregate, a test on a clock trailing the aggregate's latest stamp (`Clock.offset`,
+    or `SimulatedInstance.skewedBy` at the database rank): the transition succeeds and stamps the
+    predecessor's instant, where before the change it was refused;
+  - for the three permit renewals, a takeover on a trailing clock renews (clamped) and re-sends the
+    same reference once, and the sweep's `NEVER_RECEIVED` still waits for its bound: driven, not
+    assumed;
+  - each clamp's removal caught by its test (`MUTATION_TESTING.md`);
+  - `DISTRIBUTED_EXECUTION.md` §3's rows for the class say which clock orders what.
+- **Risk**: Medium. One line per transition, but it touches every aggregate and three
+  money-moving send protocols. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN` (the renewals on
+  money-moving rails), `DOD-TEST`
+
 ---
 
 # Phases 8–16 — Epics

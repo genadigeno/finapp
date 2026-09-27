@@ -75,14 +75,17 @@ class OutboxMetricsDatabaseTest {
     void aPendingEventIsCounted() throws SQLException {
         OutboxBacklog.Reading before = backlog.read();
 
-        insertPendingEvent(Duration.ofMinutes(7));
+        // Back-dated eight minutes to assert seven: the age is the database's now() read again
+        // in a later statement, and the local container's clock was measured stepping back
+        // 1.7 s at once (X-TSK-005) - asserting exactly the back-dating left no margin for it.
+        insertPendingEvent(Duration.ofMinutes(8));
 
         OutboxBacklog.Reading after = backlog.read();
         assertThat(after.pending())
                 .as("an unpublished row must raise the depth")
                 .isEqualTo(before.pending() + 1);
         assertThat(after.oldest())
-                .as("a row back-dated seven minutes must make the oldest age at least that")
+                .as("a row back-dated eight minutes must make the oldest age at least seven")
                 .isGreaterThanOrEqualTo(Duration.ofMinutes(7));
     }
 
@@ -115,7 +118,9 @@ class OutboxMetricsDatabaseTest {
         // always-NaN gauge satisfies perfectly, and the tests above exercise OutboxBacklog rather
         // than the meter. It took scraping a running instance. This asserts through the registry,
         // which is what a scrape actually reads.
-        insertPendingEvent(Duration.ofMinutes(2));
+        // Three minutes back to assert two: the minute is the margin for the container clock's
+        // step-backs between the insert and the read (X-TSK-005).
+        insertPendingEvent(Duration.ofMinutes(3));
 
         Gauge pending = registry.find(OutboxMetrics.PENDING).gauge();
         Gauge oldest = registry.find(OutboxMetrics.OLDEST).gauge();

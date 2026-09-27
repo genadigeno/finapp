@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-26 (`P7-TSK-001` — the rail port, the descriptor and the declared card rail; **M7.1 opens at 1 of 3**, next `P7-TSK-002`)
+Last updated: 2026-09-27 (`X-TSK-005`, cross-cutting: the database fixtures stamp from the clock that judges them, and ADR-0063 is `Proposed` for the stamps themselves; the phase's next task is still `P7-TSK-015`). *(This line read "2026-09-26 (`P7-TSK-001` … next `P7-TSK-002`)" through thirteen tasks, until `X-TSK-005` found it: the stale-second-copy class.)*
 
 ---
 
@@ -406,7 +406,9 @@ injected Clock" discipline in a test; measured, the Docker VM's clock was gainin
 second on a steady host clock between step-backs, so it could read ahead of the JVM's. The
 fixture now stamps from the test's clock and the battery was re-run fresh, green; the wider
 class (60 database suites seed `now()`, four aggregates compare timestamps) is chipped as its
-own task. **And in this document**: §Active Work's Phase 7 paragraph still read "6 of 18 ...
+own task. *(That task is `X-TSK-005`, complete on 2026-09-27. It counted 102 suites seeding
+`now()` and twenty-one tables ordering two stamps. It measured the VM's step-back at 1.7 s, and
+its lead over the host at up to 650 ms.)* **And in this document**: §Active Work's Phase 7 paragraph still read "6 of 18 ...
 Next: `P7-TSK-002`" - the stale-second-copy class a seventh time, corrected with provenance.
 
 Twenty-six probe runs, twenty-three caught — every one by its intended test — and three survivors recorded as designed: the act's two tenant ranks each dropped alone (the first look's predicate, then the locking read's) and the dispute's row lock dropped alone (the attempt lock is taken first), each survivor's control run beside it and caught (both ranks dropped, both locks dropped); every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical (`MUTATION_TESTING.md` §2 +26 rows). Multi-instance PASS — the claim, the
@@ -429,9 +431,10 @@ counts claimed.
 
 ### Previously
 
-The per-task completion records — 158 blocks, from `P7-TSK-013` back to project initiation
-(`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
-are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
+The per-task completion records — 159 blocks, from `X-TSK-005` and `P7-TSK-013` back to project
+initiation (`X-TSK-005` cross-cutting and first; `X-TSK-004` cross-cutting, standing between
+`P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
+[`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
 `P6-TSK-015`'s gate — and then "145 blocks, `X-TSK-004` newest" through five more, corrected
 by `P7-TSK-007`'s gate: the stale-second-copy class, this time in the pointer whose last
@@ -484,7 +487,34 @@ rather than a `500`. The refusal writes nothing, and recovery stays on the chann
 (`INV-IDN-06`). The narrative is in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md), the entry
 in [`BACKLOG.md`](BACKLOG.md).
 
-The last work performed was **`P7-TSK-001`** (2026-09-26): the rail port and capability
+**Cross-cutting — `X-TSK-005`, database fixtures stamp from the clock that judges them**
+(2026-09-27, owner-directed, chipped by `P7-TSK-014`'s gate; it belongs to no phase and does not
+displace `P7-TSK-015`). **`COMPLETE`** (2026-09-27).
+- **The fixtures.** Every `now()` in the database suites (464 reads) was mapped to its table,
+  column and judge. Ten suites were fixed in three shapes:
+  - a database stamp the domain later judged (`P7-TSK-014`'s shape, again in the tenancy battery);
+  - two clocks in one statement, which let the bank-detail and self-approval refusals pass on the
+    wrong constraint (demonstrated);
+  - two database reads with a second or less between them, on a clock measured stepping back
+    1.7 s at once.
+- **A pre-existing leak.** It was not a clock: `PaymentRefundDatabaseTest` failed deterministically
+  after `DisputeNotificationDatabaseTest` in one JVM, on `capture_provider_reference UNIQUE`. It was
+  reproduced on unmodified `HEAD`, then fixed.
+- **The production question**, decided and not implemented: **ADR-0063** (`Proposed`) says the
+  database orders an aggregate's facts, and a later fact's stamp is `max(now, latest)`, so the
+  twenty-one ordering `CHECK`s hold by construction on every instance. `X-TSK-006` is `PLANNED`
+  and waits on the owner's acceptance.
+- **Verified** by fresh runs: 106 tests across nine `app` suites and 23 across two `platform`
+  suites, 0 failures.
+
+The narrative is in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md), the entries in
+[`BACKLOG.md`](BACKLOG.md).
+
+The last work performed was **`X-TSK-005`** (2026-09-27, above), after `P7-TSK-002` to `-014`
+([§Current Task](#current-task) holds `P7-TSK-014`'s record, `history/TASK_HISTORY.md` the rest).
+*(This sentence named `P7-TSK-001` as the last work until `X-TSK-005` found it thirteen tasks stale:
+the stale-second-copy class again, in the paragraph `P7-TSK-014`'s repair of this section did not
+reach.)* Before those, **`P7-TSK-001`** (2026-09-26): the rail port and capability
 descriptor (ADR-0059 §1 made real with no behaviour change), the card rail declared by its
 adapter, `payment_attempt.rail` as a frozen birth fact (payments `V011`), the capability
 decision points moved onto the stored rail's declaration, and `INV-RAIL-01`'s static rule —
@@ -663,20 +693,34 @@ Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
 
-**The container clock drifts behind the host and is corrected backwards.** PostgreSQL's
-`now()` is therefore not monotonic across two statements seconds apart: a row written before a
-correction and read after it can have a `now()`-derived timestamp *in the future*. Observed at
-542 ms during `P0-TSK-020`, where it made the relay suite fail about one run in fourteen —
-always as "the relay published nothing", never anywhere near the clock.
+**The container clock gains on the host and is stepped back past it.** Measured on 2026-09-27
+(`P7-TSK-014`, then `X-TSK-005`), with a container answering host pings at a 1.3 ms half round
+trip: the host's wall clock is steady (0 µs against its monotonic clock over 30 s), and the
+Docker VM's clock **gains 55–61 ms a second** on it. It is then **stepped back 1.7 s at once**,
+reading from 650 ms ahead of the host to more than a second behind: a sawtooth about 28 s long,
+ahead about a third of the time. *(This entry said "drifts behind the host and is corrected
+backwards", observed at 542 ms, until measured. The direction was wrong, and the step three times
+larger than written.)* Two consequences:
+- PostgreSQL's `now()` is not monotonic across two transactions. A row written before a step and
+  read after it can carry a `now()`-derived timestamp *in the future*. This made the relay suite
+  fail about one run in fourteen during `P0-TSK-020`, always as "the relay published nothing",
+  never anywhere near the clock.
+- The database is a **second clock** beside the JVM's, up to a second apart either way. A fixture
+  stamping with `now()` a row the domain then judges on the JVM's clock fails whenever the two
+  disagree in the wrong direction: `P7-TSK-014`'s merchant closed "before" it was created.
 
-This is a property of the local Docker VM, not of the code, and the platform is already built
-for it: coordination timestamps are set **and** compared by the server, so a step affects both
-sides equally and correctness never depends on the step's direction. What it does break is a
-*test* that assumes a row written a moment ago is eligible a moment later. Such fixtures
-back-date the row explicitly rather than relying on the clock (`OutboxRelayTest.backDate`).
+This is a property of the local Docker VM, not of the code. The platform's coordination is built
+for it: leases, eligibility and retention are set **and** compared by the server, so a step
+affects both sides equally. What it breaks is a *test* that stamps with one clock and is judged by
+another, or by a later read of the same stepping clock. Such fixtures stamp from the clock that
+judges them, or back-date by minutes, never seconds (`DISTRIBUTED_EXECUTION.md` §5, `X-TSK-005`).
+In miniature, it is also what two production instances' clocks do to the ordering `CHECK`s,
+which ADR-0063 decides.
 
-A time-dependent test failing intermittently on this machine is worth checking against
-`SELECT now()` before it is treated as a defect.
+A time-dependent test failing intermittently on this machine is worth checking against the
+clocks before it is treated as a defect. To measure: a container from a Debian-based image
+(`postgres:18.6` is local) answering pings with GNU `date +%s.%N`, never BusyBox's, which drops
+`%N` and draws a whole-second sawtooth that is not there.
 
 **Resetting local infrastructure.** `docker compose down` keeps data; `docker compose down -v`
 discards it. A reset is required after changing Kafka's `CLUSTER_ID`, or when moving to a new
@@ -744,6 +788,8 @@ carries, what triggers paying it down, and the owning phase.
 | ~~**A second verified contact channel answers `500`.**~~ - **closed 2026-09-24** by `X-TSK-004`, pulled forward from Phase 15 at the owner's direction. *(Found by the Phase 6 → 7 transition's audit, in Phase 1's code.)* The decision this row left open is taken: **refused, not replaced** (`INV-IDN-06`). A channel is added with a session alone, so a verification that displaced the verified one would let a stolen password redirect recovery, with no step-up and no word to the address replaced. The store now verifies behind a savepoint and answers the index's `23505` with `VerifiedChannelAlreadyExistsException`, which the endpoint returns as `409 identity.VerifiedChannelAlreadyExists`. The refusal writes nothing, and ten instances racing verify exactly one. `EmailAddress`'s javadoc no longer cites a unique index on the address; `V011`'s column comment still does, and stays, because an applied migration is not edited. **The path was latent over HTTP** (nothing delivers a challenge before Phase 15's notifier) and live through the module's API, so it would have gone live with the notifier unchanged. Changing the verified channel is deferred to Phase 15 with that notifier (`DECISIONS.md` §Deliberately Deferred) | - | - | - | - |
 | **Three interleavings on the confirmation have no race test.** An instrument detached, an intent cancelled and a session abandoned while a confirmation runs are each arbitrated by a conditional transition or an in-lock re-read, and none is driven as a race (found by the Phase 6 → 7 transition's audit) | Each arbiter is one already proven elsewhere; the races are coverage, not correctness, and a phase transition is not where tests for them are designed | **An arbiter nobody broke on purpose here**: a regression in one would pass until a storm met it | Phase 7's multi-rail storm (`P7-TST-001`), which drives confirmations under all three | Phase 7 |
 | **A poisoned row can delay a sweep.** The payments and payout sweeps take the oldest candidates first and log a failing row and continue, but a row that fails every tick stays at the head of the queue and takes a slot of every batch | Skipping a failing row needs a failure count or a backoff column, a schema change on the platform's most contended tables | **Delay, not loss**: every other row is still reached, one batch slot short, and the failing row is logged every tick | A row failing repeatedly in practice, or Phase 15's runbooks | Phase 15 |
+| **A trailing instance's transition is refused by the ordering checks.** Twenty-one tables order two business stamps (a later fact's must not precede an earlier one's) that different instances take from their own clocks. When instance B trails instance A by more than the time between the facts, B's transition throws, and the result is an unmodelled `500`, or the rollback of the enclosing transaction, which can be a capture's (`X-TSK-005`) | The remedy changes domain code in eleven modules and three money-moving send protocols. ADR-0063 decides it (`Proposed`), and implementing it waits on the owner's acceptance rather than riding a fixture audit | **Fail-closed availability, not financial correctness**: nothing moves wrongly and nothing is lost. The refused act is retried (by a client, a provider's redelivery or a sweep) and succeeds once the clocks' difference is behind it. NTP keeps production skew to milliseconds, so the window is the fastest machine-driven pairs of facts | ADR-0063 accepted | Cross-cutting (`X-TSK-006`) |
+| **Suites that sweep with a fixed capture body.** The card sweep chains every stranded authorization in the shared test database, and `capture_provider_reference` is `UNIQUE`. A suite whose capture stub answers one fixed reference therefore collides with another suite's leftover authorization. `PaymentRefundDatabaseTest` did, after `DisputeNotificationDatabaseTest`; it was found by `X-TSK-005`'s battery and fixed | Auditing every sweeping suite's stubs is a test-isolation audit, not a clock one. The instance that failed was fixed with the harness's own `succeedsWithMintedReference`, whose javadoc names this collision | **An order-dependent red in the database tier**, never in production: a suite passes alone and fails after another | The next such failure, or the next fleet-wide battery | Cross-cutting |
 
 None of these is financial-correctness debt.
 

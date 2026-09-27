@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 158 "Previously" blocks, newest first, from `P7-TSK-013` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 159 "Previously" blocks, newest first, from `X-TSK-005` and `P7-TSK-013` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014`, whose record was still `CURRENT_STATE.md`'s §Just completed, so it stands first here; when a gate moves `P7-TSK-014`'s record in, that record belongs between `X-TSK-005` and `P7-TSK-013`.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,35 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`X-TSK-005` — Database fixtures stamp from the clock that judges them; the ordering question
+decided** — `COMPLETE` (2026-09-27). **Cross-cutting and owner-directed, chipped by `P7-TSK-014`'s
+gate and run while `P7-TSK-015` was `READY`. The database tier's fixtures no longer depend on the
+local VM's clock agreeing with the JVM's, or with itself. The production question the same check
+raises is decided by ADR-0063 (`Proposed`) and not implemented: `X-TSK-006` is `PLANNED`.**
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every `now()` mapped, with its judge and margin | 464 database-clock reads in 102 of 125 `app` suites, extracted mechanically: each SQL concatenation joined, each `now()` mapped to table and column, then followed to the clock that judges it. The clock was measured first: the VM gains 61 ms a second and steps back 1.7 s at once, from 650 ms ahead to 1.05 s behind a steady host clock |
+| Each hazardous fixture stamped from its judge's clock | Ten suites. One database stamp judged by the domain (the tenancy battery's proposal, `P7-TSK-014`'s shape). Two statements mixing clocks. Seven sites where two database reads had a second or less between them. Distant offsets left alone, and every cleared site recorded with its reason (`BACKLOG.md` `X-TSK-005`) |
+| The multi-instance question decided and recorded | ADR-0063 (`Proposed`): the database orders an aggregate's facts, and a later fact's stamp is `max(now, latest)`, the rule the platform already applied three times; judgements stay bounded-skew premises. `X-TSK-006` `PLANNED`; a debt row until then |
+| Fresh runs, verdicts from the XML | Nine affected `app` suites, 106 tests, 0 failures, run in the order that had exposed the leak below; two `platform` suites, 23 tests, 0 failures |
+
+**The finding that mattered most was not a flake.** In `PayoutDestinationDatabaseTest`, one fixture
+stamped `proposed_at` with the database's `now()` and `ended_at` with the JVM's. Whenever the
+database led, V006's ordering CHECK refused the row with a `23514` of its own, and the bank-detail
+refusal passed whatever the account CHECK did. Probed, each restore byte-identical: the account
+CHECK removed under the old fixture **survived** with the database 5 s ahead, and was caught with it
+0.5 s ahead over a live lag, so the clock's phase decided. Under the new fixture it is caught. The
+`P6-TSK-011` self-approval probe, which rested on the same phase, was re-performed and caught.
+
+**Found by the task's own battery, not a clock, and fixed**: after `DisputeNotificationDatabaseTest`
+in one JVM, `PaymentRefundDatabaseTest`'s sweep chained the dispute suite's stranded authorization
+first, and a fixed capture body met `capture_provider_reference UNIQUE`. The failure reproduced on
+unmodified `HEAD`, and was fixed with the harness's minted reference. **Found in passing and
+corrected**: `DISTRIBUTED_EXECUTION.md` §3's session-liveness clock, and §5's "nowhere left" claim;
+`CURRENT_STATE.md`'s header and its "last work performed" sentence, both thirteen tasks stale; the
+catalogued clock entry, wrong in direction and in size.
 
 **`P7-TSK-013` — Chargeback accounting and the combined bound** — `COMPLETE` (2026-09-27).
 **M7.6, Disputes, reaches 2 of 3: every dispute stage posts exactly once, and a chargeback never

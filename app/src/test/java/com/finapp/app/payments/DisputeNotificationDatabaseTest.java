@@ -37,6 +37,9 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.EnumMap;
@@ -722,11 +725,16 @@ class DisputeNotificationDatabaseTest {
         Merchant merchant = merchant();
         Payment sale = capturedCardPayment(merchant.payable().value());
         List<UUID> seeded = new ArrayList<>();
+        // One base from the test's clock, each dispute a second after the one before, so the
+        // listing's order is the seeding's by construction. It was now() plus i seconds, one
+        // database clock read per statement - and the local container's clock was measured
+        // stepping back 1.7 s at once (X-TSK-005), enough to swap two neighbours.
+        OffsetDateTime base =
+                OffsetDateTime.ofInstant(
+                        Instant.now(CLOCK).truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
         try (Connection app = DatabaseRoles.application()) {
             for (int i = 0; i < 101; i++) {
                 UUID dispute = IDS.next();
-                // Each opened a microsecond-distinct instant later than the one before, so
-                // the listing's order is the seeding's.
                 // With the chargeback comes its attribution (V021, P7-TSK-013): none here -
                 // 101 chargebacks on one payment could never all be the payable's, and the
                 // combined bound refuses the raw writer that tried.
@@ -738,9 +746,8 @@ class DisputeNotificationDatabaseTest {
                                 + " counterparty_share_scale, parked_share_amount_minor,"
                                 + " parked_share_currency, parked_share_scale, opened_at)"
                                 + " VALUES (?, 'simulated-card', ?, ?, 'FRAUD', 'CHARGED_BACK',"
-                                + " 1000, 'EUR', 2, 0, 'EUR', 2, 0, 'EUR', 2,"
-                                + " now() + make_interval(secs => ?))",
-                        dispute, someDisputeReference(), sale.attempt(), (double) i);
+                                + " 1000, 'EUR', 2, 0, 'EUR', 2, 0, 'EUR', 2, ?)",
+                        dispute, someDisputeReference(), sale.attempt(), base.plusSeconds(i));
                 seeded.add(dispute);
             }
         }

@@ -873,7 +873,10 @@ class PaymentRefundDatabaseTest {
                             CorrelationId.of("crashed-flow"),
                             Instant.now(CLOCK),
                             Instant.now(CLOCK).plus(Duration.ofDays(1)),
-                            Duration.ofSeconds(-1));
+                            // Expired by a minute, not a second: the takeover judges the lease
+                            // by the database's clock in a later transaction, and the local
+                            // container's clock was measured stepping back 1.7 s (X-TSK-005).
+                            Duration.ofMinutes(-1));
             other.commit();
         }
         providerRefunds("psp_rfd-heal");
@@ -1438,10 +1441,12 @@ class PaymentRefundDatabaseTest {
     void theSweepChainsAStrandedAuthorization() throws Exception {
         Captured authorized = capturedPayment(false);
         assertThat(attemptStatus(authorized.attempt())).isEqualTo("AUTHORIZED");
-        psp.succeedsWith(
-                SimulatedCardPspAdapter.CAPTURES_PATH,
-                200,
-                "{\"status\":\"approved\",\"reference\":\"psp_cap-stranded\"}");
+        // A reference minted per capture, never one fixed body: the sweep also chains other
+        // suites' stranded authorizations (below), and capture_provider_reference is UNIQUE, so
+        // a second capture answered "psp_cap-stranded" was a 23505 that left THIS attempt
+        // CAPTURE_UNKNOWN - deterministic whenever DisputeNotificationDatabaseTest's AUTHORIZED
+        // attempt was in the shared database first (found by X-TSK-005's battery).
+        psp.succeedsWithMintedReference(SimulatedCardPspAdapter.CAPTURES_PATH, "psp_cap-stranded");
 
         sweeper().sweep();
         sweeper().sweep();
@@ -1603,7 +1608,10 @@ class PaymentRefundDatabaseTest {
                             CorrelationId.of("crashed-flow"),
                             Instant.now(CLOCK),
                             Instant.now(CLOCK).plus(Duration.ofDays(1)),
-                            Duration.ofSeconds(-1));
+                            // Expired by a minute, not a second: the takeover judges the lease
+                            // by the database's clock in a later transaction, and the local
+                            // container's clock was measured stepping back 1.7 s (X-TSK-005).
+                            Duration.ofMinutes(-1));
             other.commit();
         }
         return new CrashedFlight(RefundId.of(refundId), storedReference);

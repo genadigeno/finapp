@@ -13,7 +13,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -115,11 +118,15 @@ class AdjustmentProposalSchemaDatabaseTest {
             insertProposalLine(app, standing);
             rejected = insertProposal(app, "person-1");
             app.commit();
-            // A legitimate rejection through the granted columns, so a terminal row exists.
+            // A legitimate rejection through the granted columns, so a terminal row exists -
+            // decided on the test's clock, as the proposal was proposed. Two database now()
+            // reads in two transactions are not ordered on a clock that steps back
+            // (P1-TSK-031), and V010 holds decided_at >= proposed_at (X-TSK-005).
             execute(
                     app,
                     "UPDATE ledger.adjustment_proposal SET status = 'REJECTED',"
-                            + " decided_by = 'person-2', decided_at = now() WHERE id = ?",
+                            + " decided_by = 'person-2', decided_at = ? WHERE id = ?",
+                    testClockNow(),
                     rejected);
             app.commit();
         }
@@ -231,9 +238,10 @@ class AdjustmentProposalSchemaDatabaseTest {
                         "INSERT INTO ledger.adjustment_proposal (id, status, posting_date,"
                                 + " value_date, reference, reason, proposed_by, proposed_at)"
                                 + " VALUES (?, 'PROPOSED', current_date, current_date,"
-                                + " 'raw-probe', 'raw schema probe', ?, now())")) {
+                                + " 'raw-probe', 'raw schema probe', ?, ?)")) {
             insert.setObject(1, proposal);
             insert.setString(2, proposedBy);
+            insert.setObject(3, testClockNow());
             insert.executeUpdate();
         }
         return proposal;
@@ -256,13 +264,24 @@ class AdjustmentProposalSchemaDatabaseTest {
         try (PreparedStatement update =
                 app.prepareStatement(
                         "UPDATE ledger.adjustment_proposal SET status = 'APPROVED',"
-                                + " decided_by = ?, decided_at = now(),"
+                                + " decided_by = ?, decided_at = ?,"
                                 + " journal_entry_id = ? WHERE id = ?")) {
             update.setString(1, decidedBy);
-            update.setObject(2, entry);
-            update.setObject(3, proposal);
+            update.setObject(2, testClockNow());
+            update.setObject(3, entry);
+            update.setObject(4, proposal);
             update.executeUpdate();
         }
+    }
+
+    /**
+     * The test's clock at the column's microsecond resolution - every stamp in this suite comes
+     * from it, so a decision never precedes its proposal whatever the database's clock does
+     * (X-TSK-005).
+     */
+    private static OffsetDateTime testClockNow() {
+        return OffsetDateTime.ofInstant(
+                Instant.now(CLOCK).truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
     }
 
     private static UUID clearingUsd(Connection app) throws SQLException {

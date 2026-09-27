@@ -77,9 +77,11 @@ public final class SimulatedInstance implements AutoCloseable {
      * The database's current time.
      *
      * <p>Read from the server on purpose. The JVM's own clock is not the reference: on this
-     * project's local Docker VM the container clock drifts behind the host and is corrected
-     * backwards ({@code CURRENT_STATE.md} §Local Environment Prerequisites), so a skew computed
-     * from {@code Instant.now()} would be wrong by an unknown amount in an unknown direction.
+     * project's local Docker VM the container clock gains on the host and is stepped back past
+     * it, reading anywhere from about a second behind to two-thirds of a second ahead
+     * ({@code CURRENT_STATE.md} §Local Environment Prerequisites, measured by {@code X-TSK-005}),
+     * so a skew computed from {@code Instant.now()} would be wrong by an unknown amount in an
+     * unknown direction.
      */
     public static Instant serverNow() throws SQLException {
         try (Connection reader = DatabaseRoles.application();

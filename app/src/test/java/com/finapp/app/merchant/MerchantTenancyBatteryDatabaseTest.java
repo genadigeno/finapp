@@ -43,8 +43,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -734,13 +737,21 @@ class MerchantTenancyBatteryDatabaseTest {
                 id,
                 reference());
         UUID proposed = IDS.next();
+        // Stamped from the test's clock, not the database's now(): the positive controls
+        // approve and withdraw this proposal through the domain, which stamps from the JVM's
+        // clock and refuses a decision preceding its proposal - a database clock running
+        // ahead made that control a 500 (X-TSK-005; P7-TSK-014's merchant fixture, again).
+        OffsetDateTime proposedAt =
+                OffsetDateTime.ofInstant(
+                        Instant.now(CLOCK).truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
         raw(
                 "INSERT INTO merchant.payout_destination (id, merchant_id, destination_reference,"
                         + " display_suffix, status, proposed_by, proposed_at, proposal_reason)"
-                        + " VALUES (?, ?, ?, '4000', 'PROPOSED', 'fixture-a', now(), 'fixture')",
+                        + " VALUES (?, ?, ?, '4000', 'PROPOSED', 'fixture-a', ?, 'fixture')",
                 proposed,
                 id,
-                reference());
+                reference(),
+                proposedAt);
         World funded =
                 new World(
                         id.toString(), key, spareKeyId, payable, fundingEntry, session,

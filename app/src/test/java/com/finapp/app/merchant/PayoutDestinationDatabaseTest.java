@@ -30,7 +30,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -110,14 +113,20 @@ class PayoutDestinationDatabaseTest {
                 .as("no transition was recorded")
                 .isZero();
 
-        // The schema refuses the same thing for a writer that never ran the domain code.
+        // The schema refuses the same thing for a writer that never ran the domain code. The
+        // approval is stamped from the test's clock, the one that stamped the proposal: a
+        // database now() trailing it also broke approved_at >= proposed_at, a second 23514
+        // under which this refusal passed whatever the distinctness CHECK did (X-TSK-005).
+        OffsetDateTime approvedAt = testClockNow();
         assertThatThrownBy(
                         () ->
                                 raw(
                                         "UPDATE merchant.payout_destination SET status ="
                                                 + " 'APPROVED', approved_by = proposed_by,"
-                                                + " approved_at = now(), cooling_off_until = now()"
-                                                + " + interval '72 hours' WHERE id = ?",
+                                                + " approved_at = ?, cooling_off_until = ?"
+                                                + " WHERE id = ?",
+                                        approvedAt,
+                                        approvedAt.plusHours(72),
                                         proposed.value()))
                 .isInstanceOf(SQLException.class)
                 .satisfies(e -> assertThat(((SQLException) e).getSQLState()).isEqualTo("23514"));
@@ -587,17 +596,32 @@ class PayoutDestinationDatabaseTest {
     private static void insertRaw(MerchantId merchant, String reference, String status)
             throws SQLException {
         boolean ended = status.equals("REJECTED");
+        // One clock for the row. proposed_at was the database's now() and ended_at the JVM's,
+        // so ended_at >= proposed_at failed whenever the database ran ahead - a 23514 of its
+        // own, under which the bank-detail refusals passed whatever the reference CHECK did
+        // (X-TSK-005).
+        OffsetDateTime at = testClockNow();
         raw(
                 "INSERT INTO merchant.payout_destination (id, merchant_id, destination_reference,"
                         + " display_suffix, status, proposed_by, proposed_at, proposal_reason,"
-                        + " ended_by, ended_at) VALUES (?, ?, ?, '3000', ?, 'raw-writer', now(),"
+                        + " ended_by, ended_at) VALUES (?, ?, ?, '3000', ?, 'raw-writer', ?,"
                         + " 'raw', ?, ?)",
                 IDS.next(),
                 merchant.value(),
                 reference,
                 status,
+                at,
                 ended ? "raw-writer" : null,
-                ended ? java.sql.Timestamp.from(java.time.Instant.now()) : null);
+                ended ? at : null);
+    }
+
+    /**
+     * The test's clock at the columns' microsecond resolution: the clock the domain stamps with
+     * ({@code Clock.systemUTC()}), never the database's {@code now()} (X-TSK-005).
+     */
+    private static OffsetDateTime testClockNow() {
+        return OffsetDateTime.ofInstant(
+                Instant.now(CLOCK).truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
     }
 
     private static void assertSqlState(String state, ThrowingRunnable statement) {

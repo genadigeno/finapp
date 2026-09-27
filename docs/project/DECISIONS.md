@@ -589,6 +589,17 @@ cycle; every outbound push carries the send permit; pay-by-bank waits in `AWAITI
 payer PSP. The merchant payout keeps its own port. →
 [ADR-0062](../adr/ADR-0062-account-to-account-and-instant-payments.md)
 
+### Business stamps under N instances (cross-cutting, `Proposed` by `X-TSK-005`)
+**The order of an aggregate's facts is the database's, and a business stamp never contradicts
+it.** Stamps are still read from the acting instance's clock, but a later fact's stamp is the
+later of that reading and the latest stamp the aggregate already carries. The twenty-one ordering
+`CHECK`s therefore hold by construction on every instance instead of only while clocks agree, and
+they stay as the rank against corrupt writers. Judgements of one instance's stamp by another's
+clock (expiries, cooling-off, sweep bounds, session liveness) stay bounded-skew premises, each
+dominated by its margin. The clamp removes the refusal that was a skewed instance's only symptom,
+so clock offset needs its own signal. Implemented by `X-TSK-006` once accepted. →
+[ADR-0063](../adr/ADR-0063-business-stamps-never-contradict-the-order-of-facts.md), ADR-0014
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

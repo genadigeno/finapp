@@ -73,7 +73,7 @@ cannot affect correctness.
 | `AuditWriter` / `JdbcAuditWriter` | none | Writes on the caller's connection and opens nothing of its own; insert-only, so there is no lost update to have | Delegates to the row |
 | `identity.authentication_failure` | durable | **One row per identity, updated by one atomic statement** — `INSERT … ON CONFLICT DO UPDATE … RETURNING`, so the post-increment count is produced *by the write*. There is no read-then-write to lose, which is what `INV-CON-03` means by a limit that is not bypassable: with a read-then-count, ten concurrent attempts at the threshold all read nine and all proceed. Every window and expiry decision uses the **server's** `now()` (`V004`, ADR-0014) | **Yes** |
 | `AuthenticationThrottle` | none — all state in the row | Keys off the login identifier and resolves it in a subselect *inside the same statement*, so an absent account and a present one run the same query shape — the two-query alternative is a timing difference that discloses existence | Delegates to the row |
-| `identity.session` | durable | **The authority, and there is no cache in front of it.** Every request that presents a token reads this table, so a revoked session is refused on the next request on every instance by construction (`INV-IDN-03`) rather than by a cache being told. Liveness is decided by the **server's** clock in the lookup predicate. `NoProcessLocalSessionStateTest` fails the build if any production type grows a field holding sessions — the shape ADR-0024's four patterns cannot see, and transition risk **R7** | **Yes** |
+| `identity.session` | durable | **The authority, and there is no cache in front of it.** Every request that presents a token reads this table, so a revoked session is refused on the next request on every instance by construction (`INV-IDN-03`) rather than by a cache being told. Liveness is judged in the lookup predicate against the **requesting instance's** injected clock (`SessionAuthenticationInterceptor`, `Instant.now(clock)`), and the expiries were stamped by the instances that issued and touched the session: a bounded-skew premise, because idle and absolute bounds of minutes and hours dominate NTP-disciplined skew (ADR-0063 §4). *(This said "decided by the **server's** clock" until `X-TSK-005` read the interceptor. Revocation is status, so it binds on the next request whatever the clocks say.)* `NoProcessLocalSessionStateTest` fails the build if any production type grows a field holding sessions — the shape ADR-0024's four patterns cannot see, and transition risk **R7** | **Yes** |
 | `SessionStore` / `JdbcSessionStore` | none — all state in the row | Reads and writes on the caller's connection and keeps nothing between calls. Extending the idle bound is a conditional `UPDATE … WHERE` clamped by `LEAST(…, absolute_expires_at)`, so a touch can neither resurrect a revoked session nor outlast the absolute bound | Delegates to the row |
 | `SessionRevocation` | none — all state in the row | Bulk revocation takes `SELECT … FROM identity.identity … FOR UPDATE`, and a session insert takes `FOR KEY SHARE` on the same row **through its foreign key**. The two conflict, so a session cannot be issued concurrently with a revocation and survive it (`PHASE_1_PLAN.md` §8). Only the revoking side needs an explicit lock — an explicit one on the issuing side was written, found redundant by a surviving mutation, and removed rather than left to read as the mechanism | Delegates to the row |
 | `kyc.kyc_case` | durable | **A partial unique index over the non-terminal states** is the one-open-case arbiter — a rule *across aggregates of the same type*, which only the database can settle between two concurrent transactions (`P1-TSK-005`'s reasoning). Ten instances opening for one customer produce one row and nine **converged** callers, not nine errors, because "ensure my case exists" is what both doors mean. A decision frees the slot, so a successor case is insertable (`INV-LIFE-04`). `case_kind` is unwritable at **`DB-PRIVILEGE`**: `V008` revokes the table-wide `UPDATE` and re-grants exactly `(status, status_changed_at)`, because a `KYB → KYC` flip is the one write that would silently disarm the ownership gate | **Yes** |
@@ -451,6 +451,16 @@ boundary. Anything crossing a broker or a provider is eventually consistent and 
 a clock is involved. A test that shares one connection serialises itself; a test that shares one
 clock cannot see skew. Both look like concurrency tests and prove much less.
 
+**A fixture stamps a row's times from the clock that will judge them** (`X-TSK-005`, ADR-0063).
+- A row the domain will transition or judge is stamped from the test's `Clock`, the domain's own,
+  never from the database's `now()`. The local VM's clock leads and trails the host's by up to a
+  second (below). This was `P7-TSK-014`'s failure, a transition refused as preceding a creation.
+- A row only the database judges may be stamped by the database, with **minutes** of margin,
+  never seconds: two `now()` reads in two transactions are not ordered on a clock measured
+  stepping back 1.7 s at once.
+- One statement never mixes the two clocks. A time-order `CHECK` refusing the row passes the test
+  for the wrong constraint, which `X-TSK-005` found masking a bank-detail refusal.
+
 ### The multi-instance test convention (`P0-TST-009`)
 
 A test that claims to simulate N instances gives each of them:
@@ -477,9 +487,11 @@ dangerous direction, exactly as the redaction tests assert their appenders recei
 
 **The harness's own limit, stated rather than implied.** Nothing mechanically prevents
 `SimulatedInstance.serverNow()` being changed to read the JVM's clock instead of the database's. On
-a machine where the two happen to agree - which is most of them, and is nearly true here, where the
-container drifts only about half a second - every skew test would keep passing while measuring the
-wrong thing again. The precondition does not catch it either, for the same reason. A guard would
+a machine where the two happen to agree - which is most of them, and is nearly true here against
+an hour's skew, where the container's clock gains about 60 ms a second on the host's and is stepped
+back past it, reading between a second behind and two-thirds of a second ahead (measured by
+`X-TSK-005`; this said "drifts only about half a second" until then) - every skew test would keep
+passing while measuring the wrong thing again. The precondition does not catch it either, for the same reason. A guard would
 have to assume a drift that may not exist, so the defence is that the anchor is named here and in
 the harness, not that a test enforces it.
 
@@ -501,6 +513,14 @@ participates in a cross-instance decision. The single place one did was the idem
 which was the defect ADR-0014 was written for, and is now server-side. A test sharing a clock is
 therefore not a finding; a test sharing a clock **where a client clock decides something** would
 be, and there is nowhere left for that to happen.
+
+*(**There was somewhere left**, found by `X-TSK-005` on 2026-09-27. Twenty-one tables order two
+business stamps that different instances take (a later fact's stamp must not precede an earlier
+one's), so a client clock decides whether a transition is admitted, and a trailing instance's
+transition is refused. Coordination had moved server-side; business stamps never did, by design
+(`P0-TSK-013`). ADR-0063 (`Proposed`) decides it: the database orders an aggregate's facts, and a
+later fact's stamp is `max(now, latest)`, implemented by `X-TSK-006`. Until then the refusal is a
+fail-closed availability defect, recorded in `CURRENT_STATE.md` §Known Architectural Debt.)*
 
 ---
 

@@ -47,9 +47,12 @@ class MerchantPayoutMetricsDatabaseTest {
             MerchantPayoutStore.UnknownReading beforeUnbounded =
                     payouts.unknownReading(app, Duration.ZERO);
 
-            // In flight: dispatched a moment ago. Mid-question - the P5-TSK-017 control, and the
-            // reason the gauge would alert on healthy traffic if it counted every dispatch.
-            payout(app, merchant, destination, "1 second");
+            // In flight: dispatched a minute ago. Mid-question - the P5-TSK-017 control, and the
+            // reason the gauge would alert on healthy traffic if it counted every dispatch. A
+            // minute, not a second: the unbounded reading below must count it by the database's
+            // clock in a later statement, and the local container's clock was measured stepping
+            // back 1.7 s at once (X-TSK-005) - a second-old permit could read as not yet sent.
+            payout(app, merchant, destination, "1 minute");
             // Overdue: dispatched two hours ago and never answered. What an unknown-only gauge
             // misses when the sweep is not running - a merchant's money held with nothing saying so.
             payout(app, merchant, destination, "2 hours");
@@ -66,8 +69,11 @@ class MerchantPayoutMetricsDatabaseTest {
                             + " dispatch, never the resolved one")
                     .isEqualTo(2);
             assertThat(after.oldestAgeSeconds())
+                    // Less a minute: the age is the database's now() again, floored to whole
+                    // seconds, and a clock step-back since the insert must not read as a defect
+                    // (X-TSK-005).
                     .as("the overdue dispatch has waited two hours since its permit")
-                    .isGreaterThanOrEqualTo(Duration.ofHours(2).toSeconds())
+                    .isGreaterThanOrEqualTo(Duration.ofHours(2).minusMinutes(1).toSeconds())
                     .as("and the unknown payout is aged from its entry, not its five-day-old"
                             + " birth - a row born long ago and freshly stranded reads young")
                     .isLessThan(Duration.ofDays(5).toSeconds() - 60);

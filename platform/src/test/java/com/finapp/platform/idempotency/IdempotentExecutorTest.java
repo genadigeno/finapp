@@ -759,8 +759,11 @@ class IdempotentExecutorTest {
         try (Connection other = DatabaseRoles.bootstrap()) {
             other.setAutoCommit(false);
             new JdbcIdempotencyRecordStore()
+                    // Expired by a minute, not a second: the reclaim judges the lease by the
+                    // database's clock in a later transaction, and the local container's clock
+                    // was measured stepping back 1.7 s (X-TSK-005).
                     .claim(other, key, fingerprint, CorrelationId.of("crashed-flow"), FIXED,
-                            FIXED.plus(RETENTION), Duration.ofSeconds(-1));
+                            FIXED.plus(RETENTION), Duration.ofMinutes(-1));
             other.commit();
         }
     }
