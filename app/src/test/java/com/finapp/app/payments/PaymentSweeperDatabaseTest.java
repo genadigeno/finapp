@@ -828,7 +828,22 @@ class PaymentSweeperDatabaseTest {
                 CLOCK,
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
-                new com.finapp.ledger.JdbcLedgerAccountStore());
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        new PostingService(
+                                executor(),
+                                new JdbcJournalEntryStore(IDS),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                PostingObserver.NONE),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS,
+                        CLOCK));
     }
 
     private SimulatedCardPspAdapter adapter() {
@@ -869,12 +884,26 @@ class PaymentSweeperDatabaseTest {
                 new com.finapp.payments.DisputeNotifications(
                         new com.finapp.payments.JdbcDisputeStore(),
                         intents,
-                        com.finapp.payments.PaymentRails.of(
-                                java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         new JdbcAuditWriter(),
                         new com.finapp.platform.outbox.JdbcOutboxWriter(),
                         IDS,
-                        CLOCK));
+                        CLOCK,
+                        // P7-TSK-013: the attempt lock first, and the dispute money.
+                        new com.finapp.payments.JdbcPaymentAttemptStore(),
+                        com.finapp.app.payments.ChargebackAccountingFixture.over(
+                                new PostingService(
+                                        executor(),
+                                        new JdbcJournalEntryStore(IDS),
+                                        new JdbcAuditWriter(),
+                                        new JdbcOutboxWriter(),
+                                        new JdbcBalanceProjection(),
+                                        IDS,
+                                        CLOCK,
+                                        PostingObserver.NONE),
+                                com.finapp.payments.PaymentRails.of(
+                                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                                IDS,
+                                CLOCK)));
     }
 
     private void deliverWebhook(PaymentWebhookService webhooks, String body) {

@@ -33,7 +33,9 @@ class OperationalChartMigrationTest {
             List.of(
                     "db/migration/ledger/V003__seed_operational_chart.sql",
                     "db/migration/ledger/V012__payout_clearing_joins_the_chart.sql",
-                    "db/migration/ledger/V013__instant_clearing_joins_the_chart.sql");
+                    "db/migration/ledger/V013__instant_clearing_joins_the_chart.sql",
+                    // P7-TSK-013: the dispute accounts, each with its first poster.
+                    "db/migration/ledger/V014__dispute_accounts_join_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
@@ -49,6 +51,11 @@ class OperationalChartMigrationTest {
                     // ADR-0062 §4: the net receivable on the instant scheme - pay-ins
                     // debit it, withdrawals credit it, Phase 8 discharges it per cycle.
                     AccountPurpose.INSTANT_CLEARING, AccountType.ASSET,
+                    // ADR-0061 §3: a claim - on the network by representment, or on the
+                    // counterparty for a parked share - growing on the debit side.
+                    AccountPurpose.CHARGEBACK_RECOVERABLE, AccountType.ASSET,
+                    // ADR-0061 §4: the written-off excess and the PSP's dispute fees.
+                    AccountPurpose.DISPUTE_COSTS, AccountType.EXPENSE,
                     AccountPurpose.FEE_REVENUE, AccountType.REVENUE,
                     AccountPurpose.FX_POSITION, AccountType.ASSET,
                     AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE,

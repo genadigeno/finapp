@@ -211,6 +211,18 @@ public class MerchantBeans {
                 merchantSettlement, new com.finapp.payments.WalletRefundComposition());
     }
 
+    /**
+     * The chargeback's counterparty seam (`P7-TSK-013`, ADR-0061 §4), the refund's shape one
+     * lifecycle later: ask the merchant module (the fee pin decides), fall back to the wallet's
+     * two lines for a payment that is nobody's merchant's.
+     */
+    @Bean
+    com.finapp.payments.DisputeComposition<Connection> disputeComposition(
+            com.finapp.merchant.MerchantSettlement merchantSettlement) {
+        return new MerchantBoundDisputeComposition(
+                merchantSettlement, new com.finapp.payments.WalletDisputeComposition());
+    }
+
     @Bean
     com.finapp.payments.CaptureComposition<Connection> captureComposition(
             com.finapp.merchant.MerchantSettlement merchantSettlement,

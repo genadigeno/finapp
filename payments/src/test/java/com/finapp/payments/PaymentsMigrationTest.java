@@ -91,6 +91,12 @@ class PaymentsMigrationTest {
     /** V020: the dispute (P7-TSK-012) - its machine, birth list, freeze and trail. */
     private static final String DISPUTE = "db/migration/payments/V020__the_dispute.sql";
 
+    /** V021: chargeback accounting (P7-TSK-013) - the attribution and fee columns, the
+     * combined bound for every writer both ways, and the CURRENT definitions of the refund
+     * bound and the dispute machine (V019 and V020 became applied history for them). */
+    private static final String CHARGEBACK_ACCOUNTING =
+            "db/migration/payments/V021__chargeback_accounting.sql";
+
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
     void intentStatusChecksMatchTheEnum() {
@@ -539,6 +545,116 @@ class PaymentsMigrationTest {
         assertThat(migration(WALLET_INSTRUMENT))
                 .as("and V019's second handoff keeps it again (P7-TSK-011)")
                 .contains("pg_advisory_xact_lock(3, hashtext(NEW.attempt_id::text))");
+        assertThat(migration(CHARGEBACK_ACCOUNTING).split(
+                        java.util.regex.Pattern.quote(
+                                "pg_advisory_xact_lock(3, hashtext(NEW.attempt_id::text))"),
+                        -1))
+                .as("and V021's third handoff keeps it - and the dispute's own bound takes the"
+                        + " SAME namespace, so refunds and chargebacks judge one sum"
+                        + " (P7-TSK-013)")
+                .hasSize(3);
+    }
+
+    @Test
+    @DisplayName("V021's chargeback accounting clauses are generated and pinned: the attribution"
+            + " and fee fragments, their coherence with the chargeback, the combined bound for"
+            + " every writer in BOTH directions under namespace 3, and the re-stated machine"
+            + " carrying every edge and the attribution's only-grows rule (P7-TSK-013)")
+    void theChargebackAccountingClausesArePinned() {
+        String v021 = migration(CHARGEBACK_ACCOUNTING);
+        String standing = DisputeStage.standingSqlValueList();
+        // The three money fragments, each MoneyColumns' naming and value rules, named.
+        for (String field : java.util.List.of("counterparty_share", "parked_share", "dispute_fee")) {
+            MoneyColumns.ColumnNames columns = MoneyColumns.columnsFor(field);
+            String fragment = columns.nullableDdl();
+            assertThat(v021)
+                    .as("%s's nullable fragment, clause by clause", field)
+                    .contains("ADD COLUMN " + columns.amountMinor() + " BIGINT,")
+                    .contains("ADD COLUMN " + columns.currency() + " CHAR(3),")
+                    .contains("ADD COLUMN " + columns.scale() + " SMALLINT,")
+                    .contains("CHECK (" + columns.currency() + " ~ '^[A-Z]{3}$')")
+                    .contains("CHECK (" + columns.scale() + " BETWEEN 0 AND "
+                            + com.finapp.sharedkernel.money.Money.MAX_SUPPORTED_SCALE + ")")
+                    // The all-or-nothing clause, taken from the generator itself.
+                    .contains(fragment.substring(fragment.indexOf("CHECK ((")));
+        }
+        // The attribution IS part of the chargeback; the fee rides it.
+        assertThat(v021)
+                .contains("CHECK ((chargeback_amount_minor IS NULL) ="
+                        + " (counterparty_share_amount_minor IS NULL) AND"
+                        + " (chargeback_amount_minor IS NULL) = (parked_share_amount_minor IS NULL))")
+                .contains("CHECK (counterparty_share_currency = chargeback_currency AND"
+                        + " counterparty_share_scale = chargeback_scale AND parked_share_currency"
+                        + " = chargeback_currency AND parked_share_scale = chargeback_scale)")
+                .contains("CHECK (counterparty_share_amount_minor >= 0 AND"
+                        + " parked_share_amount_minor >= 0 AND counterparty_share_amount_minor +"
+                        + " parked_share_amount_minor <= chargeback_amount_minor)")
+                .contains("CHECK (dispute_fee_amount_minor IS NULL OR (chargeback_amount_minor"
+                        + " IS NOT NULL AND dispute_fee_amount_minor > 0 AND dispute_fee_currency"
+                        + " = chargeback_currency AND dispute_fee_scale = chargeback_scale))");
+        // The dispute's bound: standing only, both terms, nothing when nothing was captured.
+        assertThat(v021)
+                .contains("OR NEW.stage NOT IN (" + standing + ") THEN")
+                .contains("AND sibling.stage IN (" + standing + ");")
+                .contains("> coalesce(captured_minor, 0) THEN")
+                .contains("payments_dispute_attribution_is_bounded:")
+                .contains("BEFORE INSERT OR UPDATE OF counterparty_share_amount_minor,"
+                        + " parked_share_amount_minor, stage");
+        // The refund's bound: the card arm adds the standing chargebacks; the executed arms
+        // survive byte for byte.
+        assertThat(v021)
+                .contains("AND dispute.stage IN (" + standing + ");")
+                .contains("IF refunded_total + charged_back_total + NEW.amount_minor >"
+                        + " captured_minor THEN")
+                .contains("refunds and standing chargebacks together past its captured amount"
+                        + " (INV-PAY-05, INV-DSP-01)")
+                .contains("attempt_model IN ('PUSH', 'BOOK')")
+                .contains("past its executed amount (INV-PAY-05)")
+                .contains("whose refund producer is not yet shipped (ADR-0059)")
+                .contains("payments_refund_is_bounded:");
+        // The re-stated machine: every edge IS the enum's, no terminal a source, the freeze
+        // NULL-safe, the chargeback NULL -> value, the attribution only grows, the fee once.
+        for (DisputeStage from : DisputeStage.values()) {
+            if (from.isTerminal()) {
+                assertThat(v021).doesNotContain("(OLD.stage = '" + from.name() + "' AND NEW.stage");
+                continue;
+            }
+            assertThat(v021)
+                    .contains("(OLD.stage = '" + from.name() + "' AND NEW.stage IN ("
+                            + from.permittedTransitions().stream()
+                                    .map(to -> "'" + to.name() + "'")
+                                    .collect(Collectors.joining(", "))
+                            + "))");
+        }
+        for (String frozen :
+                java.util.List.of(
+                        "id", "provider", "provider_dispute_reference", "attempt_id", "reason",
+                        "opened_at")) {
+            assertThat(v021).contains("NEW." + frozen + " IS DISTINCT FROM OLD." + frozen);
+        }
+        assertThat(v021)
+                .contains("AND NEW.chargeback_amount_minor IS DISTINCT FROM"
+                        + " OLD.chargeback_amount_minor)")
+                .contains("OR NEW.counterparty_share_amount_minor <"
+                        + " OLD.counterparty_share_amount_minor")
+                .contains("OR NEW.parked_share_amount_minor < OLD.parked_share_amount_minor")
+                .contains("OR NEW.stage IS DISTINCT FROM OLD.stage")
+                .contains("OR OLD.stage NOT IN (" + standing + ") THEN")
+                .contains("AND NEW.dispute_fee_amount_minor IS DISTINCT FROM"
+                        + " OLD.dispute_fee_amount_minor)")
+                .doesNotContain("<> OLD.");
+        // Every RAISE in the two bound functions keeps the constraint-violation code.
+        assertThat(v021.split("ERRCODE = '23514'", -1))
+                .as("two in the dispute's bound, eight in the refund's")
+                .hasSize(11);
+        // The grant widens to exactly the new columns; nothing is deletable.
+        assertThat(v021)
+                .contains("GRANT UPDATE (counterparty_share_amount_minor,"
+                        + " counterparty_share_currency,\n              counterparty_share_scale,"
+                        + " parked_share_amount_minor, parked_share_currency,\n             "
+                        + " parked_share_scale, dispute_fee_amount_minor, dispute_fee_currency,\n"
+                        + "              dispute_fee_scale)\n    ON payments.dispute TO finapp_app;")
+                .doesNotContain("GRANT DELETE");
     }
 
     @Test

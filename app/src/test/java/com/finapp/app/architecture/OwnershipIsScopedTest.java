@@ -423,6 +423,30 @@ class OwnershipIsScopedTest {
                                         + " this delivery inserted or locked - the network's"
                                         + " reference attributed it behind the signed door.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.standing",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-013. The combined bound's read (behind"
+                                        + " attributedStanding and standingOn): the chargebacks"
+                                        + " standing on an attempt the caller holds FOR UPDATE -"
+                                        + " reached from the signed door's attribution by OUR"
+                                        + " operation reference, from the refund command's own"
+                                        + " intent read, or from a refund row a resolver locked -"
+                                        + " never a request's identifier, and no surface returns"
+                                        + " what it reads: a sum for the bound, rows for the"
+                                        + " re-attribution.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.anyRestorableTo",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
+                                    "P7-TSK-013, JdbcPaymentIntentStore.anyInFlightCrediting's"
+                                        + " twin: a close asks whether a won chargeback would"
+                                        + " credit the account back, under the close's lock. The"
+                                        + " account is the customer's own, locked by"
+                                        + " lockOwnedBy's owner predicate. A boolean leaves, and"
+                                        + " no row of anybody's.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentAttemptStore.openInitiation",
                             new Entry(
                                     Scope.ADMINISTERED,

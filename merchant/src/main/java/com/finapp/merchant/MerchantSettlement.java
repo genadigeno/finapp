@@ -348,6 +348,99 @@ public final class MerchantSettlement {
                         });
     }
 
+    /**
+     * The lines charging part of a chargeback to a merchant-bound payment's payable, or empty
+     * when the payment is nobody's merchant's (`P7-TSK-013`, ADR-0061 §4):
+     *
+     * <pre>
+     *   DR MERCHANT_PAYABLE  amount   the merchant bears its sale's chargeback
+     *   CR counterpart       amount   CHARGEBACK_RECOVERABLE (or DISPUTE_COSTS, recovering a
+     *                                 written-off share) - payments' decision
+     * </pre>
+     *
+     * <p><strong>No fee lines, deliberately.</strong> The merchant's processing fee is not
+     * returned by a chargeback: the merchant loses the sale and keeps the fee it was charged for
+     * processing it — ADR-0054's refund policy governs refunds only. The amount is payments'
+     * judgement (the combined bound, {@code INV-DSP-01}); this method checks only that the
+     * account it charges IS the pinned merchant's payable — {@link #refund}'s third assumption
+     * at the dispute, for the same reason: a chargeback taken from the wrong account is the
+     * defect this exists to make impossible, and it throws, failing the delivery loudly.
+     *
+     * @param counterparty the account payments would charge — the payment's credit account
+     * @param counterpart the platform's account facing it
+     * @throws MerchantSettlementException if the counterparty is not the pinned merchant's
+     *     payable, or that payable does not exist
+     */
+    public Optional<List<JournalLine>> chargedBack(
+            Connection unitOfWork,
+            UUID intentRef,
+            LedgerAccountId counterparty,
+            LedgerAccountId counterpart,
+            Money amount) {
+        return chargebackPayable(unitOfWork, intentRef, counterparty, amount)
+                .map(
+                        payable ->
+                                List.of(
+                                        new JournalLine(payable.id(), Direction.DEBIT, amount),
+                                        new JournalLine(counterpart, Direction.CREDIT, amount)));
+    }
+
+    /**
+     * The exact inverse of {@link #chargedBack}, when the network returned the funds
+     * (`P7-TSK-013`): the counterpart debited, the pinned merchant's payable credited — the
+     * same check, the same empty for a payment that is nobody's merchant's.
+     */
+    public Optional<List<JournalLine>> chargebackReturned(
+            Connection unitOfWork,
+            UUID intentRef,
+            LedgerAccountId counterparty,
+            LedgerAccountId counterpart,
+            Money amount) {
+        return chargebackPayable(unitOfWork, intentRef, counterparty, amount)
+                .map(
+                        payable ->
+                                List.of(
+                                        new JournalLine(counterpart, Direction.DEBIT, amount),
+                                        new JournalLine(payable.id(), Direction.CREDIT, amount)));
+    }
+
+    /** The pinned merchant's payable, checked to be the chargeback's counterparty — or empty. */
+    private Optional<LedgerAccount> chargebackPayable(
+            Connection unitOfWork, UUID intentRef, LedgerAccountId counterparty, Money amount) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(intentRef, "intentRef must not be null");
+        Objects.requireNonNull(counterparty, "counterparty must not be null");
+        Objects.requireNonNull(amount, "amount must not be null");
+        Optional<PaymentFeePin> found = pins.findFor(unitOfWork, intentRef);
+        if (found.isEmpty()) {
+            return Optional.empty();
+        }
+        PaymentFeePin pin = found.get();
+        LedgerAccount payable =
+                ledgerAccounts
+                        .findOwned(
+                                unitOfWork,
+                                pin.merchantId().value(),
+                                AccountPurpose.MERCHANT_PAYABLE,
+                                amount.currency())
+                        .orElseThrow(
+                                () ->
+                                        new MerchantSettlementException(
+                                                "merchant " + pin.merchantId() + " has no "
+                                                        + amount.currency()
+                                                        + " payable account; the capture this"
+                                                        + " chargeback contests could not have"
+                                                        + " posted without one"));
+        if (!payable.id().equals(counterparty)) {
+            throw new MerchantSettlementException(
+                    "the chargeback would charge " + counterparty + " but merchant "
+                            + pin.merchantId() + "'s payable is " + payable.id()
+                            + "; the intent and its fee pin disagree about whose payment this"
+                            + " is");
+        }
+        return Optional.of(payable);
+    }
+
     /** What a refund of a merchant-bound payment is priced by, and whose payable it debits. */
     private record RefundTerms(
             PaymentFeePin pin, FeeScheduleVersion version, LedgerAccount payable) {}

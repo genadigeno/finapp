@@ -731,12 +731,17 @@ class MerchantTenancyBatteryDatabaseTest {
                         + " 'EUR', 2, 1000, 'EUR', 2, 'CAPTURED', now(), 'card', 'TWO_STEP')",
                 attempt, intent, "auth-" + IDS.next(), "cap-" + IDS.next(),
                 "psp-auth-" + IDS.next(), "psp-cap-" + IDS.next());
+        // The chargeback arrives with its attribution (V021, P7-TSK-013) - here the whole
+        // amount charged to the payable, which is the tenant fact the reads scope by.
         raw(
                 "INSERT INTO payments.dispute (id, provider, provider_dispute_reference,"
                         + " attempt_id, reason, stage, chargeback_amount_minor,"
-                        + " chargeback_currency, chargeback_scale, opened_at)"
+                        + " chargeback_currency, chargeback_scale,"
+                        + " counterparty_share_amount_minor, counterparty_share_currency,"
+                        + " counterparty_share_scale, parked_share_amount_minor,"
+                        + " parked_share_currency, parked_share_scale, opened_at)"
                         + " VALUES (?, 'simulated-card', ?, ?, 'FRAUD', 'CHARGED_BACK', 1000,"
-                        + " 'EUR', 2, now())",
+                        + " 'EUR', 2, 1000, 'EUR', 2, 0, 'EUR', 2, now())",
                 dispute, "dp_" + IDS.next().toString().replace("-", ""), attempt);
         return dispute.toString();
     }

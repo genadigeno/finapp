@@ -30,18 +30,33 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
 
     private static final String TABLE = "payments.dispute";
 
+    /** The mutable money fragments, in binding order: the chargeback, its two shares, the fee. */
+    private static final String MONEY_COLUMNS =
+            " chargeback_amount_minor, chargeback_currency, chargeback_scale,"
+                    + " counterparty_share_amount_minor, counterparty_share_currency,"
+                    + " counterparty_share_scale,"
+                    + " parked_share_amount_minor, parked_share_currency, parked_share_scale,"
+                    + " dispute_fee_amount_minor, dispute_fee_currency, dispute_fee_scale";
+
     private static final String COLUMNS =
             "id, provider, provider_dispute_reference, attempt_id, reason, stage,"
-                    + " chargeback_amount_minor, chargeback_currency, chargeback_scale,"
-                    + " opened_at";
+                    + MONEY_COLUMNS + ", opened_at";
 
     /** The read surfaces' shape: the dispute's columns, and the payment its attempt serves. */
     private static final String FOUND =
             "SELECT d.id, d.provider, d.provider_dispute_reference, d.attempt_id, d.reason,"
                     + " d.stage, d.chargeback_amount_minor, d.chargeback_currency,"
-                    + " d.chargeback_scale, d.opened_at, a.intent_id"
+                    + " d.chargeback_scale, d.counterparty_share_amount_minor,"
+                    + " d.counterparty_share_currency, d.counterparty_share_scale,"
+                    + " d.parked_share_amount_minor, d.parked_share_currency,"
+                    + " d.parked_share_scale, d.dispute_fee_amount_minor,"
+                    + " d.dispute_fee_currency, d.dispute_fee_scale, d.opened_at, a.intent_id"
                     + " FROM " + TABLE + " d"
                     + " JOIN payments.payment_attempt a ON a.id = d.attempt_id";
+
+    /** The chargeback stands — generated from the machine, one definition (`V021` shares it). */
+    private static final String STANDING =
+            "stage IN (" + DisputeStage.standingSqlValueList() + ")";
 
     @Override
     public boolean insert(Connection unitOfWork, Dispute opened) {
@@ -51,7 +66,7 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES"
-                                + " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                + " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                                 + " ON CONFLICT ON CONSTRAINT dispute_one_per_provider_reference"
                                 + " DO NOTHING")) {
             insert.setObject(1, opened.id().value());
@@ -60,8 +75,8 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
             insert.setObject(4, opened.attemptId().value());
             insert.setString(5, opened.reason().name());
             insert.setString(6, opened.stage().name());
-            bindChargeback(insert, 7, opened);
-            insert.setTimestamp(10, Timestamp.from(opened.openedAt()));
+            bindMoney(insert, 7, opened);
+            insert.setTimestamp(19, Timestamp.from(opened.openedAt()));
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -95,18 +110,26 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
         Objects.requireNonNull(before, "before must not be null");
         Objects.requireNonNull(after, "after must not be null");
         Objects.requireNonNull(at, "at must not be null");
-        // The chargeback's amount rides the statement too: V020 lets it move only NULL -> value
-        // (the edge entering CHARGED_BACK), so re-binding a recorded one is a no-op for every
-        // writer and changing it is refused.
+        // The money fragments ride the statement too: V020/V021 let the chargeback and its
+        // attribution arrive only NULL -> value on the edge entering CHARGED_BACK and the fee
+        // only NULL -> value, so re-binding recorded ones is a no-op for every writer and
+        // changing them is refused.
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
                         "UPDATE " + TABLE + " SET stage = ?, chargeback_amount_minor = ?,"
-                                + " chargeback_currency = ?, chargeback_scale = ?"
+                                + " chargeback_currency = ?, chargeback_scale = ?,"
+                                + " counterparty_share_amount_minor = ?,"
+                                + " counterparty_share_currency = ?,"
+                                + " counterparty_share_scale = ?,"
+                                + " parked_share_amount_minor = ?, parked_share_currency = ?,"
+                                + " parked_share_scale = ?,"
+                                + " dispute_fee_amount_minor = ?, dispute_fee_currency = ?,"
+                                + " dispute_fee_scale = ?"
                                 + " WHERE id = ? AND stage = ?")) {
             update.setString(1, after.stage().name());
-            bindChargeback(update, 2, after);
-            update.setObject(5, after.id().value());
-            update.setString(6, before.stage().name());
+            bindMoney(update, 2, after);
+            update.setObject(14, after.id().value());
+            update.setString(15, before.stage().name());
             if (update.executeUpdate() != 1) {
                 return false;
             }
@@ -118,6 +141,100 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
         }
         appendHistory(unitOfWork, after.id(), before.stage(), after.stage(), at);
         return true;
+    }
+
+    @Override
+    public boolean reattribute(Connection unitOfWork, Dispute before, Dispute after) {
+        Objects.requireNonNull(before, "before must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        ChargebackSplit was = before.split().orElseThrow();
+        ChargebackSplit now = after.split().orElseThrow();
+        // Conditional on the stage AND the shares this caller read: a lost race is a false,
+        // never a second re-attribution on top of somebody else's (the expected-value rule).
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE " + TABLE + " SET counterparty_share_amount_minor = ?,"
+                                + " parked_share_amount_minor = ?"
+                                + " WHERE id = ? AND stage = ?"
+                                + " AND counterparty_share_amount_minor = ?"
+                                + " AND parked_share_amount_minor = ?")) {
+            update.setLong(1, MoneyColumns.amountMinorOf(now.counterpartyShare()));
+            update.setLong(2, MoneyColumns.amountMinorOf(now.parkedShare()));
+            update.setObject(3, after.id().value());
+            update.setString(4, before.stage().name());
+            update.setLong(5, MoneyColumns.amountMinorOf(was.counterpartyShare()));
+            update.setLong(6, MoneyColumns.amountMinorOf(was.parkedShare()));
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("re-attributing a chargeback", failure));
+        }
+    }
+
+    @Override
+    public boolean recordFee(Connection unitOfWork, Dispute before, Dispute after) {
+        Objects.requireNonNull(before, "before must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        Money fee = after.fee().orElseThrow();
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE " + TABLE + " SET dispute_fee_amount_minor = ?,"
+                                + " dispute_fee_currency = ?, dispute_fee_scale = ?"
+                                + " WHERE id = ? AND dispute_fee_amount_minor IS NULL")) {
+            update.setLong(1, MoneyColumns.amountMinorOf(fee));
+            update.setString(2, MoneyColumns.currencyOf(fee));
+            update.setShort(3, MoneyColumns.scaleOf(fee));
+            update.setObject(4, after.id().value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("recording a dispute fee", failure));
+        }
+    }
+
+    @Override
+    public Money attributedStanding(
+            Connection unitOfWork, PaymentAttemptId attempt, CurrencyCode currency) {
+        Objects.requireNonNull(attempt, "attempt must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        // Folded through Money, never a SQL SUM (the BalanceDerivation doctrine): a share in
+        // another currency or scale refuses loudly instead of adding into the bound's term.
+        Money attributed = Money.zero(currency);
+        for (Dispute standing : standing(unitOfWork, attempt, false)) {
+            attributed = attributed.plus(standing.split().orElseThrow().attributed());
+        }
+        return attributed;
+    }
+
+    @Override
+    public List<Dispute> standingOn(Connection unitOfWork, PaymentAttemptId attempt) {
+        Objects.requireNonNull(attempt, "attempt must not be null");
+        return standing(unitOfWork, attempt, true);
+    }
+
+    @Override
+    public boolean anyRestorableTo(Connection unitOfWork, LedgerAccountId account) {
+        Objects.requireNonNull(account, "account must not be null");
+        // A POSTED share only: a parked one never reached the account, so a win returns it
+        // from the recoverable and nothing is on its way to the account.
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT EXISTS (SELECT 1 FROM " + TABLE + " d"
+                                + " JOIN payments.payment_attempt a ON a.id = d.attempt_id"
+                                + " JOIN payments.payment_intent i ON i.id = a.intent_id"
+                                + " WHERE i.credit_account_id = ?"
+                                + " AND d.stage IN (" + DisputeStage.restorableSqlValueList()
+                                + ") AND d.counterparty_share_amount_minor > 0)")) {
+            select.setObject(1, account.value());
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "asking whether a chargeback may still credit " + account, failure));
+        }
     }
 
     @Override
@@ -221,6 +338,30 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
 
     // -----------------------------------------------------------------
 
+    /** The standing chargebacks on one attempt, oldest first — locked when {@code lock}. */
+    private List<Dispute> standing(
+            Connection unitOfWork, PaymentAttemptId attempt, boolean lock) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE attempt_id = ? AND " + STANDING
+                                + " ORDER BY opened_at, id"
+                                + (lock ? " FOR UPDATE" : ""))) {
+            select.setObject(1, attempt.value());
+            List<Dispute> found = new ArrayList<>();
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    found.add(map(row));
+                }
+            }
+            return List.copyOf(found);
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading the chargebacks standing on attempt " + attempt, failure));
+        }
+    }
+
     private void appendHistory(
             Connection unitOfWork, DisputeId id, DisputeStage from, DisputeStage to, Instant at) {
         Actor actor = SecurityContext.require();
@@ -243,14 +384,25 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
         }
     }
 
-    /** The chargeback's three columns from {@code first}: all present or all NULL. */
-    private static void bindChargeback(PreparedStatement statement, int first, Dispute dispute)
+    /**
+     * The four money fragments from {@code first}, twelve parameters: the chargeback, its
+     * counterparty share, its parked share, the fee — each all present or all NULL.
+     */
+    private static void bindMoney(PreparedStatement statement, int first, Dispute dispute)
             throws SQLException {
-        if (dispute.chargeback().isPresent()) {
-            Money amount = dispute.chargeback().get();
-            statement.setLong(first, MoneyColumns.amountMinorOf(amount));
-            statement.setString(first + 1, MoneyColumns.currencyOf(amount));
-            statement.setShort(first + 2, MoneyColumns.scaleOf(amount));
+        Optional<ChargebackSplit> split = dispute.split();
+        bindFragment(statement, first, split.map(ChargebackSplit::amount));
+        bindFragment(statement, first + 3, split.map(ChargebackSplit::counterpartyShare));
+        bindFragment(statement, first + 6, split.map(ChargebackSplit::parkedShare));
+        bindFragment(statement, first + 9, dispute.fee());
+    }
+
+    private static void bindFragment(PreparedStatement statement, int first, Optional<Money> money)
+            throws SQLException {
+        if (money.isPresent()) {
+            statement.setLong(first, MoneyColumns.amountMinorOf(money.get()));
+            statement.setString(first + 1, MoneyColumns.currencyOf(money.get()));
+            statement.setShort(first + 2, MoneyColumns.scaleOf(money.get()));
         } else {
             statement.setNull(first, java.sql.Types.BIGINT);
             statement.setNull(first + 1, java.sql.Types.CHAR);
@@ -279,15 +431,22 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
     }
 
     private static Dispute map(ResultSet row) throws SQLException {
-        String currency = row.getString("chargeback_currency");
-        Optional<Money> chargeback =
-                currency == null
-                        ? Optional.empty()
-                        : Optional.of(
-                                Money.ofPersisted(
-                                        row.getLong("chargeback_amount_minor"),
-                                        CurrencyCode.of(currency),
-                                        row.getShort("chargeback_scale")));
+        Optional<Money> amount = fragment(row, "chargeback");
+        Optional<ChargebackSplit> split =
+                amount.map(
+                        taken -> {
+                            try {
+                                return new ChargebackSplit(
+                                        taken,
+                                        fragment(row, "counterparty_share").orElseThrow(),
+                                        fragment(row, "parked_share").orElseThrow());
+                            } catch (SQLException unreadable) {
+                                throw new PaymentsStorageException(
+                                        DatabaseFailure.describe(
+                                                "reading a chargeback's attribution",
+                                                unreadable));
+                            }
+                        });
         return Dispute.rehydrate(
                 DisputeId.of(row.getObject("id", UUID.class)),
                 row.getString("provider"),
@@ -295,7 +454,21 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
                 PaymentAttemptId.of(row.getObject("attempt_id", UUID.class)),
                 DisputeReason.valueOf(row.getString("reason")),
                 DisputeStage.valueOf(row.getString("stage")),
-                chargeback,
+                split,
+                fragment(row, "dispute_fee"),
                 row.getTimestamp("opened_at").toInstant());
+    }
+
+    /** One nullable money fragment by its field name (MoneyColumns' naming), strictly read. */
+    private static Optional<Money> fragment(ResultSet row, String field) throws SQLException {
+        String currency = row.getString(field + MoneyColumns.CURRENCY_SUFFIX);
+        if (currency == null) {
+            return Optional.empty();
+        }
+        return Optional.of(
+                Money.ofPersisted(
+                        row.getLong(field + MoneyColumns.AMOUNT_MINOR_SUFFIX),
+                        CurrencyCode.of(currency.stripTrailing()),
+                        row.getShort(field + MoneyColumns.SCALE_SUFFIX)));
     }
 }

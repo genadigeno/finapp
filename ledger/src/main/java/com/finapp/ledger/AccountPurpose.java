@@ -64,6 +64,26 @@ public enum AccountPurpose {
      */
     INSTANT_CLEARING(OwnerKind.OPERATIONAL),
 
+    /**
+     * What the card network took that the platform has not (yet) recovered from anyone
+     * (ADR-0061 §3–§5, `P7-TSK-013`): an operational ASSET. A chargeback debits it by the whole
+     * amount the network took against the card rail's clearing position — the external fact —
+     * and the counterparty's attributed share is credited back out of it in a second entry, so
+     * its balance is exactly the part nobody has been charged: the value the network took that
+     * the platform had already returned (the excess), and any share parked because the
+     * counterparty's account could no longer take a posting. A win empties it; a loss writes the
+     * excess off to {@link #DISPUTE_COSTS}. Added with its first poster, beside `V014`.
+     */
+    CHARGEBACK_RECOVERABLE(OwnerKind.OPERATIONAL),
+
+    /**
+     * What disputes cost the platform (ADR-0061 §4, `P7-TSK-013`): an operational EXPENSE — the
+     * excess of a lost chargeback written off, and the dispute fees the PSP reports. The
+     * platform bears both in Phase 7; passing a fee on to merchants is a fee-schedule extension,
+     * recorded as out of scope. Added with its first poster, beside `V014`.
+     */
+    DISPUTE_COSTS(OwnerKind.OPERATIONAL),
+
     /** Fees earned. Phase 6's seam; nothing posts to it before then. */
     FEE_REVENUE(OwnerKind.OPERATIONAL),
 

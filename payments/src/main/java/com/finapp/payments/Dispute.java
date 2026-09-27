@@ -13,34 +13,40 @@ import java.util.regex.Pattern;
  * {@code payments}, one per provider dispute reference, contesting the attempt the network
  * named.
  *
- * <h2>What the row is, and what it is not</h2>
+ * <h2>What the row is</h2>
  *
  * <p>The provider, its dispute reference, the contested attempt and the reason category are
  * the network's opening statement, fixed at birth: `V020` freezes them for every writer, and a
  * later notification that contradicts the attempt moves nothing. What the network says
- * afterwards moves {@link #stage()}, one edge at a time — and, once, the chargeback's amount.
- * The dispute is <strong>not a posting</strong>: this task records the lifecycle, and the
- * money each stage moves is `P7-TSK-013`'s (the chargeback's lines, the win's exact inverse,
- * the loss's write-off) — keyed by this row's identifier and its stage, judged against the
- * attempt it contests.
+ * afterwards moves {@link #stage()}, one edge at a time — and, once, the chargeback: what the
+ * network took and, since `P7-TSK-013`, who bears it ({@link #split()}). The money each stage
+ * moves is posted beside the row, keyed by this row's identifier and its stage (ADR-0061 §4):
+ * the row records the lifecycle and the attribution, the ledger the value.
  *
- * <h2>The chargeback's amount arrives with the chargeback</h2>
+ * <h2>The chargeback arrives with the chargeback</h2>
  *
  * <p>{@link #chargeback()} is present exactly when the network has taken the funds
  * ({@link DisputeStage#isChargedBack()}), set on entering {@code CHARGED_BACK} — at birth, or
  * on the inquiry's escalation — and never moved after: the captured amount's discipline,
  * {@code NULL → value} for every writer. An inquiry states only the transaction it asks about,
- * and a chargeback may take less than that; storing the inquiry's figure as the dispute's
- * amount would refuse a partial chargeback — refusing to record what the network did, the
- * alternative ADR-0061 rejects — and hand `P7-TSK-013` the wrong number to post.
+ * and a chargeback may take less than that; the figure posted is what the network took.
+ *
+ * <h2>Its attribution is judged when it arrives, and only its excess ever moves back</h2>
+ *
+ * <p>The {@link ChargebackSplit} is decided on the edge that enters {@code CHARGED_BACK}, under
+ * the attempt row lock both money paths take — the counterparty charged at most what the
+ * capture credited it, net of refunds and of the chargebacks already standing
+ * ({@code INV-DSP-01}). Afterwards the one legal change is {@link #reattributed}: a counted
+ * refund that failed gives its share of the excess back to the counterparty, while the
+ * chargeback stands.
  *
  * <h2>Recorded against the attempt the network names, whatever its state</h2>
  *
  * <p>The external fact first (ADR-0061 §4): a chargeback is money the network has
- * <em>already</em> taken, so refusing to record one — because our own capture record is still
- * ambiguous, say — would leave {@code SETTLEMENT_CLEARING} disagreeing with what the PSP will
- * net, with nothing explaining the break (the ADR's rejected alternative). Attribution of the
- * money is the combined bound's job, not the birth's.
+ * <em>already</em> taken. An attempt that has captured nothing — yet, or ever — has credited
+ * nobody, so its chargeback's attribution is none and the whole amount is excess: recorded,
+ * never refused, never deferred. Should the capture land later, the counterparty's share comes
+ * back to it then ({@link #reattributed}, through {@code ChargebackAccounting#captureLanded}).
  */
 public final class Dispute {
 
@@ -53,7 +59,8 @@ public final class Dispute {
     private final PaymentAttemptId attemptId;
     private final DisputeReason reason;
     private final DisputeStage stage;
-    private final Optional<Money> chargeback;
+    private final Optional<ChargebackSplit> chargeback;
+    private final Optional<Money> fee;
     private final Instant openedAt;
 
     private Dispute(
@@ -63,7 +70,8 @@ public final class Dispute {
             PaymentAttemptId attemptId,
             DisputeReason reason,
             DisputeStage stage,
-            Optional<Money> chargeback,
+            Optional<ChargebackSplit> chargeback,
+            Optional<Money> fee,
             Instant openedAt) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.provider = Objects.requireNonNull(provider, "provider must not be null");
@@ -73,24 +81,36 @@ public final class Dispute {
         this.reason = Objects.requireNonNull(reason, "reason must not be null");
         this.stage = Objects.requireNonNull(stage, "stage must not be null");
         this.chargeback = Objects.requireNonNull(chargeback, "chargeback must not be null");
+        this.fee = Objects.requireNonNull(fee, "fee must not be null");
         this.openedAt = Objects.requireNonNull(openedAt, "openedAt must not be null");
-        // Every rule V020's CHECKs hold is held here too, so a corrupt row is refused at read
-        // rather than acted on (the Withdrawal constructor's stance).
+        // Every rule V020's and V021's CHECKs hold is held here too, so a corrupt row is
+        // refused at read rather than acted on (the Withdrawal constructor's stance). The
+        // split's own rules (positive amount, shares within it) are ChargebackSplit's.
         requireProvider(provider);
         if (stage.isChargedBack() != chargeback.isPresent()) {
             throw new IllegalArgumentException(
-                    "a chargeback amount is recorded exactly when the network has taken the"
-                            + " funds (" + stage + ")");
+                    "a chargeback is recorded exactly when the network has taken the funds ("
+                            + stage + ")");
         }
-        if (chargeback.filter(amount -> !amount.isPositive()).isPresent()) {
-            throw new IllegalArgumentException("a chargeback amount must be positive");
+        if (fee.isPresent()) {
+            if (chargeback.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "a dispute fee is charged with a chargeback, never on an inquiry");
+            }
+            Money amount = chargeback.get().amount();
+            if (!fee.get().isPositive()
+                    || !fee.get().currency().equals(amount.currency())
+                    || fee.get().scale() != amount.scale()) {
+                throw new IllegalArgumentException(
+                        "a dispute fee is positive and in the chargeback's currency and scale");
+            }
         }
     }
 
     /**
      * The network's opening statement: born at an entry stage and nowhere else
      * ({@code INV-LIFE-02}; `V020`'s birth trigger holds the same for every writer), carrying
-     * the chargeback's amount exactly when born {@code CHARGED_BACK}.
+     * the chargeback and its attribution exactly when born {@code CHARGED_BACK}.
      */
     public static Dispute open(
             IdGenerator ids,
@@ -100,7 +120,8 @@ public final class Dispute {
             PaymentAttemptId attemptId,
             DisputeReason reason,
             DisputeStage entry,
-            Optional<Money> chargeback) {
+            Optional<ChargebackSplit> chargeback,
+            Optional<Money> fee) {
         Objects.requireNonNull(ids, "ids must not be null");
         Objects.requireNonNull(at, "at must not be null");
         Objects.requireNonNull(entry, "entry must not be null");
@@ -115,6 +136,7 @@ public final class Dispute {
                 reason,
                 entry,
                 chargeback,
+                fee,
                 // The column's own microsecond resolution (the P7-TSK-004 clock lesson).
                 at.truncatedTo(ChronoUnit.MICROS));
     }
@@ -127,23 +149,29 @@ public final class Dispute {
             PaymentAttemptId attemptId,
             DisputeReason reason,
             DisputeStage stage,
-            Optional<Money> chargeback,
+            Optional<ChargebackSplit> chargeback,
+            Optional<Money> fee,
             Instant openedAt) {
         return new Dispute(
-                id, provider, providerReference, attemptId, reason, stage, chargeback, openedAt);
+                id, provider, providerReference, attemptId, reason, stage, chargeback, fee,
+                openedAt);
     }
 
     /**
      * One edge of the machine, or the refusal ({@code INV-LIFE-02}, {@code INV-LIFE-04}).
-     * {@code stated} is the amount the network's statement carries: it becomes the chargeback's
-     * amount on entering {@code CHARGED_BACK} and is ignored on every other edge — a recorded
-     * chargeback never moves.
+     * {@code arriving} is the chargeback and its attribution: required on the edge that enters
+     * {@code CHARGED_BACK} and refused on every other — a recorded chargeback never moves.
      */
-    public Dispute advanceTo(DisputeStage next, Money stated) {
+    public Dispute advanceTo(DisputeStage next, Optional<ChargebackSplit> arriving) {
         Objects.requireNonNull(next, "next must not be null");
-        Objects.requireNonNull(stated, "stated must not be null");
+        Objects.requireNonNull(arriving, "arriving must not be null");
         if (!stage.canTransitionTo(next)) {
             throw new IllegalDisputeTransitionException(stage, next);
+        }
+        boolean entersChargeback = next == DisputeStage.CHARGED_BACK;
+        if (entersChargeback != arriving.isPresent()) {
+            throw new IllegalArgumentException(
+                    "a chargeback arrives on the edge that enters CHARGED_BACK and on no other");
         }
         return new Dispute(
                 id,
@@ -152,7 +180,51 @@ public final class Dispute {
                 attemptId,
                 reason,
                 next,
-                next == DisputeStage.CHARGED_BACK ? Optional.of(stated) : chargeback,
+                entersChargeback ? arriving : chargeback,
+                fee,
+                openedAt);
+    }
+
+    /**
+     * {@code moved} of the chargeback's excess comes back to the counterparty — the one change
+     * a split admits after it is judged (ADR-0061 §3: a counted refund that failed). Only while
+     * the chargeback stands: a won dispute's attribution was reversed with the funds.
+     */
+    public Dispute reattributed(Money moved, boolean counterpartyPostable) {
+        if (!stage.isStanding()) {
+            throw new IllegalStateException(
+                    "only a standing chargeback is re-attributed, not one at " + stage);
+        }
+        return new Dispute(
+                id,
+                provider,
+                providerReference,
+                attemptId,
+                reason,
+                stage,
+                Optional.of(chargeback.orElseThrow().reattributed(moved, counterpartyPostable)),
+                fee,
+                openedAt);
+    }
+
+    /**
+     * The PSP's dispute fee, recorded once ({@code NULL → value}, `V021` for every writer): it is
+     * charged with the chargeback, so only a charged-back dispute carries one.
+     */
+    public Dispute withFee(Money charged) {
+        Objects.requireNonNull(charged, "charged must not be null");
+        if (fee.isPresent()) {
+            throw new IllegalStateException("a recorded dispute fee never changes");
+        }
+        return new Dispute(
+                id,
+                provider,
+                providerReference,
+                attemptId,
+                reason,
+                stage,
+                chargeback,
+                Optional.of(charged),
                 openedAt);
     }
 
@@ -188,16 +260,29 @@ public final class Dispute {
         return stage;
     }
 
-    /** What the network took — present exactly when {@link DisputeStage#isChargedBack()}. */
+    /**
+     * What the network took — present exactly when {@link DisputeStage#isChargedBack()}. The
+     * figure every stage posting is computed from (never a later statement's figure).
+     */
     public Optional<Money> chargeback() {
+        return chargeback.map(ChargebackSplit::amount);
+    }
+
+    /** The chargeback with its attribution — present exactly when {@link #chargeback()} is. */
+    public Optional<ChargebackSplit> split() {
         return chargeback;
+    }
+
+    /** The PSP's dispute fee, once reported — only ever on a charged-back dispute. */
+    public Optional<Money> fee() {
+        return fee;
     }
 
     public Instant openedAt() {
         return openedAt;
     }
 
-    /** Identifiers and stage only — never the amount, never a reference (INV-AUD-02). */
+    /** Identifiers and stage only — never an amount, never a reference (INV-AUD-02). */
     @Override
     public String toString() {
         return "Dispute[" + id + ", " + stage + "]";

@@ -169,7 +169,10 @@ public class PaymentWebhookService {
             String reasonCode,
             String amountMinor,
             String currency,
-            Integer scale) {}
+            Integer scale,
+            // The PSP's dispute fee (P7-TSK-013, ADR-0061 section 4), in the amount's own
+            // currency and scale: present only on a statement from the chargeback on.
+            String feeMinor) {}
 
     /** Minor units as the wire carries them: digits only, and short enough for a long. */
     private static final Pattern MINOR_UNITS = Pattern.compile("[0-9]{1,18}");
@@ -541,10 +544,15 @@ public class PaymentWebhookService {
         switch (applied) {
             case OPENED, ADVANCED ->
                     log.info(
-                            "A dispute on attempt {} was {} at the network's word (P7-TSK-012;"
-                                    + " no posting until P7-TSK-013)",
+                            "A dispute on attempt {} was {} at the network's word, each stage"
+                                    + " posted once (P7-TSK-012, P7-TSK-013)",
                             attempt.id(),
                             applied == DisputeNotifications.Outcome.OPENED ? "opened" : "advanced");
+            case FEE_RECORDED ->
+                    log.info(
+                            "A dispute statement for attempt {} reported the PSP's dispute fee"
+                                    + " late; recorded and posted once (P7-TSK-013)",
+                            attempt.id());
             case UNCHANGED ->
                     log.info(
                             "A repeated dispute statement for attempt {} changed nothing"
@@ -568,7 +576,12 @@ public class PaymentWebhookService {
         }
     }
 
-    /** Total: an unusable statement is empty, never a throw — the anti-stall class. */
+    /**
+     * Total: an unusable statement is empty, never a throw — the anti-stall class. Since
+     * `P7-TSK-013` the statement may carry the PSP's dispute fee: a fee field we cannot read, or
+     * one on an inquiry (a fee is charged with the funds taken), makes the whole statement
+     * unusable rather than half-read.
+     */
     private static Optional<DisputeNotice> disputeNotice(WebhookPayload payload) {
         Optional<ProviderReference> reference = networkReference(payload.dispute());
         Optional<com.finapp.payments.DisputeStage> stage =
@@ -577,13 +590,43 @@ public class PaymentWebhookService {
         if (reference.isEmpty() || stage.isEmpty() || amount.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(
-                new DisputeNotice(
-                        SimulatedCardPspAdapter.NAME,
-                        reference.get(),
-                        stage.get(),
-                        CardDisputeVocabulary.reason(payload.reasonCode()),
-                        amount.get()));
+        Optional<Optional<Money>> fee = disputeFee(payload, amount.get());
+        if (fee.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(
+                    new DisputeNotice(
+                            SimulatedCardPspAdapter.NAME,
+                            reference.get(),
+                            stage.get(),
+                            CardDisputeVocabulary.reason(payload.reasonCode()),
+                            amount.get(),
+                            fee.get()));
+        } catch (IllegalArgumentException incoherent) {
+            // A fee on an inquiry: the statement contradicts itself, so it is not knowledge.
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The dispute fee in the amount's own currency and scale (`P7-TSK-013`): absent or zero is
+     * no fee (the outer Optional present, the inner empty); digits that do not parse are an
+     * unusable statement (the outer Optional empty).
+     */
+    private static Optional<Optional<Money>> disputeFee(WebhookPayload payload, Money amount) {
+        if (payload.feeMinor() == null) {
+            return Optional.of(Optional.empty());
+        }
+        if (!MINOR_UNITS.matcher(payload.feeMinor()).matches()) {
+            return Optional.empty();
+        }
+        try {
+            Money fee = Money.ofMinorUnits(Long.parseLong(payload.feeMinor()), amount.currency());
+            return Optional.of(fee.isZero() ? Optional.empty() : Optional.of(fee));
+        } catch (RuntimeException unusable) {
+            return Optional.empty();
+        }
     }
 
     /**

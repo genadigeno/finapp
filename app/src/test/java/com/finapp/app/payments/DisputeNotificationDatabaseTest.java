@@ -73,9 +73,13 @@ import org.springframework.test.context.DynamicPropertySource;
  * cross-tenant probe is the tenancy battery's row), the operator's audited per dispute.
  *
  * <p>The disputed payments are seeded raw (a captured card attempt, UUIDv7 ids as every
- * honest writer mints them) because the dispute is recorded against whatever attempt the
- * network names — the capture's own chain is P5's suites' subject. <strong>Nothing here posts
- * money</strong>: every flow asserts no journal entry references the dispute or its attempt.
+ * honest writer mints them, crediting a REAL wallet account) because the dispute is recorded
+ * against whatever attempt the network names — the capture's own chain is P5's suites'
+ * subject. <strong>What each stage's money is</strong> — the split, the balances, the bound
+ * against refunds — is {@code ChargebackAccountingDatabaseTest}'s subject (`P7-TSK-013`); here
+ * each flow counts its stage entries, exactly once each, by the posting keys that reference the
+ * dispute. *(Until `P7-TSK-013` every flow here asserted NO journal entry referenced the
+ * dispute — the stages existed and their postings were owed; those pins became these counts.)*
  */
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
@@ -135,9 +139,9 @@ class DisputeNotificationDatabaseTest {
     @Test
     @DisplayName("a chargeback notification alone opens the dispute: one row in OUR words, the"
             + " birth on the record, DisputeOpened and ChargebackReceived once, the bytes"
-            + " retained - and no money moved")
+            + " retained - and the chargeback posted once, its share attributed once")
     void aChargebackOpensTheDisputeFromTheNotificationAlone() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         long evidenceBefore = evidenceCount(payment.attempt());
 
@@ -178,7 +182,9 @@ class DisputeNotificationDatabaseTest {
         assertThat(evidenceCount(payment.attempt()))
                 .as("the statement retained verbatim, attributed to the attempt (INV-HIST-02)")
                 .isEqualTo(evidenceBefore + 1);
-        assertNoPosting(payment, row.id());
+        assertThat(postings(row.id()))
+                .as("the external fact, then the attribution - each once (P7-TSK-013)")
+                .containsExactly("dispute-chargeback", "dispute-attribution");
     }
 
     @Test
@@ -201,8 +207,20 @@ class DisputeNotificationDatabaseTest {
                         List.of("CHARGED_BACK>ACCEPTED"),
                         List.of("CHARGED_BACK>REPRESENTED", "REPRESENTED>LOST"));
         List<String> outcomes = List.of("CLOSED", "WON", "LOST", "ACCEPTED", "LOST");
+        // The money each journey moved (P7-TSK-013): nothing for an inquiry that closed; the
+        // chargeback and its attribution for every other, the win reversing both; no loss
+        // entry, because an unrefunded payment's chargeback has no excess to write off.
+        List<String> charged = List.of("dispute-chargeback", "dispute-attribution");
+        List<List<String>> postings =
+                List.of(
+                        List.of(),
+                        List.of("dispute-chargeback", "dispute-attribution", "dispute-won",
+                                "dispute-restoration"),
+                        charged,
+                        charged,
+                        charged);
         for (int i = 0; i < journeys.size(); i++) {
-            Payment payment = capturedCardPayment(IDS.next());
+            Payment payment = capturedCardPayment(wallet());
             String reference = someDisputeReference();
             for (String stage : journeys.get(i)) {
                 assertThat(deliver(notice(payment.operation(), reference, stage))
@@ -225,7 +243,8 @@ class DisputeNotificationDatabaseTest {
             assertThat(events(row.id(), "payments.ChargebackReceived"))
                     .as("a chargeback is announced exactly when the stage is entered")
                     .isEqualTo(outcomes.get(i).equals("CLOSED") ? 0 : 1);
-            assertNoPosting(payment, row.id());
+            assertThat(postings(row.id())).as("journey %s", journeys.get(i))
+                    .isEqualTo(postings.get(i));
         }
     }
 
@@ -234,7 +253,7 @@ class DisputeNotificationDatabaseTest {
             + " REPRESENTED - the history shows both; a LOST on an inquiry walks through the"
             + " chargeback")
     void aLaterStageAppliesTheInterveningOnesInOrder() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         assertThat(deliver(notice(payment.operation(), reference, "won")).statusCode())
                 .isEqualTo(204);
@@ -268,7 +287,7 @@ class DisputeNotificationDatabaseTest {
                         row.id()))
                 .containsExactly("SYSTEM");
 
-        Payment inquired = capturedCardPayment(IDS.next());
+        Payment inquired = capturedCardPayment(wallet());
         String inquiry = someDisputeReference();
         deliver(notice(inquired.operation(), inquiry, "warning_needs_response"));
         assertThat(deliver(notice(inquired.operation(), inquiry, "lost")).statusCode())
@@ -281,7 +300,7 @@ class DisputeNotificationDatabaseTest {
     @DisplayName("INV-LIFE-04: a late stage changes nothing QUIETLY; a contradicting one changes"
             + " nothing LOUDLY - the first record stands and both statements are retained")
     void lateIsQuietAndAContradictionIsLoud() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         deliver(notice(payment.operation(), reference, "won"));
         UUID dispute = disputeRow(reference).id();
@@ -323,7 +342,7 @@ class DisputeNotificationDatabaseTest {
             + " stating the transaction's full amount is quiet ordering, and a later statement"
             + " of ANOTHER chargeback amount moves nothing, loudly")
     void theChargebackAmountArrivesWithTheChargeback() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         deliver(notice(payment.operation(), reference, "warning_needs_response"));
         DisputeRow inquiry = disputeRow(reference);
@@ -362,17 +381,23 @@ class DisputeNotificationDatabaseTest {
         assertThat(history(won.id()))
                 .containsExactly(
                         "INQUIRY>CHARGED_BACK", "CHARGED_BACK>REPRESENTED", "REPRESENTED>WON");
-        assertNoPosting(payment, won.id());
+        assertThat(postings(won.id()))
+                .as("the partial chargeback posted and reversed once each - the refused"
+                        + " statements posted nothing")
+                .containsExactly("dispute-chargeback", "dispute-attribution", "dispute-won",
+                        "dispute-restoration");
     }
 
     @Test
     @DisplayName("the external fact first (ADR-0061 section 4): a dispute is recorded against the"
             + " card attempt the network names WHATEVER its state - a capture still UNKNOWN to"
-            + " us, a void - because the network has already acted; attribution is the bound's")
+            + " us, a void, an authorization never captured - because the network has already"
+            + " acted; nothing captured credited nobody, so the counterparty bears none of it"
+            + " until a capture lands (P7-TSK-013)")
     void aDisputeIsRecordedWhateverTheAttemptsState() throws Exception {
         double unmappable = webhooks("unmappable");
         for (String state : List.of("CAPTURE_UNKNOWN", "VOIDED", "AUTHORIZED")) {
-            Payment payment = cardPaymentIn(state, IDS.next());
+            Payment payment = cardPaymentIn(state, wallet());
             String reference = someDisputeReference();
             assertThat(deliver(notice(payment.operation(), reference, "needs_response"))
                     .statusCode())
@@ -384,6 +409,10 @@ class DisputeNotificationDatabaseTest {
             assertThat(attemptStatus(payment.attempt()))
                     .as("a chargeback contests the payment; it never moves the attempt")
                     .isEqualTo(state);
+            assertThat(postings(row.id()))
+                    .as("the external fact alone: nothing captured credited nobody, so nothing"
+                            + " is attributed and the whole chargeback rests recoverable")
+                    .containsExactly("dispute-chargeback");
         }
         assertThat(webhooks("unmappable")).as("recorded, not refused").isEqualTo(unmappable);
     }
@@ -392,7 +421,7 @@ class DisputeNotificationDatabaseTest {
     @DisplayName("the dispute rides the signed door: a forged dispute statement is the one 401,"
             + " and nothing is written - no row, no evidence (INV-PAY-01)")
     void aForgedDisputeStatementWritesNothing() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         long evidence = evidenceCount(payment.attempt());
         String body = notice(payment.operation(), reference, "needs_response");
@@ -417,7 +446,7 @@ class DisputeNotificationDatabaseTest {
     @DisplayName("a second cycle is a NEW dispute: a new reference on the same payment opens a"
             + " second row, the resolved one untouched (ADR-0061 section 2)")
     void aSecondCycleIsANewDispute() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String first = someDisputeReference();
         deliver(notice(payment.operation(), first, "needs_response"));
         deliver(notice(payment.operation(), first, "lost"));
@@ -440,7 +469,7 @@ class DisputeNotificationDatabaseTest {
     @DisplayName("INV-IDEM-04, rank one: ten deliveries under ONE event id race - the inbox"
             + " absorbs all but one, one row, one record, one fact")
     void tenIdenticalDeliveriesHaveOneEffect() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         String body = notice("evt_same_" + UUID.randomUUID(), payment.operation(),
                 reference, "needs_response", "duplicate", "1000", "EUR", 2);
@@ -463,7 +492,9 @@ class DisputeNotificationDatabaseTest {
         assertThat(audits(row.id(), "payments.DisputeStageApplied")).isEqualTo(1);
         assertThat(events(row.id(), "payments.DisputeOpened")).isEqualTo(1);
         assertThat(events(row.id(), "payments.ChargebackReceived")).isEqualTo(1);
-        assertNoPosting(payment, row.id());
+        assertThat(postings(row.id()))
+                .as("one financial effect (the Phase 7 gate's criterion, INV-DSP-02)")
+                .containsExactly("dispute-chargeback", "dispute-attribution");
     }
 
     @Test
@@ -471,7 +502,7 @@ class DisputeNotificationDatabaseTest {
             + " inbox - the unique reference arbitrates the opening and the locked row the"
             + " stages: one row, every statement retained")
     void tenFreshIdDeliveriesHaveOneEffect() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         long evidenceBefore = evidenceCount(payment.attempt());
 
@@ -489,6 +520,9 @@ class DisputeNotificationDatabaseTest {
         assertThat(evidenceCount(payment.attempt()))
                 .as("ten genuine statements retained")
                 .isEqualTo(evidenceBefore + 10);
+        assertThat(postings(row.id()))
+                .as("one financial effect under ten fresh ids (INV-DSP-02)")
+                .containsExactly("dispute-chargeback", "dispute-attribution");
     }
 
     @Test
@@ -496,7 +530,7 @@ class DisputeNotificationDatabaseTest {
             + " WON, the trail a legal walk with no stage twice, each fact once - whatever the"
             + " order")
     void aMixedStageRaceConverges() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         List<String> stages =
                 List.of("warning_needs_response", "needs_response", "under_review", "won");
@@ -522,7 +556,10 @@ class DisputeNotificationDatabaseTest {
         assertThat(events(row.id(), "payments.DisputeOpened")).isEqualTo(1);
         assertThat(events(row.id(), "payments.ChargebackReceived")).isEqualTo(1);
         assertThat(events(row.id(), "payments.DisputeResolved")).isEqualTo(1);
-        assertNoPosting(payment, row.id());
+        assertThat(postings(row.id()))
+                .as("each stage's money once, whatever order the racers landed in")
+                .containsExactly("dispute-chargeback", "dispute-attribution", "dispute-won",
+                        "dispute-restoration");
     }
 
     // -----------------------------------------------------------------
@@ -533,7 +570,7 @@ class DisputeNotificationDatabaseTest {
     @DisplayName("the facts guard: a later statement with another amount, another payment's"
             + " operation, or a currency the payment is not in moves nothing, loudly")
     void theFrozenFactsAreGuarded() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         deliver(notice(payment.operation(), reference, "needs_response"));
         UUID dispute = disputeRow(reference).id();
@@ -543,7 +580,7 @@ class DisputeNotificationDatabaseTest {
         deliver(notice(someEvent(), payment.operation(), reference, "won",
                 "fraudulent", "900", "EUR", 2));
         // Another payment's operation naming this dispute.
-        Payment other = capturedCardPayment(IDS.next());
+        Payment other = capturedCardPayment(wallet());
         deliver(notice(other.operation(), reference, "won"));
         assertThat(disputeRow(reference).stage()).isEqualTo("CHARGED_BACK");
         assertThat(disputeRow(reference).attempt()).isEqualTo(payment.attempt());
@@ -572,7 +609,7 @@ class DisputeNotificationDatabaseTest {
             + " unknown reason is UNCATEGORISED, an amount or reference we cannot read is"
             + " unactionable - every statement retained and acknowledged")
     void theDoorIsTotal() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         long evidence = evidenceCount(payment.attempt());
         double unmappable = webhooks("unmappable");
 
@@ -612,6 +649,25 @@ class DisputeNotificationDatabaseTest {
                 .statusCode())
                 .isEqualTo(204);
         assertThat(disputeCount(stranger)).isZero();
+
+        // The PSP's dispute fee (P7-TSK-013) is read as strictly as the amount: digits we
+        // cannot parse, or a fee on an inquiry - a fee is charged with the funds taken - make
+        // the WHOLE statement unusable rather than half-read.
+        double beforeFees = webhooks("unmappable");
+        String unreadableFee = someDisputeReference();
+        deliver(withFee(notice(payment.operation(), unreadableFee, "needs_response"), "15.00"));
+        String inquiryFee = someDisputeReference();
+        deliver(withFee(notice(payment.operation(), inquiryFee, "warning_needs_response"),
+                "1500"));
+        assertThat(disputeCount(unreadableFee)).isZero();
+        assertThat(disputeCount(inquiryFee)).isZero();
+        assertThat(webhooks("unmappable")).isEqualTo(beforeFees + 2);
+    }
+
+    /** The statement with the PSP's dispute fee field added, verbatim. */
+    private static String withFee(String statement, String feeMinor) {
+        return statement.substring(0, statement.length() - 1)
+                + ",\"feeMinor\":\"" + feeMinor + "\"}";
     }
 
     // -----------------------------------------------------------------
@@ -629,7 +685,7 @@ class DisputeNotificationDatabaseTest {
         deliver(notice(sale.operation(), reference, "under_review"));
         UUID dispute = disputeRow(reference).id();
         // A top-up credits a customer's wallet: disputable, but nobody's sale.
-        Payment topUp = capturedCardPayment(IDS.next());
+        Payment topUp = capturedCardPayment(wallet());
         String topUpReference = someDisputeReference();
         deliver(notice(topUp.operation(), topUpReference, "needs_response"));
         UUID topUpDispute = disputeRow(topUpReference).id();
@@ -671,12 +727,19 @@ class DisputeNotificationDatabaseTest {
                 UUID dispute = IDS.next();
                 // Each opened a microsecond-distinct instant later than the one before, so
                 // the listing's order is the seeding's.
+                // With the chargeback comes its attribution (V021, P7-TSK-013): none here -
+                // 101 chargebacks on one payment could never all be the payable's, and the
+                // combined bound refuses the raw writer that tried.
                 execute(app,
                         "INSERT INTO payments.dispute (id, provider, provider_dispute_reference,"
                                 + " attempt_id, reason, stage, chargeback_amount_minor,"
-                                + " chargeback_currency, chargeback_scale, opened_at)"
+                                + " chargeback_currency, chargeback_scale,"
+                                + " counterparty_share_amount_minor, counterparty_share_currency,"
+                                + " counterparty_share_scale, parked_share_amount_minor,"
+                                + " parked_share_currency, parked_share_scale, opened_at)"
                                 + " VALUES (?, 'simulated-card', ?, ?, 'FRAUD', 'CHARGED_BACK',"
-                                + " 1000, 'EUR', 2, now() + make_interval(secs => ?))",
+                                + " 1000, 'EUR', 2, 0, 'EUR', 2, 0, 'EUR', 2,"
+                                + " now() + make_interval(secs => ?))",
                         dispute, someDisputeReference(), sale.attempt(), (double) i);
                 seeded.add(dispute);
             }
@@ -699,7 +762,7 @@ class DisputeNotificationDatabaseTest {
             + " reference, audited per dispute shown - and another operator population is"
             + " refused with nothing recorded")
     void theOperatorReadsUnderThePermission() throws Exception {
-        Payment payment = capturedCardPayment(IDS.next());
+        Payment payment = capturedCardPayment(wallet());
         String reference = someDisputeReference();
         deliver(notice(payment.operation(), reference, "needs_response"));
         UUID dispute = disputeRow(reference).id();
@@ -727,7 +790,7 @@ class DisputeNotificationDatabaseTest {
                 .statusCode())
                 .as("an unknown payment is told apart from an undisputed one")
                 .isEqualTo(404);
-        Payment undisputed = capturedCardPayment(IDS.next());
+        Payment undisputed = capturedCardPayment(wallet());
         assertThat(get("/v1/operator/payments/" + undisputed.intent() + "/disputes", operator)
                 .body())
                 .contains("\"disputes\":[]");
@@ -822,6 +885,26 @@ class DisputeNotificationDatabaseTest {
                     "psp-cap-" + IDS.next());
         }
         return new Payment(intent, attempt, capture);
+    }
+
+    /**
+     * A real customer wallet ledger account, the counterparty a top-up credits (`P7-TSK-013`):
+     * the chargeback's attribution posts to the payment's credit account, so a seed crediting a
+     * random identifier would fail the posting's foreign key.
+     */
+    private UUID wallet() throws Exception {
+        return asActor(
+                        uow ->
+                                ledgerAccountStore
+                                        .createOrConverge(
+                                                uow,
+                                                LedgerAccount.owned(
+                                                        IDS, CLOCK, AccountType.LIABILITY,
+                                                        AccountPurpose.CUSTOMER_WALLET, EUR,
+                                                        IDS.next()))
+                                        .account()
+                                        .id())
+                .value();
     }
 
     private record Merchant(UUID id, String key, LedgerAccountId payable) {}
@@ -1144,14 +1227,18 @@ class DisputeNotificationDatabaseTest {
                 "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ?", attempt);
     }
 
-    /** Financial impact none (the backlog's own line): no entry references either. */
-    private static void assertNoPosting(Payment payment, UUID dispute) throws SQLException {
-        assertThat(count(
-                        "SELECT count(*) FROM ledger.journal_entry WHERE reference IN (?, ?)",
-                        payment.attempt().toString(),
-                        dispute.toString()))
-                .as("the stages exist; their postings are P7-TSK-013's")
-                .isZero();
+    /**
+     * The operations whose entries reference the dispute, in the order they posted (the
+     * store-minted UUIDv7 entry ids): each posting key's operation name — {@code
+     * dispute-chargeback}, {@code dispute-attribution}, ... — so a second effect shows as a
+     * second element (`P7-TSK-013`).
+     */
+    private static List<String> postings(UUID dispute) throws SQLException {
+        return strings(
+                "SELECT split_part(substring(idempotency_scope FROM"
+                        + " length('ledger.post:') + 1), ':', 1)"
+                        + " FROM ledger.journal_entry WHERE reference = ? ORDER BY id",
+                dispute.toString());
     }
 
     private double webhooks(String outcome) {

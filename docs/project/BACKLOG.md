@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (12 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 1 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (13 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 2 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -9012,7 +9012,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   hermetic 1689 tests across 14 modules, 0 failures; 270 targeted database tests across 22 suites, 0 failures; the platform classification guard green. The full battery
   deliberately skipped on the owner's instruction.
 
-**P7-TSK-013 — Chargeback accounting and the combined bound** — `READY`
+**P7-TSK-013 — Chargeback accounting and the combined bound** — `COMPLETE` (2026-09-27)
 - **Objective**: ADR-0061 §3–§5 — a chargeback never takes more from the counterparty than the
   capture credited it, and every stage posts exactly once.
 - **Bounded context**: Disputes (29), `payments`; Merchant (12) and Accounts (5/6) through the
@@ -9057,8 +9057,68 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   never the notice's figure; (4) `DisputeNotifications`' per-stage `entered` seam runs once
   per stage applied, in order, inside the delivery's transaction: each stage's posting
   attaches there, keyed by the dispute and its stage.
+- **Design corrections to this entry** (the `P6-TSK-001` precedent): each financial stage posts
+  TWO entries, not one — the external fact (`dispute-chargeback:<id>`: DR
+  `CHARGEBACK_RECOVERABLE` / CR the rail's clearing; `dispute-won:<id>` its inverse) and the
+  attribution (`dispute-attribution:<id>`, composed by `DisputeComposition`;
+  `dispute-restoration:<id>` its inverse) — whose per-account effect is exactly ADR-0061 §4's
+  table: the first entry never varies with who bears the loss, the counterparty's line always
+  faces the recoverable so the merchant's drill-down NAMES a chargeback (a one-entry chargeback
+  with no excess is line-for-line a retained refund, `P7-TSK-010`'s mislabel class), and the
+  composer composes only the counterparty's part. Beside the listed keys, re-attributions post
+  `dispute-reattribution:<dispute>:<cause>`. *Persistence* gained payments `V021` beside ledger
+  `V014` (the split's two share fragments, the fee, and the combined bound for every writer in
+  both directions under advisory namespace 3 — the refund bound's own). *API* gained no route;
+  two views gained additive fields (the operator dispute view's split and fee; the merchant
+  payable drill-down's `chargedBack` and `chargebacksReversed`); `payments.RefundExceedsCaptured`
+  kept its code and title, its meaning extended. The account close now refuses while a
+  chargeback whose share was posted to the account can still be won (the win's credit would
+  meet a closed account). `P7-TSK-014`'s planned migration is renumbered `V022`, with provenance.
+- **Gate**: the acceptance proven over the deployed chain — **a chargeback on an already-refunded
+  payment does not double-debit**: fully refunded, the counterparty is not touched and the whole
+  chargeback rests in `CHARGEBACK_RECOVERABLE`
+  (`ChargebackAccountingDatabaseTest#aChargebackOnAFullyRefundedPaymentNeverDebitsTheCounterpartyTwice`);
+  partially refunded, it is charged only what the capture left (`#…PartiallyRefunded…`); a
+  refund after a chargeback refused past what remains with nothing written
+  (`#aRefundAfterAChargebackIsRefusedPastWhatRemains`); eight refunds racing a chargeback on
+  one payment serialising on the attempt's lock — counted refunds and attributed share summing
+  to the capture exactly (`#refundsRacingAChargebackKeepTheBound`). **A duplicate chargeback
+  notification produces a single financial effect**: ten concurrent fresh-id deliveries of a
+  won-first chargeback with its fee post one entry per stage key
+  (`#tenFreshIdChargebacksPostOnce`), and the P7-TSK-012 suite's ten-way races now count their
+  entries once each. Resolution: a win nets every account the dispute touched to zero, a
+  re-attribution included (`#aWinNetsTheChargebackToZeroPerAccount`,
+  `#aCountedRefundThatFailsGivesItsShareBack`); a loss writes off ONLY the excess
+  (`#aLossWritesOffOnlyTheExcess`); the fee once, contradicted loudly, reported late recorded
+  then (`#theDisputeFeePostsOnceAndIsGuarded`). A closed wallet's share parked, never refused,
+  and a win returning it from the recoverable (`#aClosedWalletsShareIsParked`); a wallet kept
+  open while a charged share can still be won back, closing once lost
+  (`#aRestorableChargebackKeepsTheWalletOpen`); the merchant drill-down naming chargebacks and
+  their reversals (`#theMerchantDrillDownNamesChargebacks`); the negative-position gauge counting
+  the customer receivable (`#theNegativePositionGaugeCountsTheReceivable`); every writer bound by
+  `V021` (`PaymentsSchemaDatabaseTest#theChargebackAccountingSchemaBindsEveryWriter`); the
+  merchant's checked assumption (`MerchantCaptureDatabaseTest#aChargebackAgainstAnotherAccountIsRefused`).
+  **The gate's own find**: the design had DEFERRED a chargeback on a capture still being resolved
+  (the delivery answered unacknowledged until the capture resolved). That left two holes: a
+  chargeback on an `AUTHORIZED` attempt was recorded as all excess, and a capture landing after
+  it credited the counterparty in full while the platform carried the chargeback; and recording
+  hung on the PSP's retry window, the ADR's rejected "refuse to record" in slow motion. Replaced by
+  ONE rule — every event that frees headroom (`captured − non-failed refunds − standing
+  attributions`) re-attributes the standing excess to the counterparty, oldest dispute first:
+  a CAPTURE LANDING (`ChargebackAccounting#captureLanded`, in the capture's own transaction —
+  `#aChargebackBeforeItsCaptureIsAttributedWhenTheCaptureLands`), a counted refund FAILING
+  (ADR-0061 §3's rule), a sibling chargeback WON (`#aWinGivesASiblingsExcessBack`) — so at every
+  commit the split is the one a chargeback arriving now would take, and no statement waits.
+  Also closed at the gate: the door's reading of an unreadable fee and of a fee on an inquiry
+  (the whole statement unusable), and a win after a re-attribution netting to zero. Twenty-four probe runs, twenty-three caught — every one by its intended test — and one survivor recorded as designed: a stage's accounting applied twice inside one delivery is absorbed by the posting keys (the conditional stage transition is the load-bearing rank), and the re-aimed probe with the keys taken away was caught; every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical
+  (`MUTATION_TESTING.md` §2 +24 rows). Multi-instance PASS — the attempt row lock both money
+  paths take (every dispute delivery takes it FIRST, before the dispute insert), the conditional
+  stage transitions, the posting keys and `V021`'s namespace-3 triggers are the arbiters, all in
+  PostgreSQL; the counterparty is share-locked, never SHARE-then-UPDATE; nothing lives in
+  process state and nothing is scheduled. Fleet hermetic 1698 tests across 14 modules, 0 failures; 348 targeted database tests across 30 suites, 0 failures; the platform
+  classification guard green. The full battery deliberately skipped on the owner's instruction.
 
-**P7-TSK-014 — Representment and dispute evidence** — `PLANNED`
+**P7-TSK-014 — Representment and dispute evidence** — `READY`
 - **Objective**: ADR-0061 §7 — the merchant (or an operator) contests a chargeback with evidence,
   before its deadline, under least privilege.
 - **Bounded context**: Disputes (29), `payments`, with Merchant (12)'s key.
@@ -9068,7 +9128,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   never deciding an outcome; accept (not contest); refusal after the deadline or resolution.
 - **Out of scope**: automated evidence assembly; case management (Phase 13).
 - **Domain changes**: `DisputeEvidence`, `Representment`.
-- **Persistence**: payments `V021` (planned as `V019` at the transition — the payments sequence reached `V020` with `P7-TSK-012`'s dispute; the stale-plan-number class, recorded by that task's gate); classification rows.
+- **Persistence**: payments `V022` (planned as `V019` at the transition, renumbered `V021` by `P7-TSK-012`'s gate and `V022` by `P7-TSK-013`'s — the payments sequence reached `V021` with the chargeback accounting; the stale-plan-number class); classification rows.
 - **API**: merchant routes (tenant-scoped) and operator routes, with OpenAPI and permission rows.
 - **Events**: `DisputeEvidenceSubmitted`.
 - **Financial impact**: none directly (the outcome's posting is `-013`'s).
@@ -9084,6 +9144,18 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   probes.
 - **Accept**: a representment submitted and won end to end; evidence unreadable across tenants.
 - **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+- **Design inputs recorded by `P7-TSK-013`** (read at design, not binding decisions):
+  (1) **a submission moves no stage and no money** — the network's `REPRESENTED`,
+  `ACCEPTED`, `WON` and `LOST` statements do, and `P7-TSK-013` posts what each one owes;
+  the dispute row's share and fee columns are the notifications' alone (the application
+  role holds `UPDATE` on them, so it is the code, and `V021`'s grow-only trigger behind it,
+  that keeps a submission from writing them); (2) **the lock order** — every
+  dispute delivery takes the attempt `FOR UPDATE` FIRST, then the dispute row: a submission
+  that locks the dispute row takes the attempt first too, or it deadlocks with a racing
+  delivery (the `P7-TSK-011` class); (3) **the machine trigger's body is `V021`'s** —
+  `dispute_permits_only_machine_edges` was re-stated there with the share and fee rules, so a
+  `V022` that re-states it again carries `V021`'s body forward verbatim (`V020`'s is applied
+  history, the migration handoff discipline).
 
 **P7-TSK-015 — Rail and dispute meters and the dashboard row** — `PLANNED`
 - **Objective**: `PHASE_7_PLAN.md` §15 — every rail's health and every dispute's stage visible on a

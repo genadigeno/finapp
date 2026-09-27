@@ -566,18 +566,57 @@ class PaymentBeans {
     com.finapp.payments.DisputeNotifications disputeNotifications(
             com.finapp.payments.DisputeStore<Connection> disputeStore,
             PaymentIntentStore<Connection> paymentIntentStore,
-            com.finapp.payments.PaymentRails paymentRails,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.payments.ChargebackAccounting chargebackAccounting) {
         return new com.finapp.payments.DisputeNotifications(
                 disputeStore,
                 paymentIntentStore,
-                paymentRails,
                 auditWriter,
                 outboxWriter,
                 idGenerator,
+                clock,
+                // The attempt lock every delivery takes first (P7-TSK-013).
+                paymentAttemptStore,
+                chargebackAccounting);
+    }
+
+    /**
+     * The money of disputes (`P7-TSK-013`, ADR-0061 §3–§5): the combined bound, every stage's
+     * posting, the fee and the re-attribution. One instance shared by the dispute
+     * notifications and the refund outcomes, because the bound is ONE arithmetic over one
+     * payment's captured value — unconditional: it calls nothing and holds no state.
+     */
+    @Bean
+    com.finapp.payments.ChargebackAccounting chargebackAccounting(
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.PaymentRails paymentRails,
+            // THE DISPUTE'S COMPOSITION SEAM (P7-TSK-013): app's join, so payments never
+            // learns whose money a counterparty's account holds.
+            com.finapp.payments.DisputeComposition<Connection> disputeComposition,
+            com.finapp.ledger.PostingService postingService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.ChargebackAccounting(
+                disputeStore,
+                refundStore,
+                paymentAttemptStore,
+                paymentIntentStore,
+                paymentRails,
+                disputeComposition,
+                postingService,
+                new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
+                ledgerAccountStore,
+                auditWriter,
+                ids,
                 clock);
     }
 
@@ -664,7 +703,8 @@ class PaymentBeans {
             Clock clock,
             com.finapp.payments.PaymentRails paymentRails,
             com.finapp.payments.UnmatchedConfirmationStore<Connection>
-                    unmatchedConfirmationStore) {
+                    unmatchedConfirmationStore,
+            com.finapp.payments.ChargebackAccounting chargebackAccounting) {
         return new com.finapp.payments.PaymentOutcomes(
                 paymentIntentStore,
                 paymentAttemptStore,
@@ -684,7 +724,10 @@ class PaymentBeans {
                 unmatchedConfirmationStore,
                 // The book rail's fixed-order pair lock (P7-TSK-011): the account
                 // rows themselves, beside the chart that resolves positions.
-                ledgerAccountStore);
+                ledgerAccountStore,
+                // The combined bound's refund half (P7-TSK-013): a failed refund's share of
+                // a chargeback's excess returns to the counterparty in its own transaction.
+                chargebackAccounting);
     }
 
     @Bean

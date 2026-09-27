@@ -179,7 +179,7 @@ margin under the permit rule — judged on the locked row, never a clock alone. 
 withdrawal is irrevocable: a reversal of it is refused by the domain (`INV-REV-03`) — the
 declaration gate before anything exists, and the machine's own shape after.
 
-## 6. The dispute (ADR-0061 §2) — *shipped `P7-TSK-012`*
+## 6. The dispute (ADR-0061 §2) — *shipped `P7-TSK-012`; its money `P7-TSK-013`*
 
 ```
 INQUIRY ──> CHARGED_BACK ──> REPRESENTED ──> WON
@@ -218,6 +218,32 @@ recorded against whatever card attempt the network names, whatever its state: th
 fact first (ADR-0061 §4), attribution being the combined bound's (`P7-TSK-013`). A second
 cycle arrives with a new reference and is a new dispute, never a reopened one.
 
+**What each stage posts** (`P7-TSK-013`, `ChargebackAccounting`; ADR-0061 §3–§5) — once per
+stage, keyed by the dispute and the stage, behind the stage's conditional transition:
+
+| Stage entered | Entries | Lines |
+|---|---|---|
+| `CHARGED_BACK` | `dispute-chargeback:<id>` — the external fact | DR `CHARGEBACK_RECOVERABLE` D / CR the rail's clearing D |
+|  | `dispute-attribution:<id>` — iff the counterparty bears a posted share | DR the counterparty (payable or wallet) S / CR `CHARGEBACK_RECOVERABLE` S |
+| `WON` | `dispute-won:<id>` | DR the rail's clearing D / CR `CHARGEBACK_RECOVERABLE` D |
+|  | `dispute-restoration:<id>` — iff a posted share | DR `CHARGEBACK_RECOVERABLE` S / CR the counterparty S |
+| `LOST` / `ACCEPTED` | `dispute-loss:<id>` — iff an excess | DR `DISPUTE_COSTS` E / CR `CHARGEBACK_RECOVERABLE` E |
+| any charged-back stage | `dispute-fee:<id>` — once, when the PSP reports its fee | DR `DISPUTE_COSTS` F / CR the rail's clearing F |
+| (standing; headroom freed) | `dispute-reattribution:<id>:<cause>` — a capture landed, a counted refund failed, or a sibling chargeback won | DR the counterparty x / CR `CHARGEBACK_RECOVERABLE` x (or CR `DISPUTE_COSTS` after a loss) |
+
+**The split is judged when the chargeback arrives**, under the attempt row lock both money
+paths take: the counterparty bears `S = min(D, captured − non-failed refunds − standing
+attributions)` — posted to its account, or **parked** in the recoverable when its account takes
+no postings — and the rest, the excess `E`, is value the network took that the platform had
+already returned (or, for an attempt that has not captured, never credited). A refund is judged
+by the same arithmetic the other way. A chargeback is recorded at once whatever the capture's
+state, and every event that frees headroom — a capture landing, a counted refund failing, a
+sibling chargeback won — re-attributes the standing excess to the counterparty, so the split is
+always the one a chargeback arriving now would take. The stage facts (`ChargebackReceived`, `DisputeResolved`) name the split's accounts —
+`counterpartyAccountId`, `recoverableAccountId` — never an amount. A counterparty below zero is
+merchant debt or a receivable from the customer, counted by `finapp.ledger.negative.positions`
+and never absorbed.
+
 ## 7. The financial flows, per rail and instrument
 
 `business operation → payment state → ledger effect → external rail → settlement → reconciliation`.
@@ -229,8 +255,9 @@ cycle arrives with a new reference and is a new dispute, never a reopened one.
 | Card void | `VOIDED` | **None** — orchestration only: nothing was captured | Card PSP | None | Void reference ↔ PSP |
 | Card clearing notice | evidence recorded (shipped `P7-TSK-005`: one `clearing_record` per capture, append-only) | **None** — clearing agrees an obligation, it does not move money (`INV-SET-01`) | Card PSP | Phase 8 | Clearing references stored (`acquirer_reference`, `network_transaction_id`) |
 | Card refund | refund `COMPLETED` | DR wallet or payable (ADR-0054) / CR `SETTLEMENT_CLEARING` | Card PSP | Phase 8 | Refund entry ↔ PSP reference |
-| Chargeback | dispute `CHARGED_BACK` (the stage shipped `P7-TSK-012`: from notifications alone, one row per provider dispute reference; its posting is `P7-TSK-013`'s) | CR `SETTLEMENT_CLEARING` D; DR counterparty share; DR `CHARGEBACK_RECOVERABLE` excess (ADR-0061 §4) | Card PSP / network | Netted by the PSP (Phase 8) | Dispute reference (stored, unique per provider) ↔ stage entries |
-| Dispute won / lost | `WON` / `LOST` | Won: the exact inverse of the principal lines. Lost: excess written off to `DISPUTE_COSTS` | Card PSP | Phase 8 | As above |
+| Chargeback | dispute `CHARGED_BACK` (the stage shipped `P7-TSK-012`: from notifications alone, one row per provider dispute reference; its posting shipped `P7-TSK-013`: two entries, the external fact then the attribution, the split judged under the attempt lock) | CR `SETTLEMENT_CLEARING` D; DR counterparty share; DR `CHARGEBACK_RECOVERABLE` excess (ADR-0061 §4) — per account; as entries, DR recoverable D / CR clearing D, then DR counterparty S / CR recoverable S (§6's table) | Card PSP / network | Netted by the PSP (Phase 8) | Dispute reference (stored, unique per provider) ↔ stage entries (their `reference` is the dispute id) |
+| Dispute won / lost | `WON` / `LOST` (shipped `P7-TSK-013`) | Won: the exact inverse of the principal lines, every account netting to zero. Lost: excess written off to `DISPUTE_COSTS`, the counterparty's share standing as its debt | Card PSP | Phase 8 | As above |
+| Dispute fee | reported with or after the chargeback (shipped `P7-TSK-013`) | DR `DISPUTE_COSTS` / CR `SETTLEMENT_CLEARING` — the platform bears it in Phase 7 | Card PSP | Netted by the PSP | The fee entry ↔ the dispute |
 | Pay-in to a wallet (pay-by-bank) | push `EXECUTED` | DR `INSTANT_CLEARING` / CR wallet | Instant scheme | Scheme cycle (Phase 8) | End-to-end reference ↔ scheme reference |
 | Pay-in to a checkout | push `EXECUTED` | DR `INSTANT_CLEARING` gross / CR payable gross; DR payable fee / CR `FEE_REVENUE` fee | Instant scheme | Scheme cycle | As above, plus the order |
 | Return payment (refund of a pay-in) | refund `COMPLETED` (shipped `P7-TSK-010`: the refund command per `refundMode`, `V018`'s per-model bound, `ReturnResolution`'s partitioned sweep) | DR wallet or payable / CR `INSTANT_CLEARING` (merchant-bound: the capture's four-line inverse, ADR-0054) | Instant scheme | Scheme cycle | Return reference (ours, on the refund row) ↔ original (the attempt's scheme reference, cited on the wire); the return's own scheme reference lands at `COMPLETED` |

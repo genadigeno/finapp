@@ -89,7 +89,15 @@ public class DisputeOperations {
             String openedAt,
             List<StageChangeView> history) {}
 
-    /** A dispute as the operator reads it: the merchant's view plus reconciliation's keys. */
+    /**
+     * A dispute as the operator reads it: the merchant's view plus reconciliation's keys and,
+     * since `P7-TSK-013`, the chargeback's attribution (ADR-0061 §3–§5) — what the
+     * counterparty was charged ({@code counterpartyShare}), what is the counterparty's but
+     * parked because its account took no postings ({@code parkedShare}, an operator's to
+     * recover), and the excess the platform bears ({@code excess}), each a decimal string in
+     * {@code chargebackCurrency} and {@code null} until the funds are taken; and the PSP's
+     * {@code disputeFee}, {@code null} until reported.
+     */
     public record OperatorDisputeView(
             String disputeId,
             String paymentIntentId,
@@ -99,6 +107,10 @@ public class DisputeOperations {
             String reason,
             String chargebackAmount,
             String chargebackCurrency,
+            String counterpartyShare,
+            String parkedShare,
+            String excess,
+            String disputeFee,
             String openedAt,
             List<StageChangeView> history) {}
 
@@ -204,15 +216,22 @@ public class DisputeOperations {
                 dispute.reason().name(),
                 chargebackAmount(dispute),
                 chargebackCurrency(dispute),
+                decimal(dispute.split().map(com.finapp.payments.ChargebackSplit::counterpartyShare)),
+                decimal(dispute.split().map(com.finapp.payments.ChargebackSplit::parkedShare)),
+                decimal(dispute.split().map(com.finapp.payments.ChargebackSplit::excess)),
+                decimal(dispute.fee()),
                 dispute.openedAt().toString(),
                 history(trail));
     }
 
     /** What the network took, as a decimal string - null until the funds are taken. */
     private static String chargebackAmount(Dispute dispute) {
-        return dispute.chargeback()
-                .map(amount -> amount.toBigDecimal().toPlainString())
-                .orElse(null);
+        return decimal(dispute.chargeback());
+    }
+
+    /** A decimal string, or null for an absent amount - never a zero standing for "unknown". */
+    private static String decimal(java.util.Optional<com.finapp.sharedkernel.money.Money> amount) {
+        return amount.map(money -> money.toBigDecimal().toPlainString()).orElse(null);
     }
 
     private static String chargebackCurrency(Dispute dispute) {

@@ -205,6 +205,14 @@ class NoFloatingPointMoneyRulesTest {
                     // there is no monetary value here to be imprecise about.
                     "com.finapp.app.telemetry.PayInMetrics",
                     "com.finapp.app.telemetry.PayInMetrics$Cached",
+                    // P7-TSK-013. The SAME case again, the PaymentMetrics shape exactly: the
+                    // COUNT of counterparty accounts below zero, per purpose - longs out of
+                    // the ledger's grouped count, published through the ToDoubleFunction
+                    // Micrometer's Gauge imposes, with NaN the sentinel for unreadable. The
+                    // negative BALANCES are deliberately not published (INV-AUD-02: the gauge
+                    // is a count), so there is no monetary value here to be imprecise about.
+                    "com.finapp.app.telemetry.NegativePositionMetrics",
+                    "com.finapp.app.telemetry.NegativePositionMetrics$Cached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

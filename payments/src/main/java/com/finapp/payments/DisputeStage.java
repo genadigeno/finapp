@@ -55,21 +55,24 @@ public enum DisputeStage {
     /** The issuer asks about the payment; nothing has moved. An entry stage. */
     INQUIRY,
 
-    /** The network has taken the funds. An entry stage — and, from `P7-TSK-013`, the
-     * chargeback's posting. */
+    /** The network has taken the funds. An entry stage — and the chargeback's posting
+     * (`P7-TSK-013`): the external fact against the rail's clearing, then the counterparty's
+     * attributed share. */
     CHARGED_BACK,
 
     /** Evidence has been submitted against the chargeback. No money moves. */
     REPRESENTED,
 
-    /** The network returned the funds — terminal; from `P7-TSK-013`, the chargeback's exact
-     * inverse. */
+    /** The network returned the funds — terminal; the chargeback's exact inverse
+     * (`P7-TSK-013`). */
     WON,
 
-    /** The network upheld the chargeback — terminal. */
+    /** The network upheld the chargeback — terminal; the excess, if any, written off
+     * (`P7-TSK-013`). */
     LOST,
 
-    /** The chargeback was accepted rather than contested — terminal. */
+    /** The chargeback was accepted rather than contested — terminal; the excess, if any,
+     * written off like a loss (`P7-TSK-013`). */
     ACCEPTED,
 
     /** An inquiry that never became a chargeback — terminal. */
@@ -113,6 +116,27 @@ public enum DisputeStage {
      */
     public boolean isChargedBack() {
         return this != INQUIRY && this != CLOSED;
+    }
+
+    /**
+     * Whether the chargeback STANDS at this stage (`P7-TSK-013`): the network holds the funds —
+     * charged back, represented, lost or accepted — which is exactly when its attribution counts
+     * against the combined bound ({@code INV-DSP-01}) and when a failed counted refund's share of
+     * its excess comes back to the counterparty. A win returned the funds: its attribution was
+     * reversed with them and counts no more.
+     */
+    public boolean isStanding() {
+        return isChargedBack() && this != WON;
+    }
+
+    /**
+     * Whether the network may still RETURN the funds from this stage (`P7-TSK-013`): a standing
+     * chargeback from which {@code WON} is reachable. While a counterparty's posted share is in
+     * such a dispute, a win would credit its account back — so the account cannot close
+     * ({@code PendingCredits}: empty means nothing on its way either).
+     */
+    public boolean isRestorable() {
+        return isStanding() && canReach(WON);
     }
 
     /** The entry stages, in declaration order. */
@@ -210,6 +234,24 @@ public enum DisputeStage {
     public static String notChargedBackSqlValueList() {
         return Arrays.stream(values())
                 .filter(value -> !value.isChargedBack())
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The standing stages, as a SQL literal list — `V021`'s combined-bound triggers (the
+     * refund's and the dispute's) are generated from this. */
+    public static String standingSqlValueList() {
+        return Arrays.stream(values())
+                .filter(DisputeStage::isStanding)
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The restorable stages, as a SQL literal list — the account-closing read is generated
+     * from this. */
+    public static String restorableSqlValueList() {
+        return Arrays.stream(values())
+                .filter(DisputeStage::isRestorable)
                 .map(value -> "'" + value.name() + "'")
                 .collect(Collectors.joining(", "));
     }

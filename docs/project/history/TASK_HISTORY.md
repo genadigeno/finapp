@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 156 "Previously" blocks, newest first, from `P7-TSK-011` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 157 "Previously" blocks, newest first, from `P7-TSK-012` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,79 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P7-TSK-012` — The dispute aggregate, its notifications and its stages** — `COMPLETE` (2026-09-27).
+**M7.6, Disputes, opens at 1 of 3: a dispute runs its stages from the card PSP's signed
+notifications alone — one row per `(provider, provider_dispute_reference)` however often
+notified, later stages applying the intervening ones in order, the PSP's words stopping at the
+door — and no money moves yet** (ADR-0061 §1, §2, §6 shipped; `INV-LIFE-01`, `-02`, `-04`,
+`INV-IDEM-04`, `INV-PAY-03`, `INV-MER-01`, `INV-RAIL-01`, `INV-HIST-01`).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A dispute runs its stages from notifications alone | Every path through the machine delivered in order over the signed door, each edge a conditional transition with its trail row, its `payments.DisputeStageApplied` record and its facts (`DisputeNotificationDatabaseTest#everyStageRunsFromNotificationsAlone`); ADR-0061 §2's sentence — a `WON` heard first opens at `CHARGED_BACK` and walks through `REPRESENTED`, the history showing both, the facts in causal order, the platform every stage's actor (`#aLaterStageAppliesTheInterveningOnesInOrder`); a late stage quiet, a contradiction loud (`#lateIsQuietAndAContradictionIsLoud`) |
+| …one row however often notified | Ten deliveries under ONE event id absorbed by the inbox; ten under FRESH ids arbitrated by the unique reference — one row, one record, one fact, every statement retained (`#tenIdenticalDeliveriesHaveOneEffect`, `#tenFreshIdDeliveriesHaveOneEffect`); ten racing deliveries of DIFFERENT consistent stages converge on one row at `WON` with a legal, duplicate-free trail (`#aMixedStageRaceConverges`) |
+| Merchant reads tenant-scoped, negative-tested in the tenancy battery | The battery's table +2 routes, its addressed probes 7 → 8: A's key on B's dispute is the one 404 byte-identical to an unknown one, and A's listing carries nothing of B's (`MerchantTenancyBatteryDatabaseTest`); the operator's reads refused to another population with nothing recorded (`#theOperatorReadsUnderThePermission`) |
+
+**The machine is the enum's, generated for every writer**: `DisputeStage` (`INQUIRY →
+{CHARGED_BACK, CLOSED}`, `CHARGED_BACK → {REPRESENTED, LOST, ACCEPTED}`, `REPRESENTED → {WON,
+LOST}`, four terminals) generates `V020`'s stage `CHECK`s, its birth trigger (entry stages
+only) and its every-writer edge trigger. Order-blindness is computed from the same graph: the
+shortest walk to the notified stage is exactly the stages it implies (asserted for every pair
+against a brute-force enumeration of every walk), so no stage the network did not need to pass
+through is ever invented. A stage the dispute has passed is a late delivery, quiet; anything
+else contradicts the record, loud on the webhook meter, the first record standing.
+
+**The external fact first** (ADR-0061 §4): a dispute is recorded against whatever card attempt
+the network names, whatever its state — the network has already acted, so refusing would leave
+`SETTLEMENT_CLEARING` disagreeing with what the PSP will net; attribution is `-013`'s bound. The
+capability gate (`INV-RAIL-01`: "whether a dispute can follow") refuses a rail declaring no
+chargebacks before anything is read.
+
+**The gate's own find — the amount rule**: the design froze the disputed amount at birth, so a
+dispute opened as an inquiry stored the inquired TRANSACTION amount, and a partial chargeback
+on its escalation would have been refused as a contradiction — the dispute stuck at `INQUIRY`
+while the network had taken the funds (refusing to record what the network did, ADR-0061's
+rejected alternative) and `-013` handed the wrong figure to post. The chargeback's amount now
+ARRIVES with the chargeback — nullable, present exactly when the funds are taken (`V020`'s
+generated coherence `CHECK`), moving only `NULL → value` for every writer (the captured
+amount's discipline) — and a late inquiry repeating the full amount is quiet ordering, not a
+contradiction; a later statement of ANOTHER chargeback amount moves nothing, loudly.
+
+**The reads**: the merchant's pair over its key — the tenant predicate the disputed payment's
+credit account among its own payables (`credit_account_id = ANY (?)`, the accounts from the
+ledger's owner-scoped read in the same transaction — the tenancy register's third spelling of
+the predicate; `payments` still never learns what a merchant is), the listing bounded at 100
+with `truncated` saying when there were more, the network's reference never shown; the
+operator's pair behind the new `DISPUTE_ADMINISTER` (held by `LEDGER_OPERATOR`), every dispute
+shown audited as `payments.DisputeRead`.
+
+**A pre-existing test-isolation leak, exposed by the gate's one-invocation battery and fixed**:
+`RoutingPolicyDatabaseTest` published CARD-ONLY routing versions effective NOW into the test
+JVM's one shared database, and the newest-effective resolution made them the live policy for
+every later suite — that suite then `WithdrawalDatabaseTest` refused nine of ten withdrawals
+`NoEligibleRail`, reproduced deterministically, and every later version pin read the routing
+suite's number. Its versions are now published dormant (effective 2099) and whole (version 4's
+four rules), and the pair passes in one JVM. This re-diagnoses `P7-TSK-011`'s "cross-clock"
+`NoEligibleRail` storm (the same card-only signature), which that gate had chipped as clock skew.
+
+**Also found and fixed at the gate**: the Phase 7 status paragraph in §Current Phase still said
+"first task `P7-TSK-001` complete, next `P7-TSK-002`" — ten tasks stale, the stale-second-copy
+class a sixth time; and the three duplicated entry headers the `P7-TSK-009`…`-011` gate records
+had written into `BACKLOG.md`. Neither changed behaviour.
+
+19 probes, all caught in valid runs — every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical (`MUTATION_TESTING.md` §2 +19 rows). Multi-instance PASS — the inbox's key,
+the unique reference with its waiting `ON CONFLICT`, the row lock and the conditional stage
+transitions are the arbiters; nothing lives in process state and nothing is scheduled.
+Registers: `DISTRIBUTED_EXECUTION.md` §3 +1 row (with `-013`'s lock-order input),
+`DATA_CLASSIFICATION.md` +17 rows, `AUDITABLE_ACTIONS.md` +2, `MODULE_ARCHITECTURE.md` +3 events,
+`RoutePermissionRegisterTest` +2, `OwnershipIsScopedTest` +5 entries and the third tenant
+spelling, `SystemActorCallSitesAreEnumeratedTest`'s door claim widened, the tenancy battery +2
+routes, `RAIL_AND_DISPUTE_LIFECYCLES.md` §6 and §7 with provenance, ADR-0061 §1, §2 and §6
+annotated, the OpenAPI baseline regenerated (+4 paths, purely additive). Verified by targeted
+tiers from fresh runs — the fleet-wide hermetic test task green at 1689 tests across 14 modules, 0 failures, and 270 targeted database tests across 22 suites, 0 failures, plus
+the platform classification guard — the full battery deliberately skipped on the owner's
+instruction, no fleet-wide database or kafka counts claimed.
 
 **`P7-TSK-011` — The wallet as an instrument: pay a checkout from the wallet** — `COMPLETE` (2026-09-27).
 **M7.5, The wallet as an instrument, closes at 1 of 1: the book rail — a checkout paid from a

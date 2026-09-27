@@ -636,6 +636,15 @@ them are classified at the ceiling regardless.
 | `dispute` | `chargeback_amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) — what the network took, present exactly once the funds are taken (`payment_attempt.captured_amount_minor`'s reasoning: the posting's own number, from `P7-TSK-013`) |
 | `dispute` | `chargeback_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape (the captured amount's row) |
 | `dispute` | `chargeback_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `counterparty_share_amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) — what the chargeback charged the payment's counterparty, the combined bound's judgement (`P7-TSK-013`, `INV-DSP-01`); grows only by re-attribution |
+| `dispute` | `counterparty_share_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape — the chargeback's own currency, `CHECK`-held |
+| `dispute` | `counterparty_share_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `parked_share_amount_minor` | `RESTRICTED-FINANCIAL` | An amount — the counterparty's share parked in `CHARGEBACK_RECOVERABLE` because its account took no postings (ADR-0061 §5): a sum a person or merchant owes, recovered by an operator |
+| `dispute` | `parked_share_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `parked_share_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `dispute_fee_amount_minor` | `RESTRICTED-FINANCIAL` | An amount — the dispute fee the PSP charged the platform (ADR-0061 §4), a cost of a person's contested payment |
+| `dispute` | `dispute_fee_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `dispute_fee_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
 | `dispute` | `opened_at` | `CONFIDENTIAL` | Dates a contest of a person's payment (the `payment_attempt.created_at` reasoning) |
 | `dispute_event` | `id` | `INTERNAL` | A sequence identifier |
 | `dispute_event` | `dispute_id` | `INTERNAL` | The trail's subject |

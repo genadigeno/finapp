@@ -1,20 +1,26 @@
 package com.finapp.payments;
 
 import com.finapp.ledger.LedgerAccountId;
+import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.Money;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
 /**
- * Persistence for {@link Dispute} (`P7-TSK-012`, over `V020`).
+ * Persistence for {@link Dispute} (`P7-TSK-012`, over `V020`; the attribution and the fee over
+ * `V021`, `P7-TSK-013`).
  *
- * <p>Three populations read disputes, and each read says which it serves:
+ * <p>Four populations read disputes, and each read says which it serves:
  *
  * <ul>
  *   <li><strong>The notification's resolver</strong> — {@link #insert} and
  *       {@link #findForUpdate}, keyed by the network's own {@code (provider, reference)}, the
  *       signed door's attribution. Unscoped by design: the PSP names a dispute on any payment.
+ *   <li><strong>The combined bound</strong> — {@link #attributedStanding} and
+ *       {@link #standingOn}, keyed by the contested attempt and valid only under that attempt's
+ *       row lock (the lock-then-look contract both money paths keep, `INV-DSP-01`).
  *   <li><strong>The merchant</strong> — {@link #findForCounterparties} and
  *       {@link #listForCounterparties}: the tenant is the payment's credit account, and it rides
  *       every statement ({@code credit_account_id = ANY (?)}, {@code INV-MER-01}) with the
@@ -48,9 +54,45 @@ public interface DisputeStore<T> {
     /**
      * Moves the dispute {@code before → after}, conditional on {@code before}'s stage, with
      * its trail row — stamped {@code at}, from the caller's injected clock — in the same
-     * transaction. {@code false} when another writer moved it first.
+     * transaction. The chargeback, its attribution and the fee ride the statement: `V021` lets
+     * each move only as the aggregate does. {@code false} when another writer moved it first.
      */
     boolean transition(T unitOfWork, Dispute before, Dispute after, Instant at);
+
+    /**
+     * Writes {@code after}'s attribution — a re-attribution of {@code before}'s excess
+     * (`P7-TSK-013`, ADR-0061 §3) — conditional on the stage and on the shares {@code before}
+     * read: {@code false} when either moved since. No trail row: the stage did not move; the
+     * caller audits the act and posts its entry.
+     */
+    boolean reattribute(T unitOfWork, Dispute before, Dispute after);
+
+    /**
+     * Records {@code after}'s dispute fee, conditional on none being recorded yet — the fee
+     * moves only {@code NULL → value} (`V021`). {@code false} when a fee was recorded first.
+     */
+    boolean recordFee(T unitOfWork, Dispute before, Dispute after);
+
+    /**
+     * What the chargebacks STANDING on {@code attempt} attribute to its counterparty, posted or
+     * parked — the combined bound's second term (`INV-DSP-01`). Valid only under the attempt's
+     * row lock; zero in {@code currency} when none stands.
+     */
+    Money attributedStanding(T unitOfWork, PaymentAttemptId attempt, CurrencyCode currency);
+
+    /**
+     * The chargebacks standing on {@code attempt}, oldest first, each LOCKED — the order a failed
+     * refund's share is re-attributed in. Valid only under the attempt's row lock.
+     */
+    List<Dispute> standingOn(T unitOfWork, PaymentAttemptId attempt);
+
+    /**
+     * Whether a chargeback whose share was posted to {@code account} may still be RETURNED — a
+     * win would credit the account back — so the account must not close (`P7-TSK-013`; the
+     * answer account closing asks through its {@code PendingCredits} port, under the account's
+     * lock).
+     */
+    boolean anyRestorableTo(T unitOfWork, LedgerAccountId account);
 
     /** The operator's read of one dispute, across tenants by permission. */
     Optional<Found> findById(T unitOfWork, DisputeId id);

@@ -36,7 +36,20 @@ import lombok.RequiredArgsConstructor;
  *                | (a capture)            | (a refund)              | (a payout)              |
  *   CREDIT       | captured               | fees returned           | other                   | other
  *   DEBIT        | fees                   | refunded                | paid out                | other
+ *
+ *   payable line | CREDITS the recoverable or dispute costs | DEBITS the recoverable
+ *                | (a chargeback's attribution)             | (a won chargeback's restoration)
+ *   DEBIT        | charged back                             | other
+ *   CREDIT       | other                                    | chargebacks reversed
  * </pre>
+ *
+ * <p><strong>A chargeback is never a refund here</strong> (`P7-TSK-013`, ADR-0061 §4): its
+ * external fact moves the rail's clearing against {@code CHARGEBACK_RECOVERABLE}, and the
+ * merchant's share is charged out of the recoverable in a SEPARATE entry — so the payable's line
+ * faces the recoverable (or {@code DISPUTE_COSTS}, when a failed refund's share returns after a
+ * loss wrote the excess off), never a sale clearing. A one-entry chargeback with no excess would
+ * have been line-for-line a retained refund, and a merchant would have read its chargebacks as
+ * refunds — the `P7-TSK-010` mislabel class, prevented by the entry shape rather than found.
  *
  * <p>If a composer ever changes those shapes, this table is the thing that must change with it —
  * and it is one screen away from the code that would have changed, which is the point of putting
@@ -50,9 +63,11 @@ import lombok.RequiredArgsConstructor;
  * <h2>The terms sum to the position by construction</h2>
  *
  * <p>Every bucket came from the one statement the position was folded from, so
- * {@code position = captured − fees − refunded + feesReturned − paidOut + other} is an identity
- * of the breakdown, not a reconciliation this class performs. {@link Payable#terms()} restates it
- * so a caller can check it without re-deriving the sign convention.
+ * {@code position = captured − fees − refunded + feesReturned − paidOut − chargedBack +
+ * chargebacksReversed + other} is an identity of the breakdown, not a reconciliation this class
+ * performs. {@link Payable#terms()} restates it so a caller can check it without re-deriving the
+ * sign convention. A payable below zero after a chargeback is merchant debt ({@code INV-MER-07}
+ * amended): never more than the sale credited, recovered from later captures before any payout.
  *
  * <h2>Paid out, not in flight</h2>
  *
@@ -70,6 +85,9 @@ public final class MerchantPayable {
      *
      * @param position what the platform owes, derived; positive means owed TO the merchant
      * @param paidOut payouts the rail accepted, posted against {@code PAYOUT_CLEARING}
+     * @param chargedBack the chargebacks attributed to this merchant (`P7-TSK-013`) — its
+     *     sales' shares, charged out of {@code CHARGEBACK_RECOVERABLE}
+     * @param chargebacksReversed what won chargebacks gave back (`P7-TSK-013`)
      * @param other movements that are none of the above, SIGNED — an operator adjustment today
      */
     public record Payable(
@@ -79,6 +97,8 @@ public final class MerchantPayable {
             Money refunded,
             Money feesReturned,
             Money paidOut,
+            Money chargedBack,
+            Money chargebacksReversed,
             Money other) {
 
         public Payable {
@@ -88,6 +108,8 @@ public final class MerchantPayable {
             Objects.requireNonNull(refunded, "refunded must not be null");
             Objects.requireNonNull(feesReturned, "feesReturned must not be null");
             Objects.requireNonNull(paidOut, "paidOut must not be null");
+            Objects.requireNonNull(chargedBack, "chargedBack must not be null");
+            Objects.requireNonNull(chargebacksReversed, "chargebacksReversed must not be null");
             Objects.requireNonNull(other, "other must not be null");
         }
 
@@ -97,6 +119,8 @@ public final class MerchantPayable {
                     .minus(refunded)
                     .plus(feesReturned)
                     .minus(paidOut)
+                    .minus(chargedBack)
+                    .plus(chargebacksReversed)
                     .plus(other);
         }
     }
@@ -110,7 +134,12 @@ public final class MerchantPayable {
                     // stands between, so the payer's own wallet faces the payable -
                     // same entry shapes, same direction table.
                     AccountPurpose.CUSTOMER_WALLET,
-                    AccountPurpose.PAYOUT_CLEARING);
+                    AccountPurpose.PAYOUT_CLEARING,
+                    // The chargeback's attribution entries (P7-TSK-013): the payable faces
+                    // the recoverable, or dispute costs when a written-off share returns.
+                    // After the others, so no existing entry's label moves.
+                    AccountPurpose.CHARGEBACK_RECOVERABLE,
+                    AccountPurpose.DISPUTE_COSTS);
 
     /** The clearings a SALE moves through — one per external rail, same entry shapes. */
     private static boolean saleClearing(AccountPurpose purpose) {
@@ -148,6 +177,8 @@ public final class MerchantPayable {
         Money refunded = zero;
         Money feesReturned = zero;
         Money paidOut = zero;
+        Money chargedBack = zero;
+        Money chargebacksReversed = zero;
         Money other = zero;
         for (PositionBreakdown.Bucket bucket : breakdown.buckets()) {
             Optional<PositionBreakdown.Counterparty> counterparty = bucket.counterparty();
@@ -177,6 +208,21 @@ public final class MerchantPayable {
                 // A payout the rail accepted: the payable debited, payout clearing credited
                 // (ADR-0051 §2, keyed merchant-payout:<payoutId>).
                 paidOut = paidOut.plus(bucket.total());
+            } else if (counterparty.isPresent()
+                    && disputeSide(counterparty.get().purpose())
+                    && counterparty.get().direction() == Direction.CREDIT
+                    && !credit) {
+                // A chargeback attributed to this merchant: the payable debited out of the
+                // recoverable - or out of dispute costs, a failed refund's share returning
+                // after a loss (ADR-0061 sections 3-4, P7-TSK-013).
+                chargedBack = chargedBack.plus(bucket.total());
+            } else if (counterparty.isPresent()
+                    && counterparty.get().purpose() == AccountPurpose.CHARGEBACK_RECOVERABLE
+                    && counterparty.get().direction() == Direction.DEBIT
+                    && credit) {
+                // A won chargeback's restoration: the recoverable debited, the payable credited
+                // back - the attribution's exact inverse.
+                chargebacksReversed = chargebacksReversed.plus(bucket.total());
             } else {
                 // None of the shapes above. Signed as the liability reads it: a credit increases
                 // what is owed, a debit reduces it.
@@ -184,6 +230,13 @@ public final class MerchantPayable {
             }
         }
         return new Payable(
-                breakdown.position(), captured, fees, refunded, feesReturned, paidOut, other);
+                breakdown.position(), captured, fees, refunded, feesReturned, paidOut,
+                chargedBack, chargebacksReversed, other);
+    }
+
+    /** The platform's side of a chargeback's attribution entries — never a sale clearing. */
+    private static boolean disputeSide(AccountPurpose purpose) {
+        return purpose == AccountPurpose.CHARGEBACK_RECOVERABLE
+                || purpose == AccountPurpose.DISPUTE_COSTS;
     }
 }

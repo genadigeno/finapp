@@ -7,10 +7,12 @@ import com.finapp.app.payments.JdbcPaymentParticipants;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AsOf;
 import com.finapp.ledger.ChartOfAccounts;
+import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.JdbcBalanceProjection;
 import com.finapp.ledger.JdbcJournalEntryStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
+import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.PostingObserver;
@@ -670,6 +672,73 @@ class MerchantCaptureDatabaseTest {
         assertThatThrownBy(() -> reserve(clearing(), intentRef, AMOUNT, ZERO))
                 .isInstanceOf(MerchantSettlementException.class)
                 .hasMessageContaining("disagree about whose payment this is");
+    }
+
+    @Test
+    @DisplayName("P7-TSK-013: a chargeback of a merchant's sale charges ITS payable through the"
+            + " production seam - two lines, no fee returned (the merchant loses the sale and"
+            + " keeps the fee it was charged) - and a win's restoration is the exact inverse")
+    void aChargebackChargesTheMerchantsPayableAndReturnsNoFee() throws Exception {
+        Merchant merchant = onboardedMerchant("0.029", 30L, RefundFeePolicy.RETURNED);
+        UUID intentRef = pinFor(merchant, AMOUNT);
+        LedgerAccountId recoverable = operational(AccountPurpose.CHARGEBACK_RECOVERABLE);
+
+        assertThat(chargeback(intentRef, merchant.payable(), recoverable, false))
+                .as("even under a RETURNED policy: ADR-0054 governs refunds only")
+                .containsExactly(
+                        new JournalLine(merchant.payable(), Direction.DEBIT, AMOUNT),
+                        new JournalLine(recoverable, Direction.CREDIT, AMOUNT));
+        assertThat(chargeback(intentRef, merchant.payable(), recoverable, true))
+                .containsExactly(
+                        new JournalLine(recoverable, Direction.DEBIT, AMOUNT),
+                        new JournalLine(merchant.payable(), Direction.CREDIT, AMOUNT));
+    }
+
+    @Test
+    @DisplayName("P7-TSK-013: a chargeback charging an account that is NOT the pinned merchant's"
+            + " payable is REFUSED, loudly - the checked assumption at the dispute - and one of"
+            + " nobody's merchant's charges the wallet's two lines")
+    void aChargebackAgainstAnotherAccountIsRefused() throws Exception {
+        Merchant merchant = onboardedMerchant("0.029", 30L);
+        UUID intentRef = pinFor(merchant, AMOUNT);
+        LedgerAccountId recoverable = operational(AccountPurpose.CHARGEBACK_RECOVERABLE);
+
+        assertThatThrownBy(() -> chargeback(intentRef, clearing(), recoverable, false))
+                .isInstanceOf(MerchantSettlementException.class)
+                .hasMessageContaining("disagree about whose payment this is");
+
+        LedgerAccountId wallet = clearing(); // any account: the wallet seam never looks it up
+        assertThat(chargeback(IDS.next(), wallet, recoverable, false))
+                .as("no fee pin: the wallet's two lines, byte for byte the composer's own")
+                .containsExactly(
+                        new JournalLine(wallet, Direction.DEBIT, AMOUNT),
+                        new JournalLine(recoverable, Direction.CREDIT, AMOUNT));
+    }
+
+    /** The dispute seam production wires (`MerchantBeans`), attributing or restoring AMOUNT. */
+    private List<JournalLine> chargeback(
+            UUID intentRef, LedgerAccountId counterparty, LedgerAccountId counterpart,
+            boolean restore) {
+        com.finapp.payments.DisputeComposition<Connection> seam =
+                new com.finapp.app.merchant.MerchantBoundDisputeComposition(
+                        settlement(), new com.finapp.payments.WalletDisputeComposition());
+        com.finapp.payments.ChargebackAttribution attribution =
+                new com.finapp.payments.ChargebackAttribution(
+                        PaymentIntentId.of(intentRef),
+                        PaymentAttemptId.of(IDS.next()),
+                        com.finapp.payments.DisputeId.of(IDS.next()),
+                        counterparty,
+                        counterpart,
+                        AMOUNT,
+                        correlation(),
+                        Instant.now(CLOCK));
+        return runner.inTransaction(
+                uow -> restore ? seam.restore(uow, attribution) : seam.attribute(uow, attribution));
+    }
+
+    private LedgerAccountId operational(AccountPurpose purpose) {
+        return runner.inTransaction(
+                uow -> new ChartOfAccounts<>(ledgerAccounts).resolve(uow, purpose, EUR).id());
     }
 
     @Test
@@ -1469,7 +1538,22 @@ class MerchantCaptureDatabaseTest {
                 CLOCK,
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
-                new com.finapp.ledger.JdbcLedgerAccountStore());
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        new PostingService(
+                                executor(),
+                                new JdbcJournalEntryStore(IDS),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                PostingObserver.NONE),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS,
+                        CLOCK));
     }
 
     private PaymentCapture capture() {

@@ -122,6 +122,14 @@ public final class PaymentOutcomes {
     @NonNull private final com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccounts;
 
     /**
+     * The money of disputes (`P7-TSK-013`, ADR-0061 §3): a refund's failure hands the share of
+     * any standing chargeback's excess it had caused back to the counterparty, and a refund's
+     * dispatch asks it for the combined bound's chargeback term. Appended last (the
+     * constructor is positional history).
+     */
+    @NonNull private final ChargebackAccounting chargebacks;
+
+    /**
      * What committed (or was found committed by the loser of a harmless race).
      *
      * @param acting whether <strong>this</strong> call's conditional transition fired
@@ -169,6 +177,17 @@ public final class PaymentOutcomes {
      */
     public Money refundReservation(Connection uow, RefundReservation reservation) {
         return refundComposition.reserve(uow, reservation);
+    }
+
+    /**
+     * What the chargebacks standing on {@code attempt} attribute to its counterparty
+     * (`P7-TSK-013`, {@code INV-DSP-01}) — the refund bound's second term, read under the
+     * attempt lock the refund's dispatch holds: refunds and chargebacks together never take more
+     * from the counterparty than the capture credited it.
+     */
+    public Money chargedBackToCounterparty(
+            Connection uow, PaymentAttemptId attempt, com.finapp.sharedkernel.money.CurrencyCode currency) {
+        return chargebacks.attributedStanding(uow, attempt, currency);
     }
 
     /**
@@ -320,6 +339,13 @@ public final class PaymentOutcomes {
                     // known, so the composing flow can record what it means - a checkout
                     // order carrying the entry that paid for it - in THIS transaction.
                     composition.settled(uow, settlement, posted.entryId().value());
+
+                    // THE CAPTURE FREES HEADROOM (P7-TSK-013, the gate's find): a chargeback
+                    // stated before this capture resolved was judged against nothing captured
+                    // and rests as excess; the counterparty has just been credited, so the
+                    // standing excess comes back to it, under the attempt row this transaction's
+                    // conditional already holds - after the capture's own posting.
+                    chargebacks.captureLanded(uow, attemptId, intentId, amount, correlation, now);
 
                     if (intents.transition(
                             uow,
@@ -833,9 +859,23 @@ public final class PaymentOutcomes {
                 if (acting) {
                     refunds.recordTransition(
                             uow, refund.id(), from, RefundStatus.FAILED, platform, now);
+                    // THE ATTEMPT, LOCKED, BEFORE THE HOLD'S ACCOUNT (P7-TSK-013): a chargeback
+                    // standing on this attempt may have counted this refund as non-failed and
+                    // parked the double-take it assumed; under the lock the chargeback judges
+                    // with, that excess comes back to the counterparty below. Attempt, then
+                    // account - the order the dispatch keeps - so the two cannot deadlock.
+                    Optional<PaymentAttempt> disputable =
+                            chargebacks.lockIfDisputable(uow, refund.attemptId());
                     // The customer's money is theirs again, and the freed budget is the sum
                     // bound's own arithmetic (a FAILED refund no longer counts).
                     holds.release(uow, refund.holdReference());
+                    // ADR-0061 section 3's last rule: the money this refund was counted as
+                    // returning never went back, so its share of any chargeback's excess is the
+                    // counterparty's again - under the same lock, in this same transaction.
+                    disputable.ifPresent(
+                            locked ->
+                                    chargebacks.refundFailed(
+                                            uow, locked, refund, intentId, correlation, now));
                     // A refund's failure is a terminal fact and publishes (ADR-0044's
                     // doctrine, plan §10 in as many words).
                     announceRefund(

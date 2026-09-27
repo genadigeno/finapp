@@ -41,11 +41,21 @@ class DisputeNotificationsTest {
                 new DisputeNotifications(
                         untouchable(DisputeStore.class),
                         untouchable(PaymentIntentStore.class),
-                        PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL, BookRail.RAIL)),
                         untouchable(AuditWriter.class),
                         untouchable(OutboxWriter.class),
                         IDS,
-                        CLOCK);
+                        CLOCK,
+                        // Not even the attempt lock (P7-TSK-013): the gate refuses first.
+                        untouchable(PaymentAttemptStore.class),
+                        // The gate's one definition lives with the dispute money now; it reads
+                        // the declaration and nothing else.
+                        UntouchedChargebacks.over(
+                                untouchable(PaymentAttemptStore.class),
+                                untouchable(PaymentIntentStore.class),
+                                PaymentRails.of(
+                                        List.of(SimulatedCardPspAdapter.RAIL, BookRail.RAIL)),
+                                IDS,
+                                CLOCK));
         PaymentAttempt book =
                 PaymentAttempt.createBook(
                         IDS, CLOCK, PaymentIntentId.of(IDS.next()), BookRail.RAIL.id());
@@ -69,7 +79,8 @@ class DisputeNotificationsTest {
     }
 
     @Test
-    @DisplayName("the outcomes the operator must see are exactly the three contradictions")
+    @DisplayName("the outcomes the operator must see are exactly the three contradictions - a"
+            + " late-reported fee is new knowledge, never a contradiction (P7-TSK-013)")
     void theContradictionsAreExactlyThree() {
         for (DisputeNotifications.Outcome outcome : DisputeNotifications.Outcome.values()) {
             assertThat(outcome.isContradiction())

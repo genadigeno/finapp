@@ -633,7 +633,26 @@ class PaymentAuthorizationDatabaseTest {
                 CLOCK,
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
-                new com.finapp.ledger.JdbcLedgerAccountStore());
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        new com.finapp.ledger.PostingService(
+                                new com.finapp.platform.idempotency.IdempotentExecutor(
+                                        new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore(),
+                                        CLOCK,
+                                        Duration.ofDays(1),
+                                        Duration.ofMinutes(5)),
+                                new com.finapp.ledger.JdbcJournalEntryStore(IDS),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new com.finapp.ledger.JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                com.finapp.ledger.PostingObserver.NONE),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS,
+                        CLOCK));
     }
 
     private PaymentCancellation cancellation() {

@@ -1152,6 +1152,11 @@ class PaymentsSchemaDatabaseTest {
                 stage.equals("INQUIRY") || stage.equals("CLOSED") ? null : 1000L);
     }
 
+    /**
+     * With the chargeback, its attribution arrives (V021, P7-TSK-013): an attribution of
+     * nothing - the whole chargeback excess - so a raw seed never depends on the bound's
+     * headroom.
+     */
     private static void insertDispute(
             Connection connection,
             UUID id,
@@ -1160,11 +1165,29 @@ class PaymentsSchemaDatabaseTest {
             String stage,
             Long chargebackMinor)
             throws SQLException {
+        insertDispute(connection, id, attempt, reference, stage, chargebackMinor,
+                chargebackMinor == null ? null : 0L, chargebackMinor == null ? null : 0L);
+    }
+
+    private static void insertDispute(
+            Connection connection,
+            UUID id,
+            UUID attempt,
+            String reference,
+            String stage,
+            Long chargebackMinor,
+            Long counterpartyShareMinor,
+            Long parkedShareMinor)
+            throws SQLException {
         try (PreparedStatement insert = connection.prepareStatement(
                 "INSERT INTO payments.dispute (id, provider, provider_dispute_reference,"
                         + " attempt_id, reason, stage, chargeback_amount_minor,"
-                        + " chargeback_currency, chargeback_scale, opened_at)"
-                        + " VALUES (?, 'simulated-card', ?, ?, 'FRAUD', ?, ?, ?, ?, ?)")) {
+                        + " chargeback_currency, chargeback_scale,"
+                        + " counterparty_share_amount_minor, counterparty_share_currency,"
+                        + " counterparty_share_scale, parked_share_amount_minor,"
+                        + " parked_share_currency, parked_share_scale, opened_at)"
+                        + " VALUES (?, 'simulated-card', ?, ?, 'FRAUD', ?, ?, ?, ?, ?, ?, ?, ?,"
+                        + " ?, ?, ?)")) {
             insert.setObject(1, id);
             insert.setString(2, reference);
             insert.setObject(3, attempt);
@@ -1172,9 +1195,181 @@ class PaymentsSchemaDatabaseTest {
             insert.setObject(5, chargebackMinor);
             insert.setString(6, chargebackMinor == null ? null : "EUR");
             insert.setObject(7, chargebackMinor == null ? null : (short) 2);
-            insert.setTimestamp(8, Timestamp.from(Instant.now()));
+            insert.setObject(8, counterpartyShareMinor);
+            insert.setString(9, counterpartyShareMinor == null ? null : "EUR");
+            insert.setObject(10, counterpartyShareMinor == null ? null : (short) 2);
+            insert.setObject(11, parkedShareMinor);
+            insert.setString(12, parkedShareMinor == null ? null : "EUR");
+            insert.setObject(13, parkedShareMinor == null ? null : (short) 2);
+            insert.setTimestamp(14, Timestamp.from(Instant.now()));
             insert.executeUpdate();
         }
+    }
+
+    @Test
+    @DisplayName("V021 binds EVERY writer (P7-TSK-013): the combined bound BOTH ways under the"
+            + " refund bound's namespace - a refund past what standing chargebacks left, an"
+            + " attribution past what refunds and siblings left, anything attributed where"
+            + " nothing was captured - the attribution arriving with the chargeback and only"
+            + " ever growing by same-stage re-attribution while it stands, and the fee recorded"
+            + " once, only with a chargeback, for the migrator too")
+    void theChargebackAccountingSchemaBindsEveryWriter() throws Exception {
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
+        UUID first = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "SUCCEEDED");
+            insertAttempt(app, attempt, intent, "CAPTURED"); // captured 10.00
+            // A standing chargeback charging the counterparty 3.00 of its 10.00.
+            insertDispute(app, first, attempt, someDisputeReference(), "CHARGED_BACK",
+                    1000L, 300L, 0L);
+            // The refund half: 7.01 more would take the counterparty past its credit.
+            assertThatThrownBy(() -> insertRefund(app, IDS.next(), attempt, 701, "EUR"))
+                    .isInstanceOf(SQLException.class)
+                    .hasMessageContaining("refunds and standing chargebacks together")
+                    .extracting(failure -> ((SQLException) failure).getSQLState())
+                    .isEqualTo(CHECK_VIOLATION);
+            insertRefund(app, IDS.next(), attempt, 200, "EUR"); // 5.00 of headroom remains
+            // The dispute half: a second cycle may not attribute past what is left - posted
+            // or parked alike, a parked share is the counterparty's by attribution.
+            for (long[] shares : new long[][] {{501L, 0L}, {0L, 501L}, {300L, 201L}}) {
+                assertThatThrownBy(() -> insertDispute(app, IDS.next(), attempt,
+                                someDisputeReference(), "CHARGED_BACK", 800L, shares[0],
+                                shares[1]))
+                        .isInstanceOf(SQLException.class)
+                        .hasMessageContaining("payments_dispute_attribution_is_bounded");
+            }
+            UUID second = IDS.next();
+            insertDispute(app, second, attempt, someDisputeReference(), "CHARGED_BACK",
+                    800L, 200L, 0L); // 3.00 of headroom remains
+            // The attribution never shrinks, never moves across an edge...
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute SET counterparty_share_amount_minor = 299"
+                            + " WHERE id = ?", first));
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute SET stage = 'REPRESENTED',"
+                            + " counterparty_share_amount_minor = 350 WHERE id = ?", first));
+            // ...grows by a same-stage re-attribution while it stands, within the bound...
+            assertThat(updated(app,
+                            "UPDATE payments.dispute SET counterparty_share_amount_minor = 350"
+                                    + " WHERE id = ?", first))
+                    .isEqualTo(1);
+            assertThatThrownBy(() -> updated(app,
+                            "UPDATE payments.dispute SET counterparty_share_amount_minor = 651"
+                                    + " WHERE id = ?", first))
+                    .isInstanceOf(SQLException.class)
+                    .hasMessageContaining("payments_dispute_attribution_is_bounded");
+            // ...and a won chargeback's attribution was reversed with the funds: frozen.
+            updated(app, "UPDATE payments.dispute SET stage = 'REPRESENTED' WHERE id = ?", first);
+            updated(app, "UPDATE payments.dispute SET stage = 'WON' WHERE id = ?", first);
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute SET counterparty_share_amount_minor = 400"
+                            + " WHERE id = ?", first));
+            // The fee: only with a chargeback, recorded once, in its currency.
+            assertThat(updated(app,
+                            "UPDATE payments.dispute SET dispute_fee_amount_minor = 1500,"
+                                    + " dispute_fee_currency = 'EUR', dispute_fee_scale = 2"
+                                    + " WHERE id = ?", second))
+                    .isEqualTo(1);
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute SET dispute_fee_amount_minor = 1600 WHERE id = ?",
+                    second));
+        }
+
+        // Coherence on a fresh captured attempt, where no bound interferes: each CHECK named.
+        UUID fresh = IDS.next();
+        UUID freshIntent = IDS.next();
+        UUID inquiry = IDS.next();
+        UUID charged = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, freshIntent, "SUCCEEDED");
+            insertAttempt(app, fresh, freshIntent, "CAPTURED");
+            assertCheckNamed(
+                    () -> insertDispute(app, IDS.next(), fresh, someDisputeReference(),
+                            "INQUIRY", null, 0L, 0L),
+                    "dispute_attribution_matches_chargeback");
+            assertCheckNamed(
+                    () -> insertDispute(app, IDS.next(), fresh, someDisputeReference(),
+                            "CHARGED_BACK", 1000L, null, null),
+                    "dispute_attribution_matches_chargeback");
+            assertCheckNamed(
+                    () -> insertDispute(app, IDS.next(), fresh, someDisputeReference(),
+                            "CHARGED_BACK", 100L, 60L, 50L),
+                    "dispute_attribution_within_chargeback");
+            insertDispute(app, inquiry, fresh, someDisputeReference(), "INQUIRY");
+            insertDispute(app, charged, fresh, someDisputeReference(), "CHARGED_BACK", 1000L,
+                    0L, 0L);
+            assertCheckNamed(
+                    () -> updated(app,
+                            "UPDATE payments.dispute SET counterparty_share_currency = 'GBP'"
+                                    + " WHERE id = ?", charged),
+                    "dispute_attribution_in_chargeback_currency");
+            assertCheckNamed(
+                    () -> updated(app,
+                            "UPDATE payments.dispute SET dispute_fee_amount_minor = 1500,"
+                                    + " dispute_fee_currency = 'EUR', dispute_fee_scale = 2"
+                                    + " WHERE id = ?", inquiry),
+                    "dispute_fee_rides_the_chargeback");
+            assertCheckNamed(
+                    () -> updated(app,
+                            "UPDATE payments.dispute SET dispute_fee_amount_minor = 1500,"
+                                    + " dispute_fee_currency = 'GBP', dispute_fee_scale = 2"
+                                    + " WHERE id = ?", charged),
+                    "dispute_fee_rides_the_chargeback");
+        }
+
+        // Nothing captured credits nobody: not a unit may be attributed.
+        UUID authorized = IDS.next();
+        UUID authorizedIntent = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, authorizedIntent, "PROCESSING");
+            insertAttempt(app, authorized, authorizedIntent, "AUTHORIZED");
+            assertThatThrownBy(() -> insertDispute(app, IDS.next(), authorized,
+                            someDisputeReference(), "CHARGED_BACK", 1000L, 1L, 0L))
+                    .isInstanceOf(SQLException.class)
+                    .hasMessageContaining("payments_dispute_attribution_is_bounded");
+            insertDispute(app, IDS.next(), authorized, someDisputeReference(), "CHARGED_BACK",
+                    1000L, 0L, 0L); // all excess: recorded, never refused
+        }
+
+        // The table's owner is bound too: the second cycle's 2.00 never shrinks, and never
+        // grows past what the refunds left once the won chargeback stood no more.
+        UUID secondCycle = secondCycleOn(attempt);
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            assertSqlState(RAISED, () -> updated(migrator,
+                    "UPDATE payments.dispute SET counterparty_share_amount_minor = 100"
+                            + " WHERE id = ?", secondCycle));
+            assertThatThrownBy(() -> updated(migrator,
+                            "UPDATE payments.dispute SET counterparty_share_amount_minor = 801"
+                                    + " WHERE id = ?", secondCycle))
+                    .isInstanceOf(SQLException.class)
+                    .hasMessageContaining("payments_dispute_attribution_is_bounded");
+        }
+    }
+
+    /** The second-cycle dispute the V021 test left standing on {@code attempt}. */
+    private static UUID secondCycleOn(UUID attempt) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(
+                        "SELECT id FROM payments.dispute WHERE attempt_id = ?"
+                                + " AND stage = 'CHARGED_BACK' AND counterparty_share_amount_minor"
+                                + " = 200")) {
+            read.setObject(1, attempt);
+            try (java.sql.ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getObject(1, UUID.class);
+            }
+        }
+    }
+
+    /** A 23514 whose message names {@code constraint} - the SQLSTATE alone cannot tell two
+     * CHECKs apart. */
+    private static void assertCheckNamed(SqlAction action, String constraint) {
+        assertThatThrownBy(action::run)
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining(constraint)
+                .extracting(failure -> ((SQLException) failure).getSQLState())
+                .isEqualTo(CHECK_VIOLATION);
     }
 
     private static String someDisputeReference() {

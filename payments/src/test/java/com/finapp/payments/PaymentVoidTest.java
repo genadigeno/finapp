@@ -150,7 +150,11 @@ class PaymentVoidTest {
                         CLOCK,
                         PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcUnmatchedConfirmationStore(),
-                        new com.finapp.ledger.JdbcLedgerAccountStore());
+                        new com.finapp.ledger.JdbcLedgerAccountStore(),
+                        // No dispute in this suite (P7-TSK-013): a tripwire.
+                        UntouchedChargebacks.over(
+                                attempts, intents, PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL)),
+                                IDS, CLOCK));
         return new PaymentVoid(
                 runner,
                 intents,

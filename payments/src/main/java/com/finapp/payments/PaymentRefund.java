@@ -540,8 +540,16 @@ public final class PaymentRefund {
                 };
         Money alreadyRefunded =
                 refunds.sumNonFailedFor(uow, attempt.id(), base.currency());
+        // THE COMBINED BOUND (P7-TSK-013, INV-DSP-01, ADR-0061 section 3): refunds and the
+        // chargebacks standing on this payment together never take more from the counterparty
+        // than the capture credited it - read under the attempt lock just taken, the one every
+        // chargeback's split is judged under, so a refund racing a chargeback sees it or is
+        // seen by it. Zero on the push and book rails: they declare no chargebacks.
+        Money alreadyTaken =
+                alreadyRefunded.plus(
+                        outcomes.chargedBackToCounterparty(uow, attempt.id(), base.currency()));
         if (!amount.currency().equals(base.currency())
-                || amount.plus(alreadyRefunded).compareTo(base) > 0) {
+                || amount.plus(alreadyTaken).compareTo(base) > 0) {
             // The honest 422 BEFORE any hold is placed: nothing written, nothing reserved.
             throw new RefundExceedsCaptureException(base.currency());
         }
@@ -603,7 +611,9 @@ public final class PaymentRefund {
                                     clock,
                                     attempt,
                                     amount,
-                                    alreadyRefunded,
+                                    // The card's combined figure: the factory re-judges the
+                                    // same bound the command just did (P7-TSK-013).
+                                    alreadyTaken,
                                     reason,
                                     hold.id(),
                                     new ProviderIdempotencyReference("rfd-" + ids.next()));

@@ -214,7 +214,27 @@ class PaymentSweeperScheduleTest {
                         java.time.Clock.systemUTC(),
                         com.finapp.payments.PaymentRails.of(java.util.List.of(com.finapp.payments.SimulatedCardPspAdapter.RAIL)),
                 new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
-                new com.finapp.ledger.JdbcLedgerAccountStore());
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        new com.finapp.ledger.PostingService(
+                                new com.finapp.platform.idempotency.IdempotentExecutor(
+                                        new com.finapp.platform.idempotency
+                                                .JdbcIdempotencyRecordStore(),
+                                        java.time.Clock.systemUTC(),
+                                        Duration.ofDays(1),
+                                        Duration.ofMinutes(5)),
+                                new com.finapp.ledger.JdbcJournalEntryStore(ids()),
+                                (uow, record) -> {},
+                                new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                                new com.finapp.ledger.JdbcBalanceProjection(),
+                                ids(),
+                                java.time.Clock.systemUTC(),
+                                com.finapp.ledger.PostingObserver.NONE),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(com.finapp.payments.SimulatedCardPspAdapter.RAIL)),
+                        ids(),
+                        java.time.Clock.systemUTC()));
         com.finapp.payments.PaymentVoid voids =
                 new com.finapp.payments.PaymentVoid(
                         runner, intents, attempts, evidence, provider, outcomes,

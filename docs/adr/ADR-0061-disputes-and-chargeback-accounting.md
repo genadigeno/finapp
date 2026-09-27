@@ -66,7 +66,7 @@ the customer has spent the money.
    effects in order, in one transaction. A "won" arriving before its chargeback therefore posts
    both, and the history shows both.
 
-   *(The stages shipped `P7-TSK-012` — their postings are `P7-TSK-013`'s: the machine is
+   *(The stages shipped `P7-TSK-012` — their postings `P7-TSK-013`, point 4's note: the machine is
    `DisputeStage`, generated into `V020`'s every-writer trigger; "the intervening stages" is
    the shortest walk along its edges, which is exactly the stages the notified one implies —
    a "won" heard first opens at `CHARGED_BACK` and walks through `REPRESENTED`, each stage its
@@ -95,6 +95,27 @@ the customer has spent the money.
      debited by no more than it was credited, and the recoverable holds exactly the value the
      network took twice.
 
+   *(Shipped `P7-TSK-013`: `ChargebackSplit` is the arithmetic, judged by `ChargebackAccounting`
+   under the attempt row lock every dispute delivery now takes FIRST — before the dispute insert,
+   the lock order `P7-TSK-012` recorded — and the refund's dispatch judges `amount + non-failed
+   refunds + standing attributions ≤ captured` under the same lock (`payments.RefundExceedsCaptured`,
+   meaning extended). Both ranks for every writer: `V021`'s dispute-attribution trigger and the
+   re-stated refund-bound trigger, sharing advisory namespace 3. "Charged back to the counterparty"
+   is its ATTRIBUTED share — posted, or parked (point 5) — because a parked share is the
+   counterparty's by attribution and a second cycle must not attribute it twice. A chargeback is
+   recorded at once whatever the attempt's capture state — an attempt that has captured nothing,
+   yet or ever, credited nobody, so its whole chargeback is excess. The re-attribution rule is
+   applied to EVERY event that frees headroom (`captured − non-failed refunds − standing
+   attributions`): a counted refund failing (this point's rule), a sibling chargeback WON (its
+   attribution reversed, reachable when a win is delivered after a second cycle's chargeback), and
+   a CAPTURE LANDING on an attempt a chargeback was already stated against (the completion gate's
+   find — the design had deferred such a chargeback until the capture resolved, which left an
+   `AUTHORIZED` attempt's later capture mis-attributed to the platform and made recording depend on
+   the PSP's retry window; recording at once and re-attributing when the capture lands closes both).
+   Oldest dispute first, from the recoverable while contested and from `DISPUTE_COSTS` once a loss
+   wrote the excess off — so at every commit the split is the one a chargeback arriving now would
+   take, and the closing sentence above holds.)*
+
 4. **Accounting, the external fact first.** The notification states what the PSP did, so the
    card rail's clearing position moves by exactly that; everything else is the platform's
    attribution of it.
@@ -119,6 +140,21 @@ the customer has spent the money.
    and keeps the fee it was charged for processing it. The refund policy (ADR-0054) governs
    refunds only.
 
+   *(Shipped `P7-TSK-013`, with one design correction recorded: each financial stage posts TWO
+   entries rather than one — the external fact (`dispute-chargeback:<id>`: DR
+   `CHARGEBACK_RECOVERABLE` D / CR the rail's clearing D; `dispute-won:<id>` its inverse) and the
+   attribution (`dispute-attribution:<id>`: DR the counterparty / CR `CHARGEBACK_RECOVERABLE` its
+   share, composed by `DisputeComposition`; `dispute-restoration:<id>` its inverse). Per account the
+   pair is exactly the table above. Why two: the first entry never varies with who bears the loss;
+   the counterparty's line always faces the recoverable, so a merchant's payable drill-down names
+   a chargeback in the ledger's own vocabulary (a one-entry chargeback with no excess is
+   line-for-line a retained refund — `P7-TSK-010`'s mislabel class, prevented by the shape); and
+   the composer composes only the counterparty's part, the rail's clearing staying payments'
+   (`INV-RAIL-04`). The loss's write-off is `dispute-loss:<id>` (excess only), the fee
+   `dispute-fee:<id>` (recorded once, `NULL → value`, with the chargeback's statement or reported
+   later), a re-attribution `dispute-reattribution:<dispute>:<cause>`. The stage facts carry the
+   split's accounts, never amounts.)*
+
 5. **A counterparty may go below zero, and it is visible, never absorbed.**
    - A merchant payable driven negative by a chargeback after a payout is **merchant debt**.
      `INV-MER-07` is amended to name chargebacks as its second, bounded source: never more than
@@ -137,6 +173,16 @@ the customer has spent the money.
      transition found the inbound mirror of this — a capture refused by a closed wallet, the
      customer charged and nothing booked — and closed it at confirmation and at close. A
      chargeback cannot be refused at the door, so it is parked instead.)*
+
+   *(Shipped `P7-TSK-013`: the parked share is its own column (`parked_share`), counted against
+   the bound, left untouched by a loss's write-off and returned from the recoverable by a win.
+   Postability is read under a share lock, never upgraded in the dispute's transaction. The
+   mirror hazard — a win crediting an account closed after its chargeback — is closed at the
+   close: `AccountClosing`'s pending-credits port now also asks whether a chargeback whose share
+   was POSTED to the account can still be won (`CHARGED_BACK`/`REPRESENTED`), and refuses the
+   close until it cannot. `POSTING_SUSPENDED` has no producer; a restoration meeting one fails
+   loudly and the PSP redelivers once the freeze lifts. The positions are counted by
+   `finapp.ledger.negative.positions`, per purpose, and `INV-MER-07`'s amendment is in force.)*
 
 6. **Notifications are authenticated, deduplicated and order-blind.** Dispute notifications
    arrive through the card rail's signed webhook door (ADR-0047): authenticated before parsing,

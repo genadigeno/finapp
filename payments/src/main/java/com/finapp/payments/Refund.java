@@ -121,9 +121,12 @@ public final class Refund {
 
     /**
      * A new refund, born {@code DISPATCHED}, judged against the captured attempt —
-     * {@code INV-PAY-05}'s domain half. {@code alreadyRefunded} is the sum of this attempt's
-     * non-{@code FAILED} refunds, <strong>read under the command's lock on the attempt row</strong>
-     * ({@code P5-TSK-015}); the concurrent half of the same bound is the schema trigger's.
+     * {@code INV-PAY-05}'s domain half, and since `P7-TSK-013` {@code INV-DSP-01}'s.
+     * {@code alreadyRefunded} is what has already been taken from the counterparty: the sum of
+     * this attempt's non-{@code FAILED} refunds PLUS what the chargebacks standing on it
+     * attribute to the counterparty (the combined bound, ADR-0061 §3), <strong>read under the
+     * command's lock on the attempt row</strong> ({@code P5-TSK-015}); the concurrent half of the
+     * same bound is the schema trigger's.
      */
     public static Refund create(
             IdGenerator ids,
@@ -161,13 +164,14 @@ public final class Refund {
                     "the refunded-so-far sum cannot be negative; refused a negative sum in "
                             + alreadyRefunded.currency());
         }
-        // The bound itself: sum of non-FAILED refunds <= captured, refund-to-the-penny legal.
-        // The message names the fact and the currency, never any amount (INV-AUD-02).
+        // The bound itself: non-FAILED refunds and standing chargebacks <= captured,
+        // refund-to-the-penny legal. The message names the fact and the currency, never any
+        // amount (INV-AUD-02).
         if (amount.plus(alreadyRefunded).compareTo(captured) > 0) {
             throw new IllegalArgumentException(
-                    "refunds are bounded by the capture (INV-PAY-05): refused a refund taking"
-                            + " the refunded sum past the captured amount in "
-                            + captured.currency());
+                    "refunds and chargebacks together are bounded by the capture (INV-PAY-05,"
+                            + " INV-DSP-01): refused a refund taking the counterparty's sum past"
+                            + " the captured amount in " + captured.currency());
         }
         return new Refund(
                 RefundId.next(ids),

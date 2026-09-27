@@ -334,7 +334,10 @@ wire call** with nothing dispatched. `payments.NotRefundable` (409) is the machi
 RefundExceedsCaptured` (422) is the domain bound (`INV-PAY-05`): the requested amount
 plus every non-`FAILED` refund of the attempt would exceed the captured amount — judged under
 the attempt row lock, with `V004`'s trigger beneath, so a *sequential* over-refund is this
-honest 422 and never the schema's own `23514`. `payments.RefundUnfunded` (409) is
+honest 422 and never the schema's own `23514`. **Its meaning extended by `P7-TSK-013`**
+(`INV-DSP-01`, ADR-0061 §3), the code and title unchanged: the standing chargebacks'
+attributions count beside the refunds, so a refund after a chargeback has taken the value back
+is refused past what the capture left — the same lock, `V021`'s re-stated trigger beneath. `payments.RefundUnfunded` (409) is
 `INV-BAL-04` at the surface: the hold that reserves what the refund will take cannot be
 placed because the available balance no longer covers it — a conflict with the account's
 *current state*, retriable when funds return, which is why it is a 409 and not a 422. For a

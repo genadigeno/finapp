@@ -133,6 +133,20 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The negative-position gauge (`P7-TSK-013`, ADR-0061 §5, plan §15): counterparties below
+     * zero after a chargeback — merchant debt and customer receivables — counted from the
+     * projection at the cheap-read floor; the scrape is the schedule, no leader, no §3 row.
+     */
+    @Bean
+    NegativePositionMetrics negativePositionMetrics(
+            DataSource dataSource, Clock clock, MeterRegistry registry) {
+        com.finapp.ledger.NegativePositions<java.sql.Connection> positions =
+                new com.finapp.ledger.JdbcNegativePositions();
+        return new NegativePositionMetrics(
+                positions::countBelowZero, dataSource::getConnection, clock, registry);
+    }
+
+    /**
      * The write path's observer (`P3-TSK-020`): counters and the latency timer behind the
      * {@code ledger} module's {@link com.finapp.ledger.PostingObserver} port — published as
      * the port, so wiring that constructs a journal-write command autowires it and the

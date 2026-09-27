@@ -3860,7 +3860,16 @@
           "chargebackCurrency": {
             "type": "string"
           },
+          "counterpartyShare": {
+            "type": "string"
+          },
+          "disputeFee": {
+            "type": "string"
+          },
           "disputeId": {
+            "type": "string"
+          },
+          "excess": {
             "type": "string"
           },
           "history": {
@@ -3870,6 +3879,9 @@
             "type": "array"
           },
           "openedAt": {
+            "type": "string"
+          },
+          "parkedShare": {
             "type": "string"
           },
           "paymentIntentId": {
@@ -3982,6 +3994,12 @@
       "PayableLine": {
         "properties": {
           "captured": {
+            "type": "string"
+          },
+          "chargebacksReversed": {
+            "type": "string"
+          },
+          "chargedBack": {
             "type": "string"
           },
           "currency": {

@@ -1074,10 +1074,14 @@ the fee under `RETAINED`); a refund beyond the allowance refused with nothing wr
 least-share property swept over every completion order; refunds racing on one payable counted.
 **Phase:** 6
 
-*Amended by ADR-0061 §5 (`Proposed`, the Phase 6 → 7 transition), in force when the first
-chargeback posts (`P7-TSK-013`): a chargeback is the second, bounded source of merchant debt — it
+*Amended by ADR-0061 §5 (`Proposed`, the Phase 6 → 7 transition), **in force since the first
+chargeback posted (`P7-TSK-013`)**: a chargeback is the second, bounded source of merchant debt — it
 leaves the payable below zero by no more than the sale credited it, and the debt is recovered from
-later captures before any payout (`INV-MER-05`). `INV-DSP-01` holds the bound.*
+later captures before any payout (`INV-MER-05`). `INV-DSP-01` holds the bound. The merchant's
+processing fee is not returned by a chargeback, so a fully charged-back sale leaves the payable
+down by exactly that fee — the first source's arithmetic, reached by the second. A payable below
+zero is counted by `finapp.ledger.negative.positions` and named `chargedBack` in the merchant's
+drill-down.*
 
 ---
 
@@ -1161,10 +1165,19 @@ the platform had already returned — posts to `CHARGEBACK_RECOVERABLE`, never t
 counterparty; a refund that would breach the bound is refused.
 **Why:** The phase's named risk: a merchant that refunded properly would otherwise pay twice,
 and a refund after a chargeback would give away the same money twice (ADR-0061 §3).
-**Enforce:** `DOMAIN` — the combined bound under the attempt lock, both money paths.
+**Enforce:** `DOMAIN` — the combined bound under the attempt lock, both money paths — **and
+`DB-CONSTRAINT`** since `P7-TSK-013`: payments `V021`'s dispute-attribution trigger and the
+re-stated refund-bound trigger hold the same arithmetic for every writer, both under advisory
+namespace 3. *"Debited to the counterparty" reads as ATTRIBUTED to it — posted, or parked in
+`CHARGEBACK_RECOVERABLE` when its account takes no postings (ADR-0061 §5): a parked share is the
+counterparty's, and a second cycle must not attribute it twice. The excess comes back to the
+counterparty whenever headroom is freed — a capture landing after the chargeback was stated,
+a counted refund failing, or a sibling chargeback won — so the split is always the one a
+chargeback arriving now would take.*
 **Verify:** A chargeback on a fully and a partially refunded payment; a refund after a
 chargeback refused; refunds racing a chargeback counted in the tables; a counted refund that
-later fails re-attributing its share.
+later fails re-attributing its share. *(All in `ChargebackAccountingDatabaseTest`; the raw-writer
+ranks in `PaymentsSchemaDatabaseTest`; the arithmetic swept in `ChargebackSplitTest`.)*
 **Phase:** 7
 
 ### INV-DSP-02 — Every dispute stage posts once, and a resolution reverses exactly what it resolves
@@ -1176,7 +1189,11 @@ principal lines, and the card rail's clearing position moves by exactly what the
 posting per stage double-debits, and a win that does not mirror its chargeback leaves a
 residue nobody can explain (ADR-0061 §2, §4).
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` (the posting claim's unique key; `UNIQUE (provider,
-provider_dispute_reference)`).
+provider_dispute_reference)`). *Since `P7-TSK-013` the keys are `dispute-chargeback:`,
+`dispute-attribution:`, `dispute-won:`, `dispute-restoration:`, `dispute-loss:` and
+`dispute-fee:<id>` — two entries per financial stage, the external fact and the attribution,
+whose per-account effect is ADR-0061 §4's table — plus `dispute-reattribution:<dispute>:<cause>`;
+each behind the stage's conditional transition, so a duplicate finds both taken.*
 **Verify:** Ten-way duplicate notification races counted in the tables; out-of-order stage
 delivery; a win netting its chargeback to zero per account.
 **Phase:** 7

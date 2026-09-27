@@ -230,6 +230,35 @@ class DisputeStageTest {
         assertThat(at).isEqualTo(to);
     }
 
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a chargeback STANDS exactly while the network holds the"
+            + " funds, and is RESTORABLE exactly while a win is still reachable - both derived"
+            + " from the machine, and their SQL lists generated from them (P7-TSK-013)")
+    void standingAndRestorableAreTheMachinesOwn() {
+        for (DisputeStage stage : DisputeStage.values()) {
+            assertThat(stage.isStanding())
+                    .as("%s stands", stage)
+                    .isEqualTo(stage.isChargedBack() && stage != DisputeStage.WON);
+            assertThat(stage.isRestorable())
+                    .as("%s is restorable", stage)
+                    .isEqualTo(stage.isStanding() && stage.canReach(DisputeStage.WON));
+        }
+        assertThat(java.util.Arrays.stream(DisputeStage.values()).filter(DisputeStage::isStanding))
+                .containsExactly(
+                        DisputeStage.CHARGED_BACK,
+                        DisputeStage.REPRESENTED,
+                        DisputeStage.LOST,
+                        DisputeStage.ACCEPTED);
+        assertThat(
+                        java.util.Arrays.stream(DisputeStage.values())
+                                .filter(DisputeStage::isRestorable))
+                .containsExactly(DisputeStage.CHARGED_BACK, DisputeStage.REPRESENTED);
+        assertThat(DisputeStage.standingSqlValueList())
+                .isEqualTo("'CHARGED_BACK', 'REPRESENTED', 'LOST', 'ACCEPTED'");
+        assertThat(DisputeStage.restorableSqlValueList())
+                .isEqualTo("'CHARGED_BACK', 'REPRESENTED'");
+    }
+
     private static boolean isSubsequence(List<DisputeStage> needle, List<DisputeStage> hay) {
         int matched = 0;
         for (DisputeStage stage : hay) {

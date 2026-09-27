@@ -211,6 +211,33 @@ public enum PaymentsAuditAction implements AuditableAction {
     DISPUTE_READ(
             "payments.DisputeRead",
             "An operator read a dispute; the record names the dispute and its attempt.",
+            false),
+
+    /**
+     * The platform re-attributed part of a chargeback's excess to the payment's counterparty
+     * (`P7-TSK-013`, ADR-0061 §3): a refund the chargeback had counted failed, so the value it
+     * assumed returned never was, and its share of the excess comes back — under the attempt
+     * lock, in the refund's failure transaction, as the platform (the resolver's enumerated
+     * {@code enterSystem()} site). One record per dispute moved; the entry it posted references
+     * the dispute.
+     */
+    CHARGEBACK_REATTRIBUTED(
+            "payments.ChargebackReattributed",
+            "The platform re-attributed part of a chargeback's excess to the counterparty after a"
+                    + " counted refund failed; the record names the dispute, the refund and"
+                    + " where the share landed, never an amount.",
+            false),
+
+    /**
+     * The platform recorded the dispute fee the card PSP reported (`P7-TSK-013`, ADR-0061 §4):
+     * once per dispute ({@code NULL → value}), posted {@code DR DISPUTE_COSTS / CR} the rail's
+     * clearing under {@code dispute-fee:<id>} — the platform bears it in Phase 7. As the
+     * platform, through the webhook door's enumerated site.
+     */
+    DISPUTE_FEE_RECORDED(
+            "payments.DisputeFeeRecorded",
+            "The platform recorded the dispute fee the PSP reported and posted it as a dispute"
+                    + " cost; the record names the dispute and its attempt, never an amount.",
             false);
 
     private final String code;
