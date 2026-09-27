@@ -117,7 +117,12 @@ public final class JdbcHoldStore implements HoldStore<Connection> {
                 unitOfWork.prepareStatement(
                         // The row count is the outcome: of N concurrent releasers exactly one
                         // sees ACTIVE, and the losers converge (HoldStore's contract).
-                        "UPDATE " + TABLE + " SET status = 'RELEASED', released_at = ?"
+                        "UPDATE " + TABLE + " SET status = 'RELEASED',"
+                                // GREATEST(?, placed_at) - the P1-TSK-031 drift, clamped in the
+                                // statement: the releasing instance's clock may read behind the
+                                // one that placed the hold (ADR-0014: skew is bounded, never
+                                // zero), and a legal release must not die on V008's CHECK.
+                                + " released_at = GREATEST(?, placed_at)"
                                 + " WHERE id = ? AND status = 'ACTIVE'")) {
             move.setTimestamp(1, Timestamp.from(at));
             move.setObject(2, id.value());

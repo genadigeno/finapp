@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.ledger.AdjustmentProposalId;
+import com.finapp.ledger.AdjustmentProposalStatus;
+import com.finapp.ledger.JdbcAdjustmentProposalStore;
+import com.finapp.ledger.JournalEntryId;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.security.SecureRandom;
@@ -12,8 +16,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Savepoint;
+import java.sql.Timestamp;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -186,6 +193,121 @@ class AdjustmentProposalSchemaDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The clock
+
+    /**
+     * A proposal is decided on the clock of whichever instance serves the approval, the
+     * rejection or the initiator's withdrawal, which may read behind the one that recorded it.
+     * Both edges are the store's one conditional, driven directly: what such a clock can break is
+     * the statement - for an approval, the entry posted in the same transaction with it.
+     */
+    @Test
+    @DisplayName("a clock behind the proposal cannot fail a legal decision: decided_at clamps to"
+            + " proposed_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindTheProposalCannotFailALegalDecision() throws SQLException {
+        JdbcAdjustmentProposalStore store = new JdbcAdjustmentProposalStore();
+
+        // The approval, rolled back: its entry is a raw POSTING for the FK's sake, never
+        // committed, as the self-approval probe above has it.
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try {
+                UUID entry = IDS.next();
+                insertEntry(app, entry, "POSTING", null);
+                UUID approved = insertProposal(app, "person-1");
+                Instant born = stampsOf(app, approved).proposedAt();
+                assertThat(
+                                store.decide(
+                                        app,
+                                        AdjustmentProposalId.of(approved),
+                                        AdjustmentProposalStatus.APPROVED,
+                                        "person-2",
+                                        born.minusMillis(250),
+                                        Optional.of(JournalEntryId.of(entry))))
+                        .isTrue();
+                assertThat(stampsOf(app, approved).decidedAt()).isEqualTo(born);
+            } finally {
+                app.rollback();
+            }
+        }
+
+        // The rejection, committed.
+        try (Connection app = DatabaseRoles.application()) {
+            UUID rejected = insertProposal(app, "person-1");
+            UUID own = insertProposal(app, "person-1");
+            Instant born = stampsOf(app, rejected).proposedAt();
+            assertThat(
+                            store.decide(
+                                    app,
+                                    AdjustmentProposalId.of(rejected),
+                                    AdjustmentProposalStatus.REJECTED,
+                                    "person-2",
+                                    born.minusMillis(250),
+                                    Optional.empty()))
+                    .isTrue();
+            assertThat(stampsOf(app, rejected).decidedAt()).isEqualTo(born);
+
+            // A floor, not a pin: a clock past the proposal stamps its own read.
+            Instant later = stampsOf(app, own).proposedAt().plusSeconds(5);
+            assertThat(
+                            store.decide(
+                                    app,
+                                    AdjustmentProposalId.of(own),
+                                    AdjustmentProposalStatus.REJECTED,
+                                    "person-2",
+                                    later,
+                                    Optional.empty()))
+                    .isTrue();
+            assertThat(stampsOf(app, own).decidedAt()).isEqualTo(later);
+        }
+    }
+
+    @Test
+    @DisplayName("deciding a decided proposal under a behind clock is still the machine's or the"
+            + " conditional's refusal, never V010's CHECK")
+    void anIllegalDecisionUnderABehindClockIsStillRefused() throws SQLException {
+        JdbcAdjustmentProposalStore store = new JdbcAdjustmentProposalStore();
+        try (Connection app = DatabaseRoles.application()) {
+            UUID proposal = insertProposal(app, "person-1");
+            AdjustmentProposalId id = AdjustmentProposalId.of(proposal);
+            Instant born = stampsOf(app, proposal).proposedAt();
+            assertThat(
+                            store.decide(
+                                    app,
+                                    id,
+                                    AdjustmentProposalStatus.REJECTED,
+                                    "person-2",
+                                    born,
+                                    Optional.empty()))
+                    .isTrue();
+            Instant behind = born.minusSeconds(1);
+
+            // The machine: PROPOSED is no decision, refused before any SQL (INV-LIFE-02).
+            assertThatThrownBy(
+                            () ->
+                                    store.decide(
+                                            app,
+                                            id,
+                                            AdjustmentProposalStatus.PROPOSED,
+                                            "person-2",
+                                            behind,
+                                            Optional.empty()))
+                    .isInstanceOf(IllegalArgumentException.class);
+            // The conditional: terminal is terminal (INV-LIFE-04), a second decision zero rows.
+            assertThat(
+                            store.decide(
+                                    app,
+                                    id,
+                                    AdjustmentProposalStatus.REJECTED,
+                                    "person-3",
+                                    behind,
+                                    Optional.empty()))
+                    .isFalse();
+            assertThat(stampsOf(app, proposal).decidedAt()).isEqualTo(born);
+        }
+    }
+
+    // -----------------------------------------------------------------
     // Fixtures - raw SQL on purpose: the subject is the schema, not the domain
 
     private static void insertEntry(Connection app, UUID entry, String type, String reason)
@@ -262,6 +384,25 @@ class AdjustmentProposalSchemaDatabaseTest {
             update.setObject(2, entry);
             update.setObject(3, proposal);
             update.executeUpdate();
+        }
+    }
+
+    /** The proposal's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant proposedAt, Instant decidedAt) {}
+
+    private static Stamps stampsOf(Connection app, UUID proposal) throws SQLException {
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT proposed_at, decided_at FROM ledger.adjustment_proposal"
+                                + " WHERE id = ?")) {
+            read.setObject(1, proposal);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                Timestamp decidedAt = row.getTimestamp(2);
+                return new Stamps(
+                        row.getTimestamp(1).toInstant(),
+                        decidedAt == null ? null : decidedAt.toInstant());
+            }
         }
     }
 

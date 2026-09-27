@@ -11,6 +11,7 @@ import com.finapp.sharedkernel.money.Money;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.function.UnaryOperator;
@@ -203,6 +204,41 @@ class TransferTest {
                     .hasMessageContaining("EUR")
                     .hasMessageNotContaining("9876")
                     .hasMessageNotContaining("98.76");
+        }
+    }
+
+    @Test
+    @DisplayName("a clock behind initiation cannot stamp a legal reversal before it: the stamp"
+            + " clamps to initiatedAt (the P1-TSK-031 drift, met in domain code; ADR-0014)")
+    void aClockBehindInitiationCannotStampALegalReversalBeforeIt() {
+        // No constructor guard here: markReversed persists this stamp verbatim, so V002's CHECK
+        // is where an unclamped one would die (TransferReversal, on the operator's instance).
+        Transfer completed = transferIn(TransferStatus.COMPLETED);
+        Clock behind = Clock.fixed(completed.initiatedAt().minusMillis(250), ZoneOffset.UTC);
+
+        Transfer reversed = completed.reverse(JournalEntryId.next(IDS), IDS.next(), behind);
+        assertThat(reversed.status()).isEqualTo(TransferStatus.REVERSED);
+        assertThat(reversed.reversedAt()).isEqualTo(completed.initiatedAt());
+
+        // A floor, not a pin: a clock at or past initiation stamps its own read.
+        Clock ahead = Clock.fixed(completed.initiatedAt().plusSeconds(5), ZoneOffset.UTC);
+        assertThat(completed.reverse(JournalEntryId.next(IDS), IDS.next(), ahead).reversedAt())
+                .isEqualTo(completed.initiatedAt().plusSeconds(5));
+    }
+
+    @Test
+    @DisplayName("an illegal reversal under a behind clock is still the machine's refusal")
+    void anIllegalReversalUnderABehindClockIsStillTheMachinesRefusal() {
+        for (TransferStatus from : TransferStatus.values()) {
+            if (from.canTransitionTo(TransferStatus.REVERSED)) {
+                continue;
+            }
+            Transfer transfer = transferIn(from);
+            Clock behind = Clock.fixed(transfer.initiatedAt().minusSeconds(1), ZoneOffset.UTC);
+            assertThatThrownBy(
+                            () -> transfer.reverse(JournalEntryId.next(IDS), IDS.next(), behind))
+                    .as("%s -> REVERSED under a behind clock", from)
+                    .isInstanceOf(IllegalTransferTransitionException.class);
         }
     }
 

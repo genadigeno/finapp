@@ -1,6 +1,7 @@
 package com.finapp.app.transfers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
@@ -34,6 +35,7 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.transfers.IllegalTransferTransitionException;
 import com.finapp.transfers.JdbcTransferStore;
+import com.finapp.transfers.Transfer;
 import com.finapp.transfers.TransferId;
 import com.finapp.transfers.TransferReversal;
 import java.net.URI;
@@ -45,12 +47,15 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -400,6 +405,74 @@ class TransferReversalDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The clock
+    // -----------------------------------------------------------------
+
+    /**
+     * The reversal is served by whichever instance the operator reaches, and its clock may read
+     * behind the one that executed the transfer. {@code Transfer.reverse} mints the stamp and
+     * {@code markReversed} persists it verbatim, so the clamp lives in the aggregate; this is the
+     * command composed on such a clock, landing where an unclamped stamp would die on V002's
+     * CHECK - and take the reversal's ledger posting down with it.
+     */
+    @Test
+    @DisplayName("a clock behind initiation cannot fail a legal reversal: reversed_at lands at"
+            + " initiated_at (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindInitiationCannotFailALegalReversal() throws Exception {
+        String sender = verifiedCustomer(someLogin());
+        String source = openAccount(sender);
+        String destination = openAccount(verifiedCustomer(someLogin()));
+        fund(source, 10_00);
+        TransferId clamped = completedTransfer(sender, source, destination);
+        TransferId own = completedTransfer(sender, source, destination);
+
+        Instant born = stampsOf(clamped).initiatedAt();
+        assertThat(reverseOn(Clock.fixed(born.minusMillis(250), ZoneOffset.UTC), clamped))
+                .isPresent();
+        assertThat(stampsOf(clamped).reversedAt()).isEqualTo(born);
+
+        // A floor, not a pin: a clock past initiation stamps its own read.
+        Instant later = stampsOf(own).initiatedAt().plusSeconds(5);
+        assertThat(reverseOn(Clock.fixed(later, ZoneOffset.UTC), own)).isPresent();
+        assertThat(stampsOf(own).reversedAt()).isEqualTo(later);
+    }
+
+    @Test
+    @DisplayName("an illegal reversal under a behind clock is still the machine's refusal, with"
+            + " nothing written - never V002's CHECK")
+    void anIllegalReversalUnderABehindClockIsStillTheMachinesRefusal() throws Exception {
+        String sender = verifiedCustomer(someLogin());
+        String source = openAccount(sender);
+        String destination = openAccount(verifiedCustomer(someLogin()));
+        fund(source, 10_00);
+        HttpResponse<String> refused =
+                transfer(sender, transferBody(source, destination, "100.00"), someKey());
+        assertThat(field(refused.body(), "status")).isEqualTo("FAILED");
+        TransferId failed = TransferId.of(UUID.fromString(field(refused.body(), "id")));
+        TransferId alreadyReversed = completedTransfer(sender, source, destination);
+        assertThat(reverseOn(CLOCK, alreadyReversed)).isPresent();
+        Stamps reversed = stampsOf(alreadyReversed);
+
+        // The machine judges the locked row before any ledger work or stamp: FAILED moved no
+        // money, and COMPLETED -> REVERSED happens at most once (INV-LIFE-04).
+        for (TransferId refusedTransfer : List.of(failed, alreadyReversed)) {
+            Clock behind =
+                    Clock.fixed(
+                            stampsOf(refusedTransfer).initiatedAt().minusSeconds(1),
+                            ZoneOffset.UTC);
+            assertThatThrownBy(() -> reverseOn(behind, refusedTransfer))
+                    .isInstanceOf(IllegalTransferTransitionException.class);
+        }
+        assertThat(stampsOf(failed).reversedAt()).isNull();
+        assertThat(stampsOf(alreadyReversed)).isEqualTo(reversed);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(historyRows(app, failed.value().toString(), "REVERSED")).isZero();
+            assertThat(historyRows(app, alreadyReversed.value().toString(), "REVERSED"))
+                    .isEqualTo(1);
+        }
+    }
+
+    // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------
 
@@ -524,18 +597,51 @@ class TransferReversalDatabaseTest {
         }
     }
 
+    /** A {@code COMPLETED} transfer of 2.00, executed over HTTP on the application's clock. */
+    private TransferId completedTransfer(String sender, String source, String destination)
+            throws Exception {
+        HttpResponse<String> created =
+                transfer(sender, transferBody(source, destination, "2.00"), someKey());
+        assertThat(field(created.body(), "status")).isEqualTo("COMPLETED");
+        return TransferId.of(UUID.fromString(field(created.body(), "id")));
+    }
+
+    /**
+     * The command composed on {@code clock} and run as one operator's committed flow - an
+     * instance whose one injected Clock reads what {@code clock} reads.
+     */
+    private static Optional<Transfer> reverseOn(Clock clock, TransferId transfer)
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enter(operatorActor());
+                CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            app.setAutoCommit(false);
+            Optional<Transfer> reversed =
+                    composedReversal(clock).reverse(app, transfer, "a clock-skew probe");
+            app.commit();
+            return reversed;
+        }
+    }
+
     /**
      * The command composed as the interleaving needs it - directly, on the caller's
      * connection, the {@code TransferExecutionDatabaseTest} stance. The composition root's
      * copy is exercised by every HTTP test in this suite.
      */
     private static TransferReversal composedReversal() {
+        return composedReversal(CLOCK);
+    }
+
+    /** {@link #composedReversal()} on {@code clock}, the one Clock an instance injects. */
+    private static TransferReversal composedReversal(Clock clock) {
         return new TransferReversal(
                 new JdbcTransferStore(),
                 new ReversalService(
                         new IdempotentExecutor(
                                 new JdbcIdempotencyRecordStore(),
-                                CLOCK,
+                                clock,
                                 Duration.ofDays(1),
                                 Duration.ofMinutes(5)),
                         new JdbcJournalEntryStore(IDS),
@@ -543,12 +649,32 @@ class TransferReversalDatabaseTest {
                         new JdbcOutboxWriter(),
                         new JdbcBalanceProjection(),
                         IDS,
-                        CLOCK,
+                        clock,
                         PostingObserver.NONE),
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                clock);
+    }
+
+    /** The transfer's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant initiatedAt, Instant reversedAt) {}
+
+    private static Stamps stampsOf(TransferId transfer) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT initiated_at, reversed_at FROM transfers.transfer"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, transfer.value());
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                Timestamp reversedAt = row.getTimestamp(2);
+                return new Stamps(
+                        row.getTimestamp(1).toInstant(),
+                        reversedAt == null ? null : reversedAt.toInstant());
+            }
+        }
     }
 
     /** An operator-shaped actor: the command parses the id as the person's identity UUID. */
