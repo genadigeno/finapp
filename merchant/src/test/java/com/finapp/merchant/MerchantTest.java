@@ -97,6 +97,36 @@ class MerchantTest {
     }
 
     @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal edge: the stamp clamps to createdAt"
+                    + " (the P1-TSK-031 drift, met in domain code; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalEdge() {
+        Merchant merchant =
+                Merchant.onboard(IDS, CLOCK, UUID.randomUUID(), "Acme GmbH", "Acme", EUR);
+        Clock behind = Clock.fixed(merchant.createdAt().minusMillis(250), ZoneOffset.UTC);
+
+        Merchant suspended = merchant.suspend(behind);
+        assertThat(suspended.status()).isEqualTo(MerchantStatus.SUSPENDED);
+        assertThat(suspended.statusChangedAt()).isEqualTo(merchant.createdAt());
+
+        // A floor, not a pin: a clock at or past birth stamps its own read.
+        Clock ahead = Clock.fixed(merchant.createdAt().plusSeconds(5), ZoneOffset.UTC);
+        assertThat(suspended.reinstate(ahead).statusChangedAt())
+                .isEqualTo(merchant.createdAt().plusSeconds(5));
+    }
+
+    @Test
+    @DisplayName(
+            "an illegal edge under a behind clock is still the machine's refusal, never the"
+                    + " constructor guard's")
+    void anIllegalEdgeUnderABehindClockIsStillTheMachinesRefusal() {
+        Merchant closed = at(MerchantStatus.CLOSED);
+        Clock behind = Clock.fixed(closed.createdAt().minusSeconds(1), ZoneOffset.UTC);
+        assertThatExceptionOfType(IllegalMerchantTransitionException.class)
+                .isThrownBy(() -> closed.suspend(behind));
+    }
+
+    @Test
     @DisplayName("refusal messages carry states only - no identifier, no name (INV-AUD-02)")
     void refusalMessagesCarryStatesOnly() {
         Merchant closed = at(MerchantStatus.CLOSED);
