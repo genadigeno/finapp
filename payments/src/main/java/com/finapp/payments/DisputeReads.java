@@ -121,6 +121,39 @@ public final class DisputeReads {
         return disputes.listForCounterparties(unitOfWork, counterparties, limit);
     }
 
+    /** The chargeback-ratio report's audit target (`P7-TSK-015`): the report, named by its period. */
+    public static final String RATIO_REPORT_TARGET_TYPE = "chargeback-ratio-report";
+
+    /**
+     * The chargeback-ratio report's counts, per credited account, over {@code [from, to)} on
+     * {@code rails} (`P7-TSK-015`; {@link DisputeStore#chargebackCountsByCreditAccount}) — the
+     * operator's read across every tenant, so it is ON THE RECORD in the caller's transaction
+     * ({@code payments.ChargebackRatioRead}, the report named by {@code period}): a privileged read
+     * of every merchant's dispute experience is itself a fact. The caller attributes the accounts;
+     * {@code payments} never learns what a merchant is.
+     */
+    public List<DisputeStore.CreditedCounts> chargebackCountsForOperator(
+            Connection unitOfWork, Set<RailId> rails, Instant from, Instant to, String period) {
+        Objects.requireNonNull(period, "period must not be null");
+        List<DisputeStore.CreditedCounts> counts =
+                disputes.chargebackCountsByCreditAccount(unitOfWork, rails, from, to);
+        audit.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        SecurityContext.require(),
+                        Instant.now(clock),
+                        PaymentsAuditAction.CHARGEBACK_RATIO_READ,
+                        RATIO_REPORT_TARGET_TYPE,
+                        period,
+                        Optional.empty(),
+                        AuditOutcome.SUCCEEDED,
+                        PaymentCreation.resolvedCorrelation().correlationId(),
+                        // Counts of the window's shape only - never an account, never an amount.
+                        Optional.of("period=" + period + ", accounts=" + counts.size())));
+        return counts;
+    }
+
     private Read read(Connection unitOfWork, DisputeStore.Found found) {
         DisputeId id = found.dispute().id();
         return new Read(

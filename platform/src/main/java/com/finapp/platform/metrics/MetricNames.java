@@ -115,7 +115,18 @@ public final class MetricNames {
                     // and rejection reason" (ADR-0060's operational impact), and a
                     // name-split would invent a series per rail and make "which rail is
                     // refusing" unanswerable in one query.
-                    "rail");
+                    "rail",
+                    // Which dispute stage (P7-TSK-015). Bounded by the DisputeStage enum - the
+                    // card network's seven stages, a closed domain vocabulary naming a category
+                    // every dispute passes through, structurally never a person, a resource or
+                    // anything a caller supplies. Added deliberately, which is this list's job:
+                    // the Phase 7 plan's own table says finapp.payments.dispute is "by stage
+                    // and outcome", and a seven-way name split would invent series the plan
+                    // does not carry and make "how many disputes stand where" unanswerable in
+                    // one query - the purpose and currency precedents. P1-TSK-029 refused this
+                    // key because a two-meter naming carried ITS signal (recovery initiation
+                    // and completion); seven stages under one planned series is not that case.
+                    "stage");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

@@ -182,6 +182,37 @@ public final class JdbcLedgerAccountStore implements LedgerAccountStore<Connecti
     }
 
     @Override
+    public java.util.List<LedgerAccount> findAllById(
+            Connection unitOfWork, java.util.Collection<LedgerAccountId> ids) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(ids, "ids must not be null");
+        if (ids.isEmpty()) {
+            return java.util.List.of();
+        }
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // One statement for the whole set (P7-TSK-015's report), ordered for
+                        // deterministic answers; no lock - it decides nothing.
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE id = ANY (?) ORDER BY id")) {
+            read.setArray(
+                    1,
+                    unitOfWork.createArrayOf(
+                            "uuid", ids.stream().map(LedgerAccountId::value).toArray()));
+            try (ResultSet rows = read.executeQuery()) {
+                java.util.List<LedgerAccount> accounts = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    accounts.add(rehydrate(rows));
+                }
+                return java.util.List.copyOf(accounts);
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("reading " + ids.size() + " accounts by id", failure));
+        }
+    }
+
+    @Override
     public java.util.List<LedgerAccount> lockOwnedForUpdate(Connection unitOfWork, UUID ownerRef) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(ownerRef, "ownerRef must not be null");

@@ -18,6 +18,14 @@ import org.springframework.context.SmartLifecycle;
 @Slf4j
 public final class DisputeResponseResolutionSchedule implements SmartLifecycle {
 
+    /**
+     * The sweep's dispatched bound, as ONE placeholder (`P7-TSK-015`): the resolution sweep and
+     * the stuck-dispute-response gauge both read it, so they can never disagree about when an
+     * answer was due.
+     */
+    public static final String DISPATCHED_AGE =
+            "${finapp.payments.dispute-response.sweeper.dispatched-age:PT2M}";
+
     private final DisputeResponseResolution resolution;
     private final Duration pollInterval;
 

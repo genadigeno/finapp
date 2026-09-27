@@ -191,11 +191,15 @@ class DisputeResponseDatabaseTest {
         Payment sale = captured(merchant.payable());
         String reference = someDisputeReference();
         Instant respondBy = Instant.now(CLOCK).plus(Duration.ofDays(7)).truncatedTo(ChronoUnit.SECONDS);
+        java.util.Map<com.finapp.payments.DisputeStage, Long> stagesBefore = stages();
         assertThat(deliver(chargeback(sale, reference, "needs_response", respondBy)).statusCode())
                 .isEqualTo(204);
         UUID dispute = disputeId(reference);
         assertThat(instant("SELECT respond_by FROM payments.dispute WHERE id = ?", dispute))
                 .isEqualTo(respondBy);
+        // The stage gauge's read (P7-TSK-015): one more dispute standing charged back.
+        assertThat(standing(com.finapp.payments.DisputeStage.CHARGED_BACK, stagesBefore))
+                .isEqualTo(1);
 
         byte[] receipt = ("receipt for order 1042 " + UUID.randomUUID()).getBytes(StandardCharsets.UTF_8);
         byte[] delivered = ("signed delivery note " + UUID.randomUUID()).getBytes(StandardCharsets.UTF_8);
@@ -207,6 +211,10 @@ class DisputeResponseDatabaseTest {
                         evidence("PROOF_OF_DELIVERY", "PNG", delivered), merchant.key(), null);
         assertThat(first.statusCode()).as(first.body()).isEqualTo(201);
         assertThat(second.statusCode()).as(second.body()).isEqualTo(201);
+        double submittedBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(
+                        registry, SimulatedCardPspAdapter.RAIL.id(), "dispute_response",
+                        "submitted");
 
         provider.succeedsWithMintedReference(RESPONSES, "psp_dr");
         HttpResponse<String> answered =
@@ -214,6 +222,13 @@ class DisputeResponseDatabaseTest {
         assertThat(answered.statusCode()).as(answered.body()).isEqualTo(201);
         assertThat(field(answered.body(), "status")).isEqualTo("SUBMITTED");
         UUID response = UUID.fromString(field(answered.body(), "responseId"));
+        // The answer's judgement counted where it was written, on the disputed payment's own
+        // rail, once (P7-TSK-015) - never at the door.
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(
+                                registry, SimulatedCardPspAdapter.RAIL.id(), "dispute_response",
+                                "submitted")
+                        - submittedBefore)
+                .isEqualTo(1);
 
         // The wire: one send, OUR reference in the header, both documents labelled, the network's
         // dispute named, the answer in the PSP's word.
@@ -256,6 +271,13 @@ class DisputeResponseDatabaseTest {
                 .isEqualTo(204);
         assertThat(deliver(chargeback(sale, reference, "won", null)).statusCode()).isEqualTo(204);
         assertThat(stage(dispute)).isEqualTo("WON");
+        // The stage gauge's read follows the dispute: an outcome gained, the workload given back.
+        assertThat(standing(com.finapp.payments.DisputeStage.WON, stagesBefore)).isEqualTo(1);
+        assertThat(standing(com.finapp.payments.DisputeStage.CHARGED_BACK, stagesBefore)).isZero();
+        assertThat(standing(com.finapp.payments.DisputeStage.REPRESENTED, stagesBefore)).isZero();
+        assertThat(registry.find("finapp.payments.dispute").tag("stage", "won").gauge().value())
+                .as("the WIRED stage gauge reads the real schema: a number, never NaN")
+                .isNotNaN();
         assertThat(operations(dispute))
                 .containsExactly("dispute-chargeback", "dispute-attribution", "dispute-won",
                         "dispute-restoration");
@@ -659,11 +681,26 @@ class DisputeResponseDatabaseTest {
         Merchant merchant = merchant();
         UUID dispute = chargedBack(merchant.payable(), future());
         provider.receivesTheRequestThenLosesTheResponse(RESPONSES);
+        double unknownBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(
+                        registry, SimulatedCardPspAdapter.RAIL.id(), "dispute_response", "unknown");
+        double submittedBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(
+                        registry, SimulatedCardPspAdapter.RAIL.id(), "dispute_response",
+                        "submitted");
+        long stuckBefore = stuckAnswers(Duration.ofMinutes(10)).active();
 
         HttpResponse<String> answered =
                 post(merchantPath(dispute, "acceptance"), null, merchant.key(), someKey());
         assertThat(field(answered.body(), "status")).isEqualTo("UNKNOWN");
         UUID response = UUID.fromString(field(answered.body(), "responseId"));
+        // INV-LIFE-03's age metric sees it (P7-TSK-015), and the honest unknown IS a judgement.
+        assertThat(stuckAnswers(Duration.ofMinutes(10)).active()).isEqualTo(stuckBefore + 1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(
+                                registry, SimulatedCardPspAdapter.RAIL.id(), "dispute_response",
+                                "unknown")
+                        - unknownBefore)
+                .isEqualTo(1);
         String ours = oneString(
                 "SELECT provider_idempotency_reference FROM payments.dispute_response WHERE id = ?",
                 response);
@@ -673,6 +710,12 @@ class DisputeResponseDatabaseTest {
         resolution.sweep();
         assertThat(status(response)).isEqualTo("SUBMITTED");
         assertThat(provider.requestCount(RESPONSES)).as("resolved by query, never re-sent")
+                .isEqualTo(1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(
+                                registry, SimulatedCardPspAdapter.RAIL.id(), "dispute_response",
+                                "submitted")
+                        - submittedBefore)
+                .as("the sweep's resolution counted once, where it was written")
                 .isEqualTo(1);
         long applied = audits(response, "payments.DisputeResponseOutcomeApplied");
         resolution.sweep();
@@ -835,6 +878,48 @@ class DisputeResponseDatabaseTest {
     // -----------------------------------------------------------------
     // The deadline, the operator, the door
     // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("the stuck-answer reading counts what the sweep would ask about - an UNKNOWN answer"
+            + " and a dispatch past the bound, never a dispatch still mid-question - and the wired"
+            + " gauges read it (INV-LIFE-03's age metric, P7-TSK-015)")
+    void theStuckAnswerReadingCountsWhatTheSweepWould() throws Exception {
+        Merchant merchant = merchant();
+        Duration bound = Duration.ofMinutes(10);
+        long before = stuckAnswers(bound).active();
+        // An hour dwarfs any clock skew between this JVM and the database: only the bound decides.
+        Instant anHourAgo = Instant.now(CLOCK).minus(Duration.ofHours(1));
+        List<UUID> seeded =
+                List.of(
+                        seedAnswer(chargedBack(merchant.payable(), future()), anHourAgo, false),
+                        seedAnswer(chargedBack(merchant.payable(), future()), Instant.now(CLOCK),
+                                false),
+                        seedAnswer(chargedBack(merchant.payable(), future()), anHourAgo, true));
+        try {
+            com.finapp.payments.PaymentAttemptStore.UnknownReading reading = stuckAnswers(bound);
+            assertThat(reading.active())
+                    .as("the overdue dispatch and the UNKNOWN answer; not the one mid-question")
+                    .isEqualTo(before + 2);
+            assertThat(reading.oldestAgeSeconds())
+                    .isGreaterThanOrEqualTo(Duration.ofMinutes(55).toSeconds());
+            assertThat(registry.find("finapp.payments.dispute.response.unknown.active").gauge()
+                            .value())
+                    .as("published eagerly, and a number from a readable database")
+                    .isNotNaN();
+            assertThat(registry.find("finapp.payments.dispute.response.unknown.age").gauge())
+                    .isNotNull();
+        } finally {
+            // Never leave a stuck answer for another test's sweep to find.
+            try (Connection app = DatabaseRoles.application()) {
+                for (UUID answer : seeded) {
+                    execute(app,
+                            "UPDATE payments.dispute_response SET status = 'FAILED',"
+                                    + " failure_reason = 'DECLINED' WHERE id = ?",
+                            answer);
+                }
+            }
+        }
+    }
 
     @Test
     @DisplayName("the deadline alarm counts a chargeback near its respond-by date until an answer"
@@ -1226,6 +1311,45 @@ class DisputeResponseDatabaseTest {
     @FunctionalInterface
     private interface IntCall {
         int call(int racer) throws Exception;
+    }
+
+    /** The dispute stage gauge's own read (P7-TSK-015). */
+    private java.util.Map<com.finapp.payments.DisputeStage, Long> stages() {
+        return transactions.inTransaction(uow -> disputeStore.countByStage(uow));
+    }
+
+    /** How many more disputes stand at {@code stage} than {@code before} recorded. */
+    private long standing(
+            com.finapp.payments.DisputeStage stage,
+            java.util.Map<com.finapp.payments.DisputeStage, Long> before) {
+        return stages().get(stage) - before.get(stage);
+    }
+
+    /** The stuck-answer gauges' own read (P7-TSK-015), over {@code bound}. */
+    private com.finapp.payments.PaymentAttemptStore.UnknownReading stuckAnswers(Duration bound) {
+        return transactions.inTransaction(uow -> responseStore.unknownReading(uow, bound));
+    }
+
+    /** A raw acceptance born DISPATCHED at {@code permit} - then UNKNOWN, when asked. */
+    private UUID seedAnswer(UUID dispute, Instant permit, boolean unknown) throws Exception {
+        UUID id = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            execute(app,
+                    "INSERT INTO payments.dispute_response (id, dispute_id, kind, status,"
+                            + " failure_reason, provider_idempotency_reference, provider_reference,"
+                            + " evidence_ids, requested_by_id, requested_by_type, reason,"
+                            + " dispatch_scope, dispatch_key, send_permit, created_at)"
+                            + " VALUES (?, ?, 'ACCEPTANCE', 'DISPATCHED', NULL, ?, NULL, '{}',"
+                            + " 'meters-test', 'MERCHANT', NULL, 'dispute.respond:merchant:meters',"
+                            + " ?, ?, ?)",
+                    id, dispute, "dsr-" + id, UUID.randomUUID().toString(),
+                    java.sql.Timestamp.from(permit), java.sql.Timestamp.from(permit));
+            if (unknown) {
+                execute(app, "UPDATE payments.dispute_response SET status = 'UNKNOWN' WHERE id = ?",
+                        id);
+            }
+        }
+        return id;
     }
 
     private static void assertRefused(HttpResponse<String> response, int status, String code) {

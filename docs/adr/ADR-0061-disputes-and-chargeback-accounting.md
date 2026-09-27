@@ -262,6 +262,10 @@ Negative:
 
 Operational impact: dispute counts by stage and outcome; respond-by alarms; the negative-position
 gauge; the chargeback ratio as an operator report, never a per-merchant metric tag (ADR-0018).
+*(Shipped `P7-TSK-015`: `finapp.payments.dispute` by stage - the terminal stages are the
+outcomes - and the audited report `GET /v1/operator/reports/chargeback-ratio` under
+`MERCHANT_ADMINISTER`, the standing desk's evidence; the respond-by alarm and the negative-position
+gauge shipped with `P7-TSK-014` and `P7-TSK-013`.)*
 Security impact: dispute evidence is least-privilege, encrypted and access-audited; merchant
 dispute routes are tenant-scoped.
 Financial impact: three new operational accounts (`CHARGEBACK_RECOVERABLE` asset,

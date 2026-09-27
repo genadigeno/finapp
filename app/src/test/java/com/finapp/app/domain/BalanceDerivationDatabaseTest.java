@@ -281,7 +281,12 @@ class BalanceDerivationDatabaseTest {
                     .isInstanceOf(UnderivableBalanceException.class)
                     .hasMessageContaining("mixes scales")
                     .hasMessageContaining("USD")
-                    .satisfies(refusal -> assertThat(refusal.getMessage())
+                    // The account is named on purpose, and a random UUIDv7's hex can carry any
+                    // digit run - the P7-TSK-008 needle class, which fired HERE in P7-TSK-015's
+                    // gate battery on an identifier holding "7e777e": the amounts are judged
+                    // against what is left once the identifier is taken out.
+                    .satisfies(refusal -> assertThat(
+                                    refusal.getMessage().replace(mixed.id().toString(), "<account>"))
                             .doesNotContain("1500")
                             .doesNotContain("777"));
 

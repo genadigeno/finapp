@@ -162,11 +162,12 @@ public final class PaymentSweeper {
      *
      * <p>{@code actingJudgements} is the exception to the sentence above and the reason it
      * can be: each entry is a state some row's <strong>own conditional transition</strong>
-     * committed on this tick ({@code P5-TSK-017}), so a converged loser contributes nothing
-     * — which is what lets the schedule count throughput at the door without counting one
-     * judgement once per resolver that raced for it. Statuses only; no identifier leaves.
-     * {@code refundJudgements} is the same for the refund leg, in the refund machine's own
-     * vocabulary (the Phase 6 → 7 transition).
+     * committed on this tick ({@code P5-TSK-017}), so a converged loser contributes nothing.
+     * Statuses only; no identifier leaves. {@code refundJudgements} is the same for the
+     * refund leg, in the refund machine's own vocabulary (the Phase 6 → 7 transition). Both
+     * are the schedule's log tally since `P7-TSK-015`: the meters no longer read them,
+     * because every applier reports its acting judgements to its
+     * {@link RailOutcomeObserver}, where each door's are counted once, after commit.
      */
     public record SweepResult(
             int candidates,

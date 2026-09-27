@@ -166,6 +166,94 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The dispute stage gauges (`P7-TSK-015`, plan §15): every dispute's stage visible, one
+     * floored {@code GROUP BY} over the dispute rows; the scrape is the schedule, no leader, no
+     * §3 row.
+     */
+    @Bean
+    DisputeStageMetrics disputeStageMetrics(
+            DataSource dataSource, Clock clock, MeterRegistry registry) {
+        com.finapp.payments.DisputeStore<java.sql.Connection> disputes =
+                new com.finapp.payments.JdbcDisputeStore();
+        return new DisputeStageMetrics(
+                disputes::countByStage, dataSource::getConnection, clock, registry);
+    }
+
+    /**
+     * The stuck-withdrawal gauges (`P7-TSK-015`, plan §15), in the payout's shape: over the
+     * withdrawal sweep's own dispatched bound, read through the one placeholder the sweep reads,
+     * so the two can never disagree about when an answer was due. Unconditional — the store is.
+     */
+    @Bean
+    StuckOperationMetrics withdrawalMetrics(
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry,
+            @org.springframework.beans.factory.annotation.Value(
+                            com.finapp.app.payments.WithdrawalResolutionSchedule.DISPATCHED_AGE)
+                    java.time.Duration dispatchedAge) {
+        com.finapp.payments.WithdrawalStore<java.sql.Connection> withdrawals =
+                new com.finapp.payments.JdbcWithdrawalStore();
+        return new StuckOperationMetrics(
+                "stuck-withdrawal",
+                new StuckOperationMetrics.Series(
+                        "finapp.payments.withdrawal.unknown.active",
+                        "Withdrawals the platform has no answer for past the point one was due:"
+                                + " every UNKNOWN withdrawal, and every DISPATCHED one whose send"
+                                + " permit is older than the resolution sweep's own bound. Each"
+                                + " is a customer's money behind a standing hold. A count, never"
+                                + " an amount. NaN when unreadable, never zero. Fleet-wide:"
+                                + " aggregate with max(), never sum()",
+                        "finapp.payments.withdrawal.unknown.age",
+                        "Seconds the OLDEST unanswered withdrawal has waited, measured the way"
+                                + " the resolution sweep measures it: an UNKNOWN one from its"
+                                + " entry into that state, an overdue DISPATCHED one from its"
+                                + " latest send permit. The stuck-withdrawal alert's series. NaN"
+                                + " when unreadable, never zero. Fleet-wide: aggregate with"
+                                + " max(), never sum()"),
+                connection -> withdrawals.unknownReading(connection, dispatchedAge),
+                dataSource::getConnection,
+                clock,
+                registry);
+    }
+
+    /**
+     * The stuck-dispute-answer gauges (`P7-TSK-015`): {@code INV-LIFE-03}'s own "unknown-state age
+     * metric" for the response machine `P7-TSK-014` added, over the response sweep's dispatched
+     * bound through its one placeholder.
+     */
+    @Bean
+    StuckOperationMetrics disputeResponseMetrics(
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry,
+            @org.springframework.beans.factory.annotation.Value(
+                            com.finapp.app.payments.DisputeResponseResolutionSchedule
+                                    .DISPATCHED_AGE)
+                    java.time.Duration dispatchedAge) {
+        com.finapp.payments.DisputeResponseStore<java.sql.Connection> responses =
+                new com.finapp.payments.JdbcDisputeResponseStore();
+        return new StuckOperationMetrics(
+                "stuck-dispute-response",
+                new StuckOperationMetrics.Series(
+                        "finapp.payments.dispute.response.unknown.active",
+                        "Dispute answers the platform has no word from the PSP for past the point"
+                                + " one was due: every UNKNOWN response, and every DISPATCHED one"
+                                + " whose send permit is older than the resolution sweep's own"
+                                + " bound - an answer the network's deadline may overtake. A"
+                                + " count, never an identifier. NaN when unreadable, never zero."
+                                + " Fleet-wide: aggregate with max(), never sum()",
+                        "finapp.payments.dispute.response.unknown.age",
+                        "Seconds the OLDEST unanswered dispute response has waited, measured the"
+                                + " way the resolution sweep measures it. NaN when unreadable,"
+                                + " never zero. Fleet-wide: aggregate with max(), never sum()"),
+                connection -> responses.unknownReading(connection, dispatchedAge),
+                dataSource::getConnection,
+                clock,
+                registry);
+    }
+
+    /**
      * The write path's observer (`P3-TSK-020`): counters and the latency timer behind the
      * {@code ledger} module's {@link com.finapp.ledger.PostingObserver} port — published as
      * the port, so wiring that constructs a journal-write command autowires it and the
@@ -194,11 +282,26 @@ class TelemetryConfiguration {
      * configured provider, but a deployment that has not configured one still publishes
      * healthy zeros rather than absences an alert cannot evaluate (the {@code KycMetrics}
      * precedent, which the pinned planned-meters guard proves by booting with nothing
-     * configured at all). The provider tag is the adapter's own compile-time constant.
+     * configured at all). The provider tag is the adapter's own compile-time constant. Since
+     * `P7-TSK-015` the rail series of every DECLARED rail register here too, from the
+     * unconditional rail directory — so they exist before any rail is configured or called.
      */
     @Bean
-    PaymentMeters paymentMeters(MeterRegistry registry) {
-        return new PaymentMeters(registry, com.finapp.payments.SimulatedCardPspAdapter.NAME);
+    PaymentMeters paymentMeters(
+            MeterRegistry registry, com.finapp.payments.PaymentRails paymentRails) {
+        return new PaymentMeters(
+                registry, com.finapp.payments.SimulatedCardPspAdapter.NAME, paymentRails);
+    }
+
+    /**
+     * Where the three payment appliers report their acting judgements (`P7-TSK-015`) — the
+     * {@link com.finapp.payments.RailOutcomeObserver} port, published as the port so the wiring
+     * that constructs an applier autowires it (the {@code postingObserver} shape), counting into
+     * {@link PaymentMeters} only once each judgement's transaction commits.
+     */
+    @Bean
+    com.finapp.payments.RailOutcomeObserver railOutcomeObserver(PaymentMeters paymentMeters) {
+        return new CommittedRailOutcomes(paymentMeters);
     }
 
     /**

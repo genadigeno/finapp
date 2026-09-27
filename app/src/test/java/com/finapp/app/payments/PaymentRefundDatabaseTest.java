@@ -804,8 +804,11 @@ class PaymentRefundDatabaseTest {
 
         // AND THE METER COUNTS ONE (`P5-TSK-017`): nine resolvers converged on a judgement
         // they did not make, and throughput that counted them would report ten refunds
-        // where one customer got their money back. The acting bit is the conditional
-        // transition's own row count, and this is where it earns its place.
+        // where one customer got their money back. What stops the nine is the door's LOCKED
+        // read (the Phase 6 -> 7 transition): each finds the refund finished and applies
+        // nothing, so this race no longer reaches the applier's acting bit at all - P7-TSK-015's
+        // gate saw a probe of that bit survive here, and aConvergedRefundApplicationCountsNothing
+        // is where the bit now earns its place.
         assertThat(
                         registry.find("finapp.payments.refund")
                                 .tag("outcome", "completed")
@@ -821,6 +824,133 @@ class PaymentRefundDatabaseTest {
                 .as("every delivery that committed IS a processed delivery - the webhook"
                         + " counter measures the door, not the judgement")
                 .isEqualTo(10.0);
+    }
+
+    /**
+     * Where a converged refund application is still reachable (`P7-TSK-015`'s gate). Every
+     * refund door locks the row and applies from its locked state, so a finished refund never
+     * reaches the applier - except an AMBIGUOUS answer on a row another resolver has already
+     * moved into {@code UNKNOWN}: a stalled flight's timeout arriving after the sweep heard its
+     * own. The UNKNOWN judgement is that resolver's, and the flight's application converges.
+     * Deterministic: the provider stands in for the stall, and the resolver's move goes through
+     * the one shared applier into the same registry while the flight's call is out.
+     */
+    @Test
+    @DisplayName("a converged refund application counts nothing: a stalled flight's timeout finds"
+            + " its refund already moved into UNKNOWN by another resolver - one unknown"
+            + " judgement counted and one outcome record, not two")
+    void aConvergedRefundApplicationCountsNothing() throws Exception {
+        Captured captured = capturedPayment();
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        PaymentOutcomes metered =
+                outcomes(
+                        new com.finapp.app.telemetry.CommittedRailOutcomes(
+                                new com.finapp.app.telemetry.PaymentMeters(
+                                        registry, SimulatedCardPspAdapter.NAME)));
+        com.finapp.payments.PaymentProvider resolvedWhileStalled =
+                new com.finapp.payments.PaymentProvider() {
+                    @Override
+                    public String providerName() {
+                        return "resolved-while-stalled";
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer authorize(
+                            AuthorizationRequest request) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer capture(CaptureRequest request) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer refund(RefundRequest request) {
+                        // Another resolver, while this flight's call is out: an ambiguous
+                        // answer of its own moves the row into UNKNOWN - through the applier,
+                        // counted, as the platform, in its own flow.
+                        try (SecurityContext.Scope platform = SecurityContext.enterSystem();
+                                CorrelationContext.Scope flow =
+                                        CorrelationContext.enter(
+                                                Correlation.startingWith(
+                                                        CorrelationId.generate(IDS)))) {
+                            Correlation resolverFlow = PaymentCreation.resolvedCorrelation();
+                            RefundId stalled =
+                                    RefundId.of(
+                                            UUID.fromString(
+                                                    oneString(
+                                                            "SELECT id::text FROM payments.refund"
+                                                                    + " WHERE"
+                                                                    + " provider_idempotency_reference"
+                                                                    + " = ?",
+                                                            request.reference().value())));
+                            runner.inTransaction(
+                                    uow -> {
+                                        com.finapp.payments.Refund row =
+                                                refunds.lockForOutcome(uow, stalled)
+                                                        .orElseThrow()
+                                                        .refund();
+                                        return metered.applyRefund(
+                                                uow,
+                                                captured.intent(),
+                                                row,
+                                                row.status(),
+                                                com.finapp.payments.ProviderAnswer.Verdict
+                                                        .INDETERMINATE,
+                                                java.util.Optional.empty(),
+                                                captured.wallet(),
+                                                resolverFlow);
+                                    });
+                        } catch (SQLException failure) {
+                            throw new IllegalStateException(failure);
+                        }
+                        return com.finapp.payments.ProviderAnswer.indeterminate();
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer voidAuthorization(
+                            VoidRequest request) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public com.finapp.payments.QueryAnswer query(
+                            com.finapp.payments.ProviderIdempotencyReference ourReference) {
+                        throw new UnsupportedOperationException();
+                    }
+                };
+
+        PaymentRefund.RefundResult result =
+                refundCommand(resolvedWhileStalled, metered)
+                        .refund(
+                                captured.intent(),
+                                Money.ofMinorUnits(5_00, EUR),
+                                "stalled flight",
+                                "stalled-" + UUID.randomUUID());
+
+        assertThat(result.status()).as("the row's truth, not a judgement of the flight's own")
+                .isEqualTo(RefundStatus.UNKNOWN);
+        assertThat(refundStatus(result.refund())).isEqualTo("UNKNOWN");
+        assertThat(activeHoldCount(captured.wallet())).as("the hold stands").isEqualTo(1);
+        assertThat(refundEntryCount(captured.attempt())).isZero();
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.refund(registry, "unknown"))
+                .as("the resolver's judgement, once: the converged flight made none")
+                .isEqualTo(1);
+        assertThat(
+                        com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(
+                                registry, SimulatedCardPspAdapter.RAIL.id(), "refund",
+                                "unknown"))
+                .isEqualTo(1);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM platform.audit_record"
+                                        + " WHERE operation = 'payments.PaymentOutcomeApplied'"
+                                        + " AND change_summary LIKE ?",
+                                "refund=" + result.refund() + ", %"))
+                .as("and one outcome record - the same acting exit guards both")
+                .isEqualTo(1);
     }
 
     @Test
@@ -873,7 +1003,8 @@ class PaymentRefundDatabaseTest {
                             CorrelationId.of("crashed-flow"),
                             Instant.now(CLOCK),
                             Instant.now(CLOCK).plus(Duration.ofDays(1)),
-                            Duration.ofSeconds(-1));
+                            // A minute lapsed, not a second - crashedFlight's reason.
+                            Duration.ofMinutes(-1));
             other.commit();
         }
         providerRefunds("psp_rfd-heal");
@@ -1603,7 +1734,11 @@ class PaymentRefundDatabaseTest {
                             CorrelationId.of("crashed-flow"),
                             Instant.now(CLOCK),
                             Instant.now(CLOCK).plus(Duration.ofDays(1)),
-                            Duration.ofSeconds(-1));
+                            // Lapsed a minute ago on the SERVER clock, not one second: the
+                            // takeover is judged by the same clock, and the Docker VM's steps back
+                            // ~1.6 s every ~27 s (measured at P7-TSK-015's gate, whose battery met
+                            // a one-second lease read as still held). A stranded flight is old.
+                            Duration.ofMinutes(-1));
             other.commit();
         }
         return new CrashedFlight(RefundId.of(refundId), storedReference);
@@ -1742,6 +1877,11 @@ class PaymentRefundDatabaseTest {
     }
 
     private PaymentRefund refundCommand(com.finapp.payments.PaymentProvider provider) {
+        return refundCommand(provider, outcomes());
+    }
+
+    private PaymentRefund refundCommand(
+            com.finapp.payments.PaymentProvider provider, PaymentOutcomes outcomes) {
         return new PaymentRefund(
                 runner,
                 executor(),
@@ -1751,7 +1891,7 @@ class PaymentRefundDatabaseTest {
                 evidence,
                 holdService(),
                 provider,
-                outcomes(),
+                outcomes,
                 new JdbcAuditWriter(),
                 IDS,
                 CLOCK,
@@ -1800,6 +1940,12 @@ class PaymentRefundDatabaseTest {
     }
 
     private PaymentOutcomes outcomes() {
+        return outcomes(com.finapp.payments.RailOutcomeObserver.NONE);
+    }
+
+    /** The applier reporting to {@code observer} - the webhook door's counting seam since
+     * P7-TSK-015, so a suite reading its own registry reads what the applier committed. */
+    private PaymentOutcomes outcomes(com.finapp.payments.RailOutcomeObserver observer) {
         return new PaymentOutcomes(
                 intents,
                 attempts,
@@ -1851,7 +1997,8 @@ class PaymentRefundDatabaseTest {
                         postingService(),
                         com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS,
-                        CLOCK));
+                        CLOCK),
+                observer);
     }
 
     private SimulatedCardPspAdapter adapter() {
@@ -1884,7 +2031,9 @@ class PaymentRefundDatabaseTest {
                 intents,
                 refunds,
                 paymentMeters,
-                outcomes(),
+                // The judgement counted where it is written, into THIS suite's meters,
+                // after the delivery's commit (P7-TSK-015) - no longer by the door.
+                outcomes(new com.finapp.app.telemetry.CommittedRailOutcomes(paymentMeters)),
                 new com.finapp.payments.PaymentClearing(
                         new com.finapp.payments.JdbcClearingRecordStore(),
                         new com.finapp.platform.outbox.JdbcOutboxWriter(),

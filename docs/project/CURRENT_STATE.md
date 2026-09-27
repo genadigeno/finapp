@@ -322,10 +322,11 @@ on acceptance and settled on the scheme's cycle. Card issuing is external, and t
 platform to **101 invariants**; the in-scope set is whatever the catalogue marks `Phase: 7`, **ten**
 at planning. 18 backlog items across eight milestones (M7.1–M7.8);
 [`RAIL_AND_DISPUTE_LIFECYCLES.md`](../domain/RAIL_AND_DISPUTE_LIFECYCLES.md) states the machines;
-context 29, Disputes, merged into `payments`. **14 of 18 items complete** (2026-09-27):
+context 29, Disputes, merged into `payments`. **15 of 18 items complete** (2026-09-28):
 M7.1–M7.6 closed — the rails declared and routed, the card rail completed, the instant rail,
 pay-ins by bank with their returns, the wallet as an instrument, and **disputes end to end**
-with `P7-TSK-014`; next **`P7-TSK-015`** `READY` ([§Current
+with `P7-TSK-014` — and **M7.7 opens at 1 of 3** with the rail and dispute meters
+(`P7-TSK-015`); next **`P7-TST-001`** `READY` ([§Current
 Task](#current-task) is kept current). *(This sentence said "first task `P7-TSK-001`
 complete, next `P7-TSK-002` `READY`" until `P7-TSK-012`'s gate found it ten tasks stale —
 the stale-second-copy class a sixth time.)*
@@ -343,93 +344,104 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P7-TSK-015` — Rail and dispute meters and the dashboard row** — `READY`.
-`PHASE_7_PLAN.md` §15: every rail's health and every dispute's stage visible on a running
-instance — the §15 series eager, NaN never zero, `max()` for fleet-wide gauges; the dashboard's
-rail and dispute row; the chargeback ratio as an operator report, never a per-merchant metric tag
-(ADR-0018) — `INV-LIFE-03` (stuck states alertable), `INV-AUD-02` (no amounts in tags). No domain
-or persistence change; the report route permissioned and its reads audited. **Design inputs
-recorded by `P7-TSK-014`** on its entry: two §15 series already exist
-(`finapp.ledger.negative.positions`, `P7-TSK-013`; `finapp.payments.dispute.deadline.near`,
-`P7-TSK-014`) and must be adopted, not duplicated; the card PSP's dispute port
-(`DisputeResponder`) is deliberately UNMETERED - its latency and outcomes belong in the rail
-series by operation; and an `UNKNOWN` dispute response is a stuck state the resolution sweep
-works, which `INV-LIFE-03` wants visible beside the withdrawal's. Its entry is in
-[`BACKLOG.md`](BACKLOG.md); it runs the three-command loop, design first. **Not started.**
+**`P7-TST-001` — The multi-rail conservation storm** — `READY`.
+`PHASE_7_PLAN.md` §13: every rail and every money path at once — card, instant and wallet
+payments; withdrawals, returns, refunds and chargebacks — concurrently on shared wallets and
+payables, reconciled to the minor unit per round: each clearing position against its own rail's
+records, each payable and wallet against independent books, and the trial balance per currency;
+the gate's four scenarios counted, not argued (a provider success with a lost response, ten-way
+duplicates, duplicate callbacks, a hold released under racing debits) — `INV-RAIL-04`,
+`INV-DSP-01`, `INV-BAL-03`, `INV-ACC-01`, `INV-CON-01`. Test only: no domain, persistence, API or
+event change. **Design inputs recorded by `P7-TSK-015`** on its entry: every acting judgement is
+now counted exactly once after its commit (`finapp.payments.rail.outcome`), so a round can hold
+the meters' deltas against the rows it created — a second, independent tally; and
+`JudgementWritersAreConfinedTest` pins that every judgement is written in one of three appliers,
+so the storm needs no per-door accounting. Its entry is in [`BACKLOG.md`](BACKLOG.md); it runs the
+three-command loop, design first. **Not started.**
 
 ### Just completed
 
-**`P7-TSK-014` — Representment and dispute evidence** — `COMPLETE` (2026-09-27).
-**M7.6, Disputes, closes at 3 of 3: a chargeback is answered - contested with evidence or
-conceded - as a keyed dispatch through the card PSP that moves NO stage and NO money; the
-network's verdict stays the network's word, and the evidence rests encrypted under its own key
-with every access on the record** (ADR-0061 §7 shipped; `INV-DSP-03`, `INV-MER-01`,
-`INV-LIFE-04`, `INV-PAY-04`).
+**`P7-TSK-015` — Rail and dispute meters and the dashboard row** — `COMPLETE` (2026-09-28).
+**M7.7, Observability and demonstration, opens at 1 of 3: every rail's health and every dispute's
+stage visible on a running instance - each acting judgement counted exactly once where it is
+written, after its commit; every modelled unknown alertable by count and age; the chargeback
+ratio an operator report, never a metric tag** (`PHASE_7_PLAN.md` §15; `INV-LIFE-03`,
+`INV-AUD-02`, `INV-AUD-03`, `INV-AUD-01`).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| A representment submitted and won end to end | The merchant attaches two documents and answers over its key; the PSP takes it by OUR reference with both documents on the wire; the stage stays `CHARGED_BACK`; the network's `under_review` and `won` then drive `P7-TSK-013`'s exact inverse, the payable whole again (`DisputeResponseDatabaseTest#aRepresentmentIsSubmittedAndWonEndToEnd`); and LOST (`#aRepresentmentLostStandsAsTheNetworksWord`) - M7.6's "won and lost" |
-| Evidence unreadable across tenants | Another merchant's key reads, adds to and answers nothing of the dispute, each the same 404 as an unknown one, nothing written (`#evidenceIsUnreadableAcrossTenants`); the tenancy battery's four new addressed routes probed A-on-B (`MerchantTenancyBatteryDatabaseTest`, 12 probed) |
+| Every §15 series published by a fresh instance | `PlannedMetersExistTest#phase7PlannedMetersAreAlreadyPublished` reads the plan's §15 rows (the two added here among them) against a fresh instance's registry; the running instance's stuck pairs and stage gauge read the real schema (`WithdrawalDatabaseTest#theStuckReadingCountsWhatTheSweepWould`, `DisputeResponseDatabaseTest#theStuckAnswerReadingCountsWhatTheSweepWould`, `#aRepresentmentIsSubmittedAndWonEndToEnd`); every query of the dashboard's new row names a published series (`DashboardQueriesResolveTest`) |
 
-**One aggregate for both answers** (the backlog's `Representment` corrected to
-`DisputeResponse`): REPRESENTMENT or ACCEPTANCE, because acceptance needs every protocol
-representment has - keyed per responder, dispatched with our reference committed before the call
-(`INV-PAY-04`), one LIVE answer per dispute for every writer (`V022`'s partial unique index),
-resolved by query on our reference, the SAME request re-sent where the PSP never saw it
-(`DisputeResponseResolution`, leaderless). `SUBMITTED` means the PSP took it; `REPRESENTED`,
-`ACCEPTED`, `WON` and `LOST` still arrive by notification.
+**What inspection found**: `PaymentMeters` was built with the card PSP's name and `MeteredPushRail`
+recorded into the same timers, so every instant-rail call - withdrawals, initiations, their
+queries and returns - was published as the card PSP's latency; and judgement counting at the doors
+(`P5-TSK-017`) had lost every door added since that did not copy it - pay-in sweep executions,
+return sweep outcomes, voids, withdrawals and dispute answers were counted nowhere. The
+`PostingObserver` argument, evidenced five times.
 
-**Evidence** (`INV-DSP-03`, `INV-KYC-06`'s regime restated): `payments.dispute_evidence`,
-AES-256-GCM under `FINAPP_PAYMENTS_DISPUTE_EVIDENCE_KEY` (one key per concern), the plaintext's
-SHA-256 verified on every read, append-only by grant, content-addressed; at most five documents
-(one outbound submission carries them all), 512 KiB each, JPEG/PNG/PDF. Every content read writes
-`payments.DisputeEvidenceRead`, every wire transmission `payments.DisputeEvidenceTransmitted`
-before the bytes leave - the responder's send and the sweep's re-send alike.
+**One counting seam**: the three appliers (`PaymentOutcomes`, `WithdrawalOutcomes`,
+`DisputeResponseOutcomes`) report each acting judgement to the payments port `RailOutcomeObserver`
+- a required constructor parameter, called only past the one `if (!acting)` exit - and
+`CommittedRailOutcomes` counts it once the transaction commits (never on rollback, never thrown
+into a committed operation). The door counting is gone, and `JudgementWritersAreConfinedTest`
+pins every judgement writer to its applier. **The series**: `finapp.payments.rail.outcome` and
+`finapp.payments.rail.latency`, eager per declared rail from its capabilities; the provider timers
+under the true provider (the mislabel corrected); the dispute port metered (`MeteredDisputeResponder`,
+the `P7-TSK-014` input); `finapp.payments.withdrawal.unknown.*` and
+`finapp.payments.dispute.response.unknown.*` in the payout shape (`INV-LIFE-03`'s own age metric
+for the one machine that had none, two plan rows added with provenance); `finapp.payments.dispute`
+by current stage, `stage` joining the tag vocabulary with its written argument. The two §15 series
+earlier tasks shipped are adopted, not duplicated.
 
-**The deadline** is the network's `respondBy`, recorded once with the chargeback (an inquiry's
-answer-by date dropped at the door): the platform refuses only its OWN late dispatch and raises
-`finapp.payments.dispute.deadline.near` - never an outcome. **The operator** answers only a payment
-with no merchant (a customer wallet), reasoned, under `DISPUTE_ADMINISTER`. **The lock order**:
-every act locks the attempt and then the dispute, the order every delivery keeps.
+**The report**: `GET /v1/operator/reports/chargeback-ratio?month=YYYY-MM` under
+`MERCHANT_ADMINISTER` (the standing judgement's desk; a dispute's details stay behind
+`DISPUTE_ADMINISTER`) - per merchant, the month's card sales and chargebacks on the rails that
+declare chargebacks, a chargeback dated by its escalation, the ratio to four places and undefined
+without sales, worst first, bounded at 100 with `truncated`, audited `payments.ChargebackRatioRead`
+naming the period, never a merchant. **The dashboard**: the "Rails and disputes" row, nine panels.
 
-**The gate's own finds**: M7.6's acceptance names a representment won AND LOST - only the win
-was demonstrated; a flight dying between its committed dispatch and the PSP call (restart) was
-never exercised; the five-document bound, judged under the lock, had no race proving it; and
-malformed evidence at the boundary (a kind outside the closed set, content that is not base64, an
-empty and an oversized document) had no test - each now a test. **Found in passing**:
-`payments.ChargebackReattributed`'s description still named only the failed refund (the
-`P7-TSK-013` gate unified the rule; the string was not re-read) - corrected. **Found by the gate's own battery, not this task's code, and fixed**: its first run
-failed `MerchantPayoutDatabaseTest#onlyASettledMerchantCanBeClosed` with "statusChangedAt must
-not precede createdAt" - the fixture stamped the merchant with the DATABASE's `now()` while
-`close()` stamps from the JVM's clock, breaking the schema's own "application-supplied from one
-injected Clock" discipline in a test; measured, the Docker VM's clock was gaining ~55 ms a
-second on a steady host clock between step-backs, so it could read ahead of the JVM's. The
-fixture now stamps from the test's clock and the battery was re-run fresh, green; the wider
-class (60 database suites seed `now()`, four aggregates compare timestamps) is chipped as its
-own task. **And in this document**: §Active Work's Phase 7 paragraph still read "6 of 18 ...
-Next: `P7-TSK-002`" - the stale-second-copy class a seventh time, corrected with provenance.
+**The gate's own finds**: the report accepted any four-digit year - `9999-12` pushed its window's
+end into year 10000 - and future months: the reportable range is now 2000-01 to the current month,
+the rest the one 422; no test read the running instance's stage gauge against the real schema
+(asserted now); and **a converged application was demonstrated nowhere** - the probe moving the
+refund report ahead of the acting exit SURVIVED, because the ten-webhook race it aimed at no longer
+reaches the applier (the door's locked read stops the nine losers first, and that test's comment
+still credited the acting bit - corrected): `PaymentRefundDatabaseTest#aConvergedRefundApplicationCountsNothing`
+drives the one reachable converged refund (an ambiguous answer on a row another resolver already
+moved into `UNKNOWN`), `PaymentSweeperDatabaseTest#aConvergedCaptureIsCountedOnce` the attempt's
+(the sweep's unlocked read), both re-probed and caught. **Found by the gate's own battery, not
+this task's code, and fixed**: its first run failed two tests -
+`BalanceDerivationDatabaseTest#aMixedScaleHistoryRefusesLoudly`, whose never-a-sum needle `777`
+matched a random account identifier (`7e777e...`, the `P7-TSK-008` needle class): the identifier
+is now taken out before the amounts are judged; and
+`PaymentRefundDatabaseTest#aTakeoversRefusedConnectionProvesNothing`, whose crashed flight's claim
+lapsed one second before insertion on the server clock that also judges the takeover - measured,
+the Docker VM's clock gains ~77 ms a second and is stepped back ~1.6 s every ~27 s, so a step-back
+between the insert and the takeover read the lease as held: both crashed-flight claims now lapse a
+minute back. The battery was re-run fresh, green; both classes' remaining instances (two platform
+lease fixtures, a dozen short digit needles) are chipped as their own task.
 
-Twenty-six probe runs, twenty-three caught — every one by its intended test — and three survivors recorded as designed: the act's two tenant ranks each dropped alone (the first look's predicate, then the locking read's) and the dispute's row lock dropped alone (the attempt lock is taken first), each survivor's control run beside it and caught (both ranks dropped, both locks dropped); every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical (`MUTATION_TESTING.md` §2 +26 rows). Multi-instance PASS — the claim, the
-attempt and dispute row locks, the one-live index, the response row's conditionals, the send
-permit's conditional forward renewal and the evidence content address are the arbiters, all in
-PostgreSQL; the sweep is enumerated leaderless; nothing lives in process state. Registers:
-`DISTRIBUTED_EXECUTION.md` §3 +1 row, `DATA_CLASSIFICATION.md` +36 rows, `AUDITABLE_ACTIONS.md`
-+5, `ERROR_CONTRACT.md` +6 codes, `MODULE_ARCHITECTURE.md` +`DisputeResponseSubmitted`,
-`OwnershipIsScopedTest` +12 entries and 2 named negatives, `RoutePermissionRegisterTest` +4,
-`SystemActorCallSitesAreEnumeratedTest` +2, the scheduler register +1, `ConfinedCredentialVariablesTest`
-+1 (the eleventh credential - `Map.ofEntries` now), `NoFloatingPointMoneyRulesTest` +1 exemption,
-`CredentialReachesNoEmittedSinkTest` +3 request schemas, the tenancy battery +4 routes,
-`RAIL_AND_DISPUTE_LIFECYCLES.md` §6's response machine, ADR-0061 §7 annotated, `INV-DSP-03`
-updated, the OpenAPI baseline regenerated (+8 paths; the BREAKING rows all on new components,
-additive under v1 by ADR-0015). Verified by targeted tiers from fresh runs — the fleet-wide
-hermetic test task green at 1711 tests across 14 modules, 0 failures, and 366 targeted database tests across 31 suites, 0 failures, plus the platform classification guard — the
-full battery deliberately skipped on the owner's instruction, no fleet-wide database or kafka
-counts claimed.
+Thirty-five probe runs, thirty-four caught - every one by its intended test - and one survivor that
+was the gate's find above, closed and re-run; every verdict read from the failing testcases
+themselves, never the exit code alone, each restore byte-identical (`MUTATION_TESTING.md` §2 +9
+rows under `INV-LIFE-03`, `INV-AUD-02`, `INV-AUD-03` and `INV-AUD-01`, and §3's
+demonstrated-not-claimed paragraph for the rest). Multi-instance PASS - the meters decide nothing:
+counters are per instance and count only what a commit made true, the gauges read the shared
+database with a refresh floor and aggregate with `max()`, and the report is one read-only
+transaction; nothing lives in process state that correctness needs. Registers: `MetricNames` +`stage`,
+`PHASE_7_PLAN.md` §15 +2 rows, `AUDITABLE_ACTIONS.md` +1, `RoutePermissionRegisterTest` +1,
+`OpenApiContractTest` +1 path, `NoFloatingPointMoneyRulesTest` +4 exemptions (the gauges'
+counts), `DashboardQueriesResolveTest`'s non-series labels +3, `MODULE_ARCHITECTURE.md`'s payments
+operations, `INV-LIFE-03`'s Verify note, ADR-0059, ADR-0061 and ADR-0062 annotated, the OpenAPI
+baseline regenerated (+1 path, additive under v1 by ADR-0015). No domain behaviour, persistence,
+event or error-code change. Verified by targeted tiers from fresh runs — the fleet-wide hermetic
+test task green at 1731 tests across 14 modules, 0 failures, and 393 targeted database tests across 36 suites, 0 failures, plus the platform classification guard — the full battery
+deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts claimed.
 
 
 ### Previously
 
-The per-task completion records — 158 blocks, from `P7-TSK-013` back to project initiation
+The per-task completion records — 159 blocks, from `P7-TSK-014` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -448,9 +460,9 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 7 is `IN_PROGRESS`** (started 2026-09-26) — 14 of 18 items complete; **M7.1–M7.6
-closed**, M7.6 Disputes at 3 of 3 with `P7-TSK-014`. **Next: `P7-TSK-015`** ([§Current
-Task](#current-task) is kept current). *(This paragraph read "6 of 18 items complete; M7.1, Rail
+**Phase 7 is `IN_PROGRESS`** (started 2026-09-26) — 15 of 18 items complete; **M7.1–M7.6
+closed**, and M7.7 Observability and demonstration at 1 of 3 with `P7-TSK-015`. **Next:
+`P7-TST-001`** ([§Current Task](#current-task) is kept current). *(This paragraph read "6 of 18 items complete; M7.1, Rail
 foundations, opens at 1 of 3 (`P7-TSK-001`). Next: `P7-TSK-002`" — its count last touched by
 `P7-TSK-006`, its milestone and pointer never after `P7-TSK-001` — until `P7-TSK-014`'s gate found
 it: the stale-second-copy class a seventh time, in the section `P7-TSK-012`'s repair of the
@@ -822,7 +834,7 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P7-TSK-015` — Rail and dispute meters and the dashboard row** — see
+**`P7-TST-001` — The multi-rail conservation storm** — see
 [§Current Task](#current-task), which this section mirrors. *(It named `P7-TSK-001` from the
 transition's initialisation until `P7-TSK-002`'s gate found it stale — the stale-second-copy
 class in the very section built to mirror rather than lag; kept current since.)*

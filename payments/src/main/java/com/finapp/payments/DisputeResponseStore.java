@@ -63,4 +63,15 @@ public interface DisputeResponseStore<T> {
      */
     List<DisputeResponse> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
+     * How many dispute answers wait past their due for the PSP's word, and how long the oldest
+     * has waited (`P7-TSK-015`) — {@code INV-LIFE-03}'s own "unknown-state age metric" for the
+     * response machine, the withdrawal's shape: {@link #findSweepable}'s candidacy with the
+     * {@code UNKNOWN} bound at zero. Every {@code UNKNOWN} response counts, and every
+     * {@code DISPATCHED} one whose send permit is older than the sweep's {@code dispatchedBound}.
+     * A count and an age — never an identifier.
+     */
+    PaymentAttemptStore.UnknownReading unknownReading(
+            T unitOfWork, java.time.Duration dispatchedBound);
 }

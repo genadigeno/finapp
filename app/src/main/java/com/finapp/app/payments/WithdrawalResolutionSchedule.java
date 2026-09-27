@@ -18,6 +18,15 @@ import org.springframework.context.SmartLifecycle;
 @Slf4j
 public final class WithdrawalResolutionSchedule implements SmartLifecycle {
 
+    /**
+     * The sweep's dispatched bound, as ONE placeholder (`P7-TSK-015`, the
+     * {@code PaymentSweeperSchedule.DISPATCHED_AGE} shape): the sweep asks nothing about a
+     * younger dispatch, and the stuck-withdrawal gauge counts a dispatched withdrawal only past
+     * it. Both read this constant, so the two can never disagree about what "stuck" means.
+     */
+    public static final String DISPATCHED_AGE =
+            "${finapp.payments.withdrawal.sweeper.dispatched-age:PT10M}";
+
     private final WithdrawalResolution resolution;
     private final Duration pollInterval;
 

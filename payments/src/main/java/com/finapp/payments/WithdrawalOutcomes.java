@@ -92,6 +92,10 @@ public final class WithdrawalOutcomes {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
 
+    /** Where each acting judgement is reported (`P7-TSK-015`, {@link RailOutcomeObserver}).
+     * Appended last (the constructor is positional). */
+    @NonNull private final RailOutcomeObserver observer;
+
     /** The committed status after an answer, and whether THIS call's transition fired —
      * the row's truth, never the verdict's. */
     public record Applied(WithdrawalStatus status, boolean acting) {
@@ -352,6 +356,9 @@ public final class WithdrawalOutcomes {
                                                 .map(r -> ", failure=" + r)
                                                 .orElse("")
                                         + ", resolver=" + resolver)));
+        // Every acting branch - complete, fail, unknown - records here, so this is the one
+        // report of the judgement (P7-TSK-015), on the withdrawal's stored rail.
+        observer.withdrawalJudged(after.railId(), after.status());
     }
 
     static CausationId causeOf(Correlation correlation) {

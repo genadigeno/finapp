@@ -4,6 +4,7 @@ import com.finapp.payments.PaymentProvider;
 import com.finapp.payments.ProviderAnswer;
 import com.finapp.payments.ProviderIdempotencyReference;
 import com.finapp.payments.QueryAnswer;
+import com.finapp.payments.RailId;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -30,6 +31,13 @@ import lombok.RequiredArgsConstructor;
  * translated a provider failure would change the ambiguity semantics this whole phase rests
  * on ({@code INV-LIFE-03}) — and the duration is recorded either way. The clock is injected
  * (ADR-0014): no ambient time, here or anywhere.
+ *
+ * <h2>Two views of one call (`P7-TSK-015`)</h2>
+ *
+ * <p>Each duration is recorded under the organisation the call went to — the provider — and
+ * the rail it served, which the composition root binds from the rail's declaration (the one
+ * place its name may be written, {@code INV-RAIL-01}). One provider may serve several rails and
+ * one rail several providers; neither view can stand in for the other.
  */
 @RequiredArgsConstructor
 public final class MeteredPaymentProvider implements PaymentProvider {
@@ -37,6 +45,9 @@ public final class MeteredPaymentProvider implements PaymentProvider {
     @NonNull private final PaymentProvider delegate;
     @NonNull private final PaymentMeters meters;
     @NonNull private final Clock clock;
+
+    /** The rail these calls serve (`P7-TSK-015`) — bound at the composition root. */
+    @NonNull private final RailId rail;
 
     /**
      * The delegate's own name, unchanged — the decorator is transparent to everything but
@@ -100,6 +111,10 @@ public final class MeteredPaymentProvider implements PaymentProvider {
     }
 
     private void record(PaymentMeters.Operation operation, Instant started) {
-        meters.providerCall(operation, Duration.between(started, Instant.now(clock)));
+        meters.call(
+                delegate.providerName(),
+                rail,
+                operation,
+                Duration.between(started, Instant.now(clock)));
     }
 }

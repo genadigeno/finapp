@@ -75,6 +75,7 @@ class PaymentEndpointDatabaseTest {
 
     @Autowired private com.finapp.identity.Authorization authorization;
     @Autowired private com.finapp.payments.PaymentConfirmation confirmation;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     @BeforeAll
     static void startProvider() {
@@ -126,11 +127,28 @@ class PaymentEndpointDatabaseTest {
         assertThat(created.body()).contains("\"failureReason\":null");
         String paymentId = field(created.body(), "id");
 
+        double authorizedBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedCardPspAdapter.RAIL.id(), "payment", "authorized");
+        double capturedBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedCardPspAdapter.RAIL.id(), "payment", "captured");
+        double legacyCapturedBefore = com.finapp.app.telemetry.RailOutcomeCounts.attempt(meterRegistry, "captured");
+
         // The confirm answers the REAL state: authorized, then captured by the chained
         // command - SUCCEEDED, in one customer-visible call.
         HttpResponse<String> confirmed = confirm(token, paymentId);
         assertThat(confirmed.statusCode()).isEqualTo(200);
         assertThat(field(confirmed.body(), "status")).isEqualTo("SUCCEEDED");
+        // Both judgements counted where they were written - the synchronous Tx2 and the
+        // chained capture's - once each, on the card rail and in the legacy series
+        // (P7-TSK-015: the doors count nothing any more).
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedCardPspAdapter.RAIL.id(), "payment", "authorized")
+                        - authorizedBefore)
+                .isEqualTo(1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedCardPspAdapter.RAIL.id(), "payment", "captured")
+                        - capturedBefore)
+                .isEqualTo(1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.attempt(meterRegistry, "captured") - legacyCapturedBefore)
+                .isEqualTo(1);
 
         // The wallet balance moves - the payment IS the wallet's funding here, so the whole
         // settled balance is the captured amount (INV-BAL-02's replay agreeing is the
@@ -427,9 +445,18 @@ class PaymentEndpointDatabaseTest {
                 SimulatedCardPspAdapter.VOIDS_PATH,
                 200,
                 "{\"status\":\"approved\",\"reference\":\"psp_void-cancel\"}");
+        double voidedBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedCardPspAdapter.RAIL.id(), "payment", "voided");
+        double legacyVoidedBefore = com.finapp.app.telemetry.RailOutcomeCounts.attempt(meterRegistry, "voided");
         HttpResponse<String> cancelled = delete(token, "/v1/payments/" + id);
         assertThat(cancelled.statusCode()).as(cancelled.body()).isEqualTo(200);
         assertThat(field(cancelled.body(), "status")).isEqualTo("FAILED");
+        // The void's judgement - counted NOWHERE until P7-TSK-015 - once.
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedCardPspAdapter.RAIL.id(), "payment", "voided")
+                        - voidedBefore)
+                .isEqualTo(1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.attempt(meterRegistry, "voided") - legacyVoidedBefore)
+                .isEqualTo(1);
 
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement read =
@@ -451,6 +478,10 @@ class PaymentEndpointDatabaseTest {
         assertThat(retried.statusCode()).isEqualTo(200);
         assertThat(field(retried.body(), "status")).isEqualTo("FAILED");
         assertThat(provider.requestCount(SimulatedCardPspAdapter.VOIDS_PATH)).isEqualTo(1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedCardPspAdapter.RAIL.id(), "payment", "voided")
+                        - voidedBefore)
+                .as("the converged retry judged nothing, so counted nothing")
+                .isEqualTo(1);
     }
 
     @Test

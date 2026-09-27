@@ -299,6 +299,18 @@ public enum PaymentsAuditAction implements AuditableAction {
             "payments.DisputeResponseOutcomeApplied",
             "A dispute response outcome was applied on the locked row; the record names the"
                     + " response, its dispute, the status and the failure class.",
+            false),
+
+    /**
+     * An operator read the chargeback-ratio report (`P7-TSK-015`, {@code PHASE_7_PLAN.md} §15,
+     * ADR-0018's report-not-tag rule): every merchant's card sales and chargebacks for a period,
+     * across tenants, under {@code MERCHANT_ADMINISTER} — the standing judgement's evidence. One
+     * record per report served, naming its period, committed with the read or neither happens.
+     */
+    CHARGEBACK_RATIO_READ(
+            "payments.ChargebackRatioRead",
+            "An operator read the chargeback-ratio report; the record names the period and how"
+                    + " many credited accounts it counted, never a merchant or an amount.",
             false);
 
     private final String code;

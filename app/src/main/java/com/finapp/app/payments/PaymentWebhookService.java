@@ -301,9 +301,9 @@ public class PaymentWebhookService {
                     "A payment webhook is being processed by another instance; asking the"
                             + " provider to redeliver");
         }
-        // The judgement this delivery's own conditional made, if any - counted here, after
-        // the commit, and never for a resolver that converged (`P5-TSK-017`).
-        judged.countInto(meters);
+        // The judgement this delivery's own conditional made, if any, is counted where it was
+        // written - the applier's RailOutcomeObserver, after this delivery's commit
+        // (P7-TSK-015), never for a resolver that converged - not here.
 
         // Counted after the delivery transaction committed (`P5-TSK-017`), in ADR-0047's
         // own four states: a rolled-back delivery counts nothing, and the CONTENDED path
@@ -421,8 +421,7 @@ public class PaymentWebhookService {
                                                     "an attempt row's intent exists: V003's"
                                                             + " foreign key holds it"));
             if (authOperation && authResolvable(attempt.status())) {
-                judged.attempt(
-                        outcomes.applyAuthorization(
+                outcomes.applyAuthorization(
                         uow,
                         intent.id(),
                         attempt.id(),
@@ -432,10 +431,9 @@ public class PaymentWebhookService {
                         // The issuer approved the dispatched ask: the intent's amount, the
                         // same promise the synchronous path carries from its Tx1.
                         intent.amount(),
-                        correlation));
+                        correlation);
             } else if (!authOperation && captureResolvable(attempt.status())) {
-                judged.attempt(
-                        outcomes.applyCapture(
+                outcomes.applyCapture(
                         uow,
                         intent.id(),
                         attempt.id(),
@@ -446,7 +444,7 @@ public class PaymentWebhookService {
                         // The capture is the authorized promise, in full (one attempt, no
                         // partial capture until its producer exists - ADR-0045 §4).
                         attempt.authorizedAmount(),
-                        correlation));
+                        correlation);
             } else {
                 log.info(
                         "A payment webhook reported on attempt {} in state {} which its"
@@ -741,8 +739,7 @@ public class PaymentWebhookService {
                                         new IllegalStateException(
                                                 "an attempt row's intent exists: V003's"
                                                         + " foreign key holds it"));
-        judged.refund(
-                outcomes.applyRefund(
+        outcomes.applyRefund(
                         uow,
                         intent.id(),
                         refund,
@@ -750,19 +747,17 @@ public class PaymentWebhookService {
                         verdict.get(),
                         providerReference(payload),
                         intent.creditAccount(),
-                        PaymentCreation.resolvedCorrelation()));
+                        PaymentCreation.resolvedCorrelation());
     }
 
     /**
-     * What this delivery's effect committed, carried out of the transaction so the door can
-     * count it <strong>after the commit</strong> (`P5-TSK-017`): a resolver that lost the
-     * conditional reports nothing, so ten deliveries racing one operation count one
-     * judgement — and an effect whose transaction rolled back counts none at all.
+     * What this delivery's effect found unreadable, carried out of the transaction so the door
+     * can count the delivery's fate <strong>after the commit</strong> (`P5-TSK-017`). The
+     * judgements themselves are no longer carried: since `P7-TSK-015` the applier reports each
+     * acting one to its {@code RailOutcomeObserver}, which counts it once the transaction commits.
      */
     private static final class Judged {
 
-        private PaymentAttemptStatus attempt;
-        private com.finapp.payments.RefundStatus refund;
         private boolean unreadable;
 
         /**
@@ -778,57 +773,6 @@ public class PaymentWebhookService {
 
         boolean isUnmappable() {
             return unreadable;
-        }
-
-        void attempt(PaymentOutcomes.Applied applied) {
-            if (applied.acting()) {
-                attempt = applied.attempt();
-            }
-        }
-
-        void refund(PaymentOutcomes.RefundApplied applied) {
-            if (applied.acting()) {
-                refund = applied.status();
-            }
-        }
-
-        void countInto(com.finapp.app.telemetry.PaymentMeters meters) {
-            if (attempt != null) {
-                switch (attempt) {
-                    case AUTHORIZED ->
-                            meters.attempt(
-                                    com.finapp.app.telemetry.PaymentMeters.Judgement.AUTHORIZED);
-                    case CAPTURED ->
-                            meters.attempt(
-                                    com.finapp.app.telemetry.PaymentMeters.Judgement.CAPTURED);
-                    case FAILED ->
-                            meters.attempt(
-                                    com.finapp.app.telemetry.PaymentMeters.Judgement.FAILED);
-                    case AUTH_UNKNOWN, CAPTURE_UNKNOWN ->
-                            meters.attempt(
-                                    com.finapp.app.telemetry.PaymentMeters.Judgement.UNKNOWN);
-                    case AUTH_DISPATCHED, CAPTURE_DISPATCHED -> {
-                        // A webhook never commits one: nothing was judged.
-                    }
-                }
-            }
-            if (refund != null) {
-                switch (refund) {
-                    case COMPLETED ->
-                            meters.refund(
-                                    com.finapp.app.telemetry.PaymentMeters.RefundOutcome
-                                            .COMPLETED);
-                    case FAILED ->
-                            meters.refund(
-                                    com.finapp.app.telemetry.PaymentMeters.RefundOutcome.FAILED);
-                    case UNKNOWN ->
-                            meters.refund(
-                                    com.finapp.app.telemetry.PaymentMeters.RefundOutcome.UNKNOWN);
-                    case DISPATCHED -> {
-                        // As above.
-                    }
-                }
-            }
         }
     }
 

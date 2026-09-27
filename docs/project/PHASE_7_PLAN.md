@@ -279,10 +279,18 @@ Each has a test or a documented, accepted rationale (exit criterion 4):
 | `finapp.payments.withdrawal.unknown.age` | The oldest one's age, in the payout's shape |
 | `finapp.payments.dispute` | Disputes by stage and outcome |
 | `finapp.payments.dispute.deadline.near` | Disputes whose respond-by date is near |
+| `finapp.payments.dispute.response.unknown.active` | Stuck dispute answers: every `UNKNOWN`, and `DISPATCHED` past the sweep's bound |
+| `finapp.payments.dispute.response.unknown.age` | The oldest one's age, in the withdrawal's shape |
 | `finapp.ledger.negative.positions` | Counterparties below zero after a chargeback (merchant debt, customer receivable) |
 
 The chargeback ratio per merchant is an operator report, never a metric tag (ADR-0018).
 Everything is eager, NaN never zero, and aggregated with `max()` for fleet-wide gauges.
+
+*(The two `dispute.response.unknown` rows were added at `P7-TSK-015`'s design: `P7-TSK-014` gave
+the dispute answer a modelled `UNKNOWN` state after this table was written, and `INV-LIFE-03`'s own
+Verify clause asks for an "unknown-state age metric" for it. `finapp.payments.dispute` is one
+gauge tagged `stage` — the terminal stages are the outcomes — and `rail.outcome` counts acting
+judgements tagged `rail`, `type` and `outcome`.)*
 
 ## 16. Milestones
 

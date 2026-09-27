@@ -98,6 +98,7 @@ class WithdrawalDatabaseTest {
     @Autowired private Withdrawals engine;
     @Autowired private WithdrawalOutcomes outcomes;
     @Autowired private WithdrawalResolution resolution;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
     @Autowired private WithdrawalStore<Connection> withdrawalStore;
     @Autowired private HoldService holdService;
     @Autowired private TransactionRunner transactions;
@@ -309,11 +310,23 @@ class WithdrawalDatabaseTest {
         Fixture f = fundedFixture("20.00");
         provider.receivesTheRequestThenLosesTheResponse(
                 SimulatedInstantSchemeAdapter.TRANSFERS_PATH);
+        double unknownBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "withdrawal", "unknown");
+        double completedBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "withdrawal", "completed");
+        long stuckBefore = stuck(Duration.ofMinutes(10)).active();
 
         HttpResponse<String> withdrawn =
                 withdraw(f.token(), body(f.methodId(), "5.00", "USD"), someKey());
         assertThat(withdrawn.statusCode()).isEqualTo(201);
         assertThat(field(withdrawn.body(), "status")).isEqualTo("UNKNOWN");
+        // Counted where written (P7-TSK-015), and visible as stuck until the sweep answers.
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "withdrawal", "unknown")
+                        - unknownBefore)
+                .isEqualTo(1);
+        assertThat(stuck(Duration.ofMinutes(10)).active())
+                .as("an UNKNOWN withdrawal is stuck whatever the bound (INV-LIFE-03)")
+                .isEqualTo(stuckBefore + 1);
         String id = field(withdrawn.body(), "id");
         String reference =
                 oneString("SELECT end_to_end_reference FROM payments.withdrawal WHERE id = ?",
@@ -337,6 +350,9 @@ class WithdrawalDatabaseTest {
         Thread.sleep(80); // past the tiny unknown-age candidacy bound
         WithdrawalResolution.SweepResult swept = resolution.sweep();
         assertThat(swept.resolved()).isGreaterThanOrEqualTo(1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "withdrawal", "completed")
+                        - completedBefore)
+                .isEqualTo(1);
 
         assertThat(oneString("SELECT status FROM payments.withdrawal WHERE id = ?",
                         UUID.fromString(id)))
@@ -361,6 +377,50 @@ class WithdrawalDatabaseTest {
         assertThat(count("SELECT count(*) FROM ledger.journal_entry"
                         + " WHERE idempotency_scope = 'ledger.post:wallet-withdrawal:" + id + "'"))
                 .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the stuck-withdrawal reading counts what the sweep would ask about: a dispatch"
+            + " whose permit is past the bound, never one still mid-question - and the wired"
+            + " gauges read it, a number, never NaN, from a readable database (P7-TSK-015)")
+    void theStuckReadingCountsWhatTheSweepWould() throws Exception {
+        Fixture f = fundedFixture("20.00");
+        Duration bound = Duration.ofMinutes(10);
+        long before = stuck(bound).active();
+
+        // An hour past its permit and a moment past it: an hour dwarfs any clock skew between
+        // this JVM and the database, so only the bound decides.
+        List<Seeded> seeded =
+                List.of(
+                        seedDispatched(f, "1.00", Instant.now(CLOCK).minus(Duration.ofHours(1))),
+                        seedDispatched(f, "1.00", Instant.now(CLOCK)));
+        try {
+            com.finapp.payments.PaymentAttemptStore.UnknownReading reading = stuck(bound);
+            assertThat(reading.active())
+                    .as("the overdue dispatch counts; the one still mid-question does not")
+                    .isEqualTo(before + 1);
+            assertThat(reading.oldestAgeSeconds())
+                    .as("the age is the oldest wait, measured from the latest send permit")
+                    .isGreaterThanOrEqualTo(Duration.ofMinutes(55).toSeconds());
+            assertThat(meterRegistry.find("finapp.payments.withdrawal.unknown.active").gauge()
+                            .value())
+                    .as("published eagerly, and a number from a readable database")
+                    .isNotNaN();
+            assertThat(meterRegistry.find("finapp.payments.withdrawal.unknown.age").gauge())
+                    .isNotNull();
+        } finally {
+            // Never leave a stuck withdrawal for another test's sweep to find and resolve.
+            try (Connection app = DatabaseRoles.application();
+                    PreparedStatement retire =
+                            app.prepareStatement(
+                                    "UPDATE payments.withdrawal SET status = 'FAILED',"
+                                            + " failure_reason = 'DECLINED' WHERE id = ?")) {
+                for (Seeded row : seeded) {
+                    retire.setObject(1, row.id().value());
+                    retire.executeUpdate();
+                }
+            }
+        }
     }
 
     @Test
@@ -678,6 +738,11 @@ class WithdrawalDatabaseTest {
                 CurrencyCode.of("USD"),
                 UUID.fromString(f.methodId()),
                 new ProviderReference(f.destination()));
+    }
+
+    /** The stuck-withdrawal gauges' own read (P7-TSK-015), over {@code bound}. */
+    private com.finapp.payments.PaymentAttemptStore.UnknownReading stuck(Duration bound) {
+        return transactions.inTransaction(uow -> withdrawalStore.unknownReading(uow, bound));
     }
 
     /** A DISPATCHED row seeded directly (the sweeper-fixture pattern): a REAL hold placed

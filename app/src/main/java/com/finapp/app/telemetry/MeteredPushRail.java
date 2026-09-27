@@ -6,6 +6,7 @@ import com.finapp.payments.InitiationAnswer;
 import com.finapp.payments.PushAnswer;
 import com.finapp.payments.PushInquiryAnswer;
 import com.finapp.payments.PushRail;
+import com.finapp.payments.RailId;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,17 +20,27 @@ import java.util.Objects;
  * became a payment operation (`P7-TSK-009` — the vocabulary decision this javadoc said it
  * would be); the grant exchange stays un-timed, deliberately — an instrument registration
  * is not a payment operation.
+ *
+ * <p><strong>Under the scheme's OWN name</strong> (`P7-TSK-015`): until then these durations
+ * landed in the card PSP's {@code provider.latency} series — the meters were built with the card
+ * provider's name and this decorator recorded into them — so every withdrawal, initiation and
+ * return was published as the card PSP's latency. Each call now records under
+ * {@link PushRail#schemeName()} and under the rail the composition root binds, and the scheme's
+ * series register at construction, before the first call ({@code P1-TSK-029}).
  */
 public final class MeteredPushRail implements PushRail {
 
     private final PushRail delegate;
     private final PaymentMeters meters;
     private final Clock clock;
+    private final RailId rail;
 
-    public MeteredPushRail(PushRail delegate, PaymentMeters meters, Clock clock) {
+    public MeteredPushRail(PushRail delegate, PaymentMeters meters, Clock clock, RailId rail) {
         this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.rail = Objects.requireNonNull(rail, "rail must not be null");
+        meters.registerProvider(delegate.schemeName(), PaymentMeters.PUSH_OPERATIONS);
     }
 
     @Override
@@ -104,6 +115,10 @@ public final class MeteredPushRail implements PushRail {
     }
 
     private void record(PaymentMeters.Operation operation, Instant started) {
-        meters.providerCall(operation, Duration.between(started, Instant.now(clock)));
+        meters.call(
+                delegate.schemeName(),
+                rail,
+                operation,
+                Duration.between(started, Instant.now(clock)));
     }
 }

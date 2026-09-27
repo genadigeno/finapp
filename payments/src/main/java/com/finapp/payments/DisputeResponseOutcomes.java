@@ -48,6 +48,13 @@ public final class DisputeResponseOutcomes {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
 
+    /** The disputed payment's attempt, read for its stored rail (`P7-TSK-015`) - data, never a
+     * name ({@code INV-RAIL-01}). Appended after the P7-TSK-014 fields (positional). */
+    @NonNull private final PaymentAttemptStore<Connection> attempts;
+
+    /** Where each acting judgement is reported (`P7-TSK-015`, {@link RailOutcomeObserver}). */
+    @NonNull private final RailOutcomeObserver observer;
+
     /**
      * What one application did.
      *
@@ -112,7 +119,29 @@ public final class DisputeResponseOutcomes {
         if (applied.status() == DisputeResponseStatus.SUBMITTED) {
             announceSubmitted(unitOfWork, applied, correlation, now);
         }
+        // The acting judgement, on the disputed payment's stored rail (P7-TSK-015): the
+        // dispatching flight, a takeover and the sweep all leave through this one branch.
+        observer.disputeResponseJudged(disputedRail(unitOfWork, applied), applied.status());
         return new Applied(applied.status(), true);
+    }
+
+    /** The rail the disputed payment travelled - read off its attempt row. */
+    private RailId disputedRail(Connection unitOfWork, DisputeResponse response) {
+        Dispute contested =
+                disputes.findById(unitOfWork, response.dispute())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a response's dispute exists: V022's foreign key"
+                                                        + " holds it"))
+                        .dispute();
+        return attempts.findById(unitOfWork, contested.attemptId())
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "a dispute's attempt exists: V020's foreign key holds"
+                                                + " it"))
+                .rail();
     }
 
     /**

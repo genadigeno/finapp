@@ -250,6 +250,39 @@ public final class JdbcDisputeResponseStore implements DisputeResponseStore<Conn
         }
     }
 
+    @Override
+    public PaymentAttemptStore.UnknownReading unknownReading(
+            Connection unitOfWork, java.time.Duration dispatchedBound) {
+        Objects.requireNonNull(dispatchedBound, "dispatchedBound must not be null");
+        // findSweepable's own clocks with the UNKNOWN bound at zero (the payout's reading, the
+        // withdrawal's): an UNKNOWN answer has waited since the move that made it so, a
+        // DISPATCHED one since its latest send permit, counted only once past the bound. The
+        // SERVER's clock decides the age (ADR-0014), whole seconds, floored at zero.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*),"
+                                + " GREATEST(0, COALESCE(floor(EXTRACT(EPOCH FROM now() - min("
+                                + "   CASE WHEN r.status = 'UNKNOWN'"
+                                + "        THEN COALESCE(h.entered, r.created_at)"
+                                + "        ELSE r.send_permit END)))::bigint, 0))"
+                                + " FROM " + TABLE + " r"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM payments.dispute_response_event e"
+                                + "   WHERE e.response_id = r.id) h ON true"
+                                + " WHERE r.status = 'UNKNOWN'"
+                                + "    OR (r.status = 'DISPATCHED'"
+                                + "        AND r.send_permit <= now() - make_interval(secs => ?))")) {
+            read.setLong(1, dispatchedBound.toSeconds());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return new PaymentAttemptStore.UnknownReading(row.getLong(1), row.getLong(2));
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading the stuck-dispute-response gauge", failure));
+        }
+    }
+
     // -----------------------------------------------------------------
 
     private static Array evidenceArray(Connection unitOfWork, List<DisputeEvidenceId> evidence)

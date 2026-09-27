@@ -154,7 +154,8 @@ class PaymentVoidTest {
                         // No dispute in this suite (P7-TSK-013): a tripwire.
                         UntouchedChargebacks.over(
                                 attempts, intents, PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL)),
-                                IDS, CLOCK));
+                                IDS, CLOCK),
+                        com.finapp.payments.RailOutcomeObserver.NONE);
         return new PaymentVoid(
                 runner,
                 intents,

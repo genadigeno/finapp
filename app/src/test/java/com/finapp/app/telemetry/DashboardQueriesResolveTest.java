@@ -81,7 +81,10 @@ class DashboardQueriesResolveTest {
                     // P5-TSK-017: the provider-latency panel groups by operation.
                     "operation",
                     // The consent counters' tag key (P2-TSK-020) - a label, not a series.
-                    "purpose");
+                    "purpose",
+                    // P7-TSK-015: the rail and dispute row groups by rail, judged type and
+                    // dispute stage - labels, not series.
+                    "rail", "type", "stage");
 
     @LocalServerPort private int port;
 

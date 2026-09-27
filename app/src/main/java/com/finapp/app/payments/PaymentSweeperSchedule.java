@@ -1,6 +1,5 @@
 package com.finapp.app.payments;
 
-import com.finapp.app.telemetry.PaymentMeters;
 import com.finapp.payments.PaymentSweeper;
 import java.time.Duration;
 import java.util.Objects;
@@ -36,7 +35,9 @@ import org.springframework.context.SmartLifecycle;
  *
  * <p>The failure class only — never provider bytes, hosts or amounts ({@code INV-AUD-02});
  * per-row failures inside a successful tick are already the sweeper's own anti-stall
- * machinery. (Sweep meters are plan §15's, arriving with `P5-TSK-017`.)
+ * machinery. Its acting judgements are counted where they are written, never here: since
+ * `P7-TSK-015` every applier reports them to its {@code RailOutcomeObserver}, which counts
+ * after the row's own transaction commits.
  */
 @Slf4j
 public final class PaymentSweeperSchedule implements SmartLifecycle {
@@ -50,15 +51,12 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
     public static final String DISPATCHED_AGE = "${finapp.payments.sweeper.dispatched-age:PT10M}";
 
     private final PaymentSweeper sweeper;
-    private final PaymentMeters meters;
     private final Duration pollInterval;
 
     private ScheduledExecutorService executor;
 
-    public PaymentSweeperSchedule(
-            PaymentSweeper sweeper, PaymentMeters meters, Duration pollInterval) {
+    public PaymentSweeperSchedule(PaymentSweeper sweeper, Duration pollInterval) {
         this.sweeper = Objects.requireNonNull(sweeper, "sweeper must not be null");
-        this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval must not be null");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
             throw new IllegalArgumentException("pollInterval must be positive: " + pollInterval);
@@ -84,53 +82,21 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
     private void sweepQuietly() {
         try {
             PaymentSweeper.SweepResult result = sweeper.sweep();
-            // The tick's acting judgements, counted after their per-row transactions
-            // committed (`P5-TSK-017`): the sweeper's own tally is telemetry and may
-            // overcount convergence, which is exactly why the METER reads the acting list
-            // instead - a swept resolution racing a webhook is counted by whichever won,
-            // once.
-            result.actingJudgements().forEach(this::count);
-            // The refund leg's own acting judgements (the Phase 6 -> 7 transition), counted on
-            // the series the refund door and the webhook already feed.
-            result.refundJudgements().forEach(this::countRefund);
             if (result.candidates() > 0) {
                 // Counts only - identifiers live in the sweeper's own per-row lines.
                 log.info(
-                        "Payment sweep: {} candidates, {} applied, {} skipped, {} failed",
+                        "Payment sweep: {} candidates, {} applied, {} skipped, {} failed,"
+                                + " {} attempt and {} refund judgements acted",
                         result.candidates(),
                         result.applied(),
                         result.skipped(),
-                        result.failedRows());
+                        result.failedRows(),
+                        result.actingJudgements().size(),
+                        result.refundJudgements().size());
             }
         } catch (RuntimeException failure) {
             // The class only: a JDBC or provider message can name hosts and identifiers.
             log.warn("Payment sweep failed: {}", failure.getClass().getSimpleName());
-        }
-    }
-
-    /** The attempt machine's vocabulary; a dispatched state is no judgement (see the door). */
-    private void count(com.finapp.payments.PaymentAttemptStatus status) {
-        switch (status) {
-            case AUTHORIZED -> meters.attempt(PaymentMeters.Judgement.AUTHORIZED);
-            case CAPTURED -> meters.attempt(PaymentMeters.Judgement.CAPTURED);
-            case FAILED -> meters.attempt(PaymentMeters.Judgement.FAILED);
-            case AUTH_UNKNOWN, CAPTURE_UNKNOWN -> meters.attempt(PaymentMeters.Judgement.UNKNOWN);
-            case AUTH_DISPATCHED, CAPTURE_DISPATCHED -> {
-                // Mid-question: the sweeper never commits one, and counting it would be
-                // throughput for a decision nobody made.
-            }
-        }
-    }
-
-    /** The refund machine's vocabulary, the refund door's own mapping (`PaymentService`). */
-    private void countRefund(com.finapp.payments.RefundStatus status) {
-        switch (status) {
-            case COMPLETED -> meters.refund(PaymentMeters.RefundOutcome.COMPLETED);
-            case FAILED -> meters.refund(PaymentMeters.RefundOutcome.FAILED);
-            case UNKNOWN -> meters.refund(PaymentMeters.RefundOutcome.UNKNOWN);
-            case DISPATCHED -> {
-                // A dispatch is no judgement, and the sweep never commits one.
-            }
         }
     }
 
