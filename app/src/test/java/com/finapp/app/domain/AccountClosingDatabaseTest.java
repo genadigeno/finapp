@@ -145,7 +145,8 @@ class AccountClosingDatabaseTest {
                             () -> closing().close(app, holder.customer(), holder.account()))
                     .isInstanceOf(AccountNotEmptyException.class)
                     // The message names account and currency, never the amount (INV-AUD-02).
-                    .hasMessageNotContaining("500")
+                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+                    .hasMessageNotContaining(" 500")
                     .hasMessageNotContaining("5.00");
             app.rollback();
 
@@ -176,7 +177,8 @@ class AccountClosingDatabaseTest {
             long linesBefore = lineCountFor(app, walletOf(app, holder));
             assertThatThrownBy(() -> credit(app, holder, 700))
                     .isInstanceOf(LedgerAccountNotPostableException.class)
-                    .hasMessageNotContaining("700");
+                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+                    .hasMessageNotContaining(" 700");
             app.rollback();
             assertThat(lineCountFor(app, walletOf(app, holder))).isEqualTo(linesBefore);
 

@@ -280,9 +280,10 @@ class BalanceDerivationDatabaseTest {
                     .isInstanceOf(UnderivableBalanceException.class)
                     .hasMessageContaining("mixes scales")
                     .hasMessageContaining("USD")
+                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
                     .satisfies(refusal -> assertThat(refusal.getMessage())
-                            .doesNotContain("1500")
-                            .doesNotContain("777"));
+                            .doesNotContain(" 1500")
+                            .doesNotContain(" 777"));
 
             // `persistedOnly` is NOT mixed: its whole history is one debit at scale 3, and
             // the zero it settles against has no scale of its own - the scale-aware zero

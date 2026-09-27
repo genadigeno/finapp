@@ -123,6 +123,10 @@ class BeneficialOwnerTest {
                         Optional.of(ControlRole.DIRECTOR));
         // The stake and role are CONFIDENTIAL facts about a person (DATA_CLASSIFICATION §4);
         // a log line renders the row's identity, never its content.
-        assertThat(owner.toString()).doesNotContain("2500").doesNotContain("DIRECTOR");
+        // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+        assertThat(owner.toString())
+                .doesNotContain("=2500")
+                .doesNotContain(" 2500")
+                .doesNotContain("DIRECTOR");
     }
 }

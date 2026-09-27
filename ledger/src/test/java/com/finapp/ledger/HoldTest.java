@@ -52,7 +52,8 @@ class HoldTest {
         assertThat(HoldStatus.RELEASED.isTerminal()).isTrue();
         assertThatThrownBy(() -> released.release(CLOCK))
                 .isInstanceOf(IllegalHoldTransitionException.class)
-                .hasMessageNotContaining("500");
+                // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+                .hasMessageNotContaining(" 500");
     }
 
     @Test
@@ -111,6 +112,10 @@ class HoldTest {
         // needle - a distinctive minor-unit value - must appear nowhere.
         Hold hold =
                 Hold.place(HoldId.next(IDS), ACCOUNT, Money.ofMinorUnits(987654, USD), CLOCK);
-        assertThat(hold.toString()).doesNotContain("987654").doesNotContain("9876.54");
+        // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+        assertThat(hold.toString())
+                .doesNotContain("=987654")
+                .doesNotContain(" 987654")
+                .doesNotContain("9876.54");
     }
 }

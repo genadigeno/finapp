@@ -193,7 +193,8 @@ class ReversalDatabaseTest {
                                                             "rev-c-" + IDS.next(),
                                                             1)))
                     .isInstanceOf(OverReversalException.class)
-                    .hasMessageNotContaining("1000")
+                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+                    .hasMessageNotContaining(" 1000")
                     .hasMessageNotContaining("10.00");
             app.rollback();
             assertThat(reversalRowsOf(app, fixture.original())).isEqualTo(reversalsBefore);
